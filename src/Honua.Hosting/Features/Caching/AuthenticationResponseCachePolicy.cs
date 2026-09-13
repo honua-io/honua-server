@@ -1,8 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Microsoft.Net.Http.Headers;
-
 namespace Honua.Infrastructure.Caching;
 
 /// <summary>
@@ -44,17 +42,23 @@ internal static class AuthenticationResponseCachePolicy
         var isAuthenticationDecision = credentialResponse || context.Items.ContainsKey(AuthenticationDecisionKey) ||
             context.Response.StatusCode is StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden;
 
-        // An endpoint that already scoped its response to `private` with `Vary:
-        // Authorization` (protected tiles/scene assets, terrain tiles) has already
-        // ruled out shared/public caching and told downstream caches the response
-        // varies by credential; that decision is authoritative and must survive
-        // this catch-all. Only a missing Cache-Control, or one that is `private`
-        // without the matching `Vary`, needs to be forced to no-store for a
-        // credentialed response.
-        if (isAuthenticationDecision ||
-            (HasCredentialedIdentity(context) && !IsExplicitlyPrivate(context.Response)))
+        // Private caches can still reuse a fresh response after the server revokes
+        // the credential: its bytes, Vary key and the asset's ETag have not changed.
+        // Preserve an endpoint's private policy as metadata, but never allow it to
+        // opt credentialed responses out of no-store (#4608). No-store takes
+        // precedence over any retained freshness lifetime.
+        if (isAuthenticationDecision || HasCredentialedIdentity(context))
         {
-            context.Response.Headers.CacheControl = "no-store";
+            var headers = context.Response.GetTypedHeaders();
+            if (!isAuthenticationDecision && headers.CacheControl is { Private: true, Public: false } cacheControl)
+            {
+                cacheControl.NoStore = true;
+                headers.CacheControl = cacheControl;
+            }
+            else
+            {
+                context.Response.Headers.CacheControl = "no-store";
+            }
         }
 
         if (credentialResponse)
@@ -67,16 +71,4 @@ internal static class AuthenticationResponseCachePolicy
     private static bool HasCredentialedIdentity(HttpContext context) =>
         context.User.Identities.Any(static identity =>
             identity.IsAuthenticated && identity.FindFirst("auth_type")?.Value != DevelopmentBypassAuthType);
-
-    private static bool IsExplicitlyPrivate(HttpResponse response)
-    {
-        if (response.GetTypedHeaders().CacheControl is not { Private: true })
-        {
-            return false;
-        }
-
-        return response.Headers.Vary.Any(static value =>
-            value is not null && value.Split(',').Any(static token =>
-                token.Trim().Equals(HeaderNames.Authorization, StringComparison.OrdinalIgnoreCase)));
-    }
 }

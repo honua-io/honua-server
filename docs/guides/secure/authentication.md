@@ -18,6 +18,15 @@ and equivalent protocol-formatted errors use the same policy, including Esri
 reusing an earlier response after credentials change. Public anonymous responses
 retain their normal endpoint cache policy.
 
+An endpoint may retain `private` and a freshness lifetime alongside `no-store`;
+`no-store` takes precedence and prohibits storing the response. `Vary` and ETags
+alone cannot protect revocation: a revoked credential still has the same bytes,
+and a private cache could otherwise reuse the asset without contacting Honua.
+
+Signed scene-access envelopes also prohibit response storage, including
+conditional `304` responses, even though their endpoint-local validation does
+not attach a user principal. Public scene requests retain their normal caching.
+
 Portal `generateToken` and OAuth endpoints also return `Cache-Control: no-store`
 and `Pragma: no-cache`, including token exchange errors. Their credentials can be
 validated inside the endpoint without attaching an authenticated user to the

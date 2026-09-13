@@ -177,9 +177,9 @@ public sealed class SceneAccessEnvelopeEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
-        // Token-authorized assets must use private cacheability so shared
-        // caches cannot replay the body to clients without the token.
-        response.Headers.CacheControl?.Private.Should().BeTrue();
+        // Expiry changes server state without changing the token URL. Private
+        // cacheability alone would allow reuse without checking expiry again.
+        response.Headers.CacheControl?.NoStore.Should().BeTrue();
         response.Headers.CacheControl?.Public.Should().BeFalse();
     }
 
@@ -245,9 +245,43 @@ public sealed class SceneAccessEnvelopeEndpointTests : IAsyncLifetime
         var response = await _fixture.Client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Headers.CacheControl?.Private.Should().BeTrue();
+        response.Headers.CacheControl?.NoStore.Should().BeTrue();
         response.Headers.Vary.Should().Contain("X-Honua-Token");
         response.Headers.Vary.Should().NotContain("Authorization");
+    }
+
+    [IntegrationTheory]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /scenes/{sceneId}/{*assetPath}")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetSceneAsset_TokenAuthorized_ConditionalResponseCannotBeStored(bool useHeader)
+    {
+        var token = await IssueTokenAsync(SceneFixturePaths.ProtectedSceneId);
+        var path = $"/scenes/{SceneFixturePaths.ProtectedSceneId}/tiles/0.b3dm";
+        if (!useHeader)
+        {
+            path += $"?token={Uri.EscapeDataString(token)}";
+        }
+
+        using var initial = new HttpRequestMessage(HttpMethod.Get, path);
+        if (useHeader)
+        {
+            initial.Headers.Add("X-Honua-Token", token);
+        }
+        using var response = await _fixture.Client.SendAsync(initial);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.ETag.Should().NotBeNull();
+
+        using var conditional = new HttpRequestMessage(HttpMethod.Get, path);
+        conditional.Headers.IfNoneMatch.Add(response.Headers.ETag!);
+        if (useHeader)
+        {
+            conditional.Headers.Add("X-Honua-Token", token);
+        }
+        using var unchanged = await _fixture.Client.SendAsync(conditional);
+        unchanged.StatusCode.Should().Be(HttpStatusCode.NotModified);
+        unchanged.Headers.CacheControl?.NoStore.Should().BeTrue();
     }
 
     [IntegrationTest]
