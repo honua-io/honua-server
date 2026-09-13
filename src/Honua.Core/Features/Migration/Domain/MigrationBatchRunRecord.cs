@@ -97,6 +97,21 @@ public sealed record MigrationBatchRunRecord
     /// summary. Free-form, no secrets expected.
     /// </summary>
     public string? StatusNote { get; init; }
+
+    /// <summary>
+    /// Service-level migration fidelity verdict (issue #4600), one of
+    /// <see cref="MigrationFidelityVerdicts"/>. Folded from every child's per-layer verdict and the
+    /// relationship-apply outcomes when the batch reaches a terminal status; null while running.
+    /// <see cref="Status"/> says whether the batch finished, this says whether the migrated service is
+    /// proven equivalent to the source.
+    /// </summary>
+    public string? FidelityVerdict { get; init; }
+
+    /// <summary>
+    /// Per-resource differences that produced <see cref="FidelityVerdict"/>, ordered by code then
+    /// subject. Empty while running and for a full-fidelity batch.
+    /// </summary>
+    public MigrationFidelityDifference[] FidelityDifferences { get; init; } = [];
 }
 
 /// <summary>

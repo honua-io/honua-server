@@ -81,6 +81,69 @@ public sealed class ImportBackgroundServiceTests
             completed.SourceKind.Should().Be("arcgis-geoservices-rest");
             completed.SourceUrl.Should().Be(request.ServiceUrl);
             completed.SourceLayerName.Should().Be("Roads");
+            // #4600: the verdict travels with the persisted job, not only with the in-memory result.
+            completed.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Unverified);
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    /// <summary>
+    /// #4600: a run the fidelity gate routed to review must persist as NeedsReview with its verdict and
+    /// per-resource differences. Before the fix the job was rewritten as Failed and the differences
+    /// were dropped, so neither the batch orchestrator nor an API client could see why.
+    /// </summary>
+    [UnitTest]
+    public async Task GeoservicesBackgroundService_PersistsNeedsReviewVerdictAndDifferences_WhenFidelityGateBlocks()
+    {
+        using var provider = CreateGeoservicesProvider(new NeedsReviewGeoservicesImportService());
+        var universalProgressStore = new UniversalProgressStore(null, NullLogger<UniversalProgressStore>.Instance);
+        using var jobManager = new RedisImportJobManager(
+            universalProgressStore,
+            null,
+            NullLogger<RedisImportJobManager>.Instance,
+            new TestHostEnvironment());
+        var service = new GeoservicesImportBackgroundService(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            jobManager,
+            NullLogger<GeoservicesImportBackgroundService>.Instance);
+
+        const string jobId = "geoservices-needs-review";
+        var request = new GeoservicesImportRequest
+        {
+            JobId = jobId,
+            ServiceUrl = "https://8.8.8.8/arcgis/rest/services/Test/FeatureServer",
+            LayerId = 3,
+            TableName = "geoservices_review_test",
+            AutoPublish = true,
+            ServiceName = "imported-service"
+        };
+        var progress = GeoservicesImportProgress.CreateInitial(jobId, request.ServiceUrl, request.LayerId, request.TableName);
+
+        await jobManager.RequestStore.SetProgressAsync(jobId, request, TimeSpan.FromMinutes(10));
+        await jobManager.ProgressStore.SetProgressAsync(jobId, progress, TimeSpan.FromMinutes(10));
+        await jobManager.JobQueue.EnqueueAsync(jobId);
+
+        await service.StartAsync(CancellationToken.None);
+        try
+        {
+            await WaitForAsync(
+                async () => (await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false))?.CompletedAt is not null,
+                TimeSpan.FromSeconds(10)).ConfigureAwait(false);
+
+            var stored = await jobManager.ProgressStore.GetProgressAsync(jobId).ConfigureAwait(false);
+            stored.Should().NotBeNull();
+            stored!.Status.Should().Be(GeoservicesImportStatus.NeedsReview);
+            stored.CurrentPhase.Should().Be("Import published but requires operator review (fidelity gate)");
+            stored.ErrorMessage.Should().Be(NeedsReviewGeoservicesImportService.ReviewReason);
+            stored.FailedFeatures.Should().Be(2);
+            stored.PublishedLayerId.Should().Be(77);
+            stored.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+            var difference = stored.FidelityDifferences.Should().ContainSingle().Subject;
+            difference.Code.Should().Be(MigrationFidelityDifferenceCodes.RecordsLost);
+            difference.Actual.Should().Be("2 dropped source records");
         }
         finally
         {
@@ -897,6 +960,67 @@ public sealed class ImportBackgroundServiceTests
                 serviceName: request.ServiceName,
                 sourceLayerName: "Roads"));
         }
+
+        public Task<MigrationRelationshipApplyOutcome[]> ApplyRelationshipsAsync(
+            MigrationManifestArtifact manifest,
+            IReadOnlyDictionary<string, int> publishedLayerMap,
+            Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphStore? graphStore,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(Array.Empty<MigrationRelationshipApplyOutcome>());
+    }
+
+    private sealed class NeedsReviewGeoservicesImportService : IGeoservicesImportService
+    {
+        public const string ReviewReason = "Migration is not full fidelity: 1 blocking difference(s).";
+
+        public Task<GeoservicesServiceInfo> DiscoverServiceAsync(
+            GeoservicesDiscoveryRequest request,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<MigrationSourceInventoryArtifact> ScanSourceAsync(
+            GeoservicesDiscoveryRequest request,
+            CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<GeoservicesImportResult> ImportLayerAsync(
+            GeoservicesImportRequest request,
+            CancellationToken cancellationToken = default)
+            => ImportLayerAsync(request, progress: null, cancellationToken);
+
+        public Task<GeoservicesImportResult> ImportLayerAsync(
+            GeoservicesImportRequest request,
+            IProgress<GeoservicesImportProgress>? progress,
+            CancellationToken cancellationToken = default)
+            => Task.FromResult(GeoservicesImportResult.CreateNeedsReview(
+                request.TableName,
+                request.ServiceUrl,
+                request.LayerId,
+                featureCount: 8,
+                failedFeatures: 2,
+                publishedLayerId: 77,
+                serviceName: request.ServiceName,
+                sourceLayerName: "Hydrants",
+                duration: TimeSpan.FromSeconds(1),
+                warnings: [],
+                attachmentCount: 0,
+                failedAttachments: 0,
+                reconciliationArtifact: null,
+                catalogReconciliationReport: null,
+                reviewReason: ReviewReason,
+                fidelityVerdict: MigrationFidelityVerdicts.Incomplete,
+                fidelityDifferences:
+                [
+                    new MigrationFidelityDifference
+                    {
+                        Code = MigrationFidelityDifferenceCodes.RecordsLost,
+                        Severity = MigrationFidelityDifferenceSeverities.Blocking,
+                        Subject = "Hydrants",
+                        Expected = "0 dropped source records",
+                        Actual = "2 dropped source records",
+                        Summary = "2 source record(s) were read but did not land in the target table."
+                    }
+                ]));
 
         public Task<MigrationRelationshipApplyOutcome[]> ApplyRelationshipsAsync(
             MigrationManifestArtifact manifest,

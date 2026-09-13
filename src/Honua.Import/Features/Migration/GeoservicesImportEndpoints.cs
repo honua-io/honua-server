@@ -539,7 +539,10 @@ internal static partial class GeoservicesImportEndpoints
     }
 
     private static bool IsActiveStatus(GeoservicesImportStatus status)
-        => status is not (GeoservicesImportStatus.Completed or GeoservicesImportStatus.Failed or GeoservicesImportStatus.Cancelled);
+        => status is not (GeoservicesImportStatus.Completed
+            or GeoservicesImportStatus.Failed
+            or GeoservicesImportStatus.Cancelled
+            or GeoservicesImportStatus.NeedsReview);
 
     private static ILogger<GeoservicesImportEndpointsLog> GetLogger(HttpContext context) =>
         context.RequestServices.GetRequiredService<ILogger<GeoservicesImportEndpointsLog>>();

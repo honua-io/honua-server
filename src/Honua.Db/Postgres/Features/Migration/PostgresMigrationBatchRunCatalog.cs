@@ -155,7 +155,7 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
         const string sql = """
             SELECT batch_id, ordinal, source_resource_id, service_url, source_layer_id,
                    table_name, target_schema, service_name, depends_on::text, status,
-                   job_id, published_layer_id, status_note, updated_at
+                   job_id, published_layer_id, status_note, fidelity_verdict, updated_at
             FROM honua.migration_batch_children
             WHERE batch_id = @batchId
             ORDER BY ordinal ASC;
@@ -205,6 +205,7 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
         int? publishedLayerId,
         string? statusNote,
         DateTimeOffset updatedAt,
+        string? fidelityVerdict = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(batchId);
@@ -219,6 +220,7 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
                 job_id = COALESCE(@jobId, job_id),
                 published_layer_id = COALESCE(@publishedLayerId, published_layer_id),
                 status_note = COALESCE(@statusNote, status_note),
+                fidelity_verdict = COALESCE(@fidelityVerdict, fidelity_verdict),
                 updated_at = @updatedAt
             WHERE batch_id = @batchId
               AND ordinal = @ordinal
@@ -234,6 +236,7 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
             command.Parameters.AddWithValue("@publishedLayerId", (object?)publishedLayerId ?? DBNull.Value);
             command.Parameters.AddWithValue("@statusNote", (object?)statusNote ?? DBNull.Value);
             command.Parameters.AddWithValue("@updatedAt", updatedAt.UtcDateTime);
+            command.Parameters.AddWithValue("@fidelityVerdict", (object?)fidelityVerdict ?? DBNull.Value);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -249,6 +252,8 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
         DateTimeOffset? completedAt,
         bool? relationshipsApplied,
         string? statusNote,
+        string? fidelityVerdict = null,
+        MigrationFidelityDifference[]? fidelityDifferences = null,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(batchId);
@@ -264,7 +269,9 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
                 cancelled_children = @cancelled,
                 completed_at = COALESCE(@completedAt, completed_at),
                 relationships_applied = COALESCE(@relationshipsApplied, relationships_applied),
-                status_note = COALESCE(@statusNote, status_note)
+                status_note = COALESCE(@statusNote, status_note),
+                fidelity_verdict = COALESCE(@fidelityVerdict, fidelity_verdict),
+                fidelity_differences = COALESCE(CAST(@fidelityDifferences AS jsonb), fidelity_differences)
             WHERE batch_id = @batchId
               AND status = 'running';
             """;
@@ -279,6 +286,11 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
             command.Parameters.AddWithValue("@completedAt", (object?)completedAt?.UtcDateTime ?? DBNull.Value);
             command.Parameters.AddWithValue("@relationshipsApplied", (object?)relationshipsApplied ?? DBNull.Value);
             command.Parameters.AddWithValue("@statusNote", (object?)statusNote ?? DBNull.Value);
+            command.Parameters.AddWithValue("@fidelityVerdict", (object?)fidelityVerdict ?? DBNull.Value);
+            var differencesParam = command.Parameters.Add("@fidelityDifferences", NpgsqlDbType.Text);
+            differencesParam.Value = fidelityDifferences is null
+                ? DBNull.Value
+                : JsonSerializer.Serialize(fidelityDifferences, MigrationBatchRunJsonContext.Default.MigrationFidelityDifferenceArray);
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
         }
 
@@ -328,7 +340,8 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
             SELECT batch_id, source_kind, source_url, source_display_name, status,
                    started_at, completed_at, total_children, succeeded_children,
                    failed_children, cancelled_children, apply_relationships,
-                   relationships_applied, status_note
+                   relationships_applied, status_note, fidelity_verdict,
+                   fidelity_differences::text AS fidelity_differences
             FROM honua.migration_batch_runs
             WHERE batch_id = @batchId LIMIT 1;
             """;
@@ -353,7 +366,7 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
         const string sql = """
             SELECT batch_id, ordinal, source_resource_id, service_url, source_layer_id,
                    table_name, target_schema, service_name, depends_on::text, status,
-                   job_id, published_layer_id, status_note, updated_at
+                   job_id, published_layer_id, status_note, fidelity_verdict, updated_at
             FROM honua.migration_batch_children
             WHERE batch_id = @batchId AND ordinal = @ordinal LIMIT 1;
             """;
@@ -397,7 +410,9 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
             RelationshipsApplied = reader.GetBoolean(reader.GetOrdinal("relationships_applied")),
             StatusNote = reader.IsDBNull(reader.GetOrdinal("status_note"))
                 ? null
-                : reader.GetString(reader.GetOrdinal("status_note"))
+                : reader.GetString(reader.GetOrdinal("status_note")),
+            FidelityVerdict = ReadNullableString(reader, "fidelity_verdict"),
+            FidelityDifferences = ReadFidelityDifferences(reader)
         };
     }
 
@@ -435,8 +450,23 @@ internal sealed partial class PostgresMigrationBatchRunCatalog : IMigrationBatch
             JobId = reader.IsDBNull(jobOrdinal) ? null : reader.GetString(jobOrdinal),
             PublishedLayerId = reader.IsDBNull(layerOrdinal) ? null : reader.GetInt32(layerOrdinal),
             StatusNote = reader.IsDBNull(noteOrdinal) ? null : reader.GetString(noteOrdinal),
+            FidelityVerdict = ReadNullableString(reader, "fidelity_verdict"),
             UpdatedAt = new DateTimeOffset(DateTime.SpecifyKind(reader.GetDateTime(reader.GetOrdinal("updated_at")), DateTimeKind.Utc))
         };
+    }
+
+    private static string? ReadNullableString(NpgsqlDataReader reader, string column)
+    {
+        var ordinal = reader.GetOrdinal(column);
+        return reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+    }
+
+    private static MigrationFidelityDifference[] ReadFidelityDifferences(NpgsqlDataReader reader)
+    {
+        var json = ReadNullableString(reader, "fidelity_differences");
+        return string.IsNullOrWhiteSpace(json)
+            ? []
+            : JsonSerializer.Deserialize(json, MigrationBatchRunJsonContext.Default.MigrationFidelityDifferenceArray) ?? [];
     }
 
     internal static string BatchStatusToText(MigrationBatchRunStatus status) => status switch

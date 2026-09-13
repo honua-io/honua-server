@@ -93,6 +93,50 @@ public sealed class PostgresMigrationBatchRunCatalogTests(PostgresFixture fixtur
         (await catalog.GetActiveBatchIdsAsync()).Should().NotContain(batchId);
     }
 
+    /// <summary>
+    /// #4600: the service-level verdict, its differences and each child's per-layer verdict survive a
+    /// round trip through the real columns (migration 117), including the jsonb difference payload.
+    /// </summary>
+    [IntegrationTest]
+    public async Task UpdateBatchAsync_PersistsFidelityVerdictAndDifferences_AtTheTerminalTransition()
+    {
+        await EnsureBatchTablesAsync();
+        var catalog = CreateCatalog();
+        var batchId = $"batch-{Guid.NewGuid():N}"[..16];
+        await catalog.CreateAsync(NewBatch(batchId, 2), null, NewChildren(batchId));
+
+        (await catalog.GetAsync(batchId))!.FidelityVerdict.Should().BeNull("no verdict exists while the batch is running");
+
+        var child = await catalog.UpdateChildAsync(
+            batchId, 0, MigrationBatchChildStatus.Succeeded, "job-1", 99, null, DateTimeOffset.UtcNow,
+            MigrationFidelityVerdicts.Unverified);
+        child!.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Unverified);
+
+        var difference = new MigrationFidelityDifference
+        {
+            Code = MigrationFidelityDifferenceCodes.RelationshipOmitted,
+            Severity = MigrationFidelityDifferenceSeverities.Blocking,
+            Subject = "resource:x:layer:0:relationship:7",
+            Expected = "relationship persisted onto the target",
+            Actual = "relationship deferred",
+            Summary = "Relationship 'resource:x:layer:0:relationship:7' was discovered on the source but not persisted."
+        };
+        await catalog.UpdateBatchAsync(
+            batchId, MigrationBatchRunStatus.NeedsReview, 2, 0, 0, DateTimeOffset.UtcNow, true, "review",
+            MigrationFidelityVerdicts.Incomplete, [difference]);
+
+        var persisted = await catalog.GetAsync(batchId);
+        persisted!.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+        persisted.FidelityDifferences.Should().ContainSingle().Which.Should().BeEquivalentTo(difference);
+        (await catalog.GetChildrenAsync(batchId))[0].FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Unverified);
+
+        // Terminal state stays sticky for the verdict as well.
+        await catalog.UpdateBatchAsync(
+            batchId, MigrationBatchRunStatus.Succeeded, 2, 0, 0, DateTimeOffset.UtcNow, null, null,
+            MigrationFidelityVerdicts.FullFidelity, []);
+        (await catalog.GetAsync(batchId))!.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+    }
+
     private PostgresMigrationBatchRunCatalog CreateCatalog()
         => new(Task.FromResult(fixture.ConnectionString), NullLogger<PostgresMigrationBatchRunCatalog>.Instance);
 
@@ -186,6 +230,12 @@ public sealed class PostgresMigrationBatchRunCatalogTests(PostgresFixture fixtur
                 CONSTRAINT chk_migration_batch_children_status
                     CHECK (status IN ('pending','running','succeeded','failed','needs-review','cancelled'))
             );
+            -- Mirrors migration 117 (#4600): service-level and per-layer fidelity verdicts.
+            ALTER TABLE honua.migration_batch_runs
+                ADD COLUMN IF NOT EXISTS fidelity_verdict VARCHAR(32),
+                ADD COLUMN IF NOT EXISTS fidelity_differences JSONB;
+            ALTER TABLE honua.migration_batch_children
+                ADD COLUMN IF NOT EXISTS fidelity_verdict VARCHAR(32);
             """);
     }
 }
