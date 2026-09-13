@@ -31,6 +31,7 @@ namespace Honua.Protocols.SensorThings;
 internal static partial class SensorThingsEndpoints
 {
     internal const string BasePath = "/sta/v1.1";
+    private static readonly string[] _collectionOnlyQueryOptions = ["$filter", "$orderby", "$top", "$skip", "$count"];
 
     /// <summary>Logging category marker for SensorThings endpoints.</summary>
     internal sealed class SensorThingsEndpointsLog
@@ -181,8 +182,7 @@ internal static partial class SensorThingsEndpoints
             return false;
         }
 
-        var rejected = new[] { "$filter", "$orderby", "$top", "$skip", "$count" }
-            .FirstOrDefault(context.Request.Query.ContainsKey);
+        var rejected = _collectionOnlyQueryOptions.FirstOrDefault(context.Request.Query.ContainsKey);
         if (rejected is not null)
         {
             failure = StandardErrorHelpers.CreateBadRequest(
