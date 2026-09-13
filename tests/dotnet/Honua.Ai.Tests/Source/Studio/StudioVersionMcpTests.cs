@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using System.Security.Cryptography;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Core.Features.Operations.Abstractions;
@@ -54,6 +55,10 @@ public sealed class StudioVersionMcpTests
         savedEnvelope!.Status.Should().Be(OperationHandleStatus.Completed);
         savedEnvelope.AuditId.Should().NotBeNullOrWhiteSpace();
         var version = (await lifecycle.GetVersionAsync(draft.ItemId, versionId))!;
+        var expectedEnvelope = draft.Envelope with { Validation = draft.Envelope.Validation with { GeneratedAt = null } };
+        var expectedHash = Convert.ToHexStringLower(SHA256.HashData(
+            JsonSerializer.SerializeToUtf8Bytes(expectedEnvelope, StudioJsonContext.Default.StudioPackageEnvelope)));
+        version.ContentHash.Should().Be(expectedHash, "the immutable hash binds the seeded envelope, not the subsequently edited draft");
         version.VersionNumber.Should().Be(1);
         version.PackageKey.Should().Be("terminal-parcels");
         version.OwnerId.Should().Be("test-user");
@@ -140,6 +145,50 @@ public sealed class StudioVersionMcpTests
         await act.Should().ThrowAsync<GeoprocessingAuthorizationException>()
             .WithMessage("Parent item is owned by another caller.");
         await runtime.DidNotReceiveWithAnyArgs().SaveVersionAsync(default, default, default, default, default!, default);
+    }
+
+    [UnitTest]
+    public async Task Reopen_OwnerDenied_RefusesBeforeMutation()
+    {
+        using var provider = LifecycleProvider();
+        var lifecycle = provider.GetRequiredService<IStudioPackageLifecycleService>();
+        var draft = await SeedAsync(lifecycle);
+        var version = (await lifecycle.SaveDraftAsVersionAsync(draft.DraftId, "seed", "test-user", 1))!;
+        var authorization = Substitute.For<IStudioAuthorizationService>();
+        authorization.ResolveCallerId(Arg.Any<System.Security.Claims.ClaimsPrincipal>()).Returns("other-user");
+        authorization.AuthorizeAsync(Arg.Any<System.Security.Claims.ClaimsPrincipal>(), Arg.Any<string?>(),
+            StudioAuthorizationOperation.ReopenVersion, Arg.Any<string?>(), false, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(StudioAuthorizationDecision.Deny("studio_authorization/owner_required", "Saved version belongs to another caller."));
+        var runtime = Substitute.For<IStudioDraftMutationRuntime>();
+        var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(lifecycle);
+            services.AddSingleton(authorization);
+            services.AddSingleton(runtime);
+        }, user: "other-user");
+        var tool = new ReopenStudioVersionTool(Substitute.For<IGeoprocessingJobService>(), NullLogger<ReopenStudioVersionTool>.Instance);
+        var act = () => tool.InvokeAsync(context,
+            McpTestFactory.ParseJson($$"""{"itemId":"{{draft.ItemId}}","versionId":"{{version.VersionId}}"}"""), default);
+        await act.Should().ThrowAsync<GeoprocessingAuthorizationException>().WithMessage("Saved version belongs to another caller.");
+        await runtime.DidNotReceiveWithAnyArgs().ReopenVersionAsync(default, default, default, default!, default);
+    }
+
+    [UnitTest]
+    public async Task Save_StaleGeneration_RefusesBeforeSaving()
+    {
+        using var provider = LifecycleProvider();
+        var lifecycle = provider.GetRequiredService<IStudioPackageLifecycleService>();
+        var draft = await SeedAsync(lifecycle);
+        var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(lifecycle);
+            McpTestFactory.AddAllowingStudioAuthorization(services);
+        });
+        var tool = new SaveStudioVersionTool(Substitute.For<IGeoprocessingJobService>(), NullLogger<SaveStudioVersionTool>.Instance);
+        var act = () => tool.InvokeAsync(context,
+            McpTestFactory.ParseJson($$"""{"draftId":"{{draft.DraftId}}","generation":2}"""), default);
+        await act.Should().ThrowAsync<StudioDraftGenerationConflictException>();
+        (await lifecycle.GetPointersAsync(draft.ItemId))!.CurrentVersionId.Should().BeNull();
     }
 
     private static StudioDraftMutationRuntime Runtime(IStudioPackageLifecycleService lifecycle,
