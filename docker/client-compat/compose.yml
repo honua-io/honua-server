@@ -377,7 +377,7 @@ services:
       HONUA_BASE_URL: http://honua:5000
       HONUA_GEOPANDAS_SERVICE_ID: test_service
       HONUA_GEOPANDAS_COLLECTION_ID: "0"
-      HONUA_CERT_VECTOR_COLLECTION_ID: "10"
+      HONUA_CERT_VECTOR_COLLECTION_ID: "2011"
       HONUA_CERT_API_KEY: ClientCompatAdmin123!
       HONUA_CERT_OIDC_ISSUER: https://cert-auth.honua.test
       HONUA_CERT_OIDC_AUDIENCE: honua-client-compat
@@ -414,7 +414,7 @@ services:
       # consumes, so the two lanes certify the same rendered surface.
       HONUA_OWSLIB_RASTER_SERVICE_ID: browser_compat
       HONUA_OWSLIB_RASTER_LAYER_ID: "2000"
-      HONUA_CERT_VECTOR_COLLECTION_ID: "10"
+      HONUA_CERT_VECTOR_COLLECTION_ID: "2011"
       HONUA_CERT_RASTER_SERVICE_ID: cert_auth_raster
       HONUA_CERT_RASTER_LAYER_ID: "2010"
       HONUA_CERT_API_KEY: ClientCompatAdmin123!

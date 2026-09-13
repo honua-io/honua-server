@@ -213,7 +213,8 @@ def test_conn01_capabilities(wfs: WebFeatureService, wfs_collector: Certificatio
 
 @pytest.mark.cert("CERT-CONN-02")
 def test_conn02_transport(base_url: str, wfs_collector: CertificationEvidenceCollector) -> None:
-    assert base_url.split("://", 1)[0] == "http"
+    scheme = base_url.split("://", 1)[0]
+    assert scheme == "http"
     wfs_collector.record(
         "CERT-CONN-02", "pass" if scheme == "https" else "not-applicable",
         notes=(
