@@ -57,6 +57,58 @@ class CandidateBindingTests(unittest.TestCase):
             with self.subTest(mutation=mutation), self.assertRaises(ValueError):
                 binding.verify(pin, bad)
 
+    def test_signed_envelope_rejects_missing_gp_proof_and_repin(self):
+        with self.assertRaises(KeyError):
+            binding.verify_envelope({}, {"schema": "honua.dr-drill-receipt/v2"})
+        with self.assertRaisesRegex(ValueError, "current manifest"):
+            binding.verify_envelope({"server_digest": "new"}, {
+                "geoprocessingOutputs": {"candidate": {"server_digest": "old"}}})
+
+    def test_crash_consumer_requires_all_six_injections_and_real_terminal_fence(self):
+        pin = {"source_sha": "1" * 40, "server_image": "server@sha256:" + "2" * 64}
+        worker = "worker@sha256:" + "3" * 64
+        identity = {"requested": {**pin, "worker_image": worker}, "observed": {}}
+        for host in ("server", "server-peer", "worker"):
+            image = worker if host == "worker" else pin["server_image"]
+            identity["observed"][host] = {"revision": pin["source_sha"],
+                                         "image_ref": image, "repo_digests": [image]}
+        scenarios = [{"scenario": n, "outcome": "pass", "candidate": identity}
+                     for n in ("topology", "cleanup")]
+        for boundary in ("output-bytes-written-unpublished", "artifact-reference-published-terminal-cas-pending",
+                         "terminal-committed-registration-pending"):
+            for mode in ("worker", "store"):
+                scenarios.append({"scenario": f"crash-{boundary}-{mode}", "outcome": "pass",
+                    "candidate": identity, "job": {"id": "fixture-job", "terminal_state": "successful"},
+                    "output": {"sha256": "a" * 64, "bytes": 2048},
+                    "disruptions": [{"component": mode, "boundary": boundary,
+                                     "action": "SIGKILL" if mode == "worker" else "hide-marker-and-bytes"}],
+                    "evidence": {"fence": {"barrier": boundary, "operationId": "fixture-job",
+                                           "reply_forwarded": False, "redis_reply": ":1"},
+                                 "sha256_before": "a" * 64, "sha256_after": "a" * 64,
+                                 "job_before": {"status": 3}, "job_after": {"artifactReferences": [{}]},
+                                 "result_package_before": 0, "result_package_after": 1}})
+        summary = {"lane": "crash-boundaries", "declared_scenarios": [s["scenario"] for s in scenarios],
+                   "missing_scenarios": [], "duplicate_receipts": [], "failed": 0, "passed": 8,
+                   "scenarios": scenarios}
+        binding.verify_crashes(pin, summary)
+        for mutation in ("missing-cell", "missing-injection", "duplicate-output", "inline", "uncommitted", "registered"):
+            bad = copy.deepcopy(summary)
+            case = bad["scenarios"][-1]
+            if mutation == "missing-cell":
+                bad["scenarios"].pop()
+            elif mutation == "missing-injection":
+                case["disruptions"] = []
+            elif mutation == "duplicate-output":
+                case["evidence"]["job_after"]["artifactReferences"].append({})
+            elif mutation == "inline":
+                case["output"]["bytes"] = 512
+            elif mutation == "uncommitted":
+                case["evidence"]["fence"]["redis_reply"] = ":0"
+            else:
+                case["evidence"]["result_package_before"] = 1
+            with self.subTest(mutation=mutation), self.assertRaises(ValueError):
+                binding.verify_crashes(pin, bad)
+
     def test_repin_changes_both_image_identity_and_manifest_binding(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "manifest.json"

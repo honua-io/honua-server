@@ -103,6 +103,15 @@ def verify_crashes(pin, summary):
     return summary
 
 
+def verify_envelope(pin, envelope):
+    proof = envelope["geoprocessingOutputs"]
+    if proof["candidate"] != pin:
+        raise ValueError("signed GP receipt does not match the current manifest")
+    result = verify(pin, proof["qualification"])
+    result["crash_qualification"] = verify_crashes(pin, proof["crash_qualification"])
+    return result
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", required=True, type=Path)
@@ -116,11 +125,7 @@ if __name__ == "__main__":
         if args.summary or args.crash_summary:
             parser.error("--receipt cannot be combined with summary inputs")
         envelope = json.loads(args.receipt.read_text())
-        proof = envelope["geoprocessingOutputs"]
-        if proof["candidate"] != pin:
-            raise ValueError("signed GP receipt does not match the current manifest")
-        result = verify(pin, proof["qualification"])
-        result["crash_qualification"] = verify_crashes(pin, proof["crash_qualification"])
+        result = verify_envelope(pin, envelope)
         args.output.write_text(json.dumps(result, indent=2) + "\n")
         raise SystemExit(0)
     result = verify(pin, json.loads(args.summary.read_text())) if args.summary else pin
