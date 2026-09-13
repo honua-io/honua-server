@@ -362,3 +362,22 @@ class TestSignalDerivation:
         assert signals["throughputRps"].value is None
         assert signals["errorRate"].value is None
         assert signals["throughputRps"].status != soak_contract.STATUS_OBSERVED
+
+
+def test_excluded_preview_observations_cannot_make_ga_receipt_incomplete():
+    coverage = copy.deepcopy(VERIFIED_ENVELOPE)
+    signals = passing_signals()
+    for name in ("activeSubscriptions", "alertEvaluationsPerSecond"):
+        coverage[name] = {"coverage": "not-met", "verified": False, "observed": 0}
+        signals[name] = signal(name, None, status="unobserved")
+    document = receipt(envelope_verification=coverage, signals=signals)
+    assert document["status"] == "completed"
+    assert evaluate(document) == []
+    assert document["envelopeCoverage"]["informational"] == ["activeSubscriptions", "alertEvaluationsPerSecond"]
+    assert document["envelopeCoverage"]["notMet"] == []
+
+
+def test_receipt_with_additional_preview_envelope_fields_passes():
+    document = receipt()
+    document["envelope"] = {**document["envelope"], "activeSubscriptions": 0, "alertEvaluationsPerSecond": 0}
+    assert evaluate(document) == []

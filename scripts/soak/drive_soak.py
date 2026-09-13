@@ -48,10 +48,7 @@ from soak_contract import COVERAGE_NOT_EXERCISED, COVERAGE_NOT_MET, COVERAGE_VER
 ADMIN_HEADER = "X-API-Key"
 SERVICE = "test"
 
-# Capability ids whose opt-in the declared envelope depends on. Both ship Preview in
-# 2026.1 and are OFF by default; the envelope declares capacity for them anyway
-# (activeSubscriptions, alertEvaluationsPerSecond), so the soak has to turn them on
-# through the product's canonical opt-in and say so in the receipt.
+# Preview posture is informational. Only dimensions present in the lock are driven.
 PREVIEW_CAPABILITIES = ("realtime.feature-streams", "alerts.geofence")
 
 
@@ -603,8 +600,8 @@ class SoakDriver:
             await self.establish_envelope(client)
 
             streams: list[Any] = []
-            declared_subscriptions = self.envelope["activeSubscriptions"]
-            if self.args.subscriptions:
+            declared_subscriptions = self.envelope.get("activeSubscriptions", 0)
+            if self.args.subscriptions and "activeSubscriptions" in self.envelope:
                 streams = await self.hold_subscriptions(declared_subscriptions)
                 await self.observe_subscriptions(client)
 
@@ -625,7 +622,8 @@ class SoakDriver:
             await asyncio.sleep(self.args.steady_seconds)
             self.steady_end = utcnow()
 
-            await self.observe_subscriptions(client)
+            if "activeSubscriptions" in self.envelope:
+                await self.observe_subscriptions(client)
             self._stop.set()
             for task in tasks:
                 with contextlib.suppress(asyncio.CancelledError):
@@ -643,8 +641,10 @@ class SoakDriver:
 
             await self.run_recovery_drill(client)
 
-            self._verify_subscription_dimension(declared_subscriptions)
-            self._verify_alert_dimension()
+            if "activeSubscriptions" in self.envelope:
+                self._verify_subscription_dimension(declared_subscriptions)
+            if "alertEvaluationsPerSecond" in self.envelope:
+                self._verify_alert_dimension()
             self._verify_gp_dimensions(steady_marker[2])
 
             return self.to_json(steady_marker)

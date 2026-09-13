@@ -171,7 +171,8 @@ jobs:
           print(f"features={envelope['featuresPerLayer']}")
           print(f"gp_workers={envelope['gpWorkers']}")
           print(f"gp_queue_depth={envelope['gpQueueDepth']}")
-          print(f"subscriptions={envelope['activeSubscriptions']}")
+          print(f"subscriptions={envelope.get('activeSubscriptions', 0)}")
+          print(f"streams_enabled={str('activeSubscriptions' in envelope).lower()}")
           PY
           echo "lock sha256: $digest"
 
@@ -275,6 +276,7 @@ jobs:
           SOAK_SERVER_IMAGE: ${{ inputs.candidate_image == '' && steps.image.outputs.reference || steps.pulled.outputs.reference }}
           SOAK_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           SOAK_LICENSE_TRUSTED_KEY: ${{ steps.license.outputs.trusted_key }}
+          SOAK_STREAMS_ENABLED: ${{ steps.lock.outputs.streams_enabled }}
           SOAK_MAX_STREAM_SESSIONS: ${{ steps.lock.outputs.subscriptions }}
         run: |
           set -euo pipefail
@@ -308,8 +310,7 @@ jobs:
           set -euo pipefail
           python scripts/soak/seed_envelope.py \
             --dsn "host=localhost port=${SOAK_DB_PORT} dbname=${SOAK_DB_NAME} user=${SOAK_DB_USER} password=${SOAK_DB_PASSWORD}" \
-            --layers "${{ steps.lock.outputs.layers }}" \
-            --features-per-layer "${{ steps.lock.outputs.features }}" \
+            --lock ../lock.json \
             --observation-out "$RUNNER_TEMP/topology.json"
 
       - name: Republish the served catalogue from the seeded rows
@@ -318,6 +319,7 @@ jobs:
           SOAK_SERVER_IMAGE: ${{ steps.substrate.outputs.image }}
           SOAK_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           SOAK_LICENSE_TRUSTED_KEY: ${{ steps.license.outputs.trusted_key }}
+          SOAK_STREAMS_ENABLED: ${{ steps.lock.outputs.streams_enabled }}
           SOAK_MAX_STREAM_SESSIONS: ${{ steps.lock.outputs.subscriptions }}
         run: |
           set -euo pipefail
@@ -352,6 +354,7 @@ jobs:
           SOAK_SERVER_IMAGE: ${{ steps.substrate.outputs.image }}
           SOAK_CANDIDATE_SHA: ${{ inputs.candidate_sha }}
           SOAK_LICENSE_TRUSTED_KEY: ${{ steps.license.outputs.trusted_key }}
+          SOAK_STREAMS_ENABLED: ${{ steps.lock.outputs.streams_enabled }}
           SOAK_MAX_STREAM_SESSIONS: ${{ steps.lock.outputs.subscriptions }}
         run: |
           set -euo pipefail
@@ -393,8 +396,7 @@ jobs:
             --gp-queue-depth "${{ steps.lock.outputs.gp_queue_depth }}" \
             --compose-file docker-compose.soak.yml \
             --subscriptions \
-            --keep-series \
-            --unexercised "alertEvaluationsPerSecond=the alert pipeline refuses to start unless tenant-context resolution is disabled (its evaluation and delivery stores are instance-wide), and with resolution disabled the OGC API Features item query the declared envelope is served through answers 403 'Tenant context is required to query collection items'; driving the declared alert rate and serving the declared envelope are mutually exclusive on this candidate, so the rate is declared, not claimed"
+            --keep-series
           driver=$?
           set -e
 
