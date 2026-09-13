@@ -53,7 +53,10 @@ internal static class GPServerSoapExecution
             }
             parameters.Add(input.Name!, ReadValue(value, type));
         }
-        ReadEnvironment(operation.Element("EnvironmentValues"), parameters);
+        ReadEnvironment(operation.Element("EnvironmentValues"), parameters,
+            task.ExecutionType == GPServerExecutionPolicy.SynchronousExecutionType &&
+            (task.Parameters ?? []).Where(parameter => parameter.Direction == "esriGPParameterDirectionOutput")
+                .All(parameter => parameter.DataType is "GPString" or "GPDouble" or "GPLong" or "GPBoolean"));
         return parameters;
     }
 
@@ -101,9 +104,9 @@ internal static class GPServerSoapExecution
             var accepted = !value.HasElements && (value.Name.LocalName switch
             {
                 "DensifyFeatures" => value.Value is "false" or "0",
-                "TransportType" => value.Value == "esriGPTransportTypeUrl",
-                "ReturnData" => value.Value is "true" or "1",
-                "UpdateValues" => value.Value is "false" or "0",
+                "TransportType" => value.Value == "esriGDSTransportTypeUrl",
+                "ReturnData" => value.Value is "true" or "1" or "false" or "0",
+                "UpdateValues" => value.Value is "true" or "1" or "false" or "0",
                 _ => false
             });
             if (!accepted)
@@ -157,7 +160,7 @@ internal static class GPServerSoapExecution
         return scalar.Value;
     }
 
-    private static void ReadEnvironment(XElement? environment, Dictionary<string, string> parameters)
+    private static void ReadEnvironment(XElement? environment, Dictionary<string, string> parameters, bool scalarGeometryTask)
     {
         if (environment is null || IsNil(environment))
         {
@@ -187,6 +190,15 @@ internal static class GPServerSoapExecution
             {
                 continue;
             }
+            // ArcPy always sends these application defaults, even for a pure
+            // single-geometry scalar measure. Such a task produces no geometry,
+            // raster or geodatabase edits and uses no random source. Only these
+            // exact neutral defaults are inapplicable; changed controls still
+            // reach the shared accept-and-honor-or-reject environment validator.
+            if (scalarGeometryTask && IsNeutralScalarGeometryEnvironment(key, value))
+            {
+                continue;
+            }
             var text = ReadValue(value, ResolveType(value));
             if (string.IsNullOrEmpty(text))
             {
@@ -200,6 +212,25 @@ internal static class GPServerSoapExecution
             };
             parameters.Add("env:" + restName, text);
         }
+    }
+
+    private static bool IsNeutralScalarGeometryEnvironment(string key, XElement value)
+    {
+        var type = ResolveType(value);
+        if (key == "randomGenerator" && type == "GPRandomNumberGenerator")
+        {
+            ValidateChildren(value, "Value", "GPRandomNumberGenerator");
+            return RequiredScalar(value, "Value") == "0" && RequiredScalar(value, "GPRandomNumberGenerator") == "ACM599";
+        }
+        var expected = key switch
+        {
+            "outputZFlag" or "outputMFlag" when type == "GPString" => "Same As Input",
+            "autoCommit" when type == "GPLong" => "1000",
+            "cellSizeProjectionMethod" when type == "GPString" => "CONVERT_UNITS",
+            "nodata" when type == "GPString" => "NONE",
+            _ => null
+        };
+        return expected is not null && ReadValue(value, type) == expected;
     }
 
     private static string ResolveType(XElement value)

@@ -100,7 +100,7 @@ internal static partial class GPServerEndpoints
                                 "Job results are available only after successful execution."), soap);
                         }
                         var outputs = new List<GPResultResponse>();
-                        var names = GPServerSoapExecution.ReadResultNames(operation, status.Results?.Keys ?? []);
+                        var names = GPServerSoapExecution.ReadResultNames(operation, status.Results is { } references ? references.Keys : Enumerable.Empty<string>());
                         foreach (var outputName in names)
                         {
                             context.Request.RouteValues["paramName"] = outputName;

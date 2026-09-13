@@ -13,7 +13,7 @@ using Honua.TestKit.Helpers;
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 
 [Protocol(TestProtocols.GPServer)]
-public sealed class GPServerSoapEndpointsTests
+public sealed partial class GPServerSoapEndpointsTests
 {
     private const string Soap11 = "http://schemas.xmlsoap.org/soap/envelope/";
     private const string Soap12 = "http://www.w3.org/2003/05/soap-envelope";
@@ -169,7 +169,7 @@ public sealed class GPServerSoapEndpointsTests
     [InlineData("GetToolInfo", "", HttpStatusCode.BadRequest)]
     [InlineData("GetToolInfo", "<ToolName>Buffer</ToolName><ToolName>Clip</ToolName>", HttpStatusCode.BadRequest)]
     [InlineData("GetToolInfos", "<unexpected />", HttpStatusCode.BadRequest)]
-    [InlineData("SubmitJob", "", HttpStatusCode.NotImplemented)]
+    [InlineData("UnsupportedOperation", "", HttpStatusCode.NotImplemented)]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("POST /services/{serviceId}/GPServer")]
     public async Task Request_InvalidOrUnsupportedOperation_ReturnsSoapFault(string operation, string arguments, HttpStatusCode expected)
