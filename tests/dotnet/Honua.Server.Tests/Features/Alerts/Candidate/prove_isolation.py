@@ -31,6 +31,32 @@ def require(condition, message):
         raise AssertionError(message)
 
 
+def parse_known_routes(source):
+    section = source.split("private static readonly string[] KnownAlertRoutes =", 1)[1].split("];", 1)[0]
+    routes = re.findall(r'"([^"\n]*)"', section)
+    for route in routes:
+        require(re.fullmatch(r"[A-Z]+ /api/v\{version:apiVersion\}/admin/\S+", route),
+                f"Unrecognized known route: {route}")
+    require(len(routes) == len(set(routes)), "Duplicate known routes")
+    return routes
+
+
+def validate_refusal_audit(expected, audit):
+    require({row["correlationId"] for row in audit} == set(expected),
+            "Tenant refusals lack individually correlated access-audit records")
+    for correlation, (method, path) in expected.items():
+        records = [row for row in audit if row["correlationId"] == correlation]
+        require(len(records) == 1, f"{method} {path}: expected exactly one refusal audit record")
+        row = records[0]
+        details = json.loads(row["details"])
+        require(row["resourceId"] == path and details["method"] == method and details["status"] == 403,
+                f"{method} {path}: audit record describes a different request")
+        require(row["resourceType"] == "http" and row["outcome"] == "Denied" and row["action"] == "auth.denied",
+                f"{method} {path}: expected a denied-access audit, not an alert mutation")
+        require("private-instance-3859" not in row["details"] and "private-receiver.invalid" not in row["details"],
+                "Refusal audit disclosed private alert data")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--image", required=True)
@@ -47,7 +73,7 @@ def main():
                "concurrentTenantEvaluation": "not qualified: tenant-owned alerts are not implemented",
                "checks": [], "http": []}
     password = uuid.uuid4().hex
-    correlation = uuid.uuid4().hex
+    expected_audit = {}
     network_created = False
 
     def run(name, image, env=None, extra=()):
@@ -78,11 +104,14 @@ def main():
 
     def request(method, path, tenant=None, authenticated=True, body=None):
         headers = {"Content-Type": "application/json"}
+        correlation = uuid.uuid4().hex
         if authenticated:
             headers["X-API-Key"] = password
         if tenant:
             headers["X-Honua-Tenant"] = tenant
             headers["X-Correlation-ID"] = correlation
+            if authenticated:
+                expected_audit[correlation] = (method, path)
         data = json.dumps(body or {}).encode() if method not in ("GET", "DELETE") else None
         req = urllib.request.Request(base + path, headers=headers, data=data, method=method)
         try:
@@ -91,7 +120,7 @@ def main():
         except urllib.error.HTTPError as error:
             status, text = error.code, error.read().decode()
         receipt["http"].append({"method": method, "path": path, "tenant": tenant,
-                                "authenticated": authenticated, "requestBody": body, "status": status, "body": text})
+                                "authenticated": authenticated, "correlationId": correlation, "requestBody": body, "status": status, "body": text})
         return status, text
 
     try:
@@ -123,6 +152,7 @@ def main():
                 if request("GET", "/healthz/ready")[0] == 200:
                     break
             except (OSError, TimeoutError):
+                # Connection refusal is expected during boot; the bounded loop below fails if readiness never arrives.
                 pass
             time.sleep(1)
         else:
@@ -152,8 +182,7 @@ INSERT INTO honua.alert_channel_state(channel_type,is_paused) VALUES(1,true);
         # Reuse #4606's maintained route denominator; its C# test additionally discovers
         # live EndpointDataSource routes. Never claim source parsing discovers image routes.
         source = (Path(__file__).parents[1] / "AlertTenantIsolationRouteCoverageProofTests.cs").read_text()
-        routes = re.findall(r'"((?:GET|POST|PUT|DELETE) /api/v\{version:apiVersion\}/admin/[^"\n]+)"',
-                            source.split("private static readonly string[] KnownAlertRoutes =", 1)[1].split("];", 1)[0])
+        routes = parse_known_routes(source)
         require(len(routes) >= 23, "Route denominator unexpectedly shrank")
         for route in routes:
             method, path = route.split(" ", 1)
@@ -207,14 +236,9 @@ INSERT INTO honua.alert_channel_state(channel_type,is_paused) VALUES(1,true);
         # A real successful control defeats vacuous blanket authorization/capability denial.
         status, body = request("GET", "/api/v1/admin/alerts/zones?serviceId=private-instance-3859")
         require(status == 200 and "original" in body, "Instance administrator cannot read seeded zone")
-        audit = json.loads(sql(f"SELECT coalesce(jsonb_agg(jsonb_build_object('resourceType',resource_type,'outcome',outcome,'details',details)),'[]') FROM honua.audit_log WHERE correlation_id='{correlation}';"))
-        require(len(audit) >= 2 * len(routes), "Tenant refusals lack access-audit records")
-        for row in audit:
-            require(row["outcome"] != "Success", "Refused request audited as success")
-            require(row["resourceType"] not in ("alert_zone", "alert_rule", "alert-channel", "alert_event"),
-                    "Tenant request reached alert-domain audit mutation")
-            require("private-instance-3859" not in row["details"] and "private-receiver.invalid" not in row["details"],
-                    "Refusal audit disclosed private alert data")
+        correlations = ",".join("'" + value + "'" for value in expected_audit)
+        audit = json.loads(sql(f"SELECT coalesce(jsonb_agg(jsonb_build_object('correlationId',correlation_id,'resourceType',resource_type,'resourceId',resource_id,'action',action,'outcome',outcome,'details',details)),'[]') FROM honua.audit_log WHERE correlation_id IN ({correlations});"))
+        validate_refusal_audit(expected_audit, audit)
         receipt["audit"] = audit
         receipt["persistenceColumns"] = json.loads(sql("SELECT jsonb_object_agg(table_name,columns) FROM (SELECT table_name,jsonb_agg(column_name ORDER BY ordinal_position) columns FROM information_schema.columns WHERE table_schema='honua' AND table_name LIKE 'alert_%' GROUP BY table_name) c;"))
         receipt["rows"] = after
