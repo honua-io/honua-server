@@ -823,7 +823,8 @@ public sealed class CandidateTelemetryGateCertificationTests : IClassFixture<Loc
                 ["HONUA_DEV_AUTH"] = "false",
                 ["HONUA_ADMIN_PASSWORD"] = ControlPlaneAdminPassword,
                 ["ConnectionStrings:redis"] = redisConnectionString,
-                ["Cache:KeyPrefix"] = $"honua:{targetId}:",
+                // Cache:KeyPrefix is capped at 50 characters; the container prefix is short and still unique per run.
+                ["Cache:KeyPrefix"] = $"honua:{containerPrefix}:",
                 ["Licensing:DevGrantEdition"] = "Pro",
                 ["ControlPlane:SelfHosted:Enabled"] = "false",
                 ["ControlPlane:SelfHosted:ContainerRuntime"] = containerRuntime,
