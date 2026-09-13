@@ -174,6 +174,16 @@ class TerminalProxyTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(proxy.terminal_job(changed))
         self.assertIsNone(proxy.terminal_job([b"GET", command[-1]]))
 
+    async def test_terminal_fence_recognizes_the_candidate_persisted_numeric_enum(self):
+        # The pinned image's Redis/AOF record uses numeric ExecutionJobStatus:
+        # Queued=0, Provisioning=1, Running=2, Succeeded=3, Failed=4, Cancelled=5.
+        record = {"operationId": "gp-candidate-record", "status": 3, "version": 8}
+        command = [b"EVALSHA", b"script", b"1", b"controlplane:job:gp-candidate-record",
+                   b"7", json.dumps(record).encode()]
+        self.assertEqual(record, proxy.terminal_job(command))
+        for status in (0, 1, 2, 4, 5):
+            self.assertIsNone(proxy.terminal_job(command[:-1] + [json.dumps({**record, "status": status}).encode()]))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -43,7 +43,7 @@ def terminal_job(command):
             record = json.loads(arg)
         except (ValueError, UnicodeDecodeError):
             continue
-        if record.get("status") == "succeeded" and record.get("operationId"):
+        if record.get("status") in (3, "succeeded") and record.get("operationId"):
             return record
     return None
 

@@ -33,12 +33,12 @@ run_store_crash_boundary() {
   python3 "${repo_root}/scripts/qualification/verify-gp-store-artifact.py" "$content" || return 1
   before_sha="$(sha256sum "$content" | cut -d' ' -f1)"
   if [[ "$target" == terminal-committed-registration-pending ]]; then
-    [[ "$(jq -r .status <<<"$before_record")" == succeeded ]] || {
+    jq -e '.status == 3 or .status == "succeeded"' <<<"$before_record" >/dev/null || {
       scenario_fail "proxy fence did not follow a durable successful terminal CAS"; return 1; }
     [[ "$package_before" == 0 ]] || {
       scenario_fail "result package was already registered before the requested crash boundary"; return 1; }
   else
-    [[ "$(jq -r .status <<<"$before_record")" == running ]] || {
+    jq -e '.status == 2 or .status == "running"' <<<"$before_record" >/dev/null || {
       scenario_fail "worker escaped the pre-terminal crash fence"; return 1; }
   fi
   if [[ "$disruption" == worker ]]; then

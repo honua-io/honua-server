@@ -98,7 +98,7 @@ def verify_crashes(pin, summary):
             raise ValueError("crash recovery did not prove one registered, byte-identical staged artifact")
         if boundary == "terminal-committed-registration-pending":
             if (proof["fence"]["reply_forwarded"] is not False or proof["fence"]["redis_reply"] != ":1"
-                    or proof["job_before"]["status"] != "succeeded" or proof["result_package_before"] != 0):
+                    or proof["job_before"]["status"] not in (3, "succeeded") or proof["result_package_before"] != 0):
                 raise ValueError("terminal crash did not precede result registration")
     return summary
 
