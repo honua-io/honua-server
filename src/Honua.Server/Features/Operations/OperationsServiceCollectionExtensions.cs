@@ -115,25 +115,23 @@ internal static class OperationsServiceCollectionExtensions
                 sp.GetServices<IOperationDescriptorProvider>(),
                 sp.GetRequiredService<TimeProvider>()));
 
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StylePresetExecutor>());
+        services.TryAddDeferredOperationExecutor<StylePresetExecutor>(StylePresetOperation.OperationId);
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationApprovalRequestMapper, StylePresetApprovalMapper>());
 
-        // Executors: concrete work, registered as an enumerable for the dispatcher.
-        services.TryAddEnumerable(
-            ServiceDescriptor.Scoped<IOperationExecutor, DeferredServicePublishExecutor>());
-        services.TryAddEnumerable(
-            ServiceDescriptor.Scoped<IOperationExecutor, AdminServerStatusExecutor>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftCreateExecutor>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftUpdateExecutor>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftDeleteExecutor>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftValidateExecutor>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioDraftPreviewPlanExecutor>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioSaveVersionExecutor>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioCreatePublicationRequestExecutor>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioReopenVersionExecutor>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, StudioRollbackExecutor>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, DeployRollbackOperationExecutor>());
-        services.TryAddEnumerable(ServiceDescriptor.Scoped<IOperationExecutor, CoordinatedReleaseRollbackOperationExecutor>());
+        // Enumerate operation identities without resolving unrelated actuator dependencies.
+        services.TryAddDeferredOperationExecutor<DeferredServicePublishExecutor>(ServicePublishOperation.OperationId);
+        services.TryAddDeferredOperationExecutor<AdminServerStatusExecutor>(AdminServerStatusExecutor.OperationName);
+        services.TryAddDeferredOperationExecutor<StudioDraftCreateExecutor>(StudioDraftOperations.Create);
+        services.TryAddDeferredOperationExecutor<StudioDraftUpdateExecutor>(StudioDraftOperations.Update);
+        services.TryAddDeferredOperationExecutor<StudioDraftDeleteExecutor>(StudioDraftOperations.Delete);
+        services.TryAddDeferredOperationExecutor<StudioDraftValidateExecutor>(StudioDraftOperations.Validate);
+        services.TryAddDeferredOperationExecutor<StudioDraftPreviewPlanExecutor>(StudioDraftOperations.PreviewPlan);
+        services.TryAddDeferredOperationExecutor<StudioSaveVersionExecutor>(StudioDraftOperations.SaveVersion);
+        services.TryAddDeferredOperationExecutor<StudioCreatePublicationRequestExecutor>(StudioDraftOperations.CreatePublicationRequest);
+        services.TryAddDeferredOperationExecutor<StudioReopenVersionExecutor>(StudioDraftOperations.ReopenVersion);
+        services.TryAddDeferredOperationExecutor<StudioRollbackExecutor>(StudioDraftOperations.Rollback);
+        services.TryAddDeferredOperationExecutor<DeployRollbackOperationExecutor>(WorkflowRollbackOperations.Deploy);
+        services.TryAddDeferredOperationExecutor<CoordinatedReleaseRollbackOperationExecutor>(WorkflowRollbackOperations.CoordinatedRelease);
         services.TryAddScoped<IStudioDraftMutationRuntime, StudioDraftMutationRuntime>();
 
         var hasProposalStore = services.Any(descriptor => descriptor.ServiceType ==
@@ -151,7 +149,7 @@ internal static class OperationsServiceCollectionExtensions
                     services.AddSingleton<IOperationApprovalRequestMapper>(
                         new AdminConnectImportApprovalRequestMapper(definition));
                 }
-                services.AddScoped<IOperationExecutor>(sp => new AdminConnectImportOperationExecutor(
+                services.AddDeferredOperationExecutor(definition.OperationId, sp => new AdminConnectImportOperationExecutor(
                     definition,
                     sp.GetRequiredService<IHttpClientFactory>(),
                     sp.GetRequiredService<IHttpContextAccessor>(),
@@ -178,7 +176,7 @@ internal static class OperationsServiceCollectionExtensions
                             definition,
                             sp.GetRequiredService<IOperationSecretStore>()));
                 }
-                services.AddScoped<IOperationExecutor>(sp => new AdminApiOperationExecutor(
+                services.AddDeferredOperationExecutor(definition.OperationId, sp => new AdminApiOperationExecutor(
                     definition,
                     sp.GetRequiredService<IHttpClientFactory>(),
                     sp.GetRequiredService<IHttpContextAccessor>(),
@@ -223,7 +221,7 @@ internal static class OperationsServiceCollectionExtensions
                         definition,
                         sp.GetRequiredService<IOperationSecretStore>()));
             }
-            services.AddScoped<IOperationExecutor>(sp => new AdminOperateOperationExecutor(
+            services.AddDeferredOperationExecutor(definition.OperationId, sp => new AdminOperateOperationExecutor(
                 definition,
                 descriptor,
                 sp.GetRequiredService<IHttpClientFactory>(),
@@ -267,7 +265,7 @@ internal static class OperationsServiceCollectionExtensions
     private static void AddLegacyAdapter(
         IServiceCollection services,
         Honua.Core.Features.Guardrails.Domain.OperationClass operationClass)
-        => services.AddScoped<IOperationExecutor>(sp =>
+        => services.AddDeferredOperationExecutor(LegacyOperationIds.For(operationClass), sp =>
             new LegacyGatewayOperationAdapter(sp, operationClass));
 
     /// <summary>
