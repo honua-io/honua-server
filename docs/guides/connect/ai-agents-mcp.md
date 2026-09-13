@@ -54,7 +54,7 @@ line (ADR-0024).
 |---|---|---|
 | Dispatcher | `McpDataAccessSurface` in `honua-server` | operator agent in [`honua-devops`](https://github.com/honua-io/honua-devops) |
 | Transport | HTTP `POST /mcp` (Streamable HTTP), authenticated | MCP stdio (`--mcp`) |
-| Roster | ~27 studio/data-access tools (query, render, style, geocode/route, plan/execute, authoring/packaging) + **8 bounded, read-only ops-*evidence* tools** | ~35 operator-*intelligence* tools |
+| Roster | ~58 studio/data-access tools (query, render, style, geocode/route, plan/execute, authoring/packaging), plus a dynamic `honua_op_*` tool per published operation + **8 bounded, read-only ops-*evidence* tools** | ~35 operator-*intelligence* tools |
 | What it does | Serves geospatial data-access and studio workflows, and reads bounded operational **evidence**; at most it *proposes* a control-plane action that a human approves in the Console inbox (ADR-0062) | Reasons over that evidence and acts: diagnose, tune, upgrade planning with rollback gates, GitOps rollout, remediation planning. Consumes this repo's evidence tools via its `honua_observe_diagnose_propose` day-2 loop |
 | Licensing | Open-core (ELv2); included in Community (ADR-0024) | Source is public; the licence is proprietary (all rights reserved) and it is **not** part of the open-core runtime promise. No package is published - it is built from source or run as a container. |
 
@@ -117,6 +117,12 @@ named "operator surface" ships in this repo.
 5. Read results through resources (`resources/read`):
 
    - `honua://catalog/processes` — the process catalog the planner can draw from
+
+   > `honua://capability/<key>` is **not** one of these. It is an Open Knowledge Format
+   > document identity used by the published docs bundle, not an MCP resource; a
+   > `resources/read` on one returns `not_found`. Resolve it by opening the matching
+   > page under `okf/capabilities/` instead.
+
    - `honua://jobs/{jobId}` — live job status, phase, and percent complete
    - `honua://jobs/{jobId}/results` — the result package for a terminal job
    - `honua://jobs/{jobId}/report` — a structured analysis report for the same job

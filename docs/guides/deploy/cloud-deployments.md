@@ -35,6 +35,10 @@ On the generic web image (Docker Hub + GHCR), tags have distinct contracts. Pick
 |---|---|---|---|
 | `latest` / `latest-aot` | Latest stable native-AOT **release** (`-aot` is an alias) | A `v*` release tag is cut | `deploy.yml` |
 | `vX.Y.Z` / `vX.Y.Z-aot` | A specific native-AOT release (`-aot` is an alias) | Never (immutable) | `deploy.yml` |
+
+> **No `v*` release tag has been cut yet**, so no `vX.Y.Z` image exists and `latest` has
+> never moved. Until the first release, pin a digest or a dated `nightly-YYYYMMDD`
+> tag — both are immutable, and the quickstart pins a digest for this reason.
 | `trunk` / `trunk-aot` | Latest native-AOT **trunk** build (`-aot` is an alias) | Every nightly build | `nightly-container-build.yml` |
 | `nightly`, `nightly-YYYYMMDD`, `nightly-<sha>` | Native-AOT trunk build with moving, dated, and SHA-pinned variants | Every nightly build | `nightly-container-build.yml` |
 | `latest-jit`, `vX.Y.Z-jit`, `trunk-jit`, `nightly-jit*` | Non-production JIT compatibility/debug image | Corresponding release or nightly build | `deploy.yml` / `nightly-container-build.yml` |
@@ -85,7 +89,7 @@ aws lambda publish-version --function-name honua-prod
 
 ```bash
 az containerapp update --name honua-prod --resource-group honua \
-  --image ghcr.io/honua-io/honua-server:v1.2.3-aot
+  --image ghcr.io/honua-io/honua-server:nightly-aot
 ```
 
 ## Azure Functions

@@ -37,7 +37,7 @@ replacement or invented version pin is a candidate install.
 The local installer entry point required by the release journey is:
 
 ```powershell
-honua admin install local --profile gp-dev
+honua admin install local --profile gp-dev --yes
 ```
 
 Use it only with the candidate-pinned installer and its documented lock
@@ -249,7 +249,7 @@ then use its install receipt's cleanup procedure after deciding what data to
 retain.
 
 Optional Studio/Console clients must read the same server IDs. Configure
-`HONUA_CONSOLE_MODE=witness` only on a compatible pinned Console package
+`HONUA_CONSOLE_MODE=witness` is read by no shipped Console or server build today, so it takes effect only on a compatible pinned Console package
 that supports that mode. The focused witness shows Operate reads, releases,
 deploy status and proposal approval. Configuration writes go through Admin
 CLI or the agent path. The `admin:read`/`admin:approve` recipe still needs

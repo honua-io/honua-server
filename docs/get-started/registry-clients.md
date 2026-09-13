@@ -17,7 +17,7 @@ GitHub authentication.
 | PyPI | `honua-sdk==0.1.11` | Data plane used by this journey | None |
 | PyPI | `mcp==2.1.1` | Transport for the server MCP import tool | None |
 | npm | `@honua/sdk-js@0.1.9-beta.0` | Alternative JS SDK and CLI | None |
-| npm | `@honua/mcp-server@0.1.4-beta.0` | Alternative MCP proxy | None |
+| npm | `@honua/mcp-server@0.1.9-beta.0` | Alternative MCP proxy | None |
 | NuGet | `Honua.Sdk` `1.6.4` | Alternative .NET SDK | None |
 
 npm and NuGet versions are the release manifest's existing alternative-client

@@ -11,8 +11,10 @@ Filter, page, sort, and project features over whichever protocol your client spe
 **Prerequisites:** a running server ([quickstart](../../get-started/quickstart.md)) and a published layer ([publish layers](../publish/publish-layers.md)).
 
 The fastest way to query from a terminal is the **`honua` CLI** (installed with
-the JS SDK: `npm i -g @honua/sdk-js`, or run ad hoc with `npx @honua/sdk-js
-honua …`). It wraps the same FeatureServer query endpoint, prints a readable
+the JS SDK: `npm i -g @honua/sdk-js`, or run ad hoc with `npx -p @honua/sdk-js
+honua …` — the `-p` matters, because npx otherwise looks for a binary named
+`sdk-js`). Note that the PyPI `honua-sdk` distribution installs an executable
+with the same name and no `query` subcommand. It wraps the same FeatureServer query endpoint, prints a readable
 table by default, and emits GeoJSON or JSON on request — no URL-encoding, no
 `f=` parameters. Point it at your server once:
 

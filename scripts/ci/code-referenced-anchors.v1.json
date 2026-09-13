@@ -171,7 +171,7 @@
       ]
     }
   ],
-  "publishedBaseUrl": "https://honua.gitbook.io/honuaio",
-  "publishedAreaSlug": "honua-server",
-  "publishedUrlNote": "Where this bundle is actually served today. docsBaseUrl (docs.honua.io) is the canonical name and is NOT provisioned - its DNS points at GitHub Pages and it serves nothing, and a GitBook custom domain needs a Premium site plan. GitBook slugs a page as <publishedAreaSlug>/<filename stem>, flattened regardless of directory depth, so file paths do not resolve. When docs.honua.io is provisioned against GitBook these converge and publishedBaseUrl can be deleted."
+  "publishedUrlNote": "llms.txt links to blob permalinks at the bundle's own commit, because they are exact and checkable offline. The rendered site is GitBook, which publishes its own llms.txt at publishedSiteLlmsTxt with the correct rendered URLs - its slugs keep the directories and the .md, and slug each directory from its nav group title, so file paths are not URLs and cannot be derived from the filesystem alone. docsBaseUrl (docs.honua.io) is the canonical name, served today by GitHub Pages as a redirect layer.",
+  "sourceRepositoryUrl": "https://github.com/honua-io/honua-server",
+  "publishedSiteLlmsTxt": "https://honua.gitbook.io/honuaio/llms.txt"
 }

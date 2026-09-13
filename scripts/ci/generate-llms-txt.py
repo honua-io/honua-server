@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -48,38 +49,36 @@ def docs_base_url() -> str:
     return json.loads(ANCHORS.read_text(encoding="utf-8"))["docsBaseUrl"].rstrip("/")
 
 
-def published_base_url() -> str:
-    """Where the bundle is actually served, which is not docsBaseUrl.
+def commit() -> str:
+    """The commit these paths are true at, so every link is a permalink."""
+    out = subprocess.run(["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"],
+                         capture_output=True, text=True).stdout.strip()
+    return out or "trunk"
 
-    docs.honua.io is the canonical name and is not provisioned: its DNS points at
-    GitHub Pages, it serves nothing, and a GitBook custom domain requires a
-    Premium site plan. Emitting it here produced 142 dead links in the one file
-    whose entire job is to be fetched by machines.
+
+def published_base_url() -> str:
+    """Where a link in this file can be fetched and proved to exist.
+
+    Not the rendered site. GitBook publishes each page at its nav path with the
+    directories kept, the `.md` kept, and every directory segment slugged from
+    its *nav group title* - `guides/query-analyze/` is served as
+    `guides/query-and-analyze/`. An earlier version of this generator encoded a
+    flattened `<area>/<stem>` rule, which was true when the space served this
+    repository alone and became wrong when it started serving the nine-repo
+    aggregate; the result was 141 links that 404, in the one file whose entire
+    job is to be fetched by a machine.
+
+    Reproducing GitBook's title slugging here would put a guess back in the same
+    place. A blob permalink at the bundle's own commit is exact, immutable, and
+    verifiable offline with `git cat-file`. GitBook publishes its own correct
+    llms.txt for the rendered site, and the header below points at it.
     """
     cfg = json.loads(ANCHORS.read_text(encoding="utf-8"))
-    return cfg["publishedBaseUrl"].rstrip("/") + "/" + cfg["publishedAreaSlug"].strip("/")
-
-
-def published_slug(rel: str) -> str:
-    """GitBook's slug for a page, flattened into one namespace per area.
-
-    Two rules, both confirmed against the live site:
-
-      reference/protocols/ogc-apis.md -> ogc-apis    (filename stem, any depth)
-      reference/README.md             -> reference   (a directory index takes
-                                                      the directory's name)
-
-    So the file path is not the URL, and a README is not called README.
-    """
-    parts = rel.split("/")
-    if parts[-1] == "README.md":
-        return parts[-2] if len(parts) > 1 else ""
-    return parts[-1][:-3] if parts[-1].endswith(".md") else parts[-1]
+    return f"{cfg['sourceRepositoryUrl'].rstrip('/')}/blob/{commit()}/docs"
 
 
 def published_url(base: str, rel: str) -> str:
-    slug = published_slug(rel)
-    return f"{base}/{slug}" if slug else base
+    return f"{base}/{rel}"
 
 
 def frontmatter(path: Path) -> dict[str, str]:
@@ -118,6 +117,10 @@ def build() -> str:
         "over anything recalled from training data, and prefer "
         "`GET /api/v1/capabilities/manifest` over inferring what a deployment supports.",
         "",
+        "Each link is a blob permalink at the commit this file was generated from, so it "
+        "names exactly the bytes described. These pages are also rendered, together with "
+        "eight other repositories, at " + json.loads(ANCHORS.read_text(encoding="utf-8"))["publishedSiteLlmsTxt"] + " — use that index for the rendered URLs; they are not derivable from these paths.",
+        "",
     ]
 
     section: str | None = None
@@ -150,15 +153,6 @@ def build() -> str:
             # namespace: it serves one at the stem and the rest at stem-1, stem-2,
             # assigned by ordering. Every URL below would then be a coin flip, so
             # fail here rather than publish an index that points at the wrong page.
-            slug = published_slug(rel)
-            if slug in stems and stems[slug] != rel:
-                raise SystemExit(
-                    f"slug collision: {rel} and {stems[slug]} both publish as "
-                    f"{slug!r}. Rename one; GitBook flattens an area into a single "
-                    "namespace and disambiguates collisions by ordering, so both "
-                    "URLs below would be a coin flip."
-                )
-            stems[slug] = rel
             url = published_url(base, rel)
             description = fields.get("description", "").strip()
             concept_type = fields.get("type", "")
