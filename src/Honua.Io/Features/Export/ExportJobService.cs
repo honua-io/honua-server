@@ -223,11 +223,18 @@ internal sealed class ExportJobService(
                     Status = OperationStatus.Processing,
                     CurrentPhase = "Exporting features"
                 };
-            var admission = await _progressStore.TrySetProgressAsync(job.JobId, progress,
-                existing?.Status ?? OperationStatus.Queued, _jobRetention, processingToken).ConfigureAwait(false);
-            if (admission.Outcome != ProgressCompareAndSetOutcome.Updated)
+            if (existing is null)
             {
-                return;
+                await _progressStore.SetProgressAsync(job.JobId, progress, _jobRetention, processingToken).ConfigureAwait(false);
+            }
+            else
+            {
+                var admission = await _progressStore.TrySetProgressAsync(job.JobId, progress,
+                    existing.Status, _jobRetention, processingToken).ConfigureAwait(false);
+                if (admission.Outcome != ProgressCompareAndSetOutcome.Updated)
+                {
+                    return;
+                }
             }
 
             // "honua-export" is a compile-time relative literal and job.JobId is always the
@@ -236,7 +243,6 @@ internal sealed class ExportJobService(
             var scratchDir = Path.Join(Path.GetTempPath(), "honua-export", job.JobId);
             var licenseCancellation = licensePolicy?.OperationCancellation ?? CancellationToken.None;
             using var userCancellation = new CancellationTokenSource();
-            _activeCancellations[job.JobId] = userCancellation;
             using var licensedProcessing = CancellationTokenSource.CreateLinkedTokenSource(processingToken, licenseCancellation, userCancellation.Token);
             processingToken = licensedProcessing.Token;
             Directory.CreateDirectory(scratchDir);
@@ -257,6 +263,7 @@ internal sealed class ExportJobService(
             string? uploadedFileId = null;
             try
             {
+                _activeCancellations[job.JobId] = userCancellation;
                 // A cancellation may have been persisted before this worker registered locally.
                 if ((await _progressStore.GetProgressAsync<ExportProgress>(job.JobId, processingToken).ConfigureAwait(false))?.Status == OperationStatus.Cancelled)
                 {
@@ -301,8 +308,19 @@ internal sealed class ExportJobService(
                     OperationStatus.Processing, _jobRetention, processingToken).ConfigureAwait(false);
                 if (completion.Outcome != ProgressCompareAndSetOutcome.Updated)
                 {
-                    // A cancellation accepted on another node must not be overwritten by completion.
-                    userCancellation.Cancel();
+                    // Preserve the terminal state accepted on another node and retract the artifact.
+                    if (completion.CurrentProgress?.Status == OperationStatus.Cancelled)
+                    {
+                        userCancellation.Cancel();
+                        processingToken.ThrowIfCancellationRequested();
+                    }
+                    if (uploadedFileId is not null)
+                    {
+                        await cloudStorage.DeleteAsync(uploadedFileId, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    _jobRequests.TryRemove(job.JobId, out _);
+                    await RemovePersistedJobRequestAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
+                    return;
                 }
                 processingToken.ThrowIfCancellationRequested();
 

@@ -576,12 +576,13 @@ public sealed class ExportJobServiceTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
     [Trait("Category", "Unit")]
     [Trait("Tier", "Fast")]
     [Operation(Operations.Export)]
-    public async Task ProcessQueuedJobAsync_UserCancelsRunningExport_RemovesArtifactsAndRequest(bool afterUpload)
+    public async Task ProcessQueuedJobAsync_UserCancelsRunningExport_RemovesArtifactsAndRequest(bool afterUpload, bool remoteCancellation)
     {
         var progressStore = new InMemoryUniversalProgressStore();
         var requestCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
@@ -636,8 +637,18 @@ public sealed class ExportJobServiceTests
         {
             await reachedPhase.Task.WaitAsync(TimeSpan.FromSeconds(10));
             Directory.Exists(Path.Join(Path.GetTempPath(), "honua-export", job.JobId)).Should().BeTrue();
-            var notified = services.GetServices<IJobCancellationNotifier>().Count(notifier => notifier.Cancel(job.JobId));
-            notified.Should().Be(1, "the registered export worker must own user cancellation");
+            if (remoteCancellation)
+            {
+                // The admin endpoint on another node has no local worker to notify and persists cancellation.
+                var active = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
+                await progressStore.SetProgressAsync(job.JobId,
+                    active!.WithCancellation(DateTimeOffset.UtcNow, "Cancelled by user"));
+            }
+            else
+            {
+                var notified = services.GetServices<IJobCancellationNotifier>().Count(notifier => notifier.Cancel(job.JobId));
+                notified.Should().Be(1, "the registered export worker must own user cancellation");
+            }
         }
         finally
         {
@@ -710,8 +721,21 @@ public sealed class ExportJobServiceTests
         await sut.StartAsync(job);
         await sut.ProcessQueuedJobAsync(job.JobId);
         artifact.Should().NotBeNull();
-        artifact!.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Should().Equal(
-            "name,depth,WKT", "Harbor,12.5,POINT ZM(-157.5 21.25 12.5 7.25)", "Unlocated,,");
+        var lines = artifact!.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+        lines.Should().HaveCount(3);
+        lines[0].Should().Be("name,depth,WKT");
+        lines[2].Should().Be("Unlocated,,", "null property and geometry are represented as empty CSV cells");
+        var cells = lines[1].Split(',');
+        cells.Should().HaveCount(3);
+        cells[0].Should().Be("Harbor");
+        cells[1].Should().Be("12.5");
+        var geometry = new NetTopologySuite.IO.WKTReader().Read(cells[2]);
+        geometry.GeometryType.Should().Be("Point");
+        var coordinate = geometry.Coordinates.Should().ContainSingle().Subject;
+        coordinate.X.Should().Be(-157.5);
+        coordinate.Y.Should().Be(21.25);
+        coordinate.Z.Should().Be(12.5);
+        coordinate.M.Should().Be(7.25);
         var progress = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
         progress!.Status.Should().Be(OperationStatus.Completed);
         progress.ProcessedFeatures.Should().Be(2, "the receipt counts rows actually exported, not the estimated 99");

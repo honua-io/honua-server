@@ -253,18 +253,25 @@ public sealed class ImportAuthorizationParityTests : IAsyncLifetime
     [Operation(Operations.Import)]
     [Endpoint("POST /api/v1/admin/import/preview")]
     [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    [Endpoint("POST /api/v1/admin/tile-operations/jobs")]
+    [Endpoint("GET /api/v1/admin/tile-operations/jobs")]
+    [Endpoint("GET /api/v1/admin/tile-operations/jobs/{jobId}")]
+    [Endpoint("POST /api/v1/admin/tile-operations/jobs/{jobId}/cancel")]
+    [Endpoint("POST /api/v1/admin/tile-operations/jobs/{jobId}/retry")]
+    [Endpoint("POST /api/v1/admin/tile-operations/evict")]
+    [Endpoint("GET /api/v1/admin/tile-operations/cache/inventory")]
     public async Task AdminImportExportAndTiles_AnonymousAndUnprivilegedPrincipalsAreDenied(string method, string path)
     {
         foreach (var profile in new[] { PrincipalProfile.Anonymous, PrincipalProfile.AuthenticatedNoGrant, PrincipalProfile.WorkspaceCreate })
         {
             _importService.ClearReceivedCalls();
             using var client = CreateClient(profile);
-            using var request = new HttpRequestMessage(new HttpMethod(method), path);
-            if (method == "POST")
+            var isPreview = path.EndsWith("/preview", StringComparison.Ordinal);
+            using var request = isPreview ? BuildRestRequest(profile) : new HttpRequestMessage(new HttpMethod(method), path);
+            request.RequestUri = new Uri(path, UriKind.Relative);
+            if (method == "POST" && !isPreview)
             {
-                request.Content = path.EndsWith("/preview", StringComparison.Ordinal)
-                    ? BuildRestRequest(profile).Content
-                    : new StringContent("{}", Encoding.UTF8, "application/json");
+                request.Content = new StringContent("{}", Encoding.UTF8, "application/json");
             }
             using var response = await client.SendAsync(request);
             response.StatusCode.Should().Be(profile == PrincipalProfile.Anonymous

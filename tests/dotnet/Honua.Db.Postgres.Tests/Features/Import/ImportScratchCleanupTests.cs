@@ -5,6 +5,8 @@ using System.IO.Compression;
 using System.Text;
 using FluentAssertions;
 using Honua.TestKit.Attributes;
+using Honua.Db.Postgres.Features.FileImport;
+using Microsoft.Extensions.Logging;
 using Honua.TestKit.Infrastructure;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
@@ -66,6 +68,77 @@ public sealed class ImportScratchCleanupTests
         preview.SampleProperties["name"].Should().Be("Harbor");
         source.ScratchFile.Should().NotBeNull();
         Directory.Exists(Path.GetDirectoryName(source.ScratchFile!)).Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task Preview_CleanupDenied_LogsWarningAndPreservesOriginalFailure()
+    {
+        var logger = new CleanupLogger();
+        var service = new StreamingFileImportService(new ThrowingConnectionProvider(),
+            new NoopCrsDetectionService(), new TestFileFormatDetectionService(),
+            new NoopPerformanceMonitor(), logger);
+        await using var source = new UndeletableUpload();
+        try
+        {
+            var action = () => service.PreviewFileAsync(source, "blocked.gpkg");
+            await action.Should().ThrowAsync<IOException>().WithMessage("original upload failure");
+            source.ScratchDirectory.Should().NotBeNull();
+            Directory.Exists(source.ScratchDirectory).Should().BeTrue("the fixture must actually deny cleanup");
+            logger.Warnings.Should().ContainSingle();
+            logger.Warnings[0].Should().Contain(source.ScratchDirectory!);
+        }
+        finally
+        {
+            source.ReleaseDirectory();
+        }
+    }
+
+    private sealed class UndeletableUpload : MemoryStream
+    {
+        private FileStream? _lockedFile;
+        public string? ScratchDirectory { get; private set; }
+        public override bool CanSeek => false;
+        public override async Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken)
+        {
+            ScratchDirectory = Path.GetDirectoryName(((FileStream)destination).Name)!;
+            await destination.WriteAsync(new byte[] { 1, 2, 3, 4 }, cancellationToken);
+            await destination.FlushAsync(cancellationToken);
+            if (OperatingSystem.IsWindows())
+            {
+                _lockedFile = new FileStream(Path.Join(ScratchDirectory, "locked"), FileMode.Create,
+                    FileAccess.ReadWrite, FileShare.None);
+            }
+            else
+            {
+                File.SetUnixFileMode(ScratchDirectory, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+            }
+            throw new IOException("original upload failure");
+        }
+
+        public void ReleaseDirectory()
+        {
+            _lockedFile?.Dispose();
+            if (ScratchDirectory is not null)
+            {
+                if (!OperatingSystem.IsWindows())
+                {
+                    File.SetUnixFileMode(ScratchDirectory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+                }
+                Directory.Delete(ScratchDirectory, recursive: true);
+            }
+        }
+    }
+
+    private sealed class CleanupLogger : ILogger<StreamingFileImportService>
+    {
+        public List<string> Warnings { get; } = [];
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == LogLevel.Warning) Warnings.Add(formatter(state, exception));
+        }
     }
 
     private sealed class ObservedUpload(byte[] bytes) : MemoryStream(bytes)
