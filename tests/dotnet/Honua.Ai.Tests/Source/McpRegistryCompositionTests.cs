@@ -9,10 +9,15 @@ using Honua.Ai.Protocols.Mcp.Models;
 using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.Capabilities;
+using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Geoprocessing;
+using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -121,6 +126,87 @@ public sealed class McpRegistryCompositionTests
     }
 
     [UnitTest]
+    public async Task StartupCheck_ProductionOperationsComposition_WithPublishOperationsEnabled_StartsCleanly()
+    {
+        // honua-server#3428 (remainder recorded by #4738): the documented
+        // Mcp:PublishOperations:Enabled=true switch composed the canonical operation
+        // catalog into tools/list, and the default-on registry binding check then
+        // rejected every catalog-published honua_op_* / honua_admin_* tool, so the
+        // server failed to start. Compose the operations toolset the way Program.cs
+        // does (durable proposal store registered first, so the admin API and
+        // connect/import families join) and run the real startup check over it.
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Mcp:PublishOperations:Enabled"] = "true",
+            })
+            .Build();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(Substitute.For<IOperationProposalStore>());
+        services.AddOperationsToolset(configuration, environment);
+        services.AddAdminAccessOperations();
+        McpServiceCollectionExtensions.AddMcpPublishedOperationTools(services, configuration);
+        await using var provider = services.BuildServiceProvider();
+
+        var surface = new McpDataAccessSurface(
+            Honua.Server.Tests.Features.Protocols.Mcp.McpTaxonomyAlignmentTests.BuildTools(),
+            [],
+            NullLogger<McpDataAccessSurface>.Instance,
+            toolSources: provider.GetServices<IMcpToolSource>());
+
+        // Non-vacuous: the composition really publishes Studio, legacy-admin and
+        // Admin-family operation tools that have no static registry descriptor.
+        var registryToolNames = Registry.All
+            .Where(d => d.McpToolName is not null)
+            .Select(d => d.McpToolName!)
+            .ToHashSet(StringComparer.Ordinal);
+        var published = (await surface.GetAllToolsAsync())
+            .OfType<PublishedOperationTool>()
+            .Select(tool => tool.Name)
+            .Where(name => !registryToolNames.Contains(name))
+            .ToArray();
+        published.Should().Contain(name => name.StartsWith("honua_op_studio_", StringComparison.Ordinal));
+        published.Should().Contain(name => name.StartsWith(PublishedOperationTool.AdminNamePrefix, StringComparison.Ordinal));
+
+        var check = new McpRegistryBindingStartupCheck(
+            surface,
+            Registry,
+            Options.Create(new CapabilityRegistryBindingOptions { RegistryBinding = true }));
+
+        await check.Invoking(c => c.StartAsync(CancellationToken.None))
+            .Should().NotThrowAsync("catalog-published tools are bound through their canonical operation descriptor");
+    }
+
+    [UnitTest]
+    public async Task OrphanRuntimeTool_FromANonCatalogToolSource_IsStillDetectedAsDrift()
+    {
+        // Operation-catalog provenance binds only tools projected from an operation
+        // descriptor. Any other runtime tool source must still have a registry
+        // descriptor, so the gate keeps failing fast on an orphan dynamic tool.
+        var jobService = Substitute.For<IGeoprocessingJobService>();
+        var surface = new McpDataAccessSurface(
+            [new ListCapabilitiesTool(jobService, NullLogger<ListCapabilitiesTool>.Instance)],
+            [],
+            NullLogger<McpDataAccessSurface>.Instance,
+            toolSources: [new FixedToolSource(new StubOrphanTool())]);
+
+        (await McpRegistryCompositionValidator.FindDriftAsync(surface, Registry))
+            .Should().ContainSingle()
+            .Which.Should().Contain(StubOrphanTool.OrphanName);
+
+        var check = new McpRegistryBindingStartupCheck(
+            surface,
+            Registry,
+            Options.Create(new CapabilityRegistryBindingOptions { RegistryBinding = true }));
+        await check.Invoking(c => c.StartAsync(CancellationToken.None))
+            .Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*" + StubOrphanTool.OrphanName + "*");
+    }
+
+    [UnitTest]
     public void EmitterTools_AreProjectedFromRegistry_AndTitleCaseTheWorkflowFamily()
     {
         // The emitter's advertised-tool roster is exactly the registry's static /mcp
@@ -165,6 +251,13 @@ public sealed class McpRegistryCompositionTests
                 new FeatureCatalogResource(jobService, NullLogger<FeatureCatalogResource>.Instance),
             ],
             NullLogger<McpDataAccessSurface>.Instance);
+    }
+
+    /// <summary>A runtime tool source that is not backed by the operation catalog.</summary>
+    private sealed class FixedToolSource(params IMcpTool[] tools) : IMcpToolSource
+    {
+        public ValueTask<IReadOnlyList<IMcpTool>> GetToolsAsync(CancellationToken cancellationToken) =>
+            ValueTask.FromResult<IReadOnlyList<IMcpTool>>(tools);
     }
 
     /// <summary>A tool with a name no capability-registry descriptor advertises.</summary>
