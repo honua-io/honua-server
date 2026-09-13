@@ -8,6 +8,7 @@ using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.Services;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
@@ -1199,6 +1200,95 @@ public sealed class GeoParquetQueryFormatterTests
         geoDoc.RootElement.GetProperty("columns").GetProperty("geometry")
             .GetProperty("geometry_types").EnumerateArray()
             .Select(e => e.GetString()).Should().Equal("Point");
+    }
+
+    /// <summary>
+    /// honua-server#4747: the shipped server runs with JSON reflection disabled, and the writer
+    /// encoded a non-empty <c>geometry_types</c> with the reflection-based serializer overload, so
+    /// every <c>f=parquet</c> page with a concrete geometry type became a 500 envelope. This runs
+    /// the writer in a child process with the switch off and decodes the file it produced.
+    /// </summary>
+    [Fact]
+    public async Task FormatAsGeoParquet_WithReflectionDisabled_WritesConcreteGeometryTypesValuesAndMetadata()
+    {
+        var run = await ReflectionDisabledCloudNativeProbe.RunAsync(ReflectionDisabledCloudNativeProbe.GeoParquetFormat);
+
+        run.StandardOutput.Should().Contain($"{ReflectionDisabledCloudNativeProbe.ReflectionStatePrefix}False",
+            "the probe is only meaningful when the child really runs without reflection. {0}", run.Transcript);
+        run.StandardOutput.Should().Contain($"{ReflectionDisabledCloudNativeProbe.CanaryPrefix}threw",
+            "a reflection-based serializer call must fail in the child, as it does on the image. {0}", run.Transcript);
+        run.ExitCode.Should().Be(0, "the writer must not depend on reflection metadata. {0}", run.Transcript);
+
+        var rows = ReflectionDisabledCloudNativeProbe.Rows;
+        using var stream = new MemoryStream(run.Payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var batchReader = reader.GetRecordBatchReader();
+        var batch = await batchReader.ReadNextRecordBatchAsync();
+
+        batch.Should().NotBeNull();
+        batch!.Length.Should().Be(rows.Length);
+        batch.Schema.FieldsList.Select(f => f.Name)
+            .Should().Equal("objectid", "geometry", "name", "population", "bbox");
+
+        var objectIds = batch.Column("objectid").Should().BeOfType<Int64Array>().Which;
+        var names = batch.Column("name").Should().BeOfType<StringArray>().Which;
+        var populations = batch.Column("population").Should().BeOfType<Int32Array>().Which;
+        var geometries = batch.Column("geometry").Should().BeOfType<BinaryArray>().Which;
+        var bbox = batch.Column("bbox").Should().BeOfType<StructArray>().Which;
+        for (var index = 0; index < rows.Length; index++)
+        {
+            var row = rows[index];
+            objectIds.GetValue(index).Should().Be(row.ObjectId);
+            names.GetString(index).Should().Be(row.Name);
+            populations.GetValue(index).Should().Be(row.Population);
+
+            var point = new WKBReader().Read(geometries.GetBytes(index).ToArray())
+                .Should().BeOfType<Point>().Which;
+            point.X.Should().BeApproximately(row.X, 1e-9);
+            point.Y.Should().BeApproximately(row.Y, 1e-9);
+            if (row.Z is { } z)
+            {
+                point.Coordinate.Z.Should().BeApproximately(z, 1e-9);
+            }
+            else
+            {
+                double.IsNaN(point.Coordinate.Z).Should().BeTrue("row {0} is a 2D point", row.ObjectId);
+            }
+
+            BboxOrdinate(bbox, "xmin", index).Should().BeApproximately(row.X, 1e-9);
+            BboxOrdinate(bbox, "ymin", index).Should().BeApproximately(row.Y, 1e-9);
+            BboxOrdinate(bbox, "xmax", index).Should().BeApproximately(row.X, 1e-9);
+            BboxOrdinate(bbox, "ymax", index).Should().BeApproximately(row.Y, 1e-9);
+        }
+
+        using var geoDoc = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        geoDoc.RootElement.GetProperty("version").GetString().Should().Be("1.1.0");
+        geoDoc.RootElement.GetProperty("primary_column").GetString().Should().Be("geometry");
+        var geometryColumn = geoDoc.RootElement.GetProperty("columns").GetProperty("geometry");
+        geometryColumn.GetProperty("encoding").GetString().Should().Be("WKB");
+        geometryColumn.GetProperty("geometry_types").EnumerateArray()
+            .Select(element => element.GetString()).Should().Equal("Point", "Point Z");
+        geometryColumn.TryGetProperty("crs", out _).Should().BeFalse("EPSG:4326 output keeps the OGC:CRS84 default");
+        geometryColumn.GetProperty("covering").GetProperty("bbox").GetProperty("xmin").EnumerateArray()
+            .Select(element => element.GetString()).Should().Equal("bbox", "xmin");
+    }
+
+    /// <summary>
+    /// honua-server#4747: the AOT-safe encoder must keep the ordinal sort and the JSON escaping the
+    /// reflection-based call produced. Expected text is written out by hand, not captured.
+    /// </summary>
+    [Fact]
+    public void SerializeGeometryTypes_SortsOrdinallyAndEscapesLikeTheDefaultSerializer()
+    {
+        string[] geometryTypes = ["Polygon", "Point Z", "Point", "\"odd\\<type>+"];
+
+        var encoded = GeoParquetFeatureWriter.SerializeGeometryTypes(geometryTypes);
+
+        // JSON text: [""odd\\<type>+","Point","Point Z","Polygon"]
+        encoded.Should().Be("[\"\\u0022odd\\\\\\u003Ctype\\u003E\\u002B\",\"Point\",\"Point Z\",\"Polygon\"]");
+        JsonDocument.Parse(encoded).RootElement.EnumerateArray().Select(element => element.GetString())
+            .Should().Equal("\"odd\\<type>+", "Point", "Point Z", "Polygon");
+        GeoParquetFeatureWriter.SerializeGeometryTypes([]).Should().Be("[]");
     }
 
     /// <summary>

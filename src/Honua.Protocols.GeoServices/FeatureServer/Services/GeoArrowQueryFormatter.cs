@@ -557,8 +557,7 @@ internal sealed class GeoArrowQueryFormatter
 
         GeoParquetQueryFormatter.EnsureSupportedCloudNativeGeometrySrid(includeGeometry: true, srid, "GeoArrow");
 
-        var geometryTypesPart = JsonSerializer.Serialize(
-            geometryTypes.OrderBy(static type => type, StringComparer.Ordinal));
+        var geometryTypesPart = GeoParquetFeatureWriter.SerializeGeometryTypes(geometryTypes);
         var crsPart = GeoParquetProjJsonCatalog.TryGetProjJson(srid, out var projJson)
             ? $@",""crs"":{projJson}"
             : string.Empty;
