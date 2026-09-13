@@ -111,7 +111,9 @@ jobs:
             artifacts/gp-candidate/*.yaml
             artifacts/gp-candidate/*.txt
             artifacts/gp-candidate/output-store-dr/*.json
+            artifacts/gp-candidate/output-store-dr/*.log
             artifacts/gp-candidate/crash-boundaries/*.json
+            artifacts/gp-candidate/crash-boundaries/*.log
           if-no-files-found: error
           retention-days: 90
 

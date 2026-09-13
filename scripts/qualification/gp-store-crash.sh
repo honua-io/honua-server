@@ -10,6 +10,9 @@ run_store_crash_boundary() {
   compose up -d --force-recreate worker >/dev/null || return 1
   job="$(submit_async gdal.ogr2ogr "${native_payload}")" || return 1
   wait_barrier "$job" claimed || { scenario_fail "worker did not reach claimed fence"; return 1; }
+  # The production worker creates this directory as its unprivileged UID.
+  # Permit the host-side qualification controller to publish release files.
+  compose exec -T --user 0 worker chmod 777 "/var/run/honua/qualification/$job" || return 1
   if [[ "$target" == terminal-committed-registration-pending ]]; then
     : > "$(barrier_directory "$job")/$target.arm"
   fi

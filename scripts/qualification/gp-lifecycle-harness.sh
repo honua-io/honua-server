@@ -678,6 +678,7 @@ run_output_store_attestation() {
     write_receipt "${scenario}" fail "FINDING: staged output job did not reach a terminal state" "${job}"; return 1; }
   state="$(jq -r '.status' <<<"${terminal}")"
   [[ "${state}" == successful ]] || {
+    printf '%s\n' "${terminal}" > "${scenario_evidence_file}"
     write_receipt "${scenario}" fail "unexpected terminal state" "${job}" "${state}"; return 1; }
   objects="$(object_file_count "${job}")"
   (( objects > 0 )) || {
@@ -1249,6 +1250,9 @@ run_scenario() {
   if (( result != 0 )); then
     outcome=fail
     finding="${scenario_finding:-${preflight_failure:-scenario execution failed}}"
+    if [[ "${lane}" != self-test && -f "${observed_candidate_file}" ]]; then
+      compose logs --no-color --tail 1000 > "${receipt_root}/${name}.log" 2>&1 || true
+    fi
   fi
   if [[ ! -e "${receipt_root}/${name}.json" ]]; then
     write_receipt "${name}" "${outcome}" "${finding}"
