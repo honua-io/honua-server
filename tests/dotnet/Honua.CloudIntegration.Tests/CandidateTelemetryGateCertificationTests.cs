@@ -823,7 +823,8 @@ public sealed class CandidateTelemetryGateCertificationTests : IClassFixture<Loc
                 ["HONUA_DEV_AUTH"] = "false",
                 ["HONUA_ADMIN_PASSWORD"] = ControlPlaneAdminPassword,
                 ["ConnectionStrings:redis"] = redisConnectionString,
-                ["Cache:KeyPrefix"] = $"honua:{targetId}:",
+                // Cache:KeyPrefix is capped at 50 characters; the container prefix is short and still unique per run.
+                ["Cache:KeyPrefix"] = $"honua:{containerPrefix}:",
                 ["Licensing:DevGrantEdition"] = "Pro",
                 ["ControlPlane:SelfHosted:Enabled"] = "false",
                 ["ControlPlane:SelfHosted:ContainerRuntime"] = containerRuntime,
@@ -1044,7 +1045,8 @@ public sealed class CandidateTelemetryGateCertificationTests : IClassFixture<Loc
 
         public static async Task<string> ContainerAddressAsync(string name)
         {
-            var (exitCode, stdout, stderr) = await RunAsync(["inspect", "-f", "{{.NetworkSettings.IPAddress}}", name]);
+            // Docker Engine 29 dropped the top-level NetworkSettings.IPAddress; read the per-network address.
+            var (exitCode, stdout, stderr) = await RunAsync(["inspect", "-f", "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}", name]);
             var address = stdout.Trim();
             if (exitCode != 0 || string.IsNullOrWhiteSpace(address))
             {
