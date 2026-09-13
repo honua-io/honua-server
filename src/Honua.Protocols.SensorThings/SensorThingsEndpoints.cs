@@ -165,9 +165,9 @@ internal static partial class SensorThingsEndpoints
     }
 
     /// <summary>
-    /// Builds the plan for a single-entity request. <c>$filter</c> and <c>$orderby</c>
-    /// cannot apply to one entity, so naming them is a client error rather than something
-    /// to quietly drop.
+    /// Builds the plan for a single-entity request. Collection filtering, ordering,
+    /// paging and counting cannot apply to one entity, so naming those options is a
+    /// client error rather than something to quietly drop.
     /// </summary>
     private static bool TryPlanEntity(
         HttpContext context,
@@ -181,7 +181,8 @@ internal static partial class SensorThingsEndpoints
             return false;
         }
 
-        var rejected = plan.Options.Filter is not null ? "$filter" : plan.Options.OrderBy is not null ? "$orderby" : null;
+        var rejected = new[] { "$filter", "$orderby", "$top", "$skip", "$count" }
+            .FirstOrDefault(context.Request.Query.ContainsKey);
         if (rejected is not null)
         {
             failure = StandardErrorHelpers.CreateBadRequest(

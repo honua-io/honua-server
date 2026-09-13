@@ -65,6 +65,7 @@ internal sealed class PostgresObservationStore : IObservationStore
         CatalogQuery query,
         CancellationToken cancellationToken)
     {
+        query = WithDatastreamRelationships(query);
         await VerifySchemaFloorAsync(cancellationToken).ConfigureAwait(false);
 
         var sql = new System.Text.StringBuilder($"""
@@ -252,7 +253,40 @@ GROUP BY d.id, d.name, d.description, d.observation_type, d.unit_name, d.unit_sy
     // The datastream filter is written against the `d` alias the list query uses, so the
     // count has to introduce the same alias.
     public Task<long> CountDatastreamsAsync(CatalogQuery query, CancellationToken cancellationToken) =>
-        CountCatalogAsync(_datastreamTable, "d", query, cancellationToken);
+        CountCatalogAsync(_datastreamTable, "d", WithDatastreamRelationships(query), cancellationToken);
+
+    private static CatalogQuery WithDatastreamRelationships(CatalogQuery query)
+    {
+        if (query.DatastreamThingId is null && query.DatastreamSensorId is null && query.DatastreamObservedPropertyId is null)
+        {
+            return query;
+        }
+
+        var predicates = new List<string>();
+        var parameters = query.WhereParameters.ToList();
+        if (!string.IsNullOrWhiteSpace(query.WhereSql))
+        {
+            predicates.Add($"({query.WhereSql})");
+        }
+
+        AddRelationship("d.thing_id", query.DatastreamThingId);
+        AddRelationship("d.sensor_id", query.DatastreamSensorId);
+        AddRelationship("d.observed_property_id", query.DatastreamObservedPropertyId);
+        return query with { WhereSql = string.Join(" AND ", predicates), WhereParameters = parameters };
+
+        void AddRelationship(string column, long? id)
+        {
+            if (id is not { } value)
+            {
+                return;
+            }
+
+            // Columns are provider-owned literals; values follow the client filter's
+            // parameters so navigation can never overwrite a filter parameter.
+            predicates.Add($"{column} = @p{parameters.Count.ToString(CultureInfo.InvariantCulture)}");
+            parameters.Add(value);
+        }
+    }
 
     private async Task<long> CountCatalogAsync(
         string table,

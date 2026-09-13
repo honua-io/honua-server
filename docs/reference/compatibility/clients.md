@@ -138,8 +138,9 @@ Current gaps, stated as fact. Protocol-level Esri parity detail lives in
   and Locations are not exposed; observations omit FeatureOfInterest links even
   when a stored row carries an opaque FeatureOfInterest identifier. Explicit
   `$select=FeatureOfInterest` and `$expand=FeatureOfInterest` return HTTP 501. A `$filter` naming an unknown property, or carrying
-  a literal of the wrong type for its property, returns HTTP 400. `$filter` and
-  `$orderby` on a single-entity route return HTTP 400 because they cannot apply.
+  a literal of the wrong type for its property, returns HTTP 400. Collection-only
+  options (`$filter`, `$orderby`, `$top`, `$skip`, `$count`) on single-entity routes,
+  including singleton navigation, return HTTP 400 because they cannot apply.
 - **OGC API Processes negotiates sync and async execution.** Omission runs a process
   synchronously when it advertises `sync-execute`; `Prefer: respond-async` requests a
   durable job. Document-mode JSON is the default, while synchronous single-output

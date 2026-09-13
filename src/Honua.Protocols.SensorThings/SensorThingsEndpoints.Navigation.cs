@@ -1,9 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Globalization;
 using Honua.Core.Features.SensorThings.Abstractions;
-using Honua.Infrastructure.Helpers;
+using Honua.Infrastructure.Models;
 using Honua.Protocols.SensorThings.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -60,21 +59,14 @@ internal static partial class SensorThingsEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"{relation}({id}) not found.");
         }
 
-        // Constrain the canonical catalog query before count/order/paging. Both the
-        // column and parameter name are server-owned; the parent id is a bound value.
-        var column = relation switch
+        // Carry the relationship in the canonical query; the provider owns its
+        // SQL predicate and applies it before count/order/paging.
+        var query = relation switch
         {
-            DatastreamRelation.Thing => "d.thing_id",
-            DatastreamRelation.Sensor => "d.sensor_id",
-            DatastreamRelation.ObservedProperty => "d.observed_property_id",
+            DatastreamRelation.Thing => plan.CatalogQuery with { DatastreamThingId = id },
+            DatastreamRelation.Sensor => plan.CatalogQuery with { DatastreamSensorId = id },
+            DatastreamRelation.ObservedProperty => plan.CatalogQuery with { DatastreamObservedPropertyId = id },
             _ => throw new ArgumentOutOfRangeException(nameof(relation))
-        };
-        var query = plan.CatalogQuery;
-        var predicate = $"{column} = @p{query.WhereParameters.Count.ToString(CultureInfo.InvariantCulture)}";
-        query = query with
-        {
-            WhereSql = query.WhereSql is { Length: > 0 } filter ? $"({filter}) AND {predicate}" : predicate,
-            WhereParameters = [.. query.WhereParameters, id]
         };
         return await QueryDatastreamsAsync(context, store, plan, query).ConfigureAwait(false);
     }

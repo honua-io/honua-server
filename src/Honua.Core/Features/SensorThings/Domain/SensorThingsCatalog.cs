@@ -175,6 +175,15 @@ public readonly record struct CatalogQuery(
     int Skip,
     int Top)
 {
+    /// <summary>Restricts a Datastream list/count to the related Thing, in addition to the filter.</summary>
+    public long? DatastreamThingId { get; init; }
+
+    /// <summary>Restricts a Datastream list/count to the related Sensor, in addition to the filter.</summary>
+    public long? DatastreamSensorId { get; init; }
+
+    /// <summary>Restricts a Datastream list/count to the related ObservedProperty, in addition to the filter.</summary>
+    public long? DatastreamObservedPropertyId { get; init; }
+
     /// <summary>An unfiltered, unordered query over the first page of an entity set.</summary>
     public static CatalogQuery Page(int skip, int top) =>
         new(null, Array.Empty<object?>(), null, skip, top);
