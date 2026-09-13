@@ -208,7 +208,11 @@ internal static class StudioPackageEndpoints
             var pointers = await service.GetPointersAsync(id, context.RequestAborted).ConfigureAwait(false);
             if (pointers is null)
             {
-                return NotFound(context, "Studio content item was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.ReadContentItem,
+                    resourceType: "studio-content-item", resourceId: id.ToString("D"),
+                    "Studio content item was not found.").ConfigureAwait(false);
             }
 
             var authResult = await EnsureAuthorizedAsync(
@@ -638,7 +642,11 @@ internal static class StudioPackageEndpoints
             var draft = await service.GetDraftAsync(draftId, context.RequestAborted).ConfigureAwait(false);
             if (draft is null)
             {
-                return NotFound(context, "Studio package draft was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.ReadDraft,
+                    resourceType: "studio-package-draft", resourceId: draftId.ToString("D"),
+                    "Studio package draft was not found.").ConfigureAwait(false);
             }
 
             var authResult = await EnsureAuthorizedAsync(
@@ -680,7 +688,11 @@ internal static class StudioPackageEndpoints
             var existing = await service.GetDraftAsync(draftId, context.RequestAborted).ConfigureAwait(false);
             if (existing is null)
             {
-                return NotFound(context, "Studio package draft was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.UpdateDraft,
+                    resourceType: "studio-package-draft", resourceId: draftId.ToString("D"),
+                    "Studio package draft was not found.").ConfigureAwait(false);
             }
 
             var authResult = await EnsureAuthorizedAsync(
@@ -766,7 +778,11 @@ internal static class StudioPackageEndpoints
             var existing = await service.GetDraftAsync(draftId, context.RequestAborted).ConfigureAwait(false);
             if (existing is null)
             {
-                return NotFound(context, "Studio package draft was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.DeleteDraft,
+                    resourceType: "studio-package-draft", resourceId: draftId.ToString("D"),
+                    "Studio package draft was not found.").ConfigureAwait(false);
             }
 
             var authResult = await EnsureAuthorizedAsync(
@@ -873,7 +889,11 @@ internal static class StudioPackageEndpoints
             var existing = await service.GetDraftAsync(draftId, context.RequestAborted).ConfigureAwait(false);
             if (existing is null)
             {
-                return NotFound(context, "Studio package draft was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.ValidateDraft,
+                    resourceType: "studio-package-draft", resourceId: draftId.ToString("D"),
+                    "Studio package draft was not found.").ConfigureAwait(false);
             }
 
             var authResult = await EnsureAuthorizedAsync(
@@ -927,7 +947,11 @@ internal static class StudioPackageEndpoints
             var existing = await service.GetDraftAsync(draftId, context.RequestAborted).ConfigureAwait(false);
             if (existing is null)
             {
-                return NotFound(context, "Studio package draft was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.ValidateDraft,
+                    resourceType: "studio-package-draft", resourceId: draftId.ToString("D"),
+                    "Studio package draft was not found.").ConfigureAwait(false);
             }
 
             var authResult = await EnsureAuthorizedAsync(
@@ -987,7 +1011,11 @@ internal static class StudioPackageEndpoints
             var existing = await service.GetDraftAsync(draftId, context.RequestAborted).ConfigureAwait(false);
             if (existing is null)
             {
-                return NotFound(context, "Studio package draft was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.CreateVersion,
+                    resourceType: "studio-package-draft", resourceId: draftId.ToString("D"),
+                    "Studio package draft was not found.").ConfigureAwait(false);
             }
 
             var authResult = await EnsureAuthorizedAsync(
@@ -1006,7 +1034,11 @@ internal static class StudioPackageEndpoints
             var pointers = await service.GetPointersAsync(existing.ItemId, context.RequestAborted).ConfigureAwait(false);
             if (pointers is null)
             {
-                return NotFound(context, "Studio content item was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.CreateVersion,
+                    resourceType: "studio-content-item", resourceId: existing.ItemId.ToString("D"),
+                    "Studio content item was not found.").ConfigureAwait(false);
             }
 
             var itemAuthResult = await EnsureAuthorizedAsync(
@@ -1448,7 +1480,11 @@ internal static class StudioPackageEndpoints
             var version = await service.GetVersionAsync(itemId, versionId, context.RequestAborted).ConfigureAwait(false);
             if (version is null)
             {
-                return NotFound(context, "Studio content version was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.ReadContentItem,
+                    resourceType: "studio-content-version", resourceId: versionId.ToString("D"),
+                    "Studio content version was not found.").ConfigureAwait(false);
             }
 
             var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
@@ -1498,13 +1534,21 @@ internal static class StudioPackageEndpoints
             var left = await service.GetVersionAsync(itemId, request.LeftVersionId, context.RequestAborted).ConfigureAwait(false);
             if (left is null)
             {
-                return NotFound(context, "Studio content version was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.ReadContentItem,
+                    resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
+                    "Studio content version was not found.").ConfigureAwait(false);
             }
 
             var right = await service.GetVersionAsync(itemId, request.RightVersionId, context.RequestAborted).ConfigureAwait(false);
             if (right is null)
             {
-                return NotFound(context, "Studio content version was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.ReadContentItem,
+                    resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
+                    "Studio content version was not found.").ConfigureAwait(false);
             }
 
             var leftAuthResult = await EnsureAuthorizedAsync(
@@ -1566,7 +1610,11 @@ internal static class StudioPackageEndpoints
             var targetVersion = await service.GetVersionAsync(itemId, versionId, context.RequestAborted).ConfigureAwait(false);
             if (targetVersion is null)
             {
-                return NotFound(context, "Studio content version was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.PublishRequest,
+                    resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
+                    "Studio content version was not found.").ConfigureAwait(false);
             }
 
             // PR #3018 review, round 5, item 1: publish-request moves the ITEM's
@@ -1579,7 +1627,11 @@ internal static class StudioPackageEndpoints
             var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
             if (pointers is null)
             {
-                return NotFound(context, "Studio content item was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.PublishRequest,
+                    resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
+                    "Studio content item was not found.").ConfigureAwait(false);
             }
 
             var authResult = await EnsureAuthorizedAsync(
@@ -1658,7 +1710,11 @@ internal static class StudioPackageEndpoints
             var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
             if (pointers is null)
             {
-                return NotFound(context, "Studio content item was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.ReadContentItem,
+                    resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
+                    "Studio content item was not found.").ConfigureAwait(false);
             }
 
             var authResult = await EnsureAuthorizedAsync(
@@ -1700,7 +1756,11 @@ internal static class StudioPackageEndpoints
             var targetVersion = await service.GetVersionAsync(itemId, versionId, context.RequestAborted).ConfigureAwait(false);
             if (targetVersion is null)
             {
-                return NotFound(context, "Studio content version was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.ReopenVersion,
+                    resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
+                    "Studio content version was not found.").ConfigureAwait(false);
             }
 
             var authResult = await EnsureAuthorizedAsync(
@@ -1773,7 +1833,11 @@ internal static class StudioPackageEndpoints
             var targetVersion = await service.GetVersionAsync(itemId, request.TargetVersionId, context.RequestAborted).ConfigureAwait(false);
             if (targetVersion is null)
             {
-                return NotFound(context, "Studio content version was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.Rollback,
+                    resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
+                    "Studio content version was not found.").ConfigureAwait(false);
             }
 
             // PR #3018 review, round 5, item 1: rollback moves the ITEM's current/published
@@ -1784,7 +1848,11 @@ internal static class StudioPackageEndpoints
             var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
             if (pointers is null)
             {
-                return NotFound(context, "Studio content item was not found.");
+                return await NotFoundAfterAuthorizationAsync(
+                    authorization, context,
+                    StudioAuthorizationOperation.Rollback,
+                    resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
+                    "Studio content item was not found.").ConfigureAwait(false);
             }
 
             var authResult = await EnsureAuthorizedAsync(
@@ -1870,6 +1938,25 @@ internal static class StudioPackageEndpoints
     /// having already recorded the denial to the audit log (REQ-003/item 5). Elevated
     /// (operator-grant-gated) allow decisions are also audited.
     /// </summary>
+    /// <summary>
+    /// Answers a lookup miss without disclosing whether the resource exists (#3429): the caller is
+    /// first authorized against an ownerless target, so a non-owner receives the same governed
+    /// denial for an unknown id as for another owner's resource. Only a caller entitled to act on
+    /// that target (an admin or a matching delegate grant) learns that it was not found.
+    /// </summary>
+    private static async Task<IResult> NotFoundAfterAuthorizationAsync(
+        StudioEndpointAuthorization authorization,
+        HttpContext context,
+        StudioAuthorizationOperation operation,
+        string resourceType,
+        string? resourceId,
+        string detail)
+    {
+        var authResult = await EnsureAuthorizedAsync(
+            authorization, context, operation, resourceOwnerId: null, resourceType, resourceId).ConfigureAwait(false);
+        return authResult ?? NotFound(context, detail);
+    }
+
     private static async Task<IResult?> EnsureAuthorizedAsync(
         StudioEndpointAuthorization authorization,
         HttpContext context,

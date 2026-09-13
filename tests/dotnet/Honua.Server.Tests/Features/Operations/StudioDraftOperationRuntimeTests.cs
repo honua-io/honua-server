@@ -230,6 +230,71 @@ public sealed class StudioDraftOperationRuntimeTests
         (await store.GetPointersAsync(saved.ItemId))!.PublishedVersionId.Should().BeNull();
     }
 
+    [UnitTest]
+    public async Task PublicationProposal_DirectExecuteEdition_AwaitsApprovalWithoutMovingPublishedPointer()
+    {
+        // #3429: on a Community deployment Studio draft mutations execute directly. Before the
+        // publication-proposal floor, an agent proposal published immediately and only then reported
+        // that it had not entered approval. The same request without the proposal action keeps the
+        // edition's direct-execute behavior for the REST publish-request surface.
+        var store = new InMemoryStudioPackageStore();
+        var lifecycle = BuildLifecycle(store);
+        var saved = await SaveFirstVersionAsync(lifecycle);
+        var entitlements = Substitute.For<Honua.Core.Features.Licensing.Abstractions.ILicenseEntitlementService>();
+        entitlements.GetSnapshot().Returns(new Honua.Core.Features.Licensing.Domain.LicenseSnapshot(
+            Honua.Core.Features.Licensing.Domain.HonuaEdition.Community,
+            IsValid: true,
+            Honua.Core.Features.Licensing.Domain.LicenseValidationState.Valid,
+            ExpiresAt: null,
+            LicensedTo: "test",
+            LicenseId: "test",
+            IssuedAt: null,
+            Entitlements: [],
+            ActiveEntitlementKeys: new HashSet<string>(),
+            SnapshotVersion: 1,
+            KeyId: null));
+        var policy = new CanonicalOperationPolicyDecisionPoint(
+            Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions()),
+            new Honua.Core.Features.Guardrails.DefaultGuardrailLadder(
+                entitlements,
+                Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Guardrails.Domain.GuardrailLadderOptions())));
+        var bridge = new DurableApprovalBridge();
+        var instances = new VolatileOperationInstanceStore();
+        var runtime = new StudioDraftMutationRuntime(
+            new OperationDispatcher(
+                new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+                [PublicationExecutor(lifecycle)],
+                policy,
+                TimeProvider.System,
+                approvalBridge: bridge,
+                instanceStore: instances,
+                auditLog: new VolatileOperationAuditLog()),
+            instances);
+        var intent = new StudioPublicationIntent { Route = "/studio/parcels", Visibility = "organization" };
+
+        var proposal = await runtime.CreatePublicationRequestAsync(
+            saved.ItemId, saved.VersionId, saved.ContentHash, intent, null, "studio-author",
+            new StudioDraftMutationContext
+            {
+                PrincipalId = "studio-author",
+                CorrelationId = "corr-proposal",
+                ActionDiscriminator = BuiltInGuardrailActions.StudioPublicationProposal,
+            });
+
+        proposal.Operation.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        proposal.Operation.ProposalId.Should().Be("proposal-studio");
+        bridge.Request!.OperationId.Should().Be(StudioDraftOperations.CreatePublicationRequest);
+        (await store.GetPointersAsync(saved.ItemId))!.PublishedVersionId.Should().BeNull(
+            "a proposal must never move the published pointer before a separate principal approves it");
+
+        var direct = await runtime.CreatePublicationRequestAsync(
+            saved.ItemId, saved.VersionId, saved.ContentHash, intent, null, "studio-author",
+            new StudioDraftMutationContext { PrincipalId = "studio-author", CorrelationId = "corr-direct" });
+
+        direct.Operation.Status.Should().Be(OperationHandleStatus.Completed);
+        (await store.GetPointersAsync(saved.ItemId))!.PublishedVersionId.Should().Be(saved.VersionId);
+    }
+
     private static string InvalidIntentPayload(StudioContentVersion version) => JsonSerializer.Serialize(
         new StudioPublicationRequestPayload
         {

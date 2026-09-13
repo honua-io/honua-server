@@ -446,6 +446,84 @@ public sealed class StudioAuthorizationServiceTests
     }
 
     [UnitTest]
+    public void ResolveCallerId_IssuerBearingSubject_BindsIssuerAndResolvedTenant()
+    {
+        var service = BuildService(enabled: true, out _, tenantId: "tenant-a");
+
+        var callerId = service.ResolveCallerId(IssuedPrincipal("https://idp.example/realms/a", "alice"));
+
+        // Independently declared: each component is URI-escaped so ':' and '@' inside an issuer,
+        // subject or tenant can never forge a different component boundary.
+        Assert.Equal("subject:https%3A%2F%2Fidp.example%2Frealms%2Fa:alice@tenant:tenant-a", callerId);
+    }
+
+    [UnitTest]
+    public void ResolveCallerId_EqualSubjectFromAnotherIssuerOrTenant_NeverSameOwner()
+    {
+        var tenantA = BuildService(enabled: true, out _, tenantId: "tenant-a");
+        var tenantB = BuildService(enabled: true, out _, tenantId: "tenant-b");
+        var issuerOne = IssuedPrincipal("https://idp-one.example", "alice");
+        var issuerTwo = IssuedPrincipal("https://idp-two.example", "alice");
+
+        var owner = tenantA.ResolveCallerId(issuerOne);
+
+        Assert.NotEqual(owner, tenantA.ResolveCallerId(issuerTwo));
+        Assert.NotEqual(owner, tenantB.ResolveCallerId(issuerOne));
+        Assert.NotEqual("alice", owner);
+        Assert.Equal(owner, tenantA.ResolveCallerId(IssuedPrincipal("https://idp-one.example", "alice")));
+    }
+
+    [UnitTest]
+    public async Task AuthorizeAsync_SameSubjectInAnotherTenant_CrossUserDenied()
+    {
+        var owningTenant = BuildService(enabled: true, out _, tenantId: "public");
+        var otherTenant = BuildService(enabled: true, out _, tenantId: "tenant-b");
+        var principal = IssuedPrincipal("https://idp.example", "alice");
+        var ownerId = owningTenant.ResolveCallerId(principal);
+
+        var decision = await otherTenant.AuthorizeAsync(
+            principal,
+            otherTenant.ResolveCallerId(principal),
+            StudioAuthorizationOperation.ReadDraft,
+            resourceOwnerId: ownerId);
+
+        Assert.False(decision.IsAllowed);
+        Assert.Equal(StudioAuthorizationService.CrossUserDeniedCode, decision.Code);
+    }
+
+    [UnitTest]
+    public void ResolveCallerId_IssuerlessApiKeyPrincipal_KeepsImmutableKeyId()
+    {
+        var service = BuildService(enabled: true, out _, tenantId: "tenant-a");
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, "11111111-2222-3333-4444-555555555555"),
+                new Claim("api_key_id", "11111111-2222-3333-4444-555555555555"),
+            ],
+            authenticationType: "ApiKey"));
+
+        Assert.Equal("11111111-2222-3333-4444-555555555555", service.ResolveCallerId(principal));
+    }
+
+    [UnitTest]
+    public async Task AuthorizeAsync_MissingResourceAsOwnerlessTarget_MatchesCrossOwnerDenial()
+    {
+        var service = BuildService(enabled: true, out _);
+
+        var missing = await service.AuthorizeAsync(
+            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.UpdateDraft, resourceOwnerId: null);
+        var crossOwner = await service.AuthorizeAsync(
+            UserPrincipal(Alice), Alice, StudioAuthorizationOperation.UpdateDraft, resourceOwnerId: Bob);
+        var admin = await service.AuthorizeAsync(
+            AdminPrincipal(), "admin-1", StudioAuthorizationOperation.UpdateDraft, resourceOwnerId: null);
+
+        Assert.False(missing.IsAllowed);
+        Assert.Equal(crossOwner.Code, missing.Code);
+        Assert.Equal(crossOwner.Reason, missing.Reason);
+        Assert.True(admin.IsAllowed);
+    }
+
+    [UnitTest]
     public async Task AuthorizeAsync_ReadScopedAdmin_CannotCreateDraft()
     {
         var service = BuildService(enabled: true, out _);
@@ -510,7 +588,8 @@ public sealed class StudioAuthorizationServiceTests
     private static StudioAuthorizationService BuildService(
         bool enabled,
         out FakeOperatorAuthorizationEvaluator evaluator,
-        string[]? adminRoles = null)
+        string[]? adminRoles = null,
+        string? tenantId = null)
     {
         evaluator = new FakeOperatorAuthorizationEvaluator();
         var options = new StaticOptionsMonitor<StudioEndUserAuthorizationOptions>(new StudioEndUserAuthorizationOptions { Enabled = enabled });
@@ -519,7 +598,33 @@ public sealed class StudioAuthorizationServiceTests
             evaluator,
             new OperatorScopeAuthorizer(),
             options,
-            adminRoleOptions);
+            adminRoleOptions,
+            tenantId is null ? null : new StaticTenantContext(tenantId));
+    }
+
+    private static ClaimsPrincipal IssuedPrincipal(string issuer, string subject)
+        => new(new ClaimsIdentity(
+            [
+                new Claim("iss", issuer),
+                new Claim("sub", subject),
+                new Claim(ClaimTypes.Role, "creator"),
+            ],
+            authenticationType: "Bearer"));
+
+    private sealed class StaticTenantContext(string tenantId)
+        : Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext
+    {
+        public string? TenantId { get; } = tenantId;
+
+        public Honua.Core.Features.MultiTenancy.Abstractions.TenantContextSource Source
+            => Honua.Core.Features.MultiTenancy.Abstractions.TenantContextSource.Claim;
+
+        public bool RequireTenantId(out string tenantId, out string? reason)
+        {
+            tenantId = TenantId!;
+            reason = null;
+            return true;
+        }
     }
 
     private static ClaimsPrincipal AdminPrincipal()

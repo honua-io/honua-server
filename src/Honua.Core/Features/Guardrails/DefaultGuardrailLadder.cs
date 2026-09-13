@@ -61,6 +61,13 @@ public sealed class DefaultGuardrailLadder : IGuardrailLadder
             return Resolve(operationClass, edition);
         }
 
+        // Platform-declared actions resolve without the ops-action catalog, so a host that
+        // registers no catalog still routes them through their declared floor.
+        if (BuiltInGuardrailActions.TryGetTier(actionDiscriminator, out var builtInTier))
+        {
+            return ApplyActionFloor(operationClass, edition, builtInTier, $"built-in-action:{actionDiscriminator}");
+        }
+
         // Discriminated resolution: an action the catalog does not recognize (or when
         // no catalog is registered) fails closed to Blocked, so a malformed or unknown
         // action can never slip through as direct-execute.
@@ -71,13 +78,23 @@ public sealed class DefaultGuardrailLadder : IGuardrailLadder
             return new GuardrailDecision(GuardrailTier.Blocked, operationClass, edition, "unknown-action-blocked");
         }
 
-        // Known action: apply the per-action tier as a floor on top of the edition/
-        // operator-override policy. The tier enum is ordered DirectExecute(0) <
-        // RequiresApproval(1) < Blocked(2), so a per-action tier can only TIGHTEN the
-        // guardrail — never loosen the edition policy.
+        return ApplyActionFloor(operationClass, edition, actionTier, $"action-catalog:{actionDiscriminator}");
+    }
+
+    /// <summary>
+    /// Applies a known action's tier as a floor on top of the edition/operator-override policy.
+    /// The tier enum is ordered DirectExecute(0) &lt; RequiresApproval(1) &lt; Blocked(2), so a
+    /// per-action tier can only TIGHTEN the guardrail — never loosen the edition policy.
+    /// </summary>
+    private GuardrailDecision ApplyActionFloor(
+        OperationClass operationClass,
+        HonuaEdition edition,
+        GuardrailTier actionTier,
+        string source)
+    {
         var baseline = Resolve(operationClass, edition);
         var effective = (GuardrailTier)Math.Max((int)actionTier, (int)baseline.Tier);
-        return new GuardrailDecision(effective, operationClass, edition, $"action-catalog:{actionDiscriminator}");
+        return new GuardrailDecision(effective, operationClass, edition, source);
     }
 
     /// <inheritdoc />

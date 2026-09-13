@@ -1,0 +1,451 @@
+{
+  "format": "honua.studio.dashboard-lifecycle-receipt.v1",
+  "issue": "https://github.com/honua-io/honua-server/issues/3429",
+  "candidate": {
+    "image": "ghcr.io/honua-io/honua-server@sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd",
+    "sha": "7ba422672e0c751843b17beb36e954a019cc19fb",
+    "runningImageId": "sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd",
+    "runningReference": "ghcr.io/honua-io/honua-server@sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd"
+  },
+  "startedAt": "2026-09-12T22:29:50.432297+00:00",
+  "completedAt": "2026-09-12T22:30:03.460070+00:00",
+  "verdict": "fail",
+  "rows": [
+    {
+      "id": "dashboard.compose.eleven-verbs",
+      "criterion": "A terminal MCP client creates a dashboard and all eleven composition verbs succeed with the map/app contract.",
+      "status": "pass",
+      "failures": [],
+      "evidence": {
+        "draftId": "fa2b4fb2-4d3e-45f0-a043-f05aa8fe965c",
+        "ownerId": "dashboard-owner-9460a673",
+        "family": "dashboard",
+        "verbsApplied": [
+          "add_layer",
+          "set_layer_style",
+          "set_layer_visibility",
+          "set_view",
+          "add_widget",
+          "bind_interaction",
+          "add_control",
+          "remove_control",
+          "remove_interaction",
+          "remove_widget",
+          "remove_layer"
+        ]
+      }
+    },
+    {
+      "id": "dashboard.cas.stale-retry",
+      "criterion": "Stale generation returns the canonical conflict and current generation; a re-read non-conflicting retry succeeds exactly once; a conflicting retry stays failed.",
+      "status": "pass",
+      "failures": [],
+      "evidence": {}
+    },
+    {
+      "id": "dashboard.update-draft.shared-validator",
+      "criterion": "update_draft accepts a valid dashboard document and rejects malformed or unsupported content without mutation.",
+      "status": "pass",
+      "failures": [],
+      "evidence": {
+        "rejectedBodies": [
+          {
+            "layers": "bad"
+          },
+          {
+            "layers": [
+              {
+                "id": "same"
+              },
+              {
+                "id": "same"
+              }
+            ]
+          },
+          {
+            "widgets": [
+              {
+                "id": "missing-kind"
+              }
+            ]
+          },
+          {
+            "view": {
+              "center": [
+                1
+              ]
+            }
+          },
+          {
+            "view": {
+              "zoom": 25
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "dashboard.authorization.nondisclosure",
+      "criterion": "A different owner, a different tenant, or insufficient OAuth scope receives the canonical denial without leaking draft existence or content.",
+      "status": "fail",
+      "failures": [
+        "other-owner-missing-id: expected permission_denied/studio_authorization/cross_user_denied, observed not_found/None",
+        "same-subject-other-tenant-read: call succeeded",
+        "same-subject-other-tenant-read: denial disclosed ['draftId', 'envelope', 'generation', 'ownerId', 'validation']",
+        "same-subject-other-tenant-read: expected permission_denied/studio_authorization/cross_user_denied, observed None/None",
+        "same-subject-other-tenant-compose: call succeeded",
+        "same-subject-other-tenant-compose: denial disclosed ['draftId', 'envelope', 'generation', 'ownerId', 'validation']",
+        "same-subject-other-tenant-compose: expected permission_denied/studio_authorization/cross_user_denied, observed None/None",
+        "denied calls changed the durable draft: [{'generation': 14, 'owner_id': 'dashboard-owner-9460a673'}]"
+      ],
+      "evidence": {
+        "observed": {
+          "other-owner-read": {
+            "isError": true,
+            "code": "permission_denied",
+            "studioAuthorizationCode": "studio_authorization/cross_user_denied",
+            "disclosedFields": []
+          },
+          "other-owner-compose": {
+            "isError": true,
+            "code": "permission_denied",
+            "studioAuthorizationCode": "studio_authorization/cross_user_denied",
+            "disclosedFields": []
+          },
+          "other-owner-missing-id": {
+            "isError": true,
+            "code": "not_found",
+            "studioAuthorizationCode": null,
+            "disclosedFields": []
+          },
+          "same-subject-other-tenant-read": {
+            "isError": false,
+            "code": null,
+            "studioAuthorizationCode": null,
+            "disclosedFields": [
+              "draftId",
+              "envelope",
+              "generation",
+              "ownerId",
+              "validation"
+            ]
+          },
+          "same-subject-other-tenant-compose": {
+            "isError": false,
+            "code": null,
+            "studioAuthorizationCode": null,
+            "disclosedFields": [
+              "draftId",
+              "envelope",
+              "generation",
+              "ownerId",
+              "validation"
+            ]
+          },
+          "read-only-scope-compose": {
+            "isError": true,
+            "code": "insufficient_scope",
+            "studioAuthorizationCode": "studio_authorization/oauth_scope_required",
+            "disclosedFields": []
+          }
+        }
+      }
+    },
+    {
+      "id": "dashboard.version.restart-identity",
+      "criterion": "Validate, save, get and reopen preserve the exact content hash and immutable version identity across a server restart.",
+      "status": "pass",
+      "failures": [],
+      "evidence": {
+        "itemId": "8cb86a65-7003-41ef-b286-0e8918665c26",
+        "versionId": "8366da51-a6ab-480c-b3ff-30345d0b81b3",
+        "contentHash": "45240922431450d7c8c6dd7da3116457ca4ff42a20377f236968f66120cea420",
+        "reopenedDraftId": "a1ee21eb-8a80-4e76-b79c-e0c7000df8cd"
+      }
+    },
+    {
+      "id": "dashboard.publication.governed-proposal",
+      "criterion": "The saved dashboard enters the governed proposal lifecycle without changing a publication pointer.",
+      "status": "fail",
+      "failures": [
+        "publication did not enter AwaitingApproval: {'status': 'error', 'code': 'failed_precondition', 'message': 'Studio publication intent did not enter durable approval.', 'error': {'kind': 'PreconditionFailed', 'message': 'Studio publication intent did not enter durable approval.'}}",
+        "publication pointer moved without approval: [{'published_version_id': '8366da51-a6ab-480c-b3ff-30345d0b81b3', 'current_version_id': '8366da51-a6ab-480c-b3ff-30345d0b81b3'}]"
+      ],
+      "evidence": {
+        "response": {
+          "status": "error",
+          "proposalId": null,
+          "proposalUri": null,
+          "code": "failed_precondition",
+          "humanConfirmationRequired": null
+        }
+      }
+    },
+    {
+      "id": "dashboard.audit.joined-evidence",
+      "criterion": "Every mutation joins owner, tenant, actor, durable audit and correlation evidence through the shared seam.",
+      "status": "pass",
+      "failures": [],
+      "evidence": {
+        "ownerId": "dashboard-owner-9460a673",
+        "joins": [
+          {
+            "verb": "create_draft",
+            "traceId": "72300dd2f72c4dc2b56e1a08d31c0794",
+            "operationInstanceId": "opinst-254972a6435745018133006824ac5ecc",
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "dashboard-owner-9460a673"
+            ],
+            "auditIds": [
+              96,
+              97
+            ]
+          },
+          {
+            "verb": "add_layer",
+            "traceId": "45c41b0b4b8a404b8ee637e25e5ad871",
+            "operationInstanceId": "opinst-2a4bcfd7e742484bbde0438c7f2fc73a",
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "dashboard-owner-9460a673"
+            ],
+            "auditIds": [
+              98,
+              99
+            ]
+          },
+          {
+            "verb": "set_layer_style",
+            "traceId": "e17aa3953c9e486f81664845a9234787",
+            "operationInstanceId": "opinst-d781457c22744300b3fba9335a59c544",
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "dashboard-owner-9460a673"
+            ],
+            "auditIds": [
+              100,
+              101
+            ]
+          },
+          {
+            "verb": "set_layer_visibility",
+            "traceId": "34c11d4f61344e978448c2595916d33b",
+            "operationInstanceId": "opinst-8851bd34228c418e8d73bb789b27cdba",
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "dashboard-owner-9460a673"
+            ],
+            "auditIds": [
+              102,
+              103
+            ]
+          },
+          {
+            "verb": "set_view",
+            "traceId": "1a92ad2d0614449abff8c68f0e02a932",
+            "operationInstanceId": "opinst-72169326de5b4dfcabb82e6d2a05f865",
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "dashboard-owner-9460a673"
+            ],
+            "auditIds": [
+              104,
+              105
+            ]
+          },
+          {
+            "verb": "add_widget",
+            "traceId": "d9f3810f308f47158b7eb73d6cf52923",
+            "operationInstanceId": "opinst-29514a61865249d0987339dfb51b533f",
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "dashboard-owner-9460a673"
+            ],
+            "auditIds": [
+              106,
+              107
+            ]
+          },
+          {
+            "verb": "bind_interaction",
+            "traceId": "2d0291557cc2488484c27d27f005cc19",
+            "operationInstanceId": "opinst-504923831f114e24a7ca447f54a5b425",
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "dashboard-owner-9460a673"
+            ],
+            "auditIds": [
+              108,
+              109
+            ]
+          },
+          {
+            "verb": "add_control",
+            "traceId": "73b17d1336204387ba4671dfe8283864",
+            "operationInstanceId": "opinst-31ae5ef9209f40ffa4c0fe7cdf58528e",
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "dashboard-owner-9460a673"
+            ],
+            "auditIds": [
+              110,
+              111
+            ]
+          },
+          {
+            "verb": "remove_control",
+            "traceId": "11f7a094c3df43988d678b3d60bc5ad3",
+            "operationInstanceId": "opinst-7e0eb2d308f24bf19e362cb8544005a8",
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "dashboard-owner-9460a673"
+            ],
+            "auditIds": [
+              112,
+              113
+            ]
+          },
+          {
+            "verb": "remove_interaction",
+            "traceId": "f92ddaf971e948dfbbd06c8f90c5163e",
+            "operationInstanceId": "opinst-4f5aa5ed3236477da651b073c48f4892",
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "dashboard-owner-9460a673"
+            ],
+            "auditIds": [
+              114,
+              115
+            ]
+          },
+          {
+            "verb": "remove_widget",
+            "traceId": "0d613ddf67154994bb372c2e6fc73182",
+            "operationInstanceId": "opinst-f7d34fe67cdb4f81aa11a5108b1a4498",
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "dashboard-owner-9460a673"
+            ],
+            "auditIds": [
+              116,
+              117
+            ]
+          },
+          {
+            "verb": "remove_layer",
+            "traceId": "75a940547e904040ae94505aff10d9b6",
+            "operationInstanceId": "opinst-82b2e4087ec4418f9d212d99af11d57d",
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "dashboard-owner-9460a673"
+            ],
+            "auditIds": [
+              118,
+              119
+            ]
+          },
+          {
+            "verb": "update_draft",
+            "traceId": "ed92a588e3364b808d57513d293672ba",
+            "operationInstanceId": "opinst-9c480a3a283443b9b52c1ac012f98679",
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "dashboard-owner-9460a673"
+            ],
+            "auditIds": [
+              120,
+              121
+            ]
+          },
+          {
+            "verb": "save_version",
+            "traceId": "f00423fbc2ae4867892d1e61244cf787",
+            "operationInstanceId": "opinst-079d00e6f60f4a90a8bd5cd420469159",
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "dashboard-owner-9460a673"
+            ],
+            "auditIds": [
+              127,
+              128
+            ]
+          },
+          {
+            "verb": "reopen_version",
+            "traceId": "693ccfbc52d34937b4136c83431b0bc5",
+            "operationInstanceId": "opinst-bd77014f7e5b4162af56a42f8a8393a7",
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "dashboard-owner-9460a673"
+            ],
+            "auditIds": [
+              129,
+              130
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

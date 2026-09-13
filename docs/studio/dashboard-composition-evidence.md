@@ -48,19 +48,58 @@ declared expected envelope and Postgres-normalized body, not a copy of returned
 content. Publication intent on the reopened draft leaves the saved version hash
 and publication pointer unchanged.
 
-## Remaining acceptance
+## Candidate receipt (2026-09-12)
 
-This repairs the compose/save portion of the 2026.1 terminal journey but does not
-close [#3429](https://github.com/honua-io/honua-server/issues/3429). The fixture's
-operation/audit services run in the Test environment; a dashboard-specific
-production receipt joining owner, tenant, actor, audit and correlation across
-restart, with tenant/OAuth negatives, remains required. The shared dependencies
-#3411, #3430 and #3431 are closed; their implementation is not that joined receipt.
+The fixture's operation and audit services run in the Test environment, so the
+remaining [#3429](https://github.com/honua-io/honua-server/issues/3429) criteria are
+judged on a deployed image instead. The
+[receipt driver](../../scripts/studio/dashboard_lifecycle_receipt.py) replays the
+terminal journey's dashboard segment against a running server. It uses the MCP tools a
+terminal client calls, with OAuth bearer principals minted per request, and restarts
+the server between save and reopen. It then joins what the client sent with what the
+server durably recorded:
 
-The governed publication bridge remains pending in
-[#3980](https://github.com/honua-io/honua-server/pull/3980), which implements
-[#3304](https://github.com/honua-io/honua-server/issues/3304). Current draft intent
-recording is not governed immutable-version proposal/approval execution.
-These are outstanding pre-cut acceptance items. Only exact-candidate terminal
-driver replay is released from this implementation PR because the immutable
-candidate has not been cut; it must run under the release program after cut.
+- each call carries its own W3C trace id;
+- the operation runtime's correlation id embeds that trace id;
+- the durable audit rows, the control-plane operation instance (tenant, audit id) and the
+  draft owner are matched to it, so no response field has to be trusted.
+
+The run used the pinned candidate `7ba422672e0c751843b17beb36e954a019cc19fb`
+(`ghcr.io/honua-io/honua-server@sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd`)
+under `ASPNETCORE_ENVIRONMENT=Production`, with PostGIS, append-only Redis and a
+symmetric-key OIDC resource server on a local Docker network. The recorded
+[receipt](receipts/dashboard-lifecycle-7ba4226.json) is the baseline:
+
+| Row | Candidate `7ba4226` |
+|---|---|
+| All eleven composition verbs through MCP with literal values | pass |
+| Stale generation, re-read retry exactly once, conflicting retry stays failed | pass |
+| `update_draft` shared validator accepts valid and rejects malformed documents | pass |
+| Save, restart, get and reopen preserve version identity and content hash | pass |
+| Every mutation joins owner, tenant, actor, durable audit and correlation | pass |
+| Other owner, other tenant or narrowed scope receives a non-disclosing denial | **fail** |
+| The saved dashboard enters governed approval without moving a pointer | **fail** |
+
+The two failures are product defects that this change repairs:
+
+- **Ownership was not tenant- or issuer-bound.** Studio owners were the bare token
+  subject. The same subject presented from another tenant read *and mutated* the owner's
+  draft. An unknown draft id answered `not_found` while another owner's draft answered
+  `permission_denied`, so the difference disclosed existence. Issuer-bearing owners are now
+  keyed by issuer, subject and resolved tenant. A lookup miss is authorized as an ownerless
+  target first, over both MCP and REST, so a non-owner receives the same governed denial
+  either way.
+- **Agent publication failed open.** On a direct-execute edition,
+  `honua_studio_propose_publication` published immediately, moving the published pointer,
+  and only then reported that it had not entered approval. Proposals now carry the built-in
+  `studio.publication_proposal` guardrail action. Its tier floor requires approval on every
+  edition, while draft composition and the REST publish-request surface keep the edition
+  tier.
+
+Owner keys for issuer-bearing principals change format with this repair. Drafts created
+earlier by OIDC principals fail closed to their owners until an admin reassigns them.
+API-key owners are unchanged.
+
+The candidate predates the repair, so it cannot pass the two rows it exposed. Closing
+them against a candidate needs a re-pinned image that contains this change, followed by
+the same driver run against it.

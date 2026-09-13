@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Operations.Domain;
@@ -83,21 +84,28 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
             throw new GeoprocessingValidationException("'route' and 'visibility' are required.");
         }
 
-        var version = await lifecycleService.GetVersionAsync(itemId, versionId, cancellationToken).ConfigureAwait(false)
-            ?? throw new GeoprocessingNotFoundException($"Studio content version '{versionId:D}' was not found.");
-        var pointers = await lifecycleService.GetPointersAsync(itemId, cancellationToken).ConfigureAwait(false)
-            ?? throw new GeoprocessingNotFoundException($"Studio content item '{itemId:D}' was not found.");
+        // Authorize against the item owner before disclosing whether the item or version exists
+        // (#3429): a missing item is an ownerless target, so a non-owner receives the same governed
+        // denial for an unknown id as for another owner's item.
+        var pointers = await lifecycleService.GetPointersAsync(itemId, cancellationToken).ConfigureAwait(false);
         var authorization = RequireAuthorizationService(httpContext);
         await EnsureStudioAuthorizedAsync(
             httpContext,
             authorization,
             principal,
             StudioAuthorizationOperation.PublishRequest,
-            pointers.OwnerId,
+            pointers?.OwnerId,
             itemId.ToString("D"),
             "studio-content-item",
             OperatorOperation.Create,
             cancellationToken).ConfigureAwait(false);
+        if (pointers is null)
+        {
+            throw new GeoprocessingNotFoundException($"Studio content item '{itemId:D}' was not found.");
+        }
+
+        var version = await lifecycleService.GetVersionAsync(itemId, versionId, cancellationToken).ConfigureAwait(false)
+            ?? throw new GeoprocessingNotFoundException($"Studio content version '{versionId:D}' was not found.");
         if (pointers.CurrentVersionId != versionId)
         {
             throw new GeoprocessingPreconditionFailedException("The publication proposal must bind the current saved Studio version.");
@@ -136,6 +144,10 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
                 ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal),
                 RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(principal)
                     .OrderBy(static scope => scope, StringComparer.Ordinal).ToArray(),
+                // An agent proposal must wait for a separate principal on every edition; without
+                // this floor a direct-execute edition published first and reported failure after
+                // the published pointer had already moved (#3429).
+                ActionDiscriminator = BuiltInGuardrailActions.StudioPublicationProposal,
             },
             cancellationToken).ConfigureAwait(false);
         var operation = receipt.Operation;

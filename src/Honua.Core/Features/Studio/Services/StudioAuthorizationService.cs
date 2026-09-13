@@ -5,6 +5,7 @@ using System.Security.Claims;
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -51,13 +52,28 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
     private readonly IOperatorScopeAuthorizer _scopeAuthorizer;
     private readonly IOptionsMonitor<StudioEndUserAuthorizationOptions> _options;
     private readonly IOptionsMonitor<AdminRoleOptions> _adminRoleOptions;
+    private readonly ITenantContext? _tenantContext;
 
-    /// <summary>Initializes a new Studio authorization service.</summary>
+    /// <summary>Initializes a new Studio authorization service for a host without tenant resolution.</summary>
     public StudioAuthorizationService(
         IOperatorAuthorizationEvaluator evaluator,
         IOperatorScopeAuthorizer scopeAuthorizer,
         IOptionsMonitor<StudioEndUserAuthorizationOptions> options,
         IOptionsMonitor<AdminRoleOptions> adminRoleOptions)
+        : this(evaluator, scopeAuthorizer, options, adminRoleOptions, tenantContext: null)
+    {
+    }
+
+    /// <summary>
+    /// Initializes a new Studio authorization service whose issuer-qualified owner keys are
+    /// bound to the request's resolved tenant.
+    /// </summary>
+    public StudioAuthorizationService(
+        IOperatorAuthorizationEvaluator evaluator,
+        IOperatorScopeAuthorizer scopeAuthorizer,
+        IOptionsMonitor<StudioEndUserAuthorizationOptions> options,
+        IOptionsMonitor<AdminRoleOptions> adminRoleOptions,
+        ITenantContext? tenantContext)
     {
         ArgumentNullException.ThrowIfNull(evaluator);
         ArgumentNullException.ThrowIfNull(scopeAuthorizer);
@@ -67,6 +83,7 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         _scopeAuthorizer = scopeAuthorizer;
         _options = options;
         _adminRoleOptions = adminRoleOptions;
+        _tenantContext = tenantContext;
     }
 
     /// <inheritdoc />
@@ -112,15 +129,23 @@ public sealed class StudioAuthorizationService : IStudioAuthorizationService
         // Honua.Core has no ASP.NET dependency, so this uses ClaimsPrincipal.FindFirst rather
         // than the Microsoft.AspNetCore.Authentication FindFirstValue extension.
         var candidate = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-        if (!string.IsNullOrWhiteSpace(candidate))
+        if (string.IsNullOrWhiteSpace(candidate))
         {
-            return candidate;
+            candidate = principal.FindFirst("sub")?.Value;
         }
 
-        candidate = principal.FindFirst("sub")?.Value;
         if (!string.IsNullOrWhiteSpace(candidate))
         {
-            return candidate;
+            // A token subject is unique only within its issuer, and one issuer can mint the same
+            // subject into several tenants (#3429, #3412). Bind issuer-bearing subjects to the
+            // validated issuer and the request's resolved tenant so neither an equal subject from
+            // another issuer nor the same subject in another tenant ever owns the same draft.
+            // Issuer-less principals (API keys, framework sessions) keep their immutable id.
+            var issuer = principal.FindFirst("iss")?.Value;
+            return string.IsNullOrWhiteSpace(issuer)
+                ? candidate
+                : $"subject:{Uri.EscapeDataString(issuer)}:{Uri.EscapeDataString(candidate)}"
+                    + $"@tenant:{Uri.EscapeDataString(_tenantContext?.TenantId ?? string.Empty)}";
         }
 
         candidate = principal.FindFirst("api_key_id")?.Value;
