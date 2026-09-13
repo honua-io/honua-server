@@ -1,8 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.Json;
 using System.Security.Cryptography;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp.Studio;
 using Honua.Core.Features.Operations.Abstractions;
@@ -81,7 +81,9 @@ public sealed class StudioVersionMcpTests
         // Mutate the original draft after saving: reopen must load the immutable version.
         await lifecycle.UpdateDraftAsync(draft.DraftId, new UpdateStudioPackageDraftCommand
         {
-            PackageKey = draft.PackageKey, OwnerId = draft.OwnerId, Generation = 2,
+            PackageKey = draft.PackageKey,
+            OwnerId = draft.OwnerId,
+            Generation = 2,
             Envelope = draft.Envelope with { Body = McpTestFactory.ParseJson("""{"layers":[],"view":{"center":[0,0],"zoom":1}}""") },
             ActorId = "test-user",
         });
@@ -211,7 +213,9 @@ public sealed class StudioVersionMcpTests
         var catalog = new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System);
         var policy = new ConfigurableOperationPolicyDecisionPoint(Options.Create(new OperationPolicyOptions
         {
-            Enabled = true, DefaultDecision = decision, DefaultApprovalLane = "studio-test",
+            Enabled = true,
+            DefaultDecision = decision,
+            DefaultApprovalLane = "studio-test",
         }));
         var invoker = new OperationDispatcher(catalog,
             [new StudioSaveVersionExecutor(lifecycle, TimeProvider.System), new StudioReopenVersionExecutor(lifecycle, TimeProvider.System)],
@@ -228,10 +232,13 @@ public sealed class StudioVersionMcpTests
 
     private static Task<StudioPackageDraft> SeedAsync(IStudioPackageLifecycleService lifecycle, StudioPackageFamily family = StudioPackageFamily.Map) => lifecycle.CreateDraftAsync(new CreateStudioPackageDraftCommand
     {
-        PackageKey = "terminal-parcels", OwnerId = "test-user", ActorId = "test-user",
+        PackageKey = "terminal-parcels",
+        OwnerId = "test-user",
+        ActorId = "test-user",
         Envelope = new StudioPackageEnvelope
         {
-            Family = family, SchemaVersion = "1.0",
+            Family = family,
+            SchemaVersion = "1.0",
             Format = family == StudioPackageFamily.Map ? "honua_map_package.v1" : "studio_dashboard_package.v1",
             Body = McpTestFactory.ParseJson(family == StudioPackageFamily.Map ? MapBody :
                 MapBody.Replace("honua_map_package.v1", "studio_dashboard_package.v1", StringComparison.Ordinal)),
