@@ -1174,8 +1174,7 @@ internal static class McpToolOutputSchemas
           "version":{"type":["object","null"],"properties":{
             "itemId":{"type":"string"},"versionId":{"type":"string"},"contentHash":{"type":"string"},
             "envelope":{"type":"object"},"validation":{"type":"object"}}},
-          "studioAuthorizationCode":{"type":["string","null"]},
-          "currentGeneration":{"type":["integer","null"],"minimum":1}}}
+          "studioAuthorizationCode":{"type":["string","null"]}}}
         """);
 
     private static string ArtifactKindEnum => JsonStringArray(Enum.GetNames<ArtifactKind>());
