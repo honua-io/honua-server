@@ -91,7 +91,7 @@ def main():
         except urllib.error.HTTPError as error:
             status, text = error.code, error.read().decode()
         receipt["http"].append({"method": method, "path": path, "tenant": tenant,
-                                "authenticated": authenticated, "status": status, "body": text})
+                                "authenticated": authenticated, "requestBody": body, "status": status, "body": text})
         return status, text
 
     try:
@@ -200,6 +200,7 @@ INSERT INTO honua.alert_channel_state(channel_type,is_paused) VALUES(1,true);
             require("private-instance-3859" not in row["details"] and "private-receiver.invalid" not in row["details"],
                     "Refusal audit disclosed private alert data")
         receipt["audit"] = audit
+        receipt["persistenceColumns"] = json.loads(sql("SELECT jsonb_object_agg(table_name,columns) FROM (SELECT table_name,jsonb_agg(column_name ORDER BY ordinal_position) columns FROM information_schema.columns WHERE table_schema='honua' AND table_name LIKE 'alert_%' GROUP BY table_name) c;"))
         receipt["rows"] = after
         receipt["geometry"] = geometry
         receipt["checks"].append(f"{len(routes)} routes refuse both tenant headers and unauthenticated calls without mutation")
@@ -226,7 +227,7 @@ INSERT INTO honua.alert_channel_state(channel_type,is_paused) VALUES(1,true);
         receipt["outcome"] = "pass"
     except Exception as error:
         receipt["error"] = (str(error) + "\n" + (getattr(error, "stderr", "") or "")).replace(password, "[fixture-credential]")
-        raise
+        raise RuntimeError(receipt["error"]) from None
     finally:
         for name in reversed(containers):
             result = subprocess.run(["docker", "logs", name], capture_output=True, text=True)
