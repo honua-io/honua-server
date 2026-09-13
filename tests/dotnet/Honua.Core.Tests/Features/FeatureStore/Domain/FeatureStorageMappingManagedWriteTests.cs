@@ -87,6 +87,42 @@ public sealed class FeatureStorageMappingManagedWriteTests
 
     [UnitTest]
     [Operation(Operations.Create)]
+    public void SupportsManagedWrites_SourceBackedExternalTableNamedFeatures_IsNotWritable()
+    {
+        // A source table may legally have the same unqualified name as the managed table.
+        // Without the managed JSONB/discriminator shape, the managed writer's rows are not
+        // the rows this mapping serves, regardless of the source table name or schema.
+        var mapping = new FeatureStorageMapping(
+            TableName: "features",
+            SchemaName: "public",
+            PrimaryKeyColumn: "id",
+            GeometryColumn: "geom",
+            ProviderOptions: new Dictionary<string, string>
+            {
+                [FeatureStorageMapping.SourceBackedOption] = "true"
+            });
+
+        mapping.SupportsManagedWrites.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    public void SupportsManagedWrites_SharedTableWithoutLayerBinding_IsNotWritable()
+    {
+        var mapping = new FeatureStorageMapping(
+            TableName: "features",
+            SchemaName: "honua",
+            AttributesColumn: "attributes",
+            ProviderOptions: new Dictionary<string, string>
+            {
+                [FeatureStorageMapping.SourceBackedOption] = "true"
+            });
+
+        mapping.SupportsManagedWrites.Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
     public void SupportsManagedWrites_NonBooleanSourceBackedOption_IsWritable()
     {
         // An unparseable option is not a source-backed declaration, so the mapping keeps the
