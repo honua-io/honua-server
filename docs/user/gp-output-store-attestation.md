@@ -143,9 +143,9 @@ The lane checks the independent GeoJSON oracle, exactly one artifact reference,
 and recovery of the result package through the normal read path. Retention/hold
 qualification and other #3852 acceptance remain separate.
 
-`gp-store-candidate-qualification.yml` resolves the live release manifest on every
-scheduled or dispatched run, builds the production worker from the same source,
-and checks the running image identities. `gp-candidate-binding.py` rejects an old
+The honua-release `dr-drill-local-docker.yml` producer resolves its immutable
+release manifest on repin, scheduled and dispatched runs, builds the production
+worker from the same source, and checks the running image identities. `gp-candidate-binding.py` rejects an old
 server digest and incomplete restore/crash receipts before the trusted trunk job
 can sign them. These receipts qualify the tested local Docker shared-filesystem
 topology; they do not certify an untested backend or a customer's backup policy.

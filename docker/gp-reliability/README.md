@@ -47,10 +47,10 @@ Redis and output stores**, restores the cold backups into empty stores, and
 checks the artifact and descriptor through the peer server. Keep its backup
 directory outside the output volume. Never point this drill at a customer store.
 
-The **GP candidate store recovery** workflow reads the current honua-release
-manifest every six hours and on dispatch (`gp-candidate-repinned` is also accepted
-as a repository dispatch event). It signs only complete passing restore and
-crash-boundary receipts from trunk. The server runs by the manifest's digest;
+The honua-release **dr-drill-local-docker** workflow runs these lanes on manifest
+repins and on scheduled or dispatched qualification. Its trusted trunk producer
+embeds the complete passing restore and crash proof in the signed full-platform
+DR receipt; `gate-dr` verifies that envelope and its GP candidate binding. The server runs by the manifest's digest;
 the production worker is built locally from the manifest's matching source SHA,
 and its own image digest is recorded. A repinned server cannot consume the old
 receipt: `scripts/qualification/gp-candidate-binding.py` compares every observed

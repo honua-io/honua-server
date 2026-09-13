@@ -50,18 +50,22 @@ run_store_crash_boundary() {
   else
     record_disruption store "$target" hide-marker-and-bytes
     # Hide both the marker and the actual bytes; no synthetic Redis outage.
-    outage_root="$receipt_root/.outage-$job"
+    outage_root="$object_root/.qualification-outage-$job"
     mkdir "$outage_root" || return 1
-    mv "$object_root/.honua-gp-store.json" "$object_root/gp" "$outage_root/" || return 1
+    local mounted_root=/var/lib/honua/gp-outputs outage_failed=0
+    compose exec -T --user 0 worker mv "$mounted_root/.honua-gp-store.json" "$mounted_root/gp" \
+      "$mounted_root/.qualification-outage-$job/" || return 1
     local readiness
     readiness="$(curl --silent -o /dev/null -w '%{http_code}' "$peer_url/healthz/ready")"
-    [[ "$readiness" == 503 ]] || { scenario_fail "output-store loss did not fail readiness closed"; return 1; }
+    [[ "$readiness" == 503 ]] || outage_failed=1
     # The normal result route must not return readable bytes while the store is absent.
     local code
     code="$(curl --silent -H "X-API-Key: $api_key" -o /dev/null -w '%{http_code}' "$peer_url/api/geoprocessing/jobs/$job/artifacts/0/content")"
-    [[ "$code" != 200 ]] || { scenario_fail "missing store exposed a successful artifact"; return 1; }
-    mv "$outage_root/.honua-gp-store.json" "$outage_root/gp" "$object_root/" || return 1
+    [[ "$code" != 200 ]] || outage_failed=1
+    compose exec -T --user 0 worker mv "$mounted_root/.qualification-outage-$job/.honua-gp-store.json" \
+      "$mounted_root/.qualification-outage-$job/gp" "$mounted_root/" || return 1
     rmdir "$outage_root"
+    [[ "$outage_failed" == 0 ]] || { scenario_fail "unavailable output store did not fail closed"; return 1; }
   fi
   for barrier in claimed native-process-started output-bytes-written-unpublished artifact-reference-published-terminal-cas-pending terminal-committed-registration-pending; do
     release_barrier "$job" "$barrier"

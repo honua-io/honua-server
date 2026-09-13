@@ -108,9 +108,21 @@ if __name__ == "__main__":
     parser.add_argument("--manifest", required=True, type=Path)
     parser.add_argument("--summary", type=Path)
     parser.add_argument("--crash-summary", type=Path)
+    parser.add_argument("--receipt", type=Path, help="signed full-platform DR envelope to consume")
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
     pin = candidate(args.manifest)
+    if args.receipt:
+        if args.summary or args.crash_summary:
+            parser.error("--receipt cannot be combined with summary inputs")
+        envelope = json.loads(args.receipt.read_text())
+        proof = envelope["geoprocessingOutputs"]
+        if proof["candidate"] != pin:
+            raise ValueError("signed GP receipt does not match the current manifest")
+        result = verify(pin, proof["qualification"])
+        result["crash_qualification"] = verify_crashes(pin, proof["crash_qualification"])
+        args.output.write_text(json.dumps(result, indent=2) + "\n")
+        raise SystemExit(0)
     result = verify(pin, json.loads(args.summary.read_text())) if args.summary else pin
     if args.crash_summary:
         if not args.summary:
