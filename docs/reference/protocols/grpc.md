@@ -141,16 +141,21 @@ Breaking changes require a new major version introduced alongside the old one: o
 
 CI enforcement: protobuf changes in the `Geospatial.Grpc` package must pass a breaking-change linter (`buf breaking`) against the latest release tag, and the server pins a specific package version so consumer breaks fail the build.
 
-The server currently pins `Geospatial.Grpc` **0.2.0-alpha.1**. The separate
-protocol package has published a 1.0.0 release, but that does not change the
-server's supported binding until the server dependency is upgraded and its
-compatibility evidence is refreshed.
+The server pins `Geospatial.Grpc` **1.0.0**, which is on
+[nuget.org](https://www.nuget.org/packages/Geospatial.Grpc/) and restores
+anonymously.
 
-### Pre-1.0 exception
+### The freeze is binding
 
-The pinned `Geospatial.Grpc` package is still pre-1.0, and its [`VERSIONING.md` Pre-1.0 Exception](https://github.com/honua-io/geospatial-grpc/blob/main/VERSIONING.md) permits a coordinated structural break inside `geospatial.v1` while the package major version is `0.x`. The freeze described above becomes binding at `1.0.0`.
+`1.0.0` promotes the `geospatial.v1` schema settled in `0.2.0-alpha.1` to the
+permanent v1 compatibility contract in
+[`VERSIONING.md`](https://github.com/honua-io/geospatial-grpc/blob/trunk/VERSIONING.md),
+with no wire-surface change from that baseline. The Pre-1.0 Exception that
+permitted a coordinated structural break inside `geospatial.v1` while the package
+major version was `0.x` therefore no longer applies: the freeze described above
+is binding, and bindings generated from `1.0.0` stay valid.
 
-One such break has been exercised. `0.2.0-alpha.1` (geospatial-grpc#48 Option A) promoted the duplicated job-lifecycle control-plane messages to `execution_types.proto` and converged `SpecService` onto them, and `0.1.0-alpha.3` unified the severity enums and widened feature-query pagination. The protobuf package stayed `geospatial.v1`, so no client support floor moved, but callers built against `0.1.x` bindings must regenerate. The changes that alter what a client reads:
+Two such breaks were exercised before the freeze. `0.2.0-alpha.1` (geospatial-grpc#48 Option A) promoted the duplicated job-lifecycle control-plane messages to `execution_types.proto` and converged `SpecService` onto them, and `0.1.0-alpha.3` unified the severity enums and widened feature-query pagination. The protobuf package stayed `geospatial.v1`, so no client support floor moved, but callers built against `0.1.x` bindings must regenerate. The changes that alter what a client reads:
 
 | Change | Before | After |
 | --- | --- | --- |
