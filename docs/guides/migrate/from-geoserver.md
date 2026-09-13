@@ -8,7 +8,9 @@ resource: "honua://capability/import.geoserver"
 
 Use `honua-migrate` to scan a GeoServer catalog, complete a server-validated dry-run plan, apply the reviewed catalog with explicit acknowledgement, and monitor the resulting Honua job.
 
-**Prerequisites:** a running Honua server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), the [`honua-migrate`](https://github.com/honua-io/honua-migrate) CLI, Redis-backed jobs, and GeoServer REST credentials.
+**Prerequisites:** a running Honua server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), the `honua-migrate` CLI (`pipx install honua-migrate` - pipx keeps it isolated,
+which avoids the [console-script collision](https://github.com/honua-io/honua-migrate/blob/trunk/docs/console-script-collision.md)
+with `honua-sdk`'s legacy launcher), Redis-backed jobs, and GeoServer REST credentials.
 
 Set the local Honua credential and source details:
 

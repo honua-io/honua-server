@@ -133,7 +133,10 @@ Then send these calls one at a time:
 ```
 
 Start the candidate-pinned DevOps stdio client with `honua-devops --mcp` in
-the terminal client configuration. Its bounded workflow reads this same
+the terminal client configuration. That client comes from
+[`honua-devops`](https://github.com/honua-io/honua-devops), which is public source
+under a proprietary licence and is built from source or run as a container rather
+than installed from a package registry; the rest of this scenario works without it. Its bounded workflow reads this same
 server evidence and explains the stable finding ID and bounded evidence
 references. It must not reconstruct the hidden executable action payload.
 An empty `supportedKinds` result means no registered typed actuator is

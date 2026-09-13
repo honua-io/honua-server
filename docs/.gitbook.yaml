@@ -170,7 +170,8 @@ redirects:
   developer/spec-grounding/v1.0: developer/spec-grounding/spec-grounding-v1.0.md
   # Retired: multi-tenant operation is not an available feature.
   guides/deploy/tenancy: guides/deploy/README.md
-  # Requires honua-devops, which is private and documented nowhere, so it is
-  # not a journey a customer can follow. Moved to the contributor tree.
+  # Requires honua-devops, which publishes no package and is licensed
+  # separately, so it is not a journey a customer can follow from these docs.
+  # Moved to the contributor tree.
   get-started/one-terminal-setup: get-started/quickstart.md
 

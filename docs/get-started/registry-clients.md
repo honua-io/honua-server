@@ -25,47 +25,19 @@ pins, not a claim that this Python journey rehearsed those clients. Do not
 install all ecosystems to complete the quickstart. The publication record beside
 the manifest identifies its immutable source and byte hash.
 
-## Optional NuGet credential setup in PowerShell
+## Installing the .NET client
 
-Use this only for the GitHub Packages feed. Install the .NET SDK first. A classic
-PAT may also need organization SSO authorization. Enter it at the secure prompt;
-it is kept in the current process environment for NuGet, not committed in a config
-file. The configuration is scoped to a new sample project. NuGet.org remains
-available for public dependencies; Honua packages are mapped to GitHub Packages.
+`Honua.Sdk` and the rest of the `Honua.Sdk*` family are on nuget.org and install
+anonymously:
 
-```powershell
-$ErrorActionPreference = 'Stop'
-$Sample = 'honua-dotnet-' + [Guid]::NewGuid().ToString('N').Substring(0, 12)
-New-Item -ItemType Directory -Path $Sample | Out-Null
-Set-Location -LiteralPath $Sample
+```bash
 dotnet new console
-if ($LASTEXITCODE -ne 0) { throw 'Sample project creation failed' }
-@'
-<?xml version="1.0" encoding="utf-8"?>
-<configuration>
-  <packageSources>
-    <clear />
-    <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
-    <add key="honua" value="https://nuget.pkg.github.com/honua-io/index.json" />
-  </packageSources>
-  <packageSourceMapping>
-    <packageSource key="honua"><package pattern="Honua.*" /></packageSource>
-    <packageSource key="nuget.org"><package pattern="*" /></packageSource>
-  </packageSourceMapping>
-</configuration>
-'@ | Set-Content -LiteralPath NuGet.Config -Encoding UTF8
-$Login = Read-Host 'GitHub login with package access'
-$Token = Read-Host 'Classic PAT with read:packages' -AsSecureString
-$Pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Token)
-try {
-    $env:NuGetPackageSourceCredentials_honua = 'Username=' + $Login + ';Password=' + [Runtime.InteropServices.Marshal]::PtrToStringBSTR($Pointer) + ';ValidAuthenticationTypes=Basic'
-    dotnet add package Honua.Sdk --version 1.6.4
-    if ($LASTEXITCODE -ne 0) { throw 'NuGet package restore failed; check package access and SSO' }
-} finally {
-    Remove-Item Env:NuGetPackageSourceCredentials_honua -ErrorAction SilentlyContinue
-    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($Pointer)
-    $Token.Dispose()
-}
+dotnet add package Honua.Sdk
 ```
+
+No feed to add, no token, no package-source mapping. The same builds are also
+mirrored to GitHub Packages, which does require a classic PAT with `read:packages`
+and may need organization SSO authorization - use it only if you have a specific
+reason to prefer that feed.
 
 Return to the [quickstart](quickstart.md) for the Python installation journey.

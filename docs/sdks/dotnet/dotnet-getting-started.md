@@ -10,35 +10,22 @@ Install the Honua .NET SDK, point a client at your server, authenticate with an 
 
 **Prerequisites:** A running Honua server ([quickstart](../../get-started/quickstart.md)) with at least one published layer ([publish layers](../../guides/publish/publish-layers.md)), the .NET 10 SDK, and an API key (see [Authenticate clients](../../guides/secure/authentication.md) — the SDK landing page shows how to [mint a scoped key](../README.md#authentication)).
 
-The .NET SDK ships as `Honua.Sdk` — an umbrella package over a family of `Honua.Sdk.*` libraries (`Honua.Sdk.Grpc`, `Honua.Sdk.Admin`, `Honua.Sdk.GeoServices`, `Honua.Sdk.Catalogs`, and more). It is built for dependency injection and `Microsoft.Extensions.Hosting`. The current published release is **1.6.0**, targeting **net10.0**.
+The .NET SDK ships as `Honua.Sdk` — an umbrella package over a family of `Honua.Sdk.*` libraries (`Honua.Sdk.Grpc`, `Honua.Sdk.Admin`, `Honua.Sdk.GeoServices`, `Honua.Sdk.Catalogs`, and more). It is built for dependency injection and `Microsoft.Extensions.Hosting`. The current published release is **1.6.4**, targeting **net10.0**.
 
 ## Steps
 
 ### 1. Install the package
 
-> **`Honua.Sdk*` is not on nuget.org yet.** It is published to GitHub Packages, which requires
-> authentication even for public packages, so a bare `dotnet add package Honua.Sdk` fails with
-> `NU1101`. Add the feed first. See
-> [honua-sdk-dotnet INSTALL.md](https://github.com/honua-io/honua-sdk-dotnet/blob/trunk/INSTALL.md)
-> for the full path, including PAT scopes.
-
 ```bash
-dotnet nuget add source "https://nuget.pkg.github.com/honua-io/index.json" \
-  --name honua \
-  --username YOUR_GITHUB_USERNAME \
-  --password YOUR_GITHUB_PAT \
-  --store-password-in-clear-text
-
-dotnet add package Honua.Sdk --version 1.6.0 \
-  --source "https://nuget.pkg.github.com/honua-io/index.json"
+dotnet add package Honua.Sdk
 ```
 
-Pass `--version` explicitly: an unversioned `dotnet add package` against this feed reports
-`There are no versions available for the package`, even when the feed is correctly
-authenticated and populated. Prefer the full feed URL over the `--name honua` alias, which can
-degrade to a filesystem-path lookup (`NU1301`) within a session.
+Every `Honua.Sdk*` package is on [nuget.org](https://www.nuget.org/packages/Honua.Sdk/) and
+installs anonymously - no feed to add, no token to mint. The same builds are also mirrored to
+GitHub Packages, which requires a PAT even for public packages; prefer nuget.org unless you
+have a specific reason not to.
 
-The umbrella package pulls in the per-protocol clients. If you only need one surface — for example the gRPC feature client — you can reference it directly instead (`dotnet add package Honua.Sdk.Grpc --version 1.6.0`).
+The umbrella package pulls in the per-protocol clients. If you only need one surface — for example the gRPC feature client — you can reference it directly instead (`dotnet add package Honua.Sdk.Grpc`).
 
 ### 2. Register a client
 
