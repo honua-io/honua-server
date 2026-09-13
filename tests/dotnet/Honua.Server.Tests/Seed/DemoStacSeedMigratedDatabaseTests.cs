@@ -11,7 +11,6 @@ using Honua.Server.Startup;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Honua.TestKit.Helpers;
 using Honua.TestKit.Mixins;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -89,27 +88,30 @@ public sealed class DemoStacSeedMigratedDatabaseTests
             using var client = factory.CreateClient();
 
             // --- seeded: the canary's items probe (limit=2) and the full collection -----------
-            (await SendAsync(client, HttpMethod.Get, CollectionPath)).StatusCode.Should().Be(HttpStatusCode.OK);
+            using (var collection = await ReadJsonAsync(client, HttpMethod.Get, CollectionPath))
+            {
+                collection.RootElement.GetProperty("id").GetString().Should().Be(CollectionId);
+            }
 
-            using (var canaryItems = await ReadFeatureCollectionAsync(client, HttpMethod.Get, CollectionPath + "/items?limit=2"))
+            using (var canaryItems = await ReadJsonAsync(client, HttpMethod.Get, CollectionPath + "/items?limit=2"))
             {
                 AssertPage(canaryItems.RootElement, expectedReturned: 2, expectNextLink: true);
             }
 
-            using (var allItems = await ReadFeatureCollectionAsync(client, HttpMethod.Get, CollectionPath + "/items?limit=25"))
+            using (var allItems = await ReadJsonAsync(client, HttpMethod.Get, CollectionPath + "/items?limit=25"))
             {
                 AssertPage(allItems.RootElement, expectedReturned: 4, expectNextLink: false);
                 AssertScenes(allItems.RootElement, _reefWatchScenes);
             }
 
             // --- seeded: the canary's search probe and a full, then spatially bounded, search ---
-            using (var canarySearch = await ReadFeatureCollectionAsync(
+            using (var canarySearch = await ReadJsonAsync(
                 client, HttpMethod.Post, SearchPath, $$"""{"collections":["{{CollectionId}}"],"limit":2}"""))
             {
                 AssertPage(canarySearch.RootElement, expectedReturned: 2, expectNextLink: true);
             }
 
-            using (var allSearch = await ReadFeatureCollectionAsync(
+            using (var allSearch = await ReadJsonAsync(
                 client, HttpMethod.Post, SearchPath, $$"""{"collections":["{{CollectionId}}"],"limit":25}"""))
             {
                 AssertPage(allSearch.RootElement, expectedReturned: 4, expectNextLink: false);
@@ -118,7 +120,7 @@ public sealed class DemoStacSeedMigratedDatabaseTests
 
             // This box holds Reef-01 and Reef-03 plus Coastal-01 of collection 90820, which the
             // collections filter must exclude.
-            using (var boundedSearch = await ReadFeatureCollectionAsync(
+            using (var boundedSearch = await ReadJsonAsync(
                 client,
                 HttpMethod.Post,
                 SearchPath,
@@ -162,6 +164,12 @@ public sealed class DemoStacSeedMigratedDatabaseTests
                 // Migrations are already applied by the runner above.
                 builder.UseSetting("HONUA_SKIP_MIGRATIONS", "true");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+                // Serve through the production Postgres composition (feature readers, Metadata v2
+                // graph store), as the deployed image does. A Test host otherwise skips it. The
+                // composition binds the metadata environment while services are registered, so
+                // both settings must be host settings rather than late app configuration.
+                builder.UseSetting("HONUA_REGISTER_TEST_INFRASTRUCTURE", "true");
+                builder.UseSetting("Metadata:Environment", MetadataEnvironment);
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(
                         WebAppFixturePostgresWiringMixin.BuildAppConfigurationDictionary(
@@ -238,7 +246,7 @@ public sealed class DemoStacSeedMigratedDatabaseTests
         }
     }
 
-    private static async Task<JsonDocument> ReadFeatureCollectionAsync(
+    private static async Task<JsonDocument> ReadJsonAsync(
         HttpClient client,
         HttpMethod method,
         string path,
