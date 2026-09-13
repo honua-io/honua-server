@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
@@ -37,12 +38,14 @@ internal sealed class EdrHandler
 
     private readonly IMetadataV2GraphProvider _graphProvider;
     private readonly IRasterStore _rasterStore;
+    private readonly ICoordinateTransformService _coordinateTransformService;
 
     public EdrHandler(EdrDependencies dependencies)
     {
         ArgumentNullException.ThrowIfNull(dependencies);
         _graphProvider = dependencies.GraphProvider;
         _rasterStore = dependencies.RasterStore;
+        _coordinateTransformService = dependencies.CoordinateTransformService;
     }
 
     public static IResult GetLandingPage(HttpContext context)
@@ -110,7 +113,8 @@ internal sealed class EdrHandler
                 continue;
             }
 
-            collections.Add(BuildCollection(entry.Resource, storageLayerId.Value, raster.Value, baseUrl));
+            collections.Add(await BuildCollectionAsync(entry.Resource, storageLayerId.Value, raster.Value, baseUrl, cancellationToken)
+                .ConfigureAwait(false));
         }
 
         var links = ImmutableArray.Create(
@@ -131,7 +135,8 @@ internal sealed class EdrHandler
         }
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-        var collection = BuildCollection(resolution.Resource!, resolution.StorageLayerId, resolution.Raster, baseUrl);
+        var collection = await BuildCollectionAsync(resolution.Resource!, resolution.StorageLayerId, resolution.Raster, baseUrl, cancellationToken)
+            .ConfigureAwait(false);
         return Results.Json(collection, EdrJsonContext.Default.EdrCollection);
     }
 
@@ -150,8 +155,11 @@ internal sealed class EdrHandler
                 context, "Query parameter 'coords' must be a WKT POINT, e.g. coords=POINT(-122.4 37.8).");
         }
 
+        // coords are CRS84 lon/lat while RasterInfo.Extent is in the raster's storage CRS, so the
+        // gate compares against the CRS84-transformed extent (#4149).
         var raster = resolution.Raster;
-        if (!WithinExtent(raster.Extent, lon, lat))
+        var crs84Extent = await ResolveCrs84ExtentAsync(raster, cancellationToken).ConfigureAwait(false);
+        if (!WithinExtent(crs84Extent, lon, lat))
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context, "Requested position is outside the collection spatial extent.");
@@ -345,7 +353,12 @@ internal sealed class EdrHandler
 
     // ---- metadata building ----
 
-    private static EdrCollection BuildCollection(MetadataV2Resource resource, int storageLayerId, RasterInfo raster, string baseUrl)
+    private async Task<EdrCollection> BuildCollectionAsync(
+        MetadataV2Resource resource,
+        int storageLayerId,
+        RasterInfo raster,
+        string baseUrl,
+        CancellationToken cancellationToken)
     {
         var collectionId = storageLayerId.ToString(CultureInfo.InvariantCulture);
         var basePath = $"{baseUrl}/edr/collections/{Uri.EscapeDataString(collectionId)}";
@@ -354,14 +367,27 @@ internal sealed class EdrHandler
         Extent? extent = null;
         if (raster.Extent is { } e)
         {
+            // The storage-CRS extent is advertised in CRS84 (#4149). If the storage CRS cannot be
+            // transformed, the native bbox is labelled with its own EPSG CRS instead of CRS84, as
+            // OGC API - Coverages does for the same layer.
+            var crs84Extent = await ResolveCrs84ExtentAsync(raster, cancellationToken).ConfigureAwait(false);
             extent = new Extent
             {
-                Spatial = new SpatialExtent
-                {
-                    BoundingBox = ImmutableArray.Create(
-                        ImmutableArray.Create(e.XMin, e.YMin, e.XMax, e.YMax)),
-                    Crs = Crs84
-                }
+                Spatial = crs84Extent is { } bbox
+                    ? new SpatialExtent
+                    {
+                        BoundingBox = ImmutableArray.Create(
+                            ImmutableArray.Create(bbox.MinLon, bbox.MinLat, bbox.MaxLon, bbox.MaxLat)),
+                        Crs = Crs84
+                    }
+                    : new SpatialExtent
+                    {
+                        BoundingBox = ImmutableArray.Create(
+                            ImmutableArray.Create(e.XMin, e.YMin, e.XMax, e.YMax)),
+                        Crs = string.Create(
+                            CultureInfo.InvariantCulture,
+                            $"http://www.opengis.net/def/crs/EPSG/0/{ResolveStorageSrid(raster)}")
+                    }
             };
         }
 
@@ -598,14 +624,42 @@ internal sealed class EdrHandler
         return values;
     }
 
-    private static bool WithinExtent(RasterExtent? extent, double lon, double lat)
+    // RasterInfo.Extent is populated in the raster's storage SRID, not CRS84 (#4149).
+    private async Task<(double MinLon, double MinLat, double MaxLon, double MaxLat)?> ResolveCrs84ExtentAsync(
+        RasterInfo raster,
+        CancellationToken cancellationToken)
+    {
+        if (raster.Extent is not { } e)
+        {
+            return null;
+        }
+
+        return await OgcExtentTransformer
+            .TryTransformExtentToCrs84Async(
+                e.XMin,
+                e.YMin,
+                e.XMax,
+                e.YMax,
+                ResolveStorageSrid(raster),
+                _coordinateTransformService,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static int ResolveStorageSrid(RasterInfo raster)
+        => raster.Extent?.Srid ?? raster.Srid ?? 4326;
+
+    private static bool WithinExtent(
+        (double MinLon, double MinLat, double MaxLon, double MaxLat)? extent,
+        double lon,
+        double lat)
     {
         if (extent is not { } e)
         {
-            return true; // No declared extent: accept and let the store decide.
+            return true; // No declared or transformable extent: accept and let the store decide.
         }
 
-        return lon >= e.XMin && lon <= e.XMax && lat >= e.YMin && lat <= e.YMax;
+        return lon >= e.MinLon && lon <= e.MaxLon && lat >= e.MinLat && lat <= e.MaxLat;
     }
 
     private static int BandIndex(string parameterName)

@@ -249,6 +249,125 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Metadata, Operations.Query, Operations.ErrorHandling)]
+    [Endpoint("GET /edr/collections")]
+    [Endpoint("GET /edr/collections/{collectionId}")]
+    [Endpoint("GET /edr/collections/{collectionId}/position")]
+    public async Task Edr_WebMercatorRaster_AdvertisesCrs84ExtentAndGatesPositionInCrs84()
+    {
+        // #4149: RasterInfo.Extent is in the storage SRID. A San Francisco raster stored in EPSG:3857
+        // previously advertised its metre bbox labelled CRS84 and rejected every lon/lat position.
+        // The expected CRS84 bbox uses the spherical inverse Mercator closed form, independent of
+        // the server's transform code.
+        const double minX = -13637750;
+        const double minY = 4539250;
+        const double maxX = -13614250;
+        const double maxY = 4560250;
+        UsePrimaryRaster(CreateRasterInfo() with
+        {
+            Srid = 3857,
+            GeoTransform = [minX, 367.1875, 0, maxY, 0, -328.125],
+            Extent = new RasterExtent { XMin = minX, YMin = minY, XMax = maxX, YMax = maxY, Srid = 3857 }
+        });
+
+        var (minLon, minLat) = InverseWebMercator(minX, minY);
+        var (maxLon, maxLat) = InverseWebMercator(maxX, maxY);
+
+        using (var collectionDoc = await GetJsonAsync($"/edr/collections/{WebAppFixture.TestLayerId}"))
+        {
+            AssertCrs84Bbox(collectionDoc.RootElement, minLon, minLat, maxLon, maxLat);
+        }
+
+        using (var collectionsDoc = await GetJsonAsync("/edr/collections"))
+        {
+            AssertCrs84Bbox(collectionsDoc.RootElement.GetProperty("collections")[0], minLon, minLat, maxLon, maxLat);
+        }
+
+        using (var positionDoc = await GetJsonAsync(
+                   $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords=POINT(-122.4 37.8)"))
+        {
+            positionDoc.RootElement.GetProperty("ranges").GetProperty("band_1").GetProperty("values")
+                .EnumerateArray().First().GetDouble().Should().Be(11.0);
+        }
+
+        await _rasterStore.Received().IdentifyAsync(
+            WebAppFixture.TestLayerId,
+            TestRasterId,
+            -122.4,
+            37.8,
+            4326,
+            null,
+            Arg.Any<CancellationToken>());
+
+        // A lon/lat outside the CRS84 extent (Sacramento) is still rejected.
+        var outside = await _fixture.Client.GetAsync(
+            $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords=POINT(-121.5 38.6)");
+        outside.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata, Operations.Query)]
+    [Endpoint("GET /edr/collections/{collectionId}")]
+    [Endpoint("GET /edr/collections/{collectionId}/position")]
+    public async Task Edr_UtmRaster_AdvertisesCrs84ExtentAndAcceptsLonLatPosition()
+    {
+        // #4149 for a CRS the in-memory transformer does not cover: a UTM zone 10N (EPSG:32610)
+        // raster around San Francisco reprojects through the coordinate transform service.
+        UsePrimaryRaster(CreateRasterInfo() with
+        {
+            Srid = 32610,
+            GeoTransform = [540000, 312.5, 0, 4190000, 0, -312.5],
+            Extent = new RasterExtent { XMin = 540000, YMin = 4170000, XMax = 560000, YMax = 4190000, Srid = 32610 }
+        });
+
+        using (var collectionDoc = await GetJsonAsync($"/edr/collections/{WebAppFixture.TestLayerId}"))
+        {
+            var spatial = collectionDoc.RootElement.GetProperty("extent").GetProperty("spatial");
+            spatial.GetProperty("crs").GetString().Should().Be("http://www.opengis.net/def/crs/OGC/1.3/CRS84");
+            var bbox = spatial.GetProperty("bbox")[0].EnumerateArray().Select(v => v.GetDouble()).ToArray();
+
+            // Zone 10N is centred on -123 degrees; eastings 540-560 km near 37.8N sit between
+            // roughly -122.55 and -122.32 degrees longitude, northings 4170-4190 km between 37.67N
+            // and 37.86N. The bounds must be degrees bracketing the city, never metres.
+            bbox[0].Should().BeInRange(-122.6, -122.4);
+            bbox[1].Should().BeInRange(37.6, 37.8);
+            bbox[2].Should().BeInRange(-122.4, -122.2);
+            bbox[3].Should().BeInRange(37.8, 37.95);
+        }
+
+        using var positionDoc = await GetJsonAsync(
+            $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords=POINT(-122.4 37.8)");
+        positionDoc.RootElement.GetProperty("ranges").GetProperty("band_1").GetProperty("values")
+            .EnumerateArray().First().GetDouble().Should().Be(11.0);
+    }
+
+    private void UsePrimaryRaster(RasterInfo raster)
+    {
+        _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(raster));
+    }
+
+    private static (double Lon, double Lat) InverseWebMercator(double x, double y)
+    {
+        const double earthRadius = 6378137.0;
+        return (
+            x / earthRadius * 180.0 / Math.PI,
+            (2.0 * Math.Atan(Math.Exp(y / earthRadius)) - Math.PI / 2.0) * 180.0 / Math.PI);
+    }
+
+    private static void AssertCrs84Bbox(JsonElement collection, double minLon, double minLat, double maxLon, double maxLat)
+    {
+        var spatial = collection.GetProperty("extent").GetProperty("spatial");
+        spatial.GetProperty("crs").GetString().Should().Be("http://www.opengis.net/def/crs/OGC/1.3/CRS84");
+        var bbox = spatial.GetProperty("bbox")[0].EnumerateArray().Select(v => v.GetDouble()).ToArray();
+        bbox.Should().HaveCount(4);
+        bbox[0].Should().BeApproximately(minLon, 1e-9);
+        bbox[1].Should().BeApproximately(minLat, 1e-9);
+        bbox[2].Should().BeApproximately(maxLon, 1e-9);
+        bbox[3].Should().BeApproximately(maxLat, 1e-9);
+    }
+
     private async Task<JsonDocument> GetJsonAsync(string uri)
     {
         var response = await _fixture.Client.GetAsync(uri);
