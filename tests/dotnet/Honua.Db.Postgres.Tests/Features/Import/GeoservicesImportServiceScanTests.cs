@@ -329,6 +329,43 @@ public sealed class GeoservicesImportServiceScanTests
     }
 
     /// <summary>
+    /// #4600 review: a domain the edit validator cannot enforce (unknown type, no coded values, or no
+    /// numeric range bounds) is persisted but accepts every value, so it must not count as automated.
+    /// </summary>
+    [Theory]
+    [InlineData("""{ "type": "codedValue", "name": "EmptyCodes", "codedValues": [] }""")]
+    [InlineData("""{ "type": "mysteryDomain", "name": "Unknown" }""")]
+    [InlineData("""{ "type": "range", "name": "OneBound", "range": [5] }""")]
+    [InlineData("""{ "type": "range", "name": "WordBounds", "range": ["low", "high"] }""")]
+    public async Task ScanSourceAsync_UnenforceableDomain_ClassifiesDomainsAsManualReview(string domainJson)
+    {
+        var fieldsJson = $$"""
+            [
+              { "name": "OBJECTID", "type": "esriFieldTypeOID" },
+              { "name": "zone", "type": "esriFieldTypeString",
+                "domain": { "type": "codedValue", "name": "ZoneDomain", "codedValues": [{ "code": "R1", "name": "Residential" }] } },
+              { "name": "odd", "type": "esriFieldTypeInteger", "domain": {{domainJson}} }
+            ]
+            """;
+        var service = CreateService(new GeoservicesScanHandler(
+            serviceDescription: "Parcel Viewer",
+            spatialReferenceJson: """{"wkid":3857}""",
+            fieldsJson: fieldsJson));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5
+        });
+
+        var domains = artifact.FidelityClassifications.Should().ContainSingle(c => c.Category == "domains").Subject;
+        domains.AutomationStatus.Should().Be(MigrationFidelityAutomationStatuses.ManualReview);
+        domains.Code.Should().Be(ImportCompatibilityCodes.ManualReview);
+        domains.ManualSteps.Should().ContainSingle();
+        domains.Metadata.Should().Contain("unenforceableDomainCount", "1").And.NotContainKey("truncatedDomainCount");
+    }
+
+    /// <summary>
     /// Two domain fields: <c>zone</c> carries a coded-value domain with <paramref name="entryCount"/>
     /// entries and <c>score</c> a range domain, so the domain field count is 2 either way.
     /// </summary>
