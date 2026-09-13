@@ -104,12 +104,11 @@ internal sealed class AdminPortalCredentialVerifier(
 
     private PortalCredentialPrincipal? CreateManagedKeyPrincipal(AdminApiKeyRecord record)
     {
-        // This bridge mints an admin role, not API-key permission, layer-write,
-        // or approved-operation claims. Refuse credentials whose authority it
-        // cannot preserve. Use the same grant grammar and operation precedence
-        // as ApiKeyAuthenticationHandler rather than widening scoped keys.
-        if (!LayerScopedWriteKey.ConfersFullAdmin(record.Permissions) ||
-            record.Permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant))
+        // This bridge mints token roles, not API-key permission, layer-write, or
+        // approved-operation claims. Refuse credentials whose authority it cannot
+        // preserve rather than widening scoped keys (#4577).
+        var roles = ManagedKeyExchangeAuthority.ResolveTokenRoles(record.Permissions);
+        if (roles is null)
         {
             return null;
         }
@@ -118,7 +117,7 @@ internal sealed class AdminPortalCredentialVerifier(
             PrincipalId: AdminUsername,
             DisplayName: record.Name,
             TenantId: _tenantContext?.TenantId,
-            Roles: AdminRoles);
+            Roles: roles);
     }
 
     private async Task<string?> ResolveAdminPasswordAsync(CancellationToken cancellationToken)

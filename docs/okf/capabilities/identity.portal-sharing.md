@@ -18,7 +18,7 @@ Expose the read-only /sharing/rest Portal facade (info, portals/self, search, co
 | Edition | Community |
 | Surface maturity | 20 implemented |
 | Registry entries | 20 |
-| Proving tests | 68 |
+| Proving tests | 71 |
 
 The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, both generated from the server's own registry and test evidence. This page is a pure function of those two files — nothing in it depends on what the prose happens to say, so an unrelated documentation edit cannot stale it.
 
