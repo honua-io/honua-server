@@ -29,6 +29,16 @@ case "${lane}" in
   output-store)
     declared_scenarios=(topology output-store-attestation cleanup)
     ;;
+  crash-boundaries)
+    declared_scenarios=(topology)
+    for boundary in output-bytes-written-unpublished artifact-reference-published-terminal-cas-pending terminal-committed-registration-pending; do
+      declared_scenarios+=("crash-${boundary}-worker" "crash-${boundary}-store")
+    done
+    declared_scenarios+=(cleanup)
+    ;;
+  output-store-dr)
+    declared_scenarios=(topology output-store-attestation output-store-dr cleanup)
+    ;;
   lifecycle)
     declared_scenarios=(topology output-store-attestation sync async cancel-claimed cancel-native-process-started \
       cancel-output-bytes-written-unpublished cancel-artifact-reference-published-terminal-cas-pending \
@@ -47,7 +57,7 @@ case "${lane}" in
     declared_scenarios=(assertion-failure follow-up cleanup)
     ;;
   *)
-    echo "HONUA_GP_LANE must be output-store, lifecycle, resilience, or self-test" >&2
+    echo "HONUA_GP_LANE must be output-store, output-store-dr, crash-boundaries, lifecycle, resilience, or self-test" >&2
     exit 2
     ;;
 esac
@@ -604,7 +614,7 @@ normalized_descriptor() {
 # credential-free store evidence, and keeps staged bytes byte-identical when
 # every producer and consumer container is replaced rather than restarted.
 run_output_store_attestation() {
-  local scenario=output-store-attestation job terminal state declared
+  local scenario="${1:-output-store-attestation}" job terminal state declared
   local ephemeral_root ephemeral_log ephemeral_code attestation
   local before_ids after_ids objects worker_before worker_after worker_attestation
   local content_before content_after sha_before sha_after descriptor_before descriptor_after
@@ -668,6 +678,7 @@ run_output_store_attestation() {
     write_receipt "${scenario}" fail "FINDING: staged output job did not reach a terminal state" "${job}"; return 1; }
   state="$(jq -r '.status' <<<"${terminal}")"
   [[ "${state}" == successful ]] || {
+    printf '%s\n' "${terminal}" > "${scenario_evidence_file}"
     write_receipt "${scenario}" fail "unexpected terminal state" "${job}" "${state}"; return 1; }
   objects="$(object_file_count "${job}")"
   (( objects > 0 )) || {
@@ -705,9 +716,18 @@ run_output_store_attestation() {
   before_ids="$(compose ps -q server server-peer worker | LC_ALL=C sort | paste -sd, -)"
   worker_before="$(compose ps -q worker | head -1)"
   record_disruption store replacement before-replace
-  compose up -d --force-recreate server server-peer worker >/dev/null || {
-    rm -f "${content_before}"
-    write_receipt "${scenario}" fail "replacement containers failed to start" "${job}" "${state}"; return 1; }
+  if [[ "${scenario}" == output-store-dr ]]; then
+    python3 "${repo_root}/scripts/qualification/gp-store-recovery.py" \
+      --compose-file "${compose_file}" --project "${project_name}" \
+      --object-root "${object_root}" --backup-dir "${receipt_root}/backups" \
+      --receipt "${receipt_root}/.recovery.json" || {
+        rm -f "${content_before}"
+        write_receipt "${scenario}" fail "FINDING: staged-output backup/restore failed" "${job}" "${state}"; return 1; }
+  else
+    compose up -d --force-recreate server server-peer worker >/dev/null || {
+      rm -f "${content_before}"
+      write_receipt "${scenario}" fail "replacement containers failed to start" "${job}" "${state}"; return 1; }
+  fi
   wait_ready && wait_peer_ready || {
     rm -f "${content_before}"
     write_receipt "${scenario}" fail "FINDING: the replaced topology did not become ready against the attested store" "${job}" "${state}"
@@ -779,6 +799,11 @@ run_output_store_attestation() {
     write_receipt "${scenario}" fail "FINDING: staged output descriptor changed across replacement" "${job}" "${state}"; return 1; }
 
   set_scenario_evidence "$(jq -n --arg digest "${declared}" --arg attestation "${attestation}" --arg worker_attestation "${worker_attestation}" --arg sha_before "${sha_before}" --arg sha_after "${sha_after}" --arg before_ids "${before_ids}" --arg after_ids "${after_ids}" --argjson objects "${objects}" --argjson descriptor "$(normalized_descriptor "${descriptor_after}" "${peer_url}")" '{store:{configuration_digest:$digest,attestation:$attestation,worker_attestation:$worker_attestation},unattested_root:{accepted:false,self_provisioned:false},staged_objects:$objects,replacement:{before_container_ids:$before_ids,after_container_ids:$after_ids},artifact:{sha256_before:$sha_before,sha256_after:$sha_after,descriptor_after_host_normalized:$descriptor}}')"
+  if [[ "${scenario}" == output-store-dr ]]; then
+    jq --slurpfile recovery "${receipt_root}/.recovery.json" '.recovery=$recovery[0]' \
+      "${scenario_evidence_file}" > "${scenario_evidence_file}.tmp" || return 1
+    mv "${scenario_evidence_file}.tmp" "${scenario_evidence_file}"
+  fi
   write_receipt "${scenario}" pass "" "${job}" "${state}" "${sha_after}"
 }
 
@@ -1225,6 +1250,9 @@ run_scenario() {
   if (( result != 0 )); then
     outcome=fail
     finding="${scenario_finding:-${preflight_failure:-scenario execution failed}}"
+    if [[ "${lane}" != self-test && -f "${observed_candidate_file}" ]]; then
+      compose logs --no-color --tail 1000 > "${receipt_root}/${name}.log" 2>&1 || true
+    fi
   fi
   if [[ ! -e "${receipt_root}/${name}.json" ]]; then
     write_receipt "${name}" "${outcome}" "${finding}"
@@ -1281,7 +1309,7 @@ fill_missing_receipts() {
 
 cleanup_runtime() {
   [[ -f "${observed_candidate_file}" ]] || return 0
-  compose down --volumes --remove-orphans >/dev/null 2>&1 || { scenario_cleanup_failure="compose cleanup failed"; return 1; }
+  compose --profile crash-boundaries down --volumes --remove-orphans >/dev/null 2>&1 || { scenario_cleanup_failure="compose cleanup failed"; return 1; }
 }
 
 finish() {
@@ -1310,8 +1338,18 @@ else
     fill_missing_receipts
   }
   if [[ -z "${preflight_failure}" ]]; then
-    if [[ "${lane}" == output-store ]]; then
+    if [[ "${lane}" == output-store || "${lane}" == output-store-dr ]]; then
       run_scenario output-store-attestation run_output_store_attestation || failures=$((failures + 1))
+      if [[ "${lane}" == output-store-dr ]]; then
+        run_scenario output-store-dr run_output_store_attestation output-store-dr || failures=$((failures + 1))
+      fi
+    elif [[ "${lane}" == crash-boundaries ]]; then
+      source "${repo_root}/scripts/qualification/gp-store-crash.sh"
+      for boundary in output-bytes-written-unpublished artifact-reference-published-terminal-cas-pending terminal-committed-registration-pending; do
+        for disruption in worker store; do
+          run_scenario "crash-${boundary}-${disruption}" run_store_crash_boundary "$boundary" "$disruption" || failures=$((failures + 1))
+        done
+      done
     elif [[ "${lane}" == lifecycle ]]; then
       run_scenario output-store-attestation run_output_store_attestation || failures=$((failures + 1))
       run_scenario sync run_sync || failures=$((failures + 1))
