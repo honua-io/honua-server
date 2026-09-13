@@ -88,9 +88,28 @@ def citing_pages(key: str, display_name: str, pages: dict[pathlib.Path, str]) ->
 def render(entry: dict, facts: dict) -> str:
     key = entry["key"]
     title = entry.get("displayName") or key
+    # Never truncate. A registry description is longer than 300 characters
+    # precisely when it carries caveats, so a length cut removes the constraint
+    # and keeps the opening clause that reads like a feature announcement. All
+    # four descriptions this used to cut lost something load-bearing - that
+    # cross-tenant disclosure stays a full-severity defect, that control-plane
+    # isolation remains mandatory, that durable jobs require Redis, and what
+    # serve.grpc does not cover. OKF sets no length limit on `description`.
     description = " ".join((entry.get("description") or "").split())
-    if len(description) > 300:
-        description = description[:297].rsplit(" ", 1)[0] + "…"
+    # A capability description is a licensing and safety statement, not a
+    # summary: it is where "Preview status never lowers the security severity of
+    # cross-tenant disclosure" and "the Elastic License 2.0 prohibits providing
+    # Honua to third parties as a hosted or managed service" are said. Emitting
+    # anything other than the registry's exact words - shortened, reflowed,
+    # elided - drops the caveat and keeps the opening clause that reads like a
+    # feature announcement. Fail rather than publish a softened claim.
+    source_description = " ".join((entry.get("description") or "").split())
+    if description != source_description:
+        raise SystemExit(
+            f"{key}: emitted description differs from the registry. Capability "
+            "descriptions carry licensing and severity statements and must be "
+            "published verbatim."
+        )
 
     tags = ["capability"]
     for field in ("category", "edition"):
