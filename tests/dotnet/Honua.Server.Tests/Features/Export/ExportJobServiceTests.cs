@@ -724,9 +724,13 @@ public sealed class ExportJobServiceTests
         services.GetServices<IJobCancellationNotifier>().Any(notifier => notifier.Cancel(job.JobId)).Should().BeFalse();
     }
 
-    [UnitTest]
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
     [Operation(Operations.Export)]
-    public async Task ProcessQueuedJobAsync_RemoteRecoveryWinsCompletion_PreservesRequestForSuccessfulRetry()
+    public async Task ProcessQueuedJobAsync_RemoteRecoveryWinsCompletion_PreservesRequestForSuccessfulRetry(bool cleanupFails)
     {
         var progressStore = new InMemoryUniversalProgressStore();
         var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
@@ -759,6 +763,11 @@ public sealed class ExportJobServiceTests
                 Provider = CloudStorageProvider.AwsS3
             });
         });
+        if (cleanupFails)
+        {
+            storage.DeleteAsync("retry-artifact", Arg.Any<CancellationToken>())
+                .Returns(_ => throw new IOException("Cloud cleanup unavailable"));
+        }
         storage.GetPresignedUrlAsync("retry-artifact", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
             .Returns("https://example.test/retry.csv");
         using var services = new ServiceCollection().AddSingleton(store).AddSingleton(storage)
@@ -780,6 +789,55 @@ public sealed class ExportJobServiceTests
         uploads.Should().Be(2);
         (await cache.GetStringAsync($"export:request:{job.JobId}")).Should().BeNull();
         await storage.Received(1).DeleteAsync("retry-artifact", CancellationToken.None);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ProcessQueuedJobAsync_CompletionWinsLateCancellation_PreservesCompletedArtifact()
+    {
+        var progressStore = new InMemoryUniversalProgressStore();
+        var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var store = Substitute.For<IStreamingFeatureStore>();
+        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(_ => CreateFeatures());
+        var job = CreateJob(Guid.NewGuid().ToString("N"));
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>()).Returns(async call =>
+        {
+            await call.Arg<FileUploadRequest>().Content.CopyToAsync(Stream.Null);
+            return UploadResult.CreateSuccess(new CloudFile
+            {
+                FileId = "retry-artifact",
+                FileName = "export.csv",
+                StoragePath = "exports/export.csv",
+                ContentType = "text/csv",
+                SizeBytes = 32,
+                UploadedAt = DateTimeOffset.UtcNow,
+                Provider = CloudStorageProvider.AwsS3
+            });
+        });
+        storage.GetPresignedUrlAsync("retry-artifact", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns("https://example.test/retry.csv");
+        using var services = new ServiceCollection().AddSingleton(store).AddSingleton(storage)
+            .AddSingleton<ICrsRegistry>(new NullCrsRegistry()).BuildServiceProvider();
+        var sut = new ExportJobService(progressStore, cache, Channel.CreateUnbounded<string>(),
+            services.GetRequiredService<IServiceScopeFactory>(), NullLogger<ExportJobService>.Instance);
+        var notified = false;
+        progressStore.AfterUpdate = progress =>
+        {
+            if (progress.Status == OperationStatus.Completed) notified = sut.Cancel(job.JobId);
+        };
+        await sut.StartAsync(job);
+        await sut.ProcessQueuedJobAsync(job.JobId);
+        notified.Should().BeTrue();
+        var completed = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
+        completed!.Status.Should().Be(OperationStatus.Completed);
+        completed.ProcessedFeatures.Should().Be(1);
+        completed.DownloadUrl.Should().Be("https://example.test/retry.csv");
+        completed.OutputSizeBytes.Should().BeGreaterThan(0);
+        (await cache.GetStringAsync($"export:request:{job.JobId}")).Should().BeNull();
+        await storage.DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        Directory.Exists(Path.Join(Path.GetTempPath(), "honua-export", job.JobId)).Should().BeFalse();
     }
 
     [UnitTest]
@@ -895,6 +953,7 @@ public sealed class ExportJobServiceTests
     private sealed class InMemoryUniversalProgressStore : IUniversalProgressStore
     {
         private readonly ConcurrentDictionary<string, IOperationProgress> _entries = new(StringComparer.Ordinal);
+        public Action<IOperationProgress>? AfterUpdate { get; set; }
 
         public Task SetProgressAsync(
             string operationId,
@@ -927,6 +986,7 @@ public sealed class ExportJobServiceTests
 
                 if (_entries.TryUpdate(operationId, progress, current))
                 {
+                    AfterUpdate?.Invoke(progress);
                     return Task.FromResult(ProgressCompareAndSetResult.Updated);
                 }
             }

@@ -72,10 +72,39 @@ public sealed class StreamingGeoJsonReaderTests
         stream.Position.Should().Be(0);
     }
 
+    [Theory]
+    [InlineData(1024, 1024)]
+    [InlineData(1024, 1500)]
+    [InlineData(4096, 1500)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task ValidateAsync_OversizedToken_StopsReadingAtConfiguredBudget(int bufferSize, int budget)
+    {
+        // A root string token cannot be consumed until its closing quote arrives.
+        // Independently bound the bytes read, including non-power-of-two limits.
+        await using var stream = new FragmentedStream(
+            Encoding.UTF8.GetBytes("\"" + new string('x', budget * 4) + "\""), int.MaxValue);
+        var reader = new StreamingGeoJsonReader(new ImportLimits
+        {
+            StreamBufferSize = bufferSize,
+            MaxSingleFeatureBytes = budget
+        });
+        var act = () => reader.ValidateAsync(stream);
+        await act.Should().ThrowAsync<InvalidDataException>().WithMessage("*preflight memory budget*");
+        stream.BytesRead.Should().Be(budget);
+        stream.Position.Should().Be(0);
+    }
+
     private sealed class FragmentedStream(byte[] bytes, int chunkSize) : MemoryStream(bytes)
     {
-        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
-            => base.ReadAsync(buffer[..Math.Min(chunkSize, buffer.Length)], cancellationToken);
+        public int BytesRead { get; private set; }
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var read = await base.ReadAsync(buffer[..Math.Min(chunkSize, buffer.Length)], cancellationToken);
+            BytesRead += read;
+            return read;
+        }
     }
 
     [Fact]

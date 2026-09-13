@@ -7,6 +7,11 @@ internal static partial class ExportJobServiceLog
 {
     [LoggerMessage(
         Level = LogLevel.Warning,
+        Message = "Failed to delete artifact {FileId} for export job {JobId}; preserving the accepted job state.")]
+    public static partial void ArtifactCleanupFailed(ILogger logger, string jobId, string fileId, Exception exception);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
         Message = "Failed to roll back persisted export request metadata for job {JobId} after the progress record could not be created.")]
     public static partial void ProgressRollbackFailed(ILogger logger, string jobId, Exception exception);
 

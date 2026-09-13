@@ -316,7 +316,7 @@ internal sealed class ExportJobService(
                     }
                     if (uploadedFileId is not null)
                     {
-                        await cloudStorage.DeleteAsync(uploadedFileId, CancellationToken.None).ConfigureAwait(false);
+                        await DeleteArtifactBestEffortAsync(cloudStorage, job.JobId, uploadedFileId).ConfigureAwait(false);
                     }
                     if (completion.CurrentProgress?.Status is OperationStatus.Completed or OperationStatus.Failed)
                     {
@@ -327,10 +327,10 @@ internal sealed class ExportJobService(
                     // Keep its request available so that retry can actually execute.
                     return;
                 }
-                processingToken.ThrowIfCancellationRequested();
-
+                // Completion is terminal once its compare-and-set wins, even if a late
+                // cancellation signal arrives before request cleanup finishes.
                 _jobRequests.TryRemove(job.JobId, out _);
-                await RemovePersistedJobRequestAsync(job.JobId, processingToken).ConfigureAwait(false);
+                await RemovePersistedJobRequestAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
                 activity?.SetTag("export.output_size_bytes", fileInfo.Length);
                 activity?.SetStatus(ActivityStatusCode.Ok);
                 ExportLog.AsyncExportCompleted(_logger, job.JobId, job.TotalFeatures, fileInfo.Length);
@@ -351,7 +351,7 @@ internal sealed class ExportJobService(
                 await RemovePersistedJobRequestAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
                 if (uploadedFileId is not null)
                 {
-                    await cloudStorage.DeleteAsync(uploadedFileId, CancellationToken.None).ConfigureAwait(false);
+                    await DeleteArtifactBestEffortAsync(cloudStorage, job.JobId, uploadedFileId).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) when (userCancellation.IsCancellationRequested)
@@ -364,12 +364,19 @@ internal sealed class ExportJobService(
                     CompletedAt = DateTimeOffset.UtcNow,
                     CurrentPhase = "Cancelled by user"
                 };
-                await _progressStore.SetProgressAsync(job.JobId, cancelled, _jobRetention, CancellationToken.None).ConfigureAwait(false);
+                var cancellation = await _progressStore.TrySetProgressAsync(job.JobId, cancelled,
+                    OperationStatus.Processing, _jobRetention, CancellationToken.None).ConfigureAwait(false);
+                if (cancellation.Outcome != ProgressCompareAndSetOutcome.Updated &&
+                    cancellation.CurrentProgress?.Status != OperationStatus.Cancelled)
+                {
+                    // Another terminal state or a recovery attempt won the race.
+                    return;
+                }
                 _jobRequests.TryRemove(job.JobId, out _);
                 await RemovePersistedJobRequestAsync(job.JobId, CancellationToken.None).ConfigureAwait(false);
                 if (uploadedFileId is not null)
                 {
-                    await cloudStorage.DeleteAsync(uploadedFileId, CancellationToken.None).ConfigureAwait(false);
+                    await DeleteArtifactBestEffortAsync(cloudStorage, job.JobId, uploadedFileId).ConfigureAwait(false);
                 }
             }
             catch (OperationCanceledException) when (leaseCoordinator?.LeaseLostToken.IsCancellationRequested == true && !cancellationToken.IsCancellationRequested)
@@ -651,6 +658,19 @@ internal sealed class ExportJobService(
         }
 
         return recovered;
+    }
+
+    private async Task DeleteArtifactBestEffortAsync(ICloudFileStorage storage, string jobId, string fileId)
+    {
+        try
+        {
+            await storage.DeleteAsync(fileId, CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Cloud cleanup must not replace a cancellation or recovery winner's state.
+            ExportJobServiceLog.ArtifactCleanupFailed(_logger, jobId, fileId, ex);
+        }
     }
 
     private static string GetRequestCacheKey(string jobId) => $"{RequestCacheKeyPrefix}{jobId}";

@@ -245,7 +245,11 @@ internal sealed class StreamingGeoJsonReader
 
             // Retain only an incomplete token or feature. Parsing the whole document here
             // previously left source-sized arrays in the shared pool during the import.
-            buffer = MemoryPool.RentByteArray(_limits.StreamBufferSize);
+            var maxCapacity = _limits.MaxSingleFeatureBytes > 0
+                ? (int)Math.Min(_limits.MaxSingleFeatureBytes, Array.MaxLength)
+                : Array.MaxLength;
+            var capacity = Math.Min(_limits.StreamBufferSize, maxCapacity);
+            buffer = MemoryPool.RentByteArray(capacity);
             var buffered = 0;
             var firstChunk = true;
             var state = new JsonReaderState(new JsonReaderOptions
@@ -255,14 +259,19 @@ internal sealed class StreamingGeoJsonReader
             });
             while (true)
             {
-                if (buffered == buffer.Length)
+                if (buffered == capacity)
                 {
-                    var larger = MemoryPool.RentByteArray(checked(buffer.Length * 2));
+                    if (capacity == maxCapacity)
+                    {
+                        throw new InvalidDataException("A single GeoJSON feature or token exceeds the preflight memory budget.");
+                    }
+                    capacity = (int)Math.Min((long)capacity * 2, maxCapacity);
+                    var larger = MemoryPool.RentByteArray(capacity);
                     buffer.AsSpan(0, buffered).CopyTo(larger);
                     MemoryPool.ReturnByteArray(buffer);
                     buffer = larger;
                 }
-                var read = await stream.ReadAsync(buffer.AsMemory(buffered), cancellationToken);
+                var read = await stream.ReadAsync(buffer.AsMemory(buffered, capacity - buffered), cancellationToken);
                 buffered += read;
                 if (firstChunk)
                 {
