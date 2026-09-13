@@ -15,11 +15,13 @@ on:
     paths:
       - 'scripts/conformance/cng/**'
       - '.github/workflows/cng-conformance.yml'
+      - '.github/workflows/cng-candidate.yml'
   push:
     branches: [trunk]
     paths:
       - 'scripts/conformance/cng/**'
       - '.github/workflows/cng-conformance.yml'
+      - '.github/workflows/cng-candidate.yml'
   workflow_dispatch:
     inputs:
       server_image:
@@ -59,7 +61,7 @@ concurrency:
   # cancellation would destroy a full conformance result and produce nothing in its
   # place. Split the group by tier: self-tests serialise against self-tests, the lane
   # against the lane.
-  group: cng-conformance-${{ github.ref }}-${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call') && 'lane' || 'selftest' }}
+  group: cng-conformance-${{ github.ref }}-${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || inputs.server_image != '') && 'lane' || 'selftest' }}
   cancel-in-progress: true
 
 jobs:
@@ -219,8 +221,8 @@ jobs:
             fi
             docker tag "$SERVER_IMAGE" honua-server:latest
           fi
-          bash ./scripts/conformance/cng/run-cng-conformance.sh
-          cng_exit=$?
+          cng_exit=0
+          bash ./scripts/conformance/cng/run-cng-conformance.sh || cng_exit=$?
 
           if [[ -n "$SERVER_IMAGE" ]]; then
             image_digest="$SERVER_IMAGE"; image_digest="${image_digest##*@}"
@@ -235,6 +237,7 @@ jobs:
             source_sha="$GITHUB_SHA"
             candidate_cut_at="$(git show -s --format=%cI HEAD)"
           fi
+          client_exit=0
           python3 ./scripts/conformance/cng/validate-canonical-artifacts.py \
             --artifacts cng-results/artifacts \
             --native-results cng-results \
@@ -245,8 +248,7 @@ jobs:
             --candidate-cut-at "$candidate_cut_at" \
             --fixture-revision "docker/cng/seed.sql@$GITHUB_SHA" \
             --evidence-uri "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            --base-url "http://localhost:8094"
-          client_exit=$?
+            --base-url "http://localhost:8094" || client_exit=$?
 
           docker compose -f docker/cng/compose.yml logs --no-color honua-server \
             > cng-results/honua-server.log 2>&1 || true
