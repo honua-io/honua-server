@@ -62,6 +62,7 @@ def main():
                     if response.status == 200:
                         return
             except (OSError, urllib.error.URLError):
+                # Expected while the listener and health checks start; the bounded loop fails closed below.
                 pass
             time.sleep(1)
         raise AssertionError("candidate readiness timed out")

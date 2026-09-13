@@ -26,12 +26,12 @@ arrays and the expected process/count metadata. The oversized ring must reach
 terminal failure with an actionable vertex-limit message; normal retry/backoff
 is retained. Concurrent FeatureServer count queries must keep returning exactly 2.
 
-`layer-resource-candidate-receipt.json` records the September 12 run on the
+`layer-resource-candidate-receipt.json` records the September 13 run on the
 manifest-pinned Native AOT web image from source
 `7ba422672e0c751843b17beb36e954a019cc19fb`. Passthrough geometry and oversized-ring
 rejection passed. **Dissolve, join and buffer qualification failed:** the candidate
-completed those jobs despite the declared topology ceiling. All 474 serving probes
-passed, with maximum observed latency 0.919 seconds; the container was not OOM-killed,
+completed those jobs despite the declared topology ceiling. All 544 serving probes
+passed, with maximum observed latency 1.662 seconds; the container was not OOM-killed,
 and teardown completed. Those availability observations do not turn the failed
 resource-admission checks into a passing qualification.
 
