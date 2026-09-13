@@ -17,6 +17,45 @@ The [Windows test receipt](../../guides/operate/evidence/3302-proposal-boundary-
 records 49 passing proposal/cache tests with no skips, including nine new
 finding-proposal cases, the tested commit and source/assembly hashes.
 
+## September 13 accepted-pin recheck
+
+Resumed the matching PR/WIP continuation `docs/3302-protected-operate` at
+`647dc3fc70f84c2974ae4a4f2ada3f13f7e7b588` and rebased it onto
+`008cda56a1d584cbe7a67064d18111be77e6e2d5`. Its substantive changes already
+landed through #4745; rebase conflicts retained the upstream documents and
+generated inventory. The original #3385 branch was fetched again. The #4734
+architecture/navigation changes and #4726 local-only SLO contract are preserved.
+
+The accepted manifest fetched from the release repository has SHA-256
+`8c71ca3c29d0a09676d579f918c1a2627556f257f7ac80454fe840ff7a6e3bec` and still
+pins `7ba4226` / `sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd`.
+The [fresh staging receipt](../../guides/operate/evidence/3302-candidate-staging-recheck.json)
+was produced by the unchanged `scripts/qualification/metadata-release-installed.py`
+with `--manifest /tmp/3302-current-platform-manifest.yaml --output /tmp/3302-installed-recheck`.
+It independently checks six EPSG:4326 feature values/coordinates and the absent
+new field, then fails `prior identity missing or captured after mutation`:
+live revision 3 → 4, `owner_email` exposed during staging, no captured prior
+revision. All lane containers and the network were removed. The later recovery
+scenarios did not execute; the failed staging check was not bypassed.
+
+A separate instance using that harness's setup produced the
+[read observation](../../guides/operate/evidence/3302-candidate-read-observation.json).
+Four REST reads and four MCP calls passed the recorded status/shape checks.
+Independently specified fixture assertions establish empty findings/events,
+disabled alerting with absent observation/success clocks, and partial aggregate
+coverage on REST and MCP. No deployment-source outage or proposal attempt was
+made. The catalog probe read only its first page, so a full descriptor/capability
+drift check remains unmet. The image returns status schema `1.0`, not the corrected
+`1.1` contract, and the admin version response omits `sourceRevision`; image
+identity was checked through Docker's digest and OCI revision before boot.
+Neither result establishes deployment protection or installed-client execution.
+
+Release PR #342 remains draft/open and site PR #275 remains open at `012f8acb`
+with its deploy check skipped. Their publication/accepted-pin obligations,
+the joined deployment/recovery transcript, producer failure cases and deployment
+resource-ownership negatives remain unmet. Candidate absence is not a release
+reason; this accepted candidate exists and fails the recorded prerequisite.
+
 ## Acceptance disposition
 
 | Acceptance / verification | Disposition |
