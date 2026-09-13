@@ -1162,9 +1162,14 @@ public class StreamingImportTests : IAsyncLifetime
                 await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
                 var result = await service.ImportFileAsync(new ImportRequest
                 {
-                    FileStream = stream, FileName = "keyed.geojson", TableName = logicalName,
-                    TargetSchema = "honua_data", SourceSrid = 4326, TargetSrid = 4326,
-                    LoadMode = mode, OverwriteExisting = true,
+                    FileStream = stream,
+                    FileName = "keyed.geojson",
+                    TableName = logicalName,
+                    TargetSchema = "honua_data",
+                    SourceSrid = 4326,
+                    TargetSrid = 4326,
+                    LoadMode = mode,
+                    OverwriteExisting = true,
                     KeyColumns = mode == ImportLoadMode.Upsert ? ["key"] : []
                 });
                 result.Success.Should().BeTrue(result.ErrorMessage);

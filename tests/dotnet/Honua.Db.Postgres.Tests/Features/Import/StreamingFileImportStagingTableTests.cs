@@ -545,9 +545,14 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(PointGeoJson));
             var request = new ImportRequest
             {
-                FileStream = stream, FileName = "interrupted.geojson", TableName = OverwriteGuardLogicalTable,
-                TargetSchema = schema, SourceSrid = 4326, TargetSrid = 4326,
-                LoadMode = ImportLoadMode.Replace, OverwriteExisting = true
+                FileStream = stream,
+                FileName = "interrupted.geojson",
+                TableName = OverwriteGuardLogicalTable,
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                LoadMode = ImportLoadMode.Replace,
+                OverwriteExisting = true
             };
             var action = () => service.ImportFileAsync(request, progress, cancellation.Token);
             if (cancel)
@@ -620,9 +625,14 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             });
             var result = await service.ImportFileAsync(new ImportRequest
             {
-                FileStream = stream, FileName = "memory.geojson", TableName = "memory_proof",
-                TargetSchema = schema, SourceSrid = 4326, TargetSrid = 4326,
-                LoadMode = ImportLoadMode.Replace, OverwriteExisting = true
+                FileStream = stream,
+                FileName = "memory.geojson",
+                TableName = "memory_proof",
+                TargetSchema = schema,
+                SourceSrid = 4326,
+                TargetSrid = 4326,
+                LoadMode = ImportLoadMode.Replace,
+                OverwriteExisting = true
             }, progress);
             result.Success.Should().BeTrue(result.ErrorMessage);
             result.FeatureCount.Should().Be(count);

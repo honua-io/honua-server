@@ -643,8 +643,12 @@ public sealed class ExportJobServiceTests
                 await releaseUpload.Task;
                 return UploadResult.CreateSuccess(new CloudFile
                 {
-                    FileId = "cancelled-artifact", FileName = "export.csv", StoragePath = "exports/export.csv",
-                    ContentType = "text/csv", SizeBytes = 32, UploadedAt = DateTimeOffset.UtcNow,
+                    FileId = "cancelled-artifact",
+                    FileName = "export.csv",
+                    StoragePath = "exports/export.csv",
+                    ContentType = "text/csv",
+                    SizeBytes = 32,
+                    UploadedAt = DateTimeOffset.UtcNow,
                     Provider = CloudStorageProvider.AwsS3
                 });
             });
@@ -747,9 +751,13 @@ public sealed class ExportJobServiceTests
             artifact = await reader.ReadToEndAsync();
             return UploadResult.CreateSuccess(new CloudFile
             {
-                FileId = "csv-proof", FileName = "proof.csv", StoragePath = "exports/proof.csv",
-                ContentType = "text/csv", SizeBytes = artifact.Length,
-                UploadedAt = DateTimeOffset.UtcNow, Provider = CloudStorageProvider.AwsS3
+                FileId = "csv-proof",
+                FileName = "proof.csv",
+                StoragePath = "exports/proof.csv",
+                ContentType = "text/csv",
+                SizeBytes = artifact.Length,
+                UploadedAt = DateTimeOffset.UtcNow,
+                Provider = CloudStorageProvider.AwsS3
             });
         });
         storage.GetPresignedUrlAsync("csv-proof", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
@@ -761,7 +769,8 @@ public sealed class ExportJobServiceTests
         var job = CreateJob(Guid.NewGuid().ToString("N")) with
         {
             Fields = [new ExportField("name", ExportFieldType.String, true), new ExportField("depth", ExportFieldType.Double, true)],
-            TotalFeatures = 99, GeometryType = ExportGeometryType.Point
+            TotalFeatures = 99,
+            GeometryType = ExportGeometryType.Point
         };
         await sut.StartAsync(job);
         await sut.ProcessQueuedJobAsync(job.JobId);

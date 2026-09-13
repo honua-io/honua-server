@@ -37,6 +37,11 @@ public sealed class StreamingGeoJsonReaderTests
         });
         var bytes = Encoding.UTF8.GetBytes(json);
         await using var stream = new FragmentedStream(bom ? [0xEF, 0xBB, 0xBF, .. bytes] : bytes, chunkSize);
+        var validation = await new StreamingGeoJsonReader().ValidateAsync(stream);
+        validation.IsValid.Should().BeTrue();
+        validation.FeatureCount.Should().Be(3);
+        validation.Issues.Should().BeEmpty();
+        stream.Position.Should().Be(0);
         var features = new List<NetTopologySuite.Features.IFeature>();
         await foreach (var feature in new StreamingGeoJsonReader().ReadFeaturesAsync(stream)) features.Add(feature);
         features.Should().HaveCount(3);
@@ -48,6 +53,23 @@ public sealed class StreamingGeoJsonReaderTests
             features[index].Geometry.Coordinate.Y.Should().Be(2 + index);
             features[index].Geometry.Coordinate.Z.Should().Be(3 + index);
         }
+    }
+
+    [Theory]
+    [InlineData("{\"type\":\"FeatureCollection\",\"features\":[null]}", ImportValidationErrorCodes.InvalidGeoJson)]
+    [InlineData("{\"type\":\"wrong\",\"features\":[]}", ImportValidationErrorCodes.InvalidGeoJson)]
+    [InlineData("{\"type\":\"FeatureCollection\",\"features\":{}}", ImportValidationErrorCodes.EmptyDataset)]
+    [InlineData("{\"type\":\"FeatureCollection\",\"features\":[]", ImportValidationErrorCodes.InvalidGeoJson)]
+    [InlineData("{\"type\":\"FeatureCollection\",\"features\":[]} trailing", ImportValidationErrorCodes.InvalidGeoJson)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    public async Task ValidateAsync_FragmentedInvalidDocument_RejectsAndRewinds(string json, string code)
+    {
+        await using var stream = new FragmentedStream(Encoding.UTF8.GetBytes(json), 7);
+        var result = await new StreamingGeoJsonReader().ValidateAsync(stream);
+        result.IsValid.Should().BeFalse();
+        result.Issues.Should().Contain(issue => issue.Code == code);
+        stream.Position.Should().Be(0);
     }
 
     private sealed class FragmentedStream(byte[] bytes, int chunkSize) : MemoryStream(bytes)
