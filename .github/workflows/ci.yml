@@ -1602,16 +1602,27 @@ jobs:
             --no-restore \
             --configuration Release
 
-      - name: Install GDAL tools
+      - name: Install GDAL tools and native Parquet dependency
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -yqq gdal-bin
+          sudo apt-get install -yqq gdal-bin libatomic1
           ogrinfo --version
 
       - name: Install Python test dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r tests/python/requirements.txt
+
+      - name: Prove GeoParquet independent-consumer execution
+        # GeoParquet GA evidence requires every cell: skips and collection errors fail.
+        working-directory: tests/python
+        run: |
+          set -euo pipefail
+          mkdir -p ../TestResults
+          report="../TestResults/geoparquet-interop.xml"
+          status=0
+          pytest --tb=short -q feature_server/test_geoparquet_interop.py --junitxml="${report}" || status=$?
+          python ../../scripts/ci/check-geoparquet-interop.py "${report}" "${status}" "$(git rev-parse HEAD)"
 
       - name: Run Python Integration Tests (OGC + FeatureServer + GDAL)
         run: pytest --tb=short

@@ -1,0 +1,104 @@
+{
+  "schema": "honua.metadata-release-installed/v1",
+  "candidate": {
+    "sha": "7ba422672e0c751843b17beb36e954a019cc19fb",
+    "image": "ghcr.io/honua-io/honua-server:nightly-aot-7ba4226",
+    "digest": "sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd",
+    "reference": "ghcr.io/honua-io/honua-server@sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd",
+    "manifestSha256": "8c71ca3c29d0a09676d579f918c1a2627556f257f7ac80454fe840ff7a6e3bec"
+  },
+  "createdAt": "2026-09-12T22:09:59.880982+00:00",
+  "fixtureSha256": "83eb29ac38a3fb54914c1252b273dbb7f7f4d651a8204aafb4108d14d6d23727",
+  "scenarios": [],
+  "status": "failed",
+  "imageId": "sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd",
+  "baseline": {
+    "rowCount": 6,
+    "srid": 4326,
+    "coordinatesAndValuesVerified": true,
+    "newFieldAbsent": true,
+    "anonymousAdminDenied": true
+  },
+  "stagedOperation": {
+    "operationId": "metadata-release-staged-crash-recovery",
+    "kind": 3,
+    "status": "Reconciling",
+    "version": 4,
+    "priority": 1,
+    "createdAt": "2026-09-12T22:10:35.0738195+00:00",
+    "updatedAt": "2026-09-12T22:10:47.4530234+00:00",
+    "currentPhase": "Applied additive schema script 'add-owner_email'.",
+    "warnings": [],
+    "blockingReasons": [],
+    "audit": {
+      "requestedBy": "admin",
+      "idempotencyKey": "staged-crash-recovery",
+      "requestFingerprint": "bf3b007d1025b702737048e86a8aba98f2176312b3d282e7e64252010ec02502",
+      "approvalReasonCodes": []
+    },
+    "concurrency": {
+      "partitionKey": "staging:metadata-release:res-cng-1000",
+      "requiresExclusiveLease": true
+    },
+    "metadataRelease": {
+      "packageId": "installed-staged-crash-recovery",
+      "desiredRevision": "installed-staged-crash-recovery",
+      "targetEnvironment": "staging",
+      "jobIds": [],
+      "evidenceRefs": [],
+      "currentStage": "ServicePublication",
+      "rollbackPlan": {
+        "class": 3,
+        "isDataAffecting": true,
+        "requiresExplicitApproval": false,
+        "steps": [
+          "Reactivate the prior revision and execute the reversible inverse of script 'add-owner_email'."
+        ],
+        "evidenceRequired": []
+      },
+      "executionPlan": {
+        "packageId": "installed-staged-crash-recovery",
+        "targetEnvironment": "staging",
+        "resourceSemanticId": "res-cng-1000",
+        "newFieldName": "owner_email",
+        "script": {
+          "scriptId": "add-owner_email",
+          "reversible": true,
+          "forwardOperations": [
+            {
+              "kind": 0,
+              "resourceSemanticId": "res-cng-1000",
+              "fieldName": "owner_email",
+              "fieldType": "String",
+              "nullable": true
+            }
+          ],
+          "inverseOperations": []
+        }
+      },
+      "blockers": [],
+      "warnings": []
+    }
+  },
+  "stagingObservation": {
+    "priorRevision": 3,
+    "priorEtag": "\"f74a7a0c6579e7acc8046d63ee22f7c9cd1281267c06651dc29c23a87807978c\"",
+    "liveRevisionAtStaging": 4,
+    "liveEtagAtStaging": "\"a16560e12b604f209be6c0bdd3d0ec903632a7dd0debc02eb6f8deae48e6e582\"",
+    "liveFieldNames": [
+      "objectid",
+      "name",
+      "category",
+      "population",
+      "ratio",
+      "active",
+      "observed_at",
+      "geometry",
+      "owner_email"
+    ]
+  },
+  "error": "prior identity missing or captured after mutation",
+  "serverLogSha256": "2c5892b88ac4a28d95614c1790c6bea012f842c4bfd088fdf982f946bdb22749",
+  "cleanup": "removed lane containers and network",
+  "harnessSha256": "64825397f147c2af9c800cc6dcba43a4e0e4418735751b2c8e5e4842236a846b"
+}

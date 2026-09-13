@@ -99,7 +99,7 @@ More general failures: [Troubleshooting](../../guides/deploy/troubleshooting.md)
 
 ## Next steps
 
-- [Python common tasks](common-tasks.md) — query a FeatureServer layer and run a STAC search
+- [Python common tasks](python-common-tasks.md) — query a FeatureServer layer and run a STAC search
 - [honua-sdk-python on GitHub](https://github.com/honua-io/honua-sdk-python) — examples and the admin client
 - [Query features over HTTP](../../guides/query-analyze/query-features.md) — the protocol surfaces the SDK wraps
 - [SDK overview](../README.md)

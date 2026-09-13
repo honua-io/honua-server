@@ -119,11 +119,12 @@ wait_for_health() {
 install_tools() {
     echo -e "${YELLOW}Installing CNG validators...${NC}"
     local pinned_bin="$RESULTS_DIR/pinned-tools"
-    mkdir -p "$pinned_bin"
+    mkdir -p "$pinned_bin" || return 1
+    pinned_bin="$(cd "$pinned_bin" && pwd)" || return 1
     echo "Installing isolated gpq ${GPQ_VERSION} and go-pmtiles ${GO_PMTILES_VERSION}..."
-    GOBIN="$pinned_bin" go install "github.com/planetlabs/gpq/cmd/gpq@${GPQ_VERSION}"
-    GOBIN="$pinned_bin" go install "github.com/protomaps/go-pmtiles@${GO_PMTILES_VERSION}"
-    mv "$pinned_bin/go-pmtiles" "$pinned_bin/pmtiles"
+    GOBIN="$pinned_bin" go install "github.com/planetlabs/gpq/cmd/gpq@${GPQ_VERSION}" || return 1
+    GOBIN="$pinned_bin" go install "github.com/protomaps/go-pmtiles@${GO_PMTILES_VERSION}" || return 1
+    mv "$pinned_bin/go-pmtiles" "$pinned_bin/pmtiles" || return 1
     export PATH="$pinned_bin:$PATH"
 
     if ! command -v ogrinfo &> /dev/null; then
@@ -348,7 +349,7 @@ validate_honua_consumer_artifacts() {
 
 # --- Orchestration --------------------------------------------------------
 
-install_tools
+install_tools || exit 1
 preflight_python_fixture_dependencies || exit 1
 
 # Inputs first: the artifact generator consumes the canonical COG and Zarr through
@@ -364,6 +365,7 @@ echo -e "${YELLOW}Generating honua-produced PMTiles, 3D Tiles and COG-transcode 
 # `pipefail` is already set at the top of this script, so this captures the
 # generator's own exit status rather than tee's.
 dotnet run --project scripts/conformance/cng/artifact-gen/Honua.Cng.ArtifactGen.csproj \
+    -p:HonuaCngSourceRoot="${HONUA_CNG_SOURCE_ROOT:-$REPO_ROOT}" \
     -c Release -- "$ARTIFACTS_DIR" "$ARTIFACTS_DIR" 2>&1 | tee "$RESULTS_DIR/artifact-gen.log"
 ARTIFACT_GEN_STATUS=$?
 

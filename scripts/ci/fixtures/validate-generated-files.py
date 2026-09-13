@@ -18,22 +18,24 @@ class GeneratedFilesContracts(unittest.TestCase):
         self.assertNotIn('pull_request:', workflow)
         self.assertNotIn('workflow_dispatch:', workflow)
         self.assertIn('concurrency:\n  group: generated-files-on-trunk\n  cancel-in-progress: false', workflow)
-        self.assertIn('  contents: write', workflow)
-        self.assertIn('  pull-requests: write', workflow)
-        self.assertIn('ref: trunk', workflow)
+        self.assertIn('  contents: read', workflow)
+        self.assertNotIn('  contents: write', workflow)
+        self.assertIn('ref: ${{ github.sha }}', workflow)
+        self.assertIn('persist-credentials: false', workflow)
+        self.assertNotIn('ref: trunk', workflow)
         self.assertLess(
             workflow.index('regenerate-generated-files.sh'),
             workflow.index('publish-generated-files.sh'),
         )
         self.assertIn('regenerate-generated-files.sh --configuration Release /p:RunAnalyzers=false', workflow)
-        # No credential authorized to move trunk directly: the only secret this
-        # workflow touches is the default job token, scoped for opening a PR.
-        self.assertNotIn('secrets.', workflow)
-        self.assertIn('GH_TOKEN: ${{ github.token }}', workflow)
+        publication = workflow.index('- name: Open or refresh')
+        self.assertNotIn('secrets.', workflow[:publication])
+        self.assertIn('GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN }}', workflow[publication:])
+        self.assertNotIn('GH_TOKEN: ${{ github.token }}', workflow)
 
         script = (ROOT / 'scripts/ci/publish-generated-files.sh').read_text()
         executable_lines = [line for line in script.splitlines() if not line.strip().startswith('#')]
-        self.assertFalse(any('refs/heads/trunk' in line for line in executable_lines))
+        self.assertFalse(any('push' in line and 'refs/heads/trunk' in line for line in executable_lines))
         self.assertIn("branch='automation/regenerate-generated-files'", script)
         self.assertIn('gh pr create', script)
         self.assertIn('--force-with-lease', script)
@@ -105,6 +107,7 @@ class GeneratedFilesContracts(unittest.TestCase):
             repo.mkdir()
             env = dict(os.environ, GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull)
             env.pop('GITHUB_TOKEN', None)
+            env['GH_TOKEN'] = 'test-publication-token'
 
             gh_calls = base / 'gh-calls.log'
             gh_state = base / 'gh-pr-number'
@@ -172,7 +175,7 @@ class GeneratedFilesContracts(unittest.TestCase):
                 trunk_before,
             )
             commit_identity = run('git', 'show', '--format=%an <%ae>|%cn <%ce>', '--no-patch', branch_sha).stdout.strip()
-            bot_identity = 'github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>'
+            bot_identity = 'Mike McDougall <mike@honua.io>'
             self.assertEqual(commit_identity, f'{bot_identity}|{bot_identity}')
             self.assertEqual(
                 run('git', 'diff-tree', '--no-commit-id', '--name-only', '-r', branch_sha).stdout.strip(),
@@ -184,6 +187,9 @@ class GeneratedFilesContracts(unittest.TestCase):
             self.assertIn('--base trunk', create_call)
             self.assertIn('automation/regenerate-generated-files', create_call)
             self.assertIn('Refs #3213', create_call)
+
+            self.assertIn(f'Generated-From: {trunk_before}',
+                          run('git', 'log', '-1', '--format=%B', branch_sha).stdout)
 
             # A second publish with the same drift (e.g. the automation PR's
             # own eventual merge re-triggering the workflow with byte-identical
@@ -202,6 +208,62 @@ class GeneratedFilesContracts(unittest.TestCase):
                 run('git', '--git-dir', str(remote), 'rev-parse', 'refs/heads/trunk').stdout.strip(),
                 trunk_before,
             )
+
+            # Advance trunk independently, then replay the old triggering SHA.
+            # Its fresh validation may pass, but publication must preserve the
+            # existing automation branch and make no PR calls.
+            run('git', 'reset', '--hard', trunk_before)
+            (repo / 'authored.txt').write_text('new source\n')
+            run('git', 'add', 'authored.txt')
+            run('git', '-c', 'user.name=Mike McDougall', '-c', 'user.email=mike@honua.io',
+                'commit', '-m', 'advance trunk')
+            run('git', 'push', 'origin', 'HEAD:trunk')
+            run('git', 'reset', '--hard', trunk_before)
+            (repo / paths[0]).write_text('{"stale": true}\n')
+            branch_before = run('git', '--git-dir', str(remote), 'rev-parse',
+                                'refs/heads/automation/regenerate-generated-files').stdout
+            gh_calls.unlink()
+            stale = run('bash', 'scripts/ci/publish-generated-files.sh')
+            self.assertIn('No stale projections published', stale.stdout)
+            self.assertFalse(gh_calls.exists())
+            self.assertEqual(branch_before, run('git', '--git-dir', str(remote), 'rev-parse',
+                                               'refs/heads/automation/regenerate-generated-files').stdout)
+            self.assertEqual(run('git', 'rev-parse', 'HEAD').stdout.strip(), trunk_before)
+
+            # A newer publisher wins after our trunk observation. The lease
+            # must have been captured before that observation, so this push
+            # fails instead of overwriting the newer automation head.
+            current_trunk = run('git', '--git-dir', str(remote), 'rev-parse', 'refs/heads/trunk').stdout.strip()
+            run('git', 'reset', '--hard', current_trunk)
+            (repo / paths[0]).write_text('{"racing": true}\n')
+            real_git = shutil.which('git')
+            fake_git = fake_bin / 'git'
+            fake_git.write_text(
+                '#!/usr/bin/env bash\n'
+                'if [[ "$*" == "ls-remote --exit-code origin refs/heads/trunk" ]]; then\n'
+                f'  "{real_git}" "$@" || exit $?\n'
+                f'  "{real_git}" push --force origin {current_trunk}:refs/heads/automation/regenerate-generated-files >&2\n'
+                '  exit $?\n'
+                'fi\n'
+                f'exec "{real_git}" "$@"\n'
+            )
+            fake_git.chmod(fake_git.stat().st_mode | stat.S_IEXEC)
+            raced = run('bash', 'scripts/ci/publish-generated-files.sh', ok=False)
+            self.assertNotEqual(raced.returncode, 0, raced.stdout + raced.stderr)
+            self.assertIn('stale info', raced.stderr)
+            self.assertFalse(gh_calls.exists())
+            self.assertEqual(current_trunk, run('git', '--git-dir', str(remote), 'rev-parse',
+                                               'refs/heads/automation/regenerate-generated-files').stdout.strip())
+            fake_git.unlink()
+            # Restore a working-tree diff for the unreadable-remote case.
+            (repo / paths[0]).write_text('{"unreachable": true}\n')
+
+            # An unreachable origin must fail closed, not look like an absent
+            # branch that permits an unconditional overwrite.
+            run('git', 'remote', 'set-url', 'origin', str(base / 'missing.git'))
+            failed = run('bash', 'scripts/ci/publish-generated-files.sh', ok=False)
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertFalse(gh_calls.exists())
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)
