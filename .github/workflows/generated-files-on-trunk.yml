@@ -5,8 +5,8 @@ on:
     branches: [trunk]
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+  packages: read
 
 concurrency:
   group: generated-files-on-trunk
@@ -24,7 +24,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: trunk
+          ref: ${{ github.sha }}
+          persist-credentials: false
 
       - name: Setup .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -48,7 +49,10 @@ jobs:
       # trunk push, but the diff it lands is byte-identical to what this run
       # just committed, so that follow-up run finds nothing to publish and
       # exits at the check above -- no self-trigger guard needed.
+      # The job token cannot create PRs under repository Actions policy and
+      # would suppress the PR/push events that start admission checks. Expose
+      # the existing automation PAT only to publication; never push trunk.
       - name: Open or refresh the generated-files PR
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.MERGE_TRAIN_TOKEN }}
         run: bash scripts/ci/publish-generated-files.sh
