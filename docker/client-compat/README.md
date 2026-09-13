@@ -26,16 +26,17 @@ the stub records those cases as `skip` with a documented pending-runner note.
 
 ## Runtime contract
 
-The compose stack starts `postgres`, `redis`, the one-shot `seed` service,
-`honua`, and exactly one requested lane. The Honua container binds HTTP/1 on
+The compose stack starts `postgres` and `redis`, then `honua`, then the
+one-shot `seed` service, and finally the requested client lane. Honua completes
+its production migrations and readiness checks before fixture data is seeded. The Honua container binds HTTP/1 on
 port `5000` for browser and CLI base URLs and h2c gRPC on port `5001` so the
 container uses the same split-transport shape as production images. Redis is
 part of the stack because server workflows that require a cache or durable
 coordination backend must fail in the interop lane the same way they would fail
 in a real deployment.
 
-PostGIS enables GDAL raster drivers and the `client-compat-v1.sql` seed creates
-the raster metadata tables used by raster-aware startup paths. The browser
+PostGIS enables GDAL raster drivers. Honua migrations create the raster and
+Metadata v2 tables before `client-compat-v1.sql` populates fixture records. The browser
 lanes target `browser_compat` layer `2000`; the GDAL and PyQGIS lanes target
 `test_service` collection `0`.
 
@@ -64,7 +65,7 @@ cesium gdal`).
 The previous `--profile matrix up --abort-on-container-exit` shortcut is
 **not** safe for refresh use: `--abort-on-container-exit` terminates every
 container the moment any one of them exits. In this stack, the one-shot
-`seed` dependency exits before `honua` and the client lane run, so `up` can
+`seed` dependency exits before the client lane runs, so `up` can
 tear the stack down before any `.cert.json` evidence is written. Use
 `docker compose --profile <lane> run --rm <lane>` when you need to drive
 compose by hand.
@@ -99,37 +100,29 @@ lane runner converts it into per-protocol `.cert.json` envelopes via
 `scripts/client-compat/convert-gdal-results.py` so the diff sees a uniform
 shape across lanes.
 
-If a lane exits non-zero in CI, the lane artifact also contains
-`lane-exit-code.txt` and a tail of `compose.log`. The matrix job still exits
-successfully so the baseline-diff job can download every lane artifact, update
-`docs/gis/gap-report.md`, and fail the workflow from one deterministic gate
-instead of losing diagnostics in the first failed lane.
+If a lane exits non-zero in CI, its artifact also contains `lane-exit-code.txt`
+and the complete `compose.log`, including initial migration diagnostics. The
+lane job fails after uploading evidence. The baseline-diff job still runs,
+requires real envelopes from every requested lane, checks their server source
+SHA against the workflow's built image, and performs strict baseline comparison.
 
 ## Seed data
 
-A one-shot `seed` service (built from `docker/client-compat/seed/`) runs
-between `postgres` becoming healthy and `honua` starting. It applies:
+A one-shot `seed` service (built from `docker/client-compat/seed/`) waits for
+`honua: service_healthy`. Starting it before migrations creates unjournaled
+migration-owned tables and trips the production schema-floor guard. It applies:
 
-- `tests/seed/client-compat-v1.sql` — schema + `test_service` (layer `0`)
-  used by the `pyqgis` and `gdal` lanes (the gdal lane points at the same
-  `(test_service, 0)` pair via `HONUA_GDAL_SERVICE_ID` /
-  `HONUA_GDAL_COLLECTION_ID`). This file also owns the Metadata v2
-  compatibility snapshot tables (`honua.metadata_v2_snapshots`,
-  `honua.metadata_v2_current`) and the
-  `honua.seed_metadata_v2_compat_snapshot()` helper that the next step
-  calls — that helper lives only in `tests/seed/base-schema.sql` for the
-  browser CI path, so this Docker path keeps a parallel definition here
-  rather than applying `base-schema.sql`.
-- `tests/seed/browser-compat.yaml`  — `browser_compat` service (layers
-  `2000`-`2002`) used by the `cesium`, `openlayers`, and `arcgis-stub` lanes.
-  The file's final statement calls
-  `SELECT honua.seed_metadata_v2_compat_snapshot();` so the snapshot tables
-  populated by the previous step include the freshly-inserted browser layers
-  before `honua` starts reading them.
+- `tests/seed/client-compat-v1.sql` — `test_service` layer `0`, transaction
+  scratch layers `10`–`12`, and the Metadata v2 fixture snapshot helper. Its
+  compatibility `CREATE TABLE IF NOT EXISTS` statements see tables already
+  created and journaled by Honua migrations.
+- `tests/seed/browser-compat.yaml` — `browser_compat` layers `2000`–`2002`.
+- `tests/seed/client-compat-auth-wave1.yaml` — protected mirrors at `2010`
+  (browser points) and `2011` (canonical vector data). These IDs preserve the
+  transaction scratch layers. The final snapshot includes every fixture layer.
 
-`honua` waits for `seed` via `service_completed_successfully`, so lane
-services that depend on `honua: service_healthy` always observe a populated
-database with a current Metadata v2 snapshot.
+Every client depends on both `honua: service_healthy` and
+`seed: service_completed_successfully`, so no client observes an empty fixture.
 
 ## Real multidimensional raster fixture
 
@@ -138,7 +131,10 @@ not a metadata-only catalog projection. It creates a two-time-slice CF NetCDF
 artifact, uploads it to the pinned LocalStack S3 emulator, registers it through
 the admin API, dispatches `coverage.multidim.metadata` through Redis to the
 native GDAL worker, and verifies the derived Zarr store plus an ImageServer PNG
-render for a selected time slice.
+render for both time slices. An independent formula checks all 32 Zarr values,
+coordinate arrays, dimensions, units, fill value and nodata locations. A fixed
+0–40 stretch and nearest-neighbor sampling make both 4×4 PNGs comparable against
+independently computed north-up RGBA pixels, including transparent nodata.
 
 Run it from the repository root:
 
@@ -162,7 +158,8 @@ docker compose -f docker/client-compat/compose.yml --profile multidim-fixture do
      CI workflow targets via `docker compose --profile <lane> run --rm <lane>`,
      and the `matrix` profile is what `--profile matrix up` selects to run
      the full set.
-   - `depends_on: { honua: { condition: service_healthy } }`
+   - Dependencies on `honua: service_healthy` and
+     `seed: service_completed_successfully`.
    - `HONUA_BASE_URL=http://honua:5000`
    - `volumes: [ ../../tests:/workspace/tests:ro, ./output/<lane>:/output ]`
 3. Wire the lane into `.github/workflows/client-interop-nightly.yml` — three

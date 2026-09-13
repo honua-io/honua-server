@@ -102,7 +102,7 @@ def test_core_read_suite_authenticated_matches_anonymous_baseline(
         baseline = anonymous.collection_items(
             lane_config.collection_id, limit=fixture.TOTAL_FEATURES
         )
-        protected_id = os.getenv("HONUA_CERT_VECTOR_COLLECTION_ID", "10")
+        protected_id = os.getenv("HONUA_CERT_VECTOR_COLLECTION_ID", "2011")
         with _owslib_headers(headers):
             authenticated = Features(lane_config.oaf_url, headers=headers)
             actual = authenticated.collection_items(protected_id, limit=fixture.TOTAL_FEATURES)
@@ -172,7 +172,7 @@ def test_core_read_suite_invalid_credential_returns_protocol_challenge(
     """Wrong and expired credentials fail with protocol-shaped 401 challenges."""
     headers = cert_credentials.negative_headers(credential)
     if suite == "ogc-features":
-        protected_id = os.getenv("HONUA_CERT_VECTOR_COLLECTION_ID", "10")
+        protected_id = os.getenv("HONUA_CERT_VECTOR_COLLECTION_ID", "2011")
         url = f"{lane_config.oaf_url}/collections/{protected_id}/items?limit=1"
     elif suite == "wfs":
         valid_headers = cert_credentials.headers(AuthMode.API_KEY)

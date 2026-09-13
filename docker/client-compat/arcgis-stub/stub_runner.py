@@ -693,8 +693,11 @@ def _exercise_portal(client: httpx.Client) -> dict[str, dict]:
             # GenerateToken_WithInvalidCredentials_Returns400UnableToGenerateToken.
             tokn2_status = "pass" if (
                 code == 400 and "token" not in body
-                and body.get("error", {}).get("message") == "Unable to generate token."
+                and body.get("error", {}).get("message") == "Bad Request"
+                and "Unable to generate token." in body.get("error", {}).get("details", [])
+                and r.status_code == 200
                 and "no-store" in r.headers.get("Cache-Control", "")
+                and "no-cache" in r.headers.get("Pragma", "")
             ) else "fail"
     except (httpx.HTTPError, ValueError):
         tokn2_status = "fail"
