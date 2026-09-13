@@ -66,11 +66,21 @@ git -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
   push --force-with-lease="refs/heads/automation/regenerate-generated-files:${remote_branch}" \
   origin HEAD:refs/heads/automation/regenerate-generated-files
 
-existing="$(gh pr list --state open --head "${branch}" --base trunk --json number --jq '.[0].number // empty')"
+# PR lookup and creation use the REST pulls API, never `gh pr` (GraphQL). The
+# automation PAT's user shares its GraphQL budget with every other workflow
+# and agent on that account: trunk runs at d634053, 089f92b and 1b7dfca
+# (#4732) pushed this branch, then failed `gh pr list` with "GraphQL: API
+# rate limit already exceeded" while REST quota was still available.
+repo="${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required to address the REST pulls API}"
+existing="$(gh api "repos/${repo}/pulls?state=open&base=trunk&head=${repo%%/*}:${branch}" \
+  --jq '.[0].number // empty')"
 if [[ -n "${existing}" ]]; then
   echo "Updated existing generated-files PR #${existing}."
   exit 0
 fi
-gh pr create --base trunk --head "${branch}" \
-  --title "${title}" \
-  --body 'Automated regeneration of the tracked projections listed in scripts/ci/generated-files.sh (see docs/internal/ci/generated-files-on-trunk.md). Lands through the normal PR Gate + Review Gate + per-PR lander path; this workflow never writes trunk directly. Refs #3213.'
+gh api --method POST "repos/${repo}/pulls" \
+  -f base=trunk \
+  -f head="${branch}" \
+  -f title="${title}" \
+  -f body='Automated regeneration of the tracked projections listed in scripts/ci/generated-files.sh (see docs/internal/ci/generated-files-on-trunk.md). Lands through the normal PR Gate + Review Gate + per-PR lander path; this workflow never writes trunk directly. Refs #3213.' \
+  --jq '.html_url'

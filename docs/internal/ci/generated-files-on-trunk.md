@@ -68,7 +68,11 @@ credentials. The final publication step uses the existing `MERGE_TRAIN_TOKEN`
 for PR creation and the fixed automation-branch push. The default Actions token
 cannot create PRs under the repository's Actions policy and suppresses the
 push/PR events needed to start admission checks; there is no fallback to it.
-The PAT is not passed to generators, MSBuild or tests.
+The PAT is not passed to generators, MSBuild or tests. PR lookup and creation
+call the REST pulls API (`gh api repos/<repo>/pulls`), never `gh pr`: that
+account's GraphQL budget is shared with other automation, and three trunk runs
+on 2026-09-13 pushed the branch and then failed `gh pr list` with a GraphQL
+rate-limit error while REST quota remained (#4732).
 
 Before committing a diff, publication compares that validated source with
 remote trunk. If trunk has already advanced, it reports both identities and leaves the

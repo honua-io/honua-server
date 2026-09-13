@@ -37,7 +37,10 @@ class GeneratedFilesContracts(unittest.TestCase):
         executable_lines = [line for line in script.splitlines() if not line.strip().startswith('#')]
         self.assertFalse(any('push' in line and 'refs/heads/trunk' in line for line in executable_lines))
         self.assertIn("branch='automation/regenerate-generated-files'", script)
-        self.assertIn('gh pr create', script)
+        self.assertIn('gh api --method POST "repos/${repo}/pulls"', script)
+        # GraphQL-backed `gh pr` subcommands exhaust the shared PAT user's
+        # GraphQL budget after the branch push (#4732); publication is REST-only.
+        self.assertFalse(any('gh pr ' in line for line in executable_lines))
         self.assertIn('--force-with-lease', script)
 
     def test_publish_script_push_target_passes_the_merge_authority_guard(self):
@@ -108,20 +111,22 @@ class GeneratedFilesContracts(unittest.TestCase):
             env = dict(os.environ, GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull)
             env.pop('GITHUB_TOKEN', None)
             env['GH_TOKEN'] = 'test-publication-token'
+            env['GITHUB_REPOSITORY'] = 'honua-io/honua-server'
 
             gh_calls = base / 'gh-calls.log'
             gh_state = base / 'gh-pr-number'
             fake_bin = base / 'bin'
             fake_bin.mkdir()
             fake_gh = fake_bin / 'gh'
+            # Only REST pulls calls are answered; any `gh pr` (GraphQL) call fails.
             fake_gh.write_text(
                 '#!/usr/bin/env bash\n'
                 f'{{ echo "$*"; cat; }} >> {gh_calls}\n'
-                'if [[ "$1 $2" == "pr list" ]]; then\n'
+                'if [[ "$1" == "api" && "$2" == repos/honua-io/honua-server/pulls\\?* ]]; then\n'
                 f'  cat {gh_state} 2>/dev/null || true\n'
                 '  exit 0\n'
                 'fi\n'
-                'if [[ "$1 $2" == "pr create" ]]; then\n'
+                'if [[ "$1 $2 $3 $4" == "api --method POST repos/honua-io/honua-server/pulls" ]]; then\n'
                 f'  echo 42 > {gh_state}\n'
                 '  echo "https://example.invalid/pull/42"\n'
                 '  exit 0\n'
@@ -182,10 +187,12 @@ class GeneratedFilesContracts(unittest.TestCase):
                 paths[0],
             )
             gh_call_lines = gh_calls.read_text().splitlines()
-            self.assertTrue(any(line.startswith('pr list') for line in gh_call_lines))
-            create_call = next(line for line in gh_call_lines if line.startswith('pr create'))
-            self.assertIn('--base trunk', create_call)
-            self.assertIn('automation/regenerate-generated-files', create_call)
+            list_call = next(line for line in gh_call_lines if line.startswith('api repos/'))
+            self.assertIn('pulls?state=open&base=trunk&head=honua-io:automation/regenerate-generated-files',
+                          list_call)
+            create_call = next(line for line in gh_call_lines if line.startswith('api --method POST'))
+            self.assertIn('-f base=trunk', create_call)
+            self.assertIn('-f head=automation/regenerate-generated-files', create_call)
             self.assertIn('Refs #3213', create_call)
 
             self.assertIn(f'Generated-From: {trunk_before}',
@@ -203,7 +210,7 @@ class GeneratedFilesContracts(unittest.TestCase):
             (repo / paths[0]).write_text('{"fresh": true}\n')
             second = run('bash', 'scripts/ci/publish-generated-files.sh')
             self.assertIn('Updated existing generated-files PR #42', second.stdout)
-            self.assertNotIn('pr create', gh_calls.read_text())
+            self.assertNotIn('--method POST', gh_calls.read_text())
             self.assertEqual(
                 run('git', '--git-dir', str(remote), 'rev-parse', 'refs/heads/trunk').stdout.strip(),
                 trunk_before,
