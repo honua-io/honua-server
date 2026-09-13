@@ -147,17 +147,12 @@ Keep `.env`. Losing it means losing the database.
 docker compose up -d --wait --wait-timeout 180
 ```
 
-Check it came up:
+`--wait` holds until every container reports healthy, so a clean exit is the
+readiness check — there is nothing else to poll. If it times out,
+`docker compose logs honua postgres redis` says why.
 
-```bash
-curl -fsS http://localhost:18080/healthz/ready
-```
-
-The admin API is not anonymous — this returns `401`, which is the correct answer:
-
-```bash
-curl -s -o /dev/null -w '%{http_code}\n' http://localhost:18080/api/v1/admin/config
-```
+The admin API is not anonymous: it needs the `HONUA_ADMIN_PASSWORD` from `.env`,
+which the next step reads for you.
 
 ## 4. Publish a table and query it back
 
@@ -226,13 +221,11 @@ Two features come back with their geometry, in EPSG:4326.
 database, with the schema, geometry column and SRID `publish_layer` wants — which
 is how you publish a table you did not create yourself.
 
-The layer is now served over every protocol the deployment advertises: OGC API
-Features at `/ogc/features/collections`, GeoServices REST at
-`/rest/services/quickstart/FeatureServer/0`, WMS, WFS, vector tiles, and the rest.
-
-```bash
-curl -fsS 'http://localhost:18080/ogc/features/collections' -H "X-API-Key: $HONUA_ADMIN_PASSWORD"
-```
+The layer is now served over every protocol the deployment advertises, from that
+one publish — OGC API Features at `/ogc/features/collections`, GeoServices REST at
+`/rest/services/quickstart/FeatureServer/0`, plus WMS, WFS, vector tiles and the
+rest. `admin.list_services()` and `admin.get_capabilities()` report what this
+deployment actually exposes, rather than what the list above assumes.
 
 ## What to do next
 
