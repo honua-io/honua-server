@@ -167,7 +167,7 @@ jobs:
             --sdk-package "$SDK_PACKAGE" \
             --sdk-revision "$SDK_REVISION" \
             --workflow-repository honua-io/honua-sdk-js \
-            --workflow-name 'Realtime Preview Qualification' \
+            --workflow-name 'Realtime Cross-Transport Conformance' \
             --run-id "$SDK_RUN_ID" \
             --run-attempt "$SDK_RUN_ATTEMPT" \
             --artifact-id "$SDK_ARTIFACT_ID" \

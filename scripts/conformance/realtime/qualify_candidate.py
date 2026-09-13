@@ -187,6 +187,11 @@ def _identity_diagnostics(evidence: dict, expected: dict, now: datetime, max_age
     server = evidence.get("server") if isinstance(evidence.get("server"), dict) else {}
     sdk = evidence.get("sdk") if isinstance(evidence.get("sdk"), dict) else {}
     workflow = evidence.get("workflow") if isinstance(evidence.get("workflow"), dict) else {}
+    # The artifact id, its URL and the run's final conclusion do not exist while the
+    # producing job writes the receipt, so a receipt cannot carry them. The qualification
+    # workflow verifies them against the Actions API (run conclusion, attempt, head SHA,
+    # workflow path, and the artifact's run and name) before download; the receipt binds
+    # the execution identities its producer can actually observe.
     checks = (
         (server.get("revision"), expected["serverRevision"], "server revision"),
         (candidate.get("environment"), expected["environment"], "candidate environment"),
@@ -196,9 +201,14 @@ def _identity_diagnostics(evidence: dict, expected: dict, now: datetime, max_age
         (workflow.get("name"), expected["workflowName"], "workflow name"),
         (str(workflow.get("runId", "")), str(expected["runId"]), "workflow run id"),
         (str(workflow.get("runAttempt", "")), str(expected["runAttempt"]), "workflow run attempt"),
-        (str(workflow.get("artifactId", "")), str(expected["artifactId"]), "workflow artifact id"),
-        (workflow.get("artifactUrl"), expected["sourceArtifactUrl"], "source artifact URL"),
     )
+    for field, label in (("artifactId", "workflow artifact id"), ("artifactUrl", "source artifact URL")):
+        # A self-reported artifact identity is optional, but a stale one from another
+        # upload is a replay signal and still rejects.
+        if field in workflow:
+            wanted = expected["artifactId"] if field == "artifactId" else expected["sourceArtifactUrl"]
+            if str(workflow[field]) != str(wanted):
+                diagnostics.append(f"{label} {workflow[field]!r} does not match exact candidate {wanted!r}")
     for actual, wanted, label in checks:
         if actual != wanted:
             diagnostics.append(f"{label} {actual!r} does not match exact candidate {wanted!r}")
@@ -227,9 +237,9 @@ def _identity_diagnostics(evidence: dict, expected: dict, now: datetime, max_age
         diagnostics.append("SDK revision must be an immutable 40-character commit SHA")
     if not isinstance(sdk.get("version"), str) or not sdk["version"].strip():
         diagnostics.append("SDK package version is missing")
-    if workflow.get("conclusion") != "success":
-        diagnostics.append("source workflow conclusion must be success")
-    if not isinstance(workflow.get("artifactUrl"), str) or not workflow["artifactUrl"].startswith("https://"):
+    if "conclusion" in workflow and workflow.get("conclusion") != "success":
+        diagnostics.append("source workflow reported a conclusion other than success")
+    if not isinstance(expected["sourceArtifactUrl"], str) or not expected["sourceArtifactUrl"].startswith("https://"):
         diagnostics.append("immutable source artifact URL is missing")
 
     generated = _timestamp(evidence.get("generatedAt"), "generatedAt", diagnostics)
@@ -302,7 +312,7 @@ def qualify(evidence: dict, expected: dict, *, now: datetime, max_age: timedelta
                 reasons.append("row is not bound to the candidate environment")
             if str(row.get("runId", "")) != str(expected["runId"]) or str(row.get("runAttempt", "")) != str(expected["runAttempt"]):
                 reasons.append("row is not bound to the exact workflow execution")
-            if str(row.get("artifactId", "")) != str(expected["artifactId"]):
+            if "artifactId" in row and str(row["artifactId"]) != str(expected["artifactId"]):
                 reasons.append("row is not bound to the immutable source artifact")
         rows.append({
             "surface": surface,

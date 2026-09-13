@@ -23,8 +23,13 @@ replace the immutable candidate receipt.
 The SDK artifact must be produced by `.github/workflows/realtime-live-conformance.yml`, be named
 `realtime-cross-transport-conformance-<run-id>`, and contain `realtime-preview-evidence.json` in
 `honua.realtime-preview-evidence.v2` format. It binds the server commit and image digest, SDK
-commit and package, candidate environment, workflow/run/attempt/artifact, generation window,
-and an executed assertion receipt for every exact row. The release candidate job is the authority
+commit and package, candidate environment, the producing workflow (`Realtime Cross-Transport
+Conformance`) with its run and attempt, generation window, and an executed assertion receipt for
+every exact row. A receipt cannot name the artifact it is uploaded in or the run's final
+conclusion, because neither exists while the producer writes it; the qualification workflow
+binds the artifact id, artifact name, run conclusion, attempt, head SHA and workflow path
+through the Actions API before download, and a receipt that does self-report an artifact id or
+URL must match the dispatched one. The release candidate job is the authority
 for the candidate digest: when its digest output is present, qualification binds every receipt
 and row to that exact value. Until the release-side sequencing contract is delivered, an absent
 post-candidate receipt is a hard rejection; the gate still evaluates exact revision, source

@@ -25,7 +25,7 @@ def expected():
         "sdkPackage": "@honua/sdk-js@0.2.0",
         "sdkRevision": SDK_SHA,
         "workflowRepository": "honua-io/honua-sdk-js",
-        "workflowName": "Realtime Preview Qualification",
+        "workflowName": "Realtime Cross-Transport Conformance",
         "runId": "42",
         "runAttempt": "1",
         "artifactId": "99",
@@ -88,14 +88,13 @@ def complete_evidence():
         "candidate": {"environment": "rc-2026.1"},
         "server": {"revision": SERVER_SHA, "image": SERVER_IMAGE},
         "sdk": {"package": "@honua/sdk-js@0.2.0", "version": "0.2.0", "revision": SDK_SHA},
+        # The producing job cannot know its artifact id, artifact URL or final run
+        # conclusion; the qualification workflow verifies those through the Actions API.
         "workflow": {
             "repository": "honua-io/honua-sdk-js",
-            "name": "Realtime Preview Qualification",
+            "name": "Realtime Cross-Transport Conformance",
             "runId": 42,
             "runAttempt": 1,
-            "artifactId": 99,
-            "artifactUrl": "https://github.com/honua-io/honua-sdk-js/actions/runs/42/artifacts/99",
-            "conclusion": "success",
             "startedAt": "2026-09-02T06:30:00Z",
             "completedAt": "2026-09-02T06:50:00Z",
         },
@@ -321,6 +320,38 @@ class RealtimeCandidateQualificationTests(unittest.TestCase):
                 source = complete_evidence()
                 source["rows"][0][field] = value
                 self.assertIn(reason, " ".join(qualify(source)["rows"][0]["reasons"]))
+
+    def test_receipt_need_not_name_its_own_artifact_or_final_conclusion(self):
+        # The producing job writes the receipt before its artifact upload exists and
+        # before the run concludes; the workflow binds those through the Actions API.
+        source = complete_evidence()
+        for row in source["rows"]:
+            row.pop("artifactId", None)
+        for field in ("artifactId", "artifactUrl", "conclusion"):
+            self.assertNotIn(field, source["workflow"])
+        receipt = qualify(source)
+        self.assertEqual("qualified", receipt["status"])
+        self.assertEqual(expected()["sourceArtifactUrl"], receipt["candidate"]["sourceArtifactUrl"])
+        self.assertEqual("99", receipt["candidate"]["artifactId"])
+
+    def test_self_reported_failure_or_foreign_artifact_still_rejects(self):
+        for section, field, value, reason in (
+            ("workflow", "conclusion", "failure", "conclusion other than success"),
+            ("workflow", "artifactId", 100, "workflow artifact id"),
+            ("workflow", "name", "Realtime Preview Qualification", "workflow name"),
+        ):
+            with self.subTest(field=field):
+                source = complete_evidence()
+                source[section][field] = value
+                receipt = qualify(source)
+                self.assertEqual("rejected", receipt["status"])
+                self.assertIn(reason, " ".join(receipt["diagnostics"]))
+
+    def test_workflow_binds_the_sdk_producer_workflow_name(self):
+        workflow = Path(__file__).parents[3] / ".github/workflows/realtime-preview-qualification.yml"
+        text = workflow.read_text(encoding="utf-8")
+        self.assertIn("--workflow-name 'Realtime Cross-Transport Conformance'", text)
+        self.assertNotIn("--workflow-name 'Realtime Preview Qualification'", text)
 
     def test_unrelated_alias_cannot_credit_a_required_cell(self):
         source = complete_evidence()
