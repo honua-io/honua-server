@@ -96,7 +96,7 @@ public sealed class LocalSubstrateDockerFixture : IAsyncLifetime
             await BuildReplicaImageAsync(V2Image, V2Marker).ConfigureAwait(false);
 
             // Real seams the backend consumes. HttpLocalReplicaHealthProbe resolves the named
-            // "control-plane-telemetry" HttpClient, so a minimal AddHttpClient container is enough.
+            // "control-plane-probe" HttpClient, so a minimal AddHttpClient container is enough.
             var services = new ServiceCollection();
             services.AddHttpClient();
             _services = services.BuildServiceProvider();
