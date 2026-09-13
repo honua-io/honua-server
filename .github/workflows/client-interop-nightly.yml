@@ -146,6 +146,7 @@ jobs:
           DOCKER_BUILDKIT=1 docker build \
             --secret id=github_actor,env=GITHUB_ACTOR \
             --secret id=github_token,env=GITHUB_TOKEN \
+            --build-arg HONUA_GIT_SHA="${{ github.sha }}" \
             -t honua-server:client-compat \
             .
           build_exit=$?

@@ -249,6 +249,7 @@ services:
       context: ../..
       dockerfile: docker/client-compat/gdal/Dockerfile
     environment:
+      GITHUB_SHA: "${HONUA_SERVER_COMMIT:-}"
       HONUA_BASE_URL: http://honua:5000
       HONUA_GDAL_SERVICE_ID: test_service
       HONUA_GDAL_COLLECTION_ID: "0"
@@ -274,6 +275,8 @@ services:
       context: ../..
       dockerfile: docker/client-compat/pyqgis/Dockerfile
     environment:
+      GITHUB_SHA: "${HONUA_SERVER_COMMIT:-}"
+      HONUA_PYQGIS_SERVER_COMMIT: "${HONUA_SERVER_COMMIT:-}"
       HONUA_BASE_URL: http://honua:5000
       HONUA_PYQGIS_SERVICE_ID: test_service
       HONUA_PYQGIS_COLLECTION_ID: "0"
@@ -294,6 +297,7 @@ services:
       context: ../..
       dockerfile: docker/client-compat/openlayers/Dockerfile
     environment:
+      GITHUB_SHA: "${HONUA_SERVER_COMMIT:-}"
       HONUA_BASE_URL: http://honua:5000
       HONUA_SERVICE_ID: browser_compat
       HONUA_LAYER_ID: "2000"
@@ -314,6 +318,7 @@ services:
       context: ../..
       dockerfile: docker/client-compat/cesium/Dockerfile
     environment:
+      GITHUB_SHA: "${HONUA_SERVER_COMMIT:-}"
       HONUA_BASE_URL: http://honua:5000
     depends_on:
       honua:
@@ -332,6 +337,7 @@ services:
       context: ../..
       dockerfile: docker/client-compat/arcgis-stub/Dockerfile
     environment:
+      GITHUB_SHA: "${HONUA_SERVER_COMMIT:-}"
       HONUA_BASE_URL: http://honua:5000
       ARCGIS_STUB_SERVICE_NAME: browser_compat
       ARCGIS_STUB_LAYER_ID: "2000"
