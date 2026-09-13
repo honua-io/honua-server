@@ -2,7 +2,6 @@
 
 ## Get started
 
-- [Honua from one terminal (pre-cut guide)](get-started/one-terminal-setup.md)
 - [Windows: install published packages](get-started/windows-packages.md)
   * [Linux: install published packages](get-started/linux-packages.md)
   * [Registry clients and credentials](get-started/registry-clients.md)

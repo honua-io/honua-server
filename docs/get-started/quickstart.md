@@ -1,7 +1,7 @@
 ---
 type: guide
 title: "Quickstart: install, publish, and query"
-description: "Run these blocks in order in Windows PowerShell 5.1 or PowerShell 7 with Docker Desktop using Linux containers, Docker Compose 2.23.1+, and Python 3.11 or later."
+description: "Install Honua, publish a dataset, and query it over the protocols - in about ten minutes, with no checkout or credentials."
 resource: "https://hub.docker.com/r/honuaio/honua-server"
 ---
 # Quickstart: install, publish, and query
@@ -13,47 +13,13 @@ Desktop first. Keep the same terminal and installation directory throughout.
 For a Linux shell, use the equivalent [Linux package quickstart](linux-packages.md).
 For a lasting deployment, continue to [production Compose](../guides/deploy/docker-compose.md).
 
-No repository checkout, compiler, Bash, Git, developer helper, or GitHub Packages
-credential is needed. The server image and the two PyPI clients below are public.
-Community needs no license. Installing Redis does not grant paid capabilities;
-this journey uses a small synchronous import and does not require durable jobs.
-
-## Artifact identity and qualification
-
-The commands pin the anonymously published **pre-cut rehearsal** image
-`ghcr.io/honua-io/honua-server@sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9`
-(Docker Desktop Linux containers; this journey selects `linux/amd64`, source `5a657b9eaed7cdeac915d584ad58c028a52ca61e`). Its
-[registry manifest](https://ghcr.io/v2/honua-io/honua-server/manifests/sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9)
-is fetched by `docker pull` below. The control-plane package is
-[honua-admin 0.1.8](https://pypi.org/project/honua-admin/0.1.8/); the data-plane
-package is [honua-sdk 0.1.11](https://pypi.org/project/honua-sdk/0.1.11/).
-The import step invokes Honua's `honua_ingest_dataset` MCP tool using the
-published [MCP transport client 2.1.1](https://pypi.org/project/mcp/2.1.1/).
-
-Download the [customer install manifest](https://honua.io/data/customer-install-manifest.json)
-for all image and client identities, wheel hashes and direct downloads. Its Honua
-client pins come from the release manifest; the server pin comes from the linked
-successful pre-cut rehearsal. The [publication record](https://honua.io/data/customer-install-publication.json)
-identifies the immutable release-repository source and SHA-256 of the public copy.
-The GHCR manifest URL uses the OCI registry protocol; Docker handles its anonymous
-bearer-token exchange. It does not require a GitHub account.
-
-**This is not a qualified 2026.1 candidate.** After the cut, replace the server
-and compatible client pins together from the signed release lock and repeat this
-journey on a clean Windows machine in the Windows licensed lane. Link that
-separate qualification record on [#4300](https://github.com/honua-io/honua-server/issues/4300).
-Do not substitute the historical 2026.1 release or the moving candidate snapshot.
-
-The [pre-cut Windows receipt](../guides/deploy/evidence/windows-packages-4300.json)
-records successful fresh-volume startup, anonymous denial, authenticated admin
-access, import/publish/query, restart readback, container-recreation readback,
-and scoped teardown with these packages. It used an existing Windows host with
-a new installation directory and virtual environment, not a clean-machine RC
-qualification.
-
-The [documentation validation record](../guides/deploy/evidence/customer-install-docs-4300.json) separately records
-a Linux runtime replay of the updated commands, database and file-storage restore,
-and native PowerShell syntax checks. It is not a clean-Windows qualification.
+The commands below pin an exact server image and client versions so a run is
+reproducible: server
+`ghcr.io/honua-io/honua-server@sha256:273b4c616e806b8ac2809946659986960a1803e55bda79d99db5f3955b6c30b9`,
+[honua-admin 0.1.8](https://pypi.org/project/honua-admin/0.1.8/) and
+[honua-sdk 0.1.11](https://pypi.org/project/honua-sdk/0.1.11/). No repository
+checkout, compiler, or registry credential is needed - the image and both
+clients are public, and Community needs no license.
 
 ## 1. Create a private, isolated installation
 

@@ -6,11 +6,10 @@ Every page below is an Open Knowledge Format concept: one subject per file, type
 
 ## Get started
 
-- [Honua from one terminal](https://honua.gitbook.io/honuaio/honua-server/one-terminal-setup): Use one terminal workspace to install Honua, configure a service, apply a canonical style, run GP, author a map/dashboard and request governed publication.
 - [Install on Windows from published packages](https://honua.gitbook.io/honuaio/honua-server/windows-packages): Run these blocks in order in Windows PowerShell 5.1 or PowerShell 7, from a directory where you can create a private installation folder.
 - [Linux: install published packages](https://honua.gitbook.io/honuaio/honua-server/linux-packages): Use Docker Engine with Compose 2.23.1 or later, Python 3.11 or later with venv and pip 22.3+, and a Bash terminal.
 - [Registry clients and package credentials](https://honua.gitbook.io/honuaio/honua-server/registry-clients): The customer install manifest records the pins and their origins.
-- [Quickstart: install, publish, and query](https://honua.gitbook.io/honuaio/honua-server/quickstart): Run these blocks in order in Windows PowerShell 5.1 or PowerShell 7 with Docker Desktop using Linux containers, Docker Compose 2.23.1+, and Python 3.11 or later.
+- [Quickstart: install, publish, and query](https://honua.gitbook.io/honuaio/honua-server/quickstart): Install Honua, publish a dataset, and query it over the protocols - in about ten minutes, with no checkout or credentials.
 - [Publish your first dataset](https://honua.gitbook.io/honuaio/honua-server/first-dataset): Upload a GeoJSON file, publish it as a layer, and query it through the supported Honua clients.
 - [Make your first map](https://honua.gitbook.io/honuaio/honua-server/first-map): You'll turn a published layer into a live MapLibre map using vector tiles, TileJSON, and the server's auto-generated style in about 10 minutes.
 
