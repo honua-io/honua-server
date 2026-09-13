@@ -12,7 +12,7 @@ using Honua.Protocols.GeoServices.Soap;
 namespace Honua.Protocols.GeoServices.GPServer;
 
 /// <summary>SOAP GPValue wire translation; execution remains in the shared GP handlers.</summary>
-internal static class GPServerSoapExecution
+internal static partial class GPServerSoapExecution
 {
     private static readonly XNamespace Xsi = "http://www.w3.org/2001/XMLSchema-instance";
 
@@ -20,7 +20,7 @@ internal static class GPServerSoapExecution
         => name is "SubmitJob" or "Execute" or "GetJobStatus" or "GetJobMessages"
             or "GetJobResult" or "GetJobToolName" or "CancelJob";
 
-    internal static IReadOnlyDictionary<string, string> ReadSubmission(XElement operation, GPTaskInfoResponse task, bool scalarGeometryTask = false)
+    internal static IReadOnlyDictionary<string, string> ReadSubmission(XElement operation, GPTaskInfoResponse task)
     {
         ValidateChildren(operation, "ToolName", "Values", "Options", "EnvironmentValues");
         RequiredScalar(operation, "ToolName");
@@ -52,12 +52,9 @@ internal static class GPServerSoapExecution
             {
                 continue; // A typed empty GPValue represents an unset optional input.
             }
-            parameters.Add(input.Name!, ReadValue(value, type));
+            parameters.Add(input.Name!, ReadInputValue(value, type, input));
         }
-        ReadEnvironment(operation.Element("EnvironmentValues"), parameters,
-            scalarGeometryTask &&
-            (task.Parameters ?? []).Where(parameter => parameter.Direction == "esriGPParameterDirectionOutput")
-                .All(parameter => parameter.DataType is "GPString" or "GPDouble" or "GPLong" or "GPBoolean"));
+        ReadEnvironment(operation.Element("EnvironmentValues"), parameters);
         return parameters;
     }
 
@@ -128,9 +125,9 @@ internal static class GPServerSoapExecution
 
     private static XElement BuildOutput(GPResultResponse output)
     {
-        if (output.DataType is not ("GPString" or "GPLong" or "GPDouble" or "GPBoolean" or "GPDate"))
+        if (!IsScalarType(output.DataType))
         {
-            throw Invalid($"SOAP output type '{output.DataType}' is not supported.");
+            return BuildComplexOutput(output);
         }
         var value = output.Value switch
         {
@@ -161,7 +158,7 @@ internal static class GPServerSoapExecution
         return scalar.Value;
     }
 
-    private static void ReadEnvironment(XElement? environment, Dictionary<string, string> parameters, bool scalarGeometryTask)
+    private static void ReadEnvironment(XElement? environment, Dictionary<string, string> parameters)
     {
         if (environment is null || IsNil(environment))
         {
@@ -191,12 +188,13 @@ internal static class GPServerSoapExecution
             {
                 continue;
             }
-            // ArcPy always sends these application defaults, even for a pure
-            // single-geometry scalar measure. Such a task produces no geometry,
-            // raster or geodatabase edits and uses no random source. Only these
-            // exact neutral defaults are inapplicable; changed controls still
-            // reach the shared accept-and-honor-or-reject environment validator.
-            if (scalarGeometryTask && IsNeutralScalarGeometryEnvironment(key, value))
+            // ArcPy sends its application environment with every submission,
+            // whether or not the user changed it. These exact values are Esri's
+            // documented defaults, which is what a REST submission with no env:
+            // parameters requests, so they select the same canonical behaviour.
+            // Any changed value still reaches the shared accept-and-honor-or-
+            // reject environment validator.
+            if (IsArcPyApplicationDefault(key, value))
             {
                 continue;
             }
@@ -215,7 +213,7 @@ internal static class GPServerSoapExecution
         }
     }
 
-    private static bool IsNeutralScalarGeometryEnvironment(string key, XElement value)
+    private static bool IsArcPyApplicationDefault(string key, XElement value)
     {
         var type = ResolveType(value);
         if (key == "randomGenerator" && type == "GPRandomNumberGenerator")
