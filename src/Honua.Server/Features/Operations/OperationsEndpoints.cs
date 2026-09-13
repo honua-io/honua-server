@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Authorization.Domain;
@@ -26,6 +28,9 @@ namespace Honua.Server.Features.Operations;
 /// </summary>
 internal static class OperationsEndpoints
 {
+    private const string IdempotencyKeyHeader = "Idempotency-Key";
+    private const int MaxIdempotencyKeyLength = 200;
+
     internal sealed class OperationsEndpointsLog;
 
     public static void MapOperationsEndpoints(this IEndpointRouteBuilder endpoints)
@@ -215,16 +220,26 @@ internal static class OperationsEndpoints
             }
         }
 
+        if (!TryResolveIdempotencyKey(context, out var idempotencyKey, out var idempotencyError))
+        {
+            return BadRequest(context, idempotencyError!);
+        }
+
         try
         {
             // Surface the caller's identity AND role(s) into the policy decision point so a
             // tier/role-aware engine (Phase 4) can decide per descriptor blast-radius. The
             // Community pass-through default ignores them. The running edition supplies
             // the same trusted tier used by MCP operation submissions.
+            var principalId = CanonicalSecurityActor.Resolve(context.User)?.ActorId;
+            var tenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId;
             var policyContext = new OperationPolicyContext
             {
-                PrincipalId = CanonicalSecurityActor.Resolve(context.User)?.ActorId,
-                TenantId = context.RequestServices.GetService<ITenantContext>()?.TenantId,
+                PrincipalId = principalId,
+                TenantId = tenantId,
+                IdempotencyKey = idempotencyKey is null
+                    ? null
+                    : ScopeIdempotencyKey(idempotencyKey, tenantId, principalId),
                 Tier = context.RequestServices.GetService<ILicenseEntitlementService>()?
                     .GetSnapshot().Edition.ToString().ToLowerInvariant(),
                 SchemaName = context.RequestServices.GetService<ISchemaContext>()?.CurrentSchema,
@@ -359,16 +374,59 @@ internal static class OperationsEndpoints
             OperationsJsonContext.Default.ApiResponseOperationSecretValueResponse);
     }
 
+    // A body that omits "fields" (or "parameters") binds that member as null. Normalize it at the
+    // boundary: a null field list reached the admin approval payload and failed every destructive
+    // Admin proposal submitted through this endpoint (#3361).
     private static OperationRequest ToRequest(string operationId, OperationInvokeRequest request)
         => new()
         {
             OperationId = operationId,
-            Parameters = request.Parameters,
+            Parameters = request.Parameters ?? new Dictionary<string, string?>(StringComparer.Ordinal),
             ConnectionId = request.ConnectionId,
             ServiceName = request.ServiceName,
-            Fields = request.Fields,
+            Fields = request.Fields ?? [],
             DryRun = request.DryRun
         };
+
+    private static bool TryResolveIdempotencyKey(HttpContext context, out string? key, out string? error)
+    {
+        key = null;
+        error = null;
+        if (!context.Request.Headers.TryGetValue(IdempotencyKeyHeader, out var values) || values.Count == 0)
+        {
+            return true;
+        }
+
+        var trimmed = values.Count == 1 ? values[0]?.Trim() : null;
+        if (values.Count > 1)
+        {
+            error = $"{IdempotencyKeyHeader} header must be supplied once.";
+        }
+        else if (string.IsNullOrEmpty(trimmed))
+        {
+            error = $"{IdempotencyKeyHeader} header must not be empty.";
+        }
+        else if (trimmed.Length > MaxIdempotencyKeyLength)
+        {
+            error = $"{IdempotencyKeyHeader} header must be at most {MaxIdempotencyKeyLength} characters.";
+        }
+        else if (trimmed.Any(char.IsControl))
+        {
+            error = $"{IdempotencyKeyHeader} header must not contain control characters.";
+        }
+        else
+        {
+            key = trimmed;
+        }
+
+        return error is null;
+    }
+
+    // Bind the caller's key to its tenant and principal, so one caller's key can never resolve
+    // another caller's durable invocation or sealed proposal.
+    private static string ScopeIdempotencyKey(string key, string? tenantId, string? principalId)
+        => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
+            $"{tenantId ?? "<default>"}:{principalId ?? "<anonymous>"}:{key}")));
 
     private static IResult BadRequest(HttpContext context, string detail)
         => ProblemDetailsHelpers.CreateAdminProblem(

@@ -58,13 +58,16 @@ internal sealed partial class AdminOperationApprovalBridge(
 
         try
         {
-            var gatewayRequest = (mapper?.Map(descriptor, request, context, decision)
-                ?? request.GatewayRequest!) with
+            var mapped = mapper?.Map(descriptor, request, context, decision) ?? request.GatewayRequest!;
+            var gatewayRequest = mapped with
             {
                 OperationId = descriptor.OperationId,
                 TenantId = context.TenantId,
                 OperationInstanceId = context.OperationInstanceId,
                 CorrelationId = context.CorrelationId,
+                // The proposal persists the invocation's idempotency identity so a retry, including
+                // one after a restart, folds onto the same sealed proposal. A mapper-scoped key wins.
+                IdempotencyKey = mapped.IdempotencyKey ?? context.IdempotencyKey,
                 ScopeGoverned = context.ScopeGoverned,
                 RecognizedScopes = context.RecognizedScopes,
             };
