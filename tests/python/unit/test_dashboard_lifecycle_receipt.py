@@ -79,20 +79,26 @@ class _FakeDatabase:
         return self._rows
 
 
+def _row(audit_id, action, resource_type, resource_id, correlation, actor="owner"):
+    return {"audit_id": audit_id, "action": action, "actor": actor, "resource_type": resource_type,
+            "resource_id": resource_id, "correlation_id": correlation}
+
+
 def test_audit_join_requires_owner_actor_tenant_and_matching_instance_ids():
     trace = "9d5bce2637737efd3de6355119fd2dfa"
     correlation = f"00-{trace}-29763eb9495f9334-00"
     audit_rows = [
-        {"audit_id": 92, "action": "operation.accepted", "actor": "owner", "resource_id": "opinst-1", "correlation_id": correlation},
-        {"audit_id": 93, "action": "operation.completed", "actor": "owner", "resource_id": "opinst-1", "correlation_id": correlation},
+        _row(92, "operation.accepted", "operation_instance", "opinst-1", correlation),
+        _row(93, "operation.completed", "operation_instance", "opinst-1", correlation),
     ]
-    instance = {"tenantId": "public", "correlationId": correlation, "auditId": "92"}
+    instance = {"status": "Completed", "tenantId": "public", "correlationId": correlation, "auditId": "92"}
 
     row = receipt.ReceiptRow("audit", "joined")
     database = _FakeDatabase(audit_rows)
     receipt.audit_joins(database, row, [("add_layer", {"traceId": trace})], "owner", "public", lambda _: instance)
     assert row.failures == []
     assert f"'00-{trace}-%'" in database.queries[0]
+    assert "operation_proposal" in database.queries[0]
 
     wrong_tenant = receipt.ReceiptRow("audit", "joined")
     receipt.audit_joins(_FakeDatabase(audit_rows), wrong_tenant, [("add_layer", {"traceId": trace})], "owner", "tenant-b",
@@ -104,6 +110,37 @@ def test_audit_join_requires_owner_actor_tenant_and_matching_instance_ids():
                         lambda _: instance)
     assert any("not the draft owner" in failure for failure in wrong_actor.failures)
 
+    not_completed = receipt.ReceiptRow("audit", "joined")
+    receipt.audit_joins(_FakeDatabase(audit_rows[:1]), not_completed, [("add_layer", {"traceId": trace})], "owner", "public",
+                        lambda _: instance)
+    assert any("operation.accepted" in failure for failure in not_completed.failures)
+
     missing = receipt.ReceiptRow("audit", "joined")
     receipt.audit_joins(_FakeDatabase([]), missing, [("add_layer", {"traceId": trace})], "owner", "public", lambda _: None)
     assert missing.failures
+
+
+def test_audit_join_accepts_approval_routed_mutation_only_with_its_proposal_row():
+    # An awaiting-approval proposal never completes: its evidence is the accepted operation row plus
+    # the proposal row, and the instance audit id is the proposal row (observed on a Production host).
+    trace = "533dbdc4c3624074b8d6cdb1e0e2bdd9"
+    correlation = f"00-{trace}-a257b11f7da75da5-00"
+    accepted = _row(121, "operation.accepted", "operation_instance", "opinst-3", correlation)
+    proposed = _row(122, "operation.proposed", "operation_proposal", "proposal-b1", correlation)
+    instance = {"status": "RequiresApproval", "proposalId": "proposal-b1", "tenantId": "public",
+                "correlationId": correlation, "auditId": "122"}
+    mutation = [("propose_publication", {"traceId": trace})]
+
+    joined = receipt.ReceiptRow("audit", "joined")
+    receipt.audit_joins(_FakeDatabase([accepted, proposed]), joined, mutation, "owner", "public", lambda _: instance)
+    assert joined.failures == []
+
+    no_proposal = receipt.ReceiptRow("audit", "joined")
+    receipt.audit_joins(_FakeDatabase([accepted]), no_proposal, mutation, "owner", "public", lambda _: instance)
+    assert any("no durable proposal row" in failure for failure in no_proposal.failures)
+    assert any("audit id 122" in failure for failure in no_proposal.failures)
+
+    other_proposal = receipt.ReceiptRow("audit", "joined")
+    receipt.audit_joins(_FakeDatabase([accepted, _row(122, "operation.proposed", "operation_proposal", "proposal-x", correlation)]),
+                        other_proposal, mutation, "owner", "public", lambda _: instance)
+    assert any("no durable proposal row" in failure for failure in other_proposal.failures)

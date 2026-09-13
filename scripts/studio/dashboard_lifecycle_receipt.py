@@ -172,6 +172,8 @@ class Server:
                 if status == 200 and isinstance(payload, dict) and "result" in payload:
                     return True
             except (urllib.error.URLError, ConnectionError, TimeoutError):
+                # A restarting server refuses or drops connections until it listens again; keep
+                # polling until the deadline instead of treating the restart window as a failure.
                 pass
             time.sleep(3)
         return False
@@ -453,33 +455,42 @@ def audit_joins(db: Database, audit: ReceiptRow, mutations: list[tuple[str, dict
 
     The client's own W3C trace id is the join key: the operation runtime's correlation id embeds
     it, so no response field has to be trusted. For every mutation the durable audit log must hold
-    an accepted and a completed row for one operation instance under that trace; the operation
-    instance must carry the request tenant and the same correlation and audit ids; and the audit
-    actor must be the draft owner the lifecycle store recorded.
+    an accepted row for exactly one operation instance under that trace, and then either its
+    completed row or, for a mutation routed to approval, the proposal row for the instance's
+    proposal. The operation instance must carry the request tenant, the same correlation id and an
+    audit id that is one of those rows; every operation and proposal row must name the draft owner
+    the lifecycle store recorded as its actor.
     """
     joined = []
     for verb, call in mutations:
         trace_id = call.get("traceId")
         if not audit.check(bool(trace_id), f"{verb}: no client trace id was sent"):
             continue
-        recorded = db.rows("SELECT audit_id, action, actor, resource_id, correlation_id FROM honua.audit_log "
-                           f"WHERE resource_type = 'operation_instance' AND correlation_id LIKE {quote('00-' + trace_id + '-%')} "
-                           "ORDER BY audit_id")
+        recorded = db.rows("SELECT audit_id, action, actor, resource_type, resource_id, correlation_id FROM honua.audit_log "
+                           "WHERE resource_type IN ('operation_instance', 'operation_proposal') "
+                           f"AND correlation_id LIKE {quote('00-' + trace_id + '-%')} ORDER BY audit_id")
+        operation_rows = [row for row in recorded if row["resource_type"] == "operation_instance"]
         actions = [row["action"] for row in recorded]
-        instances = sorted({row["resource_id"] for row in recorded})
-        audit.check("operation.accepted" in actions and "operation.completed" in actions,
-                    f"{verb}: durable audit rows for trace {trace_id} are {actions}")
+        instances = sorted({row["resource_id"] for row in operation_rows})
+        audit.check("operation.accepted" in actions, f"{verb}: no durable operation.accepted row for trace {trace_id}")
         audit.check(len(instances) == 1, f"{verb}: trace {trace_id} maps to operation instances {instances}")
         actors = sorted({row["actor"] for row in recorded})
         audit.check(actors == [owner_id], f"{verb}: audit actors {actors} are not the draft owner {owner_id}")
         instance = instance_reader(instances[0]) if len(instances) == 1 else None
         if audit.check(instance is not None, f"{verb}: operation instance {instances} is not durably readable"):
+            if instance.get("status") == "RequiresApproval":
+                audit.check(any(row["resource_type"] == "operation_proposal" and row["action"] == "operation.proposed"
+                                and row["resource_id"] == instance.get("proposalId") for row in recorded),
+                            f"{verb}: no durable proposal row for {instance.get('proposalId')}")
+            else:
+                audit.check("operation.completed" in actions, f"{verb}: durable audit rows for trace {trace_id} are {actions}")
             audit.check(instance.get("tenantId") == tenant, f"{verb}: instance tenant {instance.get('tenantId')} != {tenant}")
             audit.check(instance.get("correlationId") in {row["correlation_id"] for row in recorded},
                         f"{verb}: instance correlation differs from the audit rows")
             audit.check(str(instance.get("auditId")) in {str(row["audit_id"]) for row in recorded},
                         f"{verb}: instance audit id {instance.get('auditId')} is not one of its audit rows")
         joined.append({"verb": verb, "traceId": trace_id, "operationInstanceId": instances[0] if instances else None,
+                       "status": (instance or {}).get("status"), "proposalId": (instance or {}).get("proposalId"),
                        "tenantId": (instance or {}).get("tenantId"), "auditActions": actions, "actors": actors,
                        "auditIds": [row["audit_id"] for row in recorded]})
     audit.evidence.update({"ownerId": owner_id, "joins": joined})

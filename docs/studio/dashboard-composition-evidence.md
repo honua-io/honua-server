@@ -64,23 +64,34 @@ server durably recorded:
 - the durable audit rows, the control-plane operation instance (tenant, audit id) and the
   draft owner are matched to it, so no response field has to be trusted.
 
-The run used the pinned candidate `7ba422672e0c751843b17beb36e954a019cc19fb`
-(`ghcr.io/honua-io/honua-server@sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd`)
-under `ASPNETCORE_ENVIRONMENT=Production`, with PostGIS, append-only Redis and a
-symmetric-key OIDC resource server on a local Docker network. The recorded
-[receipt](receipts/dashboard-lifecycle-7ba4226.json) is the baseline:
+Both runs used `ASPNETCORE_ENVIRONMENT=Production`, with PostGIS, append-only Redis and a
+symmetric-key OIDC resource server on a local Docker network:
 
-| Row | Candidate `7ba4226` |
-|---|---|
-| All eleven composition verbs through MCP with literal values | pass |
-| Stale generation, re-read retry exactly once, conflicting retry stays failed | pass |
-| `update_draft` shared validator accepts valid and rejects malformed documents | pass |
-| Save, restart, get and reopen preserve version identity and content hash | pass |
-| Every mutation joins owner, tenant, actor, durable audit and correlation | pass |
-| Other owner, other tenant or narrowed scope receives a non-disclosing denial | **fail** |
-| The saved dashboard enters governed approval without moving a pointer | **fail** |
+- The baseline is the pinned candidate `7ba422672e0c751843b17beb36e954a019cc19fb`
+  (`ghcr.io/honua-io/honua-server@sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd`),
+  unlicensed. See its [receipt](receipts/dashboard-lifecycle-7ba4226.json).
+- The repair run used an image built from source revision
+  `3b8a65004c6bd8905b054c17898ce73824c66bfb`. It ran with the 2026.1 release setting
+  `Licensing__Mode=Disabled` and `Guardrails__Overrides__StudioDraftMutation=DirectExecute`.
+  See its [receipt](receipts/dashboard-lifecycle-3b8a650-release-config.json).
+  - Disabled licensing grants every entitlement. That composes the Redis-backed durable
+    proposal gateway, which an unlicensed Community host does not have, so a governed
+    proposal there fails closed.
+  - It also resolves the guardrail ladder as Enterprise, which routes every Studio draft
+    mutation, including `create_draft`, through approval. The override keeps composition
+    direct, while the built-in publication-proposal floor below still requires approval.
 
-The two failures are product defects that this change repairs:
+| Row | Candidate `7ba4226` | Source `3b8a650` |
+|---|---|---|
+| All eleven composition verbs through MCP with literal values | pass | pass |
+| Stale generation, re-read retry exactly once, conflicting retry stays failed | pass | pass |
+| `update_draft` shared validator accepts valid and rejects malformed documents | pass | pass |
+| Other owner, other tenant or narrowed scope receives a non-disclosing denial | **fail** | pass |
+| Save, restart, get and reopen preserve version identity and content hash | pass | pass |
+| The saved dashboard enters governed approval without moving a pointer | **fail** | pass |
+| Every mutation joins owner, tenant, actor, durable audit and correlation | pass | pass |
+
+The candidate failures are product defects that this change repairs:
 
 - **Ownership was not tenant- or issuer-bound.** Studio owners were the bare token
   subject. The same subject presented from another tenant read *and mutated* the owner's
@@ -96,10 +107,25 @@ The two failures are product defects that this change repairs:
   edition, while draft composition and the REST publish-request surface keep the edition
   tier.
 
+The first source-built run exposed two further defects on current trunk, which this change
+also repairs:
+
+- **OAuth reopen, publication, rollback, validate and preview-plan were refused.** Trunk
+  #4722 made the dispatcher reject every scope-governed submission it cannot map, and the
+  operation scope mapping knew only draft create, update, save and delete. The refusal
+  happened before an operation envelope existed, so REST reopen answered `409` and MCP
+  proposals answered an internal error, both reading "not durably readable". Every Studio
+  runtime operation now maps to the same scope ceiling `StudioAuthorizationService` uses.
+- **REST mutations recorded the bare subject as actor.** Studio REST handlers now pass the
+  canonical Studio caller id, as the MCP tools already did. Audit actors and draft owners
+  therefore agree.
+
 Owner keys for issuer-bearing principals change format with this repair. Drafts created
 earlier by OIDC principals fail closed to their owners until an admin reassigns them.
-API-key owners are unchanged.
+API-key owners are unchanged. The guardrail posture of `Licensing__Mode=Disabled` for
+Studio composition is tracked separately in
+[#4758](https://github.com/honua-io/honua-server/issues/4758).
 
-The candidate predates the repair, so it cannot pass the two rows it exposed. Closing
-them against a candidate needs a re-pinned image that contains this change, followed by
-the same driver run against it.
+The source-built run passes every row. The pinned candidate predates the repair, so the
+remaining step for #3429 is to rerun the same driver against a re-pinned candidate image that
+contains this change, with the release deployment settings above.
