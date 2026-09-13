@@ -238,6 +238,41 @@ public sealed class ImportAuthorizationParityTests : IAsyncLifetime
         _effects.Should().ContainSingle("the exact approved upload grant must survive the shared semantic gate");
     }
 
+    [Theory]
+    [InlineData("POST", "/api/v1/admin/import/preview")]
+    [InlineData("GET", "/api/v1/admin/services/test/layers/0/export")]
+    [InlineData("POST", "/api/v1/admin/tile-operations/jobs")]
+    [InlineData("GET", "/api/v1/admin/tile-operations/jobs")]
+    [InlineData("GET", "/api/v1/admin/tile-operations/jobs/missing")]
+    [InlineData("POST", "/api/v1/admin/tile-operations/jobs/missing/cancel")]
+    [InlineData("POST", "/api/v1/admin/tile-operations/jobs/missing/retry")]
+    [InlineData("POST", "/api/v1/admin/tile-operations/evict")]
+    [InlineData("GET", "/api/v1/admin/tile-operations/cache/inventory")]
+    [Trait("Category", "Integration")]
+    [Trait("Tier", "Integration")]
+    [Operation(Operations.Import)]
+    [Endpoint("POST /api/v1/admin/import/preview")]
+    [Endpoint("GET /api/v1/admin/services/{serviceName}/layers/{layerId}/export")]
+    public async Task AdminImportExportAndTiles_AnonymousAndUnprivilegedPrincipalsAreDenied(string method, string path)
+    {
+        foreach (var profile in new[] { PrincipalProfile.Anonymous, PrincipalProfile.AuthenticatedNoGrant, PrincipalProfile.WorkspaceCreate })
+        {
+            _importService.ClearReceivedCalls();
+            using var client = CreateClient(profile);
+            using var request = new HttpRequestMessage(new HttpMethod(method), path);
+            if (method == "POST")
+            {
+                request.Content = path.EndsWith("/preview", StringComparison.Ordinal)
+                    ? BuildRestRequest(profile).Content
+                    : new StringContent("{}", Encoding.UTF8, "application/json");
+            }
+            using var response = await client.SendAsync(request);
+            response.StatusCode.Should().Be(profile == PrincipalProfile.Anonymous
+                ? HttpStatusCode.Unauthorized : HttpStatusCode.Forbidden, $"{method} {path} / {profile}");
+            await _importService.DidNotReceive().PreviewFileAsync(Arg.Any<Stream>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+        }
+    }
+
     private HttpClient CreateClient(PrincipalProfile profile) => profile switch
     {
         PrincipalProfile.Anonymous => _fixture.CreateClient(),

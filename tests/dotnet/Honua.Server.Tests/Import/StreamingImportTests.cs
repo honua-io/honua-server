@@ -94,7 +94,8 @@ public class StreamingImportTests : IAsyncLifetime
         var responseContent = await response.Content.ReadAsStringAsync();
         responseContent.Should().Contain("streaming_test_table");
         responseContent.Should().Contain("\"success\":true");
-        responseContent.Should().Contain("\"featureCount\":");
+        using var payload = JsonDocument.Parse(responseContent);
+        payload.RootElement.GetProperty("featureCount").GetInt32().Should().Be(1000);
     }
 
     [IntegrationTest]
@@ -776,8 +777,9 @@ public class StreamingImportTests : IAsyncLifetime
         // Assert
         response.BeSuccessful();
         var responseContent = await response.Content.ReadAsStringAsync();
-        responseContent.Should().Contain("totalFeatureCount");
-        // Feature count should be limited by MaxPreviewFeatures (default 100)
+        using var payload = JsonDocument.Parse(responseContent);
+        payload.RootElement.GetProperty("totalFeatureCount").GetInt32().Should().Be(100);
+        payload.RootElement.GetProperty("sampleProperties").GetProperty("id").GetInt32().Should().Be(0);
     }
 
     [IntegrationTest]
@@ -1135,6 +1137,78 @@ public class StreamingImportTests : IAsyncLifetime
 
         response.BeSuccessful();
         return await response.Content.ReadAsStringAsync();
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    public async Task Import_UpsertRepeatedKeys_UpdatesGeometryAndValuesWithoutDuplicatingRows()
+    {
+        var logicalName = "upsert_proof_" + Guid.NewGuid().ToString("N")[..12];
+        var table = "imported_" + logicalName;
+        var service = _fixture.GetService<IFileImportService>();
+        const string original = """
+            {"type":"FeatureCollection","features":[
+              {"type":"Feature","geometry":{"type":"Point","coordinates":[1,2]},"properties":{"key":"A","name":"old","value":1}},
+              {"type":"Feature","geometry":{"type":"Point","coordinates":[3,4]},"properties":{"key":"B","name":"retained","value":null}}]}
+            """;
+        const string update = """
+            {"type":"FeatureCollection","features":[
+              {"type":"Feature","geometry":{"type":"Point","coordinates":[-157.5,21.25]},"properties":{"key":"A","name":"updated","value":12.5}},
+              {"type":"Feature","geometry":{"type":"Point","coordinates":[5,6]},"properties":{"key":"C","name":"inserted","value":3}}]}
+            """;
+        try
+        {
+            foreach (var (json, mode) in new[] { (original, ImportLoadMode.Replace), (update, ImportLoadMode.Upsert), (update, ImportLoadMode.Upsert) })
+            {
+                await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
+                var result = await service.ImportFileAsync(new ImportRequest
+                {
+                    FileStream = stream, FileName = "keyed.geojson", TableName = logicalName,
+                    TargetSchema = "honua_data", SourceSrid = 4326, TargetSrid = 4326,
+                    LoadMode = mode, OverwriteExisting = true,
+                    KeyColumns = mode == ImportLoadMode.Upsert ? ["key"] : []
+                });
+                result.Success.Should().BeTrue(result.ErrorMessage);
+                result.FeatureCount.Should().Be(2);
+            }
+            await using var connection = await _fixture.Postgres.GetConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT properties->>'key', properties->>'name', properties->>'value', ST_X(geometry), ST_Y(geometry), ST_SRID(geometry) FROM honua_data.{QuoteIdentifier(table)} ORDER BY properties->>'key'";
+            var rows = new List<(string, string, string?, double, double, int)>();
+            await using (var reader = await command.ExecuteReaderAsync())
+            {
+                while (await reader.ReadAsync())
+                {
+                    rows.Add((reader.GetString(0), reader.GetString(1), reader.IsDBNull(2) ? null : reader.GetString(2), reader.GetDouble(3), reader.GetDouble(4), reader.GetInt32(5)));
+                }
+            }
+            rows.Should().Equal(("A", "updated", "12.5", -157.5, 21.25, 4326),
+                ("B", "retained", null, 3, 4, 4326), ("C", "inserted", "3", 5, 6, 4326));
+            command.CommandText = "SELECT column_name, udt_name FROM information_schema.columns WHERE table_schema='honua_data' AND table_name=@table ORDER BY ordinal_position";
+            command.Parameters.AddWithValue("table", table);
+            var columns = new List<(string, string)>();
+            await using (var reader = await command.ExecuteReaderAsync())
+            {
+                while (await reader.ReadAsync()) columns.Add((reader.GetString(0), reader.GetString(1)));
+            }
+            columns.Should().Equal(("id", "int4"), ("geometry", "geometry"), ("properties", "jsonb"), ("created_at", "timestamptz"));
+            command.CommandText = "SELECT indexdef FROM pg_indexes WHERE schemaname='honua_data' AND tablename=@table";
+            var indexes = new List<string>();
+            await using (var reader = await command.ExecuteReaderAsync())
+            {
+                while (await reader.ReadAsync()) indexes.Add(reader.GetString(0));
+            }
+            indexes.Should().Contain(index => index.Contains("USING gist (geometry)", StringComparison.Ordinal));
+            indexes.Should().Contain(index => index.Contains("USING gin (properties)", StringComparison.Ordinal));
+            indexes.Should().Contain(index => index.Contains("CREATE UNIQUE INDEX", StringComparison.Ordinal) && index.Contains("'key'", StringComparison.Ordinal));
+        }
+        finally
+        {
+            await using var connection = await _fixture.Postgres.GetConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"DROP TABLE IF EXISTS honua_data.{QuoteIdentifier(table)} CASCADE";
+            await command.ExecuteNonQueryAsync();
+        }
     }
 
     private static ImportResult DeserializeImportResult(string responseContent)

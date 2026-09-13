@@ -509,6 +509,77 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
         }
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Category", "Integration")]
+    [Trait("Tier", "Integration")]
+    public async Task ImportFileAsync_ReplaceInterruptedAfterCommittedBatch_PreservesLiveRowsAndReclaimsAllStagingRelations(bool cancel)
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync("replace_interrupt");
+        try
+        {
+            await EnsureImportFunctionsAsync();
+            await SeedOverwriteGuardTargetAsync(schema);
+            var liveOid = await ReadRelationIdAsync(schema, OverwriteGuardPhysicalTable);
+            using var cancellation = new CancellationTokenSource();
+            var committedBatches = 0;
+            var progress = new InlineImportProgress(value =>
+            {
+                if (value.BatchesCommitted > 0)
+                {
+                    committedBatches = value.BatchesCommitted;
+                    if (cancel)
+                    {
+                        cancellation.Cancel();
+                        cancellation.Token.ThrowIfCancellationRequested();
+                    }
+                    throw new IOException("fixture failure after committed batch");
+                }
+            });
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var service = new StreamingFileImportService(provider,
+                new CrsDetectionService(provider, NullLogger<CrsDetectionService>.Instance),
+                new TestFileFormatDetectionService(), new NoopPerformanceMonitor(),
+                NullLogger<StreamingFileImportService>.Instance, ImportLimits.Default with { BatchSize = 1 });
+            await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(PointGeoJson));
+            var request = new ImportRequest
+            {
+                FileStream = stream, FileName = "interrupted.geojson", TableName = OverwriteGuardLogicalTable,
+                TargetSchema = schema, SourceSrid = 4326, TargetSrid = 4326,
+                LoadMode = ImportLoadMode.Replace, OverwriteExisting = true
+            };
+            var action = () => service.ImportFileAsync(request, progress, cancellation.Token);
+            if (cancel)
+            {
+                await action.Should().ThrowAsync<OperationCanceledException>();
+            }
+            else
+            {
+                (await action()).Success.Should().BeFalse();
+            }
+            committedBatches.Should().Be(1, "interrupt only after a batch has committed to staging");
+            (await ReadRelationIdAsync(schema, OverwriteGuardPhysicalTable)).Should().Be(liveOid);
+            var rows = await ReadOverwriteGuardRowsAsync(schema);
+            rows.Select(row => (row.Name, row.Code, row.Wkt)).Should().Equal(SeededLiveRows);
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            // Include indexes and sequences, not just tables: no staging relation may remain.
+            command.CommandText = "SELECT relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=@schema AND relname LIKE '%__staging%'";
+            command.Parameters.AddWithValue("schema", schema);
+            (await command.ExecuteScalarAsync()).Should().BeNull();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    private sealed class InlineImportProgress(Action<ImportProgress> report) : IProgress<ImportProgress>
+    {
+        public void Report(ImportProgress value) => report(value);
+    }
+
     private async Task<bool> TableExistsAsync(string schema, string tableName)
     {
         await using var connection = await fixture.DataSource.OpenConnectionAsync();

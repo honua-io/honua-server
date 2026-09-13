@@ -575,6 +575,151 @@ public sealed class ExportJobServiceTests
             .Should().Be(0);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.Export)]
+    public async Task ProcessQueuedJobAsync_UserCancelsRunningExport_RemovesArtifactsAndRequest(bool afterUpload)
+    {
+        var progressStore = new InMemoryUniversalProgressStore();
+        var requestCache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var reachedPhase = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseUpload = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        CancellationToken workerToken = default;
+        var streamingStore = Substitute.For<IStreamingFeatureStore>();
+        streamingStore.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call => StreamUntilCancelled(call.ArgAt<CancellationToken>(2)));
+        async IAsyncEnumerable<Feature> StreamUntilCancelled(
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken token)
+        {
+            workerToken = token;
+            yield return Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty.Add("name", "Partial"));
+            if (!afterUpload)
+            {
+                reachedPhase.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            }
+        }
+
+        var cloudStorage = Substitute.For<ICloudFileStorage>();
+        cloudStorage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>())
+            .Returns(async call =>
+            {
+                // A provider may finish its upload concurrently with the user's cancellation.
+                await call.Arg<FileUploadRequest>().Content.CopyToAsync(Stream.Null);
+                reachedPhase.TrySetResult();
+                await releaseUpload.Task;
+                return UploadResult.CreateSuccess(new CloudFile
+                {
+                    FileId = "cancelled-artifact", FileName = "export.csv", StoragePath = "exports/export.csv",
+                    ContentType = "text/csv", SizeBytes = 32, UploadedAt = DateTimeOffset.UtcNow,
+                    Provider = CloudStorageProvider.AwsS3
+                });
+            });
+        var registrations = new ServiceCollection();
+        registrations.AddLogging();
+        registrations.AddHonuaImportExportAndTileOperations(new ConfigurationBuilder().Build());
+        registrations.AddSingleton<IUniversalProgressStore>(progressStore);
+        registrations.AddSingleton<IDistributedCache>(requestCache);
+        registrations.AddSingleton<ILicenseOperationPolicy>(Substitute.For<ILicenseOperationPolicy>());
+        registrations.AddSingleton<IStreamingFeatureStore>(streamingStore);
+        registrations.AddSingleton<ICrsRegistry>(new NullCrsRegistry());
+        registrations.AddSingleton<ICloudFileStorage>(cloudStorage);
+        using var services = registrations.BuildServiceProvider();
+        var sut = services.GetRequiredService<IExportJobService>();
+        var job = CreateJob(Guid.NewGuid().ToString("N"));
+        await sut.StartAsync(job);
+        var processing = sut.ProcessQueuedJobAsync(job.JobId);
+        try
+        {
+            await reachedPhase.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            Directory.Exists(Path.Join(Path.GetTempPath(), "honua-export", job.JobId)).Should().BeTrue();
+            var notified = services.GetServices<IJobCancellationNotifier>().Count(notifier => notifier.Cancel(job.JobId));
+            notified.Should().Be(1, "the registered export worker must own user cancellation");
+        }
+        finally
+        {
+            releaseUpload.TrySetResult();
+        }
+
+        await processing.WaitAsync(TimeSpan.FromSeconds(10));
+        workerToken.IsCancellationRequested.Should().BeTrue();
+        var progress = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
+        progress!.Status.Should().Be(OperationStatus.Cancelled);
+        progress.DownloadUrl.Should().BeNull();
+        progress.OutputSizeBytes.Should().Be(0);
+        progress.CompletedAt.Should().NotBeNull();
+        (await requestCache.GetStringAsync($"export:request:{job.JobId}")).Should().BeNull();
+        Directory.Exists(Path.Join(Path.GetTempPath(), "honua-export", job.JobId)).Should().BeFalse();
+        if (afterUpload)
+        {
+            await cloudStorage.Received(1).DeleteAsync("cancelled-artifact", CancellationToken.None);
+        }
+        else
+        {
+            await cloudStorage.DidNotReceive().UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>());
+        }
+        services.GetServices<IJobCancellationNotifier>().Any(notifier => notifier.Cancel(job.JobId)).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ProcessQueuedJobAsync_CsvArtifact_PreservesValuesNullsAndZmOrdinates()
+    {
+        var progressStore = new InMemoryUniversalProgressStore();
+        var cache = new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+        var store = Substitute.For<IStreamingFeatureStore>();
+        store.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(FixtureFeatures());
+        static async IAsyncEnumerable<Feature> FixtureFeatures()
+        {
+            // ISO WKB: little-endian PointZM (3001), followed by X/Y/Z/M doubles.
+            // Encoded independently from the export writer; expected ordinates below are fixture constants.
+            yield return Feature.Create(1, Convert.FromHexString("01B90B00000000000000B063C0000000000040354000000000000029400000000000001D40"),
+                ImmutableDictionary<string, object?>.Empty.Add("name", "Harbor").Add("depth", 12.5));
+            yield return Feature.Create(2, null,
+                ImmutableDictionary<string, object?>.Empty.Add("name", "Unlocated").Add("depth", null));
+            await Task.CompletedTask;
+        }
+        string? artifact = null;
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.UploadAsync(Arg.Any<FileUploadRequest>(), Arg.Any<CancellationToken>()).Returns(async call =>
+        {
+            using var reader = new StreamReader(call.Arg<FileUploadRequest>().Content, leaveOpen: true);
+            artifact = await reader.ReadToEndAsync();
+            return UploadResult.CreateSuccess(new CloudFile
+            {
+                FileId = "csv-proof", FileName = "proof.csv", StoragePath = "exports/proof.csv",
+                ContentType = "text/csv", SizeBytes = artifact.Length,
+                UploadedAt = DateTimeOffset.UtcNow, Provider = CloudStorageProvider.AwsS3
+            });
+        });
+        storage.GetPresignedUrlAsync("csv-proof", Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns("https://example.test/proof.csv");
+        using var services = new ServiceCollection().AddSingleton(store).AddSingleton(storage)
+            .AddSingleton<ICrsRegistry>(new NullCrsRegistry()).BuildServiceProvider();
+        var sut = new ExportJobService(progressStore, cache, Channel.CreateUnbounded<string>(),
+            services.GetRequiredService<IServiceScopeFactory>(), NullLogger<ExportJobService>.Instance);
+        var job = CreateJob(Guid.NewGuid().ToString("N")) with
+        {
+            Fields = [new ExportField("name", ExportFieldType.String, true), new ExportField("depth", ExportFieldType.Double, true)],
+            TotalFeatures = 99, GeometryType = ExportGeometryType.Point
+        };
+        await sut.StartAsync(job);
+        await sut.ProcessQueuedJobAsync(job.JobId);
+        artifact.Should().NotBeNull();
+        artifact!.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries).Should().Equal(
+            "name,depth,WKT", "Harbor,12.5,POINT ZM(-157.5 21.25 12.5 7.25)", "Unlocated,,");
+        var progress = await progressStore.GetProgressAsync<ExportProgress>(job.JobId);
+        progress!.Status.Should().Be(OperationStatus.Completed);
+        progress.ProcessedFeatures.Should().Be(2, "the receipt counts rows actually exported, not the estimated 99");
+        progress.DownloadUrl.Should().Be("https://example.test/proof.csv");
+        progress.Warnings.Should().BeEmpty();
+        Directory.Exists(Path.Join(Path.GetTempPath(), "honua-export", job.JobId)).Should().BeFalse();
+    }
+
     private static async IAsyncEnumerable<Feature> CreateWarningFeatures()
     {
         yield return Feature.Create(1, geometry: null,
