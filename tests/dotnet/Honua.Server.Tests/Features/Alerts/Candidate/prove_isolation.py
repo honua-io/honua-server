@@ -47,6 +47,7 @@ def main():
                "concurrentTenantEvaluation": "not qualified: tenant-owned alerts are not implemented",
                "checks": [], "http": []}
     password = uuid.uuid4().hex
+    correlation = uuid.uuid4().hex
     network_created = False
 
     def run(name, image, env=None, extra=()):
@@ -60,7 +61,7 @@ def main():
 
     def sql(statement):
         return command("docker", "exec", "-i", postgres, "psql", "-XAt", "-v", "ON_ERROR_STOP=1",
-                       "-U", "honua", "-d", "honua", input=statement)
+                       "-h", "127.0.0.1", "-U", "honua", "-d", "honua", input=statement)
 
     def start_server(name, **settings):
         return run(name, args.image, {
@@ -81,6 +82,7 @@ def main():
             headers["X-API-Key"] = password
         if tenant:
             headers["X-Honua-Tenant"] = tenant
+            headers["X-Correlation-ID"] = correlation
         data = json.dumps(body or {}).encode() if method not in ("GET", "DELETE") else None
         req = urllib.request.Request(base + path, headers=headers, data=data, method=method)
         try:
@@ -158,12 +160,29 @@ INSERT INTO honua.alert_channel_state(channel_type,is_paused) VALUES(1,true);
             path = re.sub(r"\{([^}:]+)(?::[^}]+)?\}",
                           lambda match: {"version": "1", "zoneId": "3859", "ruleId": "3859",
                                          "eventId": "3859", "channel": "webhook"}[match[1]], path)
+            rule = {"serviceId": "private-instance-3859", "layerId": 1, "zoneId": None,
+                    "ruleName": "attempted", "triggerType": "threshold",
+                    "conditionsJson": '{"field":"speed","operator":">","value":30}',
+                    "cooldownSeconds": 60, "severity": "warning", "editionRequired": "pro",
+                    "channels": ["webhook"], "isActive": True}
+            body_input = {"note": "3859"}
+            if "/zones" in path:
+                body_input = {"serviceId": "private-instance-3859", "zoneName": "attempted",
+                              "wkt": "POLYGON((0 0,0 2,2 2,2 0,0 0))", "srid": 4326, "isActive": True}
+            elif path.endswith("/rules/test"):
+                body_input = {"rule": rule}
+            elif path.endswith("/enabled"):
+                body_input = {"enabled": True}
+            elif "/rules" in path:
+                body_input = rule
+            elif path.endswith("/suppress"):
+                body_input = {"suppressUntil": "2099-01-01T00:00:00Z", "note": "3859"}
             for tenant in ("tenant-a-3859", "tenant-b-3859"):
-                status, body = request(method, path, tenant)
+                status, body = request(method, path, tenant, body=body_input)
                 require(status == 403 and DENIAL in body, f"Isolation filter did not refuse {tenant} {route}: {status} {body}")
                 for private in (tenant, "private-instance-3859", "private-receiver.invalid"):
                     require(private not in body, f"Refusal disclosed {private}")
-            status, _ = request(method, path, "tenant-unauthorized-3859", authenticated=False)
+            status, _ = request(method, path, "tenant-unauthorized-3859", authenticated=False, body=body_input)
             require(status in (401, 403), f"Unauthenticated request was not denied: {route}")
         after = rows()
         require(after == before, "Tenant requests mutated alert persistence")
@@ -172,6 +191,15 @@ INSERT INTO honua.alert_channel_state(channel_type,is_paused) VALUES(1,true);
         # A real successful control defeats vacuous blanket authorization/capability denial.
         status, body = request("GET", "/api/v1/admin/alerts/zones?serviceId=private-instance-3859")
         require(status == 200 and "original" in body, "Instance administrator cannot read seeded zone")
+        audit = json.loads(sql(f"SELECT coalesce(jsonb_agg(jsonb_build_object('resourceType',resource_type,'outcome',outcome,'details',details)),'[]') FROM honua.audit_log WHERE correlation_id='{correlation}';"))
+        require(len(audit) >= 2 * len(routes), "Tenant refusals lack access-audit records")
+        for row in audit:
+            require(row["outcome"] != "Success", "Refused request audited as success")
+            require(row["resourceType"] not in ("alert_zone", "alert_rule", "alert-channel", "alert_event"),
+                    "Tenant request reached alert-domain audit mutation")
+            require("private-instance-3859" not in row["details"] and "private-receiver.invalid" not in row["details"],
+                    "Refusal audit disclosed private alert data")
+        receipt["audit"] = audit
         receipt["rows"] = after
         receipt["geometry"] = geometry
         receipt["checks"].append(f"{len(routes)} routes refuse both tenant headers and unauthenticated calls without mutation")
@@ -189,7 +217,6 @@ INSERT INTO honua.alert_channel_state(channel_type,is_paused) VALUES(1,true);
                 time.sleep(1)
             else:
                 raise AssertionError(f"{name}: tenant-enabled workers did not exit")
-            logs = command("docker", "logs", worker)  # sanitized complete logs retained below
             # Native startup errors may be written to stderr.
             log_result = subprocess.run(["docker", "logs", worker], capture_output=True, text=True, check=True)
             logs = log_result.stdout + log_result.stderr
@@ -198,7 +225,7 @@ INSERT INTO honua.alert_channel_state(channel_type,is_paused) VALUES(1,true);
             receipt["checks"].append(name + ": startup rejected before evaluation/delivery mutation")
         receipt["outcome"] = "pass"
     except Exception as error:
-        receipt["error"] = str(error).replace(password, "[fixture-credential]")
+        receipt["error"] = (str(error) + "\n" + (getattr(error, "stderr", "") or "")).replace(password, "[fixture-credential]")
         raise
     finally:
         for name in reversed(containers):
