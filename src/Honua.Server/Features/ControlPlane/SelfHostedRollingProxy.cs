@@ -375,7 +375,7 @@ internal sealed partial class HttpLocalReplicaHealthProbe(
 
         var clampedSamples = Math.Clamp(samples <= 0 ? 1 : samples, MinimumSamples, MaximumSamples);
         var timeout = Math.Max(1, timeoutSeconds);
-        var client = httpClientFactory.CreateClient("control-plane-telemetry");
+        var client = httpClientFactory.CreateClient(ControlPlaneHttpClients.Probe);
         var failures = 0;
 
         for (var attempt = 0; attempt < clampedSamples; attempt++)

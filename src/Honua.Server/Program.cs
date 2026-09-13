@@ -573,10 +573,7 @@ builder.Services.AddResilientHttpClient(
     "import-source",
     HttpResiliencePolicies.SlowServiceDefaults,
     configureHandler: static () => Honua.Import.FileImport.ImportHttpClientHelper.CreatePinnedDnsHttpMessageHandler());
-builder.Services.AddResilientHttpClient(
-    "control-plane-telemetry",
-    "control-plane-telemetry",
-    HttpResiliencePolicies.FastApiDefaults);
+builder.Services.AddControlPlaneHttpClients();
 builder.Services.AddResilientHttpClient(
     "control-plane-azure",
     "control-plane-azure",

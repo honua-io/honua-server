@@ -144,7 +144,7 @@ internal sealed class HttpDeployHealthProbe(IHttpClientFactory httpClientFactory
 
         var samples = Math.Clamp(request.Samples <= 0 ? 1 : request.Samples, MinimumSamples, MaximumSamples);
         var timeoutSeconds = Math.Max(1, request.TimeoutSeconds);
-        var client = httpClientFactory.CreateClient("control-plane-telemetry");
+        var client = httpClientFactory.CreateClient(ControlPlaneHttpClients.Probe);
         var failures = 0;
 
         for (var attempt = 0; attempt < samples; attempt++)
@@ -218,7 +218,7 @@ internal sealed class HttpDeployHealthProbe(IHttpClientFactory httpClientFactory
 
         var timeoutSeconds = Math.Max(1, request.TimeoutSeconds);
         var maxBytes = Math.Max(1, request.MaxResponseBytes);
-        var client = httpClientFactory.CreateClient("control-plane-telemetry");
+        var client = httpClientFactory.CreateClient(ControlPlaneHttpClients.Probe);
 
         try
         {
