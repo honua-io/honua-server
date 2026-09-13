@@ -32,7 +32,7 @@ internal static class OperationSecretKeyRingProtection
         if (string.IsNullOrWhiteSpace(path))
         {
             throw new InvalidOperationException(
-                $"'{CertificatePathKey}' must be configured when the durable operation secret channel is enabled.");
+                $"'{CertificatePathKey}' is required when the durable operation secret channel is enabled.");
         }
 
         if (!File.Exists(path))

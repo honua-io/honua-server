@@ -9,7 +9,7 @@ using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 
-namespace Honua.Server.Tests.Features.Operations;
+namespace Honua.Server.Tests.Features.OperationSecretKeyRingProtectionTests;
 
 public sealed class OperationSecretKeyRingProtectionTests
 {
