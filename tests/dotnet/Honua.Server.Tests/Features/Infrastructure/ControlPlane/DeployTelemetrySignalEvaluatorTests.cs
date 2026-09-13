@@ -1638,6 +1638,28 @@ public sealed class DeployTelemetrySignalEvaluatorTests
     }
 
     [Fact]
+    public async Task EvaluateStagedCandidateAsync_ReadyOnlyAfterExposureDeadline_FailsWithoutActivation()
+    {
+        // The backend health gate first passes after the deadline. Healthy probes must not cut the
+        // candidate over late.
+        var capturedQueries = new ConcurrentQueue<string>();
+        var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 0 });
+        var evaluator = CreateEvaluator(capturedQueries, healthProbe: probe);
+        var operation = CreateOperation(
+            DeployTargetKind.SelfHostedRolling,
+            StagedMetricsParameters(("telemetry.exposure_deadline_seconds", "600")),
+            createdAt: DateTimeOffset.UtcNow.AddMinutes(-11));
+
+        var decision = await evaluator.EvaluateStagedCandidateAsync(operation, candidateReady: true);
+
+        decision!.RollbackRecommended.Should().BeTrue();
+        decision.WaitForMoreTelemetry.Should().BeFalse();
+        decision.Message.Should().Contain("was not ready for cutover within the 600-second exposure deadline");
+        probe.Invocations.Should().Be(0, "an expired staged phase fails before any probe could clear it");
+        capturedQueries.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task EvaluateStagedCandidateAsync_ReadyWithHealthyProbe_ClearsCutoverWithoutReadingMetrics()
     {
         // Created one minute ago: inside the preset warmup. EvaluateAsync would hold on warmup and then on

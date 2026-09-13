@@ -236,14 +236,18 @@ internal sealed class DeployTelemetrySignalEvaluator(
 
         // A staged candidate serves no traffic, so nothing traffic-dependent can describe it yet. Until
         // the backend's own health gate passes, hold only to the exposure deadline, then fail the rollout
-        // without activating the candidate.
-        if (!candidateReady)
+        // without activating the candidate. The deadline bounds the whole staged phase: a standby that
+        // only turns ready after it is rolled back too, never cut over late.
+        var exposureDeadlineElapsed = DateTimeOffset.UtcNow - operation.CreatedAt >= policy.ExposureDeadline;
+        if (!candidateReady || exposureDeadlineElapsed)
         {
             return HoldUntilExposureDeadline(
                 operation,
                 policy,
                 "the staged candidate revision to pass the backend health gate before cutover",
-                "the staged candidate revision never passed the backend health gate");
+                candidateReady
+                    ? "the staged candidate revision was not ready for cutover"
+                    : "the staged candidate revision never passed the backend health gate");
         }
 
         // The readiness and golden-query probes can run against the staged revision. A failing probe

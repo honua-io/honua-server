@@ -427,6 +427,30 @@ public sealed class DeployWorkflowReconcilerHealthGateTests
     }
 
     [Fact]
+    public async Task Reconcile_StagedCandidateReadyOnlyAfterExposureDeadline_RollsBackWithoutCutover()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new RecordingDeployBackend(observeStatus: WorkflowOperationStatus.Reconciling, promotionRecommended: true)
+        {
+            StagesCandidateWithoutTraffic = true
+        };
+        var operation = CreateOperationWith(StagedMetricsParameters, DateTimeOffset.UtcNow.AddMinutes(-31), WorkflowOperationStatus.Reconciling);
+        await store.TryCreateAsync(operation);
+        var reconciler = CreateReconciler(
+            store,
+            backend,
+            CreateMetricsEvaluator(new ConcurrentQueue<string>(), _ => Respond(HttpStatusCode.OK, PrometheusEmptyVector), HealthyProbe()));
+
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var updated = await store.GetAsync(operation.OperationId);
+
+        backend.PromoteCalls.Should().Be(0, "a standby that turns ready after the exposure deadline is never cut over late");
+        backend.RollbackCalls.Should().Be(1);
+        updated!.Deploy!.TrafficExposedAt.Should().BeNull();
+        updated.CurrentPhase.Should().Contain("was not ready for cutover within the 1800-second exposure deadline");
+    }
+
+    [Fact]
     public async Task Reconcile_ObservationWindowElapsedWhileMetricsEvidenceMissing_StaysUncommitted_ThenRollsBack()
     {
         // Promoted five minutes ago, window deadline already past, but Prometheus has no candidate samples.
