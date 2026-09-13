@@ -391,6 +391,8 @@ public sealed class CapabilityRegistryConformanceTests
             new UpdateStudioDraftTool(jobService, NullLogger<UpdateStudioDraftTool>.Instance),
             new ValidateStudioDraftTool(jobService, NullLogger<ValidateStudioDraftTool>.Instance),
             new PreviewStudioDraftTool(jobService, NullLogger<PreviewStudioDraftTool>.Instance),
+            new SaveStudioVersionTool(jobService, NullLogger<SaveStudioVersionTool>.Instance),
+            new ReopenStudioVersionTool(jobService, NullLogger<ReopenStudioVersionTool>.Instance),
             new AddStudioLayerTool(jobService, NullLogger<AddStudioLayerTool>.Instance),
             new RemoveStudioLayerTool(jobService, NullLogger<RemoveStudioLayerTool>.Instance),
             new SetStudioLayerStyleTool(jobService, NullLogger<SetStudioLayerStyleTool>.Instance),
