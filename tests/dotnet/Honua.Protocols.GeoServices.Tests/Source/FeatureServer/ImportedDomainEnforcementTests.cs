@@ -122,6 +122,34 @@ public sealed class ImportedDomainEnforcementTests
             "with no persisted domain nothing is enforced, which is why the registry reports a truncated domain as manual review");
     }
 
+    /// <summary>
+    /// #4600 review: <see cref="EsriFieldDomainParser.IsEnforceable"/> is what keeps a domain in the
+    /// automated classification tier, so it must agree with the validator. Each unenforceable variant is
+    /// persisted by the parser yet accepts a value outside anything the source declared; each enforceable
+    /// variant rejects it.
+    /// </summary>
+    [Theory]
+    [Operation(Operations.ApplyEdits)]
+    [InlineData("""{ "type": "codedValue", "name": "EmptyCodes", "codedValues": [] }""", false)]
+    [InlineData("""{ "type": "mysteryDomain", "name": "Unknown" }""", false)]
+    [InlineData("""{ "type": "range", "name": "OneBound", "range": [5] }""", false)]
+    [InlineData("""{ "type": "range", "name": "WordBounds", "range": ["low", "high"] }""", false)]
+    [InlineData("""{ "type": "codedValue", "name": "OneCode", "codedValues": [{ "code": 7, "name": "Seven" }] }""", true)]
+    [InlineData("""{ "type": "range", "name": "NumericStrings", "range": ["1", "9"] }""", true)]
+    public void IsEnforceable_AgreesWithApplyEditsValidation(string domainJson, bool expectedEnforceable)
+    {
+        using var document = JsonDocument.Parse($$"""{ "name": "odd", "type": "esriFieldTypeInteger", "domain": {{domainJson}} }""");
+        var parsed = EsriFieldDomainParser.Parse(document.RootElement);
+
+        EsriFieldDomainParser.IsEnforceable(parsed.Domain).Should().Be(expectedEnforceable);
+
+        // 1000 is outside every enforceable variant above (codes {7}, range [1, 9]).
+        var field = new MetadataV2Field { Name = "odd", Type = MetadataV2FieldType.Integer, Nullable = true, Domain = parsed.Domain };
+        Validate(field, "odd", 1000L).IsValid.Should().Be(
+            !expectedEnforceable,
+            "a domain is enforceable exactly when edit validation rejects a value outside it");
+    }
+
     private static MetadataV2Field ParseField(string fieldJson, MetadataV2FieldType type)
     {
         using var document = JsonDocument.Parse(fieldJson);

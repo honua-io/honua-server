@@ -126,20 +126,37 @@ internal sealed partial class GeoservicesImportService
         {
             var domains = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceDomains);
 
-            // #4600: a coded-value domain over the capture cap is recorded with its type but no values and
-            // is not persisted (EsriFieldDomainParser), so that field migrates without its domain.
-            var truncatedDomainCount = resource.Fields.Count(static field =>
-                string.Equals(field.DomainType, EsriFieldDomainParser.CodedValueDomainType, StringComparison.Ordinal)
-                && field.DomainValues is null);
-            var truncated = truncatedDomainCount > 0;
+            // #4600: the automated tier is only honest for domains the edit validator enforces. Each field's
+            // domain goes through EsriFieldDomainParser, the parser the importer persists from: a coded-value
+            // domain over the capture cap is not persisted at all, and an unknown domain type, an empty
+            // coded-value list or a malformed range is persisted but accepts every value on edit.
+            var (truncatedDomainCount, unenforceableDomainCount) = CountUnenforcedDomains(resourceElement);
             var domainMetadata = new Dictionary<string, string>(StringComparer.Ordinal)
             {
                 ["domainFieldCount"] = domainFieldCount.ToString(CultureInfo.InvariantCulture)
             };
-            if (truncated)
+            if (truncatedDomainCount > 0)
             {
                 domainMetadata["truncatedDomainCount"] = truncatedDomainCount.ToString(CultureInfo.InvariantCulture);
             }
+
+            if (unenforceableDomainCount > 0)
+            {
+                domainMetadata["unenforceableDomainCount"] = unenforceableDomainCount.ToString(CultureInfo.InvariantCulture);
+            }
+
+            var (domainStatus, domainCode, domainReason, domainSteps) = truncatedDomainCount > 0
+                ? (domains.UnsupportedAutomationStatus ?? MigrationFidelityAutomationStatuses.ManualReview,
+                    domains.UnsupportedCode ?? ImportCompatibilityCodes.ArcGisDomainTruncated,
+                    domains.UnsupportedReason ?? domains.Reason,
+                    domains.UnsupportedManualSteps)
+                : unenforceableDomainCount > 0
+                    ? (MigrationFidelityAutomationStatuses.ManualReview,
+                        ImportCompatibilityCodes.ManualReview,
+                        "At least one field domain has an unsupported type, no coded values, or no numeric range bounds, "
+                        + "so the published field accepts every value on edit.",
+                        new[] { "Define an enforceable coded-value or range domain on the target field configuration before cutover." })
+                    : (domains.AutomationStatus, domains.Code, domains.Reason, domains.ManualSteps);
 
             records.Add(CreateFidelityRecord(
                 $"{resource.Id}:domains",
@@ -147,10 +164,10 @@ internal sealed partial class GeoservicesImportService
                 "field-domain",
                 "domains",
                 resource.Name,
-                truncated ? domains.UnsupportedAutomationStatus ?? domains.AutomationStatus : domains.AutomationStatus,
-                truncated ? domains.UnsupportedCode ?? domains.Code : domains.Code,
-                truncated ? domains.UnsupportedReason ?? domains.Reason : domains.Reason,
-                truncated ? domains.UnsupportedManualSteps : domains.ManualSteps,
+                domainStatus,
+                domainCode,
+                domainReason,
+                domainSteps,
                 metadata: domainMetadata));
         }
 
@@ -260,6 +277,38 @@ internal sealed partial class GeoservicesImportService
                     .OrderBy(static item => item.Key, StringComparer.Ordinal)
                     .ToDictionary(static item => item.Key, static item => item.Value, StringComparer.Ordinal)
         };
+
+    private static (int Truncated, int Unenforceable) CountUnenforcedDomains(JsonElement resourceElement)
+    {
+        if (!resourceElement.TryGetProperty("fields", out var fields) || fields.ValueKind != JsonValueKind.Array)
+        {
+            return (0, 0);
+        }
+
+        var truncated = 0;
+        var unenforceable = 0;
+        foreach (var field in fields.EnumerateArray())
+        {
+            if (field.ValueKind != JsonValueKind.Object
+                || !field.TryGetProperty("domain", out var domain)
+                || domain.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var parsed = EsriFieldDomainParser.Parse(field);
+            if (parsed.Truncated)
+            {
+                truncated++;
+            }
+            else if (!EsriFieldDomainParser.IsEnforceable(parsed.Domain))
+            {
+                unenforceable++;
+            }
+        }
+
+        return (truncated, unenforceable);
+    }
 
     private static string ToFidelityAutomationStatus(string compatibilityLevel)
     {
