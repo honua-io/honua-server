@@ -47,6 +47,18 @@ class GpQualificationHarnessTests(unittest.TestCase):
         self.assertEqual("fail", receipts["output-store-attestation"]["outcome"])
         self.assertIn("preflight failure", receipts["output-store-attestation"]["finding"])
 
+    def test_dr_preflight_accounts_for_every_required_receipt(self):
+        completed, receipts, summary = self.run_harness(
+            "output-store-dr", HONUA_SERVER_IMAGE="unattested:latest"
+        )
+        self.assertNotEqual(0, completed.returncode)
+        self.assertEqual(
+            ["topology", "output-store-attestation", "output-store-dr", "cleanup"],
+            summary["declared_scenarios"],
+        )
+        self.assertEqual("fail", receipts["output-store-dr"]["outcome"])
+        self.assertEqual([], summary["missing_scenarios"])
+
     def test_result_semantics_follow_submitted_process_across_subshells(self):
         source = HARNESS.read_text(encoding="utf-8")
         functions = "\n".join(
