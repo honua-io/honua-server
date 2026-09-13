@@ -189,6 +189,14 @@ public sealed class SensorThingsNavigationTests : IAsyncLifetime
         selected.RootElement.GetProperty("Thing").GetProperty("@iot.id").GetInt64().Should().Be(1);
         using var invalid = await _fixture.Client.GetAsync("/sta/v1.1/Datastreams(1)/Thing?$filter=id%20eq%201");
         invalid.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        foreach (var query in new[] { "$select=FeatureOfInterest", "$expand=FeatureOfInterest" })
+        {
+            using var unavailable = await _fixture.Client.GetAsync("/sta/v1.1/Observations(1)?" + query);
+            unavailable.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
+            var error = await unavailable.Content.ReadAsStringAsync();
+            error.Should().Contain("FeaturesOfInterest are not exposed");
+            error.Should().NotContain("follow the entity");
+        }
         using var unsupported = await _fixture.Client.GetAsync("/sta/v1.1/Things(1)/Datastreams?$expand=Observations($select=result)");
         unsupported.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
     }
