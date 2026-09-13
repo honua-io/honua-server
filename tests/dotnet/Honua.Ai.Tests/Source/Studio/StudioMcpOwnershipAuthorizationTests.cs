@@ -638,6 +638,7 @@ public sealed class StudioMcpOwnershipAuthorizationTests
     [InlineData(DraftToolFamily.Read)]
     [InlineData(DraftToolFamily.Update)]
     [InlineData(DraftToolFamily.Validate)]
+    [InlineData(DraftToolFamily.Preview)]
     [InlineData(DraftToolFamily.Composition)]
     [InlineData(DraftToolFamily.PublicationProposal)]
     [Operation(Operations.StudioLifecycle)]
@@ -666,6 +667,45 @@ public sealed class StudioMcpOwnershipAuthorizationTests
         var admin = BuildContext(CallerKind.Admin, lifecycle, validator: null, adminAuthorization);
         await ((Func<Task>)(() => tool.InvokeAsync(admin, arguments, CancellationToken.None)))
             .Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [Theory]
+    [InlineData(DraftToolFamily.Validate, CallerKind.NonOwner)]
+    [InlineData(DraftToolFamily.Preview, CallerKind.NonOwner)]
+    [InlineData(DraftToolFamily.Validate, CallerKind.Owner)]
+    [InlineData(DraftToolFamily.Preview, CallerKind.Owner)]
+    [InlineData(DraftToolFamily.Validate, CallerKind.Admin)]
+    [InlineData(DraftToolFamily.Preview, CallerKind.Admin)]
+    [Operation(Operations.StudioLifecycle)]
+    [Endpoint("POST /mcp tools/call honua_studio_validate_draft")]
+    [Endpoint("POST /mcp tools/call honua_studio_preview_draft")]
+    public async Task MissingValidator_ExistingDraftAuthorizesBeforeReportingUnavailable(
+        DraftToolFamily family,
+        CallerKind callerKind)
+    {
+        var lifecycle = Substitute.For<IStudioPackageLifecycleService>();
+        lifecycle.GetDraftAsync(DraftId, Arg.Any<CancellationToken>()).Returns(BuildDraft(Alice));
+        var authorization = BuildAuthorization();
+        var context = BuildContext(callerKind, lifecycle, validator: null, authorization);
+        var (tool, arguments) = BuildInvocation(family, Substitute.For<IGeoprocessingJobService>());
+
+        var act = () => tool.InvokeAsync(context, arguments, CancellationToken.None);
+
+        if (callerKind == CallerKind.NonOwner)
+        {
+            var denied = await act.Should().ThrowAsync<GeoprocessingAuthorizationException>();
+            denied.Which.PolicyCode.Should().Be(StudioAuthorizationService.CrossUserDeniedCode);
+        }
+        else
+        {
+            await act.Should().ThrowAsync<GeoprocessingStoreUnavailableException>()
+                .WithMessage("The Studio package validator is not available on this server.");
+        }
+
+        authorization.Calls.Should().ContainSingle(call =>
+            call.Operation == ExpectedStudioOperation(family)
+            && call.ResourceOwnerId == Alice
+            && call.ResourceId == DraftId.ToString("D"));
     }
 
     [UnitTest]

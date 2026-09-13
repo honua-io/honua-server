@@ -477,7 +477,6 @@ internal sealed class ValidateStudioDraftTool : StudioDraftToolBase, IMcpTool
                 cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
-        var validator = RequireValidator(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioDraftIdArgument);
         var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
@@ -492,6 +491,7 @@ internal sealed class ValidateStudioDraftTool : StudioDraftToolBase, IMcpTool
 
         // Pure computation only — no UpdateDraftAsync/ValidateDraftAsync call,
         // so the draft's persisted generation is untouched.
+        var validator = RequireValidator(httpContext);
         var validation = validator.Validate(draft.Envelope);
 
         Audit(principal, ToolName, draftId, generationBefore: draft.Generation, generationAfter: draft.Generation);
@@ -556,7 +556,6 @@ internal sealed class PreviewStudioDraftTool : StudioDraftToolBase, IMcpTool
                 cancellationToken)
             .ConfigureAwait(false);
         var lifecycleService = RequireLifecycleService(httpContext);
-        var validator = RequireValidator(httpContext);
 
         var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioDraftIdArgument);
         var draftId = GetStudioDraftTool.RequireDraftId(argument.DraftId);
@@ -571,6 +570,7 @@ internal sealed class PreviewStudioDraftTool : StudioDraftToolBase, IMcpTool
 
         // Pure computation only — mirrors StudioPackageLifecycleService.PreviewPlanAsync's
         // projection without calling it (that method persists via ValidateDraftAsync first).
+        var validator = RequireValidator(httpContext);
         var validation = validator.Validate(draft.Envelope);
         var requiresJob = StudioPackageLifecycleService.RequiresBackgroundJob(draft.Family);
         var steps = requiresJob
