@@ -122,7 +122,30 @@ rejected without being self-provisioned, and reads a staged artifact back throug
 host after every server and worker container is replaced, asserting an unchanged
 descriptor and byte checksum.
 
-Exact-candidate #3852 crash-boundary evidence and the signed release/DR receipt must
-be rerun against the cut server/worker images. The release decision record on
-2026-09-05 states that no candidate digest exists yet; these local regressions do
-not claim candidate qualification or a completed production backup-policy rehearsal.
+Under the 2026-09-12 operator ruling, qualify the manifest-pinned server image
+**before the candidate cut**. A working manifest pin is sufficient to run the
+qualification; an uncut release is not a reason to defer it. A re-pin requires new
+evidence for the new image digest.
+
+The `output-store-dr` lane adds a cold recovery drill to the replacement proof.
+It stops every producer and consumer, snapshots Postgres, Redis and the attested
+output volume, destroys the original stores, and restores into verified-empty
+stores. It then compares the forced-staged artifact's descriptor and full bytes
+through the replacement peer's authenticated content route. The receipt records
+the backup hashes, store inventories, attestation and recovery timestamps.
+
+The `crash-boundaries` lane supplies the shared #3852 crash receipts: worker
+SIGKILL and actual output-volume unavailability at each of the durable-bytes,
+descriptor-publication and terminal-commit boundaries. The terminal fence is an
+external Redis proxy that withholds a successful terminal-CAS acknowledgement;
+the published worker cannot reach its terminal callbacks before the injection.
+The lane checks the independent GeoJSON oracle, exactly one artifact reference,
+and recovery of the result package through the normal read path. Retention/hold
+qualification and other #3852 acceptance remain separate.
+
+`gp-store-candidate-qualification.yml` resolves the live release manifest on every
+scheduled or dispatched run, builds the production worker from the same source,
+and checks the running image identities. `gp-candidate-binding.py` rejects an old
+server digest and incomplete restore/crash receipts before the trusted trunk job
+can sign them. These receipts qualify the tested local Docker shared-filesystem
+topology; they do not certify an untested backend or a customer's backup policy.

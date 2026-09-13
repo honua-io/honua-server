@@ -116,8 +116,9 @@ class TerminalProxyTests(unittest.IsolatedAsyncioTestCase):
             def close(self):
                 pass
 
-        for response in (b":1\r\n", b":0\r\n"):
-            with self.subTest(response=response), tempfile.TemporaryDirectory() as temp:
+        notification = b"*3\r\n$7\r\nmessage\r\n$1\r\nc\r\n$1\r\nx\r\n"
+        for response, notice in ((b":1\r\n", b""), (b":0\r\n", b""), (b":1\r\n", notification)):
+            with self.subTest(response=response, notification=bool(notice)), tempfile.TemporaryDirectory() as temp:
                 root = Path(temp)
                 directory = root / "job-1"
                 directory.mkdir()
@@ -129,27 +130,27 @@ class TerminalProxyTests(unittest.IsolatedAsyncioTestCase):
                     b"$" + str(len(x)).encode() + b"\r\n" + x + b"\r\n" for x in command)
                 reader, upstream = asyncio.StreamReader(), asyncio.StreamReader()
                 reader.feed_data(raw)
-                upstream.feed_data(response)
+                upstream.feed_data(notice + response)
                 output, forwarded = Writer(), Writer()
                 with patch.object(proxy.asyncio, "open_connection", new=AsyncMock(return_value=(upstream, forwarded))):
                     task = asyncio.create_task(proxy.client(reader, output, root))
                     try:
                         async with asyncio.timeout(2):
-                            while not (fence.with_suffix(".ready.json").exists() or output.bytes):
+                            while not (fence.with_suffix(".ready.json").exists() or output.bytes.endswith(response)):
                                 await asyncio.sleep(0.005)
                         self.assertEqual(raw, forwarded.bytes)
                         if response == b":1\r\n":
-                            self.assertEqual(b"", output.bytes)
+                            self.assertEqual(notice, output.bytes)
                             evidence = json.loads(fence.with_suffix(".ready.json").read_text())
                             self.assertFalse(evidence["reply_forwarded"])
                             self.assertEqual("succeeded", evidence["terminal_record"]["status"])
                             fence.with_suffix(".release").touch()
                             async with asyncio.timeout(2):
-                                while not output.bytes:
+                                while not output.bytes.endswith(response):
                                     await asyncio.sleep(0.005)
                         else:
                             self.assertFalse(fence.with_suffix(".ready.json").exists())
-                        self.assertEqual(response, output.bytes)
+                        self.assertEqual(notice + response, output.bytes)
                     finally:
                         reader.feed_eof()
                         await asyncio.wait_for(task, 2)

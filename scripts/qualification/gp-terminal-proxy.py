@@ -60,9 +60,23 @@ async def client(reader, writer, root=Path("/barriers")):
             await upstream_writer.drain()
 
     async def replies():
+        subscription_replies = 0
         while True:
-            command = await pending.get()
-            raw, _ = await frame(upstream_reader)
+            raw, response = await frame(upstream_reader)
+            if isinstance(response, list) and response and response[0] in (b"message", b"pmessage", b"smessage"):
+                # Pub/sub notifications have no matching request. They must not
+                # steal the pending command whose CAS reply we are examining.
+                writer.write(raw)
+                await writer.drain()
+                continue
+            if subscription_replies:
+                subscription_replies -= 1
+                command = None
+            else:
+                command = await pending.get()
+                if isinstance(command, list) and command and command[0].upper() in (
+                        b"SUBSCRIBE", b"PSUBSCRIBE", b"SSUBSCRIBE", b"UNSUBSCRIBE", b"PUNSUBSCRIBE", b"SUNSUBSCRIBE"):
+                    subscription_replies = max(0, len(command) - 2)
             job = terminal_job(command)
             if job and raw == b":1\r\n":
                 operation = job["operationId"].replace("/", "_").replace("\\", "_").replace("..", "_")

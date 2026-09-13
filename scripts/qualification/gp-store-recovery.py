@@ -35,6 +35,13 @@ def recover(compose_file, project, object_root, backup_dir):
         raise ValueError("only the qualification store can be destroyed")
     backup_dir.mkdir(parents=True, exist_ok=False)
     compose = ["docker", "compose", "--project-name", project, "-f", str(compose_file)]
+    for host in ("server", "server-peer", "worker"):
+        container = run(*compose, "ps", "-q", host).decode().strip()
+        details = json.loads(run("docker", "inspect", container))[0]
+        mounts = [m for m in details["Mounts"] if m["Destination"] == "/var/lib/honua/gp-outputs"]
+        if (len(mounts) != 1 or mounts[0]["Type"] != "bind"
+                or Path(mounts[0]["Source"]).resolve() != object_root):
+            raise ValueError("output directory must be the actual shared mount of every qualification host")
     inventory = []
     for service, target in (("postgres", "/var/lib/postgresql/data"), ("redis", "/data")):
         container = run(*compose, "ps", "-q", service).decode().strip()
