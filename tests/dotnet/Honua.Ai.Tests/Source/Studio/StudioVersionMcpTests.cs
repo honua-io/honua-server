@@ -78,7 +78,9 @@ public sealed class StudioVersionMcpTests
             JsonSerializer.SerializeToUtf8Bytes(expectedEnvelope, StudioJsonContext.Default.StudioPackageEnvelope)));
         savedEnvelope.ResourceIds.Should().BeEquivalentTo(new Dictionary<string, string>
         {
-            ["itemId"] = draft.ItemId.ToString("D"), ["versionId"] = versionId.ToString("D"), ["contentHash"] = expectedHash,
+            ["itemId"] = draft.ItemId.ToString("D"),
+            ["versionId"] = versionId.ToString("D"),
+            ["contentHash"] = expectedHash,
         });
         await AssertPollableResultAsync(savedEnvelope, instances);
         version.ContentHash.Should().Be(expectedHash, "the immutable hash binds the seeded envelope, not the subsequently edited draft");
@@ -116,7 +118,8 @@ public sealed class StudioVersionMcpTests
         reopenedEnvelope.AuditId.Should().NotBeNullOrWhiteSpace();
         reopenedEnvelope.ResourceIds.Should().BeEquivalentTo(new Dictionary<string, string>
         {
-            ["draftId"] = reopenedDraft.DraftId.ToString("D"), ["generation"] = "1",
+            ["draftId"] = reopenedDraft.DraftId.ToString("D"),
+            ["generation"] = "1",
         });
         await AssertPollableResultAsync(reopenedEnvelope, instances);
         (await lifecycle.GetPointersAsync(draft.ItemId))!.CurrentVersionId.Should().Be(versionId);
@@ -230,9 +233,13 @@ public sealed class StudioVersionMcpTests
     {
         var proposal = new OperationProposal
         {
-            ProposalId = "proposal-result", OperationId = operation.OperationId, RequestedBy = "test-user",
-            Kind = OperationClass.StudioDraftMutation, Status = OperationProposalStatus.Succeeded,
-            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+            ProposalId = "proposal-result",
+            OperationId = operation.OperationId,
+            RequestedBy = "test-user",
+            Kind = OperationClass.StudioDraftMutation,
+            Status = OperationProposalStatus.Succeeded,
+            CreatedAt = DateTimeOffset.UtcNow,
+            UpdatedAt = DateTimeOffset.UtcNow,
             Audit = new() { OperationInstanceId = operation.OperationInstanceId },
         };
         var store = Substitute.For<IOperationProposalStore>();
