@@ -257,7 +257,7 @@ public sealed class StudioDraftOperationRuntimeTests
             Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions()),
             new Honua.Core.Features.Guardrails.DefaultGuardrailLadder(
                 entitlements,
-                Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Guardrails.Domain.GuardrailLadderOptions())));
+                Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Guardrails.GuardrailLadderOptions())));
         var bridge = new DurableApprovalBridge();
         var instances = new VolatileOperationInstanceStore();
         var runtime = new StudioDraftMutationRuntime(

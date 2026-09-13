@@ -509,7 +509,7 @@ internal static class StudioPackageEndpoints
                 }
             }
 
-            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var actor = authorization.ResolveCallerId(context.User);
 
             if (!authorization.IsAdmin(context.User)
                 && authorization.IsEndUserAuthorizationEnabled
@@ -722,7 +722,7 @@ internal static class StudioPackageEndpoints
 
             var ownerId = request.OwnerId;
 
-            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var actor = authorization.ResolveCallerId(context.User);
             var receipt = await mutationRuntime.UpdateAsync(
                 draftId,
                 new UpdateStudioPackageDraftCommand
@@ -796,7 +796,7 @@ internal static class StudioPackageEndpoints
 
             var receipt = await mutationRuntime.DeleteAsync(
                 draftId,
-                BuildMutationContext(context, ConsolePrincipal.ResolveActorId(context.User)),
+                BuildMutationContext(context, authorization.ResolveCallerId(context.User)),
                 context.RequestAborted).ConfigureAwait(false);
             SetOperationHeaders(context, receipt.Operation);
             if (receipt.Operation.Status != OperationHandleStatus.Completed)
@@ -905,7 +905,7 @@ internal static class StudioPackageEndpoints
                 return authResult;
             }
 
-            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var actor = authorization.ResolveCallerId(context.User);
             var receipt = await mutationRuntime.ValidateAsync(
                 draftId,
                 actor,
@@ -963,7 +963,7 @@ internal static class StudioPackageEndpoints
                 return authResult;
             }
 
-            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var actor = authorization.ResolveCallerId(context.User);
             var receipt = await mutationRuntime.PreviewAsync(
                 draftId,
                 actor,
@@ -1050,7 +1050,7 @@ internal static class StudioPackageEndpoints
                 return itemAuthResult;
             }
 
-            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var actor = authorization.ResolveCallerId(context.User);
             var receipt = await mutationRuntime.SaveVersionAsync(
                 draftId,
                 existing.Generation,
@@ -1643,7 +1643,7 @@ internal static class StudioPackageEndpoints
                 return authResult;
             }
 
-            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var actor = authorization.ResolveCallerId(context.User);
             var receipt = await mutationRuntime.CreatePublicationRequestAsync(
                 itemId,
                 versionId,
@@ -1772,7 +1772,7 @@ internal static class StudioPackageEndpoints
                 return authResult;
             }
 
-            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var actor = authorization.ResolveCallerId(context.User);
             var receipt = await mutationRuntime.ReopenVersionAsync(
                 itemId,
                 versionId,
@@ -1864,7 +1864,7 @@ internal static class StudioPackageEndpoints
                 return authResult;
             }
 
-            var actor = ConsolePrincipal.ResolveActorId(context.User);
+            var actor = authorization.ResolveCallerId(context.User);
             var receipt = await mutationRuntime.RollbackAsync(
                 itemId,
                 request.TargetVersionId,
