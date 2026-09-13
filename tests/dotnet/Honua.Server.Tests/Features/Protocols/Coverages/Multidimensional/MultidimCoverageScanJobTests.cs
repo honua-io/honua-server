@@ -132,7 +132,7 @@ public sealed class MultidimCoverageScanJobTests
             metadata!.YAxisAscending.Should().Be(ascending);
             metadata.Extent.Should().NotBeNull();
             metadata.Extent!.Value.YMin.Should().Be(20.45);
-            metadata.Extent.Value.YMax.Should().Be(20.85);
+            metadata.Extent!.Value.YMax.Should().Be(20.85);
             metadata.Resolution.Should().Be((0.1, 0.1));
         }
     }
