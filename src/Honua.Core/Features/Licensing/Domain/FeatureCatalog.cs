@@ -576,6 +576,6 @@ public static class FeatureCatalog
 
         // Control plane — Enterprise Preview
         new(MultiTenancyKey, "Multi-Tenant Operation", Categories.ControlPlane,
-            HonuaEdition.Enterprise, "Preview/trial-only tenant lifecycle, schema routing, and usage surfaces for non-production evaluation. Honua 2026.1 GA deployments are single-tenant; do not use customer production data. There is no GA, availability, performance, durability, SLO, or scale commitment, and Preview status never lowers the security severity of cross-tenant disclosure."),
+            HonuaEdition.Enterprise, "Preview/trial-only tenant lifecycle, schema routing, and usage surfaces for non-production evaluation. Honua 2026.1 GA deployments are single-tenant; do not use customer production data. There is no GA, availability, performance, durability, SLO, or scale commitment, and Preview status never lowers the security severity of cross-tenant disclosure. Honua does not provide SaaS, hosting, or a managed service, and the Elastic License 2.0 prohibits providing Honua to third parties as a hosted or managed service."),
     ];
 }
