@@ -54,13 +54,21 @@ public sealed class DeferredOperationExecutorTests
         ((IOperationRequestPreparer)inner).PrepareAsync(request, context, token).Returns(prepared);
         var handle = new OperationHandle
         {
-            OperationId = "prepared", OperationInstanceId = "instance", CorrelationId = "correlation",
-            Status = OperationHandleStatus.Completed, CreatedAt = DateTimeOffset.UnixEpoch, UpdatedAt = DateTimeOffset.UnixEpoch,
+            OperationId = "prepared",
+            OperationInstanceId = "instance",
+            CorrelationId = "correlation",
+            Status = OperationHandleStatus.Completed,
+            CreatedAt = DateTimeOffset.UnixEpoch,
+            UpdatedAt = DateTimeOffset.UnixEpoch,
         };
         var status = new OperationStatus
         {
-            OperationId = "prepared", OperationInstanceId = "instance", CorrelationId = "correlation",
-            Status = OperationHandleStatus.Completed, CreatedAt = DateTimeOffset.UnixEpoch, UpdatedAt = DateTimeOffset.UnixEpoch,
+            OperationId = "prepared",
+            OperationInstanceId = "instance",
+            CorrelationId = "correlation",
+            Status = OperationHandleStatus.Completed,
+            CreatedAt = DateTimeOffset.UnixEpoch,
+            UpdatedAt = DateTimeOffset.UnixEpoch,
         };
         inner.SubmitAsync(prepared, context, token).Returns(handle);
         inner.GetStatusAsync(handle, token).Returns(status);
