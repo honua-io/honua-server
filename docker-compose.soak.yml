@@ -90,29 +90,15 @@ services:
       # test here.
       ExecutionAdmission__MaxSubmissionsPerWindow: "0"
       # A real signed Pro license, minted for this run only (scripts/soak/mint_license.sh).
-      # Licensing:DevGrantEdition is refused in Production by design, and the declared envelope
-      # covers Pro surfaces (feature streams), so the soak runs on the same licensing path a
-      # customer does.
+      # Licensing:DevGrantEdition is refused in Production by design. The soak retains the
+      # same licensing verification path a customer uses.
       Licensing__LicenseContent: ${SOAK_LICENSE_CONTENT:?Set SOAK_LICENSE_CONTENT}
       Licensing__TrustedKeys__soak: ${SOAK_LICENSE_TRUSTED_KEY:?Set SOAK_LICENSE_TRUSTED_KEY}
-      # The envelope declares capacity for two surfaces that ship Preview (off by default) in
-      # 2026.1: activeSubscriptions (realtime.feature-streams) and alertEvaluationsPerSecond
-      # (alerts.geofence). Opting in through the canonical gate is the only way to drive them.
-      Capabilities__Experimental__realtime.feature-streams__Enabled: "true"
-      # The declared envelope holds 1,000 concurrent subscriptions; the feature-stream session
-      # cap defaults to 256 per tenant/principal, which would refuse the declared load.
-      FeatureStreaming__MaxConcurrentSessions: "${SOAK_MAX_STREAM_SESSIONS:-1200}"
-      # Alerts__Enabled is deliberately NOT set here, and the envelope's
-      # alertEvaluationsPerSecond dimension is reported as declared-not-exercised in the
-      # receipt. The alert pipeline validates at startup that tenant-context resolution is OFF
-      # ("alert evaluation and delivery stores are instance-wide"), and with
-      # MultiTenancy:Enabled=false the OGC API Features item query — which the soak profile
-      # drives, and which the declared envelope's four layers are served through — answers
-      # 403 "Tenant context is required to query collection items". The two cannot both hold
-      # on one deployment in this candidate, so the soak keeps the serving surface the
-      # envelope is about and records the gap instead of faking the signal.
-      # MultiTenancy resolution therefore stays at its default (enabled); the deployment is
-      # still single-tenant, which is what the envelope's tenants=1 declares.
+      # Operator ruling A 2026-09-13: Preview dimensions carry no GA capacity promise.
+      # The workflow enables streams only when the supplied lock declares subscriptions.
+      Capabilities__Experimental__realtime.feature-streams__Enabled: "${SOAK_STREAMS_ENABLED:-false}"
+      FeatureStreaming__MaxConcurrentSessions: "${SOAK_MAX_STREAM_SESSIONS:-256}"
+      # Alerting stays Preview/off; single-tenant context resolution keeps its default.
       FileStorage__Provider: Local
       FileStorage__LocalStorage__BasePath: /var/lib/honua/storage
     depends_on:
