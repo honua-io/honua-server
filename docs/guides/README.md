@@ -74,7 +74,7 @@ Task-oriented guides, grouped by what you want to do. New to Honua? Start with t
 | Validate pilot prerequisites and first-hour failure modes | [Pilot onboarding runbook](deploy/pilot-onboarding-runbook.md) |
 | Run without containers for development | [Local development](deploy/local-development.md) |
 | Deploy on Kubernetes | [Kubernetes](deploy/kubernetes.md) |
-| Deploy on AWS, Azure, or GCP | [Cloud deployments](deploy/cloud-deployments.md) |
+| Deploy on AWS or Azure | [Cloud deployments](deploy/cloud-deployments.md) |
 | Choose a deployment topology | [Deployment scenarios](deploy/cloud-deployments.md) |
 | Configure the server with environment variables | [Configuration](deploy/configuration.md) |
 | Understand the operate loop, two seats, autonomy ladder, and rollback taxonomy | [Operating Honua](operate/README.md) |

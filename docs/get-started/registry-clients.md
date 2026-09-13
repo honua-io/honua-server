@@ -18,7 +18,7 @@ GitHub authentication.
 | PyPI | `mcp==2.1.1` | Transport for the server MCP import tool | None |
 | npm | `@honua/sdk-js@0.1.9-beta.0` | Alternative JS SDK and CLI | None |
 | npm | `@honua/mcp-server@0.1.4-beta.0` | Alternative MCP proxy | None |
-| GitHub Packages NuGet | `Honua.Sdk` `1.6.0` | Alternative .NET SDK | GitHub account with package access and a classic PAT with `read:packages` |
+| NuGet | `Honua.Sdk` `1.6.4` | Alternative .NET SDK | None |
 
 npm and NuGet versions are the release manifest's existing alternative-client
 pins, not a claim that this Python journey rehearsed those clients. Do not
@@ -59,7 +59,7 @@ $Token = Read-Host 'Classic PAT with read:packages' -AsSecureString
 $Pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Token)
 try {
     $env:NuGetPackageSourceCredentials_honua = 'Username=' + $Login + ';Password=' + [Runtime.InteropServices.Marshal]::PtrToStringBSTR($Pointer) + ';ValidAuthenticationTypes=Basic'
-    dotnet add package Honua.Sdk --version 1.6.0
+    dotnet add package Honua.Sdk --version 1.6.4
     if ($LASTEXITCODE -ne 0) { throw 'NuGet package restore failed; check package access and SSO' }
 } finally {
     Remove-Item Env:NuGetPackageSourceCredentials_honua -ErrorAction SilentlyContinue

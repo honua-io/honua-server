@@ -147,7 +147,7 @@ Every page below is an Open Knowledge Format concept: one subject per file, type
 - [Integration patterns](https://honua.gitbook.io/honuaio/honua-server/integration-patterns): Cross-cutting patterns for building integrations against Honua: choosing a surface, discovering capabilities at runtime, paginating correctly, reacting to changes (polling vs webhooks), authenticating, and keeping batch loads idempotent.
 - [Saved-map collaborative edit operation log](https://honua.gitbook.io/honuaio/honua-server/saved-map-collaboration-op-log): Server-owned durable ordering and conflict behavior for multi-user saved-map editing.
 - [Feature locks (collaborative editing)](https://honua.gitbook.io/honuaio/honua-server/feature-locks): A feature lock is a short lease one editor takes on one feature so a second editor cannot overwrite it mid-edit.
-- [OGC conformance](https://honua.gitbook.io/honuaio/honua-server/ogc-conformance): Honua Server currently passes 1137/1138 OGC CITE assertions across 14 suites on trunk.
+- [OGC conformance](https://honua.gitbook.io/honuaio/honua-server/ogc-conformance): Honua Server currently passes 1138/1138 OGC CITE assertions across 14 suites on trunk.
 - [CITE status](https://honua.gitbook.io/honuaio/honua-server/cite-status): The authoritative snapshot of Honua's OGC CITE conformance runs.
 - [Supported clients and known limitations](https://honua.gitbook.io/honuaio/honua-server/clients): This page lists the clients Honua Server is tested against, the protocol each one uses, and the honest list of current gaps.
 - [GeoServices REST parity](https://honua.gitbook.io/honuaio/honua-server/geoservices-parity): Honua provides protocol-level compatibility at Esri GeoServices REST paths for selected, operation-scoped workflows.
