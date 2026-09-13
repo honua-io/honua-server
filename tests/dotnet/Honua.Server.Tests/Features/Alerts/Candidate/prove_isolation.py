@@ -186,6 +186,22 @@ INSERT INTO honua.alert_channel_state(channel_type,is_paused) VALUES(1,true);
             require(status in (401, 403), f"Unauthenticated request was not denied: {route}")
         after = rows()
         require(after == before, "Tenant requests mutated alert persistence")
+        expected = {
+            "alert_zones": {"zone_id": 3859, "zone_name": "original", "service_id": "private-instance-3859"},
+            "alert_rules": {"rule_id": 3859, "zone_id": 3859, "layer_id": 1, "rule_name": "original", "trigger_type": 4},
+            "alert_events": {"event_id": 3859, "rule_id": 3859, "objectid": 42, "generation": 1, "severity": "warning"},
+            "alert_event_lifecycle": {"event_id": 3859, "lifecycle_status": 0, "acknowledged_by": None, "resolved_by": None},
+            "alert_dispatch": {"event_id": 3859, "channel_type": 1, "status": 4, "attempts": 3,
+                               "destination": "https://private-receiver.invalid/3859"},
+            "alert_channel_state": {"channel_type": 1, "is_paused": True},
+            # Migration 013 seeds the evaluator at generation zero before workers start.
+            "alert_worker_checkpoint": {"worker_name": "evaluator", "last_generation": 0, "last_dwell_sweep_at": None},
+        }
+        for table, fields in expected.items():
+            require(len(after[table]) == 1, f"{table}: unexpected row count")
+            require({key: after[table][0][key] for key in fields} == fields,
+                    f"{table}: persisted values differ from independently seeded expectations")
+        require(after["alert_state"] == [], "Disabled workers created evaluation state")
         geometry = json.loads(sql("SELECT json_build_object('area',ST_Area(geometry),'srid',ST_SRID(geometry),'geometry',ST_AsGeoJSON(geometry)::json) FROM honua.alert_zones WHERE zone_id=3859;"))
         require(geometry == {"area": 4, "srid": 4326, "geometry": {"type": "MultiPolygon", "coordinates": [[[[0, 0], [0, 2], [2, 2], [2, 0], [0, 0]]]]}}, "Fixture geometry changed")
         # A real successful control defeats vacuous blanket authorization/capability denial.
