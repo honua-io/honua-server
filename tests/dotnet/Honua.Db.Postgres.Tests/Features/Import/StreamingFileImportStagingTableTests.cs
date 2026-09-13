@@ -642,14 +642,23 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
             (peakRetained - baseline).Should().BeLessThan(64L * 1024 * 1024);
             await using var connection = await fixture.DataSource.OpenConnectionAsync();
             await using var command = connection.CreateCommand();
-            command.CommandText = $"SELECT count(*), sum((properties->>'ordinal')::bigint), min(length(properties->>'padding')), max(length(properties->>'padding')), bool_and(ST_X(geometry)=1 AND ST_Y(geometry)=2 AND ST_SRID(geometry)=4326) FROM \"{schema}\".imported_memory_proof";
+            command.CommandText = $"""
+                SELECT count(*), sum((properties->>'ordinal')::bigint),
+                    count(DISTINCT (properties->>'ordinal')::int),
+                    min((properties->>'ordinal')::int), max((properties->>'ordinal')::int),
+                    bool_and(properties->>'padding' = repeat('x', 4096)),
+                    bool_and(ST_X(geometry)=1 AND ST_Y(geometry)=2 AND ST_SRID(geometry)=4326)
+                FROM "{schema}".imported_memory_proof
+                """;
             await using var reader = await command.ExecuteReaderAsync();
             (await reader.ReadAsync()).Should().BeTrue();
             reader.GetInt64(0).Should().Be(count);
             reader.GetDecimal(1).Should().Be((long)count * (count - 1) / 2);
-            reader.GetInt32(2).Should().Be(4096);
-            reader.GetInt32(3).Should().Be(4096);
-            reader.GetBoolean(4).Should().BeTrue();
+            reader.GetInt64(2).Should().Be(count, "every generated ordinal must occur exactly once");
+            reader.GetInt32(3).Should().Be(0);
+            reader.GetInt32(4).Should().Be(count - 1);
+            reader.GetBoolean(5).Should().BeTrue("every padding value must match the generated fixture");
+            reader.GetBoolean(6).Should().BeTrue();
         }
         finally
         {
