@@ -11,7 +11,9 @@ namespace Honua.Ai.Protocols.Mcp;
 /// <c>/mcp</c> catalog is bound to the registry: every advertised tool name and
 /// every advertised resource URI (concrete or template) must be described by a
 /// <see cref="CapabilityDescriptor"/> in the <see cref="ICapabilityRegistry"/> —
-/// no tool or resource is served without registry provenance.
+/// no tool or resource is served without registry provenance. Tools projected from
+/// the canonical operation catalog (<c>Mcp:PublishOperations</c>) carry that
+/// provenance through their operation descriptor instead.
 /// </summary>
 /// <remarks>
 /// This is the "nothing served without a registry descriptor" direction, which
