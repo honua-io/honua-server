@@ -171,7 +171,7 @@ jobs:
           print(f"features={envelope['featuresPerLayer']}")
           print(f"gp_workers={envelope['gpWorkers']}")
           print(f"gp_queue_depth={envelope['gpQueueDepth']}")
-          print(f"subscriptions={envelope.get('activeSubscriptions', 0)}")
+          print(f"subscriptions={envelope.get('activeSubscriptions', 256)}")
           print(f"streams_enabled={str('activeSubscriptions' in envelope).lower()}")
           PY
           echo "lock sha256: $digest"
