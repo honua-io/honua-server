@@ -12,7 +12,15 @@ cleanup() {
     docker compose -p "$project" -f "$compose_file" down --volumes --remove-orphans >/dev/null
   fi
 }
-trap cleanup EXIT
+finish() {
+  result=$?
+  if (( result != 0 )) && [[ -n "$compose_file" ]]; then
+    docker compose -p "$project" -f "$compose_file" logs honua-server seed postgres >&2 || true
+  fi
+  cleanup
+  exit "$result"
+}
+trap finish EXIT
 # Random host ports keep this test isolated from other local/CI fixtures.
 export HONUA_CITE_WFS10_SERVER_PORT=0 HONUA_CITE_WFS10_POSTGRES_PORT=0
 export HONUA_CITE_WFS11_SERVER_PORT=0 HONUA_CITE_WFS11_POSTGRES_PORT=0
@@ -25,12 +33,12 @@ for suite in wfs10 wfs11 wfs20; do
   exit_code="$(docker wait "$seed_id")"
   "${compose[@]}" logs seed
   [[ "$exit_code" == 0 ]]
-  "${compose[@]}" exec -T honua-server wget -qO- http://localhost:8080/healthz/ready
+  "${compose[@]}" exec -T honua-server wget -T 15 -qO- http://localhost:8080/healthz/ready
   expected=14
   [[ "$suite" == wfs20 ]] && expected=2
   actual="$("${compose[@]}" exec -T postgres psql -U postgres -d honua_cite -Atc 'SELECT count(*) FROM honua.layers')"
   [[ "$actual" == "$expected" ]]
-  "${compose[@]}" exec -T honua-server wget -qO- 'http://localhost:8080/wfs?service=WFS&version=2.0.0&request=GetCapabilities' > /tmp/"$project"-capabilities.xml
+  "${compose[@]}" exec -T honua-server wget -T 15 -qO- 'http://localhost:8080/wfs?service=WFS&version=2.0.0&request=GetCapabilities' > /tmp/"$project"-capabilities.xml
   grep -q 'admin_boundaries' /tmp/"$project"-capabilities.xml
   rm /tmp/"$project"-capabilities.xml
   # A journal mismatch must be rejected before any data mutation, with the

@@ -53,7 +53,6 @@ services:
     networks:
       - cite-network
 
-  # OGC CITE Team Engine for WFS 2.0 conformance testing
   # Use the image's migration runner before inserting data; never initialize
   # migration-owned tables through PostgreSQL's initdb hook.
   seed:
@@ -76,6 +75,7 @@ services:
       - cite-network
     restart: "no"
 
+  # OGC CITE Team Engine for WFS 2.0 conformance testing
   cite-teamengine:
     image: ogccite/ets-wfs20:latest
     ports:
@@ -104,7 +104,8 @@ services:
     image: ogccite/ets-wfs20:latest
     user: "0:0"
     depends_on:
-      cite-teamengine:
+      # OGC CITE Team Engine for WFS 2.0 conformance testing
+  cite-teamengine:
         condition: service_healthy
       honua-server:
         condition: service_started
