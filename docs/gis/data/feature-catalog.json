@@ -5831,7 +5831,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_WebMercatorRaster_AdvertisesCrs84ExtentAndGatesPositionInCrs84"
       ],
       "proof_ledger_surface": "ogc-api-edr",
       "maturity": "preview",
@@ -5847,7 +5848,9 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrDepthTests.Edr_Collection_ExposesParameterNamesExtentAndOutputFormats",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_MetadataEndpoints_ExposeCollectionsWithPositionAndCubeQueries",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_UnknownCollection_Returns404"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_UnknownCollection_Returns404",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_UtmRaster_AdvertisesCrs84ExtentAndAcceptsLonLatPosition",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_WebMercatorRaster_AdvertisesCrs84ExtentAndGatesPositionInCrs84"
       ],
       "proof_ledger_surface": "ogc-api-edr",
       "maturity": "preview",
@@ -5897,7 +5900,9 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_MixedValidAndUnknownParameterNames_Returns400",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_ReturnsCoverageJsonPointSeries",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_UnknownParameterName_Returns400",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_ValidParameterNameSubset_ReturnsOnlyRequestedParameter"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_Position_ValidParameterNameSubset_ReturnsOnlyRequestedParameter",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_UtmRaster_AdvertisesCrs84ExtentAndAcceptsLonLatPosition",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr.EdrEndpointsTests.Edr_WebMercatorRaster_AdvertisesCrs84ExtentAndGatesPositionInCrs84"
       ],
       "proof_ledger_surface": "ogc-api-edr",
       "maturity": "preview",
@@ -12950,7 +12955,8 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_WithPublisherAndDistinctAttribution_ProjectsBothProviders",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_WithUnknownStandaloneLicense_UsesVariousLicenseToken",
         "Honua.Server.Tests.Features.Protocols.Stac.StacCollectionsTests.GetCollection_WithUrlOnlyContact_DerivesHostProviderName",
-        "Honua.Server.Tests.Features.Protocols.Stac.StacQueryablesTests.GetCollection_AdvertisesQueryablesRelLink"
+        "Honua.Server.Tests.Features.Protocols.Stac.StacQueryablesTests.GetCollection_AdvertisesQueryablesRelLink",
+        "Honua.Server.Tests.Seed.DemoStacSeedMigratedDatabaseTests.DemoStacSeed_OnServerMigratedDatabase_ServesCollection90810ItemsAndSearch"
       ],
       "proof_ledger_surface": "stac-api",
       "maturity": "implemented",
@@ -12980,7 +12986,8 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests.GetItems_WithInvalidThreeDimensionalBbox_Returns400",
         "Honua.Server.Tests.Features.Protocols.Stac.StacItemsTests.GetItems_WithLimit_RespectsLimit",
         "Honua.Server.Tests.Features.Protocols.Stac.StacPagingRegressionTests.OptionalCounts_PageAcrossCollectionsWithoutCounting",
-        "Honua.Server.Tests.Features.Protocols.Stac.StacTemporalSearchRegressionTests.Datetime_WithoutTemporalField_DoesNotReturnUndatedRows"
+        "Honua.Server.Tests.Features.Protocols.Stac.StacTemporalSearchRegressionTests.Datetime_WithoutTemporalField_DoesNotReturnUndatedRows",
+        "Honua.Server.Tests.Seed.DemoStacSeedMigratedDatabaseTests.DemoStacSeed_OnServerMigratedDatabase_ServesCollection90810ItemsAndSearch"
       ],
       "proof_ledger_surface": "stac-api",
       "maturity": "implemented",
@@ -21611,7 +21618,8 @@
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithOutOfRangeBbox_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithStringIds_FiltersByStacItemId",
         "Honua.Server.Tests.Features.Protocols.Stac.StacSearchTests.SearchPost_WithThreeDimensionalBbox_ReturnsItems",
-        "Honua.Server.Tests.Features.Protocols.Stac.StacTemporalSearchRegressionTests.Datetime_WithoutTemporalField_DoesNotReturnUndatedRows"
+        "Honua.Server.Tests.Features.Protocols.Stac.StacTemporalSearchRegressionTests.Datetime_WithoutTemporalField_DoesNotReturnUndatedRows",
+        "Honua.Server.Tests.Seed.DemoStacSeedMigratedDatabaseTests.DemoStacSeed_OnServerMigratedDatabase_ServesCollection90810ItemsAndSearch"
       ],
       "proof_ledger_surface": "stac-api",
       "maturity": "implemented",
