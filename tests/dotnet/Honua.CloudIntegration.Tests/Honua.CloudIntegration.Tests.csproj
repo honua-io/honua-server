@@ -75,6 +75,9 @@
          PostgresDatabaseMigrationRunner (migration-gate lane) lives in Honua.Db.Postgres. Both are
          internal and made visible via InternalsVisibleTo on those assemblies. -->
     <ProjectReference Include="..\..\..\src\Honua.Jobs\Honua.Jobs.csproj" />
+    <!-- CandidateODataDeltaCertificationTests reuses MetadataV2CompatSnapshotSql (internal,
+         visible via InternalsVisibleTo on Honua.Postgres) so the exact-candidate V1-to-V2
+         merge stays byte-identical to the server's own projection. -->
     <ProjectReference Include="..\..\..\src\Honua.Db\Postgres\Honua.Postgres.csproj" />
   </ItemGroup>
 
