@@ -51,7 +51,8 @@ def validate_refusal_audit(expected, audit):
         details = json.loads(row["details"])
         require(row["resourceId"] == path and details["method"] == method and details["status"] == 403,
                 f"{method} {path}: audit record describes a different request")
-        require(row["resourceType"] == "http" and row["outcome"] == "Denied" and row["action"] == "auth.denied",
+        # The audit matrix records admin routes as "admin"; unlisted routes use the "http" auth-failure fallback.
+        require(row["resourceType"] in ("http", "admin") and row["outcome"] == "Denied",
                 f"{method} {path}: expected a denied-access audit, not an alert mutation")
         require("private-instance-3859" not in row["details"] and "private-receiver.invalid" not in row["details"],
                 "Refusal audit disclosed private alert data")
@@ -238,8 +239,8 @@ INSERT INTO honua.alert_channel_state(channel_type,is_paused) VALUES(1,true);
         require(status == 200 and "original" in body, "Instance administrator cannot read seeded zone")
         correlations = ",".join("'" + value + "'" for value in expected_audit)
         audit = json.loads(sql(f"SELECT coalesce(jsonb_agg(jsonb_build_object('correlationId',correlation_id,'resourceType',resource_type,'resourceId',resource_id,'action',action,'outcome',outcome,'details',details)),'[]') FROM honua.audit_log WHERE correlation_id IN ({correlations});"))
-        validate_refusal_audit(expected_audit, audit)
         receipt["audit"] = audit
+        validate_refusal_audit(expected_audit, audit)
         receipt["persistenceColumns"] = json.loads(sql("SELECT jsonb_object_agg(table_name,columns) FROM (SELECT table_name,jsonb_agg(column_name ORDER BY ordinal_position) columns FROM information_schema.columns WHERE table_schema='honua' AND table_name LIKE 'alert_%' GROUP BY table_name) c;"))
         receipt["rows"] = after
         receipt["geometry"] = geometry

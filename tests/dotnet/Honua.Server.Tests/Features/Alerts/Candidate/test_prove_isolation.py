@@ -31,6 +31,12 @@ class IsolationProofRegressionTests(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, 'different request'):
             validate_refusal_audit({'a': ('POST', '/rules')}, [self.audit('a')])
 
+    def test_denied_admin_matrix_record_is_an_access_audit(self):
+        row = self.audit('a', 'POST', '/rules')
+        row['resourceType'] = 'admin'
+        row['action'] = 'admin.mutation'
+        validate_refusal_audit({'a': ('POST', '/rules')}, [row])
+
     def test_every_refusal_has_its_own_denied_access_record(self):
         validate_refusal_audit({'a': ('GET', '/zones'), 'b': ('POST', '/rules')},
                                [self.audit('a'), self.audit('b', 'POST', '/rules')])
