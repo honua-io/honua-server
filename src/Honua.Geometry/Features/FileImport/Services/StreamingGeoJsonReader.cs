@@ -26,6 +26,7 @@ namespace Honua.Core.Features.FileImport.Services;
 internal sealed record JsonProcessingState
 {
     public bool InFeaturesArray { get; init; }
+    public bool AwaitingFeaturesArray { get; init; }
     public int FeatureDepth { get; init; }
     public bool IsCollectingFeature { get; init; }
     public int FeatureStartIndex { get; init; } = -1;
@@ -118,6 +119,15 @@ internal sealed class StreamingGeoJsonReader
                 // Utf8JsonReader treats it as an invalid start-of-value token otherwise.
                 if (firstChunk)
                 {
+                    // A stream may return fewer than the three bytes needed to recognize a BOM.
+                    if (data.Length < 3 && bytesRead > 0)
+                    {
+                        leftoverBuffer ??= MemoryPool.RentByteArray(3);
+                        data.Span.CopyTo(leftoverBuffer);
+                        leftoverLength = data.Length;
+                        if (combinedBuffer != null) MemoryPool.ReturnByteArray(combinedBuffer, clearArray: false);
+                        continue;
+                    }
                     firstChunk = false;
                     var span = data.Span;
                     if (span.Length >= 3 && span[0] == 0xEF && span[1] == 0xBB && span[2] == 0xBF)
@@ -216,9 +226,8 @@ internal sealed class StreamingGeoJsonReader
         Stream stream,
         CancellationToken cancellationToken = default)
     {
-        var issues = new List<ImportValidationIssue>();
-        var featureCount = 0;
-
+        var validation = new ValidationState();
+        byte[]? buffer = null;
         try
         {
             if (stream.CanSeek)
@@ -226,83 +235,147 @@ internal sealed class StreamingGeoJsonReader
                 stream.Position = 0;
                 if (stream.Length > _limits.MaxMemoryBytes)
                 {
-                    issues.Add(ImportValidationIssue.Create(
+                    validation.Issues.Add(ImportValidationIssue.Create(
                         ImportValidationErrorCodes.GeoJsonValidationTooLarge,
                         $"GeoJSON preflight validation is limited to {_limits.MaxMemoryBytes:N0} bytes.",
                         field: "file"));
-
-                    return new GeoJsonValidationResult(featureCount, issues);
+                    return new GeoJsonValidationResult(0, validation.Issues);
                 }
             }
 
-            using var document = await JsonDocument.ParseAsync(
-                stream,
-                new JsonDocumentOptions
-                {
-                    AllowTrailingCommas = true,
-                    CommentHandling = JsonCommentHandling.Skip
-                },
-                cancellationToken);
-
-            var root = document.RootElement;
-            if (!root.TryGetProperty("type", out var rootTypeElement) ||
-                !string.Equals(rootTypeElement.GetString(), "FeatureCollection", StringComparison.Ordinal))
+            // Retain only an incomplete token or feature. Parsing the whole document here
+            // previously left source-sized arrays in the shared pool during the import.
+            buffer = MemoryPool.RentByteArray(_limits.StreamBufferSize);
+            var buffered = 0;
+            var firstChunk = true;
+            var state = new JsonReaderState(new JsonReaderOptions
             {
-                issues.Add(ImportValidationIssue.Create(
+                AllowTrailingCommas = true,
+                CommentHandling = JsonCommentHandling.Skip
+            });
+            while (true)
+            {
+                if (buffered == buffer.Length)
+                {
+                    var larger = MemoryPool.RentByteArray(checked(buffer.Length * 2));
+                    buffer.AsSpan(0, buffered).CopyTo(larger);
+                    MemoryPool.ReturnByteArray(buffer);
+                    buffer = larger;
+                }
+                var read = await stream.ReadAsync(buffer.AsMemory(buffered), cancellationToken);
+                buffered += read;
+                if (firstChunk)
+                {
+                    if (buffered < 3 && read > 0) continue;
+                    firstChunk = false;
+                    if (buffered >= 3 && buffer[0] == 0xEF && buffer[1] == 0xBB && buffer[2] == 0xBF)
+                    {
+                        buffer.AsSpan(3, buffered - 3).CopyTo(buffer);
+                        buffered -= 3;
+                    }
+                }
+                var consumed = ValidateChunk(buffer.AsSpan(0, buffered), read == 0, ref state, validation);
+                buffer.AsSpan(consumed, buffered - consumed).CopyTo(buffer);
+                buffered -= consumed;
+                if (_limits.MaxSingleFeatureBytes > 0 && buffered > _limits.MaxSingleFeatureBytes)
+                {
+                    throw new InvalidDataException("A single GeoJSON feature or token exceeds the preflight memory budget.");
+                }
+                if (read == 0) break;
+            }
+
+            if (!validation.IsFeatureCollection)
+            {
+                validation.Issues.Add(ImportValidationIssue.Create(
                     ImportValidationErrorCodes.InvalidGeoJson,
-                    "GeoJSON root object must have type \"FeatureCollection\".",
-                    field: "type"));
+                    "GeoJSON root object must have type \"FeatureCollection\".", field: "type"));
             }
-
-            if (!root.TryGetProperty("features", out var featuresElement) ||
-                featuresElement.ValueKind != JsonValueKind.Array)
+            if (!validation.HasFeaturesArray || validation.FeatureCount == 0)
             {
-                issues.Add(ImportValidationIssue.Create(
+                validation.Issues.Add(ImportValidationIssue.Create(
                     ImportValidationErrorCodes.EmptyDataset,
-                    "GeoJSON FeatureCollection does not contain a features array.",
-                    field: "features"));
-            }
-            else
-            {
-                foreach (var featureElement in featuresElement.EnumerateArray())
-                {
-                    featureCount++;
-                    if (issues.Count < MaxValidationIssues)
-                    {
-                        issues.AddRange(ValidateFeature(featureElement, featureCount)
-                            .Take(MaxValidationIssues - issues.Count));
-                    }
-
-                    if (_limits.MaxFeaturesPerFile > 0 && featureCount >= _limits.MaxFeaturesPerFile)
-                    {
-                        break;
-                    }
-                }
-            }
-
-            if (featureCount == 0 && issues.All(issue => issue.Code != ImportValidationErrorCodes.EmptyDataset))
-            {
-                issues.Add(ImportValidationIssue.Create(
-                    ImportValidationErrorCodes.EmptyDataset,
-                    "GeoJSON FeatureCollection does not contain any features.",
-                    field: "features"));
+                    validation.HasFeaturesArray
+                        ? "GeoJSON FeatureCollection does not contain any features."
+                        : "GeoJSON FeatureCollection does not contain a features array.", field: "features"));
             }
         }
         catch (JsonException)
         {
-            issues.Add(ImportValidationIssue.Create(
+            validation.Issues.Add(ImportValidationIssue.Create(
                 ImportValidationErrorCodes.InvalidGeoJson,
                 "GeoJSON document is not valid JSON."));
         }
         finally
         {
-            if (stream.CanSeek)
+            if (buffer != null) MemoryPool.ReturnByteArray(buffer);
+            if (stream.CanSeek) stream.Position = 0;
+        }
+        return new GeoJsonValidationResult(validation.FeatureCount, validation.Issues);
+    }
+
+    private sealed class ValidationState
+    {
+        public List<ImportValidationIssue> Issues { get; } = [];
+        public int FeatureCount { get; set; }
+        public bool IsFeatureCollection { get; set; }
+        public bool HasFeaturesArray { get; set; }
+        public bool InFeaturesArray { get; set; }
+        public string? RootProperty { get; set; }
+    }
+
+    private int ValidateChunk(ReadOnlySpan<byte> data, bool finalBlock,
+        ref JsonReaderState state, ValidationState validation)
+    {
+        var reader = new Utf8JsonReader(data, finalBlock, state);
+        while (true)
+        {
+            var before = reader;
+            if (!reader.Read()) break;
+            if (validation.InFeaturesArray && reader.CurrentDepth == 2)
             {
-                stream.Position = 0;
+                if (!JsonDocument.TryParseValue(ref reader, out var feature))
+                {
+                    reader = before;
+                    break;
+                }
+                using (feature)
+                {
+                    if (_limits.MaxFeaturesPerFile <= 0 || validation.FeatureCount < _limits.MaxFeaturesPerFile)
+                    {
+                        validation.FeatureCount++;
+                        if (validation.Issues.Count < MaxValidationIssues)
+                        {
+                            validation.Issues.AddRange(ValidateFeature(feature.RootElement, validation.FeatureCount)
+                                .Take(MaxValidationIssues - validation.Issues.Count));
+                        }
+                    }
+                }
+            }
+            else if (reader.CurrentDepth == 1)
+            {
+                if (reader.TokenType == JsonTokenType.PropertyName)
+                {
+                    validation.RootProperty = reader.GetString();
+                }
+                else
+                {
+                    if (validation.RootProperty == "type")
+                    {
+                        validation.IsFeatureCollection = reader.TokenType == JsonTokenType.String
+                            && reader.ValueTextEquals("FeatureCollection");
+                    }
+                    if (validation.RootProperty == "features")
+                    {
+                        validation.HasFeaturesArray = reader.TokenType == JsonTokenType.StartArray;
+                        validation.InFeaturesArray = validation.HasFeaturesArray;
+                    }
+                    if (reader.TokenType == JsonTokenType.EndArray) validation.InFeaturesArray = false;
+                    validation.RootProperty = null;
+                }
             }
         }
-
-        return new GeoJsonValidationResult(featureCount, issues);
+        state = reader.CurrentState;
+        return checked((int)reader.BytesConsumed);
     }
 
     /// <summary>
@@ -318,6 +391,7 @@ internal sealed class StreamingGeoJsonReader
         var lastConsumed = 0;
 
         var inFeaturesArray = processingState.InFeaturesArray;
+        var awaitingFeaturesArray = processingState.AwaitingFeaturesArray;
         var featureDepth = processingState.FeatureDepth;
         var isCollectingFeature = processingState.IsCollectingFeature;
         var featureStartIndex = processingState.FeatureStartIndex;
@@ -345,15 +419,20 @@ internal sealed class StreamingGeoJsonReader
 
             lastConsumed = (int)reader.BytesConsumed;
 
-            if (reader.TokenType == JsonTokenType.PropertyName && reader.GetString() == "features" && !inFeaturesArray)
+            if (awaitingFeaturesArray)
             {
-                // Next token should be the start of the features array
-                if (reader.Read() && reader.TokenType == JsonTokenType.StartArray)
+                // Preserve this state when the property name and opening array arrive in different reads.
+                awaitingFeaturesArray = false;
+                if (reader.TokenType == JsonTokenType.StartArray)
                 {
                     inFeaturesArray = true;
                     featureDepth = reader.CurrentDepth;
-                    lastConsumed = (int)reader.BytesConsumed;
                 }
+            }
+            else if (reader.TokenType == JsonTokenType.PropertyName && reader.CurrentDepth == 1
+                && reader.GetString() == "features" && !inFeaturesArray)
+            {
+                awaitingFeaturesArray = true;
             }
             else if (inFeaturesArray)
             {
@@ -405,12 +484,14 @@ internal sealed class StreamingGeoJsonReader
         {
             if (featureBuffer == null && featureStartIndex >= 0 && featureStartIndex < data.Length)
             {
-                featureBuffer = new ArrayBufferWriter<byte>(data.Length - featureStartIndex);
-                featureBuffer.Write(data.Span.Slice(featureStartIndex));
+                featureBuffer = new ArrayBufferWriter<byte>(Math.Max(1, lastConsumed - featureStartIndex));
+                // Only retain consumed tokens here. The incomplete token suffix is already
+                // carried by leftoverBuffer; copying it twice corrupts every spanning feature.
+                featureBuffer.Write(data.Span.Slice(featureStartIndex, lastConsumed - featureStartIndex));
             }
             else
             {
-                BufferFeatureBytes(data.Length);
+                BufferFeatureBytes(lastConsumed);
             }
 
             // A single feature object that spans many chunks accumulates here across
@@ -430,6 +511,7 @@ internal sealed class StreamingGeoJsonReader
         var newProcessingState = new JsonProcessingState
         {
             InFeaturesArray = inFeaturesArray,
+            AwaitingFeaturesArray = awaitingFeaturesArray,
             FeatureDepth = featureDepth,
             IsCollectingFeature = isCollectingFeature,
             FeatureStartIndex = featureStartIndex,
@@ -444,7 +526,8 @@ internal sealed class StreamingGeoJsonReader
     {
         var issues = new List<ImportValidationIssue>(1);
 
-        if (!root.TryGetProperty("type", out var typeElement) ||
+        if (root.ValueKind != JsonValueKind.Object ||
+            !root.TryGetProperty("type", out var typeElement) ||
             !string.Equals(typeElement.GetString(), "Feature", StringComparison.Ordinal))
         {
             issues.Add(ImportValidationIssue.Create(

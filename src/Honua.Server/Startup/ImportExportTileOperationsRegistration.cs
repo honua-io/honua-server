@@ -114,6 +114,8 @@ internal static class ImportExportTileOperationsRegistration
                 sp.GetRequiredService<ILogger<ExportJobService>>(),
                 sp.GetService<IConnectionMultiplexer>(),
                 licensePolicy: sp.GetRequiredService<ILicenseOperationPolicy>()));
+        services.AddSingleton<IJobCancellationNotifier>(sp =>
+            (ExportJobService)sp.GetRequiredService<IExportJobService>());
         services.AddHostedService<ExportBackgroundService>();
 
         // Resumable generated tile-cache seed/warm generation checkpoint store (#2661). Durable
