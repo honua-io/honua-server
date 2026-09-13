@@ -90,6 +90,8 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_apply_style_preset",
         "honua_resolve_entity",
         "honua_list_capabilities",
+        "honua_studio_save_version",
+        "honua_studio_reopen_version",
         "honua_studio_create_draft",
         "honua_studio_get_draft",
         "honua_studio_update_draft",
@@ -417,6 +419,8 @@ public sealed partial class McpTaxonomyAlignmentTests
             // Studio draft lifecycle + composition tools (honua-server#3002).
             // No honua_studio_publish/honua_studio_rollback tool exists — only
             // honua_studio_propose_publication, which records intent (REQ-003).
+            ["honua_studio_save_version"] = (Destructive: false, Idempotent: false),
+            ["honua_studio_reopen_version"] = (Destructive: false, Idempotent: false),
             ["honua_studio_create_draft"] = (Destructive: false, Idempotent: false),
             ["honua_studio_update_draft"] = (Destructive: false, Idempotent: false),
             ["honua_studio_add_layer"] = (Destructive: false, Idempotent: false),

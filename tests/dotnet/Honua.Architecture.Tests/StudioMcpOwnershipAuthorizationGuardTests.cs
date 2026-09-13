@@ -35,7 +35,7 @@ public sealed class StudioMcpOwnershipAuthorizationGuardTests
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
-        registeredTypes.Should().HaveCount(17,
+        registeredTypes.Should().HaveCount(19,
             "the complete honua_studio lifecycle/composition/proposal roster must remain under this guard");
 
         var sourceFiles = Directory.EnumerateFiles(studioRoot, "*.cs", SearchOption.TopDirectoryOnly)
@@ -66,7 +66,7 @@ public sealed class StudioMcpOwnershipAuthorizationGuardTests
                     $"Registered Studio tool '{type}' must have an auditable source declaration.");
             }
 
-            if (type is "CreateStudioDraftTool" or "ProposeStudioPublicationTool")
+            if (type is "CreateStudioDraftTool" or "ProposeStudioPublicationTool" or "ReopenStudioVersionTool")
             {
                 ExtractClassBody(resolvedDeclaration.Source, resolvedDeclaration.Index)
                     .Should().Contain("EnsureStudioAuthorizedAsync(",
