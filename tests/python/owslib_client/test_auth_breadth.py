@@ -197,7 +197,12 @@ def test_core_read_suite_invalid_credential_returns_protocol_challenge(
         )
 
     response = http_get(url, headers=headers, timeout=30)
-    expected_status = 200 if suite == "wms" else 401
+    # The expired bearer is rejected by the shared error formatter before
+    # the WMS handler: PA-069/PA-074 retain HTTP 200 + an XML exception on
+    # this alias (FormatError_RestWmsAliasPath_ReturnsXmlExceptionReport).
+    # A bad API key reaches the protected service's 401 AccessDenied challenge.
+    wms_invalid_token = suite == "wms" and credential == "expired-oidc-bearer"
+    expected_status = 200 if wms_invalid_token else 401
     assert response.status_code == expected_status, response.text[:500]
     challenge = response.headers.get("WWW-Authenticate", "")
     expected_scheme = "Bearer" if credential == "expired-oidc-bearer" else "ApiKey"
@@ -211,4 +216,13 @@ def test_core_read_suite_invalid_credential_returns_protocol_challenge(
         assert problem.get("title")
     else:
         assert "xml" in content_type
-        assert b"Exception" in response.content and b"AccessDenied" in response.content
+        assert b"Exception" in response.content
+        if wms_invalid_token:
+            assert b'code="InvalidParameterValue"' in response.content
+            assert b"Invalid token." in response.content
+        elif suite == "wfs":
+            assert b'exceptionCode="AccessDenied"' in response.content
+        else:
+            assert b'code="AccessDenied"' in response.content
+        assert b"Capability>" not in response.content
+        assert b"FeatureCollection" not in response.content
