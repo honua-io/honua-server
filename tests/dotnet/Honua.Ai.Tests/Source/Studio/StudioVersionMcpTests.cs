@@ -26,16 +26,23 @@ namespace Honua.Server.Tests.Features.Protocols.Mcp;
 public sealed class StudioVersionMcpTests
 {
     private static readonly string MapBody = """
-        {"format":"honua_map_package.v1","layers":[{"id":"parcels","type":"fill","sourceId":"content.parcels","styleRef":"style_parcels"}],
+        {"mapPackageId":"fixture-map","format":"honua_map_package.v1","status":"Ready","createdAt":"1970-01-01T00:00:00Z","layers":[{"id":"parcels","type":"fill","sourceId":"content.parcels","styleRef":"style_parcels"}],
          "view":{"center":[-157.86,21.31],"zoom":10},"widgets":[{"id":"legend","kind":"legend"}]}
         """;
 
     [UnitTest]
-    public async Task SaveAndReopen_UseRealDurableRuntime_AndPreserveIndependentMapValues()
+    public Task SaveAndReopen_UseRealDurableRuntime_AndPreserveIndependentMapValues()
+        => AssertSaveAndReopenAsync(StudioPackageFamily.Map);
+
+    [UnitTest]
+    public Task SaveAndReopen_PreserveIndependentDashboardValues()
+        => AssertSaveAndReopenAsync(StudioPackageFamily.Dashboard);
+
+    private static async Task AssertSaveAndReopenAsync(StudioPackageFamily family)
     {
         using var provider = LifecycleProvider();
         var lifecycle = provider.GetRequiredService<IStudioPackageLifecycleService>();
-        var draft = await SeedAsync(lifecycle);
+        var draft = await SeedAsync(lifecycle, family);
         var instances = new VolatileOperationInstanceStore();
         var runtime = Runtime(lifecycle, instances, PolicyDecisionKind.Allow);
         var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
@@ -55,19 +62,26 @@ public sealed class StudioVersionMcpTests
         savedEnvelope!.Status.Should().Be(OperationHandleStatus.Completed);
         savedEnvelope.AuditId.Should().NotBeNullOrWhiteSpace();
         var version = (await lifecycle.GetVersionAsync(draft.ItemId, versionId))!;
-        var expectedEnvelope = draft.Envelope with { Validation = draft.Envelope.Validation with { GeneratedAt = null } };
+        var expectedEnvelope = draft.Envelope with
+        {
+            Validation = new StudioValidationSummary { Status = StudioPackageValidationStatus.Valid },
+        };
         var expectedHash = Convert.ToHexStringLower(SHA256.HashData(
             JsonSerializer.SerializeToUtf8Bytes(expectedEnvelope, StudioJsonContext.Default.StudioPackageEnvelope)));
         version.ContentHash.Should().Be(expectedHash, "the immutable hash binds the seeded envelope, not the subsequently edited draft");
+        version.Validation.Status.Should().Be(StudioPackageValidationStatus.Valid);
+        version.Validation.Diagnostics.Should().BeEmpty();
         version.VersionNumber.Should().Be(1);
         version.PackageKey.Should().Be("terminal-parcels");
         version.OwnerId.Should().Be("test-user");
-        AssertMap(version.Envelope);
+        AssertMap(version.Envelope, family);
 
+        (await lifecycle.GetDraftAsync(draft.DraftId))!.Generation.Should().Be(2,
+            "saving persists refreshed validation and advances the mutable draft generation");
         // Mutate the original draft after saving: reopen must load the immutable version.
         await lifecycle.UpdateDraftAsync(draft.DraftId, new UpdateStudioPackageDraftCommand
         {
-            PackageKey = draft.PackageKey, OwnerId = draft.OwnerId, Generation = draft.Generation,
+            PackageKey = draft.PackageKey, OwnerId = draft.OwnerId, Generation = 2,
             Envelope = draft.Envelope with { Body = McpTestFactory.ParseJson("""{"layers":[],"view":{"center":[0,0],"zoom":1}}""") },
             ActorId = "test-user",
         });
@@ -81,7 +95,7 @@ public sealed class StudioVersionMcpTests
         reopenedDraft.BaseVersionId.Should().Be(versionId);
         reopenedDraft.ItemId.Should().Be(draft.ItemId);
         reopenedDraft.Generation.Should().Be(1);
-        AssertMap(reopenedDraft.Envelope);
+        AssertMap(reopenedDraft.Envelope, family);
         var reopenedEnvelope = await instances.GetAsync(reopenedBody.GetProperty("operation").GetProperty("operationInstanceId").GetString()!);
         reopenedEnvelope!.Status.Should().Be(OperationHandleStatus.Completed);
         reopenedEnvelope.AuditId.Should().NotBeNullOrWhiteSpace();
@@ -212,20 +226,22 @@ public sealed class StudioVersionMcpTests
         return services.BuildServiceProvider();
     }
 
-    private static Task<StudioPackageDraft> SeedAsync(IStudioPackageLifecycleService lifecycle) => lifecycle.CreateDraftAsync(new CreateStudioPackageDraftCommand
+    private static Task<StudioPackageDraft> SeedAsync(IStudioPackageLifecycleService lifecycle, StudioPackageFamily family = StudioPackageFamily.Map) => lifecycle.CreateDraftAsync(new CreateStudioPackageDraftCommand
     {
         PackageKey = "terminal-parcels", OwnerId = "test-user", ActorId = "test-user",
         Envelope = new StudioPackageEnvelope
         {
-            Family = StudioPackageFamily.Map, SchemaVersion = "1.0",
-            Format = lifecycle.GetCapabilities().Families.Single(f => f.Family == StudioPackageFamily.Map).Format,
-            Body = McpTestFactory.ParseJson(MapBody),
+            Family = family, SchemaVersion = "1.0",
+            Format = family == StudioPackageFamily.Map ? "honua_map_package.v1" : "studio_dashboard_package.v1",
+            Body = McpTestFactory.ParseJson(family == StudioPackageFamily.Map ? MapBody :
+                MapBody.Replace("honua_map_package.v1", "studio_dashboard_package.v1", StringComparison.Ordinal)),
         },
     });
 
-    private static void AssertMap(StudioPackageEnvelope envelope)
+    private static void AssertMap(StudioPackageEnvelope envelope, StudioPackageFamily family)
     {
-        envelope.Family.Should().Be(StudioPackageFamily.Map);
+        envelope.Family.Should().Be(family);
+        envelope.Format.Should().Be(family == StudioPackageFamily.Map ? "honua_map_package.v1" : "studio_dashboard_package.v1");
         envelope.SchemaVersion.Should().Be("1.0");
         var body = StudioCompositionBodyEditor.ReadBody(envelope);
         body.Layers.Should().ContainSingle(layer => layer.Id == "parcels" && layer.SourceId == "content.parcels" && layer.StyleRef == "style_parcels");

@@ -162,36 +162,37 @@ and CRS; for raster work include nodata and metadata. A snapshot of current
 output, a completed job status, or an artifact URL alone is not correctness
 evidence. Carry the verified artifact into the Studio composition.
 
-## 6. Author, validate, save and reopen (partially available)
+## 6. Author, validate, save and reopen
 
-The `setup` view includes create/validate but omits most draft mutation tools.
-Before authoring, explicitly request the authenticated full catalog:
+Confirm that the candidate advertises `setup.v2` and its canonical create,
+read, update, validate, preview, save and reopen descriptors. Older candidates
+may expose only part of this sequence; record the missing tools and stop that
+qualification cell instead of inventing a client-side catalog.
 
-```json
-{"jsonrpc":"2.0","id":3,"method":"tools/list","params":{"view":"full"}}
-```
+Create a map draft with the published layer or verified GP result in its
+composition envelope. Use `honua_studio_update_draft` with the returned schema
+to edit layers, style references, view, widgets and controls. Pass the latest
+`generation` on every mutation. A stale generation requires a fresh read and
+reviewed retry. `honua_studio_validate_draft` and preview are read-only.
+Granular composition tools remain available through the explicit paginated
+`full` catalog escape hatch; retain its digests separately if you use it.
 
-Follow `nextCursor` with the same view to discover `honua_studio_create_draft`,
-`honua_studio_get_draft`, `honua_studio_update_draft` and the composition tools
-below. Retain the full-view digests separately from setup-view evidence; this
-escape hatch does not broaden write authority. Use the returned envelope
-schemas. Add the published layer/GP result with `honua_studio_add_layer`,
-set its view/style, and validate with `honua_studio_validate_draft`.
-Pass the latest returned `generation` on every mutation. A stale generation
-requires a fresh read and reviewed retry. Validation is read-only.
+Call `honua_studio_save_version` with `draftId`, `generation` and an optional
+`changeNote`. A completed operation returns `version`, including `itemId`,
+`versionId`, `contentHash`, envelope and validation. Saving refreshes the
+mutable draft generation, so read it again before editing that same draft.
+Call `honua_studio_reopen_version` with the saved `itemId` and `versionId` to
+create an editable draft. Assert its actual layer, view, widget and style
+values against the independent fixture, and retain its `draftId`,
+`baseVersionId`, `generation` and body. **A successful get-draft is not
+save/reopen proof.** Approval-required envelopes have no completed version or
+reopened draft yet; follow their proposal and retain that outcome.
 
 Repeat for a dashboard using the discovered composition/widget schemas.
-Dashboard composition eligibility is still tracked by
-[#3429](https://github.com/honua-io/honua-server/issues/3429). If rejected,
-stop and retain the structured failure; do not relabel the dashboard as a map
-to count it as passed.
-
-The required next steps are immutable save, get version and reopen for both
-map and dashboard. Resolve their actual operations from the candidate catalog
-and retain draft ID/generation, version ID, content hash and reopened body.
-**A successful get-draft is not save/reopen proof.** The source Studio MCP
-lifecycle does not supply a complete dedicated save/get-version/reopen
-sequence; do not invent tool names or claim this stage completed.
+If the candidate rejects dashboard composition, retain its structured failure
+and the [#3429](https://github.com/honua-io/honua-server/issues/3429) disposition;
+do not relabel it as a map. A source fixture does not certify the pinned
+candidate: retain separate real-model and exact-candidate execution receipts.
 [SDK #1397](https://github.com/honua-io/honua-sdk-js/issues/1397) and
 [SDK #1398](https://github.com/honua-io/honua-sdk-js/issues/1398) own the
 server-discovered routing and lifecycle client.

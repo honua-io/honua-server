@@ -44,6 +44,7 @@ internal sealed class SaveStudioVersionTool(IGeoprocessingJobService jobService,
         Title = "Save Studio version",
         Description = "Save the current Studio draft generation as an immutable version through the governed Studio runtime. "
             + "Use the returned version.itemId, version.versionId and version.contentHash for publication or reopen. "
+            + "Read the draft again before editing it further because saving refreshes its generation. "
             + "An approval-required operation has no saved version yet; follow its proposal before continuing.",
         InputSchema = StudioMcpSchemas.SaveVersionArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioVersionMutationOutputSchema,
@@ -74,7 +75,7 @@ internal sealed class SaveStudioVersionTool(IGeoprocessingJobService jobService,
         var actor = ActorIdFor(authorization, principal);
         var receipt = await RequireMutationRuntime(httpContext).SaveVersionAsync(argument.DraftId, argument.Generation,
             argument.ChangeNote, actor, MutationContext(httpContext, principal, actor), cancellationToken).ConfigureAwait(false);
-        Audit(principal, Name, draft.DraftId, draft.Generation, draft.Generation);
+        Audit(principal, Name, draft.DraftId, draft.Generation, generationAfter: null);
         return McpToolHelpers.SuccessResult(new McpStudioSaveVersionOutput
         {
             Operation = receipt.Operation,
