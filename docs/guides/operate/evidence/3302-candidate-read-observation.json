@@ -1,0 +1,197 @@
+{
+  "schemaVersion": "honua.operate-read-observation/v1",
+  "observedAt": "2026-09-13T06:50:49.8314072+00:00",
+  "candidate": {
+    "sha": "7ba422672e0c751843b17beb36e954a019cc19fb",
+    "image": "ghcr.io/honua-io/honua-server:nightly-aot-7ba4226",
+    "digest": "sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd",
+    "reference": "ghcr.io/honua-io/honua-server@sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd",
+    "manifestSha256": "8c71ca3c29d0a09676d579f918c1a2627556f257f7ac80454fe840ff7a6e3bec"
+  },
+  "identityVerification": "Harness.start verified local image RepoDigests and OCI source revision before boot; admin version response did not expose sourceRevision.",
+  "fixture": {
+    "harness": "scripts/qualification/metadata-release-installed.py",
+    "harnessSha256": "64825397f147c2af9c800cc6dcba43a4e0e4418735751b2c8e5e4842236a846b",
+    "setup": "Harness.start only; isolated seeded PostGIS/Redis, Development Enterprise dev grant, no deploy targets, alerting disabled; no operation submitted",
+    "cleanup": "removed lane containers and network"
+  },
+  "qualificationStatus": "blocked",
+  "scope": "Four read routes and four MCP observation calls; not installed CLI, DevOps stdio, Console, proposal authorization, source outage, deployment or recovery qualification.",
+  "restReads": [
+    {
+      "route": "/api/v1/admin/version",
+      "httpStatus": 200
+    },
+    {
+      "route": "/api/v1/operate/status",
+      "httpStatus": 200
+    },
+    {
+      "route": "/api/v1/admin/observability/ops-health",
+      "httpStatus": 200
+    },
+    {
+      "route": "/api/v1/admin/observability/findings",
+      "httpStatus": 200
+    }
+  ],
+  "mcp": {
+    "protocolVersion": "2025-03-26",
+    "catalog": "Only first full-view page read; nextCursor present. This is not a complete catalog/descriptor drift check.",
+    "checks": [
+      {
+        "tool": "honua_ops_health",
+        "expected": {
+          "httpStatus": 200,
+          "rpcError": false,
+          "isError": false,
+          "structuredFields": [
+            "evidencePosture"
+          ]
+        },
+        "status": "passed"
+      },
+      {
+        "tool": "honua_ops_findings",
+        "expected": {
+          "httpStatus": 200,
+          "rpcError": false,
+          "isError": false,
+          "structuredFields": [
+            "evidencePosture",
+            "findings"
+          ]
+        },
+        "status": "passed"
+      },
+      {
+        "tool": "honua_operate_events",
+        "expected": {
+          "httpStatus": 200,
+          "rpcError": false,
+          "isError": false,
+          "structuredFields": [
+            "items",
+            "partialResult"
+          ]
+        },
+        "status": "passed"
+      },
+      {
+        "tool": "honua_supported_operation_kinds",
+        "expected": {
+          "httpStatus": 200,
+          "rpcError": false,
+          "isError": false,
+          "structuredFields": [
+            "supportedKinds"
+          ]
+        },
+        "status": "passed"
+      }
+    ],
+    "supportedKinds": [
+      "AdminConfigChange",
+      "Deploy",
+      "Geoprocess",
+      "MetadataRelease"
+    ]
+  },
+  "fixtureAssertions": {
+    "status": "passed",
+    "findingsEmptyOnBothSurfaces": true,
+    "disabledAlertSource": "notConfigured, no observedAt or lastSuccessfulAt on REST and MCP",
+    "coverage": "aggregate partial; alert source expected but not included on REST and MCP",
+    "events": "zero items; partialResult=false"
+  },
+  "statusContract": {
+    "expected": {
+      "schemaVersion": "1.1",
+      "slo.nodeLocalRetainedTail.scope": "replica-local",
+      "slo.nodeLocalRetainedTail.isPlatformSli": false
+    },
+    "status": "failed",
+    "observed": {
+      "schemaVersion": "1.0",
+      "generatedAt": "2026-09-13T06:50:49.8314072+00:00",
+      "status": "degraded",
+      "reasons": [
+        "health-rollup:Degraded"
+      ],
+      "domains": {
+        "deploys": {
+          "source": "GET /api/v1/admin/deploy/operations/{operationId}",
+          "available": true,
+          "active": 0,
+          "parked": 0,
+          "awaitingApproval": 0,
+          "byStatus": {}
+        },
+        "jobs": {
+          "source": "GET /api/v1/admin/observability/ops-health",
+          "available": true,
+          "totalActive": 0,
+          "queued": 0,
+          "running": 0,
+          "backends": [],
+          "byStatusBackend": [],
+          "substrate": {
+            "evaluated": false,
+            "note": "Substrate compatibility is not evaluated on this build; local-backend substrate posture is surfaced by the substrate-fail-closed work."
+          }
+        },
+        "alerts": {
+          "source": "GET /api/v1/admin/observability/alerts",
+          "enabled": false,
+          "dispatcherRunning": false,
+          "storagePollFailing": false,
+          "channelCircuits": []
+        },
+        "migrations": {
+          "source": "GET /api/v1/admin/observability/migrations",
+          "pending": 0,
+          "pendingContract": 0,
+          "upgradeRequired": false,
+          "classification": "none"
+        },
+        "findings": {
+          "source": "GET /api/v1/admin/observability/findings",
+          "total": 0,
+          "bySeverity": {
+            "critical": 0,
+            "warning": 0,
+            "info": 0
+          },
+          "top": []
+        },
+        "telemetryBackends": {
+          "source": "ControlPlane:TelemetryConnections",
+          "configured": 0,
+          "backends": []
+        }
+      },
+      "slo": {
+        "configured": false,
+        "reason": "No availability SLO target is configured. Set Slo:Availability:Target to a fraction in (0, 1) (for example 0.995) to evaluate an error budget from the in-process serving-latency window."
+      }
+    },
+    "reason": "Accepted image predates the corrected status contract; the schema 1.0 reason still recommends deriving an error budget from the in-process window."
+  },
+  "versionResponse": {
+    "success": true,
+    "data": {
+      "version": "1.0.0",
+      "metadataApiVersion": "metadata.honua.io/v2alpha1",
+      "metadataSchemaVersion": "2.0.0-alpha.1",
+      "serverTime": "2026-09-13T06:50:49.7290582+00:00"
+    },
+    "message": null,
+    "timestamp": "2026-09-13T06:50:49.7290588+00:00"
+  },
+  "replayProcedure": [
+    "Use Harness(pinned_server(manifest), output), then Harness.start(); its image identity assertions and isolated setup are unchanged.",
+    "Read the four routes with the isolated admin key. POST initialize and the four scenario tools/call messages to /mcp with Accept application/json, text/event-stream; parse data events as JSON-RPC.",
+    "Assert HTTP 200, no JSON-RPC error or isError, and the listed structured fields. Independently expect no findings/events from this fixture and disabled alerting with absent success clocks; check REST and MCP separately.",
+    "Compare operate status against the documented schema 1.1 local-only SLO contract. Retain the failed comparison; call Harness.finish() to remove resources."
+  ]
+}

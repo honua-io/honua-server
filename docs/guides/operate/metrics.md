@@ -28,6 +28,25 @@ appear only after the corresponding event occurs. Use it with the
 
 See [Ops evidence posture](evidence-posture.md) for the complete vocabularies.
 
+### Deployment-source provenance
+
+Read the source's provenance as well as its field values. The current findings
+producer has these distinct sources:
+
+| Source suffix under `honua_ops_findings` | Producer and qualification limit |
+|---|---|
+| `control_plane` | `configProjection`, `control-plane-options`: describes configuration evaluated now; it does not observe the serving revision at a provider. |
+| `deploy_preflight` | `inProcess`, `deploy-preflight-probe`: describes the in-process preflight; it is not a provider rollback receipt. |
+| `workflow_operations` | `durableStore`, `workflow-operation-store`: the producer currently stamps completeness and clocks from store registration and evaluation time. A `complete` envelope alone does not prove successful collection, backend-loss handling or full target coverage. |
+
+For the deployment source, require the independently observed provider revision
+and collection/coverage evidence described in the [scenario](scenario.md).
+Do not reinterpret evaluation-time clocks as successful provider observations.
+Live partial, unverified and backend-loss producer checks remain unmet in the
+[qualification record](../../internal/contributor/operate-docs-precut-evidence.md).
+Injected-envelope adapter tests prove suppression at that adapter boundary;
+they cannot establish the producer's collection behavior.
+
 For alert backlog evidence, `backlogObservedAt` is the successful collection
 time used by the source envelope. Legacy `lastPollAt` is only a dispatcher
 attempt heartbeat and may advance during a storage outage. The
@@ -49,11 +68,19 @@ collection after recovery; a new response or poll attempt cannot refresh it.
 
 ## Platform SLO and local diagnostics
 
-`GET /api/v1/operate/status` separates `slo.nodeLocalRetainedTail` from a
+The corrected `schemaVersion=1.1` contract for `GET /api/v1/operate/status`
+separates `slo.nodeLocalRetainedTail` from a
 platform SLI. Until a distributed, all-request, in-band-aware source exists,
 `slo.configured=false` and `slo.availability=null`, even when an intended
 availability target is configured. No platform burn rate or error budget is
 derived from the tail.
+
+The accepted `7ba4226` image still returns schema `1.0`, as the
+[installed read observation](evidence/3302-candidate-read-observation.json)
+records. A missing `nodeLocalRetainedTail` block on that image is a contract
+version mismatch, not evidence of zero traffic. Its legacy advice to derive an
+error budget from the in-process window must not be used for a platform SLO.
+The corrected contract remains required when qualifying a replacement pin.
 
 The diagnostic reports `scope=replica-local`, `isPlatformSli=false`, retained
 population/capacity, overwritten samples and oldest/newest retained ages. Its
