@@ -646,8 +646,8 @@ public sealed class StreamingFileImportStagingTableTests(PostgresFixture fixture
                 SELECT count(*), sum((properties->>'ordinal')::bigint),
                     count(DISTINCT (properties->>'ordinal')::int),
                     min((properties->>'ordinal')::int), max((properties->>'ordinal')::int),
-                    bool_and(properties->>'padding' = repeat('x', 4096)),
-                    bool_and(ST_X(geometry)=1 AND ST_Y(geometry)=2 AND ST_SRID(geometry)=4326)
+                    bool_and((properties->>'padding') IS NOT DISTINCT FROM repeat('x', 4096)),
+                    bool_and(geometry IS NOT NULL AND ST_X(geometry)=1 AND ST_Y(geometry)=2 AND ST_SRID(geometry)=4326)
                 FROM "{schema}".imported_memory_proof
                 """;
             await using var reader = await command.ExecuteReaderAsync();
