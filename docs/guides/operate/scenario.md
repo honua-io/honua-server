@@ -26,6 +26,29 @@ sections below provide the advanced API/MCP procedure for operators and replay.
 > disposition](../../internal/contributor/operate-docs-precut-evidence.md)
 > records the accepted pin's known failure and remaining receipt requirements.
 
+## Check the installed contract
+
+The September 13 replay of the accepted `7ba4226` image passes the four
+observation calls in step 2, but the protected-update journey remains blocked.
+Its [read observation](evidence/3302-candidate-read-observation.json) and
+[installed staging recheck](evidence/3302-candidate-staging-recheck.json)
+establish these limits. A separate [catalog replay](evidence/3302-candidate-catalog.json)
+discovers all five named scenario tools across five pages and verifies the
+finding-proposal input schema; discovery does not execute a proposal:
+
+| Check | Observed result and operator decision |
+|---|---|
+| Read health/findings through REST and MCP | The isolated fixture returns structured evidence. Disabled alerting remains `notConfigured`, without observation/success clocks, on both surfaces. Read success does not establish deployment-source outage handling or permission to change a target. |
+| Read Operate status | The image returns `schemaVersion=1.0`, before the corrected `1.1` local-diagnostic contract. Its suggestion to configure a platform error budget from the in-process window is obsolete. Follow the [metric semantics](metrics.md#platform-slo-and-local-diagnostics); do not turn that diagnostic into protection evidence. |
+| Discover operation kinds | `Deploy` is registered, but that says nothing about the selected backend's rollback support, prior revision or verification policy. Complete the target-specific checks before approval. |
+| Stage a protected service revision | The fixture changes live revision 3 → 4 and exposes `owner_email` during preparation; the prior revision is missing from the operation. The expected unchanged service and captured recovery identity are not established. Stop qualification at this failed check. |
+
+The staging failure breaks the promise that preparation preserves the live
+service and binds a known prior revision for recovery. Accepting a replacement
+image and replaying these checks is still required; updating the documentation
+does not qualify the current pin. This observation uses isolated Docker fixtures
+and does not certify ECS-small, the installed DevOps client, or Console.
+
 ## Progress and protection
 
 These are the required client descriptions of server truth, not additional API
@@ -114,7 +137,9 @@ the terminal client configuration. Its bounded workflow reads this same
 server evidence and explains the stable finding ID and bounded evidence
 references. It must not reconstruct the hidden executable action payload.
 An empty `supportedKinds` result means no registered typed actuator is
-available for this session; stop at diagnosis.
+available for this session; stop at diagnosis. A nonempty result identifies
+operation kinds only. It does not prove a backend is configured for your target
+or that its protected-update path has passed qualification.
 
 ## 3. Apply the evidence gate before proposing
 
