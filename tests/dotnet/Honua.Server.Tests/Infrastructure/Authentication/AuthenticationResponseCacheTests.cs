@@ -27,16 +27,56 @@ public sealed class AuthenticationResponseCachePolicyTests
         return context;
     }
 
-    [UnitTest]
-    public void Apply_AuthenticatedResponse_WithExplicitPrivateCacheControl_PreservesEndpointPolicy()
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", Tiers.Fast)]
+    [InlineData("Bearer", "Authorization", 200)]
+    [InlineData("Bearer", "Authorization", 304)]
+    [InlineData("ApiKey", "Authorization, X-API-Key", 200)]
+    [InlineData("ApiKey", "Authorization, X-API-Key", 304)]
+    [InlineData("Basic", "Authorization", 200)]
+    public void Apply_AuthenticatedPrivateResponse_CannotBeReusedAfterCredentialRevocation(
+        string scheme, string vary, int statusCode)
     {
         var context = CreateAuthenticatedContext();
+        context.User = new ClaimsPrincipal(new ClaimsIdentity(authenticationType: scheme));
+        context.Response.StatusCode = statusCode;
         context.Response.Headers.CacheControl = "private, max-age=3600";
-        context.Response.Headers.Vary = "Authorization";
+        context.Response.Headers.Vary = vary;
+        context.Response.Headers.ETag = "\"unchanged-asset\"";
 
         AuthenticationResponseCachePolicy.Apply(context);
 
-        context.Response.Headers.CacheControl.ToString().Should().Be("private, max-age=3600");
+        // Revocation changes server state, not the credential bytes used as a
+        // private cache's Vary key. Neither Vary nor an unchanged ETag forces a
+        // fresh request during max-age. Storage must be prohibited explicitly.
+        var cacheControl = context.Response.GetTypedHeaders().CacheControl;
+        cacheControl.Should().NotBeNull();
+        cacheControl!.NoStore.Should().BeTrue();
+        cacheControl.Private.Should().BeTrue();
+        cacheControl.Public.Should().BeFalse();
+        context.Response.Headers.Vary.ToString().Should().Be(vary);
+        context.Response.Headers.ETag.ToString().Should().Be("\"unchanged-asset\"");
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", Tiers.Fast)]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Apply_AnonymousOrDevelopmentBypass_PreservesPublicCachePolicy(bool developmentBypass)
+    {
+        var context = new DefaultHttpContext();
+        if (developmentBypass)
+        {
+            context.User = new ClaimsPrincipal(new ClaimsIdentity(
+                [new Claim("auth_type", "dev-bypass")], authenticationType: "Test"));
+        }
+        context.Response.Headers.CacheControl = "public, max-age=3600";
+
+        AuthenticationResponseCachePolicy.Apply(context);
+
+        context.Response.Headers.CacheControl.ToString().Should().Be("public, max-age=3600");
     }
 
     [UnitTest]

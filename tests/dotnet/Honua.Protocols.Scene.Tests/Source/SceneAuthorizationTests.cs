@@ -108,12 +108,13 @@ public sealed class SceneAuthorizationTests : IAsyncLifetime
         // therefore declare `private` cacheability and vary on every header
         // that may have authorized it: `Authorization` (Bearer / Basic-compat)
         // and `X-API-Key` (canonical API-key transport — what this fixture
-        // sends). Omitting either risks a private cache reusing a response
-        // across credentials.
+        // sends). The final authentication policy must also add no-store:
+        // revocation changes server state without changing either header.
         var response = await _authenticatedClient.GetAsync($"/scenes/{SceneFixturePaths.ProtectedSceneId}/tileset.json");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.CacheControl?.Private.Should().BeTrue();
+        response.Headers.CacheControl?.NoStore.Should().BeTrue();
         response.Headers.CacheControl?.Public.Should().BeFalse();
         response.Headers.CacheControl?.MaxAge.Should().BeGreaterThan(TimeSpan.Zero);
         response.Headers.Vary.Should().Contain("Authorization");
@@ -130,11 +131,13 @@ public sealed class SceneAuthorizationTests : IAsyncLifetime
         // likely to traverse intermediary caches. Vary must also list every
         // credential header that could have authorized the body so a private
         // cache cannot reuse a response across requests authenticated by a
-        // different transport.
+        // different transport. No-store also prevents reuse with the same
+        // credential bytes after that credential is revoked.
         var response = await _authenticatedClient.GetAsync($"/scenes/{SceneFixturePaths.ProtectedSceneId}/tiles/0.b3dm");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Headers.CacheControl?.Private.Should().BeTrue();
+        response.Headers.CacheControl?.NoStore.Should().BeTrue();
         response.Headers.CacheControl?.Public.Should().BeFalse();
         response.Headers.Vary.Should().Contain("Authorization");
         response.Headers.Vary.Should().Contain("X-API-Key");
