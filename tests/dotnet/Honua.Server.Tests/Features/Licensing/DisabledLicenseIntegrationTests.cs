@@ -3,6 +3,8 @@
 
 using System.Net;
 using System.Text.Json;
+using Honua.Core.Features.Guardrails.Abstractions;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Licensing;
@@ -52,6 +54,22 @@ public sealed class DisabledLicenseIntegrationTests
             Assert.DoesNotContain(fixture.Services.GetServices<IHostedService>(), service =>
                 service is FileBackedLicenseService or LicenseCapacityMeter);
             Assert.False(fixture.Services.GetRequiredService<ILicenseOperationPolicy>().IsBlocked);
+
+            // #4758: the composed ladder keeps Studio draft composition direct in Disabled mode,
+            // while publication, rollback and agent proposals keep their approval step.
+            var ladder = fixture.Services.GetRequiredService<IGuardrailLadder>();
+            Assert.Equal(GuardrailTier.DirectExecute, ladder.Resolve(OperationClass.StudioDraftMutation).Tier);
+            foreach (var action in new[]
+                     {
+                         BuiltInGuardrailActions.StudioPublicationProposal,
+                         BuiltInGuardrailActions.StudioPublicationRequest,
+                         BuiltInGuardrailActions.StudioRollback,
+                     })
+            {
+                Assert.Equal(GuardrailTier.RequiresApproval, ladder.Resolve(OperationClass.StudioDraftMutation, action).Tier);
+            }
+
+            Assert.Equal(GuardrailTier.RequiresApproval, ladder.Resolve(OperationClass.Deploy).Tier);
             using var client = fixture.CreateClient();
             client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword);
             foreach (var path in new[] { "/api/v1/admin/license", "/api/v1/admin/license/status" })

@@ -680,7 +680,7 @@ internal sealed class StudioDraftMutationRuntime(
             },
             StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload,
             StudioDraftOperationJsonContext.Default.StudioPublicationRequest,
-            context,
+            GovernedStep(context, BuiltInGuardrailActions.StudioPublicationRequest),
             cancellationToken);
 
     public Task<StudioDraftMutationReceipt<StudioPackageDraft>> ReopenVersionAsync(
@@ -707,8 +707,16 @@ internal sealed class StudioDraftMutationRuntime(
             },
             StudioDraftOperationJsonContext.Default.StudioRollbackPayload,
             StudioDraftOperationJsonContext.Default.StudioRollbackRequest,
-            context,
+            GovernedStep(context, BuiltInGuardrailActions.StudioRollback),
             cancellationToken);
+
+    // Publication and rollback move content pointers, so they route as governed actions rather
+    // than draft composition (#4758). A caller-supplied action, such as the agent publication
+    // proposal, is kept because its floor is at least as strict.
+    private static StudioDraftMutationContext GovernedStep(StudioDraftMutationContext context, string action)
+        => string.IsNullOrWhiteSpace(context.ActionDiscriminator)
+            ? context with { ActionDiscriminator = action }
+            : context;
 
     private async Task<StudioDraftMutationReceipt<TResult>> InvokeAsync<TPayload, TResult>(
         string operationId,

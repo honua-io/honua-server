@@ -14,6 +14,8 @@ namespace Honua.Core.Features.Guardrails;
 /// and the license entitlement snapshot. Implements the locked default policy
 /// from #1690: Community/Pro execute directly (subject to RBAC + entitlement),
 /// Enterprise routes in-scope mutating operation classes through approval.
+/// Under <c>Licensing:Mode=Disabled</c> (Enterprise-equivalent), Studio draft
+/// composition executes directly while discriminated Studio steps keep approval (#4758).
 /// Operator overrides can tighten or loosen the default per operation class.
 /// </summary>
 public sealed class DefaultGuardrailLadder : IGuardrailLadder
@@ -92,13 +94,21 @@ public sealed class DefaultGuardrailLadder : IGuardrailLadder
         GuardrailTier actionTier,
         string source)
     {
-        var baseline = Resolve(operationClass, edition);
+        // A discriminated action is a governed step rather than draft composition, so its
+        // baseline never takes the Disabled-mode Studio composition tier.
+        var baseline = ResolveClass(operationClass, edition, disabledStudioComposition: false);
         var effective = (GuardrailTier)Math.Max((int)actionTier, (int)baseline.Tier);
         return new GuardrailDecision(effective, operationClass, edition, source);
     }
 
     /// <inheritdoc />
     public GuardrailDecision Resolve(OperationClass operationClass, HonuaEdition edition)
+        => ResolveClass(operationClass, edition, disabledStudioComposition: true);
+
+    private GuardrailDecision ResolveClass(
+        OperationClass operationClass,
+        HonuaEdition edition,
+        bool disabledStudioComposition)
     {
         // Unknown/undeclared operation classes fail closed (or open in dev).
         if (!Enum.IsDefined(operationClass))
@@ -112,6 +122,18 @@ public sealed class DefaultGuardrailLadder : IGuardrailLadder
         if (TryResolveOverride(operationClass, edition, out var overridden))
         {
             return overridden;
+        }
+
+        // #4758: Licensing:Mode=Disabled grants every entitlement and reports Enterprise, but it
+        // is the unlicensed 2026.1 posture rather than an Enterprise governance deployment. Studio
+        // draft composition therefore executes directly, as on Community. Publication, rollback
+        // and agent proposals resolve with an action discriminator and keep the approval baseline.
+        if (disabledStudioComposition &&
+            operationClass == OperationClass.StudioDraftMutation &&
+            _entitlements.GetSnapshot().Mode == LicenseMode.Disabled)
+        {
+            return new GuardrailDecision(
+                GuardrailTier.DirectExecute, operationClass, edition, "licensing-disabled-studio-composition");
         }
 
         return new GuardrailDecision(ResolveDefaultTier(edition), operationClass, edition, "default-policy");

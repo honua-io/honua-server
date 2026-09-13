@@ -295,6 +295,85 @@ public sealed class StudioDraftOperationRuntimeTests
         (await store.GetPointersAsync(saved.ItemId))!.PublishedVersionId.Should().Be(saved.VersionId);
     }
 
+    [UnitTest]
+    public async Task LicensingDisabled_ComposesDirectly_WhilePublicationAndRollbackAwaitApproval()
+    {
+        // #4758: Licensing:Mode=Disabled reports Enterprise, which used to route every Studio draft
+        // mutation, including create, to approval. Composition now executes directly, while the
+        // REST publish-request, the agent publication proposal and rollback still wait for approval.
+        var store = new InMemoryStudioPackageStore();
+        var lifecycle = BuildLifecycle(store);
+        var saved = await SaveFirstVersionAsync(lifecycle);
+        var policy = new CanonicalOperationPolicyDecisionPoint(
+            Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions()),
+            new Honua.Core.Features.Guardrails.DefaultGuardrailLadder(
+                new Honua.Infrastructure.Licensing.DisabledLicenseService(),
+                Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Guardrails.GuardrailLadderOptions())));
+        var bridge = new DurableApprovalBridge();
+        var instances = new VolatileOperationInstanceStore();
+        var runtime = new StudioDraftMutationRuntime(
+            new OperationDispatcher(
+                new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+                [
+                    new StudioDraftCreateExecutor(lifecycle, TimeProvider.System),
+                    PublicationExecutor(lifecycle),
+                    new StudioRollbackExecutor(lifecycle, TimeProvider.System),
+                ],
+                policy,
+                TimeProvider.System,
+                approvalBridge: bridge,
+                instanceStore: instances,
+                auditLog: new VolatileOperationAuditLog()),
+            instances);
+
+        var created = await runtime.CreateAsync(
+            new CreateStudioPackageDraftCommand
+            {
+                PackageKey = "disabled-compose",
+                WorkspaceId = "studio",
+                OwnerId = "studio-author",
+                ActorId = "studio-author",
+                Envelope = PublicationEnvelope("1=1"),
+            },
+            new StudioDraftMutationContext { PrincipalId = "studio-author", CorrelationId = "corr-create" });
+
+        created.Operation.Status.Should().Be(OperationHandleStatus.Completed);
+        created.Value.Should().NotBeNull();
+        (await store.GetDraftAsync(created.Value!.DraftId)).Should().NotBeNull();
+        bridge.Request.Should().BeNull("draft composition must not create an approval proposal");
+
+        var intent = new StudioPublicationIntent { Route = "/studio/parcels", Visibility = "organization" };
+        var publication = await runtime.CreatePublicationRequestAsync(
+            saved.ItemId, saved.VersionId, saved.ContentHash, intent, null, "studio-author",
+            new StudioDraftMutationContext { PrincipalId = "studio-author", CorrelationId = "corr-publish" });
+
+        publication.Operation.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        bridge.Request!.OperationId.Should().Be(StudioDraftOperations.CreatePublicationRequest);
+        bridge.Request.GatewayRequest!.ActionDiscriminator.Should().Be(BuiltInGuardrailActions.StudioPublicationRequest);
+
+        var proposal = await runtime.CreatePublicationRequestAsync(
+            saved.ItemId, saved.VersionId, saved.ContentHash, intent, null, "studio-author",
+            new StudioDraftMutationContext
+            {
+                PrincipalId = "studio-author",
+                CorrelationId = "corr-proposal",
+                ActionDiscriminator = BuiltInGuardrailActions.StudioPublicationProposal,
+            });
+
+        proposal.Operation.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        bridge.Request!.GatewayRequest!.ActionDiscriminator.Should().Be(BuiltInGuardrailActions.StudioPublicationProposal);
+
+        var rollback = await runtime.RollbackAsync(
+            saved.ItemId, saved.VersionId, StudioRollbackPointer.Current, "studio-author", "restore",
+            new StudioDraftMutationContext { PrincipalId = "studio-author", CorrelationId = "corr-rollback" });
+
+        rollback.Operation.Status.Should().Be(OperationHandleStatus.RequiresApproval);
+        bridge.Request!.OperationId.Should().Be(StudioDraftOperations.Rollback);
+        var pointers = await store.GetPointersAsync(saved.ItemId);
+        pointers!.PublishedVersionId.Should().BeNull("neither publication nor rollback may move a pointer before approval");
+        pointers.CurrentVersionId.Should().Be(saved.VersionId);
+    }
+
     private static string InvalidIntentPayload(StudioContentVersion version) => JsonSerializer.Serialize(
         new StudioPublicationRequestPayload
         {

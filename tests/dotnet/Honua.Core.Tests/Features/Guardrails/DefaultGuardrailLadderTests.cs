@@ -20,12 +20,13 @@ public class DefaultGuardrailLadderTests
     private static DefaultGuardrailLadder CreateLadder(
         HonuaEdition edition = HonuaEdition.Community,
         GuardrailLadderOptions? options = null,
-        Honua.Core.Features.Guardrails.Abstractions.IOpsActionGuardrailCatalog? catalog = null)
+        Honua.Core.Features.Guardrails.Abstractions.IOpsActionGuardrailCatalog? catalog = null,
+        LicenseMode mode = LicenseMode.Enabled)
     {
         var entitlements = new Mock<ILicenseEntitlementService>();
         entitlements
             .Setup(service => service.GetSnapshot())
-            .Returns(CreateSnapshot(edition));
+            .Returns(CreateSnapshot(edition, mode));
 
         return new DefaultGuardrailLadder(
             entitlements.Object,
@@ -33,10 +34,15 @@ public class DefaultGuardrailLadderTests
             catalog);
     }
 
-    private static LicenseSnapshot CreateSnapshot(HonuaEdition edition) => new(
+    // Mirrors DisabledLicenseService.CreateSnapshot: Disabled mode reports Enterprise with a
+    // Disabled validation state (#4721).
+    private static DefaultGuardrailLadder CreateDisabledLadder(GuardrailLadderOptions? options = null)
+        => CreateLadder(HonuaEdition.Enterprise, options, mode: LicenseMode.Disabled);
+
+    private static LicenseSnapshot CreateSnapshot(HonuaEdition edition, LicenseMode mode = LicenseMode.Enabled) => new(
         edition,
         IsValid: true,
-        LicenseValidationState.Valid,
+        mode == LicenseMode.Disabled ? LicenseValidationState.Disabled : LicenseValidationState.Valid,
         ExpiresAt: null,
         LicensedTo: "test",
         LicenseId: "test",
@@ -44,7 +50,109 @@ public class DefaultGuardrailLadderTests
         Entitlements: [],
         ActiveEntitlementKeys: new HashSet<string>(),
         SnapshotVersion: 1,
-        KeyId: null);
+        KeyId: null)
+    {
+        Mode = mode
+    };
+
+    // ------------------------------------------------------------------
+    // Licensing:Mode=Disabled Studio posture (#4758)
+    // ------------------------------------------------------------------
+
+    [UnitTest]
+    public void Resolve_LicensingDisabled_StudioDraftCompositionExecutesDirectly()
+    {
+        var ladder = CreateDisabledLadder();
+
+        var viaSnapshot = ladder.Resolve(OperationClass.StudioDraftMutation);
+        var withoutAction = ladder.Resolve(OperationClass.StudioDraftMutation, actionDiscriminator: null);
+
+        Assert.Equal(GuardrailTier.DirectExecute, viaSnapshot.Tier);
+        Assert.Equal("licensing-disabled-studio-composition", viaSnapshot.Source);
+        Assert.Equal(HonuaEdition.Enterprise, viaSnapshot.Edition);
+        Assert.Equal(GuardrailTier.DirectExecute, withoutAction.Tier);
+    }
+
+    [UnitTest]
+    public void Resolve_LicensingDisabled_StudioPublicationProposalStillRequiresApproval()
+    {
+        var ladder = CreateDisabledLadder();
+
+        var decision = ladder.Resolve(OperationClass.StudioDraftMutation, BuiltInGuardrailActions.StudioPublicationProposal);
+
+        Assert.Equal(GuardrailTier.RequiresApproval, decision.Tier);
+        Assert.Equal("built-in-action:studio.publication_proposal", decision.Source);
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(BuiltInGuardrailActions.StudioPublicationRequest, HonuaEdition.Community, LicenseMode.Enabled, GuardrailTier.DirectExecute)]
+    [InlineData(BuiltInGuardrailActions.StudioPublicationRequest, HonuaEdition.Pro, LicenseMode.Enabled, GuardrailTier.DirectExecute)]
+    [InlineData(BuiltInGuardrailActions.StudioPublicationRequest, HonuaEdition.Enterprise, LicenseMode.Enabled, GuardrailTier.RequiresApproval)]
+    [InlineData(BuiltInGuardrailActions.StudioPublicationRequest, HonuaEdition.Enterprise, LicenseMode.Disabled, GuardrailTier.RequiresApproval)]
+    [InlineData(BuiltInGuardrailActions.StudioRollback, HonuaEdition.Community, LicenseMode.Enabled, GuardrailTier.DirectExecute)]
+    [InlineData(BuiltInGuardrailActions.StudioRollback, HonuaEdition.Pro, LicenseMode.Enabled, GuardrailTier.DirectExecute)]
+    [InlineData(BuiltInGuardrailActions.StudioRollback, HonuaEdition.Enterprise, LicenseMode.Enabled, GuardrailTier.RequiresApproval)]
+    [InlineData(BuiltInGuardrailActions.StudioRollback, HonuaEdition.Enterprise, LicenseMode.Disabled, GuardrailTier.RequiresApproval)]
+    public void Resolve_StudioGovernedSteps_KeepEditionTierAndNeverTakeDisabledCompositionTier(
+        string action,
+        HonuaEdition edition,
+        LicenseMode mode,
+        GuardrailTier expectedTier)
+    {
+        var ladder = CreateLadder(edition, mode: mode);
+
+        var decision = ladder.Resolve(OperationClass.StudioDraftMutation, action);
+
+        Assert.Equal(expectedTier, decision.Tier);
+        Assert.Equal($"built-in-action:{action}", decision.Source);
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData(OperationClass.AdminConfigChange)]
+    [InlineData(OperationClass.Deploy)]
+    [InlineData(OperationClass.MetadataRelease)]
+    [InlineData(OperationClass.Seed)]
+    [InlineData(OperationClass.Geoprocess)]
+    [InlineData(OperationClass.ServicePublish)]
+    public void Resolve_LicensingDisabled_OtherClassesKeepEnterpriseApprovalDefault(OperationClass operationClass)
+    {
+        var ladder = CreateDisabledLadder();
+
+        var decision = ladder.Resolve(operationClass);
+
+        Assert.Equal(GuardrailTier.RequiresApproval, decision.Tier);
+        Assert.Equal("default-policy", decision.Source);
+    }
+
+    [UnitTest]
+    public void Resolve_LicensingEnabledEnterprise_StudioDraftCompositionStillRequiresApproval()
+    {
+        var ladder = CreateLadder(HonuaEdition.Enterprise);
+
+        var decision = ladder.Resolve(OperationClass.StudioDraftMutation);
+
+        Assert.Equal(GuardrailTier.RequiresApproval, decision.Tier);
+        Assert.Equal("default-policy", decision.Source);
+    }
+
+    [UnitTest]
+    public void Resolve_LicensingDisabled_OperatorOverrideStillTightensComposition()
+    {
+        var options = new GuardrailLadderOptions();
+        options.Overrides[nameof(OperationClass.StudioDraftMutation)] = nameof(GuardrailTier.RequiresApproval);
+        var ladder = CreateDisabledLadder(options);
+
+        var composition = ladder.Resolve(OperationClass.StudioDraftMutation);
+        var proposal = ladder.Resolve(OperationClass.StudioDraftMutation, BuiltInGuardrailActions.StudioPublicationProposal);
+
+        Assert.Equal(GuardrailTier.RequiresApproval, composition.Tier);
+        Assert.Equal("operator-override", composition.Source);
+        Assert.Equal(GuardrailTier.RequiresApproval, proposal.Tier);
+    }
 
     [Theory]
     [Trait("Category", "Unit")]
