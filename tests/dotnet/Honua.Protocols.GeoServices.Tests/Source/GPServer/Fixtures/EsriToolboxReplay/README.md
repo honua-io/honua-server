@@ -12,6 +12,7 @@ These retained observations are not desktop certificates.
 | `managed-arcpy-and-sdk-verified.json` | Actual SDK 2.4.3 and licensed ArcPy 3.7.1 import all 119 tasks and remotely compute area 12 on the managed SOAP diagnostic image. |
 | `managed-soap-trace.json` | Captured ArcPy SOAP operations, request shapes, six default environment controls, and successful HTTP statuses. |
 | `soap-auth-controls.json` | Verified HTTPS anonymous/invalid-key requests return 401 SOAP faults; an authorized malformed submission returns 400. |
+| `managed-metadata-arcpy-and-sdk-verified.json` | Both installed clients pass again after SOAP metadata reads were separated from result storage; run [34743150468](https://github.com/honua-io/honua-esri-compat/actions/runs/34743150468). |
 
 The successful licensed run is
 [34741056478](https://github.com/honua-io/honua-esri-compat/actions/runs/34741056478).
