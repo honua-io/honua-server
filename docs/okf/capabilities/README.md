@@ -26,15 +26,13 @@ in here — a page rewritten elsewhere would silently stale all 117 of these. Ru
 capabilities no page in the bundle names yet.
 
 A capability appearing here is not a statement that it is generally available.
-**Status** is the registry's own lifecycle value, and 22 of these are not GA:
+**Status** is the registry's own lifecycle value, and a fifth of these are not GA:
 `preview` and `experimental` capabilities carry usage restrictions stated in full on
-each page. Multi-tenant operation, for one, is Preview/trial-only, is not offered as a
-hosted or managed service, and is restricted by the Elastic License 2.0.
+each page. Some entitlement keys are deliberately not published here at all.
 
 | Capability | Category | Edition | Status |
 | --- | --- | --- | --- |
 | [Admin Control Plane](admin.control-plane.md) | ControlPlane | Community | ga |
-| [Multi-Tenant Operation](admin.multi-tenancy.md) | ControlPlane | Enterprise | **preview** |
 | [Agent Operations (Validation Layer)](ai.agent-operations.md) | AI | Pro | ga |
 | [Agent Approval Workflows](ai.approval-workflows.md) | AI | Enterprise | ga |
 | [Spec Grounding Mutations](ai.grounding.md) | AI | Pro | ga |

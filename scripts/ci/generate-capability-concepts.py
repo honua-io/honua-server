@@ -85,6 +85,20 @@ def citing_pages(key: str, display_name: str, pages: dict[pathlib.Path, str]) ->
     return hits
 
 
+# Capability keys that exist in the licensing registry but must not be published
+# as concepts. The registry is the entitlement vocabulary; it is not a catalogue
+# of things a reader may use, and a generated page with a title, an edition and a
+# proving-test count reads as an available feature no matter what its prose says.
+#
+# admin.multi-tenancy: multi-tenant operation is not an available feature. Honua
+# does not provide SaaS, hosting, or a managed service, and the Elastic License
+# 2.0 prohibits providing Honua to third parties as a hosted or managed service.
+# Publishing it as a capability advertises something nobody may use.
+UNPUBLISHED = {
+    "admin.multi-tenancy": "not an available feature; prohibited as a hosted or managed service under ELv2",
+}
+
+
 def render(entry: dict, facts: dict) -> str:
     key = entry["key"]
     title = entry.get("displayName") or key
@@ -204,10 +218,9 @@ def render_index(entries: list[tuple[str, str, str, str, str]]) -> str:
         "capabilities no page in the bundle names yet.",
         "",
         "A capability appearing here is not a statement that it is generally available.",
-        "**Status** is the registry's own lifecycle value, and 22 of these are not GA:",
+        "**Status** is the registry's own lifecycle value, and a fifth of these are not GA:",
         "`preview` and `experimental` capabilities carry usage restrictions stated in full on",
-        "each page. Multi-tenant operation, for one, is Preview/trial-only, is not offered as a",
-        "hosted or managed service, and is restricted by the Elastic License 2.0.",
+        "each page. Some entitlement keys are deliberately not published here at all.",
         "",
         "| Capability | Category | Edition | Status |",
         "| --- | --- | --- | --- |",
@@ -233,6 +246,8 @@ def build() -> dict[str, str]:
     index_rows = []
     for entry in sorted(entries, key=lambda e: e["key"]):
         key = entry["key"]
+        if key in UNPUBLISHED:
+            continue
         facts = facts_by_key.get(key, {})
         written[f"{key}.md"] = render(entry, facts)
         index_rows.append((
