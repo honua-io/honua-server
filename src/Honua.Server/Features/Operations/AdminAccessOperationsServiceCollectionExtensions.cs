@@ -35,7 +35,7 @@ internal static class AdminAccessOperationsServiceCollectionExtensions
                         definition,
                         sp.GetRequiredService<IOperationSecretStore>()));
             }
-            services.AddScoped<IOperationExecutor>(sp => new AdminOperateOperationExecutor(
+            services.AddDeferredOperationExecutor(definition.OperationId, sp => new AdminOperateOperationExecutor(
                 definition,
                 descriptor,
                 sp.GetRequiredService<IHttpClientFactory>(),

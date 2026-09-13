@@ -48,6 +48,39 @@ public sealed class OperationsToolsetTests
     private const string TestConnectionId = "11111111-1111-1111-1111-111111111111";
 
     [UnitTest]
+    public async Task Dispatcher_BrokenStudioDependency_OnlyFailsTheSelectedStudioOperation()
+    {
+        var services = new ServiceCollection();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns("Test");
+        var readiness = Substitute.For<IReadinessCheckService>();
+        readiness.CheckReadinessAsync(Arg.Any<CancellationToken>()).Returns(ReadinessResult.Ready());
+        services.AddSingleton(readiness);
+        services.AddSingleton<IOperationPolicyDecisionPoint>(new AllowAllPolicyDecisionPoint());
+        services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
+        // Deliberately leave IStudioPackageLifecycleService unresolved. Constructing its
+        // executor used to prevent even validation of an unrelated status operation.
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        var invoker = scope.ServiceProvider.GetRequiredService<Honua.Core.Features.Operations.Abstractions.IOperationInvoker>();
+
+        var validation = await invoker.ValidateAsync(new OperationRequest { OperationId = "admin.server.status" });
+        validation.IsValid.Should().BeTrue();
+        var status = await invoker.SubmitAsync(
+            new OperationRequest { OperationId = "admin.server.status" }, new OperationPolicyContext());
+        status.Status.Should().Be(OperationHandleStatus.Completed);
+        status.Result!.Details["status"].Should().Be("ready");
+        status.Result.Details["message"].Should().Be("Ready");
+        var failed = await invoker.SubmitAsync(
+            new OperationRequest { OperationId = StudioDraftOperations.Create }, new OperationPolicyContext());
+        failed.Status.Should().Be(OperationHandleStatus.Failed);
+        failed.Reason.Should().Be("Operation validation failed (InvalidOperationException).");
+        failed.Reason.Should().NotContain("IStudioPackageLifecycleService");
+        (await invoker.ValidateAsync(new OperationRequest { OperationId = "admin.server.status" }))
+            .IsValid.Should().BeTrue("one failed actuator must not poison another invocation in the same scope");
+    }
+
+    [UnitTest]
     public void AddOperationsToolset_RegistersServicePublishApprovalMapperAndCanonicalActuator()
     {
         var services = new ServiceCollection();
@@ -61,7 +94,8 @@ public sealed class OperationsToolsetTests
             descriptor.ImplementationType == typeof(ServicePublishApprovalRequestMapper));
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationExecutor) &&
-            descriptor.ImplementationType == typeof(DeferredServicePublishExecutor));
+            descriptor.IsKeyedService &&
+            descriptor.KeyedImplementationType == typeof(DeferredServicePublishExecutor));
         services
             .Where(descriptor =>
                 descriptor.ServiceType == typeof(IOperationApprovalRequestMapper) &&
@@ -80,16 +114,20 @@ public sealed class OperationsToolsetTests
                 StudioDraftOperations.Rollback);
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationExecutor) &&
-            descriptor.ImplementationType == typeof(StudioDraftDeleteExecutor));
+            descriptor.IsKeyedService &&
+            descriptor.KeyedImplementationType == typeof(StudioDraftDeleteExecutor));
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationExecutor) &&
-            descriptor.ImplementationType == typeof(StudioCreatePublicationRequestExecutor));
+            descriptor.IsKeyedService &&
+            descriptor.KeyedImplementationType == typeof(StudioCreatePublicationRequestExecutor));
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationExecutor) &&
-            descriptor.ImplementationType == typeof(StudioReopenVersionExecutor));
+            descriptor.IsKeyedService &&
+            descriptor.KeyedImplementationType == typeof(StudioReopenVersionExecutor));
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationExecutor) &&
-            descriptor.ImplementationType == typeof(StudioRollbackExecutor));
+            descriptor.IsKeyedService &&
+            descriptor.KeyedImplementationType == typeof(StudioRollbackExecutor));
         services.Should().Contain(descriptor =>
             descriptor.ServiceType == typeof(IOperationEnvelopeFactory) &&
             descriptor.Lifetime == ServiceLifetime.Singleton);
@@ -256,8 +294,8 @@ public sealed class OperationsToolsetTests
             descriptor.ImplementationFactory != null).Should().Be(
                 AdminConnectImportOperationCatalog.Definitions.Count +
                 AdminApiOperationCatalog.Definitions.Count +
-                (AdminOperateOperationCatalog.Definitions.Count * 2) + 4,
-                "Lanes A and B are idempotent, Lane D composes on each call, and the four legacy adapters remain unique");
+                (AdminOperateOperationCatalog.Definitions.Count * 2) + 4 + 14,
+                "Lanes A and B are idempotent, Lane D composes on each call, and the four legacy adapters and fourteen typed actuators remain unique");
     }
 
     [UnitTest]
@@ -282,8 +320,8 @@ public sealed class OperationsToolsetTests
                 descriptor.ServiceType == typeof(IOperationExecutor) &&
                 descriptor.ImplementationFactory != null)
             .Should().Be(
-                AdminOperateOperationCatalog.Definitions.Count + 4,
-                "each admin operation and legacy operation class gets one factory-registered executor");
+                AdminOperateOperationCatalog.Definitions.Count + 4 + 14,
+                "each admin operation, legacy operation class, and typed actuator gets one deferred projection");
 
         // Idempotence across repeated composition, previously TryAddEnumerable's job.
         services.AddOperationsToolset(new ConfigurationBuilder().Build(), environment);
@@ -291,7 +329,7 @@ public sealed class OperationsToolsetTests
                 descriptor.ServiceType == typeof(IOperationExecutor) &&
                 descriptor.ImplementationFactory != null)
             .Should().Be(
-                (AdminOperateOperationCatalog.Definitions.Count * 2) + 4,
+                (AdminOperateOperationCatalog.Definitions.Count * 2) + 4 + 14,
                 "re-registration must not duplicate the legacy adapters even though admin executors are added again");
     }
 
