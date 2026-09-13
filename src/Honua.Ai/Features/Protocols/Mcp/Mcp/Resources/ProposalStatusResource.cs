@@ -7,6 +7,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Models;
 using Microsoft.Extensions.DependencyInjection;
@@ -137,6 +138,12 @@ internal sealed class ProposalStatusResource : IMcpResource
             ResolvedBy = proposal.ResolvedBy,
             ResolutionReason = proposal.ResolutionReason,
             ExecutionOperationId = proposal.ExecutionOperationId,
+            ResourceIds = isProposer && proposal.Status == OperationProposalStatus.Succeeded
+                && proposal.OperationId is "studio.draft.save-version" or "studio.content.reopen-version"
+                && operation?.Status == OperationHandleStatus.Completed
+                && operation.OperationId == proposal.OperationId
+                && string.Equals(operation.TenantId, proposal.TenantId, StringComparison.Ordinal)
+                    ? operation.ResourceIds : null,
             PublicationId = isActive && operation?.ResourceIds.TryGetValue("publicationId", out var publicationId) == true
                 ? publicationId
                 : null,

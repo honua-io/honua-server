@@ -1,10 +1,15 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Ai.Protocols.Mcp.Studio;
+using Honua.Ai.Protocols.Mcp.Resources;
+using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Policy;
@@ -53,9 +58,12 @@ public sealed class StudioVersionMcpTests
         });
         var jobs = Substitute.For<IGeoprocessingJobService>();
         var save = new SaveStudioVersionTool(jobs, NullLogger<SaveStudioVersionTool>.Instance);
+        using var activity = new Activity("studio-save-audit").Start();
         var saved = await save.InvokeAsync(context,
             McpTestFactory.ParseJson($$"""{"draftId":"{{draft.DraftId}}","generation":1,"changeNote":"known map fixture"}"""), default);
         saved.IsError.Should().BeFalse();
+        activity.GetTagItem("studio.generation.before").Should().Be(1L);
+        activity.GetTagItem("studio.generation.after").Should().Be(2L);
         var savedBody = saved.StructuredContent!.Value;
         var versionId = savedBody.GetProperty("version").GetProperty("versionId").GetGuid();
         var savedEnvelope = await instances.GetAsync(savedBody.GetProperty("operation").GetProperty("operationInstanceId").GetString()!);
@@ -68,6 +76,11 @@ public sealed class StudioVersionMcpTests
         };
         var expectedHash = Convert.ToHexStringLower(SHA256.HashData(
             JsonSerializer.SerializeToUtf8Bytes(expectedEnvelope, StudioJsonContext.Default.StudioPackageEnvelope)));
+        savedEnvelope.ResourceIds.Should().BeEquivalentTo(new Dictionary<string, string>
+        {
+            ["itemId"] = draft.ItemId.ToString("D"), ["versionId"] = versionId.ToString("D"), ["contentHash"] = expectedHash,
+        });
+        await AssertPollableResultAsync(savedEnvelope, instances);
         version.ContentHash.Should().Be(expectedHash, "the immutable hash binds the seeded envelope, not the subsequently edited draft");
         version.Validation.Status.Should().Be(StudioPackageValidationStatus.Valid);
         version.Validation.Diagnostics.Should().BeEmpty();
@@ -101,6 +114,11 @@ public sealed class StudioVersionMcpTests
         var reopenedEnvelope = await instances.GetAsync(reopenedBody.GetProperty("operation").GetProperty("operationInstanceId").GetString()!);
         reopenedEnvelope!.Status.Should().Be(OperationHandleStatus.Completed);
         reopenedEnvelope.AuditId.Should().NotBeNullOrWhiteSpace();
+        reopenedEnvelope.ResourceIds.Should().BeEquivalentTo(new Dictionary<string, string>
+        {
+            ["draftId"] = reopenedDraft.DraftId.ToString("D"), ["generation"] = "1",
+        });
+        await AssertPollableResultAsync(reopenedEnvelope, instances);
         (await lifecycle.GetPointersAsync(draft.ItemId))!.CurrentVersionId.Should().Be(versionId);
     }
 
@@ -125,12 +143,13 @@ public sealed class StudioVersionMcpTests
         var tool = new SaveStudioVersionTool(Substitute.For<IGeoprocessingJobService>(), NullLogger<SaveStudioVersionTool>.Instance);
         var result = await tool.InvokeAsync(context,
             McpTestFactory.ParseJson($$"""{"draftId":"{{draft.DraftId}}","generation":1}"""), default);
-        var operationId = result.StructuredContent!.Value.GetProperty("operation").GetProperty("operationInstanceId").GetString()!;
+        var resultBody = Assert.IsType<JsonElement>(result.StructuredContent);
+        var operationId = resultBody.GetProperty("operation").GetProperty("operationInstanceId").GetString()!;
         var operation = (await instances.GetAsync(operationId))!;
         operation.Status.Should().Be(OperationHandleStatus.RequiresApproval);
         operation.ProposalId.Should().Be("proposal-save");
         (await lifecycle.GetPointersAsync(draft.ItemId))!.CurrentVersionId.Should().BeNull();
-        result.StructuredContent.Value.TryGetProperty("version", out _).Should().BeFalse();
+        resultBody.TryGetProperty("version", out _).Should().BeFalse();
     }
 
     [UnitTest]
@@ -205,6 +224,41 @@ public sealed class StudioVersionMcpTests
             McpTestFactory.ParseJson($$"""{"draftId":"{{draft.DraftId}}","generation":2}"""), default);
         await act.Should().ThrowAsync<StudioDraftGenerationConflictException>();
         (await lifecycle.GetPointersAsync(draft.ItemId))!.CurrentVersionId.Should().BeNull();
+    }
+
+    private static async Task AssertPollableResultAsync(OperationHandle operation, IOperationInstanceStore instances)
+    {
+        var proposal = new OperationProposal
+        {
+            ProposalId = "proposal-result", OperationId = operation.OperationId, RequestedBy = "test-user",
+            Kind = OperationClass.StudioDraftMutation, Status = OperationProposalStatus.Succeeded,
+            CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
+            Audit = new() { OperationInstanceId = operation.OperationInstanceId },
+        };
+        var store = Substitute.For<IOperationProposalStore>();
+        store.GetAsync(proposal.ProposalId, Arg.Any<CancellationToken>()).Returns(_ => proposal);
+        var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(store);
+            services.AddSingleton(instances);
+            services.AddSingleton(Substitute.For<IGeoprocessingJobService>());
+        });
+        var resource = new ProposalStatusResource(NullLogger<ProposalStatusResource>.Instance);
+        async Task<JsonElement> ReadAsync()
+        {
+            var response = await resource.ReadAsync(context, "honua://proposals/proposal-result", default);
+            return McpTestFactory.ParseJson(response.Contents.Single().Text!);
+        }
+        var result = await ReadAsync();
+        result.GetProperty("resourceIds").EnumerateObject().ToDictionary(p => p.Name, p => p.Value.GetString()!)
+            .Should().BeEquivalentTo(operation.ResourceIds);
+        proposal = proposal with { Status = OperationProposalStatus.AwaitingApproval };
+        (await ReadAsync()).TryGetProperty("resourceIds", out _).Should().BeFalse();
+        proposal = proposal with { Status = OperationProposalStatus.Succeeded, RequestedBy = "another-user" };
+        (await ReadAsync()).TryGetProperty("resourceIds", out _).Should().BeFalse();
+        proposal = proposal with { RequestedBy = "test-user", TenantId = "another-tenant" };
+        var crossTenant = () => ReadAsync();
+        await crossTenant.Should().ThrowAsync<KeyNotFoundException>();
     }
 
     private static StudioDraftMutationRuntime Runtime(IStudioPackageLifecycleService lifecycle,

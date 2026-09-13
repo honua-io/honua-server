@@ -392,6 +392,14 @@ internal sealed class StudioSaveVersionExecutor(IStudioPackageLifecycleService l
     protected override JsonTypeInfo<StudioSaveVersionPayload> PayloadType => StudioDraftOperationJsonContext.Default.StudioSaveVersionPayload;
     protected override JsonTypeInfo<StudioContentVersion> ResultType => StudioDraftOperationJsonContext.Default.StudioContentVersion;
 
+    protected override IReadOnlyDictionary<string, string> ResourceIds(StudioContentVersion result) =>
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["itemId"] = result.ItemId.ToString("D"),
+            ["versionId"] = result.VersionId.ToString("D"),
+            ["contentHash"] = result.ContentHash,
+        };
+
     protected override async Task<StudioContentVersion> ActuateAsync(
         StudioSaveVersionPayload payload,
         CancellationToken cancellationToken) => await Lifecycle
@@ -541,6 +549,13 @@ internal sealed class StudioReopenVersionExecutor(IStudioPackageLifecycleService
     public override string OperationId => StudioDraftOperations.ReopenVersion;
     protected override JsonTypeInfo<StudioReopenVersionPayload> PayloadType => StudioDraftOperationJsonContext.Default.StudioReopenVersionPayload;
     protected override JsonTypeInfo<StudioPackageDraft> ResultType => StudioDraftOperationJsonContext.Default.StudioPackageDraft;
+
+    protected override IReadOnlyDictionary<string, string> ResourceIds(StudioPackageDraft result) =>
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["draftId"] = result.DraftId.ToString("D"),
+            ["generation"] = result.Generation.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        };
 
     protected override async Task<StudioPackageDraft> ActuateAsync(
         StudioReopenVersionPayload payload,

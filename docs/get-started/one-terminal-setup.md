@@ -181,6 +181,11 @@ Call `honua_studio_save_version` with `draftId`, `generation` and an optional
 `changeNote`. A completed operation returns `version`, including `itemId`,
 `versionId`, `contentHash`, envelope and validation. Saving refreshes the
 mutable draft generation, so read it again before editing that same draft.
+After approval, poll `honua://proposals/{proposalId}` until `Succeeded` and
+read `resourceIds`: save returns `itemId`, `versionId`, and `contentHash`;
+reopen returns `draftId` and `generation` (as strings). These result identities
+are visible to the proposer only after the canonical operation completes.
+
 Call `honua_studio_reopen_version` with the saved `itemId` and `versionId` to
 create an editable draft. Assert its actual layer, view, widget and style
 values against the independent fixture, and retain its `draftId`,
