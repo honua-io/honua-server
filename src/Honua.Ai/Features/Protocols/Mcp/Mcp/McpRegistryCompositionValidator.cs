@@ -11,7 +11,9 @@ namespace Honua.Ai.Protocols.Mcp;
 /// <c>/mcp</c> catalog is bound to the registry: every advertised tool name and
 /// every advertised resource URI (concrete or template) must be described by a
 /// <see cref="CapabilityDescriptor"/> in the <see cref="ICapabilityRegistry"/> —
-/// no tool or resource is served without registry provenance.
+/// no tool or resource is served without registry provenance. Tools projected from
+/// the canonical operation catalog (<c>Mcp:PublishOperations</c>) carry that
+/// provenance through their operation descriptor instead.
 /// </summary>
 /// <remarks>
 /// This is the "nothing served without a registry descriptor" direction, which
@@ -89,7 +91,12 @@ internal static class McpRegistryCompositionValidator
             .ToHashSet(StringComparer.Ordinal);
         foreach (var tool in await surface.GetAllToolsAsync(cancellationToken).ConfigureAwait(false))
         {
-            if (!registryToolNames.Contains(tool.Name))
+            // A tool projected from the canonical operation catalog (#2483,
+            // Mcp:PublishOperations) is bound through its operation descriptor, which
+            // is that family's single source of truth; the registry cannot enumerate
+            // the runtime catalog statically. Every other runtime tool source still
+            // needs a registry descriptor (honua-server#3428).
+            if (!registryToolNames.Contains(tool.Name) && tool is not Tools.PublishedOperationTool)
             {
                 problems.Add($"served /mcp tool '{tool.Name}' has no capability-registry descriptor");
             }
