@@ -12,8 +12,10 @@ using Testcontainers.Redis;
 
 namespace Honua.Server.Tests.Infrastructure.Authentication;
 
+/// <summary>Exercises the durable OAuth registry against real Redis.</summary>
+/// <remarks>Store-level integration tests issue no HTTP requests and claim no endpoint coverage.</remarks>
 [SecurityTest]
-[Protocol(TestProtocols.FeatureServer)]
+[Protocol(TestProtocols.TestQuality)]
 [Operation(Operations.Security)]
 public sealed class RedisOAuthClientStoreTests
 {
