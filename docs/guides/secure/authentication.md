@@ -142,9 +142,7 @@ new plaintext credential.
 Proposal lists, proposal reads and decisions, and operation-handle reads are
 restricted to the tenant recorded when the operation was accepted. A record
 owned by another tenant is omitted from lists and returns `404` on direct
-access. Cross-tenant access requires a configured `MultiTenancy:MultiTenantAdminRoles`
-role (by default `multi_tenant_admin` or `platform_admin`); the ordinary `admin`
-role does not grant it. MCP proposal resources use the same ownership boundary.
+access. MCP proposal resources use the same ownership boundary.
 Legacy records without a tenant owner are hidden from tenant-scoped callers;
 a platform operator can inspect those records and re-propose pending work in
 its intended tenant. Idempotency keys are scoped to the accepted tenant.

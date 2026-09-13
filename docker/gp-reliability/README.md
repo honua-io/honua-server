@@ -39,6 +39,23 @@ receipt root.
 The same inputs are exposed by the **GP Lifecycle Qualification** dispatchable
 workflow. Its artifact upload uses `if: always()` so receipts survive a red run.
 
+For candidate store qualification, run both `HONUA_GP_LANE=output-store-dr` and
+`HONUA_GP_LANE=crash-boundaries` with separate `HONUA_GP_RECEIPT_DIR` directories.
+Use `HONUA_GP_SCENARIO_TIMEOUT_SECONDS=900` to allow natural stale-worker lease
+recovery after SIGKILL. The DR lane **destroys its isolated original Postgres,
+Redis and output stores**, restores the cold backups into empty stores, and
+checks the artifact and descriptor through the peer server. Keep its backup
+directory outside the output volume. Never point this drill at a customer store.
+
+The honua-release **dr-drill-local-docker** workflow runs these lanes on manifest
+repins and on scheduled or dispatched qualification. Its trusted trunk producer
+embeds the complete passing restore and crash proof in the signed full-platform
+DR receipt; `gate-dr` verifies that envelope and its GP candidate binding. The server runs by the manifest's digest;
+the production worker is built locally from the manifest's matching source SHA,
+and its own image digest is recorded. A repinned server cannot consume the old
+receipt: `scripts/qualification/gp-candidate-binding.py` compares every observed
+host and required scenario against the manifest supplied to the verifier.
+
 The resilience mode adds poison entries, worker/output-store disruption, stale
 claims, backlog drain, TTL cleanup, retry exhaustion, output-size enforcement,
 tenant concurrency/backpressure and nondisclosure, plus an optional sustained

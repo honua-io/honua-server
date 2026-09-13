@@ -313,4 +313,4 @@ placement targets; exact-candidate certification is still required for both.
 EKS, Azure, hosted models, broad autonomous remediation and #3300 performance
 depth are outside this scenario. Whole-catalog GP and four cloud-native
 formats retain their separate 2026.1 GA qualification requirements; customer
-alerting, multi-tenancy and offline sync remain Preview.
+alerting and offline sync remain Preview.

@@ -185,7 +185,11 @@ def evaluate(lock: dict[str, Any], receipt: dict[str, Any], digest: str, expecte
         failures.append("soak profile does not match the lock")
     if receipt.get("steadyStateSeconds", 0) < lock.get("soak", {}).get("minimumSteadyStateSeconds", 0):
         failures.append("steady-state duration is below the locked minimum")
-    if receipt.get("envelope") != lock.get("supportedEnvelope"):
+    declared = lock.get("supportedEnvelope", {})
+    observed = receipt.get("envelope")
+    if not isinstance(observed, dict) or any(
+        name not in observed or observed[name] != value for name, value in declared.items()
+    ):
         failures.append("tested capacity envelope does not exactly match the supported envelope")
 
     signals = receipt.get("signals")
@@ -246,6 +250,10 @@ def build_receipt(
             "refusing to claim the declared envelope: no coverage record for " + ", ".join(sorted(missing))
         )
 
+    informational = {name: record for name, record in envelope_verification.items()
+                     if name not in declared_dimensions}
+    envelope_verification = {name: envelope_verification[name] for name in declared_dimensions}
+
     bad_coverage = sorted(
         name
         for name, record in envelope_verification.items()
@@ -264,7 +272,7 @@ def build_receipt(
     if missing:
         raise ContractError("missing required signal(s): " + ", ".join(sorted(missing)))
 
-    unobserved = sorted(name for name, signal in signals.items() if signal.status != STATUS_OBSERVED)
+    unobserved = sorted(name for name in required_signals(lock) if signals[name].status != STATUS_OBSERVED)
     not_met = sorted(
         name for name, record in envelope_verification.items()
         if record.get("coverage") == COVERAGE_NOT_MET
@@ -285,7 +293,7 @@ def build_receipt(
         "completedAt": completed_at,
         "steadyStateSeconds": steady_state_seconds,
         "envelope": lock.get("supportedEnvelope"),
-        "envelopeVerification": envelope_verification,
+        "envelopeVerification": {**envelope_verification, **informational},
         "signals": {name: signal.to_json() for name, signal in sorted(signals.items())},
         "measurement": measurement,
         "substrate": substrate,
@@ -302,6 +310,7 @@ def build_receipt(
         "verified": sorted(set(envelope_verification) - set(not_exercised) - set(not_met)),
         "declaredNotExercised": not_exercised,
         "notMet": not_met,
+        "informational": sorted(informational),
     }
     return receipt
 

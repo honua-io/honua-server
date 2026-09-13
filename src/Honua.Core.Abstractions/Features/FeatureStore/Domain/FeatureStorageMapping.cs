@@ -90,7 +90,10 @@ public sealed record FeatureStorageMapping(
     /// </remarks>
     public bool SupportsManagedWrites =>
         !IsSourceBacked
-        || ManagedFeaturesTableName.Equals(TableName, StringComparison.OrdinalIgnoreCase);
+        || (ManagedFeaturesTableName.Equals(TableName, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(AttributesColumn, "attributes", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(LayerDiscriminatorColumn, "layer_id", StringComparison.OrdinalIgnoreCase)
+            && LayerDiscriminatorValue.HasValue);
 
     /// <summary>
     /// Gets the best available fully qualified storage name for diagnostics and capability reporting.

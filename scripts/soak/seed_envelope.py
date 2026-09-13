@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from pathlib import Path
 from typing import Any
 
 import psycopg
@@ -194,10 +195,19 @@ def observe(connection, *, layer_count: int) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dsn", required=True, help="libpq connection string for the migrated database")
-    parser.add_argument("--layers", type=int, required=True, help="layers per service, from the lock")
-    parser.add_argument("--features-per-layer", type=int, required=True, help="features per layer, from the lock")
+    parser.add_argument("--lock", type=Path, help="read GA topology directly from the capacity lock")
+    parser.add_argument("--layers", type=int, help="layers per service, from the lock")
+    parser.add_argument("--features-per-layer", type=int, help="features per layer, from the lock")
     parser.add_argument("--observation-out", help="write the observed topology JSON here")
     args = parser.parse_args()
+    if args.lock:
+        envelope = json.loads(args.lock.read_text(encoding="utf-8"))["supportedEnvelope"]
+        if envelope["tenants"] != 1 or envelope["services"] != 1:
+            parser.error("the local-docker seeder supports one tenant and one service")
+        args.layers = envelope["layersPerService"]
+        args.features_per_layer = envelope["featuresPerLayer"]
+    if args.layers is None or args.features_per_layer is None:
+        parser.error("supply --lock or both --layers and --features-per-layer")
 
     with psycopg.connect(args.dsn) as connection:
         seed(connection, layer_count=args.layers, features_per_layer=args.features_per_layer)

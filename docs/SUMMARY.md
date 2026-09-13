@@ -103,7 +103,6 @@
   - [Scaling & performance](guides/deploy/scaling-and-performance.md)
   - [Upgrade & rollback](guides/deploy/upgrade-and-rollback.md)
   - [Troubleshooting](guides/deploy/troubleshooting.md)
-  - [Tenancy support](guides/deploy/tenancy.md)
   - [Capability deployment profiles](guides/deploy/capability-deployment-profiles.md)
   - [Route geoprocessing to AWS Batch](operator/geoprocessing-aws-batch.md)
 - Migrate
@@ -152,8 +151,8 @@
 - [CQL2 & filtering](reference/cql2-and-filtering.md)
 - [Geoprocessing operations](reference/geoprocessing-operations.md)
 - [Spec plan/apply engine](reference/spec-engine.md)
-- [Spec grammar v1.0](developer/spec-grammar/v1.0/README.md)
-- [Spec grounding v1.0](developer/spec-grounding/v1.0/README.md)
+- [Spec grammar v1.0](developer/spec-grammar/spec-grammar-v1.0.md)
+- [Spec grounding v1.0](developer/spec-grounding/spec-grounding-v1.0.md)
 - [OpenAPI specs & explorer](reference/openapi-and-explorer.md)
 - [Interactive API documentation](developer/api-specs/README.md)
 - [Versioning & support](reference/versioning-and-support.md)

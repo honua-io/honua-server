@@ -3613,7 +3613,7 @@
     {
       "id": "3340d67ea8865fb5",
       "kind": "docs-fence",
-      "path": "docs/developer/spec-grammar/v1.0/README.md",
+      "path": "docs/developer/spec-grammar/spec-grammar-v1.0.md",
       "validation": {
         "status": "not-executable",
         "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
@@ -3626,7 +3626,7 @@
     {
       "id": "8192c032a0e9a9f6",
       "kind": "docs-fence",
-      "path": "docs/developer/spec-grammar/v1.0/README.md",
+      "path": "docs/developer/spec-grammar/spec-grammar-v1.0.md",
       "validation": {
         "status": "not-executable",
         "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
@@ -3639,7 +3639,7 @@
     {
       "id": "87fe9429c9ed33a5",
       "kind": "docs-fence",
-      "path": "docs/developer/spec-grammar/v1.0/README.md",
+      "path": "docs/developer/spec-grammar/spec-grammar-v1.0.md",
       "validation": {
         "status": "not-executable",
         "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
@@ -3652,7 +3652,7 @@
     {
       "id": "d68f32669d0398b2",
       "kind": "docs-fence",
-      "path": "docs/developer/spec-grammar/v1.0/README.md",
+      "path": "docs/developer/spec-grammar/spec-grammar-v1.0.md",
       "validation": {
         "status": "not-executable",
         "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
@@ -3665,7 +3665,7 @@
     {
       "id": "dfd1a69cc7fb810f",
       "kind": "docs-fence",
-      "path": "docs/developer/spec-grammar/v1.0/README.md",
+      "path": "docs/developer/spec-grammar/spec-grammar-v1.0.md",
       "validation": {
         "status": "not-executable",
         "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
@@ -3678,7 +3678,7 @@
     {
       "id": "8e9e8a60b92d183e",
       "kind": "docs-fence",
-      "path": "docs/developer/spec-grounding/v1.0/README.md",
+      "path": "docs/developer/spec-grounding/spec-grounding-v1.0.md",
       "validation": {
         "status": "not-executable",
         "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
@@ -3691,7 +3691,7 @@
     {
       "id": "b1a2e7ff4b068a75",
       "kind": "docs-fence",
-      "path": "docs/developer/spec-grounding/v1.0/README.md",
+      "path": "docs/developer/spec-grounding/spec-grounding-v1.0.md",
       "validation": {
         "status": "not-executable",
         "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
@@ -3704,7 +3704,7 @@
     {
       "id": "d2058c6649d667d5",
       "kind": "docs-fence",
-      "path": "docs/developer/spec-grounding/v1.0/README.md",
+      "path": "docs/developer/spec-grounding/spec-grounding-v1.0.md",
       "validation": {
         "status": "not-executable",
         "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
@@ -3717,7 +3717,7 @@
     {
       "id": "e093415a964e7527",
       "kind": "docs-fence",
-      "path": "docs/developer/spec-grounding/v1.0/README.md",
+      "path": "docs/developer/spec-grounding/spec-grounding-v1.0.md",
       "validation": {
         "status": "not-executable",
         "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
