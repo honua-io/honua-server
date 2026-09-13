@@ -49,7 +49,7 @@ python3 scripts/conformance/realtime/qualify_candidate.py \
   --candidate-environment "$HONUA_CANDIDATE_ENVIRONMENT" \
   --sdk-package "$HONUA_SDK_PACKAGE" --sdk-revision "$HONUA_SDK_REVISION" \
   --workflow-repository honua-io/honua-sdk-js \
-  --workflow-name 'Realtime Preview Qualification' \
+  --workflow-name 'Realtime Cross-Transport Conformance' \
   --run-id "$SDK_RUN_ID" --run-attempt "$SDK_RUN_ATTEMPT" \
   --artifact-id "$SDK_ARTIFACT_ID" \
   --source-artifact-url "$SDK_ARTIFACT_URL" \
