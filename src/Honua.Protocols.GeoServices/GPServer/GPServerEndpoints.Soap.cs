@@ -35,9 +35,7 @@ internal static partial class GPServerEndpoints
                     var catalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
                     var definition = ResolveTaskDefinition(catalog, taskName)
                         ?? throw new GeoprocessingNotFoundException("The requested task was not found.");
-                    return GPServerSoapExecution.ReadSubmission(operation, BuildTaskInfo(taskName, definition),
-                        scalarGeometryTask: definition.ProcessId.StartsWith("geometry.", StringComparison.Ordinal) &&
-                            GPServerExecutionPolicy.IsSynchronous(definition));
+                    return GPServerSoapExecution.ReadSubmission(operation, BuildTaskInfo(taskName, definition));
                 }
 
                 // Parsing is deferred until the canonical handler authorizes the

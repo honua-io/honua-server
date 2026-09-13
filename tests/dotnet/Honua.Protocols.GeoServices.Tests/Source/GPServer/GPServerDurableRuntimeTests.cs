@@ -232,6 +232,147 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /services/{serviceId}/GPServer")]
+    [InterfaceOperation(TestProtocols.GPServer, "SubmitJob")]
+    [InterfaceOperation(TestProtocols.GPServer, "GetJobResult")]
+    public async Task SoapBuffer_WithProductionExecutor_ReturnsRecordSetBoundedByTheIndependentBufferGeometry()
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        var fixture = CreateDurableFixture(productionExecutor: true);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            client.Timeout = TimeSpan.FromSeconds(45);
+            var result = await SubmitSoapAndReadResultAsync(client, "Honua_67656F6D657472792E627566666572", $"""
+                <GPValue xsi:type="tns:GPString"><Value>{PolygonWkb((0, 0), (3, 0), (3, 4), (0, 4), (0, 0))}</Value></GPValue>
+                <GPValue xsi:type="tns:GPLong"><Value>3857</Value></GPValue>
+                <GPValue xsi:type="tns:GPDouble"><Value>1</Value></GPValue>
+                """, "outputFeatureLayer");
+
+            var ring = ReadSingleRing(result, out var wkid);
+            wkid.Should().Be("3857");
+            // A distance-1 buffer of the 3 by 4 rectangle: the rectangle grown by
+            // 1 on every side, with quarter-circle corners of radius 1.
+            ring.Min(point => point.X).Should().BeApproximately(-1, 1e-9);
+            ring.Max(point => point.X).Should().BeApproximately(4, 1e-9);
+            ring.Min(point => point.Y).Should().BeApproximately(-1, 1e-9);
+            ring.Max(point => point.Y).Should().BeApproximately(5, 1e-9);
+            foreach (var offsetVertex in new[] { (-1d, 0d), (-1d, 4d), (0d, 5d), (3d, 5d), (4d, 4d), (4d, 0d), (3d, -1d), (0d, -1d) })
+            {
+                ring.Should().Contain(point => Math.Abs(point.X - offsetVertex.Item1) < 1e-9 && Math.Abs(point.Y - offsetVertex.Item2) < 1e-9);
+            }
+            // Exact area is 12 + 2 * (3 + 4) + pi. A corner approximation with at
+            // least two segments per quarter lies between the inscribed octagon and the circle.
+            var area = Math.Abs(ShoelaceArea(ring));
+            area.Should().BeGreaterThanOrEqualTo(26 + (4 * Math.Sin(Math.PI / 4)));
+            area.Should().BeLessThanOrEqualTo(26 + Math.PI + 1e-9);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /services/{serviceId}/GPServer")]
+    [InterfaceOperation(TestProtocols.GPServer, "SubmitJob")]
+    [InterfaceOperation(TestProtocols.GPServer, "GetJobResult")]
+    public async Task SoapUnion_WithMultiValueInput_ReturnsTheIndependentlyComputedRectangle()
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        var fixture = CreateDurableFixture(productionExecutor: true);
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            client.Timeout = TimeSpan.FromSeconds(45);
+            var result = await SubmitSoapAndReadResultAsync(client, "Honua_67656F6D657472792E756E696F6E", $"""
+                <GPValue xsi:type="tns:GPMultiValue"><MemberDataType>GPString</MemberDataType><Values xsi:type="tns:GPValues">
+                <GPValue xsi:type="tns:GPString"><Value>{PolygonWkb((0, 0), (3, 0), (3, 4), (0, 4), (0, 0))}</Value></GPValue>
+                <GPValue xsi:type="tns:GPString"><Value>{PolygonWkb((2, 0), (5, 0), (5, 4), (2, 4), (2, 0))}</Value></GPValue>
+                </Values></GPValue>
+                <GPValue xsi:type="tns:GPLong"><Value>3857</Value></GPValue>
+                """, "outputFeatureLayer");
+
+            var ring = ReadSingleRing(result, out var wkid);
+            wkid.Should().Be("3857");
+            // [0,3]x[0,4] union [2,5]x[0,4] is [0,5]x[0,4]: area 5 * 4.
+            Math.Abs(ShoelaceArea(ring)).Should().BeApproximately(5 * 4, 1e-9);
+            foreach (var corner in new[] { (0d, 0d), (5d, 0d), (5d, 4d), (0d, 4d) })
+            {
+                ring.Should().Contain(point => Math.Abs(point.X - corner.Item1) < 1e-9 && Math.Abs(point.Y - corner.Item2) < 1e-9);
+            }
+            ring.Should().OnlyContain(point => point.X >= -1e-9 && point.X <= 5 + 1e-9 && point.Y >= -1e-9 && point.Y <= 4 + 1e-9);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private static async Task<XElement> SubmitSoapAndReadResultAsync(HttpClient client, string toolName, string values, string outputName)
+    {
+        var submitted = await SendSoapAsync(client, "SubmitJob",
+            $"<ToolName>{toolName}</ToolName><Values xsi:type=\"tns:GPValues\">{values}</Values>" +
+            GPServerSoapRequestFixtures.ArcPyDefaultControls);
+        var jobId = submitted.Value;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        while (true)
+        {
+            var status = await SendSoapAsync(client, "GetJobStatus", $"<JobID>{jobId}</JobID>");
+            if (status.Value == "esriJobSucceeded")
+            {
+                break;
+            }
+            status.Value.Should().NotBe("esriJobFailed").And.NotBe("esriJobCancelled");
+            await Task.Delay(100, timeout.Token);
+        }
+        return await SendSoapAsync(client, "GetJobResult",
+            $"<JobID>{jobId}</JobID><ParameterNames><String>{outputName}</String></ParameterNames>");
+    }
+
+    private static (double X, double Y)[] ReadSingleRing(XElement result, out string wkid)
+    {
+        var xsiType = XName.Get("type", "http://www.w3.org/2001/XMLSchema-instance");
+        var output = result.Element("Values")!.Elements("GPValue").Should().ContainSingle().Subject;
+        output.Attribute(xsiType)!.Value.Should().Be("tns:GPFeatureRecordSetLayer");
+        wkid = output.Descendants("GeometryDef").Single().Element("SpatialReference")!.Element("WKID")!.Value;
+        var polygon = output.Descendants("Record").Should().ContainSingle().Subject
+            .Descendants("Value").Single(value => value.Attribute(xsiType)?.Value == "tns:PolygonN");
+        var ring = polygon.Element("RingArray")!.Elements("Ring").Should().ContainSingle().Subject;
+        var points = ring.Descendants("Point").Select(point => (
+            double.Parse(point.Element("X")!.Value, System.Globalization.CultureInfo.InvariantCulture),
+            double.Parse(point.Element("Y")!.Value, System.Globalization.CultureInfo.InvariantCulture))).ToArray();
+        points[0].Should().Be(points[^1]);
+        return points;
+    }
+
+    // Independent OGC WKB polygon encoding of literal ordinates.
+    private static string PolygonWkb(params (double X, double Y)[] ring)
+    {
+        using var bytes = new MemoryStream();
+        using (var writer = new BinaryWriter(bytes, Encoding.UTF8, leaveOpen: true))
+        {
+            writer.Write((byte)1);
+            writer.Write(3u);
+            writer.Write(1u);
+            writer.Write((uint)ring.Length);
+            foreach (var (x, y) in ring)
+            {
+                writer.Write(x);
+                writer.Write(y);
+            }
+        }
+        return Convert.ToBase64String(bytes.ToArray());
+    }
+
+    private static double ShoelaceArea((double X, double Y)[] ring)
+        => Enumerable.Range(0, ring.Length - 1).Sum(index => (ring[index].X * ring[index + 1].Y) - (ring[index + 1].X * ring[index].Y)) / 2;
+
     private static async Task<XElement> SendSoapAsync(HttpClient client, string operation, string arguments)
     {
         var xml = $"""

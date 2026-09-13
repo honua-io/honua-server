@@ -88,17 +88,28 @@ Failed synchronous execution produces a SOAP fault; cancellation succeeds only
 when the canonical runtime confirms it. The mixed catalog continues to advertise
 asynchronous execution, while SOAP `Execute` accepts sync-eligible tasks.
 
-SOAP execution currently supports scalar `GPString`, `GPLong`, `GPDouble`,
-`GPBoolean`, and `GPDate` values. Complex SOAP feature/raster/file/multivalue
-payloads are rejected explicitly. REST's FeatureSet and artifact contracts above
-remain available. Result options accept URL transport, no densification, and
-boolean ReturnData/UpdateValues controls for scalar outputs; unsupported options
-return faults. Supported SOAP spatial-reference environment controls map to the
-same REST environment validation. ArcPy's six unchanged defaults (Z/M "Same As
-Input", random seed 0/ACM599, autoCommit 1000, CONVERT_UNITS cell-size projection,
-and NONE nodata) are accepted only for synchronous geometry tasks with scalar
-outputs, where those defaults do not alter the result. Changed controls remain
-subject to canonical validation.
+SOAP execution supports scalar `GPString`, `GPLong`, `GPDouble`, `GPBoolean`, and
+`GPDate` values, plus the complex values the catalog advertises:
+
+- `GPFeatureRecordSetLayer` and `GPRecordSet` inputs are Esri RecordSets. They are
+  read into the same Esri JSON FeatureSet a REST client submits, so the FeatureSet
+  rules above apply unchanged. Feature and table outputs are returned as RecordSets
+  holding the REST result's fields, attributes, geometry and spatial reference.
+- `GPMultiValue` inputs with scalar members become the REST JSON array.
+- `GPRasterDataLayer` and `GPDataFile` outputs are returned as GDSData with the
+  authenticated REST output URL.
+
+Values that cannot be represented faithfully return faults rather than being
+dropped: curve segments, point IDs, vertical coordinate systems, spatial references
+without a WKID, truncated RecordSets, unsupported field types, and outputs with no
+retrievable URL. Result options accept URL transport, no densification, and boolean
+ReturnData/UpdateValues controls; unsupported options return faults. Supported SOAP
+spatial-reference environment controls map to the same REST environment validation.
+ArcPy sends its six application environment defaults with every submission (Z/M
+"Same As Input", random seed 0/ACM599, autoCommit 1000, CONVERT_UNITS cell-size
+projection, and NONE nodata). These are Esri's documented defaults and select the
+same behaviour as a REST request without `env:` parameters, so they are accepted
+for every task. Changed controls remain subject to canonical validation.
 
 Installed-client execution observations are retained with the GPServer tests in
 `Fixtures/EsriToolboxReplay`. These establish remote scalar execution, including

@@ -1,0 +1,42 @@
+{
+  "at": "2026-09-13T19:45:39.030875+00:00",
+  "source": "3c52a4bffa8f9b8621a39a8868f839e0e605de78",
+  "image": "sha256:54926040d8b543cac746289c601fb77202ef4446e00a22fa5539836e4bedc8bb",
+  "checks": {
+    "buffer_feature_output": {
+      "tool": "Buffer",
+      "error": "ExecuteError: Bad syntax in request. (status code 400).\nFailed to execute (Buffer).\n",
+      "trace": "Traceback (most recent call last):\n  File \"C:\\Users\\mike\\actions-runner-honua-esri\\_work\\honua-esri-compat\\honua-esri-compat\\scripts\\probe-gp-soap-complex.py\", line 93, in run\n    result = tool(*args)\n  File \"https://127.0.0.1:18464/services;desktop_ui_features;admin;[REDACTED]\", line 76, in Buffer\n  File \"https://127.0.0.1:18464/services;desktop_ui_features;admin;[REDACTED]\", line 73, in Buffer\n  File \"C:\\Users\\mike\\AppData\\Local\\Programs\\ArcGIS\\Pro\\Resources\\ArcPy\\arcpy\\geoprocessing\\_base.py\", line 541, in <lambda>\n    return lambda *args: val(*gp_fixargs(args, True))\n                         ~~~^^^^^^^^^^^^^^^^^^^^^^^^^\narcgisscripting.ExecuteError: Bad syntax in request. (status code 400).\nFailed to execute (Buffer).\n\n"
+    },
+    "union_multivalue_input": {
+      "tool": "Honua_67656F6D657472792E756E696F6E",
+      "error": "ExecuteError: Bad syntax in request. (status code 400).\nFailed to execute (Honua_67656F6D657472792E756E696F6E).\n",
+      "trace": "Traceback (most recent call last):\n  File \"C:\\Users\\mike\\actions-runner-honua-esri\\_work\\honua-esri-compat\\honua-esri-compat\\scripts\\probe-gp-soap-complex.py\", line 93, in run\n    result = tool(*args)\n  File \"https://127.0.0.1:18464/services;desktop_ui_features;admin;[REDACTED]\", line 1180, in Honua_67656F6D657472792E756E696F6E\n  File \"https://127.0.0.1:18464/services;desktop_ui_features;admin;[REDACTED]\", line 1177, in Honua_67656F6D657472792E756E696F6E\n  File \"C:\\Users\\mike\\AppData\\Local\\Programs\\ArcGIS\\Pro\\Resources\\ArcPy\\arcpy\\geoprocessing\\_base.py\", line 541, in <lambda>\n    return lambda *args: val(*gp_fixargs(args, True))\n                         ~~~^^^^^^^^^^^^^^^^^^^^^^^^^\narcgisscripting.ExecuteError: Bad syntax in request. (status code 400).\nFailed to execute (Honua_67656F6D657472792E756E696F6E).\n\n"
+    },
+    "clip_featureset_inputs": {
+      "tool": "Clip",
+      "error": "ExecuteError: Bad syntax in request. (status code 400).\nFailed to execute (Clip).\n",
+      "trace": "Traceback (most recent call last):\n  File \"C:\\Users\\mike\\actions-runner-honua-esri\\_work\\honua-esri-compat\\honua-esri-compat\\scripts\\probe-gp-soap-complex.py\", line 93, in run\n    result = tool(*args)\n  File \"https://127.0.0.1:18464/services;desktop_ui_features;admin;[REDACTED]\", line 139, in Clip\n  File \"https://127.0.0.1:18464/services;desktop_ui_features;admin;[REDACTED]\", line 136, in Clip\n  File \"C:\\Users\\mike\\AppData\\Local\\Programs\\ArcGIS\\Pro\\Resources\\ArcPy\\arcpy\\geoprocessing\\_base.py\", line 541, in <lambda>\n    return lambda *args: val(*gp_fixargs(args, True))\n                         ~~~^^^^^^^^^^^^^^^^^^^^^^^^^\narcgisscripting.ExecuteError: Bad syntax in request. (status code 400).\nFailed to execute (Clip).\n\n"
+    },
+    "attribute_filter_featureset_input": {
+      "tool": "Honua_7472616E73666F726D2E6174747269627574652D66696C746572",
+      "error": "ExecuteError: Bad syntax in request. (status code 400).\nFailed to execute (Honua_7472616E73666F726D2E6174747269627574652D66696C746572).\n",
+      "trace": "Traceback (most recent call last):\n  File \"C:\\Users\\mike\\actions-runner-honua-esri\\_work\\honua-esri-compat\\honua-esri-compat\\scripts\\probe-gp-soap-complex.py\", line 93, in run\n    result = tool(*args)\n  File \"https://127.0.0.1:18464/services;desktop_ui_features;admin;[REDACTED]\", line 2045, in Honua_7472616E73666F726D2E6174747269627574652D66696C746572\n  File \"https://127.0.0.1:18464/services;desktop_ui_features;admin;[REDACTED]\", line 2042, in Honua_7472616E73666F726D2E6174747269627574652D66696C746572\n  File \"C:\\Users\\mike\\AppData\\Local\\Programs\\ArcGIS\\Pro\\Resources\\ArcPy\\arcpy\\geoprocessing\\_base.py\", line 541, in <lambda>\n    return lambda *args: val(*gp_fixargs(args, True))\n                         ~~~^^^^^^^^^^^^^^^^^^^^^^^^^\narcgisscripting.ExecuteError: Bad syntax in request. (status code 400).\nFailed to execute (Honua_7472616E73666F726D2E6174747269627574652D66696C746572).\n\n"
+    },
+    "near_table_recordset_output": {
+      "tool": "GenerateNearTable",
+      "error": "ExecuteError: Bad syntax in request. (status code 400).\nFailed to execute (GenerateNearTable).\n",
+      "trace": "Traceback (most recent call last):\n  File \"C:\\Users\\mike\\actions-runner-honua-esri\\_work\\honua-esri-compat\\honua-esri-compat\\scripts\\probe-gp-soap-complex.py\", line 93, in run\n    result = tool(*args)\n  File \"https://127.0.0.1:18464/services;desktop_ui_features;admin;[REDACTED]\", line 385, in GenerateNearTable\n  File \"https://127.0.0.1:18464/services;desktop_ui_features;admin;[REDACTED]\", line 382, in GenerateNearTable\n  File \"C:\\Users\\mike\\AppData\\Local\\Programs\\ArcGIS\\Pro\\Resources\\ArcPy\\arcpy\\geoprocessing\\_base.py\", line 541, in <lambda>\n    return lambda *args: val(*gp_fixargs(args, True))\n                         ~~~^^^^^^^^^^^^^^^^^^^^^^^^^\narcgisscripting.ExecuteError: Bad syntax in request. (status code 400).\nFailed to execute (GenerateNearTable).\n\n"
+    },
+    "buffer_cancel": {
+      "tool": "Buffer",
+      "error": "ExecuteError: Bad syntax in request. (status code 400).\nFailed to execute (Buffer).\n",
+      "trace": "Traceback (most recent call last):\n  File \"C:\\Users\\mike\\actions-runner-honua-esri\\_work\\honua-esri-compat\\honua-esri-compat\\scripts\\probe-gp-soap-complex.py\", line 93, in run\n    result = tool(*args)\n  File \"https://127.0.0.1:18464/services;desktop_ui_features;admin;[REDACTED]\", line 76, in Buffer\n  File \"https://127.0.0.1:18464/services;desktop_ui_features;admin;[REDACTED]\", line 73, in Buffer\n  File \"C:\\Users\\mike\\AppData\\Local\\Programs\\ArcGIS\\Pro\\Resources\\ArcPy\\arcpy\\geoprocessing\\_base.py\", line 541, in <lambda>\n    return lambda *args: val(*gp_fixargs(args, True))\n                         ~~~^^^^^^^^^^^^^^^^^^^^^^^^^\narcgisscripting.ExecuteError: Bad syntax in request. (status code 400).\nFailed to execute (Buffer).\n\n"
+    }
+  },
+  "arcpy": "3.7.1",
+  "feature_set_construction": {
+    "as_shape": "RecordSet"
+  },
+  "completed": true
+}
