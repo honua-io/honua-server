@@ -44,17 +44,27 @@ Run from the repository root on a Docker host with ports 18449 and 18450 free:
 
 ```bash
 tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/qualify-wfs-candidate.sh \
-  ghcr.io/honua-io/honua-server@sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd \
+  ghcr.io/honua-io/honua-server@sha256:54926040d8b543cac746289c601fb77202ef4446e00a22fa5539836e4bedc8bb \
   /tmp/wfs-candidate-receipt.json
 ```
 
-The committed `wfs-candidate-receipt.json` records observed container/image
-identities, the image's source revision, resource limits, child job states,
+Each receipt records observed container/image identities, the image's source
+revision, resource limits, child job states, parent workflow terminal state,
 exact decoded output hashes, and the independent duplicate-page rejection.
-Both semantic cases pass on the manifest-pinned Native AOT image from
+
+`wfs-candidate-receipt.json` is the current receipt: the imaged trunk nightly
+Native AOT image `sha256:54926040d8b543cac746289c601fb77202ef4446e00a22fa5539836e4bedc8bb`
+(`nightly-aot-3c52a4b`, source `3c52a4bffa8f9b8621a39a8868f839e0e605de78`,
+which contains the tenant fix below) passes. In both scenarios the child job
+succeeds, the parent workflow reaches `Succeeded` with 1/1 steps, paging stops at
+`[0,1,2,3]` without `numberMatched` and `[0,1,2]` with it, the decoded output
+hash is identical, the duplicate page is rejected, and cleanup passes.
+
+`wfs-candidate-receipt-7ba4226.json` keeps the earlier failure. Both semantic
+cases passed on the then manifest-pinned Native AOT image from
 `7ba422672e0c751843b17beb36e954a019cc19fb`.
 
-**The complete workflow qualification fails on that image.** After the child
+**The complete workflow qualification failed on that image.** After the child
 succeeds, its parent remains Running with `Job state could not be observed`:
 the background orchestrator loses the persisted tenant when reconstructing its
 principal, so canonical job ownership correctly denies access. The harness
@@ -70,8 +80,10 @@ persisted tenant before completing the parent. The companion
 uses the production job service to check scoped access and foreign-tenant
 read/cancellation denial, including a tenantless legacy run.
 
-The release's whole-catalog GP GA promise still needs a new manifest-pinned
-image containing that fix and a passing rerun. The shared lifecycle/resilience
+The imaged nightly above contains that fix and passes, but it is not yet the
+release manifest's pinned candidate. The whole-catalog GP GA receipt is complete
+only when this harness passes again on the cut candidate digest, which must be
+built from `3c52a4bffa8f9b8621a39a8868f839e0e605de78` or later. The shared lifecycle/resilience
 receipt bill in #3848 is not replaced by this operation proof. Inline artifacts
 are used here, so this fixture claims neither staged-storage qualification
 (#3852) nor external-PostGIS sink transaction qualification (#3855).
