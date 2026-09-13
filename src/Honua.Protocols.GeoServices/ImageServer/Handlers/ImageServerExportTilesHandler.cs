@@ -58,6 +58,7 @@ internal sealed class ImageServerExportTilesHandler
         RasterFormat RasterFormat,
         string TileExtension,
         DateTimeOffset? Timestamp,
+        DateTimeOffset? TimeStart,
         bool TilePackage);
 
     private readonly IMetadataV2GraphProvider _graphProvider;
@@ -231,6 +232,7 @@ internal sealed class ImageServerExportTilesHandler
                             Geometry = tileGeometry,
                             GeometrySrid = 3857,
                             Timestamp = plan.Timestamp,
+                            TimeStart = plan.TimeStart,
                         },
                         token).ConfigureAwait(false);
 
@@ -466,12 +468,12 @@ internal sealed class ImageServerExportTilesHandler
             return (null, StandardErrorHelpers.CreateBadRequest(context, "Unsupported tile format."));
         }
 
-        if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeError))
+        if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeStart, out var timeError))
         {
             return (null, StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter."));
         }
 
-        var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+        var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp, timeStart);
         if (editionError != null)
         {
             return (null, editionError);
@@ -549,6 +551,7 @@ internal sealed class ImageServerExportTilesHandler
             rasterFormat,
             tileExtension,
             timestamp,
+            timeStart,
             tilePackage), null);
     }
 
@@ -1354,12 +1357,12 @@ internal sealed class ImageServerExportTilesHandler
                 context, "Compact Cache V2 tile export supports only png or jpeg tile formats."));
         }
 
-        if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeError))
+        if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeStart, out var timeError))
         {
             return (null, StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter."));
         }
 
-        var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+        var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp, timeStart);
         if (editionError is not null)
         {
             return (null, editionError);

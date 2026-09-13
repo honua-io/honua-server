@@ -33,6 +33,7 @@ internal static class ImageServerTileCacheKey
         IReadOnlyList<RasterInfo> selectedRasters,
         RasterMergeStrategy mergeStrategy,
         DateTimeOffset? timestamp,
+        DateTimeOffset? timeStart,
         string mosaicRule,
         RasterFormat rasterFormat,
         int level,
@@ -57,7 +58,7 @@ internal static class ImageServerTileCacheKey
             tenantAuthKey,
             rasterKey,
             mergeStrategy.ToString(),
-            timestamp?.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture) ?? string.Empty,
+            BuildTimeKey(timestamp, timeStart),
             mosaicRule,
             rasterFormat.ToString(),
             BuildWindowKey(window)));
@@ -89,6 +90,16 @@ internal static class ImageServerTileCacheKey
             RasterFormat.TIFF or RasterFormat.COG => "tif",
             _ => "png"
         };
+
+    // An instant keeps its pre-extent key (epoch ms) so existing cached tiles stay addressable; a
+    // start,end extent adds its start bound so two windows sharing an end never collide.
+    private static string BuildTimeKey(DateTimeOffset? timestamp, DateTimeOffset? timeStart)
+    {
+        var end = timestamp?.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture) ?? string.Empty;
+        return timeStart is { } start
+            ? $"{start.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)}~{end}"
+            : end;
+    }
 
     private static string BuildWindowKey(RasterTileWindow? window)
     {

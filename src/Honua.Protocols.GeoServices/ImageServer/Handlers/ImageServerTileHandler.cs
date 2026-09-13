@@ -104,12 +104,12 @@ internal sealed class ImageServerTileHandler
                 return StandardErrorHelpers.CreateBadRequest(context, "Unsupported tile format. Supported formats: png, jpg, jpeg, tiff, tif, cog.");
             }
 
-            if (!ImageServerMosaicHelpers.TryParseTime(context.Request.Query["time"], out var timestamp, out var timeError))
+            if (!ImageServerMosaicHelpers.TryParseTime(context.Request.Query["time"], out var timestamp, out var timeStart, out var timeError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter.");
             }
 
-            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp, timeStart);
             if (editionError != null)
             {
                 return editionError;
@@ -139,7 +139,8 @@ internal sealed class ImageServerTileHandler
                 {
                     Geometry = tileGeometry,
                     GeometrySrid = 3857,
-                    Timestamp = timestamp
+                    Timestamp = timestamp,
+                    TimeStart = timeStart
                 },
                 cancellationToken);
 
@@ -168,6 +169,7 @@ internal sealed class ImageServerTileHandler
                     selectedRasters,
                     mergeStrategy,
                     timestamp,
+                    timeStart,
                     context.Request.Query["mosaicRule"].ToString(),
                     rasterFormat,
                     level,
@@ -340,12 +342,12 @@ internal sealed class ImageServerTileHandler
                 return StandardErrorHelpers.CreateBadRequest(context, "Unsupported tile format. Supported formats: png, jpg, jpeg, tiff, tif, cog.");
             }
 
-            if (!ImageServerMosaicHelpers.TryParseTime(context.Request.Query["time"], out var timestamp, out var timeError))
+            if (!ImageServerMosaicHelpers.TryParseTime(context.Request.Query["time"], out var timestamp, out var timeStart, out var timeError))
             {
                 return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter.");
             }
 
-            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp, timeStart);
             if (editionError != null)
             {
                 return editionError;
@@ -376,7 +378,8 @@ internal sealed class ImageServerTileHandler
                 {
                     Geometry = tileGeometry,
                     GeometrySrid = grid.Srid,
-                    Timestamp = timestamp
+                    Timestamp = timestamp,
+                    TimeStart = timeStart
                 },
                 cancellationToken);
 
@@ -413,6 +416,7 @@ internal sealed class ImageServerTileHandler
                 selectedRasters,
                 mergeStrategy,
                 timestamp,
+                timeStart,
                 context.Request.Query["mosaicRule"].ToString(),
                 rasterFormat,
                 level,

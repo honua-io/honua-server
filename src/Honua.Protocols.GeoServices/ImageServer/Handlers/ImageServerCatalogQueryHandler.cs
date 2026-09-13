@@ -234,7 +234,7 @@ internal sealed class ImageServerCatalogQueryHandler
             }
         }
 
-        if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var time, out var timeError))
+        if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var time, out var timeStart, out var timeError))
         {
             error = timeError;
             return false;
@@ -294,6 +294,7 @@ internal sealed class ImageServerCatalogQueryHandler
             OutputSrid = outputSrid,
             SpatialFilter = spatialFilter,
             Time = time,
+            TimeStart = timeStart,
             Offset = offset,
             Limit = limit,
             OrderBy = orderBy,

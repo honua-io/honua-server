@@ -4532,6 +4532,7 @@
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithJobStoreButNoQueue_StillReportsJobsRunnerUnavailable",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithPartialSpatialAnalysisEntitlements_MarksAnalysisUnavailable",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithRedisConfiguredButUnentitled_ReportsLicenseRequiredNotMissingDependency",
+        "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithTenantContextDisabled_OmitsTenantScopeEntirely",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithUnknownEnvironment_ReturnsUnavailableManifestState",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithWorkspaceClaimTypeDifferentCasing_MatchesRbacWorkspaceScope",
         "Honua.Server.Tests.Features.Capabilities.CapabilityManifestEndpointTests.GetManifest_WithoutDurableJobStore_ReportsDependencyReasonEvenForAnonymousCaller",
@@ -8777,7 +8778,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeStatisticsHistograms_Get_WithEnvelope_ReturnsStatisticsAndHistograms",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeStatisticsHistograms_Get_WithoutGeometry_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeStatisticsHistograms_WithGeometry_ClipsAnalysisToAoi"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeStatisticsHistograms_WithGeometry_ClipsAnalysisToAoi",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.ImageServerOperations_WithEsriEpochMillisecondTimeExtent_AreNotRejected"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "preview",
@@ -8852,6 +8854,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerErrorHandlingTests.ExportImage_NonExistentLayer_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerHttpAuthorizationTests.RestrictedImagery_AnonymousAndUnentitledCallers_ReceiveNoPixels",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.ExportImage_AsInlineJpegMosaic_AppliesCompressionQuality",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.ExportImage_WithBboxBeyondRasterFootprint_CoversRequestedBboxWithNoDataOutsideData",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.ImageServerOperations_WithEsriEpochMillisecondTimeExtent_AreNotRejected",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_JpegFormat_ReturnsSuccessOrNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_MaximumSize_ReturnsSuccessOrNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_MinimumSize_ReturnsSuccessOrNotFound",
@@ -8914,7 +8918,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetSamples_Get_WithMultipoint_ReturnsSamples",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.GetSamples_Get_WithoutGeometry_ReturnsBadRequest",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerHttpAuthorizationTests.RestrictedImagery_AnonymousAndUnentitledCallers_ReceiveNoPixels"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerHttpAuthorizationTests.RestrictedImagery_AnonymousAndUnentitledCallers_ReceiveNoPixels",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.ImageServerOperations_WithEsriEpochMillisecondTimeExtent_AreNotRejected"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "preview",
@@ -8951,6 +8956,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerErrorHandlingTests.Identify_SingleValueGeometry_ReturnsBadRequestOrNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerHttpAuthorizationTests.RestrictedImagery_AnonymousAndUnentitledCallers_ReceiveNoPixels",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.Identify_UsesSpatialMosaicSelectionAcrossMultipleRasters",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.Identify_WithEsriEpochMillisecondTime_SelectsSameSliceAsIsoInstant",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.Identify_WithEsriTimeExtent_SelectsNewestBatchInsideWindow",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.Identify_WithMaxMergeRule_ReturnsMaximumPixelValue",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.Identify_WithNewestMergeRule_ReturnsNewestRasterValueAndCatalogItems",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.Identify_WithTimeOnCommunityEdition_ReturnsPaymentRequired",
@@ -9119,7 +9126,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.QueryCatalog_Get_OutFields_ProjectsAttributes",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.QueryCatalog_Get_ReturnsFeatureCollection",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.QueryCatalog_NonExistentLayer_ReturnsNotFound",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.QueryCatalog_ListsAllRastersWithAcquisitionDates"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.QueryCatalog_ListsAllRastersWithAcquisitionDates",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.QueryCatalog_WithEsriTimeExtent_ReturnsNewestBatchInsideWindow"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "preview",
@@ -12198,6 +12206,7 @@
         "Honua.Server.Tests.Features.Protocols.Scene.SceneAccessEnvelopeEndpointTests.GetSceneAsset_NoTokenOnProtectedScene_Returns401",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneAccessEnvelopeEndpointTests.GetSceneAsset_PathTraversalWithValidToken_Returns400",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneAccessEnvelopeEndpointTests.GetSceneAsset_TamperedToken_Returns401",
+        "Honua.Server.Tests.Features.Protocols.Scene.SceneAccessEnvelopeEndpointTests.GetSceneAsset_TokenAuthorized_ConditionalResponseCannotBeStored",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneAccessEnvelopeEndpointTests.GetSceneAsset_TokenAuthorized_DoesNotEmitVaryAuthorization",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneAccessEnvelopeEndpointTests.GetSceneAsset_TokenForDifferentScene_Returns403",
         "Honua.Server.Tests.Features.Protocols.Scene.SceneAccessEnvelopeEndpointTests.GetSceneAsset_TokenInHonuaHeader_Returns200",

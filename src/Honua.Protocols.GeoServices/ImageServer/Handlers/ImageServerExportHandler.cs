@@ -166,13 +166,13 @@ internal sealed class ImageServerExportHandler
                     .ConfigureAwait(false);
             }
 
-            if (!ImageServerMosaicHelpers.TryParseTime(request.Time, out var timestamp, out var timeError))
+            if (!ImageServerMosaicHelpers.TryParseTime(request.Time, out var timestamp, out var timeStart, out var timeError))
             {
                 ImageServerLog.InvalidExportParameters(_logger, layerId, timeError ?? "Invalid time parameter");
                 return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time parameter.");
             }
 
-            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp, timeStart);
             if (editionError != null)
             {
                 return editionError;
@@ -200,6 +200,7 @@ internal sealed class ImageServerExportHandler
                 Geometry = exportQuery.ClipRegion?.Geometry,
                 GeometrySrid = exportQuery.ClipRegion?.Srid,
                 Timestamp = mosaicRule.Method == MosaicMethod.LockRaster ? null : timestamp,
+                TimeStart = mosaicRule.Method == MosaicMethod.LockRaster ? null : timeStart,
             };
 
             var selectedRasters = await _exportBackend.QueryRastersAsync(storageLayerId, selectionQuery, cancellationToken);
@@ -764,6 +765,9 @@ internal sealed class ImageServerExportHandler
                 var writer = new NetTopologySuite.IO.WKBWriter();
                 var geometryBytes = writer.Write(geometry);
 
+                // Esri clients paint the returned pixels across the requested bbox, so the image
+                // must cover the whole bbox with NoData outside the data (#4060), not just the
+                // bbox-raster intersection stretched to size.
                 query = query with
                 {
                     ClipRegion = new RasterClipRegion
@@ -771,6 +775,7 @@ internal sealed class ImageServerExportHandler
                         Geometry = geometryBytes,
                         Srid = bboxSrid,
                     },
+                    CoverClipExtent = true,
                 };
             }
 

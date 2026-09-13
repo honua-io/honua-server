@@ -137,6 +137,11 @@ internal sealed class ImageServerCatalogQuery
     public DateTimeOffset? Time { get; init; }
 
     /// <summary>
+    /// Start of an Esri <c>start,end</c> time extent; <see cref="Time"/> then carries its end.
+    /// </summary>
+    public DateTimeOffset? TimeStart { get; init; }
+
+    /// <summary>
     /// Ordering specification applied after filtering and before pagination.
     /// Each entry is a canonical catalog field name plus a descending flag.
     /// Empty means the catalog's natural order is preserved.
@@ -253,6 +258,7 @@ internal sealed class ImageServerCatalogReader : IImageServerCatalogReader
             SpatialPredicate = predicate,
             ObjectIds = query.ObjectIds,
             Timestamp = query.Time,
+            TimeStart = query.TimeStart,
             Offset = pushPaging ? Math.Max(0, query.Offset) : 0,
             Limit = pushLimit,
             IncludeTotalCount = pushPaging,

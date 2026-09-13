@@ -340,6 +340,232 @@ public sealed class ImageServerMosaicIntegrationTests
     }
 
     [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
+    [Operation(Operations.Export)]
+    public async Task ExportImage_WithBboxBeyondRasterFootprint_CoversRequestedBboxWithNoDataOutsideData()
+    {
+        // #4060: Esri clients paint the exported pixels across the requested bbox. The seeded rasters
+        // cover x[0,4] y[0,2] (west 20, overlap-newest 5, east 40); bbox [-4,-2,4,2] at 80x40 is
+        // 0.1-degree pixels, so the data is 40x20 = 800 pixels in the upper-right quarter and every
+        // other pixel must be NoData. Before the fix the 80x40 image was the data alone, stretched.
+        var fixture = await CreateFixtureAsync(seedRasters: false);
+        try
+        {
+            await RasterIntegrationTestData.RunWithIssue522MosaicAsync(fixture, async () =>
+            {
+                const string export = "?bbox=-4,-2,4,2&size=80,40&format=tiff&interpolation=RSP_NearestNeighbor";
+
+                var jsonResponse = await fixture.Client.GetAsync(
+                    $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/exportImage{export}&f=json");
+                var jsonContent = await jsonResponse.Content.ReadAsStringAsync();
+                jsonResponse.StatusCode.Should().Be(HttpStatusCode.OK, jsonContent);
+                using (var json = JsonDocument.Parse(jsonContent))
+                {
+                    json.RootElement.GetProperty("width").GetInt32().Should().Be(80);
+                    json.RootElement.GetProperty("height").GetInt32().Should().Be(40);
+                    var extent = json.RootElement.GetProperty("extent");
+                    extent.GetProperty("xmin").GetDouble().Should().BeApproximately(-4, 1e-9);
+                    extent.GetProperty("ymin").GetDouble().Should().BeApproximately(-2, 1e-9);
+                    extent.GetProperty("xmax").GetDouble().Should().BeApproximately(4, 1e-9);
+                    extent.GetProperty("ymax").GetDouble().Should().BeApproximately(2, 1e-9);
+                    extent.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+                }
+
+                var imageResponse = await fixture.Client.GetAsync(
+                    $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/exportImage{export}&f=image");
+                imageResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+                var image = await imageResponse.Content.ReadAsByteArrayAsync();
+
+                await using var connection = await fixture.Postgres.GetConnectionAsync(fixture.CurrentSchema);
+                await using var command = connection.CreateCommand();
+                command.CommandText = """
+                    WITH decoded AS (SELECT ST_FromGDALRaster(@data, 4326) AS rast)
+                    SELECT ST_Width(rast), ST_Height(rast),
+                           ST_XMin(ST_Envelope(rast)), ST_YMin(ST_Envelope(rast)),
+                           ST_XMax(ST_Envelope(rast)), ST_YMax(ST_Envelope(rast)),
+                           (ST_SummaryStats(rast, 1, true)).count,
+                           ST_Value(rast, 1, ST_SetSRID(ST_MakePoint(0.55, 1.05), 4326)),
+                           ST_Value(rast, 1, ST_SetSRID(ST_MakePoint(3.55, 1.05), 4326)),
+                           ST_Value(rast, 1, ST_SetSRID(ST_MakePoint(-2.05, 1.05), 4326)),
+                           ST_Value(rast, 1, ST_SetSRID(ST_MakePoint(2.05, -1.05), 4326))
+                    FROM decoded;
+                    """;
+                command.Parameters.AddWithValue("data", image);
+                await using var reader = await command.ExecuteReaderAsync();
+                (await reader.ReadAsync()).Should().BeTrue();
+
+                reader.GetInt32(0).Should().Be(80);
+                reader.GetInt32(1).Should().Be(40);
+                reader.GetDouble(2).Should().BeApproximately(-4, 1e-9);
+                reader.GetDouble(3).Should().BeApproximately(-2, 1e-9);
+                reader.GetDouble(4).Should().BeApproximately(4, 1e-9);
+                reader.GetDouble(5).Should().BeApproximately(2, 1e-9);
+                reader.GetInt64(6).Should().Be(800);
+                reader.GetDouble(7).Should().Be(20, "only the west raster covers x=0.55");
+                reader.GetDouble(8).Should().Be(40, "only the east raster covers x=3.55");
+                reader.IsDBNull(9).Should().BeTrue("x=-2.05 is west of every raster");
+                reader.IsDBNull(10).Should().BeTrue("y=-1.05 is south of every raster");
+            });
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/identify")]
+    [Operation(Operations.Identify)]
+    public async Task Identify_WithEsriEpochMillisecondTime_SelectsSameSliceAsIsoInstant()
+    {
+        // #4061: time-aware Esri clients send epoch milliseconds, the form timeInfo.timeExtent
+        // advertises. 2024-01-20 selects the newest batch at or before it, east (Jan 15), which is
+        // the only raster at x=2.5 in that batch (value 40).
+        var fixture = await CreateFixtureAsync(HonuaEdition.Pro, seedRasters: false);
+        try
+        {
+            await RasterIntegrationTestData.RunWithIssue522MosaicAsync(fixture, async () =>
+            {
+                var instant = new DateTimeOffset(2024, 1, 20, 0, 0, 0, TimeSpan.Zero);
+
+                (await IdentifyBand1Async(fixture, 2.5, $"{instant.ToUnixTimeMilliseconds()}")).Should().Be(40);
+                (await IdentifyBand1Async(fixture, 2.5, "2024-01-20T00:00:00Z")).Should().Be(40);
+            });
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/identify")]
+    [Operation(Operations.Identify, Operations.ErrorHandling)]
+    public async Task Identify_WithEsriTimeExtent_SelectsNewestBatchInsideWindow()
+    {
+        // #4061: time=<start>,<end> (epoch ms, either bound may be null) selects the newest batch
+        // inside the window. Batches: west Jan 1 (20, x[0,2]), east Jan 15 (40, x[2,4]),
+        // overlap-newest Feb 1 (5, x[1,3]).
+        var fixture = await CreateFixtureAsync(HonuaEdition.Pro, seedRasters: false);
+        try
+        {
+            await RasterIntegrationTestData.RunWithIssue522MosaicAsync(fixture, async () =>
+            {
+                var dec31 = Ms(2023, 12, 31);
+                var jan02 = Ms(2024, 1, 2);
+                var jan10 = Ms(2024, 1, 10);
+                var jan16 = Ms(2024, 1, 16);
+                var jan20 = Ms(2024, 1, 20);
+
+                (await IdentifyBand1Async(fixture, 1.5, $"{dec31},{jan10}")).Should().Be(20);
+                (await IdentifyBand1Async(fixture, 2.5, $"{jan10},{jan20}")).Should().Be(40);
+                (await IdentifyBand1Async(fixture, 1.5, $"{jan16},null")).Should().Be(5);
+                (await IdentifyBand1Async(fixture, 1.5, $"{jan02},{jan10}")).Should().BeNull(
+                    "no acquisition falls inside the window, so no raster is selected");
+
+                var reversed = await fixture.Client.GetAsync(
+                    $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/identify" +
+                    $"?geometry=1.5,1&geometryType=esriGeometryPoint&f=json&time={jan20},{jan10}");
+                await reversed.AssertGeoServicesErrorAsync(400);
+            });
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/query")]
+    [Operation(Operations.Query)]
+    public async Task QueryCatalog_WithEsriTimeExtent_ReturnsNewestBatchInsideWindow()
+    {
+        var fixture = await CreateFixtureAsync(HonuaEdition.Pro, seedRasters: false);
+        try
+        {
+            await RasterIntegrationTestData.RunWithIssue522MosaicAsync(fixture, async () =>
+            {
+                foreach (var time in new[] { $"{Ms(2024, 1, 10)},{Ms(2024, 1, 20)}", $"{Ms(2024, 1, 20)}" })
+                {
+                    var response = await fixture.Client.GetAsync(
+                        $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/query?f=json&returnGeometry=false&time={time}");
+                    var content = await response.Content.ReadAsStringAsync();
+                    response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+                    using var json = JsonDocument.Parse(content);
+                    var features = json.RootElement.GetProperty("features");
+                    features.GetArrayLength().Should().Be(1, $"only the east batch (Jan 15) matches time={time}");
+                    features[0].GetProperty("attributes").GetProperty("AcquisitionDate").GetInt64()
+                        .Should().Be(RasterIntegrationTestData.EastAcquisition.ToUnixTimeMilliseconds());
+                }
+            });
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/getSamples")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/computeStatisticsHistograms")]
+    [Operation(Operations.Export, Operations.Identify)]
+    public async Task ImageServerOperations_WithEsriEpochMillisecondTimeExtent_AreNotRejected()
+    {
+        // #4061: before the fix every ImageServer operation answered 400 to time=<start>,<end>.
+        // The Jan 10 - Jan 20 window selects only east (constant 40).
+        var fixture = await CreateFixtureAsync(HonuaEdition.Pro, seedRasters: false);
+        try
+        {
+            await RasterIntegrationTestData.RunWithIssue522MosaicAsync(fixture, async () =>
+            {
+                var time = $"{Ms(2024, 1, 10)},{Ms(2024, 1, 20)}";
+                var root = $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer";
+
+                var export = await fixture.Client.GetAsync($"{root}/exportImage?bbox=2,0,4,2&size=8,8&format=png&f=image&time={time}");
+                export.StatusCode.Should().Be(HttpStatusCode.OK, await export.Content.ReadAsStringAsync());
+                export.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+
+                var samples = await fixture.Client.GetAsync($"{root}/getSamples?geometry=2.5,1&geometryType=esriGeometryPoint&f=json&time={time}");
+                var samplesContent = await samples.Content.ReadAsStringAsync();
+                samples.StatusCode.Should().Be(HttpStatusCode.OK, samplesContent);
+                samplesContent.Should().Contain("40");
+
+                var statistics = await fixture.Client.GetAsync($"{root}/computeStatisticsHistograms?f=json&time={time}");
+                var statisticsContent = await statistics.Content.ReadAsStringAsync();
+                statistics.StatusCode.Should().Be(HttpStatusCode.OK, statisticsContent);
+            });
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private static long Ms(int year, int month, int day)
+        => new DateTimeOffset(year, month, day, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+
+    private static async Task<double?> IdentifyBand1Async(WebAppFixture fixture, double x, string time)
+    {
+        var response = await fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/identify" +
+            $"?geometry={x.ToString(System.Globalization.CultureInfo.InvariantCulture)},1&geometryType=esriGeometryPoint&f=json&time={time}");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+
+        using var json = JsonDocument.Parse(content);
+        if (json.RootElement.TryGetProperty("value", out var value) &&
+            value.ValueKind == JsonValueKind.String &&
+            value.GetString() == "NoData")
+        {
+            return null;
+        }
+
+        return json.RootElement.GetProperty("properties").GetProperty("Band_1").GetDouble();
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Query, Operations.PerformanceTesting)]
     public async Task QueryRasters_ForTenOverlappingRasters_CompletesWithinTwoSeconds()
     {

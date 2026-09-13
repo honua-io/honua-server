@@ -107,7 +107,7 @@ internal sealed class ImageServerSamplesHandler
                 return StandardErrorHelpers.CreateBadRequest(context, geometryError ?? "Invalid geometry.");
             }
 
-            if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeError))
+            if (!ImageServerMosaicHelpers.TryParseTime(GetString(values, "time"), out var timestamp, out var timeStart, out var timeError))
             {
                 ImageServerLog.InvalidIdentifyParameters(_logger, layerId, timeError ?? "Invalid time");
                 return StandardErrorHelpers.CreateBadRequest(context, timeError ?? "Invalid time.");
@@ -132,7 +132,7 @@ internal sealed class ImageServerSamplesHandler
                     .ConfigureAwait(false);
             }
 
-            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp);
+            var editionError = ImageServerMosaicHelpers.RequireTemporalMosaicAccess(context, timestamp, timeStart);
             if (editionError != null)
             {
                 return editionError;
@@ -159,6 +159,7 @@ internal sealed class ImageServerSamplesHandler
                     Geometry = ImageServerMosaicHelpers.CreatePointGeometry(point.X, point.Y),
                     GeometrySrid = srid,
                     Timestamp = timestamp,
+                    TimeStart = timeStart,
                 };
 
                 var selectedRasters = await _rasterStore.QueryRastersAsync(layerId, selectionQuery, cancellationToken);

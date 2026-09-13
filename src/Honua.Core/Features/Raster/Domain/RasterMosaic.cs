@@ -128,7 +128,15 @@ public readonly record struct RasterSelectionQuery
     /// effective acquisition equals the single most-recent acquisition across the layer at
     /// or before the requested instant ("newest batch" snapshot). Rasters from earlier
     /// acquisitions are excluded — layers with mixed-date scenes can therefore produce
-    /// spatial coverage gaps under a timestamp filter.
+    /// spatial coverage gaps under a timestamp filter. For an Esri <c>start,end</c> time extent this
+    /// is the extent end (or <c>null</c> for an open end).
     /// </summary>
     public DateTimeOffset? Timestamp { get; init; }
+
+    /// <summary>
+    /// Optional start of an Esri <c>start,end</c> time extent. When supplied, the newest-batch
+    /// acquisition must also be at or after this instant, so the selected batch is the newest one
+    /// inside the requested window (nothing matches when no acquisition falls inside it).
+    /// </summary>
+    public DateTimeOffset? TimeStart { get; init; }
 }

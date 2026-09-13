@@ -874,6 +874,284 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         }
     }
 
+    // #4060: Esri clients paint exportImage pixels across the requested bbox, so a bbox reaching past
+    // the raster must return an image covering the whole bbox with NoData outside the data.
+    // Fixture: a 2x2 8BUI raster over x[0,10] y[0,10] (5-degree pixels, NoData 255) holding 1 2 / 3 4.
+    // bbox [-10,10] at 40x40 gives 0.5-degree output pixels whose grid lines land on 0, so the data is
+    // exactly the upper-right 20x20 pixels (400 valid) and the other three quadrants are NoData.
+    [IntegrationTest]
+    public async Task ExportImageAsync_WithCoverClipExtent_CoversRequestedBboxWithNoDataOutsideRaster()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            var rasterId = await InsertQuadrantRasterAsync(schemaName);
+            var store = CreateStore(schemaName);
+            var query = CreateCoverClipQuery(-10, -10, 10, 10, width: 40, height: 40);
+
+            var result = await store.ExportImageAsync(LayerId, rasterId, query).ConfigureAwait(false);
+
+            result.Width.Should().Be(40);
+            result.Height.Should().Be(40);
+            result.Srid.Should().Be(4326);
+            result.Extent.Should().NotBeNull();
+            result.Extent!.Value.XMin.Should().BeApproximately(-10, 1e-9);
+            result.Extent.Value.YMin.Should().BeApproximately(-10, 1e-9);
+            result.Extent.Value.XMax.Should().BeApproximately(10, 1e-9);
+            result.Extent.Value.YMax.Should().BeApproximately(10, 1e-9);
+
+            var probe = await ProbeExportedRasterAsync(
+                schemaName,
+                result.Data,
+                srid: 4326,
+                (2.25, 7.25), (7.25, 7.25), (2.25, 2.25), (7.25, 2.25),
+                (-4.75, 4.75), (4.75, -4.75), (-4.75, -4.75));
+
+            probe.Width.Should().Be(40);
+            probe.Height.Should().Be(40);
+            probe.XMin.Should().BeApproximately(-10, 1e-9);
+            probe.YMin.Should().BeApproximately(-10, 1e-9);
+            probe.XMax.Should().BeApproximately(10, 1e-9);
+            probe.YMax.Should().BeApproximately(10, 1e-9);
+            probe.NoData.Should().Be(255);
+            probe.ValidPixels.Should().Be(400);
+            probe.Values.Should().Equal(1, 2, 3, 4, null, null, null);
+
+            // Without CoverClipExtent the store keeps trim semantics (WCS/Coverages): the output is
+            // the bbox-raster intersection only.
+            var trimmed = await store.ExportImageAsync(LayerId, rasterId, query with { CoverClipExtent = false }).ConfigureAwait(false);
+            trimmed.Extent!.Value.XMin.Should().BeApproximately(0, 1e-9);
+            trimmed.Extent.Value.YMin.Should().BeApproximately(0, 1e-9);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    // #4060 with imageSR: the bbox is reprojected into the output SRID and the image covers that
+    // envelope. Expected Web Mercator ordinates use the spherical closed form, independent of PostGIS.
+    [IntegrationTest]
+    public async Task ExportImageAsync_WithCoverClipExtentAndOutputSrid_CoversReprojectedBbox()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            var rasterId = await InsertQuadrantRasterAsync(schemaName);
+            var store = CreateStore(schemaName);
+
+            var result = await store.ExportImageAsync(
+                    LayerId,
+                    rasterId,
+                    CreateCoverClipQuery(-10, -10, 10, 10, width: 64, height: 64) with { OutputSrid = 3857 })
+                .ConfigureAwait(false);
+
+            var (minX, minY) = ToWebMercator(-10, -10);
+            var (maxX, maxY) = ToWebMercator(10, 10);
+            var upperLeftData = ToWebMercator(2.5, 7.5);
+            var lowerRightData = ToWebMercator(7.5, 2.5);
+            var outsideData = ToWebMercator(-5, -5);
+
+            result.Width.Should().Be(64);
+            result.Height.Should().Be(64);
+            result.Srid.Should().Be(3857);
+
+            var probe = await ProbeExportedRasterAsync(
+                schemaName, result.Data, srid: 3857, upperLeftData, lowerRightData, outsideData);
+
+            probe.XMin.Should().BeApproximately(minX, 1e-3);
+            probe.YMin.Should().BeApproximately(minY, 1e-3);
+            probe.XMax.Should().BeApproximately(maxX, 1e-3);
+            probe.YMax.Should().BeApproximately(maxY, 1e-3);
+
+            // The data quadrant is exactly half of each axis (Mercator maps 0 to 0), so 32x32 pixels.
+            probe.ValidPixels.Should().Be(32 * 32);
+            probe.Values.Should().Equal(1, 4, null);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    // #4060 on the mosaic path: west x[0,2] = 20, overlap-newest x[1,3] = 5 (newest), east x[2,4] = 40,
+    // all y[0,2]. bbox [-4,-2,4,2] at 80x40 gives 0.1-degree pixels; the data covers x[0,4] y[0,2],
+    // i.e. 40x20 = 800 valid pixels, and the newest raster wins the overlaps.
+    [IntegrationTest]
+    public async Task ExportMosaicAsync_WithCoverClipExtent_CoversRequestedBboxWithNoDataOutsideRasters()
+    {
+        var (schemaName, ids) = await SeedMosaicStackAsync();
+        try
+        {
+            var store = CreateStore(schemaName);
+
+            var result = await store.ExportMosaicAsync(
+                    LayerId,
+                    [ids.West, ids.OverlapNewest, ids.East],
+                    RasterMergeStrategy.Newest,
+                    CreateCoverClipQuery(-4, -2, 4, 2, width: 80, height: 40),
+                    RasterMosaicOrdering.AcquisitionNewest)
+                .ConfigureAwait(false);
+
+            result.Width.Should().Be(80);
+            result.Height.Should().Be(40);
+
+            var probe = await ProbeExportedRasterAsync(
+                schemaName,
+                result.Data,
+                srid: 4326,
+                (0.55, 1.05), (1.55, 1.05), (2.55, 1.05), (3.55, 1.05),
+                (-2.05, 1.05), (2.05, -1.05));
+
+            probe.Width.Should().Be(80);
+            probe.Height.Should().Be(40);
+            probe.XMin.Should().BeApproximately(-4, 1e-9);
+            probe.YMin.Should().BeApproximately(-2, 1e-9);
+            probe.XMax.Should().BeApproximately(4, 1e-9);
+            probe.YMax.Should().BeApproximately(2, 1e-9);
+            probe.ValidPixels.Should().Be(800);
+            probe.Values.Should().Equal(20, 5, 5, 40, null, null);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    // #4061: an Esri start,end time extent selects the newest acquisition batch inside the window.
+    [IntegrationTest]
+    public async Task QueryRastersAsync_WithTimeExtent_SelectsNewestBatchInsideWindow()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            await InsertRasterAsync(schemaName, "jan", DateTimeOffset.Parse("2024-01-01T00:00:00Z", CultureInfo.InvariantCulture), 0, 1);
+            await InsertRasterAsync(schemaName, "feb", DateTimeOffset.Parse("2024-02-01T00:00:00Z", CultureInfo.InvariantCulture), 0, 1);
+            await InsertRasterAsync(schemaName, "mar", DateTimeOffset.Parse("2024-03-01T00:00:00Z", CultureInfo.InvariantCulture), 0, 1);
+            var store = CreateStore(schemaName);
+
+            async Task<string[]> SelectAsync(string? start, string? end)
+            {
+                var rasters = await store.QueryRastersAsync(
+                    LayerId,
+                    new RasterSelectionQuery
+                    {
+                        TimeStart = start is null ? null : DateTimeOffset.Parse(start, CultureInfo.InvariantCulture),
+                        Timestamp = end is null ? null : DateTimeOffset.Parse(end, CultureInfo.InvariantCulture)
+                    }).ConfigureAwait(false);
+                return rasters.Select(raster => raster.Name).ToArray();
+            }
+
+            (await SelectAsync("2024-01-15T00:00:00Z", "2024-02-15T00:00:00Z")).Should().Equal("feb");
+            (await SelectAsync("2024-02-15T00:00:00Z", null)).Should().Equal("mar");
+            (await SelectAsync(null, "2024-02-15T00:00:00Z")).Should().Equal("feb");
+            (await SelectAsync("2024-01-02T00:00:00Z", "2024-01-20T00:00:00Z")).Should().BeEmpty(
+                "no acquisition falls inside the window, so an older batch must not leak in");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    private static RasterQuery CreateCoverClipQuery(double minX, double minY, double maxX, double maxY, int width, int height)
+        => new()
+        {
+            OutputFormat = RasterFormat.TIFF,
+            ClipRegion = new RasterClipRegion
+            {
+                Geometry = CreateEnvelopeWkb(minX, minY, maxX, maxY),
+                Srid = 4326,
+            },
+            CoverClipExtent = true,
+            OutputWidth = width,
+            OutputHeight = height,
+            ResamplingAlgorithm = ResamplingAlgorithm.NearestNeighbor,
+        };
+
+    private static (double X, double Y) ToWebMercator(double lon, double lat)
+    {
+        const double earthRadius = 6378137.0;
+        return (
+            lon * Math.PI / 180.0 * earthRadius,
+            Math.Log(Math.Tan(Math.PI / 4.0 + lat * Math.PI / 360.0)) * earthRadius);
+    }
+
+    private sealed record ExportedRasterProbe(
+        int Width,
+        int Height,
+        double XMin,
+        double YMin,
+        double XMax,
+        double YMax,
+        long ValidPixels,
+        double? NoData,
+        double?[] Values);
+
+    private async Task<ExportedRasterProbe> ProbeExportedRasterAsync(
+        string schemaName,
+        byte[] exportedRaster,
+        int srid,
+        params (double X, double Y)[] points)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            WITH decoded AS (SELECT ST_FromGDALRaster(@data, @srid) AS rast)
+            SELECT ST_Width(rast),
+                   ST_Height(rast),
+                   ST_XMin(ST_Envelope(rast)),
+                   ST_YMin(ST_Envelope(rast)),
+                   ST_XMax(ST_Envelope(rast)),
+                   ST_YMax(ST_Envelope(rast)),
+                   COALESCE((ST_SummaryStats(rast, 1, true)).count, 0),
+                   ST_BandNoDataValue(rast, 1),
+                   ARRAY(
+                       SELECT ST_Value(rast, 1, ST_SetSRID(ST_MakePoint(p.x, p.y), @srid))
+                       FROM unnest(@xs, @ys) WITH ORDINALITY AS p(x, y, ord)
+                       ORDER BY p.ord)
+            FROM decoded;
+            """;
+        command.Parameters.AddWithValue("data", exportedRaster);
+        command.Parameters.AddWithValue("srid", srid);
+        command.Parameters.AddWithValue("xs", points.Select(point => point.X).ToArray());
+        command.Parameters.AddWithValue("ys", points.Select(point => point.Y).ToArray());
+        await using var reader = await command.ExecuteReaderAsync();
+        await reader.ReadAsync();
+        return new ExportedRasterProbe(
+            reader.GetInt32(0),
+            reader.GetInt32(1),
+            reader.GetDouble(2),
+            reader.GetDouble(3),
+            reader.GetDouble(4),
+            reader.GetDouble(5),
+            reader.GetInt64(6),
+            reader.IsDBNull(7) ? null : reader.GetDouble(7),
+            reader.GetFieldValue<double?[]>(8));
+    }
+
+    private async Task<long> InsertQuadrantRasterAsync(string schemaName)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO raster_data (layer_id, name, raster, acquisition_date, created_at)
+            SELECT @layerId,
+                   'quadrant',
+                   ST_SetValues(
+                       ST_AddBand(ST_MakeEmptyRaster(2, 2, 0, 10, 5, -5, 0, 0, 4326), '8BUI'::text, 0, 255),
+                       1, 1, 1, ARRAY[[1, 2], [3, 4]]::double precision[][]),
+                   NOW(),
+                   NOW()
+            RETURNING id;
+            """;
+        command.Parameters.AddWithValue("layerId", LayerId);
+        return (long)(await command.ExecuteScalarAsync().ConfigureAwait(false))!;
+    }
+
     private async Task<(long Count, double Min, double Max)> SummarizeValidPixelsAsync(string schemaName, byte[] exportedRaster)
     {
         await using var connection = await fixture.GetConnectionAsync(schemaName);

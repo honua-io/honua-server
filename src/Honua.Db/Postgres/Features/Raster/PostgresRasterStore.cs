@@ -145,18 +145,16 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         var timestampCte = string.Empty;
         var timestampWhereClause = string.Empty;
-        if (query.Timestamp.HasValue)
+        if (query.Timestamp.HasValue || query.TimeStart.HasValue)
         {
             timestampCte = $"""
                 , selected_time AS (
                     SELECT MAX(COALESCE(acquisition_date, created_at)) AS target_acquisition
                     FROM {_rasterDataTable}
-                    WHERE {layerWhereClause}
-                      AND COALESCE(acquisition_date, created_at) <= @timestamp
+                    WHERE {layerWhereClause}{BuildTimeBoundsClause(query.Timestamp, query.TimeStart, parameters)}
                 )
                 """;
             timestampWhereClause = "WHERE effective_acquisition = (SELECT target_acquisition FROM selected_time)";
-            parameters.Add(("@timestamp", query.Timestamp.Value.UtcDateTime));
         }
 
         await using var command = connection.CreateCommand();
@@ -357,18 +355,16 @@ internal sealed class PostgresRasterStore : IRasterStore
             whereClauses.Add("id = ANY(@objectIds)");
         }
 
-        if (query.Timestamp is { } timestamp)
+        if (query.Timestamp.HasValue || query.TimeStart.HasValue)
         {
             cteParts.Add($"""
                 selected_time AS (
                     SELECT MAX(COALESCE(acquisition_date, created_at)) AS target_acquisition
                     FROM {_rasterDataTable}
-                    WHERE layer_id = @layerId
-                      AND COALESCE(acquisition_date, created_at) <= @timestamp
+                    WHERE layer_id = @layerId{BuildTimeBoundsClause(query.Timestamp, query.TimeStart, parameters)}
                 )
                 """);
             whereClauses.Add("COALESCE(acquisition_date, created_at) = (SELECT target_acquisition FROM selected_time)");
-            parameters.Add(("@timestamp", timestamp.UtcDateTime));
         }
 
         var filteredCte = $"""
@@ -411,6 +407,30 @@ internal sealed class PostgresRasterStore : IRasterStore
         RasterCatalogSpatialRelation.Overlaps => "ST_Overlaps(ST_Envelope(rd.raster), fs.geom)",
         _ => "ST_Intersects(ST_Envelope(rd.raster), fs.geom)",
     };
+
+    // Newest-batch time bounds: an instant (or an Esri extent end) caps the effective acquisition
+    // from above, and an extent start bounds it from below, so the selected batch is the newest
+    // acquisition inside the requested window.
+    private static string BuildTimeBoundsClause(
+        DateTimeOffset? timestamp,
+        DateTimeOffset? timeStart,
+        List<(string Name, object Value)> parameters)
+    {
+        var clause = string.Empty;
+        if (timestamp is { } end)
+        {
+            clause += "\n  AND COALESCE(acquisition_date, created_at) <= @timestamp";
+            parameters.Add(("@timestamp", end.UtcDateTime));
+        }
+
+        if (timeStart is { } start)
+        {
+            clause += "\n  AND COALESCE(acquisition_date, created_at) >= @timeStart";
+            parameters.Add(("@timeStart", start.UtcDateTime));
+        }
+
+        return clause;
+    }
 
     private static string BuildCatalogCommandText(string ctePrefix, RasterCatalogQuery query, bool includeAggregate)
     {
@@ -561,28 +581,26 @@ internal sealed class PostgresRasterStore : IRasterStore
         var hasOutputDimensions = query.OutputWidth is > 0 && query.OutputHeight is > 0;
         if (!hasOutputDimensions && query.PixelSize is { } pixelSize)
         {
-            var algorithm = query.ResamplingAlgorithm switch
-            {
-                ResamplingAlgorithm.NearestNeighbor => "NearestNeighbor",
-                ResamplingAlgorithm.Bilinear => "Bilinear",
-                ResamplingAlgorithm.Bicubic => "Cubic",
-                ResamplingAlgorithm.Lanczos => "Lanczos",
-                _ => "NearestNeighbor"
-            };
-            if (!_allowedResamplingAlgorithms.Contains(algorithm))
-            {
-                throw new ArgumentException($"Unsupported resampling algorithm: {algorithm}");
-            }
+            var algorithm = ResolveResamplingAlgorithm(query.ResamplingAlgorithm);
 
             rasterExpr = $"ST_Rescale({rasterExpr}, @pixelW, @pixelH, '{algorithm}')";
             extraParams.Add(("@pixelW", pixelSize.Width));
             extraParams.Add(("@pixelH", pixelSize.Height));
         }
 
+        // When the output must cover the clip envelope (Esri exportImage bbox, #4060), steps 3 and 4
+        // are replaced by the frame CTEs below, which warp the pipeline output onto a grid spanning
+        // the envelope in the output SRID at the exact requested size.
+        var frameClipExtent = ShouldFrameClipExtent(query, hasOutputDimensions);
+
         // 3. Reproject output if requested.
         if (query.OutputSrid.HasValue && query.OutputSrid.Value > 0)
         {
-            rasterExpr = $"ST_Transform({rasterExpr}, @outputSrid)";
+            if (!frameClipExtent)
+            {
+                rasterExpr = $"ST_Transform({rasterExpr}, @outputSrid)";
+            }
+
             extraParams.Add(("@outputSrid", query.OutputSrid.Value));
         }
 
@@ -592,10 +610,19 @@ internal sealed class PostgresRasterStore : IRasterStore
         // grid and drift the output off the requested size (the exportImage size contract).
         if (hasOutputDimensions)
         {
-            rasterExpr = $"ST_Resize({rasterExpr}, @outputWidth, @outputHeight)";
+            if (!frameClipExtent)
+            {
+                rasterExpr = $"ST_Resize({rasterExpr}, @outputWidth, @outputHeight)";
+            }
+
             extraParams.Add(("@outputWidth", query.OutputWidth!.Value));
             extraParams.Add(("@outputHeight", query.OutputHeight!.Value));
         }
+
+        var sourceCteName = frameClipExtent ? "frame_source" : "transformed";
+        var frameCtes = frameClipExtent
+            ? BuildClipExtentFrameCtes(sourceCteName, query.ClipRegion!.Value, query.OutputSrid, ResolveResamplingAlgorithm(query.ResamplingAlgorithm))
+            : string.Empty;
 
         // COG export: use creation options for proper internal tiling.
         // If the COG GDAL driver is unavailable, fall back to GTiff with COG-compatible options.
@@ -615,11 +642,11 @@ internal sealed class PostgresRasterStore : IRasterStore
 
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
-            WITH transformed AS (
+            WITH {sourceCteName} AS (
                 SELECT {rasterExpr} AS rast
                 FROM {_rasterDataTable}
                 WHERE layer_id = @layerId AND id = @rasterId
-            )
+            ){frameCtes}
             SELECT ST_AsGDALRaster(rast, '{effectiveFormat}'{creationOptionsClause}) AS data,
                    ST_Width(rast) AS width,
                    ST_Height(rast) AS height,
@@ -1056,6 +1083,93 @@ internal sealed class PostgresRasterStore : IRasterStore
         var resolutions = usable.Select(c => (c.Resolution, c.Resolution)).ToList();
         var bestIndex = OverviewLevelSelector.SelectBestIndex(tileSpan, tileSpan, 256, 256, resolutions);
         return bestIndex >= 0 ? usable[bestIndex].Id : null;
+    }
+
+    private static string ResolveResamplingAlgorithm(ResamplingAlgorithm resamplingAlgorithm)
+    {
+        var algorithm = resamplingAlgorithm switch
+        {
+            ResamplingAlgorithm.NearestNeighbor => "NearestNeighbor",
+            ResamplingAlgorithm.Bilinear => "Bilinear",
+            ResamplingAlgorithm.Bicubic => "Cubic",
+            ResamplingAlgorithm.Lanczos => "Lanczos",
+            _ => "NearestNeighbor"
+        };
+        if (!_allowedResamplingAlgorithms.Contains(algorithm))
+        {
+            throw new ArgumentException($"Unsupported resampling algorithm: {algorithm}");
+        }
+
+        return algorithm;
+    }
+
+    // ----- Clip-extent framing (Esri exportImage bbox contract, #4060) --------
+    // ST_Clip+ST_Resize, and ST_Transform/ST_Resample onto a reference grid, all keep the SOURCE
+    // extent, so a bbox reaching past the raster came back as the bbox-raster intersection
+    // stretched to the requested size while every Esri client paints it across the whole bbox.
+    // The frame CTEs build an OutputWidth x OutputHeight grid spanning the clip envelope in the
+    // output SRID, warp the pipeline output onto it with one grid-aligned ST_Transform, and union
+    // that over an all-NoData canvas carrying the same bands, so the image covers exactly the
+    // requested envelope with NoData wherever the raster has no pixels.
+
+    private static bool ShouldFrameClipExtent(RasterQuery query, bool hasOutputDimensions)
+        => query.CoverClipExtent && hasOutputDimensions && query.ClipRegion is { Inverted: false };
+
+    /// <summary>
+    /// Builds the CTE chain (starting with a leading comma) that frames <paramref name="sourceCte"/>'s
+    /// <c>rast</c> onto the clip envelope and exposes the result as <c>transformed</c>. Binds
+    /// <c>@clipGeom</c>/<c>@clipSrid</c> (added by the clip-region <c>BuildClipExpression</c>),
+    /// <c>@outputWidth</c>/<c>@outputHeight</c> and, when <paramref name="outputSrid"/> is set,
+    /// <c>@outputSrid</c>. Bands without a NoData value get NoData 0 on the canvas so uncovered
+    /// pixels are still flagged NoData (transparent in PNG).
+    /// </summary>
+    internal static string BuildClipExtentFrameCtes(string sourceCte, RasterClipRegion clip, int? outputSrid, string algorithm)
+    {
+        var sourceSrid = $"ST_SRID({sourceCte}.rast)";
+        var targetSrid = outputSrid is > 0 ? "@outputSrid" : clip.Srid is > 0 ? "@clipSrid" : sourceSrid;
+        var envelopeGeom = clip.Srid is > 0
+            ? "ST_GeomFromWKB(@clipGeom, @clipSrid)"
+            : $"ST_GeomFromWKB(@clipGeom, {sourceSrid})";
+
+        return $"""
+            ,
+            frame_bounds AS (
+                SELECT ST_Envelope(ST_Transform({envelopeGeom}, {targetSrid})) AS geom,
+                       {targetSrid} AS srid
+                FROM {sourceCte}
+                WHERE {sourceCte}.rast IS NOT NULL
+            ),
+            frame_grid AS (
+                SELECT ST_MakeEmptyRaster(
+                    @outputWidth, @outputHeight,
+                    ST_XMin(fb.geom), ST_YMax(fb.geom),
+                    (ST_XMax(fb.geom) - ST_XMin(fb.geom)) / @outputWidth::double precision,
+                    -((ST_YMax(fb.geom) - ST_YMin(fb.geom)) / @outputHeight::double precision),
+                    0.0, 0.0, fb.srid) AS rast
+                FROM frame_bounds fb
+            ),
+            frame_data AS (
+                SELECT ST_Transform(s.rast, g.rast, '{algorithm}') AS rast
+                FROM {sourceCte} s, frame_grid g
+                WHERE s.rast IS NOT NULL
+            ),
+            frame_canvas AS (
+                SELECT ST_AddBand(g.rast, ARRAY(
+                           SELECT ROW(NULL, m.pixeltype, COALESCE(m.nodatavalue, 0), COALESCE(m.nodatavalue, 0))::addbandarg
+                           FROM generate_series(1, ST_NumBands(d.rast)) AS n,
+                                LATERAL ST_BandMetaData(d.rast, n) AS m
+                           ORDER BY n)) AS rast
+                FROM frame_grid g, frame_data d
+            ),
+            transformed AS (
+                SELECT ST_Union(layers.rast, 'LAST' ORDER BY layers.layer_order) AS rast
+                FROM (
+                    SELECT rast, 1 AS layer_order FROM frame_canvas
+                    UNION ALL
+                    SELECT rast, 2 AS layer_order FROM frame_data
+                ) layers
+            )
+            """;
     }
 
     // ----- Clip execution (export bbox + renderingRule Clip raster function) ---
@@ -1742,27 +1856,24 @@ internal sealed class PostgresRasterStore : IRasterStore
         var hasOutputDimensions = query.OutputWidth is > 0 && query.OutputHeight is > 0;
         if (!hasOutputDimensions && query.PixelSize is { } pixelSize)
         {
-            var algorithm = query.ResamplingAlgorithm switch
-            {
-                ResamplingAlgorithm.NearestNeighbor => "NearestNeighbor",
-                ResamplingAlgorithm.Bilinear => "Bilinear",
-                ResamplingAlgorithm.Bicubic => "Cubic",
-                ResamplingAlgorithm.Lanczos => "Lanczos",
-                _ => "NearestNeighbor"
-            };
-            if (!_allowedResamplingAlgorithms.Contains(algorithm))
-            {
-                throw new ArgumentException($"Unsupported resampling algorithm: {algorithm}");
-            }
+            var algorithm = ResolveResamplingAlgorithm(query.ResamplingAlgorithm);
 
             postMergeRasterExpr = $"ST_Rescale({postMergeRasterExpr}, @pixelW, @pixelH, '{algorithm}')";
             extraParams.Add(("@pixelW", pixelSize.Width));
             extraParams.Add(("@pixelH", pixelSize.Height));
         }
 
+        // Covering the clip envelope (Esri exportImage bbox, #4060) replaces the in-place
+        // reprojection and resize with the frame CTEs, exactly as on the single-raster path.
+        var frameClipExtent = ShouldFrameClipExtent(query, hasOutputDimensions);
+
         if (query.OutputSrid.HasValue && query.OutputSrid.Value > 0)
         {
-            postMergeRasterExpr = $"ST_Transform({postMergeRasterExpr}, @outputSrid)";
+            if (!frameClipExtent)
+            {
+                postMergeRasterExpr = $"ST_Transform({postMergeRasterExpr}, @outputSrid)";
+            }
+
             extraParams.Add(("@outputSrid", query.OutputSrid.Value));
         }
 
@@ -1771,10 +1882,19 @@ internal sealed class PostgresRasterStore : IRasterStore
         // echo the requested size (the exportImage size contract).
         if (hasOutputDimensions)
         {
-            postMergeRasterExpr = $"ST_Resize({postMergeRasterExpr}, @outputWidth, @outputHeight)";
+            if (!frameClipExtent)
+            {
+                postMergeRasterExpr = $"ST_Resize({postMergeRasterExpr}, @outputWidth, @outputHeight)";
+            }
+
             extraParams.Add(("@outputWidth", query.OutputWidth!.Value));
             extraParams.Add(("@outputHeight", query.OutputHeight!.Value));
         }
+
+        var mosaicSourceCteName = frameClipExtent ? "frame_source" : "transformed";
+        var mosaicFrameCtes = frameClipExtent
+            ? BuildClipExtentFrameCtes(mosaicSourceCteName, query.ClipRegion!.Value, query.OutputSrid, ResolveResamplingAlgorithm(query.ResamplingAlgorithm))
+            : string.Empty;
 
         var creationOptionsClause = "";
         var effectiveFormat = formatName;
@@ -1875,11 +1995,11 @@ internal sealed class PostgresRasterStore : IRasterStore
                 FROM source
                 WHERE rast IS NOT NULL
             ),
-            transformed AS (
+            {mosaicSourceCteName} AS (
                 SELECT {postMergeRasterExpr} AS rast
                 FROM merged
                 WHERE rast IS NOT NULL
-            )
+            ){mosaicFrameCtes}
             SELECT ST_AsGDALRaster(rast, '{effectiveFormat}'{creationOptionsClause}) AS data,
                    ST_Width(rast) AS width,
                    ST_Height(rast) AS height,
