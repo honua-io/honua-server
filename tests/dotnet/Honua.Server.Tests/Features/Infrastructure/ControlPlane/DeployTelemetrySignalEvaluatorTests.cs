@@ -1745,6 +1745,81 @@ public sealed class DeployTelemetrySignalEvaluatorTests
     }
 
     [Fact]
+    public async Task EvaluateStagedCandidateAsync_GoldenQueryServiceMissing_PreservesReasonAtExposureDeadline()
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        var evaluator = CreateEvaluator(capturedQueries);
+        var parameters = StagedMetricsParameters(
+            ("telemetry.exposure_deadline_seconds", "600"),
+            ("telemetry.golden_query.url", "http://127.0.0.1:18081/query"),
+            ("telemetry.golden_query.expected_contains", "\"features\""));
+        parameters.Remove("telemetry.healthz.url");
+
+        var holding = await evaluator.EvaluateStagedCandidateAsync(
+            CreateOperation(DeployTargetKind.SelfHostedRolling, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-1)),
+            candidateReady: true);
+        var escalated = await evaluator.EvaluateStagedCandidateAsync(
+            CreateOperation(DeployTargetKind.SelfHostedRolling, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-11)),
+            candidateReady: true);
+
+        holding!.WaitForMoreTelemetry.Should().BeTrue();
+        holding.RollbackRecommended.Should().BeFalse();
+        holding.Message.Should().Contain("golden-query correctness gate is configured but no probe service is available");
+        escalated!.RollbackRecommended.Should().BeTrue();
+        escalated.WaitForMoreTelemetry.Should().BeFalse();
+        escalated.Message.Should().Contain("beyond the 600-second exposure deadline");
+        escalated.Message.Should().Contain("golden-query correctness gate is configured but no probe service is available");
+        capturedQueries.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task EvaluateStagedCandidateAsync_ReadyAfterDeadlineWithoutConfiguredProbes_FailsWithoutActivation(bool probeServiceAvailable)
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 0 });
+        var evaluator = CreateEvaluator(capturedQueries, healthProbe: probeServiceAvailable ? probe : null);
+        var parameters = StagedMetricsParameters(("telemetry.exposure_deadline_seconds", "600"));
+        parameters.Remove("telemetry.healthz.url");
+
+        var decision = await evaluator.EvaluateStagedCandidateAsync(
+            CreateOperation(DeployTargetKind.SelfHostedRolling, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-11)),
+            candidateReady: true);
+
+        decision!.RollbackRecommended.Should().BeTrue();
+        decision.WaitForMoreTelemetry.Should().BeFalse();
+        decision.Message.Should().Contain("was not ready for cutover within the 600-second exposure deadline");
+        probe.Invocations.Should().Be(0);
+        probe.GoldenInvocations.Should().Be(0);
+        capturedQueries.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task EvaluateStagedCandidateAsync_ReadyAfterDeadlineWithGoldenQuery_FailsWithoutProbing()
+    {
+        var capturedQueries = new ConcurrentQueue<string>();
+        var probe = new FakeHealthProbe(new DeployHealthProbeResult { Attempts = 3, Failures = 0 });
+        var evaluator = CreateEvaluator(capturedQueries, healthProbe: probe);
+        var parameters = StagedMetricsParameters(
+            ("telemetry.exposure_deadline_seconds", "600"),
+            ("telemetry.golden_query.url", "http://127.0.0.1:18081/query"),
+            ("telemetry.golden_query.expected_contains", "\"features\""));
+        parameters.Remove("telemetry.healthz.url");
+
+        var decision = await evaluator.EvaluateStagedCandidateAsync(
+            CreateOperation(DeployTargetKind.SelfHostedRolling, parameters, createdAt: DateTimeOffset.UtcNow.AddMinutes(-11)),
+            candidateReady: true);
+
+        decision!.RollbackRecommended.Should().BeTrue();
+        decision.WaitForMoreTelemetry.Should().BeFalse();
+        decision.Message.Should().Contain("was not ready for cutover within the 600-second exposure deadline");
+        probe.Invocations.Should().Be(0);
+        probe.GoldenInvocations.Should().Be(0);
+        capturedQueries.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task EvaluateStagedCandidateAsync_NoTelemetryPolicy_ReturnsNull()
     {
         var evaluator = CreateEvaluator(new ConcurrentQueue<string>());

@@ -234,6 +234,17 @@ internal sealed class DeployTelemetrySignalEvaluator(
             return InvalidPolicyDecision(operation.Deploy, operation.CreatedAt, policy);
         }
 
+        // A missing probe service is unavailable evidence, even when the backend is ready. Preserve
+        // that specific reason at the exposure deadline. With no service these helpers return a
+        // bounded decision without running a probe, so an expired candidate still cannot cut over.
+        if (candidateReady && healthProbe == null && (policy.HasHealthProbe || policy.HasGoldenQuery))
+        {
+            var missingProbeDeadline = EvidenceDeadline.BeforeExposure(operation.CreatedAt, policy);
+            return policy.HasHealthProbe
+                ? await EvaluateHealthProbeAsync(operation, policy, missingProbeDeadline, cancellationToken).ConfigureAwait(false)
+                : await EvaluateGoldenQueryAsync(operation, policy, missingProbeDeadline, cancellationToken).ConfigureAwait(false);
+        }
+
         // A staged candidate serves no traffic, so nothing traffic-dependent can describe it yet. Until
         // the backend's own health gate passes, hold only to the exposure deadline, then fail the rollout
         // without activating the candidate. The deadline bounds the whole staged phase: a standby that
