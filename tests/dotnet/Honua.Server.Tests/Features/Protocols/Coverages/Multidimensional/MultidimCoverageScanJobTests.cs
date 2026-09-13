@@ -117,6 +117,26 @@ public sealed class MultidimCoverageScanJobTests
     }
 
     [UnitTest]
+    public void TryMapArtifact_StorageCoordinatesOverrideClassicRasterOrientation()
+    {
+        foreach (var ascending in new[] { true, false })
+        {
+            var order = ascending ? "true" : "false";
+            var envelope = $$"""{"mdiminfo":{{GdalMdimInfoJson}},"info":{{GdalInfoJson}},"yAxisAscending":{{order}}}""";
+            var artifact = "data:application/json;base64," + Convert.ToBase64String(Encoding.UTF8.GetBytes(envelope));
+
+            var metadata = MultidimCoverageScanJob.TryMapArtifact(
+                artifact, MultidimensionalCoverageFormat.NetCdf4, Array.Empty<string>());
+
+            metadata.Should().NotBeNull();
+            metadata!.YAxisAscending.Should().Be(ascending);
+            metadata.Extent!.YMin.Should().Be(20.45);
+            metadata.Extent.YMax.Should().Be(20.85);
+            metadata.Resolution.Should().Be((0.1, 0.1));
+        }
+    }
+
+    [UnitTest]
     public void TryGetZarrRootPath_ReadsDerivedZarrFromEnvelope()
     {
         var envelope = """{"mdiminfo":""" + GdalMdimInfoJson + ""","zarr":{"rootPath":"maui/sst.zarr"}}""";

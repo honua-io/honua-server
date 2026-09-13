@@ -1259,7 +1259,7 @@
     {
       "id": "NB-DDB-NULL-01",
       "scenarioFacetId": "SF-GEOM-NULL",
-      "description": "4 NULL and 6 populated description values across 10 rows — the server emits JSON null (not an omitted key or an empty string) and no row was dropped."
+      "description": "4 NULL and 6 populated description values across 10 rows \u2014 the server emits JSON null (not an omitted key or an empty string) and no row was dropped."
     },
     {
       "id": "NB-DDB-NULL-02",
@@ -1269,7 +1269,7 @@
     {
       "id": "NB-DDB-PAGE-03",
       "scenarioFacetId": "SF-PAGE-LIMIT",
-      "description": "5 pages of limit=3 produced [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] — exactly the full set, no duplicates, no gaps, and the walk terminated on an empty page."
+      "description": "5 pages of limit=3 produced [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] \u2014 exactly the full set, no duplicates, no gaps, and the walk terminated on an empty page."
     },
     {
       "id": "NB-DDB-PAGE-04",
@@ -1949,12 +1949,12 @@
     {
       "id": "NB-RSF-FMT-01",
       "scenarioFacetId": "SF-EXT-FORMAT",
-      "description": "End-to-end GeoPackage fidelity: the WFS response was written with sf::st_write() and read back with sf::st_read() — 10/10 rows, names match, empty geometries match, max coordinate...."
+      "description": "End-to-end GeoPackage fidelity: the WFS response was written with sf::st_write() and read back with sf::st_read() \u2014 10/10 rows, names match, empty geometries match, max coordinate...."
     },
     {
       "id": "NB-RSF-FMT-02",
       "scenarioFacetId": "SF-EXT-FORMAT",
-      "description": "End-to-end GeoJSON fidelity: the WFS response was written with sf::st_write() and read back with sf::st_read() — 10/10 rows, names match, empty geometries match, max coordinate deviation...."
+      "description": "End-to-end GeoJSON fidelity: the WFS response was written with sf::st_write() and read back with sf::st_read() \u2014 10/10 rows, names match, empty geometries match, max coordinate deviation...."
     },
     {
       "id": "NB-RSF-FMT-03",

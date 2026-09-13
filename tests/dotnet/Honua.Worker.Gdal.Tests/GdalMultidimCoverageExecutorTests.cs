@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
@@ -62,6 +63,42 @@ public sealed class GdalMultidimCoverageExecutorTests
 
         context.Artifacts.Should().ContainSingle()
             .Which.Should().StartWith("data:application/json");
+    }
+
+    [UnitTest]
+    public async Task Execute_CoordinateEndpoints_PreserveAscendingAndDescendingStorageOrder()
+    {
+        foreach (var ascending in new[] { true, false })
+        {
+            foreach (var indexing in new[] { "\"/latitude\"", "{\"latitude\":{\"full_name\":\"/latitude\"}}" })
+            {
+                var structure = "{\"type\":\"group\",\"dimensions\":[{\"type\":\"HORIZONTAL_Y\",\"indexing_variable\":" +
+                    indexing + "}],\"arrays\":{\"sst\":{\"datatype\":\"Float32\"}}}";
+                var coordinates = ascending
+                    ? "{\"values\":[37.70,\"[...]\",37.85]}"
+                    : "{\"values\":[37.85,\"[...]\",37.70]}";
+                var runner = new FakeGdalCommandRunner((tool, args, _) => new GdalCommandResult
+                {
+                    ExitCode = 0,
+                    StandardOutput = tool == "gdalmdiminfo"
+                        ? args.Contains("-array") ? coordinates : structure
+                        : "{}",
+                });
+                var executor = NewExecutor(runner, out _);
+                var job = GdalJobFactory.Job(GdalMultidimCoverageMetadataJobExecutor.HandledProcessId,
+                    ("provider", "AwsS3"), ("bucket", "cubes"), ("objectKey", "sst.nc"));
+                var context = new RecordingJobExecutionContext(job.OperationId);
+
+                var result = await executor.ExecuteAsync(job, context, default);
+
+                result.Status.Should().Be(ExecutionJobStatus.Succeeded);
+                var read = runner.Invocations.Should().ContainSingle(invocation =>
+                    invocation.Tool == "gdalmdiminfo" && invocation.Arguments.Contains("-array")).Subject;
+                read.Arguments.Should().Equal("-array", "/latitude", "-detailed", "-limit", "2", "/vsis3/cubes/sst.nc");
+                using var artifact = JsonDocument.Parse(DecodeDataUriJson(context.Artifacts.Should().ContainSingle().Subject));
+                artifact.RootElement.GetProperty("yAxisAscending").GetBoolean().Should().Be(ascending);
+            }
+        }
     }
 
     [UnitTest]
