@@ -25,12 +25,23 @@ if git diff --quiet HEAD -- "${GENERATED_FILES[@]}"; then
   echo 'Generated files are up to date; nothing to publish.'
   exit 0
 fi
+# Validation stays bound to the triggering source even on an old rerun. A
+# stale run must not replace the automation PR generated from newer trunk.
+source_sha="$(git rev-parse HEAD)"
+remote_trunk="$(git ls-remote --exit-code origin refs/heads/trunk)"
+remote_trunk="${remote_trunk%%[[:space:]]*}"
+if [[ "$source_sha" != "$remote_trunk" ]]; then
+  echo "Validated source $source_sha; trunk is now $remote_trunk. No stale projections published."
+  exit 0
+fi
+: "${GH_TOKEN:?MERGE_TRAIN_TOKEN is required to publish a PR and trigger its admission checks}"
 git diff --stat HEAD -- "${GENERATED_FILES[@]}"
 
 git add -- "${GENERATED_FILES[@]}"
-git -c user.name='github-actions[bot]' \
-    -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+git -c user.name='Mike McDougall' \
+    -c user.email='mike@honua.io' \
     commit -m "${title}" \
+    -m "Generated-From: ${source_sha}" \
     -m 'Refs #3213 (perpetual generated-file sync; never closes the epic)'
 
 # One automation-owned branch: a failed `gh pr create` never leaves a new
@@ -44,8 +55,13 @@ git -c user.name='github-actions[bot]' \
 # `git push` whose ref is a shell variable everywhere outside its own
 # allowlist -- that is exactly how a disguised trunk push would read. Keep
 # this literal in sync with `branch` above by hand.
-git fetch origin "refs/heads/${branch}:refs/remotes/origin/${branch}" || true
-git push --force-with-lease origin HEAD:refs/heads/automation/regenerate-generated-files
+# Read an explicit lease: an absent branch is valid; an API/network failure
+# is not. Credentials are resolved only for this push and never stored by checkout.
+remote_branch="$(git ls-remote origin "refs/heads/${branch}")"
+remote_branch="${remote_branch%%[[:space:]]*}"
+git -c credential.helper= -c 'credential.helper=!gh auth git-credential' \
+  push --force-with-lease="refs/heads/automation/regenerate-generated-files:${remote_branch}" \
+  origin HEAD:refs/heads/automation/regenerate-generated-files
 
 existing="$(gh pr list --state open --head "${branch}" --base trunk --json number --jq '.[0].number // empty')"
 if [[ -n "${existing}" ]]; then
