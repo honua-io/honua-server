@@ -6025,7 +6025,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 121,
+      "line": 123,
       "language": "json"
     },
     {
@@ -6038,7 +6038,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 117,
+      "line": 119,
       "language": "json"
     },
     {
@@ -6051,7 +6051,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 191,
+      "line": 193,
       "language": "json"
     },
     {
@@ -6064,7 +6064,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 125,
+      "line": 127,
       "language": "json"
     },
     {
@@ -6077,7 +6077,7 @@
         "check": "inventory-classification"
       },
       "fence": 9,
-      "line": 251,
+      "line": 253,
       "language": "powershell"
     },
     {
@@ -6090,7 +6090,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 203,
+      "line": 205,
       "language": "powershell"
     },
     {
@@ -6103,7 +6103,7 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 220,
+      "line": 222,
       "language": "powershell"
     },
     {
@@ -6116,7 +6116,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 129,
+      "line": 131,
       "language": "json"
     },
     {
@@ -6129,7 +6129,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 111,
+      "line": 113,
       "language": "json"
     },
     {

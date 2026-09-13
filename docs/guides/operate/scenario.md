@@ -32,7 +32,9 @@ The September 13 replay of the accepted `7ba4226` image passes the four
 observation calls in step 2, but the protected-update journey remains blocked.
 Its [read observation](evidence/3302-candidate-read-observation.json) and
 [installed staging recheck](evidence/3302-candidate-staging-recheck.json)
-establish these limits:
+establish these limits. A separate [catalog replay](evidence/3302-candidate-catalog.json)
+discovers all five named scenario tools across five pages and verifies the
+finding-proposal input schema; discovery does not execute a proposal:
 
 | Check | Observed result and operator decision |
 |---|---|

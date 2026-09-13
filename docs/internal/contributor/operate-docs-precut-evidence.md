@@ -44,8 +44,12 @@ Four REST reads and four MCP calls passed the recorded status/shape checks.
 Independently specified fixture assertions establish empty findings/events,
 disabled alerting with absent observation/success clocks, and partial aggregate
 coverage on REST and MCP. No deployment-source outage or proposal attempt was
-made. The catalog probe read only its first page, so a full descriptor/capability
-drift check remains unmet. The image returns status schema `1.0`, not the corrected
+made. A subsequent [catalog replay](../../guides/operate/evidence/3302-candidate-catalog.json)
+follows all five pages of the authenticated `full` view (56 descriptors), rejects
+duplicates/cursor cycles, finds all five named scenario tools, and checks the
+required string inputs `findingId` and `candidateId`. Descriptor hashes are retained.
+This checks the scenario tool inventory, not full Admin MCP parity or actuation.
+The image returns status schema `1.0`, not the corrected
 `1.1` contract, and the admin version response omits `sourceRevision`; image
 identity was checked through Docker's digest and OCI revision before boot.
 Neither result establishes deployment protection or installed-client execution.

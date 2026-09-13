@@ -1,0 +1,94 @@
+{
+  "schemaVersion": "honua.operate-catalog-observation/v1",
+  "observedAt": "2026-09-13T07:03:40.3028085+00:00",
+  "candidate": {
+    "sha": "7ba422672e0c751843b17beb36e954a019cc19fb",
+    "image": "ghcr.io/honua-io/honua-server:nightly-aot-7ba4226",
+    "digest": "sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd",
+    "reference": "ghcr.io/honua-io/honua-server@sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd",
+    "manifestSha256": "8c71ca3c29d0a09676d579f918c1a2627556f257f7ac80454fe840ff7a6e3bec"
+  },
+  "scope": "Authenticated server MCP full-view discovery and scenario descriptor checks only; excludes full Admin MCP parity, proposal execution, DevOps stdio, CLI, Console and deployment qualification.",
+  "status": "passed",
+  "request": {
+    "method": "tools/list",
+    "params": {
+      "view": "full"
+    },
+    "pagination": "Each nextCursor was passed as params.cursor with view=full until absent; duplicates and cursor cycles rejected."
+  },
+  "pages": [
+    {
+      "count": 12,
+      "nextCursor": "bDE6MTI"
+    },
+    {
+      "count": 12,
+      "nextCursor": "bDE6MjQ"
+    },
+    {
+      "count": 12,
+      "nextCursor": "bDE6MzY"
+    },
+    {
+      "count": 12,
+      "nextCursor": "bDE6NDg"
+    },
+    {
+      "count": 8,
+      "nextCursor": null
+    }
+  ],
+  "totalDescriptors": 56,
+  "expectedTools": [
+    "honua_ops_health",
+    "honua_ops_findings",
+    "honua_operate_events",
+    "honua_supported_operation_kinds",
+    "honua_propose_finding"
+  ],
+  "missingTools": [],
+  "descriptorDigests": {
+    "honua_ops_health": "7da867d7f51bf9c8204bf11b12b63abc37d0bd433cbfcbaf455ddbc3873e6f82",
+    "honua_ops_findings": "2e3b0085ed42683fc2478fcf72253217794b8638d73bc4739cc72659941f4ed2",
+    "honua_operate_events": "0c838174865746ccd80cde4290d5592c76ae0c7c3e8f0308f805800cb8785143",
+    "honua_supported_operation_kinds": "e77faced34913bcc8201b3bc579f62db85c4d828fa075d67c77eecbe3852879f",
+    "honua_propose_finding": "d034e80b9e865af6db472678fe4c2c189b19e9d3ece25dec5884790516eda17c"
+  },
+  "digestEncoding": "SHA-256 of UTF-8 json.dumps(descriptor, sort_keys=True, separators=(comma, colon)), Python default ensure_ascii=True",
+  "proposalInputCheck": {
+    "expected": {
+      "required": [
+        "findingId",
+        "candidateId"
+      ],
+      "types": {
+        "findingId": "string",
+        "candidateId": "string"
+      }
+    },
+    "observed": {
+      "type": "object",
+      "required": [
+        "findingId",
+        "candidateId"
+      ],
+      "properties": {
+        "findingId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "candidateId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "additionalProperties": false
+    },
+    "status": "passed"
+  },
+  "fixture": "Unchanged metadata-release-installed.py Harness.start in isolated Development/Enterprise-dev-grant PostGIS/Redis; image RepoDigests and OCI revision checked before boot; no deployment target configured or proposal submitted.",
+  "cleanup": "removed lane containers and network"
+}
