@@ -21264,12 +21264,21 @@
       "protocol": "http-route-family",
       "code_location": "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/GPServerSoapEndpointsTests.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SoapArea_WithProductionExecutor_ReturnsIndependentRectangleAreaAndMetadata",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.DiscoveryOperation_ValidRequest_ReturnsTypedResult",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.GetToolInfos_ArcPyEnvelope_ReturnsCanonicalTaskAndParameterMetadata",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.GetToolInfos_ArcPyToolIdentifiers_AreValidUniqueAndRoundTrip",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.GetToolInfos_ProtectedService_EnforcesCanonicalAuthorization",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.Request_InvalidOrUnsupportedOperation_ReturnsSoapFault",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.Request_MalformedEnvelope_ReturnsSafeSoapFault"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.Request_MalformedEnvelope_ReturnsSafeSoapFault",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.SoapCancelJob_UsesTruthfulCanonicalCancellation",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.SoapExecute_TerminalFailure_ReturnsFaultInsteadOfSuccessfulEmptyResults",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.SoapExecution_ProcessAuthorization_PrecedesParameterValidation",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.SoapJobMetadata_SucceededJob_DoesNotRequireResultStore",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.SoapJobOperation_CrossServiceBinding_CannotReadOrCancel",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.SoapJobOperation_OwnershipDenial_IsPropagated",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.SoapJobOperation_ValidBinding_ReturnsCanonicalStatus",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.SoapSubmitJob_PublishedName_UsesCanonicalPlanAndBinding"
       ],
       "proof_ledger_surface": "gpserver-soap-discovery",
       "maturity": "implemented",
