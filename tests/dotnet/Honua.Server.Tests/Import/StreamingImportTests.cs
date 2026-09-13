@@ -1140,6 +1140,7 @@ public class StreamingImportTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_UpsertRepeatedKeys_UpdatesGeometryAndValuesWithoutDuplicatingRows()
     {
         var logicalName = "upsert_proof_" + Guid.NewGuid().ToString("N")[..12];
@@ -1159,6 +1160,24 @@ public class StreamingImportTests : IAsyncLifetime
         {
             foreach (var (json, mode) in new[] { (original, ImportLoadMode.Replace), (update, ImportLoadMode.Upsert), (update, ImportLoadMode.Upsert) })
             {
+                // Create through the real upload route, then exercise keyed upserts through
+                // its registered provider (the upload contract does not expose upsert options).
+                if (mode == ImportLoadMode.Replace)
+                {
+                    using var content = new MultipartFormDataContent();
+                    using var file = new ByteArrayContent(Encoding.UTF8.GetBytes(json));
+                    file.Headers.ContentType = new MediaTypeHeaderValue("application/geo+json");
+                    content.Add(file, "file", "keyed.geojson");
+                    content.Add(new StringContent(logicalName), "TableName");
+                    content.Add(new StringContent("honua_data"), "TargetSchema");
+                    content.Add(new StringContent("true"), "OverwriteExisting");
+                    using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+                    response.BeSuccessful();
+                    var created = DeserializeImportResult(await response.Content.ReadAsStringAsync());
+                    created.Success.Should().BeTrue(created.ErrorMessage);
+                    created.FeatureCount.Should().Be(2);
+                    continue;
+                }
                 await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(json));
                 var result = await service.ImportFileAsync(new ImportRequest
                 {
