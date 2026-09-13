@@ -14,6 +14,7 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Mixins;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Npgsql;
 
@@ -164,21 +165,32 @@ public sealed class DemoStacSeedMigratedDatabaseTests
                 // Migrations are already applied by the runner above.
                 builder.UseSetting("HONUA_SKIP_MIGRATIONS", "true");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
-                // Serve through the production Postgres composition (feature readers, Metadata v2
-                // graph store), as the deployed image does. A Test host otherwise skips it. The
-                // composition binds the metadata environment while services are registered, so
-                // both settings must be host settings rather than late app configuration.
-                builder.UseSetting("HONUA_REGISTER_TEST_INFRASTRUCTURE", "true");
-                builder.UseSetting("Metadata:Environment", MetadataEnvironment);
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(
                         WebAppFixturePostgresWiringMixin.BuildAppConfigurationDictionary(
                             connectionString,
                             new Dictionary<string, string?>
                             {
-                                ["HONUA_ADMIN_PASSWORD"] = WebAppFixture.SharedAdminPassword,
-                                ["Metadata:Environment"] = MetadataEnvironment
+                                ["HONUA_ADMIN_PASSWORD"] = WebAppFixture.SharedAdminPassword
                             })));
+                builder.ConfigureTestServices(services =>
+                {
+                    // The deployed image's Postgres composition, bound to this database. Unlike
+                    // WebAppFixture hosts, keep the Postgres Metadata v2 store (the seed activates
+                    // a snapshot row, not an in-memory graph) and the production schema guard (the
+                    // production runner migrated this database).
+                    WebAppFixturePostgresWiringMixin.RemovePostgresBackedServices(services);
+                    WebAppFixturePostgresWiringMixin.RemoveBackgroundPollers(services);
+                    Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(
+                        services,
+                        WebAppFixturePostgresWiringMixin.BuildPostgresTestConfiguration(
+                            connectionString,
+                            new Dictionary<string, string?> { ["Metadata:Environment"] = MetadataEnvironment }),
+                        ServerCoreSchemaMigrations.Manifest);
+                    WebAppFixturePostgresWiringMixin.OverrideNonMultiplexingDataSource(services, connectionString);
+                    Honua.Infrastructure.Rendering.VectorAwareRasterMapRendererServiceCollectionExtensions
+                        .AddVectorAwareRasterMapRendering(services);
+                });
             },
             "Test");
 

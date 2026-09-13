@@ -413,13 +413,32 @@ BEGIN
             'apiVersion','metadata.honua.io/v2alpha1',
             'revision', 0,
             'environment', v_env,
-            'generatedAt', v_now,
-            'resources','[]'::jsonb,
-            'connections','[]'::jsonb,
-            'storageBindings','[]'::jsonb,
-            'services','[]'::jsonb,
-            'publications','[]'::jsonb);
+            'generatedAt', v_now);
     END IF;
+
+    -- The server's snapshot index walks every top-level collection of the graph
+    -- document, so a snapshot without one (e.g. "catalogs") fails every Metadata v2
+    -- read in the environment with HTTP 500 (honua-server#3384). Fill each absent
+    -- member with the canonical empty value the server's own bootstrap writes;
+    -- members already present win.
+    v_doc := jsonb_build_object(
+        'namespaces','[]'::jsonb,
+        'metadata', jsonb_build_object('id','','name',''),
+        'catalogs','[]'::jsonb,
+        'resources','[]'::jsonb,
+        'connections','[]'::jsonb,
+        'storageBindings','[]'::jsonb,
+        'services','[]'::jsonb,
+        'publications','[]'::jsonb,
+        'projectionProfiles','[]'::jsonb,
+        'policies','[]'::jsonb,
+        'roles','[]'::jsonb,
+        'runtime', jsonb_build_object(
+            'status', jsonb_build_object('state','unknown','lifecycle','draft','conditions','[]'::jsonb),
+            'metadata', jsonb_build_object('id','','name',''),
+            'extensions','{}'::jsonb),
+        'extensionPoints','[]'::jsonb,
+        'extensions','{}'::jsonb) || v_doc;
 
     -- Store-owned revision allocation. An interrupted writer may have left an
     -- orphan snapshot above current, so never reuse a retained revision number.
