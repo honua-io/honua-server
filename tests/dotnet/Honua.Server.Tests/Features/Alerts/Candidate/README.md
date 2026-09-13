@@ -33,7 +33,8 @@ The independent expectations are:
   attempts), and paused webhook channel remain unchanged. State/checkpoint rows
   remain unchanged too. The square's area is independently `2 * 2 = 4`, its SRID
   is 4326, and every stored ordinate matches the input. Nodata is inapplicable.
-- All 46 authenticated refusals have access-audit records, with no successful
+- All 46 authenticated refusals each have a unique correlation ID and exactly
+  one matching access-audit record (method/path/status), with no successful
   outcome, alert-domain mutation, or private instance service/destination details.
 - With alerts explicitly enabled and opted in, default tenant resolution,
   explicit tenant resolution, and schema routing each terminate the native host
@@ -70,3 +71,10 @@ identified source-host TRX (10 passed, zero failures/skips). `binding.json` reco
 the identities and qualification boundary. Both the archive and its entries have
 SHA-256 checksums; verify the outer checksum from `evidence/` with
 `sha256sum -c SHA256SUMS`.
+
+Run the parser/audit regression checks with `python3 -m unittest discover -s
+tests/dotnet/Honua.Server.Tests/Features/Alerts/Candidate -p 'test_*.py'`
+(as one shell command). Six checks cover new HTTP methods, malformed routes,
+a duplicate hiding a missing audit, mismatched request metadata, and both
+permitted denied-access audit categories. The reviewed archive includes these
+regression tests and the rerun with per-refusal correlation.
