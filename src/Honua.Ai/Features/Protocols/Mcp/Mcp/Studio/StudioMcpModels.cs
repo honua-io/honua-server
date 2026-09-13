@@ -599,3 +599,22 @@ internal sealed class McpStudioProposePublicationOutput
     [JsonPropertyName("message")]
     public required string Message { get; init; }
 }
+
+internal sealed record McpStudioSaveVersionArgument
+{
+    [JsonPropertyName("draftId")] public required Guid DraftId { get; init; }
+    [JsonPropertyName("generation")] public required long Generation { get; init; }
+    [JsonPropertyName("changeNote")] public string? ChangeNote { get; init; }
+}
+
+internal sealed record McpStudioReopenVersionArgument
+{
+    [JsonPropertyName("itemId")] public required Guid ItemId { get; init; }
+    [JsonPropertyName("versionId")] public required Guid VersionId { get; init; }
+}
+
+internal sealed record McpStudioSaveVersionOutput
+{
+    [JsonPropertyName("operation")] public required OperationHandle Operation { get; init; }
+    [JsonPropertyName("version")] public StudioContentVersion? Version { get; init; }
+}

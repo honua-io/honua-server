@@ -402,6 +402,22 @@
       "notes": "Honua extension (honua-server#3002): builds a read-only preview plan for a Studio package lifecycle draft. Pending formalization in the standard's preview_map_package/preview_app_package family."
     },
     {
+      "standardName": "studio_save_version",
+      "referenceToolName": "honua_studio_save_version",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "schema": "tools/studio_save_version.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (#3428): save a generation-checked immutable Studio version through the canonical mutation runtime; owner and policy checks apply."
+    },
+    {
+      "standardName": "studio_reopen_version",
+      "referenceToolName": "honua_studio_reopen_version",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "schema": "tools/studio_reopen_version.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension (#3428): reopen an immutable saved version as an editable draft through the canonical mutation runtime; owner and policy checks apply."
+    },
+    {
       "standardName": "studio_add_layer",
       "referenceToolName": "honua_studio_add_layer",
       "family": "Studio composition and lifecycle (Honua extension)",

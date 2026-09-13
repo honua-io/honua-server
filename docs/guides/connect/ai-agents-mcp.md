@@ -166,6 +166,16 @@ Select a view three ways, highest precedence first:
 
 The shipped view is `setup`: the bounded terminal path of readiness → connect/import → publish service and layer → verify access → canonical style and render → bounded geoprocessing → Studio map/dashboard composition and lifecycle → publication submit and status. It is budget-bounded (at most 48 descriptors, 128 KiB of aggregate canonical descriptor JSON, 16 KiB per descriptor), so the whole view arrives in one page with no `nextCursor`.
 
+The `setup.v2` revision includes draft read, edit, preview, immutable version
+save, and saved-version reopen. `honua_studio_save_version` takes the draft id
+and its current generation; its version result supplies the item id, version
+id, and content hash used for publication. `honua_studio_reopen_version` creates
+an editable draft from that saved version. Both delegate to the canonical
+Studio mutation runtime and apply the same ownership and policy checks as the
+REST lifecycle. Their operation envelopes report approval requirements without
+claiming a save or reopen completed. Destructive delete and rollback operations
+remain outside the setup view.
+
 A view is **discovery, not authority**:
 
 - Selecting one can only *narrow* what `tools/list` returns. Membership grants nothing, caches no prior allow decision, and never widens a principal's reach.

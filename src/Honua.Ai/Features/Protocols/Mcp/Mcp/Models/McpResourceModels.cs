@@ -60,6 +60,9 @@ internal sealed class McpProposalResource
     [JsonPropertyName("executionOperationId")]
     public string? ExecutionOperationId { get; set; }
 
+    [JsonPropertyName("resourceIds")]
+    public IReadOnlyDictionary<string, string>? ResourceIds { get; set; }
+
     [JsonPropertyName("publicationId")]
     public string? PublicationId { get; set; }
 

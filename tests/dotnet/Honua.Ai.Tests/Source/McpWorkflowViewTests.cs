@@ -47,6 +47,64 @@ public sealed class McpWorkflowViewTests
     // ------------------------------------------------------------------
 
     [UnitTest]
+    public async Task SetupView_EligibleLifecycleOperationAddedAndRemoved_RefreshesMembership()
+    {
+        McpDataAccessSurface Surface(params IMcpToolSource[] sources) => new(
+            McpTaxonomyAlignmentTests.BuildTools().Where(tool => tool.Name != "honua_studio_reopen_version"),
+            [], NullLogger<McpDataAccessSurface>.Instance, toolSources: sources);
+        var before = await ListToolsAsync(Surface(), McpWorkflowViewCatalog.SetupViewName);
+        var after = await ListToolsAsync(
+            Surface(new StubToolSource("honua_studio_reopen_version")), McpWorkflowViewCatalog.SetupViewName);
+        after.Names.Should().Contain("honua_studio_reopen_version");
+        after.MembershipDigestOf().Should().NotBe(before.MembershipDigestOf());
+        var removed = await ListToolsAsync(Surface(), McpWorkflowViewCatalog.SetupViewName);
+        removed.MembershipDigestOf().Should().Be(before.MembershipDigestOf());
+    }
+
+    [UnitTest]
+    public async Task SetupView_LiveStudioOperationCatalog_IncludesEditingSaveAndReopenWithinBudget()
+    {
+        var catalog = new Honua.Core.Features.Operations.Services.OperationCatalog(
+            [new Honua.Server.Features.Operations.ServerOperationDescriptorProvider()], TimeProvider.System);
+        var descriptors = Honua.Server.Features.Operations.StudioDraftOperations.BuildDescriptors();
+        var source = new PublishedOperationToolSource(
+            catalog,
+            Options.Create(new McpPublishedOperationOptions { Enabled = true }),
+            NullLogger<PublishedOperationToolSource>.Instance,
+            requestMappers: descriptors.Select(descriptor =>
+                new Honua.Server.Features.Operations.StudioDraftApprovalRequestMapper(descriptor.OperationId)));
+        var surface = BuildFullSurface(source);
+        var view = await ListToolsAsync(surface, McpWorkflowViewCatalog.SetupViewName);
+        var full = await ListToolsAsync(surface, McpWorkflowViewNegotiation.FullCatalogViewName);
+
+        view.Names.Should().Contain([
+            "honua_studio_update_draft",
+            "honua_studio_save_version",
+            "honua_studio_reopen_version"]);
+        view.Names.Should().NotContain(name => name.StartsWith("honua_op_studio_", StringComparison.Ordinal),
+            "generic gated and destructive operations do not belong to the executable setup path");
+        foreach (var descriptor in view.Tools)
+        {
+            var canonical = full.Tools.Single(tool => tool.GetProperty("name").GetString() ==
+                descriptor.GetProperty("name").GetString());
+            descriptor.GetRawText().Should().Be(canonical.GetRawText());
+        }
+
+        var aggregate = Encoding.UTF8.GetBytes("[" + string.Join(",", view.Tools.Select(tool => tool.GetRawText())) + "]");
+        var bytes = aggregate.Length;
+        view.Meta.GetProperty("descriptorBytes").GetInt32().Should().Be(bytes);
+        view.Meta.GetProperty("descriptorDigest").GetString().Should().Be(
+            "sha256:" + Convert.ToHexStringLower(SHA256.HashData(aggregate)));
+        view.Meta.GetProperty("estimatedTokens").GetInt32().Should().Be(bytes / 4);
+        var largest = view.Tools.Max(tool => Encoding.UTF8.GetByteCount(tool.GetRawText()));
+        view.NextCursor.Should().BeNull();
+        view.Tools.Length.Should().BeLessThanOrEqualTo(48);
+        bytes.Should().BeLessThanOrEqualTo(128 * 1024);
+        largest.Should().BeLessThanOrEqualTo(16 * 1024);
+        _output.WriteLine($"Live setup catalog: {view.Tools.Length} descriptors, {bytes} bytes, ~{bytes / 4} tokens, largest {largest} bytes.");
+    }
+
+    [UnitTest]
     public async Task ToolsList_WithSetupView_ReturnsOnlyServerSelectedDescriptors()
     {
         var surface = BuildFullSurface();
@@ -96,10 +154,15 @@ public sealed class McpWorkflowViewTests
             "honua_list_jobs",
             "honua_studio_create_draft",
             "honua_studio_validate_draft",
+            "honua_studio_get_draft",
+            "honua_studio_update_draft",
+            "honua_studio_preview_draft",
+            "honua_studio_save_version",
+            "honua_studio_reopen_version",
             "honua_studio_propose_publication",
             "honua_supported_operation_kinds",
         ]);
-        view.Names.Should().HaveCountLessThanOrEqualTo(20);
+        view.Names.Should().HaveCountLessThanOrEqualTo(25);
 
         var stages = view.Meta.GetProperty("stages").EnumerateArray().ToArray();
         stages.Select(s => s.GetProperty("id").GetString()).Should().Equal(
@@ -395,7 +458,7 @@ public sealed class McpWorkflowViewTests
         foreach (var definition in McpWorkflowViewCatalog.All.Values)
         {
             McpWorkflowViewProjector.Project(definition, BuildCatalogEntries()).Members
-                .Should().HaveCountLessThanOrEqualTo(20, $"view '{definition.Name}' must remain task-bounded");
+                .Should().HaveCountLessThanOrEqualTo(25, $"view '{definition.Name}' must remain task-bounded");
         }
     }
 
@@ -574,7 +637,7 @@ public sealed class McpWorkflowViewTests
 
         after.Names.Should().NotContain("honua_op_import_geojson")
             .And.NotContain("honua_op_service_promote");
-        after.Names.Should().HaveCountLessThanOrEqualTo(20);
+        after.Names.Should().HaveCountLessThanOrEqualTo(25);
 
         // Removing the operation drops it again, still with no edit.
         var removed = await ListToolsAsync(BuildFullSurface(), McpWorkflowViewCatalog.SetupViewName);
@@ -607,7 +670,7 @@ public sealed class McpWorkflowViewTests
 
         var baseline = McpWorkflowViewProjector.Project(McpWorkflowViewCatalog.Setup, BuildCatalogEntries());
         names.Should().Equal(baseline.Members.Select(m => m.ToolName));
-        names.Should().HaveCountLessThanOrEqualTo(20);
+        names.Should().HaveCountLessThanOrEqualTo(25);
     }
 
     [UnitTest]
@@ -645,7 +708,7 @@ public sealed class McpWorkflowViewTests
 
         response!.Error.Should().BeNull();
         var tools = response.Result!.Value.GetProperty("tools");
-        tools.GetArrayLength().Should().BeLessThanOrEqualTo(20);
+        tools.GetArrayLength().Should().BeLessThanOrEqualTo(25);
         tools.EnumerateArray().Select(t => t.GetProperty("name").GetString())
             .Should().NotContain(name => name!.StartsWith("honua_op_import_", StringComparison.Ordinal));
     }
@@ -742,7 +805,7 @@ public sealed class McpWorkflowViewTests
             .ToArray();
 
         views.Select(v => v.GetProperty("name").GetString()).Should().Equal("default", "setup");
-        views.Should().OnlyContain(v => v.GetProperty("toolCount").GetInt32() <= 20);
+        views.Should().OnlyContain(v => v.GetProperty("toolCount").GetInt32() <= 25);
     }
 
     // ------------------------------------------------------------------
