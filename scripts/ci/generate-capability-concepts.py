@@ -100,7 +100,42 @@ def citing_pages(key: str, display_name: str, pages: dict[pathlib.Path, str]) ->
 UNPUBLISHED_STATUS = {"internal"}
 
 
-def render(entry: dict, facts: dict) -> str:
+RESOURCE_DECLARATION = re.compile(r'^resource:\s*"honua://capability/([^"]+)"\s*$', re.M)
+FRONTMATTER_TITLE = re.compile(r'^title:\s*"?(.+?)"?\s*$', re.M)
+
+
+def documented_in(root: pathlib.Path) -> dict[str, list[tuple[str, str]]]:
+    """Pages that declare a capability in frontmatter, keyed by capability.
+
+    Capability pages were dead ends - a sentence, a table of counts, and no
+    outbound link - while the page documenting the capability sat one
+    frontmatter field away.
+
+    This reads `resource:` declarations, not prose. That is what keeps the page
+    a pure function of its inputs: rewriting a page cannot stale anything here,
+    only changing a declared resource can.
+    """
+    found: dict[str, list[tuple[str, str]]] = {}
+    for page in sorted(root.rglob("*.md"), key=lambda q: q.as_posix()):
+        rel = page.relative_to(root).as_posix()
+        if rel.startswith("okf/capabilities/"):
+            continue
+        text = page.read_text(encoding="utf-8", errors="replace")
+        if not text.startswith("---"):
+            continue
+        end = text.find(chr(10) + "---", 3)
+        if end == -1:
+            continue
+        front = text[3:end]
+        m = RESOURCE_DECLARATION.search(front)
+        if not m:
+            continue
+        t = FRONTMATTER_TITLE.search(front)
+        found.setdefault(m.group(1), []).append((t.group(1) if t else rel, rel))
+    return found
+
+
+def render(entry: dict, facts: dict, documented: list[tuple[str, str]] | None = None) -> str:
     key = entry["key"]
     title = entry.get("displayName") or key
     # Never truncate. A registry description is longer than 300 characters
@@ -181,10 +216,18 @@ def render(entry: dict, facts: dict) -> str:
         "what the prose happens to say, so an unrelated documentation edit cannot stale it."
     )
     lines.append("")
-    lines.append(
-        "Which pages discuss this capability is a question about the prose, so it is reported "
-        "rather than baked in: run `scripts/ci/generate-capability-concepts.py --report`."
-    )
+    # Somewhere to go. Without this the page ends at a table of counts and an
+    # instruction to run a script, which is not an answer for a reader or an agent.
+    if documented:
+        lines.append("## Documented in")
+        lines.append("")
+        for label, rel in documented:
+            lines.append(f"- [{label}](../../{rel})")
+    else:
+        lines.append(
+            "No page in this bundle declares this capability yet. Add "
+            f'`resource: "honua://capability/{key}"` to the page that documents it.'
+        )
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -244,6 +287,7 @@ def build() -> dict[str, str]:
     facts_by_key = {c["key"]: c for c in matrix.get("capabilities", [])}
 
     written: dict[str, str] = {}
+    documented = documented_in(REPO_ROOT / "docs")
     index_rows = []
     for entry in sorted(entries, key=lambda e: e["key"]):
         key = entry["key"]
@@ -251,7 +295,7 @@ def build() -> dict[str, str]:
         if status in UNPUBLISHED_STATUS:
             continue
         facts = facts_by_key.get(key, {})
-        written[f"{key}.md"] = render(entry, facts)
+        written[f"{key}.md"] = render(entry, facts, documented.get(key))
         index_rows.append((
             key,
             entry.get("displayName") or key,
