@@ -766,9 +766,9 @@ internal static partial class FeatureServerEndpoints
                     AddResults = response?.AddResults ?? [],
                     UpdateResults = response?.UpdateResults ?? [],
                     DeleteResults = response?.DeleteResults ?? [],
-                    // Each layer commits in its own transaction; report when this layer's edits
-                    // were applied (#4105).
-                    EditMoment = sharedOptions.ReturnEditMoment ? ResolveEditMoment(context) : null
+                    // Each layer commits in its own transaction; report the moment the edits handler
+                    // recorded for this layer's edits (#4105).
+                    EditMoment = sharedOptions.ReturnEditMoment ? response?.EditMoment ?? ResolveEditMoment(context) : null
                 };
             }
             else if (i == 0)
@@ -1184,15 +1184,21 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// Adds <c>editMoment</c> (server clock, epoch milliseconds) to a JSON applyEdits response when the
-    /// client asked for it with returnEditMoment=true (#4105). The handler has committed by the time it
-    /// returns, so the moment is taken after the edits were applied. The handler's response object may be
-    /// the one recorded for idempotent replay (#2250), so the moment goes on a copy, never on that object.
+    /// Emits <c>editMoment</c> (server clock, epoch milliseconds) on a JSON applyEdits response only when
+    /// the client asked for it with returnEditMoment=true (#4105). A committed edit carries the moment the
+    /// edits handler recorded with the response, so an Idempotency-Key replay (#2250) reports the original
+    /// moment; a response the handler did not stamp (no committed write) gets the current server time. The
+    /// handler's object may be the replay record, so any change goes on a copy, never on that object.
     /// </summary>
     private static IResult StampEditMoment(HttpContext context, ApplyEditsRequest request, IResult result)
     {
-        if (!request.ReturnEditMoment ||
-            result is not Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApplyEditsResponse> { Value: { } response } json)
+        if (result is not Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApplyEditsResponse> { Value: { } response } json)
+        {
+            return result;
+        }
+
+        long? editMoment = request.ReturnEditMoment ? response.EditMoment ?? ResolveEditMoment(context) : null;
+        if (response.EditMoment == editMoment)
         {
             return result;
         }
@@ -1203,7 +1209,7 @@ internal static partial class FeatureServerEndpoints
             UpdateResults = response.UpdateResults,
             DeleteResults = response.DeleteResults,
             Success = response.Success,
-            EditMoment = ResolveEditMoment(context),
+            EditMoment = editMoment,
         };
         return Results.Json(
             stamped,
@@ -1308,10 +1314,32 @@ internal static partial class FeatureServerEndpoints
         return true;
     }
 
+    /// <summary>
+    /// True when an attachments/assetMaps payload carries no edits: blank, JSON <c>null</c>, or a JSON
+    /// array with no elements however it is formatted (<c>[ ]</c>, a multi-line empty array). Anything
+    /// else, including text that is not JSON, counts as edits and is rejected rather than dropped.
+    /// </summary>
     private static bool IsEmptyEditPayload(string payload)
     {
-        var trimmed = payload.Trim();
-        return trimmed.Length == 0 || trimmed == "[]" || trimmed == "null";
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return true;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            return document.RootElement.ValueKind switch
+            {
+                JsonValueKind.Null => true,
+                JsonValueKind.Array => document.RootElement.GetArrayLength() == 0,
+                _ => false,
+            };
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static bool HasServiceAttachmentPayload(JsonElement? payload)

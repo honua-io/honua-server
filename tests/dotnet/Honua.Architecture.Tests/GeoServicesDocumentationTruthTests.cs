@@ -146,6 +146,14 @@ public sealed class GeoServicesDocumentationTruthTests
 
             actual.Should().BeEquivalentTo(expected, $"{file} must describe the applyEdits controls the server serves");
         }
+
+        // The public compatibility guide must tell clients the same thing as the parity data.
+        var guide = File.ReadAllText(ArchitectureTestHelpers.CombinePath(root, "docs", "reference", "compatibility", "geoservices-parity.md"));
+        guide.Should().Contain("`returnEditMoment=true` adds `editMoment`");
+        guide.Should().Contain("`returnEditResults` are accepted on\nthe query string or in the body and have no effect");
+        guide.Should().Contain("so\nan edit is never silently dropped");
+        guide.Should().NotContain("`returnEditMoment`, and `attachments` are rejected")
+            .And.NotContain("are silently ignored. queryRelatedRecords");
     }
 
     private static System.Text.Json.JsonElement? FindProperty(System.Text.Json.JsonElement element, string name)
