@@ -86,6 +86,19 @@ public interface IWorkspaceLifecycleService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Resolves a named workspace in the existing optional scope. Implementations
+    /// without scoped storage must fail closed rather than reuse an unscoped workspace.
+    /// </summary>
+    Task<Workspace> GetOrCreateScopedWorkspaceAsync(
+        string ownerId,
+        string label,
+        string? scopeId,
+        CancellationToken cancellationToken = default)
+        => scopeId is null
+            ? GetOrCreateNamedWorkspaceAsync(ownerId, label, cancellationToken)
+            : throw new NotSupportedException("Scoped workspace storage is unavailable.");
+
+    /// <summary>
     /// Promotes an artifact from a temporary workspace to a durable destination.
     /// </summary>
     Task<ArtifactPromotionResult> PromoteArtifactAsync(

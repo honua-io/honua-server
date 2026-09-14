@@ -75,7 +75,9 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
             ExpiresAt = expiration
         };
 
-        var created = await _workspaceStore.CreateAsync(workspace, cancellationToken);
+        var created = _workspaceStore is IAtomicWorkspaceStore atomicStore
+            ? await atomicStore.CreateWithQuotaAsync(workspace, _options.MaxWorkspaceCount, cancellationToken)
+            : await _workspaceStore.CreateAsync(workspace, cancellationToken);
         WorkspaceLifecycleLog.WorkspaceCreated(_logger, created.WorkspaceId, kind, expiration);
         return created;
     }
@@ -146,6 +148,26 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(workspaceId);
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
+        ArgumentOutOfRangeException.ThrowIfNegative(sizeBytes);
+
+        if (_artifactStore is IAtomicWorkspaceStore atomicStore)
+        {
+            var artifact = new Artifact
+            {
+                ArtifactId = Guid.NewGuid().ToString("N"),
+                WorkspaceId = workspaceId,
+                Kind = kind,
+                Label = label,
+                State = ArtifactLifecycleState.Available,
+                Uri = uri,
+                ContentType = contentType,
+                SizeBytes = sizeBytes,
+                CreatedAt = _timeProvider.GetUtcNow(),
+                Metadata = metadata ?? new Dictionary<string, string>()
+            };
+            return await atomicStore.AddOrReplaceAsync(artifact, overwrite, cancellationToken).ConfigureAwait(false)
+                ?? throw new ArtifactAlreadyExistsException(workspaceId, label);
+        }
 
         var existingArtifacts = await _artifactStore.ListByWorkspaceAsync(workspaceId, cancellationToken)
             .ConfigureAwait(false);
@@ -182,20 +204,42 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
             .ConfigureAwait(false);
     }
 
-    public async Task<Workspace> GetOrCreateNamedWorkspaceAsync(
+    public Task<Workspace> GetOrCreateNamedWorkspaceAsync(
         string ownerId,
         string label,
+        CancellationToken cancellationToken = default)
+        => GetOrCreateScopedWorkspaceAsync(ownerId, label, null, cancellationToken);
+
+    public async Task<Workspace> GetOrCreateScopedWorkspaceAsync(
+        string ownerId,
+        string label,
+        string? scopeId,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(ownerId);
         ArgumentException.ThrowIfNullOrWhiteSpace(label);
 
         var now = _timeProvider.GetUtcNow();
+        if (_workspaceStore is IAtomicWorkspaceStore atomicStore)
+        {
+            return await atomicStore.GetOrCreateNamedAsync(new Workspace
+            {
+                WorkspaceId = Guid.NewGuid().ToString("N"),
+                Kind = WorkspaceKind.Scratch,
+                Label = label,
+                OwnerId = ownerId,
+                ScopeId = scopeId,
+                State = WorkspaceLifecycleState.Active,
+                CreatedAt = now,
+                ExpiresAt = _retentionPolicy.ComputeExpiration(WorkspaceKind.Scratch, now)
+            }, _options.MaxWorkspaceCount, cancellationToken).ConfigureAwait(false);
+        }
         var owned = await _workspaceStore.ListByOwnerAsync(ownerId, cancellationToken).ConfigureAwait(false);
         var existing = owned
             .Where(workspace =>
                 workspace.State == WorkspaceLifecycleState.Active &&
                 !workspace.IsExpired(now) &&
+                string.Equals(workspace.ScopeId, scopeId, StringComparison.Ordinal) &&
                 string.Equals(workspace.Label, label, StringComparison.Ordinal))
             .OrderByDescending(workspace => workspace.CreatedAt)
             .FirstOrDefault();
@@ -206,7 +250,7 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         }
 
         return await CreateWorkspaceAsync(
-            WorkspaceKind.Scratch, label, ownerId, cancellationToken: cancellationToken)
+            WorkspaceKind.Scratch, label, ownerId, scopeId, cancellationToken: cancellationToken)
             .ConfigureAwait(false);
     }
 
