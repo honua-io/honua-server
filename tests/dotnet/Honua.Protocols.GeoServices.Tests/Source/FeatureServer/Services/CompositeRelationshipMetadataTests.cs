@@ -7,11 +7,13 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.TestKit.Attributes;
 
-namespace Honua.Protocols.GeoServices.Tests.Source.FeatureServer;
+namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
 /// <summary>Checks public ownership metadata and truthful edit capabilities.</summary>
 public sealed class CompositeRelationshipMetadataTests
 {
+    private static readonly string[] EditableCapabilities = ["Query", "Create", "Update", "Delete"];
+
     [UnitTest]
     public void RelationshipResponse_PreservesCompositeAndBothKeyFields()
     {
@@ -50,7 +52,7 @@ public sealed class CompositeRelationshipMetadataTests
         {
             Options = new Dictionary<string, JsonElement>
             {
-                ["capabilities"] = JsonSerializer.SerializeToElement(new[] { "Query", "Create", "Update", "Delete" })
+                ["capabilities"] = JsonSerializer.SerializeToElement(EditableCapabilities)
             }
         };
         var publication = new MetadataV2Publication();
