@@ -53,6 +53,9 @@ public sealed partial class LayerPublishingIntegrationTests
         metadata.RootElement.TryGetProperty("geometryType", out _).Should().BeFalse();
         metadata.RootElement.TryGetProperty("spatialReference", out _).Should().BeFalse();
         metadata.RootElement.GetProperty("supportsReturningQueryExtent").GetBoolean().Should().BeFalse();
+        var advanced = metadata.RootElement.GetProperty("advancedQueryCapabilities");
+        advanced.GetProperty("supportsReturningQueryExtent").GetBoolean().Should().BeFalse();
+        advanced.GetProperty("supportsQueryWithDistance").GetBoolean().Should().BeFalse();
 
         using var queryResponse = await _client.GetAsync($"{serviceUrl}/{_layerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=false");
         queryResponse.StatusCode.Should().Be(HttpStatusCode.OK);
