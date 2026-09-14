@@ -19,6 +19,8 @@ public sealed class PostgresFixture : IAsyncLifetime
     // The state object is process-wide and every mutation is serialized by _sharedLock.
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
     private static readonly PostgresSharedState SharedState = new();
+    private static readonly string[] SharedStoreMigrations =
+        ["113_AddDurableQuerySnapshots.sql", "118_CreateGeoprocessingWorkspaces.sql"];
 
     private sealed class PostgresSharedState
     {
@@ -81,15 +83,20 @@ public sealed class PostgresFixture : IAsyncLifetime
                         cmd.CommandText = "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster; CREATE EXTENSION IF NOT EXISTS unaccent; CREATE EXTENSION IF NOT EXISTS pgcrypto;";
                         await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
                         // Test hosts skip application migrations. Execute the owning
-                        // production receipt DDL once under the shared initialization
-                        // lock so every protocol fixture gets the durable delta store.
+                        // production DDL once under the shared initialization lock
+                        // so registered providers have their required tables.
                         var assembly = typeof(Program).Assembly;
-                        var migration = assembly.GetManifestResourceNames().Single(name =>
-                            name.EndsWith("113_AddDurableQuerySnapshots.sql", StringComparison.Ordinal));
-                        await using var sql = assembly.GetManifestResourceStream(migration)!;
-                        using var reader = new StreamReader(sql);
-                        cmd.CommandText = "CREATE SCHEMA IF NOT EXISTS honua;\n" + await reader.ReadToEndAsync().ConfigureAwait(false);
-                        await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
+                        foreach (var filename in SharedStoreMigrations)
+                        {
+                            var migration = assembly.GetManifestResourceNames().Single(name =>
+                                name.EndsWith(filename, StringComparison.Ordinal));
+                            await using var sql = assembly.GetManifestResourceStream(migration)!;
+                            using var reader = new StreamReader(sql);
+                            var ddl = (await reader.ReadToEndAsync().ConfigureAwait(false))
+                                .Replace("$HonuaSchema$", "honua", StringComparison.Ordinal);
+                            cmd.CommandText = "CREATE SCHEMA IF NOT EXISTS honua;\n" + ddl;
+                            await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);
+                        }
                     }).ConfigureAwait(false);
 
                     SharedState.SharedInitialized = true;
