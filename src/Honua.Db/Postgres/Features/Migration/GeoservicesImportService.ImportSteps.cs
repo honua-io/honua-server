@@ -428,6 +428,7 @@ internal sealed partial class GeoservicesImportService
                 PublishedTarget = publishedLayer is not null,
                 FailedFeatures = failedFeatures,
                 Attachments = attachmentFidelity,
+                Relationships = DescribeUnappliedSourceRelationships(layerInfo, publishedLayer?.LayerId),
                 SourceSnapshot = sourceSnapshot
             });
 
