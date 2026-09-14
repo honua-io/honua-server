@@ -955,6 +955,61 @@ public sealed class DeployWorkflowServiceTests
     }
 
     [Fact]
+    public async Task PlanAsync_WithStalenessBoundOnFixedWindowProvider_BlocksInsteadOfIgnoringIt()
+    {
+        var backend = new ImmediateDeployBackend();
+        var service = new DeployWorkflowService(
+            new TestDeployTargetRegistry(),
+            [new TestWorkflowOperationStore()],
+            [backend],
+            new StubApprovalEvaluator(),
+            NullLogger<DeployWorkflowService>.Instance,
+            new TestControlPlaneOptionsMonitor(new ControlPlaneOptions
+            {
+                TelemetryConnections =
+                [
+                    new DeployTelemetryConnectionOptions { ConnectionId = "prod-prom", Provider = "prometheus", BaseUrl = "https://example.com" },
+                    new DeployTelemetryConnectionOptions { ConnectionId = "prod-cw", Provider = "cloudwatch", BaseUrl = "https://monitoring.us-east-1.amazonaws.com" },
+                    new DeployTelemetryConnectionOptions { ConnectionId = "prod-az", Provider = "azuremonitor", Region = "workspace-id" }
+                ]
+            }));
+
+        Dictionary<string, string> Gate(string connectionId, string? maxStalenessSeconds)
+        {
+            var parameters = new Dictionary<string, string>
+            {
+                ["telemetry.connection"] = connectionId,
+                ["telemetry.error_rate.query"] = "errors / requests",
+                ["telemetry.error_rate.threshold"] = "0.05",
+                ["telemetry.sample_count.query"] = "request_count",
+                ["telemetry.sample_count.minimum"] = "10"
+            };
+            if (maxStalenessSeconds != null)
+            {
+                parameters["telemetry.max_staleness_seconds"] = maxStalenessSeconds;
+            }
+
+            return parameters;
+        }
+
+        var cloudWatchBounded = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: Gate("prod-cw", "60"));
+        var azureBounded = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: Gate("prod-az", "60"));
+        var cloudWatchDefault = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: Gate("prod-cw", null));
+        var prometheusBounded = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: Gate("prod-prom", "60"));
+
+        cloudWatchBounded!.Plan.IsReadyToSubmit.Should().BeFalse();
+        cloudWatchBounded.Plan.BlockingReasons.Should().ContainSingle()
+            .Which.Should().Contain("telemetry.max_staleness_seconds is only honored by the prometheus provider")
+            .And.Contain("connection 'prod-cw' uses 'cloudwatch'");
+        azureBounded!.Plan.IsReadyToSubmit.Should().BeFalse();
+        azureBounded.Plan.BlockingReasons.Should().ContainSingle()
+            .Which.Should().Contain("connection 'prod-az' uses 'azuremonitor'");
+        cloudWatchDefault!.Plan.IsReadyToSubmit.Should().BeTrue("without an explicit bound nothing is ignored");
+        prometheusBounded!.Plan.IsReadyToSubmit.Should().BeTrue("the prometheus provider checks each sample's observation time");
+        backend.StartCount.Should().Be(0);
+    }
+
+    [Fact]
     public async Task PlanAsync_WithHealthOnlyProfile_IsReadyWithoutAnyMetricsConnection()
     {
         var backend = new ImmediateDeployBackend();

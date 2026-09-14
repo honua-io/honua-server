@@ -24,6 +24,7 @@ internal sealed partial class DeployWorkflowService
 {
     private const string RollbackSubmissionPendingPhase = "Rollback request accepted; submitting to deploy backend.";
     private const string RollbackSubmissionRetryablePhase = "Rollback provider submission was not confirmed; retry is allowed.";
+    private const string MaxStalenessParameterKey = "telemetry.max_staleness_seconds";
     private static readonly Regex UnsafeOperationIdCharacters = new("[^a-z0-9]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly IDeployTargetRegistry _targetRegistry;
     private readonly IWorkflowOperationStore? _workflowStore;
@@ -157,13 +158,29 @@ internal sealed partial class DeployWorkflowService
             return $"Telemetry gate configuration rejected: {policy.ValidationError}";
         }
 
-        if (!policy.IsHealthOnly &&
-            _controlPlaneOptions != null &&
-            !_controlPlaneOptions.CurrentValue.TelemetryConnections.Any(connection =>
-                string.Equals(connection.ConnectionId, policy.ConnectionId, StringComparison.Ordinal)))
+        if (policy.IsHealthOnly || _controlPlaneOptions == null)
+        {
+            return null;
+        }
+
+        var connection = _controlPlaneOptions.CurrentValue.TelemetryConnections.FirstOrDefault(candidate =>
+            string.Equals(candidate.ConnectionId, policy.ConnectionId, StringComparison.Ordinal));
+        if (connection == null)
         {
             return $"Telemetry gate configuration rejected: connection '{policy.ConnectionId}' is not configured under " +
                 "ControlPlane:TelemetryConnections, so the metric gate could never be satisfied.";
+        }
+
+        // Only the Prometheus provider reads each sample's observation time. CloudWatch and Azure Monitor
+        // query a fixed 300-second window, so an explicit staleness bound on them would be silently
+        // ignored (#4617).
+        if (spec.Parameters.TryGetValue(MaxStalenessParameterKey, out var staleness) &&
+            !string.IsNullOrWhiteSpace(staleness) &&
+            !string.Equals(connection.Provider?.Trim(), "prometheus", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"Telemetry gate configuration rejected: {MaxStalenessParameterKey} is only honored by the prometheus provider; " +
+                $"connection '{connection.ConnectionId}' uses '{connection.Provider}', which reads a fixed 300-second query window, " +
+                "so the bound would be silently ignored.";
         }
 
         return null;
