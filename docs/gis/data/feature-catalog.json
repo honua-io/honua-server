@@ -8997,6 +8997,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.Identify_WithLockRasterMosaicRule_ReturnsLockedRasterPixelAndObjectId",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.Identify_WithMaxMergeRule_ReturnsMaximumPixelValue",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.Identify_WithNewestMergeRule_ReturnsNewestRasterValueAndCatalogItems",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.Identify_WithOrderingMosaicMethods_ResolvesContestedPixelLikeExport",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.Identify_WithTimeOnCommunityEdition_ReturnsPaymentRequired",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.Identify_WithTimeOnProEdition_WhenNewestLayerSnapshotMissesPoint_ReturnsNoData",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.Identify_CommaSeparatedGeometry_ReturnsSuccessOrNotFound",
