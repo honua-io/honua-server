@@ -331,10 +331,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
         };
     }
 
-    private static void ThrowIfPublishValidationFailed(TablePublishValidationResult validation)
+    private static void ThrowIfPublishValidationFailed(TablePublishValidationResult validation, bool createEditableCopy)
     {
         var errors = validation.Checks
-            .Where(check => check.Severity == SeverityError)
+            // A managed copy reads the existing source into a new managed layer.
+            // Only that explicit operation may reuse an already published table;
+            // all field, geometry, identity and target-binding checks still apply.
+            .Where(check => check.Severity == SeverityError
+                && (!createEditableCopy || check.Code != LayerConflictCheckCode))
             .ToArray();
         if (errors.Length == 0)
         {

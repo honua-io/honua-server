@@ -215,7 +215,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 },
                 cancellationToken)
             .ConfigureAwait(false);
-        ThrowIfPublishValidationFailed(validation);
+        ThrowIfPublishValidationFailed(validation, request.CreateEditableCopy);
 
         var tableInfo = await ResolveTableInfoForValidationAsync(connectionString, schema, table, cancellationToken)
             ?? throw new LayerPublishingException(
