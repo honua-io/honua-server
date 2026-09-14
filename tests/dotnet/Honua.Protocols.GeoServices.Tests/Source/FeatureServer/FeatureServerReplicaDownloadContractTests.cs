@@ -94,7 +94,7 @@ public sealed class FeatureServerReplicaDownloadContractTests
         var path = document.RootElement.GetProperty("paths")[0];
         path[0].EnumerateArray().Select(value => value.GetDouble()).Should().Equal([1d, 2d, 3d, 4d], json);
         path[1].GetArrayLength().Should().Be(4, "the missing Z keeps its slot so the measure is not read as elevation: {0}", json);
-        path[1][2].GetString().Should().Be("NaN", json);
+        path[1][2].ValueKind.Should().Be(JsonValueKind.Null, json);
         path[1][3].GetDouble().Should().Be(8, json);
 
         var parsed = JsonSerializer.Deserialize(json, FeatureServerJsonContext.Default.GeoServicesGeometry)!;

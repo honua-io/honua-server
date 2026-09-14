@@ -1025,7 +1025,7 @@ internal static partial class GeoServicesGeometryConverter
     /// <summary>
     /// Builds one Esri JSON vertex. The Z and M slots are positional and follow the geometry's
     /// <c>hasZ</c>/<c>hasM</c> flags, not the vertex: a vertex without a Z in a ZM geometry keeps a NaN Z
-    /// slot (serialized as "NaN") so its M is not read back as the elevation.
+    /// slot (serialized as null) so its M is not read back as the elevation.
     /// </summary>
     private static double[] BuildCoordinateArray(CoordinateSequence sequence, int index, bool hasZ, bool hasM)
     {
