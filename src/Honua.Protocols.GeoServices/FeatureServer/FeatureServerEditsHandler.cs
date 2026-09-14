@@ -376,6 +376,12 @@ internal sealed class FeatureServerEditsHandler(
             var featureCount = editResult.CreatedCount + editResult.UpdatedCount + editResult.DeletedCount;
             scope.SetSuccess(featureCount);
             var finalResponse = BuildFinalResponse(editContext, editResult);
+            // The edit moment is taken once the write has returned and travels with the response the
+            // idempotency store records below, so a replayed retry reports when the edits were
+            // originally applied (#4105). The endpoint emits it only when returnEditMoment=true.
+            finalResponse.EditMoment = (httpContext.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System)
+                .GetUtcNow()
+                .ToUnixTimeMilliseconds();
             FeatureServerLog.ApplyEditsCompleted(_logger, serviceId, layerId, finalResponse.Success);
 
             // Record the response for at-most-once replay (#2250) only when the edit actually committed
