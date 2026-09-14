@@ -97,7 +97,7 @@ internal static class NAServerParameterTranslation
         ArgumentNullException.ThrowIfNull(parameters);
 
         var outSrid = ParseOutSr(parameters);
-        var inSrid = ParseInSr(parameters, outSrid);
+        var inSrid = ParseInSr(parameters, outSrid, "stops");
         var stops = ParsePoints(GetValue(parameters, "stops"), "stops");
         if (stops.Count < 2)
         {
@@ -142,7 +142,7 @@ internal static class NAServerParameterTranslation
         ArgumentNullException.ThrowIfNull(parameters);
 
         var outSrid = ParseOutSr(parameters);
-        var inSrid = ParseInSr(parameters, outSrid);
+        var inSrid = ParseInSr(parameters, outSrid, "facilities");
         var facilities = ParsePoints(GetValue(parameters, "facilities"), "facilities");
         if (facilities.Count == 0)
         {
@@ -203,7 +203,7 @@ internal static class NAServerParameterTranslation
         ArgumentNullException.ThrowIfNull(parameters);
 
         var outSrid = ParseOutSr(parameters);
-        var inSrid = ParseInSr(parameters, outSrid);
+        var inSrid = ParseInSr(parameters, outSrid, "incidents", "facilities");
 
         var incidents = ParsePoints(GetValue(parameters, "incidents"), "incidents");
         if (incidents.Count == 0)
@@ -275,7 +275,7 @@ internal static class NAServerParameterTranslation
         var outputType = ParseOdOutputType(GetValue(parameters, "outputType"));
 
         var outSrid = ParseOutSr(parameters);
-        var inSrid = ParseInSr(parameters, outSrid);
+        var inSrid = ParseInSr(parameters, outSrid, "origins", "destinations");
 
         var origins = ParsePoints(GetValue(parameters, "origins"), "origins");
         if (origins.Count == 0)
@@ -341,7 +341,7 @@ internal static class NAServerParameterTranslation
         ArgumentNullException.ThrowIfNull(parameters);
 
         var outSrid = ParseOutSr(parameters);
-        var inSrid = ParseInSr(parameters, outSrid);
+        var inSrid = ParseInSr(parameters, outSrid, "facilities", "demandPoints");
 
         var facilities = ParsePoints(GetValue(parameters, "facilities"), "facilities");
         if (facilities.Count == 0)
@@ -906,18 +906,24 @@ internal static class NAServerParameterTranslation
     /// Esri clients describe input coordinates with the <c>spatialReference</c> carried by
     /// each stops/facilities/incidents/origins/destinations/demandPoints/barriers FeatureSet
     /// (or by its geometries); the Esri solve operations define no <c>inSR</c> parameter.
+    /// Only the inputs the current operation consumes are read, so a parameter it ignores cannot
+    /// change how its coordinates are interpreted, and <c>latestWkid</c> wins over a legacy Esri
+    /// <c>wkid</c> that PostGIS cannot transform.
     /// Ignoring that declaration solved Web Mercator input as if it were WGS84 (#4025), so a
     /// declared reference is authoritative. The Honua <c>inSR</c> extension applies only to
     /// undeclared input, then falls back to the output SRID. Conflicting declarations — two
     /// inputs, or a declaration and <c>inSR</c>, naming different references — are rejected
     /// rather than guessed. Web Mercator aliases (<c>102100</c>) resolve to EPSG:3857.
     /// </remarks>
-    private static int ParseInSr(IReadOnlyDictionary<string, string> parameters, int outSrid)
+    private static int ParseInSr(
+        IReadOnlyDictionary<string, string> parameters,
+        int outSrid,
+        params string[] inputParameters)
     {
-        var explicitInSr = ParseSpatialReference(parameters, "inSR");
+        var explicitInSr = ParseSpatialReference(parameters, "inSR", preferLatestWkid: true);
         int? declaredSrid = null;
         string? declaredBy = null;
-        foreach (var parameterName in GeometryInputParameters)
+        foreach (var parameterName in inputParameters.Concat(BarrierParameters))
         {
             foreach (var srid in ReadDeclaredSpatialReferences(GetValue(parameters, parameterName), parameterName))
             {
@@ -948,13 +954,9 @@ internal static class NAServerParameterTranslation
     }
 
     /// <summary>
-    /// NAServer parameters whose Esri FeatureSet value can declare the input spatial reference.
+    /// Barrier parameters every solve consumes; their FeatureSets can declare the input spatial reference.
     /// </summary>
-    private static readonly string[] GeometryInputParameters =
-    [
-        "stops", "facilities", "incidents", "origins", "destinations", "demandPoints",
-        "barriers", "polylineBarriers", "polygonBarriers",
-    ];
+    private static readonly string[] BarrierParameters = ["barriers", "polylineBarriers", "polygonBarriers"];
 
     /// <summary>
     /// Returns the normalized SRIDs declared by a FeatureSet or geometry JSON value: the
@@ -986,12 +988,11 @@ internal static class NAServerParameterTranslation
             AddDeclared(root);
             if (root.TryGetProperty("features", out var features) && features.ValueKind == JsonValueKind.Array)
             {
-                foreach (var feature in features.EnumerateArray())
+                foreach (var geometry in features.EnumerateArray()
+                             .Where(static feature => feature.ValueKind == JsonValueKind.Object)
+                             .Select(static feature => feature.TryGetProperty("geometry", out var geometry) ? geometry : default))
                 {
-                    if (feature.ValueKind == JsonValueKind.Object && feature.TryGetProperty("geometry", out var geometry))
-                    {
-                        AddDeclared(geometry);
-                    }
+                    AddDeclared(geometry);
                 }
             }
 
@@ -1015,7 +1016,7 @@ internal static class NAServerParameterTranslation
                 return;
             }
 
-            if (!TryReadWkid(spatialReference, out var wkid))
+            if (!TryReadWkid(spatialReference, preferLatestWkid: true, out var wkid))
             {
                 throw new NAServerParameterException(
                     $"'{parameterName}' spatialReference must carry a positive 'wkid' or 'latestWkid'.");
@@ -1031,7 +1032,10 @@ internal static class NAServerParameterTranslation
     /// Returns <c>null</c> when the parameter is absent/empty; throws on a malformed
     /// value.
     /// </summary>
-    private static int? ParseSpatialReference(IReadOnlyDictionary<string, string> parameters, string key)
+    private static int? ParseSpatialReference(
+        IReadOnlyDictionary<string, string> parameters,
+        string key,
+        bool preferLatestWkid = false)
     {
         var value = GetValue(parameters, key);
         if (string.IsNullOrWhiteSpace(value))
@@ -1050,7 +1054,7 @@ internal static class NAServerParameterTranslation
             try
             {
                 using var doc = JsonDocument.Parse(trimmed);
-                if (TryReadWkid(doc.RootElement, out var wkid))
+                if (TryReadWkid(doc.RootElement, preferLatestWkid, out var wkid))
                 {
                     return wkid;
                 }
@@ -1067,10 +1071,11 @@ internal static class NAServerParameterTranslation
     }
 
     /// <summary>
-    /// Reads the positive <c>wkid</c> (preferred) or <c>latestWkid</c> from an Esri
-    /// spatial-reference object.
+    /// Reads a positive <c>wkid</c> or <c>latestWkid</c> from an Esri spatial-reference object. With
+    /// <paramref name="preferLatestWkid"/> the current EPSG <c>latestWkid</c> is tried first, because a
+    /// legacy Esri <c>wkid</c> such as <c>102067</c> has no PostGIS definition to transform from.
     /// </summary>
-    private static bool TryReadWkid(JsonElement spatialReference, out int wkid)
+    private static bool TryReadWkid(JsonElement spatialReference, bool preferLatestWkid, out int wkid)
     {
         wkid = 0;
         if (spatialReference.ValueKind != JsonValueKind.Object)
@@ -1078,7 +1083,8 @@ internal static class NAServerParameterTranslation
             return false;
         }
 
-        foreach (var name in (ReadOnlySpan<string>)["wkid", "latestWkid"])
+        ReadOnlySpan<string> names = preferLatestWkid ? ["latestWkid", "wkid"] : ["wkid", "latestWkid"];
+        foreach (var name in names)
         {
             if (spatialReference.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number &&
                 value.TryGetInt32(out var parsed) && parsed > 0)

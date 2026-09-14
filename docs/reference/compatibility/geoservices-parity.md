@@ -314,7 +314,8 @@ the shared `IRoutingProvider` routing pipeline.
 
 Input coordinates are interpreted in the `spatialReference` that the Esri FeatureSet (or each of its geometries)
 declares on `stops`, `facilities`, `incidents`, `origins`, `destinations`, `demandPoints`, and the barrier parameters,
-exactly as Esri clients send them (#4025). Web Mercator aliases such as `102100` resolve to EPSG:3857. The Honua
+exactly as Esri clients send them (#4025). Only the inputs the solve operation consumes are read, and `latestWkid`
+takes precedence over a legacy Esri `wkid`. Web Mercator aliases such as `102100` resolve to EPSG:3857. The Honua
 `inSR` extension applies only to input that declares no reference, and otherwise defaults to `outSR`. A request whose
 inputs declare different references, or whose `inSR` contradicts a declared reference, is rejected with a GeoServices
 400 rather than solved in a guessed reference.

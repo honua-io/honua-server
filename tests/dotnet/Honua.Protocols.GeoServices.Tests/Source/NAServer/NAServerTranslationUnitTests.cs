@@ -334,6 +334,35 @@ public sealed class NAServerTranslationUnitTests
     }
 
     [UnitTest]
+    [Operation(Operations.Directions)]
+    public void BuildRouteSolveRequest_ParameterTheOperationIgnores_DoesNotDeclareTheInputSrid()
+    {
+        // A route solve consumes stops and barriers only; a stray facilities FeatureSet must neither
+        // reinterpret the stops nor turn the valid request into a conflict.
+        var request = NAServerParameterTranslation.BuildRouteSolveRequest(
+            Parameters(("stops", "-157.85,21.30;-157.86,21.31"), ("facilities", WebMercatorFeatureSet)));
+
+        request.InSrid.Should().Be(4326);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Directions)]
+    public void BuildRouteSolveRequest_LegacyWkidWithLatestWkid_UsesLatestWkid()
+    {
+        // Esri pairs a legacy identifier with its EPSG successor (S-JTSK Krovak East North: 102067 -> 5514);
+        // PostGIS only knows the EPSG code.
+        const string krovak = """
+            { "spatialReference": { "wkid": 102067, "latestWkid": 5514 }, "features": [ { "geometry": { "x": -742000.0, "y": -1043000.0 } }, { "geometry": { "x": -741000.0, "y": -1042000.0 } } ] }
+            """;
+
+        NAServerParameterTranslation.BuildRouteSolveRequest(Parameters(("stops", krovak)))
+            .InSrid.Should().Be(5514);
+        NAServerParameterTranslation.BuildRouteSolveRequest(
+                Parameters(("stops", krovak), ("inSR", "{\"wkid\":102067,\"latestWkid\":5514}")))
+            .InSrid.Should().Be(5514, "the same reference sent as inSR agrees with the declaration");
+    }
+
+    [UnitTest]
     [Operation(Operations.ServiceArea)]
     public void MapServiceArea_GeoJsonCcwOuterRing_IsNormalizedToClockwiseForEsri()
     {
