@@ -154,55 +154,91 @@ public sealed class CandidateODataDeltaCertificationTests
             }
         }
 
-        await env.SeedScenarioRowsAsync();
-
-        var delta = await FollowAsync($"/odata/Features({TestLayerId})?$filter=name%20ne%20'excluded'&$top=1", true);
-        var baselineExpected = new Dictionary<long, string>
+        // The odata.yaml fixture's 15 pre-existing baseline cities, unmutated for the whole
+        // scenario. Folded into every expected/authoritative comparison below so the
+        // certification also fails if a delta page incorrectly removed or corrupted one of them,
+        // not only its own scenario rows.
+        var baselineCities = new Dictionary<long, string>
         {
-            [73001] = "first",
-            [73002] = "second",
-            [73003] = "leaving",
-            [73004] = "recreate",
-            [73006] = "delete"
+            [1] = "San Francisco",
+            [2] = "Los Angeles",
+            [3] = "Sacramento",
+            [4] = "San Diego",
+            [5] = "San Jose",
+            [6] = "Seattle",
+            [7] = "Portland",
+            [8] = "Salt Lake City",
+            [9] = "Denver",
+            [10] = "Phoenix",
+            [11] = "Las Vegas",
+            [12] = "Tucson",
+            [13] = "Virtual City",
+            [14] = "Albuquerque",
+            [15] = "Boise"
         };
-        state.Where(entry => entry.Key >= 73000).Should().BeEquivalentTo(baselineExpected);
 
-        await env.MutateScenarioRowsAsync();
-
-        var terminal = await FollowAsync(delta, false);
-        var expected = new Dictionary<long, string>
+        string? outcome = null;
+        string finalStateHash = string.Empty;
+        try
         {
-            [73001] = "first-updated",
-            [73002] = "second-updated",
-            [73004] = "recreated",
-            [73005] = "entered"
-        };
-        state.Where(entry => entry.Key >= 73000).Should().BeEquivalentTo(expected, "the independently specified mutation outcome must replace the baseline");
-        var afterMutation = state.Where(entry => entry.Key >= 73000).ToDictionary(entry => entry.Key, entry => entry.Value);
-        StateHash(afterMutation).Should().Be(StateHash(expected));
-        var authoritative = (await AuthoritativeAsync()).Where(entry => entry.Key >= 73000).ToDictionary(entry => entry.Key, entry => entry.Value);
-        StateHash(afterMutation).Should().Be(StateHash(authoritative), "the subscriber converges to an independent direct SQL query against the real candidate database");
+            await env.SeedScenarioRowsAsync();
 
-        _ = await FollowAsync(terminal, false);
-        state.Where(entry => entry.Key >= 73000).Should().BeEquivalentTo(expected, "terminal polling is idempotent");
+            var delta = await FollowAsync($"/odata/Features({TestLayerId})?$filter=name%20ne%20'excluded'&$top=1", true);
+            var baselineExpected = new Dictionary<long, string>(baselineCities)
+            {
+                [73001] = "first",
+                [73002] = "second",
+                [73003] = "leaving",
+                [73004] = "recreate",
+                [73006] = "delete"
+            };
+            state.Should().BeEquivalentTo(baselineExpected);
 
-        await env.RestartCandidateAsync();
+            await env.MutateScenarioRowsAsync();
 
-        _ = await FollowAsync(terminal, false);
-        state.Where(entry => entry.Key >= 73000).Should().BeEquivalentTo(expected, "the same durable terminal token survives a complete container restart");
+            var terminal = await FollowAsync(delta, false);
+            var expected = new Dictionary<long, string>(baselineCities)
+            {
+                [73001] = "first-updated",
+                [73002] = "second-updated",
+                [73004] = "recreated",
+                [73005] = "entered"
+            };
+            state.Should().BeEquivalentTo(expected, "the independently specified mutation outcome must replace the baseline");
+            StateHash(state).Should().Be(StateHash(expected));
+            var authoritative = await AuthoritativeAsync();
+            StateHash(state).Should().Be(StateHash(authoritative), "the subscriber converges to an independent direct SQL query against the real candidate database, over the complete tracked set");
 
-        await env.ApplyPostRestartMutationAsync();
-        expected[73001] = "after-restart";
-        var restartedTerminal = await FollowAsync(terminal, false);
-        state.Where(entry => entry.Key >= 73000).Should().BeEquivalentTo(expected, "a post-restart update at the same timestamp must converge without rebaselining");
-        var afterRestart = state.Where(entry => entry.Key >= 73000).ToDictionary(entry => entry.Key, entry => entry.Value);
-        StateHash(afterRestart).Should().Be(StateHash(expected));
-        var authoritativeAfterRestart = (await AuthoritativeAsync()).Where(entry => entry.Key >= 73000).ToDictionary(entry => entry.Key, entry => entry.Value);
-        StateHash(afterRestart).Should().Be(StateHash(authoritativeAfterRestart));
-        _ = await FollowAsync(restartedTerminal, false);
-        state.Where(entry => entry.Key >= 73000).Should().BeEquivalentTo(expected);
+            _ = await FollowAsync(terminal, false);
+            state.Should().BeEquivalentTo(expected, "terminal polling is idempotent");
 
-        await env.WriteReceiptAsync(StateHash(afterRestart));
+            await env.RestartCandidateAsync();
+
+            _ = await FollowAsync(terminal, false);
+            state.Should().BeEquivalentTo(expected, "the same durable terminal token survives a complete container restart");
+
+            await env.ApplyPostRestartMutationAsync();
+            expected[73001] = "after-restart";
+            var restartedTerminal = await FollowAsync(terminal, false);
+            state.Should().BeEquivalentTo(expected, "a post-restart update at the same timestamp must converge without rebaselining");
+            StateHash(state).Should().Be(StateHash(expected));
+            var authoritativeAfterRestart = await AuthoritativeAsync();
+            StateHash(state).Should().Be(StateHash(authoritativeAfterRestart));
+            _ = await FollowAsync(restartedTerminal, false);
+            state.Should().BeEquivalentTo(expected);
+
+            finalStateHash = StateHash(state);
+            outcome = "passed";
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            outcome = $"failed: {ex.Message}";
+            throw;
+        }
+        finally
+        {
+            await env.WriteReceiptAsync(outcome ?? "failed: aborted before an outcome was recorded", finalStateHash);
+        }
     }
 
     private static string StateHash(IReadOnlyDictionary<long, string> state)
@@ -222,6 +258,7 @@ public sealed class CandidateODataDeltaCertificationTests
     private sealed class CandidateODataEnvironment : IAsyncDisposable
     {
         private const string PostgresImage = "postgis/postgis:18-3.6";
+        private const string RedisImage = "redis:7.2-alpine";
         private const int CandidateContainerPort = 8080;
         private const string DatabasePassword = "candidate-3872-odata-delta";
 
@@ -229,6 +266,7 @@ public sealed class CandidateODataDeltaCertificationTests
         private readonly ITestOutputHelper _output;
         private readonly string _networkName;
         private readonly string _postgresContainerName;
+        private readonly string _redisContainerName;
         private readonly string _candidateContainerName;
         private readonly string _postgresConnectionStringFromHost;
         private readonly int _candidateHostPort;
@@ -238,6 +276,7 @@ public sealed class CandidateODataDeltaCertificationTests
             ITestOutputHelper output,
             string networkName,
             string postgresContainerName,
+            string redisContainerName,
             string candidateContainerName,
             string postgresConnectionStringFromHost,
             int candidateHostPort)
@@ -246,6 +285,7 @@ public sealed class CandidateODataDeltaCertificationTests
             _output = output;
             _networkName = networkName;
             _postgresContainerName = postgresContainerName;
+            _redisContainerName = redisContainerName;
             _candidateContainerName = candidateContainerName;
             _postgresConnectionStringFromHost = postgresConnectionStringFromHost;
             _candidateHostPort = candidateHostPort;
@@ -259,6 +299,7 @@ public sealed class CandidateODataDeltaCertificationTests
             var suffix = Guid.NewGuid().ToString("N")[..8];
             var networkName = $"honua-cod-{suffix}";
             var postgresContainerName = $"honua-cod-pg-{suffix}";
+            var redisContainerName = $"honua-cod-redis-{suffix}";
             var candidateContainerName = $"honua-cod-server-{suffix}";
 
             await Docker.RunCheckedAsync(["network", "create", networkName]);
@@ -276,6 +317,14 @@ public sealed class CandidateODataDeltaCertificationTests
                 var postgresConnectionStringFromHost =
                     $"Host=127.0.0.1;Port={hostPort.ToString(CultureInfo.InvariantCulture)};Database=honua;Username=honua;Password={DatabasePassword}";
 
+                // The candidate is certified under Production, the deployment profile it claims to
+                // certify: Development takes materially different composition and validation
+                // branches (e.g. the durable-event/Redis-required guardrail below is skipped
+                // entirely outside Production), so this lane must not pass on a boot mode a real
+                // release never runs. Production requires a reachable Redis for durable
+                // coordination, so a real one is booted here too.
+                await Docker.RunCheckedAsync(["run", "-d", "--name", redisContainerName, "--network", networkName, RedisImage]);
+
                 // Boot the candidate first so its own migrations create the schema (including the
                 // metadata_v2_snapshots family the compat activation below writes into) exactly as
                 // a real deployment would; only then seed and activate the V1-to-V2 projection
@@ -286,11 +335,13 @@ public sealed class CandidateODataDeltaCertificationTests
                 [
                     "run", "-d", "--name", candidateContainerName, "--network", networkName,
                     "-p", $"127.0.0.1:{candidateHostPort.ToString(CultureInfo.InvariantCulture)}:{CandidateContainerPort.ToString(CultureInfo.InvariantCulture)}",
-                    "-e", "ASPNETCORE_ENVIRONMENT=Development",
+                    "-e", "ASPNETCORE_ENVIRONMENT=Production",
                     "-e", $"ConnectionStrings__DefaultConnection=Host={postgresContainerName};Port=5432;Database=honua;Username=honua;Password={DatabasePassword}",
+                    "-e", $"ConnectionStrings__Redis={redisContainerName}:6379",
                     "-e", "HONUA_ADMIN_PASSWORD=Candidate-3872-Odata-Delta!admin",
                     "-e", "Security__ConnectionEncryption__MasterKey=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-                    "-e", "AllowedHosts=*",
+                    "-e", "HostValidation__AllowedHosts__0=127.0.0.1",
+                    "-e", "HostValidation__AllowedHosts__1=localhost",
                     image.Id
                 ]);
 
@@ -299,6 +350,7 @@ public sealed class CandidateODataDeltaCertificationTests
                     output,
                     networkName,
                     postgresContainerName,
+                    redisContainerName,
                     candidateContainerName,
                     postgresConnectionStringFromHost,
                     candidateHostPort);
@@ -312,6 +364,7 @@ public sealed class CandidateODataDeltaCertificationTests
             catch
             {
                 await Docker.RunAsync(["rm", "-f", candidateContainerName]);
+                await Docker.RunAsync(["rm", "-f", redisContainerName]);
                 await Docker.RunAsync(["rm", "-f", postgresContainerName]);
                 await Docker.RunAsync(["network", "rm", networkName]);
                 throw;
@@ -381,12 +434,13 @@ public sealed class CandidateODataDeltaCertificationTests
             await WaitForCandidateReadyAsync();
         }
 
-        public async Task WriteReceiptAsync(string finalStateHash)
+        public async Task WriteReceiptAsync(string outcome, string finalStateHash)
         {
             var receipt = new Receipt(
                 Schema: "honua.candidate-odata-delta-receipt/v1",
                 Scenario: "equal-timestamps-deletes-recreate-filter-transitions-restart",
                 Candidate: _image,
+                Outcome: outcome,
                 FinalStateHash: finalStateHash,
                 CompletedAt: DateTimeOffset.UtcNow);
             var json = JsonSerializer.Serialize(receipt, ReceiptJsonOptions);
@@ -516,6 +570,7 @@ public sealed class CandidateODataDeltaCertificationTests
         {
             HttpClient.Dispose();
             await Docker.RunAsync(["rm", "-f", _candidateContainerName]);
+            await Docker.RunAsync(["rm", "-f", _redisContainerName]);
             await Docker.RunAsync(["rm", "-f", _postgresContainerName]);
             await Docker.RunAsync(["network", "rm", _networkName]);
         }
@@ -532,6 +587,7 @@ public sealed class CandidateODataDeltaCertificationTests
         string Schema,
         string Scenario,
         ImageIdentity Candidate,
+        string Outcome,
         string FinalStateHash,
         DateTimeOffset CompletedAt);
 
