@@ -277,7 +277,8 @@ internal sealed class ImageServerComputeClassStatisticsHandler
                 var values = new List<int>(doc.RootElement.GetArrayLength());
                 foreach (var element in doc.RootElement.EnumerateArray())
                 {
-                    if (element.ValueKind != System.Text.Json.JsonValueKind.Number || !element.TryGetInt32(out var band) || band < 0)
+                    // int.MaxValue has no 1-based store band: shifting it would wrap negative.
+                    if (element.ValueKind != System.Text.Json.JsonValueKind.Number || !element.TryGetInt32(out var band) || band is < 0 or int.MaxValue)
                     {
                         error = "bandIds entries must be non-negative 0-based band indices.";
                         return false;
@@ -300,7 +301,7 @@ internal sealed class ImageServerComputeClassStatisticsHandler
         var parsed = new List<int>(parts.Length);
         foreach (var part in parts)
         {
-            if (!int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var band) || band < 0)
+            if (!int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var band) || band is < 0 or int.MaxValue)
             {
                 error = "bandIds entries must be non-negative 0-based band indices.";
                 return false;

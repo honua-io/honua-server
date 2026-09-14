@@ -856,8 +856,9 @@ internal sealed class ImageServerExportHandler
         var parsed = new List<int>(parts.Length);
         foreach (var part in parts)
         {
+            // int.MaxValue has no 1-based store band: shifting it would wrap negative.
             if (!int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var zeroBased) ||
-                zeroBased < 0)
+                zeroBased is < 0 or int.MaxValue)
             {
                 error = "bandIds must be a comma-separated list of non-negative band indices.";
                 return false;

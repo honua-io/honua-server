@@ -487,6 +487,28 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
     [UnitTest]
     [Operation(Operations.Query)]
+    public async Task ComputeAsync_BandIdsIntMaxValue_ReturnsBadRequestWithoutWrappingToNegativeBand()
+    {
+        // 2147483647 is a valid Int32 but has no 1-based store band: the 0-based shift would wrap
+        // to int.MinValue and reach the raster store as a negative band.
+        foreach (var bandIds in new[] { "2147483647", "[2147483647]", "0,2147483647" })
+        {
+            var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["bandIds"] = bandIds,
+            };
+
+            var context = CreateImageServerContext();
+            var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
+            await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
+        }
+
+        await _rasterStore.DidNotReceiveWithAnyArgs().GetStatisticsAsync(
+            default, default, default, default, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
     public async Task ComputeAsync_RasterStoreThrows_ReturnsServerError()
     {
         _rasterStore.QueryRastersAsync(default, default, default)
