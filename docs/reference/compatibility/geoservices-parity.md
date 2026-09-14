@@ -151,6 +151,36 @@ Contract details:
   same-key retry receives `409`; this safety bias prevents duplicating rows that may already
   have committed (#3052).
 
+#### synchronizeReplica upload retries
+
+`synchronizeReplica` uploads (`syncDirection=upload` or `bidirectional`) are at-most-once too
+(#4026). Field clients on flaky links re-send an upload whose response they never received, and
+that retry used to insert its adds a second time. The first upload that applies is recorded for
+the dedupe window (24 hours). A retry returns the recorded `appliedAdds`, `appliedUpdates`,
+`appliedDeletes`, `conflicts` and, with `returnIdsForAdds=true`, `editResults` instead of applying
+the edits again. A bidirectional retry still assembles its download half fresh.
+
+- A client key identifies the upload: the `Idempotency-Key` header or the Esri `editsUploadID`
+  parameter, under the key rules above. When both are sent they must match. A key already used for
+  different edits is rejected with a 400. Edits differ when their `syncDirection`,
+  `rollbackOnFailure`, `conflictHandling` or `edits` differ.
+- Without a key, a fingerprint of those same inputs, taken at the replica's upload cursor, identifies
+  the upload. A retry therefore replays, while identical edits sent again after another upload apply
+  as new data. A client that deliberately sends identical edits back to back should send a new key
+  each time.
+- A replayed bidirectional retry acknowledges the live server generation of the download half it
+  delivers, so the next download does not repeat it.
+- An upload that fails after committing some rows is recorded too. This happens in the default
+  best-effort mode (`rollbackOnFailure=false`). Its retry returns the same error instead of applying
+  the committed rows again. An upload that provably committed nothing frees its key, so the retry
+  runs fresh.
+- The key is scoped to the principal, the replica's service and the replica. A retry reaches the same
+  record whatever the casing of the service in the path.
+- A `409` answers an identical upload that is still in flight. Its reservation lasts the configured
+  `Limits:Connections:RequestTimeout` plus 30 seconds, and never less than 60 seconds. A request that
+  outlives its reservation never overwrites another request's reservation or record. The Redis or
+  in-process backing follows the applyEdits contract above.
+
 ### applyEdits per-feature error codes
 
 `applyEdits` (and the standalone `addFeatures`/`updateFeatures`/`deleteFeatures`

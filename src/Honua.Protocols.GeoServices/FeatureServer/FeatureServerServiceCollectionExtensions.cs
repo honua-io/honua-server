@@ -55,6 +55,18 @@ internal static class FeatureServerServiceCollectionExtensions
                 serviceProvider.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
                 serviceProvider.GetRequiredService<ILogger<DistributedApplyEditsIdempotencyStore>>()));
 
+        // At-most-once synchronizeReplica uploads (#4026): same backing and reservation semantics as
+        // the applyEdits store, singleton for the same reason. The reservation outlasts the configured
+        // request timeout so a slow upload is never overtaken by its own retry.
+        services.TryAddSingleton<IReplicaUploadIdempotencyStore>(static serviceProvider =>
+            new DistributedReplicaUploadIdempotencyStore(
+                serviceProvider.GetService<IConnectionMultiplexer>(),
+                serviceProvider.GetService<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(),
+                serviceProvider.GetRequiredService<ILogger<DistributedReplicaUploadIdempotencyStore>>(),
+                DistributedReplicaUploadIdempotencyStore.ReservationWindowFor(
+                    serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<Honua.Core.Configuration.LimitsOptions>>()
+                        .Value.Connections.RequestTimeout)));
+
         // Collaborative-editing lock enforcement (#4402). Registered with TryAdd so a host
         // that also calls AddFeatureLockCollaboration shares the SAME singleton lease store
         // as the /collaboration/feature-locks endpoints — a lease handed out there and the
