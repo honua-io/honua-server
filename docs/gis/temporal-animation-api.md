@@ -51,6 +51,12 @@ The GeoServices `time=` parameter accepts:
   like omitting the parameter (so animation clients can hold a constant parameter
   slot).
 - `time=<instant>` — a single value; treated as `start == end`.
+- `time=[<start>, <end>]` — the same interval written as a two-element JSON
+  array, the form the ArcGIS API for Python sends from a layer's
+  `timeInfo.timeExtent`. Elements are epoch milliseconds, `null`, or quoted
+  ISO-8601 strings, and results are identical to `time=<start>,<end>`. Any other
+  element count or unbalanced brackets are rejected like other unparseable
+  values.
 
 An inverted interval (`start > end`) and any unparseable value are rejected with
 **HTTP 400**. Interval semantics are inclusive intersection: a feature matches

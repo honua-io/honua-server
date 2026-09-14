@@ -485,6 +485,119 @@ public sealed class FeatureServerTemporalTests : IClassFixture<WebAppFixture>
     [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task GeoServicesQuery_BracketedTimeExtent_FeatureServer_MatchesPlainExtentAndExpectedFeatures()
+        => await AssertBracketedTimeExtentMatchesPlainExtentAsync("FeatureServer");
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/{layerId}/query")]
+    public async Task GeoServicesQuery_BracketedTimeExtent_MapServer_MatchesPlainExtentAndExpectedFeatures()
+        => await AssertBracketedTimeExtentMatchesPlainExtentAsync("MapServer");
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task GeoServicesQuery_MalformedBracketedTimeExtent_ReturnsBadRequest()
+    {
+        var malformed = new[]
+        {
+            "[1672527600000, 1728950400000",
+            "[1672527600000]",
+            "[1672527600000, 1700000000000, 1728950400000]",
+            "[1728950400000, 1672527600000]",
+        };
+
+        foreach (var encodedTime in malformed.Select(Uri.EscapeDataString))
+        {
+            var response = await _client.GetAsync(
+                $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query?time={encodedTime}&f=json");
+
+            await response.AssertGeoServicesErrorAsync(400);
+        }
+    }
+
+    /// <summary>
+    /// #4782: the ArcGIS API for Python sends a layer's <c>timeInfo.timeExtent</c> as a bracketed
+    /// JSON array (<c>time=[start, end]</c>). The expected features are computed here from the
+    /// unfiltered layer with the intersects rule — feature <c>[timestamp, COALESCE(event_date,
+    /// timestamp)]</c> overlaps the query interval, and an open bound does not constrain — rather
+    /// than taken from a time-filtered server response.
+    /// </summary>
+    private async Task AssertBracketedTimeExtentMatchesPlainExtentAsync(string serviceType)
+    {
+        var queryPath = $"/rest/services/{WebAppFixture.TestServiceId}/{serviceType}/{WebAppFixture.TestLayerId}/query";
+
+        var response = await _client.GetAsync($"{queryPath}?where=1%3D1&outFields=%2A&f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var content = await response.Content.ReadAsStringAsync();
+        List<(long Id, DateTimeOffset Start, DateTimeOffset End)> features;
+        using (var document = JsonDocument.Parse(content))
+        {
+            document.RootElement.TryGetProperty("features", out var featuresElement).Should().BeTrue(content);
+            (document.RootElement.TryGetProperty("exceededTransferLimit", out var exceeded)
+                && exceeded.ValueKind == JsonValueKind.True).Should().BeFalse("the unfiltered read must see every feature");
+
+            features = featuresElement.EnumerateArray()
+                .Select(feature =>
+                {
+                    var attributes = feature.GetProperty("attributes");
+                    var start = TryReadTemporal(attributes, "timestamp");
+                    return (Id: TryReadObjectId(feature), Start: start, End: TryReadTemporal(attributes, "event_date") ?? start);
+                })
+                .Where(feature => feature.Id.HasValue && feature.Start.HasValue)
+                .Select(feature => (feature.Id!.Value, feature.Start!.Value, feature.End!.Value))
+                .ToList();
+        }
+
+        var minStartMs = features.Min(feature => feature.Start).ToUnixTimeMilliseconds();
+        var maxStartMs = features.Max(feature => feature.Start).ToUnixTimeMilliseconds();
+        (maxStartMs - minStartMs).Should().BeGreaterThan(1, "the fixture needs distinct feature start times to prove selection");
+
+        // Query from the earliest feature start to the midpoint, so the latest-starting feature is outside.
+        var queryStartMs = minStartMs;
+        var queryEndMs = minStartMs + ((maxStartMs - minStartMs) / 2);
+        var queryStart = DateTimeOffset.FromUnixTimeMilliseconds(queryStartMs);
+        var queryEnd = DateTimeOffset.FromUnixTimeMilliseconds(queryEndMs);
+
+        var expectedClosed = features
+            .Where(feature => feature.Start <= queryEnd && feature.End >= queryStart)
+            .Select(feature => feature.Id)
+            .ToList();
+        var expectedOpenStart = features
+            .Where(feature => feature.Start <= queryEnd)
+            .Select(feature => feature.Id)
+            .ToList();
+        expectedClosed.Should().NotBeEmpty();
+        expectedClosed.Count.Should().BeLessThan(features.Count, "the extent must exclude at least one feature");
+
+        // The exact parameter set the ArcGIS API for Python sent, including its '+'-encoded space.
+        const string clientParameters =
+            "where=1%3D1&outFields=%2A&returnGeometry=true&returnCountOnly=false&returnIdsOnly=false" +
+            "&returnDistinctValues=false&returnExtentOnly=false&returnZ=false&returnM=false" +
+            "&returnCentroid=false&returnAllRecords=true&returnTrueCurves=false&f=json";
+        var cases = new (string Time, IReadOnlyCollection<long> Expected)[]
+        {
+            ($"%5B{queryStartMs}%2C+{queryEndMs}%5D", expectedClosed),
+            ($"{queryStartMs},{queryEndMs}", expectedClosed),
+            (Uri.EscapeDataString($"[null, {queryEndMs}]"), expectedOpenStart),
+            ($"null,{queryEndMs}", expectedOpenStart),
+        };
+
+        foreach (var (time, expected) in cases)
+        {
+            var timeResponse = await _client.GetAsync($"{queryPath}?{clientParameters}&time={time}");
+            timeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            var timeContent = await timeResponse.Content.ReadAsStringAsync();
+            using var timeDocument = JsonDocument.Parse(timeContent);
+            timeDocument.RootElement.TryGetProperty("error", out _).Should().BeFalse($"time={time} returned {timeContent}");
+
+            ExtractObjectIds(timeDocument).Should().BeEquivalentTo(expected, $"time={time} on {serviceType}");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task GeoServicesQuery_InvalidTimeFormat_ReturnsBadRequest()
     {
         // Arrange
