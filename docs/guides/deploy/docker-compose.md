@@ -5,9 +5,17 @@ description: "Take a single-node Compose install to production: a TLS edge, back
 ---
 # Deploy with Docker Compose
 
-This is what to do **after** Honua is running. It covers what the quickstart
-deliberately leaves out: terminating TLS in front of it, taking backups you have
-actually restored from, and upgrading without losing the database.
+This is the **single-node** path: one host you administer, running Compose. It
+covers what the quickstart leaves out — terminating TLS in front of it, taking
+backups you have actually restored from, and upgrading without losing the
+database.
+
+**Deploying to a cloud account instead?** That path is
+[honua-iac](https://github.com/honua-io/honua-iac) — public Terraform modules for
+ECS/Fargate, Lambda, Azure Container Apps, Azure Functions, EKS and AKS. See
+[Deploy on AWS and Azure](cloud-deployments.md) to pick a pattern, then
+[the operator deployment guide](https://github.com/honua-io/honua-iac/blob/trunk/docs/operator-deployment.md) to stand it up.
+Nothing below applies to those; they do not use Compose.
 
 **Start from the [quickstart](../../get-started/quickstart.md).** It gives you
 the `compose.yaml`, the `.env` and a published layer in about ten minutes, on any

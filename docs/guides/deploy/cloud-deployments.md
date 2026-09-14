@@ -9,17 +9,37 @@ You'll pick a managed-cloud deployment pattern for Honua — ECS/Fargate, Lambda
 
 **Prerequisites:** A PostGIS database (RDS or Azure Database for PostgreSQL Flexible Server), the required env vars from [Configure Honua Server](configuration.md) (`ConnectionStrings__DefaultConnection`, `HONUA_ADMIN_PASSWORD`, `Security__ConnectionEncryption__MasterKey`, `Cors__AllowedOrigins__0`), and TLS terminated at the edge (ALB, API Gateway, Front Door) — Honua does not terminate TLS.
 
-Infrastructure-as-code for all of these patterns ships as private Terraform modules (honua-iac), available to customers through support.
+**The infrastructure-as-code for every pattern below is [honua-iac](https://github.com/honua-io/honua-iac),
+and it is public.** Start with its
+[operator deployment guide](https://github.com/honua-io/honua-iac/blob/trunk/docs/operator-deployment.md) — this page explains
+*which* pattern to pick and what each one implies; that guide is how you stand one up.
+
+Modules are consumed by Git source pinned to a SemVer tag rather than from the public
+Terraform Registry, which the Elastic License 2.0 precludes
+([the recorded decision](https://github.com/honua-io/honua-iac/blob/trunk/docs/module-publishing-decision.md)):
+
+```hcl
+module "honua" {
+  source = "git::https://github.com/honua-io/honua-iac.git//infrastructure/terraform/modules/aws-ecs?ref=<tag>"
+  # ...module inputs...
+}
+```
+
+See [how modules are versioned and consumed](https://github.com/honua-io/honua-iac/blob/trunk/docs/module-versioning.md) for the
+ref policy, and [deployment presets](https://github.com/honua-io/honua-iac/blob/trunk/docs/deployment-presets.md) for sizing.
 
 ## Pick a pattern
 
-| Pattern | Best for | Image family | Rollout mechanism |
-|---|---|---|---|
-| AWS ECS/Fargate + ALB | Steady production traffic | `*-ecs-aot` (arm64) | ALB weighted target groups (canary) |
-| AWS Lambda | Spiky/low traffic, scale-to-zero | `*-lambda-aot` (arm64) | Alias weighted versions (canary) |
-| Azure Container Apps | Steady production traffic on Azure | generic web image | Revision traffic splitting (canary) |
-| Azure Functions | Spiky/low traffic on Azure | `*-functions-aot` (amd64) | Staging slot swap (atomic) |
-| Kubernetes (EKS/AKS) | Existing cluster estate | generic web image (multi-arch) | See [Deploy on Kubernetes](kubernetes.md) |
+| Pattern | Best for | Image family | Rollout mechanism | honua-iac module |
+|---|---|---|---|---|
+| AWS ECS/Fargate + ALB | Steady production traffic | `*-ecs-aot` (arm64) | ALB weighted target groups (canary) | `aws-ecs` |
+| AWS Lambda | Spiky/low traffic, scale-to-zero | `*-lambda-aot` (arm64) | Alias weighted versions (canary) | `aws-serverless` |
+| Azure Container Apps | Steady production traffic on Azure | generic web image | Revision traffic splitting (canary) | `azure-aca` |
+| Azure Functions | Spiky/low traffic on Azure | `*-functions-aot` (amd64) | Staging slot swap (atomic) | `azure-functions` |
+| Kubernetes (EKS/AKS) | Existing cluster estate | generic web image (multi-arch) | See [Deploy on Kubernetes](kubernetes.md) | `aws-eks`, `azure-aks` |
+
+The database and observability tiers are separate modules: `aws-data` / `azure-data`
+for the managed PostGIS, and `observability-stack`.
 
 Generic web images are published to Docker Hub (`honuaio/honua-server`) and GHCR (`ghcr.io/honua-io/honua-server`). The unsuffixed release and trunk tags are the canonical native-AOT production artifact. The `-aot` generic tags remain compatibility aliases to the same image. JIT images are explicitly suffixed `-jit` and are development/conformance/debugging aids, not supported production serving artifacts.
 
