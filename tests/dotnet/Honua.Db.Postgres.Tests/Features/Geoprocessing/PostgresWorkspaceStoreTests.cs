@@ -21,6 +21,29 @@ namespace Honua.Db.Postgres.Tests.Features.Geoprocessing;
 public sealed class PostgresWorkspaceStoreTests(PostgresFixture fixture)
 {
     [IntegrationTest]
+    public Task Workspace_ExpiredActiveRowsReleaseQuotaWithoutCleanup()
+        => WithStoresAsync(async stores =>
+        {
+            var original = await stores[0].GetOrCreateNamedAsync(Workspace("owner", "analysis"), 1);
+            await stores[0].CreateAsync(Artifact(original.WorkspaceId, "output", "data:text/plain,old") with { SizeBytes = 3 });
+            var overLimit = () => stores[1].GetOrCreateNamedAsync(Workspace("owner", "replacement"), 1);
+            await overLimit.Should().ThrowAsync<WorkspaceQuotaExceededException>();
+
+            // Leave the persisted state Active: no cleanup service or sweep runs.
+            await stores[0].ExtendExpirationAsync(original.WorkspaceId, DateTimeOffset.UtcNow.AddMinutes(-1));
+            (await stores[1].GetAsync(original.WorkspaceId))!.State.Should().Be(WorkspaceLifecycleState.Active);
+            var expiredUsage = await stores[1].GetUsageSummaryAsync("owner");
+            expiredUsage.ActiveWorkspaceCount.Should().Be(0);
+            expiredUsage.TotalArtifactCount.Should().Be(0);
+            expiredUsage.TotalStorageBytes.Should().Be(0);
+
+            var replacement = await stores[2].GetOrCreateNamedAsync(Workspace("owner", "analysis"), 1);
+            replacement.WorkspaceId.Should().NotBe(original.WorkspaceId);
+            (await stores[3].GetUsageSummaryAsync("owner")).ActiveWorkspaceCount.Should().Be(1);
+            (await stores[3].ListByOwnerAsync("owner")).Should().HaveCount(2);
+        });
+
+    [IntegrationTest]
     public Task Workspace_CountQuotaSerializesDifferentLabelsScopesAndCreationPaths()
         => WithStoresAsync(async stores =>
         {

@@ -93,13 +93,17 @@ internal sealed partial class PostgresWorkspaceStore : IWorkspaceStore, IArtifac
     {
         var limit = maxWorkspaceCount ?? WorkspaceQuota.Default.MaxWorkspaceCount!.Value;
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
-        if (proposal.State != WorkspaceLifecycleState.Active)
+        if (proposal.State != WorkspaceLifecycleState.Active || proposal.IsExpired(_clock.GetUtcNow()))
         {
             return;
         }
-        await using var command = new NpgsqlCommand($"SELECT count(*) FROM {_workspaces} WHERE owner_id = @owner AND state = @active", connection, transaction);
+        await using var command = new NpgsqlCommand($"""
+            SELECT count(*) FROM {_workspaces}
+            WHERE owner_id = @owner AND state = @active AND (expires_at IS NULL OR expires_at > @now)
+            """, connection, transaction);
         command.Parameters.AddWithValue("owner", proposal.OwnerId);
         command.Parameters.AddWithValue("active", (int)WorkspaceLifecycleState.Active);
+        command.Parameters.AddWithValue("now", _clock.GetUtcNow());
         var count = (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
         if (count >= limit)
         {
@@ -143,11 +147,12 @@ internal sealed partial class PostgresWorkspaceStore : IWorkspaceStore, IArtifac
         await using var command = new NpgsqlCommand($"""
             SELECT count(DISTINCT w.workspace_id)::integer, count(a.artifact_id)::integer, COALESCE(sum(a.size_bytes), 0)::bigint
             FROM {_workspaces} w LEFT JOIN {_artifacts} a ON a.workspace_id = w.workspace_id AND a.state <> @deleted
-            WHERE w.owner_id = @owner AND w.state = @active
+            WHERE w.owner_id = @owner AND w.state = @active AND (w.expires_at IS NULL OR w.expires_at > @now)
             """, connection);
         command.Parameters.AddWithValue("owner", ownerId);
         command.Parameters.AddWithValue("active", (int)WorkspaceLifecycleState.Active);
         command.Parameters.AddWithValue("deleted", (int)ArtifactLifecycleState.Deleted);
+        command.Parameters.AddWithValue("now", _clock.GetUtcNow());
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
         return new WorkspaceUsageSummary { ActiveWorkspaceCount = reader.GetInt32(0), TotalArtifactCount = reader.GetInt32(1), TotalStorageBytes = reader.GetInt64(2) };
