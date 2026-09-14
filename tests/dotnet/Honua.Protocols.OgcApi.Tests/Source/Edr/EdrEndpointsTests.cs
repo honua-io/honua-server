@@ -514,6 +514,14 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
         var malformed = await _fixture.Client.GetAsync(
             $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords={Uri.EscapeDataString("MULTIPOINT((-122.4 37.8),(-122.3))")}");
         malformed.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await malformed.Content.ReadAsStringAsync()).Should().Contain("WKT POINT or MULTIPOINT");
+
+        // The parenthesised MULTIPOINT form is exempt from LDAP inspection only while it is pure WKT;
+        // filter syntax smuggled into coords is still rejected before the handler runs.
+        var filter = await _fixture.Client.GetAsync(
+            $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords={Uri.EscapeDataString("MULTIPOINT((-122.4 37.8))(|(uid=*))")}");
+        filter.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await filter.Content.ReadAsStringAsync()).Should().Contain("attempt detected in query parameter 'coords'");
     }
 
     private void UsePrimaryRaster(RasterInfo raster)
