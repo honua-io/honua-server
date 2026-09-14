@@ -155,7 +155,9 @@ public sealed partial class LayerPublishingIntegrationTests
             });
             using var deniedDelete = await SendAttachmentJsonAsync($"{parentUrl}/deleteAttachments", form, allowError: true);
             deniedDelete.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
-            (await store.GetAsync(_layerId.Value, 1, attachment.Id)).Should().NotBeNull().Which.Filename.Should().Be("parent.txt");
+            var retained = await store.GetAsync(_layerId.Value, 1, attachment.Id);
+            retained.Should().NotBeNull();
+            retained!.Value.Filename.Should().Be("parent.txt");
         }
         finally
         {
