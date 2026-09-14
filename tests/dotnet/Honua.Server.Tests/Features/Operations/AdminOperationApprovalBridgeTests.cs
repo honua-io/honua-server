@@ -164,6 +164,62 @@ public sealed class AdminOperationApprovalBridgeTests
     }
 
     [UnitTest]
+    public async Task CreateProposalAsync_ForwardsInvocationIdempotencyKey_ToDurableProposal()
+    {
+        var captured = await CaptureGatewayRequestAsync(
+            CreateBridge,
+            Request(),
+            Context() with { IdempotencyKey = "scoped-invocation-key" });
+
+        captured.IdempotencyKey.Should().Be("scoped-invocation-key",
+            "a retry must fold onto the sealed proposal instead of minting a duplicate (#3361)");
+    }
+
+    [UnitTest]
+    public async Task CreateProposalAsync_MapperScopedIdempotencyKey_WinsOverInvocationKey()
+    {
+        var captured = await CaptureGatewayRequestAsync(
+            services => new AdminOperationApprovalBridge(
+                services,
+                [new TestMapper("mapper-scoped-key")],
+                NullLogger<AdminOperationApprovalBridge>.Instance),
+            Request(),
+            Context() with { IdempotencyKey = "scoped-invocation-key" });
+
+        captured.IdempotencyKey.Should().Be("mapper-scoped-key");
+    }
+
+    private static async Task<OperationGatewayRequest> CaptureGatewayRequestAsync(
+        Func<IServiceProvider, AdminOperationApprovalBridge> createBridge,
+        OperationRequest request,
+        OperationPolicyContext context)
+    {
+        OperationGatewayRequest? captured = null;
+        var gateway = Substitute.For<IOperationGateway>();
+        gateway.CreateApprovalProposalAsync(
+                Arg.Any<string>(),
+                Arg.Do<OperationGatewayRequest>(value => captured = value),
+                Arg.Any<CancellationToken>())
+            .Returns(new OperationGatewayResult
+            {
+                Outcome = OperationGatewayOutcome.ProposalCreated,
+                Decision = GatewayDecision(),
+                ProposalId = "proposal-123",
+                AuditId = "audit-456",
+            });
+        var services = new ServiceCollection()
+            .AddSingleton(gateway)
+            .AddSingleton(AllowApprovalGuardrail())
+            .BuildServiceProvider();
+
+        var result = await createBridge(services).CreateProposalAsync(Descriptor(), request, context, Decision());
+
+        result.IsDurable.Should().BeTrue();
+        captured.Should().NotBeNull();
+        return captured!;
+    }
+
+    [UnitTest]
     public async Task CreateProposalAsync_ScopeGovernedWithoutRecognizedScopes_FailsBeforePersistence()
     {
         var gateway = Substitute.For<IOperationGateway>();
@@ -263,7 +319,7 @@ public sealed class AdminOperationApprovalBridgeTests
         return guardrail;
     }
 
-    private sealed class TestMapper : IOperationApprovalRequestMapper
+    private sealed class TestMapper(string? idempotencyKey = null) : IOperationApprovalRequestMapper
     {
         public string OperationId => "admin.test";
 
@@ -277,6 +333,7 @@ public sealed class AdminOperationApprovalBridgeTests
                 Kind = OperationClass.AdminConfigChange,
                 RequestedBy = context.PrincipalId,
                 ExecutionPayload = "{}",
+                IdempotencyKey = idempotencyKey,
             };
 
         public OperationApprovalReplayMapping MapReplay(OperationGatewayRequest request)
