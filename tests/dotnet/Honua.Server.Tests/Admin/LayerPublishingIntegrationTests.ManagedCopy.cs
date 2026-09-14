@@ -87,19 +87,20 @@ public sealed partial class LayerPublishingIntegrationTests
             item.GetProperty("schema").GetString() == _importedTableSchema && item.GetProperty("table").GetString() == _importedTableName);
         // Service import has already published the retained table. Converting that
         // read-only publication into an independent managed copy is the onboarding path.
+        _retainedSourceServiceName = $"{_serviceName}-source";
         var sourcePublication = await PublishLayerAsync(new PublishLayerRequest
         {
             Schema = _importedTableSchema!,
             Table = _importedTableName!,
             LayerName = $"Source {_serviceName}",
-            ServiceName = $"{_serviceName}-source",
+            ServiceName = _retainedSourceServiceName,
             GeometryColumn = table.GetProperty("geometryColumn").GetString(),
             GeometryType = "Point",
             Srid = 4326,
             PrimaryKey = "id",
             Fields = ["id", "properties"]
         }, _connectionName);
-        var sourceQuery = $"/rest/services/{_serviceName}-source/FeatureServer/{sourcePublication.LayerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true";
+        var sourceQuery = $"/rest/services/{_retainedSourceServiceName}/FeatureServer/{sourcePublication.LayerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true";
         using var sourceBefore = JsonDocument.Parse(await _client.GetStringAsync(sourceQuery));
         var originalSourceFeatures = sourceBefore.RootElement.GetProperty("features").GetRawText();
         var published = await PublishLayerAsync(new PublishLayerRequest
