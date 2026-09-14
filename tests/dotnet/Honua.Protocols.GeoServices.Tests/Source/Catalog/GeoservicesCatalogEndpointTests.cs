@@ -1100,7 +1100,9 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             result.Elements().Single(element => element.Name.LocalName == "AllowedCompressions")
                 .Value.Should().Be("None");
             result.Elements().Single(element => element.Name.LocalName == "AllowedMosaicMethods")
-                .Value.Should().Be("NorthWest,LockRaster,None");
+                .Value.Should().Be("None,NorthWest,LockRaster,ByAttribute,Nadir,Seamline");
+            result.Elements().Single(element => element.Name.LocalName == "DefaultMosaicMethod")
+                .Value.Should().Be("esriMosaicByAttribute");
             result.Elements().Single(element => element.Name.LocalName == "SupportBSQ")
                 .Value.Should().Be("false");
             result.Descendants().Single(element => element.Name.LocalName == "WKID")

@@ -269,9 +269,10 @@ public class ImageServerMetadataHandlerTests
         info.BlockWidth.Should().BeNull();
         info.BlockHeight.Should().BeNull();
 
-        // Esri serializes allowedMosaicMethods as a comma-separated string, not an array.
+        // Esri serializes allowedMosaicMethods as a comma-separated string, not an array, using
+        // the unprefixed method vocabulary (#4063).
         info.AllowedMosaicMethods.Should().BeOfType<string>();
-        info.AllowedMosaicMethods.Should().Contain("esriMosaic");
+        info.AllowedMosaicMethods.Should().Be("None,NorthWest,LockRaster,ByAttribute,Nadir,Seamline");
     }
 
     [UnitTest]

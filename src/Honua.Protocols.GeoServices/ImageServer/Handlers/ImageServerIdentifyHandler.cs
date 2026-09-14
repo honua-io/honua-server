@@ -144,15 +144,38 @@ internal sealed class ImageServerIdentifyHandler
                 return editionError;
             }
 
-            var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, request.MosaicRule);
+            // identify parses mosaicRule with the same parser as exportImage (#4064), so an
+            // esriMosaicLockRaster rule pins the identified catalog items exactly as export does
+            // and a malformed rule is rejected instead of silently falling back to the mosaic.
+            if (!ImageServerMosaicRule.TryParse(request.MosaicRule, out var mosaicRule, out var mosaicRuleError, out var mosaicRuleNotImplemented))
+            {
+                ImageServerLog.InvalidIdentifyParameters(_logger, layerId, mosaicRuleError);
+                return mosaicRuleNotImplemented
+                    ? StandardErrorHelpers.CreateNotImplemented(context, mosaicRuleError)
+                    : StandardErrorHelpers.CreateBadRequest(context, mosaicRuleError);
+            }
+
+            var mergeStrategy = mosaicRule.Operation
+                ?? ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, mosaicRule: null);
+            var isLockRaster = mosaicRule.Method == MosaicMethod.LockRaster;
+
+            // A locked raster set is independent of the temporal newest-batch snapshot (as in
+            // exportImage), so the time filter is dropped and the locked ids are intersected with
+            // the rasters under the point.
             var selectionQuery = new RasterSelectionQuery
             {
                 Geometry = ImageServerMosaicHelpers.CreatePointGeometry(x.Value, y.Value),
                 GeometrySrid = srid,
-                Timestamp = timestamp,
-                TimeStart = timeStart
+                Timestamp = isLockRaster ? null : timestamp,
+                TimeStart = isLockRaster ? null : timeStart
             };
             var selectedRasters = await _rasterStore.QueryRastersAsync(layerId, selectionQuery, cancellationToken);
+            if (isLockRaster)
+            {
+                var lockedIds = new HashSet<long>(mosaicRule.LockRasterIds ?? []);
+                selectedRasters = selectedRasters.Where(raster => lockedIds.Contains(raster.Id)).ToArray();
+            }
+
             if (selectedRasters.Length == 0)
             {
                 // ArcGIS ImageServer identify returns a 200 NoData document (not a 404) when the
@@ -168,7 +191,8 @@ internal sealed class ImageServerIdentifyHandler
                     Location = new Point
                     {
                         X = x.Value,
-                        Y = y.Value
+                        Y = y.Value,
+                        SpatialReference = CreateLocationSpatialReference(srid)
                     },
                     Properties = new Dictionary<string, object?>
                     {
@@ -214,7 +238,8 @@ internal sealed class ImageServerIdentifyHandler
                 Location = new Point
                 {
                     X = pixelResult.X,
-                    Y = pixelResult.Y
+                    Y = pixelResult.Y,
+                    SpatialReference = CreateLocationSpatialReference(pixelResult.Srid ?? srid)
                 },
                 Properties = CreateProperties(pixelResult, request.PixelSize),
                 CatalogItems = request.ReturnCatalogItems == true
@@ -315,7 +340,7 @@ internal sealed class ImageServerIdentifyHandler
             ObjectId = null,
             Name = read.Variable ?? displayName,
             Value = hasData ? value.ToString(CultureInfo.InvariantCulture) : "NoData",
-            Location = new Point { X = x, Y = y },
+            Location = new Point { X = x, Y = y, SpatialReference = CreateLocationSpatialReference(srid) },
             Properties = new Dictionary<string, object?>
             {
                 ["HasData"] = hasData,
@@ -431,20 +456,30 @@ internal sealed class ImageServerIdentifyHandler
         return (null, null, null);
     }
 
+    // Esri identify reports the pixel as the band values in band order joined by ", "
+    // ("17, 22, 39, 45"), or "NoData" when no band holds a value (#4064). Values are formatted
+    // with the invariant culture so a client splitting on "," always recovers one value per band.
     private static string FormatPixelValues(Dictionary<int, object?> bandValues)
     {
-        if (bandValues.Count == 0)
+        if (bandValues.Values.All(static value => value is null))
             return "NoData";
 
-        if (bandValues.Count == 1)
-            return bandValues.First().Value?.ToString() ?? "NoData";
+        return string.Join(", ", bandValues.OrderBy(kvp => kvp.Key).Select(kvp => FormatBandValue(kvp.Value)));
+    }
 
-        // Format multi-band values
-        var values = bandValues.OrderBy(kvp => kvp.Key)
-            .Select(kvp => $"Band {kvp.Key}: {kvp.Value ?? "NoData"}")
-            .ToArray();
+    private static string FormatBandValue(object? value) => value switch
+    {
+        null => "NoData",
+        IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
+        _ => value.ToString() ?? "NoData"
+    };
 
-        return string.Join("; ", values);
+    // The raster store interprets identify coordinates without an sr as WGS84, so the location
+    // is labelled with the reference its coordinates are actually in.
+    private static SpatialReference CreateLocationSpatialReference(int? srid)
+    {
+        var wkid = srid ?? 4326;
+        return new SpatialReference { Wkid = wkid, LatestWkid = wkid };
     }
 
     private static Dictionary<string, object?> CreateProperties(

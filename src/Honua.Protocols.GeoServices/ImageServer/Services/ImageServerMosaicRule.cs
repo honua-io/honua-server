@@ -73,6 +73,30 @@ public enum MosaicMethod
 /// </summary>
 public readonly record struct ImageServerMosaicRule
 {
+    /// <summary>
+    /// The <c>allowedMosaicMethods</c> the service advertises (#4063): the unprefixed Esri
+    /// vocabulary (<c>None,Center,NorthWest,LockRaster,ByAttribute,Nadir,Viewpoint,Seamline</c>)
+    /// narrowed to the methods <see cref="TryParse"/> classifies as executable. <c>Center</c> and
+    /// <c>Viewpoint</c> classify as <see cref="MosaicMethod.Unsupported"/> (501 on a multi-raster
+    /// request), so they are not advertised. REST and SOAP service metadata share this value.
+    /// </summary>
+    public const string AllowedMosaicMethods = "None,NorthWest,LockRaster,ByAttribute,Nadir,Seamline";
+
+    /// <summary>
+    /// The <c>defaultMosaicMethod</c> the service advertises (#4063). A request without a
+    /// <c>mosaicRule</c> composites newest acquisition first (<see cref="ToOrdering"/> falls back to
+    /// <see cref="RasterMosaicOrdering.AcquisitionNewest"/>), which in Esri terms is a
+    /// <c>ByAttribute</c> mosaic over <see cref="DefaultSortField"/>, not <c>NorthWest</c>.
+    /// </summary>
+    public const string DefaultMosaicMethod = "ByAttribute";
+
+    /// <summary>
+    /// The raster-catalog date field the default <see cref="DefaultMosaicMethod"/> sorts on. It is
+    /// the catalog attribute field name, and <see cref="TryParse"/> resolves it to the
+    /// acquisition ordering.
+    /// </summary>
+    public const string DefaultSortField = "AcquisitionDate";
+
     /// <summary>The normalized mosaic method requested by the rule.</summary>
     public MosaicMethod Method { get; init; }
 
