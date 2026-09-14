@@ -684,6 +684,27 @@ assert_descriptor \
   "targeted" \
   "false" \
   "GeoServices GPServer and NAServer"
+# 2026-09-14 capacity split: gRPC source selects both Operator Eval children
+# (GrpcProcessServiceIntegrationTests stays in the parent); Scene tests only
+# run in gRPC Protocol and Scene.
+assert_descriptor \
+  "grpc-source-targets-grpc-protocol-scene" \
+  "src/Honua.Server/Features/Protocols/Grpc/HonuaFeatureService.cs" \
+  "targeted" \
+  "false" \
+  "gRPC Protocol and Scene"
+assert_descriptor \
+  "grpc-source-targets-operator-eval" \
+  "src/Honua.Server/Features/Protocols/Grpc/HonuaFeatureService.cs" \
+  "targeted" \
+  "false" \
+  "Operator Eval Harness"
+assert_descriptor \
+  "grpc-tests-target-grpc-protocol-scene" \
+  "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/SceneGrpcIntegrationTests.cs" \
+  "targeted" \
+  "false" \
+  "gRPC Protocol and Scene"
 assert_descriptor \
   "routing-feature-includes-server-tests-owner" \
   "src/Honua.Routing/Features/Routing/Providers/PgRoutingProvider.cs" \
@@ -1573,6 +1594,18 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
     "GeoServices GPServer and NAServer" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "gRPC Protocol and Scene" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Geoprocessing.GrpcProcessServiceIntegrationTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Operator Eval Harness" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Eval.EvalHarnessTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Operator Eval Harness" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
