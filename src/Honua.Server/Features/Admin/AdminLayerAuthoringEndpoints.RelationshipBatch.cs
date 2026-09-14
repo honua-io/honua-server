@@ -118,7 +118,7 @@ internal static partial class AdminLayerAuthoringEndpoints
         // These admin DTOs carry global storage-layer ids, not service-local
         // LayerIndex values. A resource may have several protocol publications.
         var resourceIds = snapshot.PublicationsForStorageLayer(layerId)
-            .Where(publication => snapshot.ResolveResource(publication)?.ResourceType
+            .Where(publication => snapshot.ResolveResource(publication)?.Type
                 is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table)
             .Select(publication => publication.ResourceId).Distinct(StringComparer.Ordinal).Take(2).ToArray();
         if (resourceIds.Length != 1)
