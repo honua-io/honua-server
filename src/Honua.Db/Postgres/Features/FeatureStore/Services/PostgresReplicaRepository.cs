@@ -73,15 +73,16 @@ internal sealed class PostgresReplicaRepository : IReplicaRepository
         ReplicaRecord record)
     {
         const string sql = """
-            INSERT INTO honua.replicas (replica_id, replica_name, service_id, owner_id, sync_model, layer_ids, created_at, last_sync_time, last_sync_generation, upload_base_generation)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            INSERT INTO honua.replicas (replica_id, replica_name, service_id, owner_id, sync_model, layer_ids, created_at, last_sync_time, last_sync_generation, upload_base_generation, scope_definition)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             ON CONFLICT (replica_id) DO UPDATE SET
                 replica_name = EXCLUDED.replica_name,
                 sync_model = EXCLUDED.sync_model,
                 layer_ids = EXCLUDED.layer_ids,
                 last_sync_time = EXCLUDED.last_sync_time,
                 last_sync_generation = EXCLUDED.last_sync_generation,
-                upload_base_generation = EXCLUDED.upload_base_generation
+                upload_base_generation = EXCLUDED.upload_base_generation,
+                scope_definition = EXCLUDED.scope_definition
             """;
 
         var command = new NpgsqlCommand(sql, connection, transaction);
@@ -96,6 +97,7 @@ internal sealed class PostgresReplicaRepository : IReplicaRepository
         command.Parameters.AddWithValue(NpgsqlDbType.TimestampTz, record.LastSyncTime);
         command.Parameters.AddWithValue(NpgsqlDbType.Bigint, record.LastSyncGeneration);
         command.Parameters.AddWithValue(NpgsqlDbType.Bigint, record.UploadBaseGeneration);
+        command.Parameters.AddWithValue(NpgsqlDbType.Jsonb, (object?)record.ScopeDefinition ?? DBNull.Value);
 
         return command;
     }
@@ -137,7 +139,7 @@ internal sealed class PostgresReplicaRepository : IReplicaRepository
     {
         const string sql = """
             SELECT replica_id, replica_name, service_id, owner_id, sync_model, layer_ids,
-                   created_at, last_sync_time, last_sync_generation, upload_base_generation
+                   created_at, last_sync_time, last_sync_generation, upload_base_generation, scope_definition
             FROM honua.replicas
             WHERE replica_id = $1
             """;
@@ -163,7 +165,8 @@ internal sealed class PostgresReplicaRepository : IReplicaRepository
             CreatedAt = reader.GetFieldValue<DateTimeOffset>(6),
             LastSyncTime = reader.GetFieldValue<DateTimeOffset>(7),
             LastSyncGeneration = reader.GetInt64(8),
-            UploadBaseGeneration = reader.GetInt64(9)
+            UploadBaseGeneration = reader.GetInt64(9),
+                ScopeDefinition = reader.IsDBNull(10) ? null : reader.GetString(10)
         };
     }
 
@@ -171,7 +174,7 @@ internal sealed class PostgresReplicaRepository : IReplicaRepository
     {
         const string sql = """
             SELECT replica_id, replica_name, service_id, owner_id, sync_model, layer_ids,
-                   created_at, last_sync_time, last_sync_generation, upload_base_generation
+                   created_at, last_sync_time, last_sync_generation, upload_base_generation, scope_definition
             FROM honua.replicas
             WHERE service_id = $1
             ORDER BY created_at DESC, replica_id ASC
@@ -197,7 +200,8 @@ internal sealed class PostgresReplicaRepository : IReplicaRepository
                 CreatedAt = reader.GetFieldValue<DateTimeOffset>(6),
                 LastSyncTime = reader.GetFieldValue<DateTimeOffset>(7),
                 LastSyncGeneration = reader.GetInt64(8),
-                UploadBaseGeneration = reader.GetInt64(9)
+                UploadBaseGeneration = reader.GetInt64(9),
+                ScopeDefinition = reader.IsDBNull(10) ? null : reader.GetString(10)
             });
         }
 
