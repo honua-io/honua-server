@@ -665,7 +665,7 @@ internal static partial class FeatureServerEndpoints
                 GeoServicesFeature[]? addFeatures = null;
                 if (insertIds.Length > 0)
                 {
-                    var query = new FeatureQuery { ObjectIds = ImmutableArray.Create(insertIds) };
+                    var query = ReplicaGeometryQuery(new FeatureQuery { ObjectIds = ImmutableArray.Create(insertIds) }, layer.Resource);
                     var result = await featureReader.QueryAsync(layer.StorageLayerId, query, cancellationToken);
                     addFeatures = result.Items
                         .Select(f => ConvertFeatureToGeoServices(f, layer.Resource))
@@ -675,7 +675,7 @@ internal static partial class FeatureServerEndpoints
                 GeoServicesFeature[]? updateFeatures = null;
                 if (updateIds.Length > 0)
                 {
-                    var query = new FeatureQuery { ObjectIds = ImmutableArray.Create(updateIds) };
+                    var query = ReplicaGeometryQuery(new FeatureQuery { ObjectIds = ImmutableArray.Create(updateIds) }, layer.Resource);
                     var result = await featureReader.QueryAsync(layer.StorageLayerId, query, cancellationToken);
                     updateFeatures = result.Items
                         .Select(f => ConvertFeatureToGeoServices(f, layer.Resource))
@@ -785,7 +785,7 @@ internal static partial class FeatureServerEndpoints
     {
         var result = await featureReader.QueryAsync(
             layer.StorageLayerId,
-            new FeatureQuery { Limit = queryLimits.MaxRecordCount + 1 },
+            ReplicaGeometryQuery(new FeatureQuery { Limit = queryLimits.MaxRecordCount + 1 }, layer.Resource),
             cancellationToken);
         if (result.HasMoreResults || result.Items.Length > queryLimits.MaxRecordCount)
         {
@@ -938,7 +938,7 @@ internal static partial class FeatureServerEndpoints
                 {
                     var result = await featureReader.QueryAsync(
                         layer.StorageLayerId,
-                        new FeatureQuery { ObjectIds = ImmutableArray.Create(insertIds) },
+                        ReplicaGeometryQuery(new FeatureQuery { ObjectIds = ImmutableArray.Create(insertIds) }, layer.Resource),
                         cancellationToken);
                     addFeatures = result.Items.Select(f => ConvertFeatureToGeoServices(f, layer.Resource)).ToArray();
                 }
@@ -947,7 +947,7 @@ internal static partial class FeatureServerEndpoints
                 {
                     var result = await featureReader.QueryAsync(
                         layer.StorageLayerId,
-                        new FeatureQuery { ObjectIds = ImmutableArray.Create(updateIds) },
+                        ReplicaGeometryQuery(new FeatureQuery { ObjectIds = ImmutableArray.Create(updateIds) }, layer.Resource),
                         cancellationToken);
                     updateFeatures = result.Items.Select(f => ConvertFeatureToGeoServices(f, layer.Resource)).ToArray();
                 }
@@ -1187,6 +1187,8 @@ internal static partial class FeatureServerEndpoints
         // (#2136). Defaults to true, the Esri Synchronize Replica default (#4031): a client that omits
         // the parameter must never get a partially applied upload. Best-effort per-row apply is opt-in
         // with an explicit rollbackOnFailure=false.
+        var rollbackOnFailureSupplied = TryGetValue(values, "rollbackOnFailure", out var rollbackOnFailureRaw)
+            && !StringValues.IsNullOrEmpty(rollbackOnFailureRaw);
         if (!TryParseBoolValue(values, "rollbackOnFailure", true, out var rollbackOnFailure, out var rollbackError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -1264,7 +1266,7 @@ internal static partial class FeatureServerEndpoints
                 }
 
                 uploadStore = context.RequestServices.GetRequiredService<IReplicaUploadIdempotencyStore>();
-                uploadFingerprint = ComputeReplicaUploadFingerprint(syncDirection, rollbackOnFailure, lastWriteWins, editsJson!);
+                uploadFingerprint = ComputeReplicaUploadFingerprint(syncDirection, rollbackOnFailure, rollbackOnFailureSupplied, lastWriteWins, editsJson!);
                 keylessUpload = explicitUploadKey is null;
                 // The replica's stored service id, not the route value: service lookup is case-insensitive,
                 // so path casing must not fork the key.
@@ -1633,15 +1635,22 @@ internal static partial class FeatureServerEndpoints
     /// rollback and conflict-handling modes, and the raw edits payload a retry re-sends byte for byte
     /// (#4026). A reused key whose fingerprint differs is a different upload, not a retry.
     /// </summary>
-    private static string ComputeReplicaUploadFingerprint(
+    /// <remarks>
+    /// An upload that omits <c>rollbackOnFailure</c> keeps the "best-effort" token it hashed to before the
+    /// default became true (#4031). A retry that spans that change must still find the record its first
+    /// attempt wrote inside the dedupe window; a new token would turn a keyless retry into a fresh upload
+    /// that applies its adds again. The cost is that an omitted value and an explicit false fingerprint alike.
+    /// </remarks>
+    internal static string ComputeReplicaUploadFingerprint(
         string syncDirection,
         bool rollbackOnFailure,
+        bool rollbackOnFailureSupplied,
         bool lastWriteWins,
         string editsJson)
     {
         var material = string.Concat(
             syncDirection.Trim().ToLowerInvariant(), "\n",
-            rollbackOnFailure ? "rollback" : "best-effort", "\n",
+            rollbackOnFailure && rollbackOnFailureSupplied ? "rollback" : "best-effort", "\n",
             lastWriteWins ? "lastWriteWins" : "manualReview", "\n",
             editsJson);
         return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(material)));
@@ -2674,12 +2683,26 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// The spatial reference replica features are delivered in: the layer's declared storage SRID,
-    /// falling back to WGS 84 exactly as the query path does (#4027).
+    /// Read query for replica feature payloads (#4027). Z and M are requested from storage because a
+    /// provider's plain WKB read strips them before the converter runs, and coordinates are reprojected
+    /// to the layer's advertised spatial reference so they match the label on the download: a
+    /// storage-mapped resource otherwise returns them in its storage CRS.
     /// </summary>
-    private static int ResolveReplicaLayerSrid(MetadataV2Resource resource)
-        => resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
+    internal static FeatureQuery ReplicaGeometryQuery(FeatureQuery query, MetadataV2Resource resource)
+        => query with
+        {
+            IncludeZ = true,
+            IncludeM = true,
+            OutputSrid = resource.HasGeometry() ? resource.ReadSrid() : null
+        };
 
-    private static GeoServicesSpatialReference? CreateReplicaLayerSpatialReference(MetadataV2Resource resource)
+    /// <summary>
+    /// The spatial reference replica features are delivered in: the layer's advertised SRID, falling back
+    /// to WGS 84 exactly as the query path does (#4027). An attribute-only table has none.
+    /// </summary>
+    internal static int? ResolveReplicaLayerSrid(MetadataV2Resource resource)
+        => resource.HasGeometry() ? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid : null;
+
+    internal static GeoServicesSpatialReference? CreateReplicaLayerSpatialReference(MetadataV2Resource resource)
         => GeoServicesGeometryConverter.CreateSpatialReference(ResolveReplicaLayerSrid(resource));
 }
