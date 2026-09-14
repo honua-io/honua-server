@@ -416,6 +416,19 @@ internal static partial class FeatureServerEndpoints
             return createRbacError;
         }
 
+        // The response carries the replica data (#4018), so write access alone is not enough: every
+        // selected layer also needs Query access, the gate extractChanges applies. A write-only credential
+        // must not bulk-read a layer it may not query.
+        var queryAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Read, cancellationToken).ConfigureAwait(false);
+        foreach (var layer in createLayers)
+        {
+            var queryAccessError = queryAccess.RequireAccess(layer.Resource);
+            if (queryAccessError is not null)
+            {
+                return queryAccessError;
+            }
+        }
+
         // Every createReplica parameter is honored or rejected; none is silently dropped (#4018).
         // syncModel is validated instead of stored verbatim: an arbitrary value used to be persisted and
         // made the replica info resource omit both replicaServerGen and layerServerGens.
@@ -1027,6 +1040,21 @@ internal static partial class FeatureServerEndpoints
         var isUploadDirection = !string.Equals(syncDirection, "download", StringComparison.OrdinalIgnoreCase);
         var isDownloadDirection = string.Equals(syncDirection, "download", StringComparison.OrdinalIgnoreCase)
             || string.Equals(syncDirection, "bidirectional", StringComparison.OrdinalIgnoreCase);
+
+        // A download returns feature data, so it needs Query access on every replica layer, as extractChanges
+        // and createReplica do; write access alone must not read the layers (#4018).
+        if (isDownloadDirection)
+        {
+            var queryAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Read, cancellationToken).ConfigureAwait(false);
+            foreach (var layer in replicaLayers)
+            {
+                var queryAccessError = queryAccess.RequireAccess(layer.Resource);
+                if (queryAccessError is not null)
+                {
+                    return queryAccessError;
+                }
+            }
+        }
 
         // Esri sync protocol: the client echoes the server generation it actually
         // received (replicaServerGen, from the preceding extractChanges serverGen).
