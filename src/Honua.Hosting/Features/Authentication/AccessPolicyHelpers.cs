@@ -669,25 +669,61 @@ internal static class AccessPolicyHelpers
     /// <param name="operation">The canonical operation being authorized.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The per-resource decisions.</returns>
-    public static async Task<ResourceAccessSet> EvaluateResourceAccessSetAsync(
+    public static Task<ResourceAccessSet> EvaluateResourceAccessSetAsync(
         HttpContext context,
         IEnumerable<MetadataV2Resource> resources,
         MetadataV2Service? service,
         AuthorizationOperation operation,
         CancellationToken cancellationToken = default)
+        => EvaluateResourceAccessSetAsync(context, resources, service, [operation], cancellationToken);
+
+    /// <summary>
+    /// Resolves one decision per resource that allows the resource when the canonical resolver or
+    /// the coarse policy admits ANY of <paramref name="operations"/> (for example, a replica write
+    /// admitted by an update, insert or delete grant). A denied resource keeps the decision for the
+    /// first operation, which also selects the coarse fallback scope.
+    /// </summary>
+    /// <param name="context">The request context.</param>
+    /// <param name="resources">The resources the request may touch.</param>
+    /// <param name="service">The owning service, when known.</param>
+    /// <param name="operations">The canonical operations, any of which authorizes a resource.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The per-resource decisions.</returns>
+    public static async Task<ResourceAccessSet> EvaluateResourceAccessSetAsync(
+        HttpContext context,
+        IEnumerable<MetadataV2Resource> resources,
+        MetadataV2Service? service,
+        IReadOnlyList<AuthorizationOperation> operations,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(resources);
-        var decisions = new Dictionary<MetadataV2Resource, AccessDecision>(ReferenceEqualityComparer.Instance);
-        foreach (var resource in resources)
+        ArgumentNullException.ThrowIfNull(operations);
+        if (operations.Count == 0)
         {
-            if (!decisions.ContainsKey(resource))
-            {
-                decisions[resource] = await EvaluateResourceAccessAsync(
-                    context, resource, service, operation, cancellationToken).ConfigureAwait(false);
-            }
+            throw new ArgumentException("At least one operation is required.", nameof(operations));
         }
 
-        return new ResourceAccessSet(context, service, ScopeForOperation(operation), decisions);
+        var decisions = new Dictionary<MetadataV2Resource, AccessDecision>(ReferenceEqualityComparer.Instance);
+        foreach (var resource in resources.Distinct<MetadataV2Resource>(ReferenceEqualityComparer.Instance))
+        {
+            AccessDecision? decision = null;
+            foreach (var operation in operations)
+            {
+                var candidate = await EvaluateResourceAccessAsync(
+                    context, resource, service, operation, cancellationToken).ConfigureAwait(false);
+                if (candidate.IsAllowed)
+                {
+                    decision = candidate;
+                    break;
+                }
+
+                decision ??= candidate;
+            }
+
+            decisions[resource] = decision!.Value;
+        }
+
+        return new ResourceAccessSet(context, service, ScopeForOperation(operations[0]), decisions);
     }
 
     /// <summary>

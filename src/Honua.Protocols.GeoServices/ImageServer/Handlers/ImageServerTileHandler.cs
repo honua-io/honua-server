@@ -538,8 +538,10 @@ internal sealed class ImageServerTileHandler
             return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
         }
 
+        // Authorize the same operation the tile and WMTS routes resolved this publication with
+        // (ImageServerLayerResolver defaults to Query), so both checks admit the same principals.
         return await AccessPolicyHelpers.RequireResourceAccessAsync(
-            context, resolvedLayer.Resource, AuthorizationOperation.Export, service, cancellationToken).ConfigureAwait(false);
+            context, resolvedLayer.Resource, AuthorizationOperation.Query, service, cancellationToken).ConfigureAwait(false);
     }
 
     private static byte[] CreateTileEnvelope(int level, int row, int col)

@@ -2396,10 +2396,16 @@ internal static partial class FeatureServerEndpoints
         ];
     }
 
+    private static readonly AuthorizationOperation[] _replicaReadOperations = [AuthorizationOperation.Query];
+
+    private static readonly AuthorizationOperation[] _replicaWriteOperations =
+        [AuthorizationOperation.Update, AuthorizationOperation.Insert, AuthorizationOperation.Delete];
+
     /// <summary>
     /// Resolves the canonical per-operation access decisions (#4783) for every replica-eligible layer
     /// of the service, so the synchronous replica layer resolution applies permission grants as well
-    /// as the coarse access policy.
+    /// as the coarse access policy. A write scope admits any mutating grant (update, insert or
+    /// delete), matching the replica write gates that run around this resolution.
     /// </summary>
     private static Task<ResourceAccessSet> ResolveReplicaLayerAccessAsync(
         HttpContext context,
@@ -2411,7 +2417,7 @@ internal static partial class FeatureServerEndpoints
             context,
             ResolveServiceReplicaLayersV2(service, snapshot).Select(layer => layer.Resource),
             service,
-            AccessPolicyHelpers.DefaultOperationForScope(scope),
+            scope == AccessScope.Write ? _replicaWriteOperations : _replicaReadOperations,
             cancellationToken);
 
     private static bool TryResolveReplicaLayerIdsV2(

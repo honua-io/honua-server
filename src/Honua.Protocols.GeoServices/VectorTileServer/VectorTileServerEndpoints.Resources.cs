@@ -157,8 +157,10 @@ internal static partial class VectorTileServerEndpoints
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
+            // Select with the tile route's operation so root.json always styles the publication the
+            // tiles render (honua-server#4112), even under per-layer operation grants.
             var primary = await ResolvePrimaryVectorTilePublicationAsync(
-                snapshot, service, context, AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false);
+                snapshot, service, context, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
             if (primary is null)
             {
                 return StandardErrorHelpers.CreateNotFound(

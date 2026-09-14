@@ -87,7 +87,7 @@ internal static partial class FeatureServerEndpoints
             return formatError;
         }
 
-        var accessError = await RequireServiceReadAccessAsync(serviceId, context);
+        var accessError = await RequireServiceReadAccessAsync(serviceId, context, AuthorizationOperation.Metadata);
         if (accessError != null)
         {
             return accessError;
@@ -111,7 +111,7 @@ internal static partial class FeatureServerEndpoints
             context.TraceIdentifier);
         scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId);
 
-        var accessError = await RequireServiceReadAccessAsync(serviceId, context);
+        var accessError = await RequireServiceReadAccessAsync(serviceId, context, AuthorizationOperation.Metadata);
         if (accessError != null)
         {
             return accessError;
@@ -180,7 +180,7 @@ internal static partial class FeatureServerEndpoints
             context.TraceIdentifier);
         scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId);
 
-        var accessError = await RequireServiceReadAccessAsync(serviceId, context);
+        var accessError = await RequireServiceReadAccessAsync(serviceId, context, AuthorizationOperation.Metadata);
         if (accessError != null)
         {
             return accessError;
@@ -204,7 +204,7 @@ internal static partial class FeatureServerEndpoints
             context.TraceIdentifier);
         scope.WithTag(HonuaTelemetry.Tags.ServiceId, serviceId);
 
-        var accessError = await RequireServiceReadAccessAsync(serviceId, context);
+        var accessError = await RequireServiceReadAccessAsync(serviceId, context, AuthorizationOperation.Query);
         if (accessError != null)
         {
             return accessError;
@@ -221,13 +221,15 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// Resolves the service through the shared V2 validation pipeline and enforces
-    /// read access. Returns an error <see cref="IResult"/> on failure or
-    /// <see langword="null"/> when the caller is permitted to read the service.
+    /// Resolves the service through the shared V2 validation pipeline and enforces read access
+    /// for <paramref name="operation"/>: <see cref="AuthorizationOperation.Metadata"/> for the
+    /// descriptive resources, <see cref="AuthorizationOperation.Query"/> for data reads. Returns an
+    /// error <see cref="IResult"/> on failure or <see langword="null"/> when the caller is permitted.
     /// </summary>
     private static async Task<IResult?> RequireServiceReadAccessAsync(
         string serviceId,
-        HttpContext context)
+        HttpContext context,
+        AuthorizationOperation operation)
     {
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
@@ -256,7 +258,7 @@ internal static partial class FeatureServerEndpoints
             context,
             allPairs.Select(pair => pair.Resource),
             service,
-            AuthorizationOperation.Query,
+            operation,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -298,7 +300,7 @@ internal static partial class FeatureServerEndpoints
             context,
             allPairs.Select(pair => pair.Resource),
             service,
-            AuthorizationOperation.Query,
+            AuthorizationOperation.Metadata,
             cancellationToken).ConfigureAwait(false);
         var accessError = access.RequireAny(allPairs.Select(pair => pair.Resource));
         if (accessError != null)
