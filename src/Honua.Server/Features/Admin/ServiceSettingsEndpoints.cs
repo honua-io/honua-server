@@ -486,6 +486,7 @@ internal static class ServiceSettingsEndpoints
                     // GET responses can still echo what the caller PUT.
                     return next;
                 },
+                request.Editing,
                 context.RequestAborted).ConfigureAwait(false);
             if (mutation.BindingConflict)
             {
@@ -502,7 +503,8 @@ internal static class ServiceSettingsEndpoints
                     ApiResponse<object>.Failure($"Layer {layerId} not found in service '{serviceName}'."));
             }
 
-            await InvalidateServiceCatalogCacheAsync(context, graphProvider, serviceName, logger).ConfigureAwait(false);
+            await InvalidateServiceCatalogCacheAsync(context, graphProvider, serviceName, logger,
+                request.Editing is not null ? persistedResource.Metadata.Id : null).ConfigureAwait(false);
 
             var response = BuildLayerMetadataResponse(
                 layerId,
@@ -510,8 +512,13 @@ internal static class ServiceSettingsEndpoints
                 persistedResource.Metadata,
                 persistedResource.AccessPolicy,
                 persistedResource.Temporal,
-                updatedRasterMosaic);
+                updatedRasterMosaic,
+                persistedResource.Editing);
             return TypedResults.Ok(ApiResponse<LayerMetadataResponse>.CreateSuccess(response));
+        }
+        catch (ArgumentException ex) when (request.Editing is not null)
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -604,12 +611,14 @@ internal static class ServiceSettingsEndpoints
         MetadataV2ObjectMetadata metadata,
         AccessPolicy? accessPolicy,
         MetadataV2ResourceTemporal? timeInfo,
-        RasterMosaicResponse? rasterMosaic)
+        RasterMosaicResponse? rasterMosaic,
+        MetadataV2ResourceEditing? editing)
     {
         return new LayerMetadataResponse
         {
             LayerId = layerId,
             LayerName = layerName,
+            Editing = editing,
             License = metadata.License,
             Attribution = metadata.Attribution,
             Publisher = metadata.Publisher,
@@ -803,7 +812,8 @@ internal static class ServiceSettingsEndpoints
         HttpContext context,
         IMetadataV2GraphProvider graphProvider,
         string serviceName,
-        ILogger<ServiceSettingsEndpointsLog> logger)
+        ILogger<ServiceSettingsEndpointsLog> logger,
+        string? resourceId = null)
     {
         var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
         if (cacheInvalidator == null)
@@ -822,7 +832,7 @@ internal static class ServiceSettingsEndpoints
                 .Select(s => s.Metadata.Id)
                 .ToHashSet(StringComparer.Ordinal);
             var layerIds = snapshot.Graph.Publications
-                .Where(p => serviceIds.Contains(p.ServiceId))
+                .Where(p => serviceIds.Contains(p.ServiceId) || (resourceId is not null && p.ResourceId == resourceId))
                 .Select(p => p.LayerIndex)
                 .Where(layerIndex => layerIndex.HasValue)
                 .Select(layerIndex => layerIndex!.Value)
@@ -830,7 +840,7 @@ internal static class ServiceSettingsEndpoints
                 .ToArray();
 
             await cacheInvalidator.InvalidateServiceCatalogAsync(
-                serviceName,
+                resourceId is null ? serviceName : null,
                 layerIds,
                 context.RequestAborted).ConfigureAwait(false);
         }
@@ -914,6 +924,7 @@ internal static class ServiceSettingsEndpoints
         int layerId,
         string resourceId,
         Func<MetadataV2Resource, MetadataV2Resource> mutate,
+        MetadataV2EditingPatch? editingPatch,
         CancellationToken cancellationToken)
     {
         for (var attempt = 1; ; attempt++)
@@ -949,6 +960,21 @@ internal static class ServiceSettingsEndpoints
                 Resources = resources,
                 Revision = snapshot.Graph.Revision + 1,
             };
+
+            if (editingPatch is not null)
+            {
+                var serviceIds = snapshot.Graph.Services.Where(service =>
+                        string.Equals(service.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase) &&
+                        ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.FeatureServer))
+                    .Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
+                var publicationIds = snapshot.Graph.Publications.Where(publication =>
+                        publication.ResourceId == resourceId && serviceIds.Contains(publication.ServiceId) &&
+                        publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                        publication.LayerIndex == layerId && snapshot.IsRoutable(publication))
+                    .Select(publication => publication.Metadata.Id).ToHashSet(StringComparer.Ordinal);
+                updated = MetadataV2EditingConfiguration.Apply(updated, resourceId, publicationIds, editingPatch);
+                mutatedResource = updated.Resources.Single(resource => resource.Metadata.Id == resourceId);
+            }
 
             try
             {

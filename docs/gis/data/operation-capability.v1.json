@@ -7,11 +7,11 @@
     "capabilities": "docs/gis/data/feature-catalog.json"
   },
   "summary": {
-    "operationCount": 491,
+    "operationCount": 492,
     "unresolvedCount": 0,
     "capabilityCount": 23,
     "perSpec": {
-      "admin-api": 401,
+      "admin-api": 402,
       "ogc-api-coverages": 8,
       "ogc-api-features": 19,
       "ogc-api-maps": 8,
@@ -21,7 +21,7 @@
       "studio-api": 22
     },
     "perCapability": {
-      "admin.control-plane": 282,
+      "admin.control-plane": 283,
       "admin.multi-tenancy": 7,
       "alerts.evaluation": 18,
       "analytics.h3": 1,
@@ -1896,6 +1896,16 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "get-api-v1-admin-metadata-environments-environment-inventory"
+    },
+    {
+      "spec": "admin-api",
+      "method": "PUT",
+      "path": "/api/v1/admin/metadata/layers/relationships/batch",
+      "operationId": "setAdminLayerRelationshipsBatch",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "put-api-v1-admin-metadata-layers-relationships-batch"
     },
     {
       "spec": "admin-api",
