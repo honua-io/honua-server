@@ -194,7 +194,7 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         await workspaceLifecycle.Received(1).GetOrCreateNamedWorkspaceAsync(
             "admin", "ws-1", Arg.Any<CancellationToken>());
         await workspaceLifecycle.Received(1).PublishArtifactAsync(
-                Arg.Is<WorkspaceArtifactPublication>(p => p.WorkspaceId == "ws-1-resolved" && p.Kind == ArtifactKind.File && p.Label == "artifact1" && p.Overwrite == false && p.Reference == "data:fake-artifact"),
+                Arg.Is<WorkspaceArtifactPublication>(p => p.WorkspaceId == "ws-1-resolved" && p.Kind == ArtifactKind.File && p.Label == "artifact1" && !p.Overwrite && p.Reference == "data:fake-artifact"),
                 Arg.Any<Func<CancellationToken, Task<bool>>>(), Arg.Any<CancellationToken>());
         // The raw label must never be used as a workspace id downstream.
         await workspaceLifecycle.DidNotReceive().PublishArtifactAsync(
@@ -262,7 +262,7 @@ public sealed class GeoprocessingDispatchJobExecutorTests
             });
         workspaceLifecycle
             .PublishArtifactAsync(
-                Arg.Is<WorkspaceArtifactPublication>(p => p.WorkspaceId == "ws-1-resolved" && p.Kind == ArtifactKind.File && p.Label == "artifact1" && p.Overwrite == false && p.Reference == "data:fake-artifact"),
+                Arg.Is<WorkspaceArtifactPublication>(p => p.WorkspaceId == "ws-1-resolved" && p.Kind == ArtifactKind.File && p.Label == "artifact1" && !p.Overwrite && p.Reference == "data:fake-artifact"),
                 Arg.Any<Func<CancellationToken, Task<bool>>>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new ArtifactAlreadyExistsException("ws-1-resolved", "artifact1"));
 
@@ -311,7 +311,7 @@ public sealed class GeoprocessingDispatchJobExecutorTests
 
         result.Status.Should().Be(ExecutionJobStatus.Succeeded);
         await workspaceLifecycle.Received(1).PublishArtifactAsync(
-                Arg.Is<WorkspaceArtifactPublication>(p => p.WorkspaceId == "ws-1-resolved" && p.Kind == ArtifactKind.File && p.Label == "artifact1" && p.Overwrite == true && p.Reference == "data:fake-artifact"),
+                Arg.Is<WorkspaceArtifactPublication>(p => p.WorkspaceId == "ws-1-resolved" && p.Kind == ArtifactKind.File && p.Label == "artifact1" && p.Overwrite && p.Reference == "data:fake-artifact"),
                 Arg.Any<Func<CancellationToken, Task<bool>>>(), Arg.Any<CancellationToken>());
     }
 
