@@ -233,6 +233,7 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    [Endpoint("GET /rest/services/{serviceName}/FeatureServer/{layerId}")]
     public async Task UpdateLayerMetadata_RepairsAttachmentBindingWithoutChangingStorageOrPublicationPolicy()
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
@@ -262,6 +263,10 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         repaired.AccessPolicy.Should().BeEquivalentTo(before.Resources.Single(resource => resource.Metadata.Id == publication.ResourceId).AccessPolicy);
         after.Resources.Where(resource => resource.Metadata.Id != publication.ResourceId)
             .Should().BeEquivalentTo(before.Resources.Where(resource => resource.Metadata.Id != publication.ResourceId));
+        var publicResponse = await _client.GetAsync("/rest/services/test/FeatureServer/0?f=json");
+        publicResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var publicMetadata = JsonDocument.Parse(await publicResponse.Content.ReadAsStringAsync());
+        publicMetadata.RootElement.GetProperty("hasAttachments").GetBoolean().Should().BeTrue();
     }
 
     [IntegrationTest]
