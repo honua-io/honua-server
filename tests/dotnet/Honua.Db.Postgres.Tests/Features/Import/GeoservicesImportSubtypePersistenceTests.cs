@@ -31,7 +31,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// <c>defaultSubtypeCode</c> (see <see cref="MetadataV2Resource.Subtypes"/>).
 /// </summary>
 [Collection("Database")]
-public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fixture)
+public sealed partial class GeoservicesImportSubtypePersistenceTests(PostgresFixture fixture)
 {
     [Theory]
     [InlineData(false)]
@@ -191,10 +191,11 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
     }
 
     private GeoservicesImportService CreateService(PostgresMetadataV2GraphStore graphStore, string dataSchema, bool featureTypes,
-        bool hasZ = false, bool hasM = false)
+        bool hasZ = false, bool hasM = false, HttpMessageHandler? handler = null,
+        Honua.Core.Features.Attachments.Abstractions.IAttachmentStore? attachmentStore = null)
     {
         var restClient = new ArcGisRestClient(
-            new HttpClient(new SubtypeFeatureServerHandler(featureTypes, hasZ, hasM)),
+            new HttpClient(handler ?? new SubtypeFeatureServerHandler(featureTypes, hasZ, hasM)),
             NullLogger<ArcGisRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
 
@@ -223,7 +224,8 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
             NullLogger<GeoservicesImportService>.Instance,
             new GeoservicesLayerPublicationService(
                 NullLogger<GeoservicesLayerPublicationService>.Instance,
-                layerPublishingService: publishingService));
+                layerPublishingService: publishingService),
+            attachmentStore: attachmentStore);
     }
 
     private async Task EnsureCatalogSchemaAsync()
