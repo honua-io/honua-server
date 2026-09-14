@@ -410,8 +410,9 @@ internal static class McpServiceCollectionExtensions
 
     /// <summary>
     /// Publishes validated operations-toolset descriptors as first-class MCP tools
-    /// (#2483, ADR-0056 Increment 4). Off unless <c>Mcp:PublishOperations:Enabled</c>
-    /// is set, so the advertised catalog is unchanged by default. Must be called
+    /// (#2483, ADR-0056 Increment 4). The audited Admin projection publishes by default
+    /// (#3363; <c>Mcp:PublishOperations:AdminProjection=false</c> withholds it) and the full
+    /// catalog stays opt-in via <c>Mcp:PublishOperations:Enabled</c>. Must be called
     /// AFTER the operations toolset is composed (<c>AddOperationsToolset</c>), because
     /// the tool source resolves the canonical <see cref="Honua.Core.Features.Operations.Abstractions.IOperationCatalog"/>
     /// — call it from a host that has the operations toolset wired, not from a bare

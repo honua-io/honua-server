@@ -18,8 +18,10 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 /// <c>tools/list</c> and <c>tools/call</c>.
 /// </summary>
 /// <remarks>
-/// Off unless <c>Mcp:PublishOperations:Enabled</c> is set, so no host changes its advertised
-/// catalog by default. In "deterministic mode" (<c>DeterministicOnly</c>) only AI-free
+/// By default only the audited Admin projection publishes (#3363): operations named by a registered
+/// <see cref="IAuditedAdminMcpProjection"/> (<c>Mcp:PublishOperations:AdminProjection</c>). The full
+/// catalog publishes only when <c>Mcp:PublishOperations:Enabled</c> is set. Audited
+/// <see cref="AdminMcpOperationExclusions"/> never publish. In "deterministic mode" (<c>DeterministicOnly</c>) only AI-free
 /// descriptors are published — the audit/inspect toolset. Descriptors already exposed by a
 /// hand-authored tool are skipped so the same operation is not advertised twice.
 /// </remarks>
@@ -28,10 +30,17 @@ internal sealed class PublishedOperationToolSource : IMcpToolSource
     /// <summary>
     /// Operation ids already surfaced by a hand-authored MCP tool, so they are not
     /// double-published here. <c>service.publish</c> is <c>honua_publish_service</c> /
-    /// <c>honua_publish_result</c>.
+    /// <c>honua_publish_result</c>; <c>studio.content.create-publication-request</c> is
+    /// <c>honua_studio_propose_publication</c>, which enforces the Studio owner authorization the
+    /// generic projection does not.
     /// </summary>
     private static readonly HashSet<string> ExcludedOperationIds =
-        new(StringComparer.Ordinal) { PublishServiceTool.PublishOperationId, "style.apply-preset" };
+        new(StringComparer.Ordinal)
+        {
+            PublishServiceTool.PublishOperationId,
+            "style.apply-preset",
+            "studio.content.create-publication-request",
+        };
 
     private static readonly IReadOnlyList<IMcpTool> Empty = [];
 
@@ -40,26 +49,32 @@ internal sealed class PublishedOperationToolSource : IMcpToolSource
     private readonly IOptions<McpPublishedOperationOptions> _options;
     private readonly ILogger<PublishedOperationToolSource> _logger;
     private readonly IReadOnlyDictionary<string, int> _mapperCounts;
+    private readonly HashSet<string> _auditedOperationIds;
 
     public PublishedOperationToolSource(
         IOperationCatalog catalog,
         IOptions<McpPublishedOperationOptions> options,
         ILogger<PublishedOperationToolSource> logger,
         IServiceScopeFactory? scopeFactory = null,
-        IEnumerable<IOperationApprovalRequestMapper>? requestMappers = null)
+        IEnumerable<IOperationApprovalRequestMapper>? requestMappers = null,
+        IEnumerable<IAuditedAdminMcpProjection>? auditedProjections = null)
     {
         _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _logger = logger;
         _scopeFactory = scopeFactory;
         _mapperCounts = OperationDescriptorPublication.CountMappings(requestMappers ?? []);
+        _auditedOperationIds = (auditedProjections ?? [])
+            .SelectMany(projection => projection.OperationIds)
+            .ToHashSet(StringComparer.Ordinal);
     }
 
     /// <inheritdoc />
     public async ValueTask<IReadOnlyList<IMcpTool>> GetToolsAsync(CancellationToken cancellationToken)
     {
         var options = _options.Value;
-        if (!options.Enabled)
+        var auditedOnly = !options.Enabled;
+        if (auditedOnly && (!options.AdminProjection || _auditedOperationIds.Count == 0))
         {
             return Empty;
         }
@@ -78,6 +93,11 @@ internal sealed class PublishedOperationToolSource : IMcpToolSource
         var tools = new List<IMcpTool>(snapshot.Operations.Count);
         foreach (var descriptor in snapshot.Operations)
         {
+            // Without the full-catalog opt-in, only the audited Admin projection publishes.
+            if (auditedOnly && !_auditedOperationIds.Contains(descriptor.OperationId))
+            {
+                continue;
+            }
             if (!OperationDescriptorPublication.CanAdvertise(descriptor, _mapperCounts))
             {
                 continue;

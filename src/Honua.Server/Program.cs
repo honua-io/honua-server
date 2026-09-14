@@ -917,8 +917,11 @@ builder.Services.AddWorkflowPackages();
 builder.Services.AddOperationsToolset(builder.Configuration, builder.Environment);
 builder.Services.AddAdminAccessOperations();
 // #2483 (ADR-0056 Increment 4): publish validated operations-toolset descriptors as
-// first-class MCP tools. Off unless Mcp:PublishOperations:Enabled=true; wired after the
-// operations toolset so the tool source can resolve the canonical IOperationCatalog.
+// first-class MCP tools. The audited Admin projection publishes by default (#3363;
+// Mcp:PublishOperations:AdminProjection=false withholds it); the full operations catalog
+// stays opt-in via Mcp:PublishOperations:Enabled=true. Audited secret/session Admin
+// operations never publish. Wired after the operations toolset so the tool source can
+// resolve the canonical IOperationCatalog.
 Honua.Ai.Protocols.Mcp.McpServiceCollectionExtensions.AddMcpPublishedOperationTools(
     builder.Services, builder.Configuration);
 builder.Services.AddAdminRealtime(builder.Configuration);
