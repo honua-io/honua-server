@@ -83,7 +83,7 @@ public sealed partial class LayerPublishingIntegrationTests
         using var scope = _fixture.Services.CreateScope();
         var snapshot = await scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>().GetCurrentAsync();
         var resource = snapshot.Graph.Resources.Should().ContainSingle(candidate =>
-            candidate.SchemaFields.Any(field => field.Domain?.Name == domainName)).Subject;
+            candidate.SchemaFields.Any(field => field.Domain != null && field.Domain.Name == domainName)).Subject;
         resource.Display!.HasZ.Should().Be(hasZ);
         resource.Display.HasM.Should().Be(hasM);
         resource.Subtypes!.DefaultSubtypeCode!.Value.GetInt32().Should().Be(100);
