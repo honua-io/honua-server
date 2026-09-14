@@ -760,8 +760,8 @@ internal static partial class FeatureServerEndpoints
                 RelatedTableId = relatedLayerId,
                 Role = relationship.Role,
                 Cardinality = MapEsriCardinality(relationship.Cardinality),
-                Composite = false,
-                KeyField = relationship.DestinationField,
+                Composite = relationship.Composite,
+                KeyField = relationship.OriginField,
                 OriginKeyField = relationship.OriginField,
                 DestinationKeyField = relationship.DestinationField,
                 Description = relationship.Description
@@ -942,13 +942,13 @@ internal static partial class FeatureServerEndpoints
     {
         var hasPublications = publications is { Count: > 0 };
         var supportsCreate = hasPublications
-            ? publications!.Any(pair => ServiceSupportsOperationV2(service, "Create", pair.Publication))
+            ? publications!.Any(pair => !MetadataV2RelationshipEditPolicy.RequiresReadOnly(pair.Resource) && ServiceSupportsOperationV2(service, "Create", pair.Publication))
             : ServiceSupportsOperationV2(service, "Create");
         var supportsUpdate = hasPublications
-            ? publications!.Any(pair => ServiceSupportsOperationV2(service, "Update", pair.Publication))
+            ? publications!.Any(pair => !MetadataV2RelationshipEditPolicy.RequiresReadOnly(pair.Resource) && ServiceSupportsOperationV2(service, "Update", pair.Publication))
             : ServiceSupportsOperationV2(service, "Update");
         var supportsDelete = hasPublications
-            ? publications!.Any(pair => ServiceSupportsOperationV2(service, "Delete", pair.Publication))
+            ? publications!.Any(pair => !MetadataV2RelationshipEditPolicy.RequiresReadOnly(pair.Resource) && ServiceSupportsOperationV2(service, "Delete", pair.Publication))
             : ServiceSupportsOperationV2(service, "Delete");
 
         if (supportsCreate)
