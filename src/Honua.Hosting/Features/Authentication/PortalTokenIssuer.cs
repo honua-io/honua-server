@@ -33,6 +33,12 @@ internal sealed partial class PortalTokenIssuer(
     internal const string BindingClaimType = "portal_token_binding";
     private const string TokenKeyPrefix = "portal-auth:token:";
 
+    // Redis keeps key lifetimes in whole seconds and rounds the remainder down, so a distributed
+    // entry that expires exactly at ExpiresAt can vanish up to a second before the expiry the
+    // client was given. The entry outlives ExpiresAt by this margin; the ExpiresAt check in
+    // GetAsync stays the authority for when the token stops validating (honua-server#4777).
+    private static readonly TimeSpan DistributedEntryExpiryMargin = TimeSpan.FromSeconds(2);
+
     private readonly IMemoryCache _memoryCache = memoryCache;
     private readonly ILogger<PortalTokenIssuer> _logger = logger;
     private readonly IDistributedCache? _distributedCache = distributedCache;
@@ -337,7 +343,7 @@ internal sealed partial class PortalTokenIssuer(
                 payload,
                 new DistributedCacheEntryOptions
                 {
-                    AbsoluteExpiration = expiresAt
+                    AbsoluteExpiration = expiresAt + DistributedEntryExpiryMargin
                 },
                 cancellationToken).ConfigureAwait(false);
             _memoryCache.Set(key, payload, expiresAt);
