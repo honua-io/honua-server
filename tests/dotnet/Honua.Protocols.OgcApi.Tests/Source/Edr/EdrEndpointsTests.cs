@@ -342,6 +342,170 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
             .EnumerateArray().First().GetDouble().Should().Be(11.0);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Query, Operations.ErrorHandling)]
+    [Endpoint("GET /edr/collections/{collectionId}/position")]
+    [Endpoint("GET /edr/collections/{collectionId}/cube")]
+    public async Task Edr_PositionAndCube_FormatOutsideOutputFormats_Returns400()
+    {
+        // #4153: the collection advertises output_formats=[CoverageJSON]. OGC API - Common Part 1
+        // (8.1.3) maps any other `f` value to 400 instead of a CoverageJSON 200.
+        var position = $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords=POINT(-122.4 37.8)";
+        var cube = $"/edr/collections/{WebAppFixture.TestLayerId}/cube?bbox=-122.5,37.7,-122.3,37.9&resolution-x=1";
+        foreach (var format in new[] { "csv", "GeoJSON", "netcdf" })
+        {
+            var positionResponse = await _fixture.Client.GetAsync($"{position}&f={format}");
+            positionResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"position f={format}");
+            (await positionResponse.Content.ReadAsStringAsync()).Should().Contain("CoverageJSON");
+
+            var cubeResponse = await _fixture.Client.GetAsync($"{cube}&f={format}");
+            cubeResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"cube f={format}");
+        }
+
+        await _rasterStore.DidNotReceive().IdentifyAsync(
+            Arg.Any<int>(),
+            Arg.Any<long>(),
+            Arg.Any<double>(),
+            Arg.Any<double>(),
+            Arg.Any<int?>(),
+            Arg.Any<RasterIdentifyRendering?>(),
+            Arg.Any<CancellationToken>());
+
+        var advertised = await _fixture.Client.GetAsync($"{position}&f=CoverageJSON");
+        advertised.StatusCode.Should().Be(HttpStatusCode.OK, await advertised.Content.ReadAsStringAsync());
+        advertised.Content.Headers.ContentType?.MediaType.Should().Be("application/prs.coveragejson+json");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query, Operations.ErrorHandling)]
+    [Endpoint("GET /edr/collections/{collectionId}/position")]
+    [Endpoint("GET /edr/collections/{collectionId}/cube")]
+    public async Task Edr_PositionAndCube_CrsOutsideCollectionCrs_Returns400WithoutSampling()
+    {
+        // #4153: the collection advertises crs=[CRS84]. EPSG:3857 metres were previously read as
+        // CRS84 degrees; they must be rejected before any pixel is sampled.
+        var position = await _fixture.Client.GetAsync(
+            $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords=POINT(-13625000 4550000)&crs=EPSG:3857");
+        position.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await position.Content.ReadAsStringAsync()).Should().Contain("crs");
+
+        var cube = await _fixture.Client.GetAsync(
+            $"/edr/collections/{WebAppFixture.TestLayerId}/cube?bbox=-13637750,4539250,-13614250,4560250&crs=EPSG:3857");
+        cube.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        await _rasterStore.DidNotReceive().IdentifyAsync(
+            Arg.Any<int>(),
+            Arg.Any<long>(),
+            Arg.Any<double>(),
+            Arg.Any<double>(),
+            Arg.Any<int?>(),
+            Arg.Any<RasterIdentifyRendering?>(),
+            Arg.Any<CancellationToken>());
+
+        // The advertised CRS, by code or by URI, is accepted and still sampled as lon/lat.
+        foreach (var crs in new[] { "CRS84", "http://www.opengis.net/def/crs/OGC/1.3/CRS84" })
+        {
+            using var doc = await GetJsonAsync(
+                $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords=POINT(-122.4 37.8)&crs={Uri.EscapeDataString(crs)}");
+            doc.RootElement.GetProperty("domain").GetProperty("axes").GetProperty("x").GetProperty("values")[0]
+                .GetDouble().Should().Be(-122.4);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /edr/collections/{collectionId}/position")]
+    public async Task Edr_Position_MultiPoint_ReturnsCoverageCollectionSampledAtEachPosition()
+    {
+        // #4153: EDR 1.1 position examples use coords=MULTIPOINT(...). The store stub derives each
+        // band value from the sampled coordinate (band_1 = lon + 200, band_2 = lat), so the expected
+        // values below are computed from the request coordinates, not captured from the handler.
+        _rasterStore.IdentifyAsync(
+                WebAppFixture.TestLayerId,
+                TestRasterId,
+                Arg.Any<double>(),
+                Arg.Any<double>(),
+                Arg.Any<int?>(),
+                Arg.Any<RasterIdentifyRendering?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult(new PixelValueResult
+            {
+                X = call.ArgAt<double>(2),
+                Y = call.ArgAt<double>(3),
+                Srid = 4326,
+                HasData = true,
+                BandValues = new Dictionary<int, object?>
+                {
+                    [1] = call.ArgAt<double>(2) + 200.0,
+                    [2] = call.ArgAt<double>(3),
+                    [3] = 13.0
+                }
+            }));
+
+        (double Lon, double Lat)[] positions = [(-122.4, 37.8), (-122.35, 37.75)];
+        foreach (var coords in new[]
+                 {
+                     "MULTIPOINT((-122.4 37.8),(-122.35 37.75))",
+                     "MULTIPOINT(-122.4 37.8, -122.35 37.75)"
+                 })
+        {
+            using var doc = await GetJsonAsync(
+                $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords={Uri.EscapeDataString(coords)}&parameter-name=band_1,band_2&datetime=2026-06-20T00:00:00Z");
+            var root = doc.RootElement;
+            root.GetProperty("type").GetString().Should().Be("CoverageCollection", coords);
+            root.GetProperty("domainType").GetString().Should().Be("PointSeries");
+            root.GetProperty("parameters").EnumerateObject().Select(p => p.Name)
+                .Should().BeEquivalentTo("band_1", "band_2");
+
+            var coverages = root.GetProperty("coverages").EnumerateArray().ToArray();
+            coverages.Should().HaveCount(positions.Length);
+            for (var i = 0; i < positions.Length; i++)
+            {
+                var (lon, lat) = positions[i];
+                var domain = coverages[i].GetProperty("domain");
+                domain.GetProperty("domainType").GetString().Should().Be("PointSeries");
+                domain.GetProperty("axes").GetProperty("x").GetProperty("values")[0].GetDouble().Should().Be(lon);
+                domain.GetProperty("axes").GetProperty("y").GetProperty("values")[0].GetDouble().Should().Be(lat);
+                domain.GetProperty("axes").GetProperty("t").GetProperty("values")[0].GetString()
+                    .Should().StartWith("2026-06-20");
+
+                var ranges = coverages[i].GetProperty("ranges");
+                ranges.GetProperty("band_1").GetProperty("values")[0].GetDouble()
+                    .Should().BeApproximately(lon + 200.0, 1e-9);
+                ranges.GetProperty("band_2").GetProperty("values")[0].GetDouble()
+                    .Should().BeApproximately(lat, 1e-9);
+                ranges.TryGetProperty("band_3", out _).Should().BeFalse();
+            }
+        }
+
+        foreach (var (lon, lat) in positions)
+        {
+            await _rasterStore.Received(2).IdentifyAsync(
+                WebAppFixture.TestLayerId,
+                TestRasterId,
+                lon,
+                lat,
+                4326,
+                null,
+                Arg.Any<CancellationToken>());
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /edr/collections/{collectionId}/position")]
+    public async Task Edr_Position_MultiPointWithMemberOutsideExtent_Returns400()
+    {
+        var inside = await _fixture.Client.GetAsync(
+            $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords={Uri.EscapeDataString("MULTIPOINT((-122.4 37.8),(0 0))")}");
+        inside.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await inside.Content.ReadAsStringAsync()).Should().Contain("outside the collection spatial extent");
+
+        var malformed = await _fixture.Client.GetAsync(
+            $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords={Uri.EscapeDataString("MULTIPOINT((-122.4 37.8),(-122.3))")}");
+        malformed.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     private void UsePrimaryRaster(RasterInfo raster)
     {
         _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
