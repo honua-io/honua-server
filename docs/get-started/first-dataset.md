@@ -90,8 +90,7 @@ Install the control-plane SDK and create the named connection. Skip the create c
 
 ```bash
 python3 -m pip install \
-  "honua-sdk @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.1.9#subdirectory=packages/honua-sdk" \
-  "honua-admin @ git+https://github.com/honua-io/honua-sdk-python.git@python-sdk-v0.1.9#subdirectory=packages/honua-admin"
+  honua-sdk==0.1.11 honua-admin==0.1.8
 python3 - <<'PY'
 import subprocess
 

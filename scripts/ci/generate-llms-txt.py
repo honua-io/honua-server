@@ -49,37 +49,31 @@ def docs_base_url() -> str:
 
 
 def published_base_url() -> str:
-    """Where the bundle is actually served, which is not docsBaseUrl.
+    """Where a link in this file can be fetched and proved to exist.
 
-    docs.honua.io is the canonical name and is not provisioned: its DNS points at
-    GitHub Pages, it serves nothing, and a GitBook custom domain requires a
-    Premium site plan. Emitting it here produced 142 dead links in the one file
-    whose entire job is to be fetched by machines.
+    Not the rendered site. GitBook publishes each page at its nav path with the
+    directories kept, the `.md` kept, and every directory segment slugged from
+    its *nav group title* - `guides/query-analyze/` is served as
+    `guides/query-and-analyze/`. An earlier version of this generator encoded a
+    flattened `<area>/<stem>` rule, which was true when the space served this
+    repository alone and became wrong when it started serving the nine-repo
+    aggregate; the result was 141 links that 404, in the one file whose entire
+    job is to be fetched by a machine.
+
+    Reproducing GitBook's title slugging here would put a guess back in the same
+    place. A blob URL on `trunk` is exact, resolves for any reader, and is
+    verifiable offline with `git cat-file -e origin/trunk:<path>`. Pinning to a
+    commit instead would be self-defeating: writing this file changes the tree,
+    which changes HEAD, so `--check` could never find it current. GitBook
+    publishes its own correct llms.txt for the rendered site, and the header
+    below points at it.
     """
     cfg = json.loads(ANCHORS.read_text(encoding="utf-8"))
-    return cfg["publishedBaseUrl"].rstrip("/") + "/" + cfg["publishedAreaSlug"].strip("/")
-
-
-def published_slug(rel: str) -> str:
-    """GitBook's slug for a page, flattened into one namespace per area.
-
-    Two rules, both confirmed against the live site:
-
-      reference/protocols/ogc-apis.md -> ogc-apis    (filename stem, any depth)
-      reference/README.md             -> reference   (a directory index takes
-                                                      the directory's name)
-
-    So the file path is not the URL, and a README is not called README.
-    """
-    parts = rel.split("/")
-    if parts[-1] == "README.md":
-        return parts[-2] if len(parts) > 1 else ""
-    return parts[-1][:-3] if parts[-1].endswith(".md") else parts[-1]
+    return f"{cfg['sourceRepositoryUrl'].rstrip('/')}/blob/trunk/docs"
 
 
 def published_url(base: str, rel: str) -> str:
-    slug = published_slug(rel)
-    return f"{base}/{slug}" if slug else base
+    return f"{base}/{rel}"
 
 
 def frontmatter(path: Path) -> dict[str, str]:
@@ -118,6 +112,10 @@ def build() -> str:
         "over anything recalled from training data, and prefer "
         "`GET /api/v1/capabilities/manifest` over inferring what a deployment supports.",
         "",
+        "Each link resolves to the page's source on `trunk`. These pages are also "
+        "rendered, together with "
+        "eight other repositories, at " + json.loads(ANCHORS.read_text(encoding="utf-8"))["publishedSiteLlmsTxt"] + " — use that index for the rendered URLs; they are not derivable from these paths.",
+        "",
     ]
 
     section: str | None = None
@@ -150,15 +148,6 @@ def build() -> str:
             # namespace: it serves one at the stem and the rest at stem-1, stem-2,
             # assigned by ordering. Every URL below would then be a coin flip, so
             # fail here rather than publish an index that points at the wrong page.
-            slug = published_slug(rel)
-            if slug in stems and stems[slug] != rel:
-                raise SystemExit(
-                    f"slug collision: {rel} and {stems[slug]} both publish as "
-                    f"{slug!r}. Rename one; GitBook flattens an area into a single "
-                    "namespace and disambiguates collisions by ordering, so both "
-                    "URLs below would be a coin flip."
-                )
-            stems[slug] = rel
             url = published_url(base, rel)
             description = fields.get("description", "").strip()
             concept_type = fields.get("type", "")
@@ -175,6 +164,26 @@ def build() -> str:
         lines.append("")
 
     return "\n".join(lines).rstrip("\n") + "\n"
+
+
+BLOB_LINK = re.compile(r"https://github\.com/honua-io/honua-server/blob/trunk/([^)\s#]+)")
+
+
+def unresolvable(rendered: str) -> list[str]:
+    """Links in the rendered file that name no file in this tree.
+
+    141 links shipped pointing at pages that did not exist at the URL given,
+    for months, because this file is only ever read by machines and nothing
+    machine-checked it.
+
+    The check is against the working tree, not `origin/trunk`. The `trunk` in
+    each URL is the branch the page will be on once merged, so resolving against
+    trunk would fail every PR that adds a page - which is exactly the change
+    most likely to add a link. What has to be true is that the path names a real
+    file in the commit being made; merging then makes the URL correct.
+    """
+    paths = sorted({m.group(1) for m in BLOB_LINK.finditer(rendered)})
+    return [path for path in paths if not (REPO_ROOT / path).is_file()]
 
 
 def main(argv: list[str]) -> int:
@@ -194,7 +203,14 @@ def main(argv: list[str]) -> int:
             print("::error::docs/llms.txt is stale. Run "
                   "'python3 scripts/ci/generate-llms-txt.py' and commit the result.", file=sys.stderr)
             return 1
-        print(f"docs/llms.txt is current: {entries} page(s).")
+        dead = unresolvable(rendered)
+        if dead:
+            print(f"::error::docs/llms.txt links {len(dead)} path(s) that are not files:",
+                  file=sys.stderr)
+            for path in dead[:15]:
+                print(f"  {path}", file=sys.stderr)
+            return 1
+        print(f"docs/llms.txt is current: {entries} page(s), every link resolves.")
         return 0
 
     OUTPUT.write_text(rendered, encoding="utf-8")

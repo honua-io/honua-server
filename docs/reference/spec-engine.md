@@ -2,6 +2,8 @@
 type: reference
 title: "Spec engine"
 resource: "honua://capability/ai.spec-apply"
+resources:
+  - "honua://capability/ai.spec-artifacts"
 ---
 # Spec engine
 

@@ -18,13 +18,13 @@ https://your-honua.example.com/mcp
 
 The connector must send a bearer token for a user authorized to the target
 tenant and Studio resources. Discover tools with `tools/list`; do not hard-code
-the 17-name table as an authorization boundary. A safe turn is:
+the tool table as an authorization boundary. A safe turn is:
 
 1. call `honua_studio_create_draft`;
 2. apply typed mutations using the returned `generation`;
 3. on `failed_precondition`, fetch, reconcile, and retry once;
 4. validate and preview the draft;
-5. save/reopen through an SDK client if durable versioning is required.
+5. save a version with `honua_studio_save_version`, and branch a new draft from one with `honua_studio_reopen_version` — both are MCP tools, so durable versioning does not need an SDK client. `honua_studio_save_version` returns the immutable `versionId` and `contentHash` that `honua_studio_propose_publication` requires.
 
 `honua_studio_propose_publication` records intent, but do not promise a public
 URL: the governed publication journey is blocked by

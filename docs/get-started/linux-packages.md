@@ -9,7 +9,7 @@ resource: "https://github.com/honua-io/honua-server/releases"
 Use Docker Engine with Compose 2.23.1 or later, Python 3.11 or later with venv and pip 22.3+,
 and a Bash terminal. The configuration runs the same Production image, registry
 clients and two-feature journey as the [Windows quickstart](quickstart.md).
-Read its [artifact identity and qualification](quickstart.md#artifact-identity-and-qualification)
+Read its [artifact identity and qualification](../internal/evidence/quickstart-artifact-qualification.md)
 first. No source checkout, build or GitHub login is needed. This pre-cut profile
 selects `linux/amd64`; use an amd64 host for this rehearsal.
 

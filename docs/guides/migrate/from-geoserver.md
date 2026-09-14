@@ -8,7 +8,9 @@ resource: "honua://capability/import.geoserver"
 
 Use `honua-migrate` to scan a GeoServer catalog, complete a server-validated dry-run plan, apply the reviewed catalog with explicit acknowledgement, and monitor the resulting Honua job.
 
-**Prerequisites:** a running Honua server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), the [`honua-migrate`](https://github.com/honua-io/honua-migrate) CLI, Redis-backed jobs, and GeoServer REST credentials.
+**Prerequisites:** a running Honua server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), the `honua-migrate` CLI (`pipx install honua-migrate` - pipx keeps it isolated,
+which avoids the [console-script collision](https://github.com/honua-io/honua-migrate/blob/trunk/docs/console-script-collision.md)
+with `honua-sdk`'s legacy launcher), Redis-backed jobs, and GeoServer REST credentials.
 
 Set the local Honua credential and source details:
 
@@ -97,7 +99,13 @@ honua-migrate services geoserver resume \
 
 ## 5. Reconcile and repoint clients
 
-Verify the published target through the supported Honua CLI:
+Verify the published target with the JavaScript SDK's `honua` CLI:
+
+> `honua` here is the JavaScript SDK's CLI, which is the one with `query`. Install it with
+> `npm i -g @honua/sdk-js`, or run it ad hoc as `npx -p @honua/sdk-js honua …` — the `-p`
+> matters, because npx otherwise looks for a binary named `sdk-js`. The PyPI `honua-sdk`
+> distribution installs an executable with the same name and no `query` subcommand, so on a
+> machine with both, prefer the `npx -p` form.
 
 ```bash
 export HONUA_BASE_URL="$HONUA_URL"

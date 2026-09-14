@@ -43,6 +43,13 @@ DATE_RE = re.compile(
     r"(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?$"
 )
 SCALAR_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*):\s*(.*)$")
+SEQUENCE_ITEM_RE = re.compile(r"^\s+-\s+(.*\S)\s*$")
+
+
+def unquote(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        return value[1:-1]
+    return value
 
 
 def load_manifest() -> dict:
@@ -56,20 +63,26 @@ def parse_frontmatter(text: str) -> tuple[dict[str, str] | None, str | None]:
         return None, None
     lines = text.splitlines()
     fields: dict[str, str] = {}
+    pending_list: str | None = None
     for i, raw in enumerate(lines[1:], start=1):
         if raw.strip() == "---":
             return fields, None
         if not raw.strip() or raw.lstrip().startswith("#"):
             continue
+        item = SEQUENCE_ITEM_RE.match(raw)
+        if item and pending_list is not None:
+            fields[pending_list] = (fields[pending_list] + ", " if fields[pending_list] else "") + unquote(item.group(1))
+            continue
         m = SCALAR_RE.match(raw)
         if not m:
-            # Nested or list values are legal YAML but nothing here emits them;
-            # flag rather than silently skipping a line we cannot read.
+            # A nested mapping is still something this reader cannot represent;
+            # flag rather than silently skipping a line it cannot understand.
             return fields, f"line {i + 1} is not a `key: value` scalar: {raw.strip()!r}"
         key, value = m.group(1), m.group(2).strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-            value = value[1:-1]
-        fields[key] = value
+        # `key:` with nothing after it opens a block sequence - one page can
+        # declare several capabilities, and `resources:` is written that way.
+        pending_list = key if not value else None
+        fields[key] = unquote(value)
     return fields, "frontmatter fence was never closed"
 
 

@@ -3,6 +3,9 @@ type: guide
 title: "Connect AI agents to Honua over MCP"
 description: "Point any MCP-capable agent (Claude Code, Claude Desktop, or your own client) at Honua's built-in MCP endpoint to plan, validate, dry-run, and execute geoprocessing work with the same authorization rules as every other protocol."
 resource: "honua://capability/ai.mcp-discovery"
+resources:
+  - "honua://capability/ai.agent-operations"
+  - "honua://capability/ai.approval-workflows"
 ---
 # Connect AI agents to Honua over MCP
 
@@ -49,11 +52,11 @@ line (ADR-0024).
 
 | | **This repo — MCP data-access surface** | **`honua-devops` — operator surface** |
 |---|---|---|
-| Dispatcher | `McpDataAccessSurface` in `honua-server` | operator agent in `honua-devops` (private) |
+| Dispatcher | `McpDataAccessSurface` in `honua-server` | operator agent in [`honua-devops`](https://github.com/honua-io/honua-devops) |
 | Transport | HTTP `POST /mcp` (Streamable HTTP), authenticated | MCP stdio (`--mcp`) |
-| Roster | ~27 studio/data-access tools (query, render, style, geocode/route, plan/execute, authoring/packaging) + **8 bounded, read-only ops-*evidence* tools** | ~35 operator-*intelligence* tools |
+| Roster | ~58 studio/data-access tools (query, render, style, geocode/route, plan/execute, authoring/packaging), plus a dynamic `honua_op_*` tool per published operation + **8 bounded, read-only ops-*evidence* tools** | ~35 operator-*intelligence* tools |
 | What it does | Serves geospatial data-access and studio workflows, and reads bounded operational **evidence**; at most it *proposes* a control-plane action that a human approves in the Console inbox (ADR-0062) | Reasons over that evidence and acts: diagnose, tune, upgrade planning with rollback gates, GitOps rollout, remediation planning. Consumes this repo's evidence tools via its `honua_observe_diagnose_propose` day-2 loop |
-| Licensing | Open-core (ELv2); included in Community (ADR-0024) | Private/proprietary; **not** part of the open-core runtime promise |
+| Licensing | Open-core (ELv2); included in Community (ADR-0024) | Source is public; the licence is proprietary (all rights reserved) and it is **not** part of the open-core runtime promise. No package is published - it is built from source or run as a container. |
 
 The 8 ops-evidence tools (`honua_ops_health`, `honua_ops_findings`,
 `honua_alert_events`, `honua_operate_events`, `honua_platform_release_status`,
@@ -114,6 +117,12 @@ named "operator surface" ships in this repo.
 5. Read results through resources (`resources/read`):
 
    - `honua://catalog/processes` — the process catalog the planner can draw from
+
+   > `honua://capability/<key>` is **not** one of these. It is an Open Knowledge Format
+   > document identity used by the published docs bundle, not an MCP resource; a
+   > `resources/read` on one returns `not_found`. Resolve it by opening the matching
+   > page under `okf/capabilities/` instead.
+
    - `honua://jobs/{jobId}` — live job status, phase, and percent complete
    - `honua://jobs/{jobId}/results` — the result package for a terminal job
    - `honua://jobs/{jobId}/report` — a structured analysis report for the same job
@@ -140,15 +149,19 @@ named "operator surface" ships in this repo.
    - `honua_studio_add_layer` / `honua_studio_remove_layer` / `honua_studio_set_layer_style` / `honua_studio_set_layer_visibility` / `honua_studio_set_view` / `honua_studio_add_widget` / `honua_studio_remove_widget` — bounded composition mutations for `map`/`app`-family drafts, taxonomy-aligned with the honua-sdk-js agent-tools vocabulary (`addLayer`, `setViewport`). Each patches the draft's composition body and pushes it through the same generation-checked update path. `honua_studio_set_layer_visibility` is the persisted counterpart of the ADR-0030 `setVisibility` action verb: `visible` is part of the stored composition wire shape, so a client-local table-of-contents toggle is overwritten by the next draft sync unless it is written through this tool.
    - `honua_studio_bind_interaction` / `honua_studio_remove_interaction` — declarative event→action wiring between the draft's components (geospatial-mcp ADR-0030, opt-in `composition` conformance profile; Honua is the reference implementation of the standard's `bind_interaction`/`remove_interaction`). A binding is `{ id, on: {ref, event}, do: {ref, verb, args} }` over closed sets: events `featureSelect`/`featureHover` (layers), `selection` (widgets), `change` (controls), `viewportChange` (map); verbs `setFilter`, `setViewport`, `selectFeature`, `runWidgetQuery`, `setVisibility`. Bindings are data, never code — `args` is static JSON plus `$event.` path substitution, with no expression language — and actions never emit events, so bindings cannot cascade. Binding an existing `id` replaces it; removing an unknown `id` is an error, not a no-op. The server rejects bindings whose `on.ref`/`do.ref` does not resolve to a component declared in the same document — including a `control:{id}` reference, which resolves against the draft's `controls` collection (add the control first with `honua_studio_add_control`) — and rejects a ninth binding on any one `(on.ref, on.event)` source.
    - `honua_studio_add_control` / `honua_studio_remove_control` — the draft's `controls` collection (geospatial-mcp ADR-0031, same opt-in `composition` profile; Honua is the reference implementation of the standard's `add_control`/`remove_control`). A control is `{ id, kind, title?, sourceId?, config? }` — an input affordance the user operates, and the thing a `control:{id}` interaction reference resolves against. Controls are a peer collection to layers and widgets rather than a widget kind, and they are chrome rather than `layout` grid items. `kind` is a closed set: `navigation`, `scale`, `fullscreen`, `geolocate`, `search`, `measure`, `timeSlider`, `filterSelect`, `filterSlider`, `filterDateRange`, `bookmarks`, `opacity`, `attribution`, `basemapSwitcher` — deliberately with no feature-editing draw kind, because source-record mutation stays behind the governed `edit_features` boundary (ADR-0028). Adding an existing `id` replaces that control; removing an unknown `id` is an error, not a no-op. Removing a control an interaction still references fails unless you pass `cascadeInteractions: true`, which removes those bindings with it — a document never silently retains a dangling `control:` binding.
+   - `honua_studio_save_version` / `honua_studio_reopen_version` — freeze the current draft generation as an immutable version, and branch a fresh editable draft from a saved version. `honua_studio_save_version` is what produces the `versionId` and `contentHash` the publication proposal below requires; there is no other way to obtain them.
    - `honua_studio_propose_publication` — after saving the draft, pass its exact `itemId`, immutable `versionId`, and `contentHash` with the requested `route` and `visibility`. The tool creates a durable canonical publication proposal and returns proposal/operation/audit identities; it does not self-approve. A separate authorized principal must approve the proposal, and the agent can poll the returned `proposalUri` for the final status and active URL.
 
-   These tools authorize against a distinct operator-grant family (`OperatorResourceType.StudioDraft`, informally "studio-compose") from the package-review/authoring tools above, so an operator can scope Studio composition access independently once end-user (non-admin) authorization lands (honua-server#3001). The default posture mirrors the REST Studio lifecycle surface: `admin` bypasses as usual; non-admin principals need an explicit grant. All seventeen tools are advertised unconditionally (like `honua_create_map_package`/`honua_publish_service`): each resolves the Studio persistence service per call rather than at registration time, so a host that never composed Studio persistence still lists the tools but fails calls with a structured, retryable `unavailable` error instead of silently omitting them from `tools/list`.
+   These tools authorize against a distinct operator-grant family (`OperatorResourceType.StudioDraft`, informally "studio-compose") from the package-review/authoring tools above, so an operator can scope Studio composition access independently once end-user (non-admin) authorization lands (honua-server#3001). The default posture mirrors the REST Studio lifecycle surface: `admin` bypasses as usual; non-admin principals need an explicit grant. All nineteen are advertised unconditionally (like `honua_create_map_package`/`honua_publish_service`): each resolves the Studio persistence service per call rather than at registration time, so a host that never composed Studio persistence still lists the tools but fails calls with a structured, retryable `unavailable` error instead of silently omitting them from `tools/list`.
 
 ## Verify
 
 Run `POST /mcp` with `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`.
 
-The response lists the nine `honua_*` tools above with JSON Schema input definitions. From your agent, "list the Honua tools and validate an empty plan" should return a structured violation list (for example `EMPTY_PLAN_ID`), not an error.
+The response lists the `honua_*` tools this deployment advertises, with JSON Schema input
+definitions. Which ones appear depends on the deployment profile - see [Which tools and
+resources appear](#which-tools-and-resources-appear-capability-gating) - so treat `tools/list`
+as the authoritative inventory rather than counting the families above. From your agent, "list the Honua tools and validate an empty plan" should return a structured violation list (for example `EMPTY_PLAN_ID`), not an error.
 
 Each tool descriptor also carries MCP behavior `annotations` (`title`, `readOnlyHint`, `destructiveHint`, `idempotentHint`) and a `structuredContentSchema` describing the tool's structured result, so schema-driven clients can reason about safety and validate responses.
 

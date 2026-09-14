@@ -96,6 +96,8 @@ Extent refresh and several bulk catalog operations do not yet have SDK wrappers;
 ## Verify the data plane
 
 ```bash
+# `honua` here is the JavaScript SDK's CLI - the one with `query`.
+# npx -p @honua/sdk-js honua …  works without installing anything.
 export HONUA_BASE_URL=http://localhost:8080
 export HONUA_API_KEY=your-admin-api-key
 

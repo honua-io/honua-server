@@ -98,9 +98,60 @@ def citing_pages(key: str, display_name: str, pages: dict[pathlib.Path, str]) ->
 # Keyed on status rather than on a list of keys, so a future internal capability
 # is excluded by classification instead of by someone remembering to add it here.
 UNPUBLISHED_STATUS = {"internal"}
+# Statuses that mean "real, but not promised". A capability in one of these
+# has no customer page on purpose.
+PREVIEW_STATUS = {"preview", "experimental"}
 
 
-def render(entry: dict, facts: dict) -> str:
+RESOURCE_DECLARATION = re.compile(r'^resource:\s*"honua://capability/([^"]+)"\s*$', re.M)
+# OKF reserves singular `resource` for a page's primary identity, which is one
+# value. Most reference pages document several capabilities - the authentication
+# guide covers four - so a singular field capped coverage at one capability per
+# page and left 74 of 117 concepts with no inbound link at all. `resources:` is a
+# producer extension, a YAML list of additional honua://capability/<key> values;
+# v0.2 requires consumers to preserve keys they do not know, so it travels safely.
+RESOURCES_BLOCK = re.compile(r'^resources:\s*$((?:\n[ \t]+-[^\n]*)+)', re.M)
+RESOURCES_ITEM = re.compile(r'-\s*"?honua://capability/([^"\s]+)"?\s*$', re.M)
+FRONTMATTER_TITLE = re.compile(r'^title:\s*"?(.+?)"?\s*$', re.M)
+
+
+def documented_in(root: pathlib.Path) -> dict[str, list[tuple[str, str]]]:
+    """Pages that declare a capability in frontmatter, keyed by capability.
+
+    Capability pages were dead ends - a sentence, a table of counts, and no
+    outbound link - while the page documenting the capability sat one
+    frontmatter field away.
+
+    This reads `resource:` declarations, not prose. That is what keeps the page
+    a pure function of its inputs: rewriting a page cannot stale anything here,
+    only changing a declared resource can.
+    """
+    found: dict[str, list[tuple[str, str]]] = {}
+    for page in sorted(root.rglob("*.md"), key=lambda q: q.as_posix()):
+        rel = page.relative_to(root).as_posix()
+        if rel.startswith("okf/capabilities/"):
+            continue
+        text = page.read_text(encoding="utf-8", errors="replace")
+        if not text.startswith("---"):
+            continue
+        end = text.find(chr(10) + "---", 3)
+        if end == -1:
+            continue
+        front = text[3:end]
+        keys = [m.group(1) for m in RESOURCE_DECLARATION.finditer(front)]
+        block = RESOURCES_BLOCK.search(front)
+        if block:
+            keys += RESOURCES_ITEM.findall(block.group(1))
+        if not keys:
+            continue
+        t = FRONTMATTER_TITLE.search(front)
+        entry = (t.group(1) if t else rel, rel)
+        for key in dict.fromkeys(keys):
+            found.setdefault(key, []).append(entry)
+    return found
+
+
+def render(entry: dict, facts: dict, documented: list[tuple[str, str]] | None = None) -> str:
     key = entry["key"]
     title = entry.get("displayName") or key
     # Never truncate. A registry description is longer than 300 characters
@@ -181,10 +232,70 @@ def render(entry: dict, facts: dict) -> str:
         "what the prose happens to say, so an unrelated documentation edit cannot stale it."
     )
     lines.append("")
-    lines.append(
-        "Which pages discuss this capability is a question about the prose, so it is reported "
-        "rather than baked in: run `scripts/ci/generate-capability-concepts.py --report`."
-    )
+    # Somewhere to go. Without this the page ends at a table of counts and an
+    # instruction to run a script, which is not an answer for a reader or an agent.
+    if documented:
+        lines.append("## Documented in")
+        lines.append("")
+        for label, rel in documented:
+            lines.append(f"- [{label}](../../{rel})")
+    elif not facts.get("entryCount") and not facts.get("provingTestCount"):
+        # No route in the generated feature catalog and no proving test. This is
+        # a registry entry for something that is not built, and saying "no page
+        # documents it" invites someone to write a page describing a feature
+        # that does not exist. A reader asking what this key means deserves the
+        # real answer, which is that nothing serves it yet.
+        lines.append("## Not implemented yet")
+        lines.append("")
+        lines.append(
+            "No route in the server's generated feature catalog resolves to this capability, "
+            "and no test proves it. It is a reserved registry key: it names something the "
+            "platform intends to offer and does not offer today, so there is nothing to "
+            "document and nothing to call."
+        )
+        lines.append("")
+        lines.append("- [All capabilities](README.md) — the full index, with what each edition includes")
+        lines.append("- [Editions and licensing](../../concepts/editions-and-licensing.md)")
+    elif ((facts.get("status") or entry.get("status") or "").lower() in PREVIEW_STATUS
+          or not (facts.get("maturity") or {}).get("implemented")):
+        # It has routes and tests, but none of those routes is `implemented`
+        # maturity - they are all preview or experimental - or the capability
+        # itself is marked so. "No page documents this" would read as an
+        # oversight and invite a customer page that promotes something the
+        # release does not promise. The absence is deliberate.
+        lines.append("## Preview")
+        lines.append("")
+        lines.append(
+            "This capability is Preview. It is off by default, it needs an explicit opt-in to "
+            "enable, and it is not covered by the compatibility promise for the release - so it "
+            "has no customer-facing page in this bundle, and that is deliberate rather than an "
+            "omission. The counts above are real routes and real tests; what they are not is a "
+            "commitment."
+        )
+        lines.append("")
+        lines.append("- [Editions and licensing](../../concepts/editions-and-licensing.md) — what Preview means here")
+        lines.append("- [All capabilities](README.md)")
+    else:
+        # It ships - the table above counts real routes and real tests - and no
+        # page claims it. That is a documentation gap, and naming it as one is
+        # more useful than an instruction to a contributor.
+        lines.append("## Where to look")
+        lines.append("")
+        lines.append(
+            "This capability ships - the counts above are routes in the server's generated "
+            "feature catalog and tests that prove them - but no page in this bundle documents "
+            "it yet. Until one does:"
+        )
+        lines.append("")
+        lines.append("- [All capabilities](README.md) — the full index with editions and status")
+        lines.append("- [Editions and licensing](../../concepts/editions-and-licensing.md) — what each edition includes")
+        lines.append("- [Capability matrix](../../gis/data/capability-matrix.v1.json) — the generated evidence for this key")
+        lines.append("")
+        lines.append(
+            "Writing the page that documents it? Declare "
+            f'`resource: "honua://capability/{key}"` in its frontmatter, or add the key under a '
+            "`resources:` list if the page already claims another one, and it will be linked here."
+        )
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -244,6 +355,7 @@ def build() -> dict[str, str]:
     facts_by_key = {c["key"]: c for c in matrix.get("capabilities", [])}
 
     written: dict[str, str] = {}
+    documented = documented_in(REPO_ROOT / "docs")
     index_rows = []
     for entry in sorted(entries, key=lambda e: e["key"]):
         key = entry["key"]
@@ -251,7 +363,7 @@ def build() -> dict[str, str]:
         if status in UNPUBLISHED_STATUS:
             continue
         facts = facts_by_key.get(key, {})
-        written[f"{key}.md"] = render(entry, facts)
+        written[f"{key}.md"] = render(entry, facts, documented.get(key))
         index_rows.append((
             key,
             entry.get("displayName") or key,

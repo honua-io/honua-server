@@ -2,6 +2,7 @@
 type: concept
 title: "Protocols"
 description: "Honua serves every published layer through multiple protocols at once — the same PostGIS table can be queried from ArcGIS Pro, QGIS, Excel, a MapLibre web map, and an AI agent without ETL or duplication."
+resource: "honua://capability/serve.sensorthings"
 ---
 # Protocols
 

@@ -15,7 +15,13 @@ Honua serves the GeoServices REST API at `/rest/services/{serviceId}/FeatureServ
 
 ### 1. Map the service URLs
 
-List the published services and layers with the supported data-plane CLI:
+List the published services and layers with the JavaScript SDK's `honua` CLI:
+
+> `honua` here is the JavaScript SDK's CLI, which is the one with `query`. Install it with
+> `npm i -g @honua/sdk-js`, or run it ad hoc as `npx -p @honua/sdk-js honua …` — the `-p`
+> matters, because npx otherwise looks for a binary named `sdk-js`. The PyPI `honua-sdk`
+> distribution installs an executable with the same name and no `query` subcommand, so on a
+> machine with both, prefer the `npx -p` form.
 
 ```bash
 export HONUA_BASE_URL="$HONUA_URL"

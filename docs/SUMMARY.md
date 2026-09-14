@@ -2,13 +2,13 @@
 
 ## Get started
 
-- [Honua from one terminal (pre-cut guide)](get-started/one-terminal-setup.md)
-- [Windows: install published packages](get-started/windows-packages.md)
-  * [Linux: install published packages](get-started/linux-packages.md)
-  * [Registry clients and credentials](get-started/registry-clients.md)
 - [Quickstart: install, publish, and query](get-started/quickstart.md)
 - [Your first dataset](get-started/first-dataset.md)
 - [Your first map](get-started/first-map.md)
+- Install as a native package instead
+  - [Linux](get-started/linux-packages.md)
+  - [Windows](get-started/windows-packages.md)
+  - [Client packages and registries](get-started/registry-clients.md)
 
 ## Concepts
 
@@ -150,6 +150,7 @@
 - [Data formats](reference/data-formats.md)
 - [CQL2 & filtering](reference/cql2-and-filtering.md)
 - [Geoprocessing operations](reference/geoprocessing-operations.md)
+- [Analysis content, artifacts & reports](reference/analysis-artifacts-and-reports.md)
 - [Spec plan/apply engine](reference/spec-engine.md)
 - [Spec grammar v1.0](developer/spec-grammar/spec-grammar-v1.0.md)
 - [Spec grounding v1.0](developer/spec-grounding/spec-grounding-v1.0.md)

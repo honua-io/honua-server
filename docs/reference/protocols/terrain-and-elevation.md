@@ -3,6 +3,10 @@ type: reference
 title: "Terrain and elevation"
 description: "Honua serves registered raster/DEM datasets two ways: Terrain-RGB PNG tiles for MapLibre/Mapbox raster-dem rendering, and JSON elevation endpoints for numeric point, profile, and surface-analysis queries."
 resource: "honua://capability/serve.elevation"
+resources:
+  - "honua://capability/analytics.line-of-sight"
+  - "honua://capability/analytics.sun-shadow"
+  - "honua://capability/analytics.slice"
 ---
 # Terrain and elevation
 

@@ -8,7 +8,9 @@ resource: "honua://capability/import.geoservices"
 
 Use `honua-migrate` to discover an ArcGIS FeatureServer or MapServer, create a reviewable plan, apply it with explicit acknowledgement, and monitor the resulting Honua job. The service workflow is deliberately staged so discovery and planning cannot mutate either system.
 
-**Prerequisites:** a running Honua server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), the [`honua-migrate`](https://github.com/honua-io/honua-migrate) CLI, and an ArcGIS service root ending in `FeatureServer` or `MapServer`.
+**Prerequisites:** a running Honua server ([quickstart](../../get-started/quickstart.md)), admin credentials ([authentication](../secure/authentication.md)), the `honua-migrate` CLI (`pipx install honua-migrate` - pipx keeps it isolated,
+which avoids the [console-script collision](https://github.com/honua-io/honua-migrate/blob/trunk/docs/console-script-collision.md)
+with `honua-sdk`'s legacy launcher), and an ArcGIS service root ending in `FeatureServer` or `MapServer`.
 
 Set the Honua connection once. The CLI reads these values without writing them to artifacts:
 
@@ -78,7 +80,13 @@ honua-migrate services arcgis cancel "$JOB_ID" --yes
 
 ## 5. Reconcile the result
 
-Use the supported Honua data-plane CLI to inspect the published target:
+Inspect the published target with the JavaScript SDK's `honua` CLI:
+
+> `honua` here is the JavaScript SDK's CLI, which is the one with `query`. Install it with
+> `npm i -g @honua/sdk-js`, or run it ad hoc as `npx -p @honua/sdk-js honua …` — the `-p`
+> matters, because npx otherwise looks for a binary named `sdk-js`. The PyPI `honua-sdk`
+> distribution installs an executable with the same name and no `query` subcommand, so on a
+> machine with both, prefer the `npx -p` form.
 
 ```bash
 export HONUA_BASE_URL="$HONUA_URL"

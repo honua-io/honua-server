@@ -3,6 +3,13 @@ type: reference
 title: "OGC APIs"
 description: "Honua implements the modern OGC API family — Features, Maps, Tiles, Coverages, Processes, Records, and Styles — as JSON-first REST surfaces under /ogc/."
 resource: "honua://capability/serve.ogc-api-features"
+resources:
+  - "honua://capability/serve.ogc-api-tiles"
+  - "honua://capability/serve.ogc-api-maps"
+  - "honua://capability/serve.ogc-api-records"
+  - "honua://capability/serve.ogc-api-coverages"
+  - "honua://capability/serve.ogc-api-edr"
+  - "honua://capability/process.ogc-api-processes"
 ---
 # OGC APIs
 

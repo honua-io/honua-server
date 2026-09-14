@@ -68,11 +68,10 @@ The returned key authorizes the read-only ops surfaces — `GET /api/v1/operate/
 
 ## Steps
 
-1. Enable the observability surfaces. `HONUA_OBSERVABILITY=true` turns on metrics; `HONUA_OPENTELEMETRY=true` adds distributed tracing; the scrape path is configurable.
+1. Point the scrape at the right path and give it an admin credential. Metrics are always exported; the endpoint is mapped at `Observability__Prometheus__Path` and requires the `Admin` policy. Tracing is on by default (`Tracing__Enabled`) and exports once `OTEL_EXPORTER_OTLP_ENDPOINT` is set.
 
 ```bash
-HONUA_OBSERVABILITY=true
-HONUA_OPENTELEMETRY=true
+OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
 Observability__Prometheus__Path=/metrics
 ```
 
@@ -134,9 +133,10 @@ Expected: `Healthy` followed by a JSON health snapshot with status fields.
 
 ## Troubleshoot
 
-- **`/metrics` returns 404** — `HONUA_OBSERVABILITY` is not `true`, or the path was moved with `Observability__Prometheus__Path`.
+- **`/metrics` returns 401 or 403** — the endpoint requires the `Admin` policy. Scrape it with an admin credential, or keep it on an interface Prometheus can reach and your users cannot.
+- **`/metrics` returns 404** — the path was moved with `Observability__Prometheus__Path`, or no meter provider is registered (the server logs that it skipped mapping the endpoint).
 - **`/metrics` returns 401** — the scrape request is missing the `X-API-Key` header (or OIDC bearer token).
-- **No traces in your backend** — set `HONUA_OPENTELEMETRY=true` and an `OTEL_EXPORTER_OTLP_ENDPOINT`; confirm status via `GET /api/v1/admin/observability/telemetry`.
+- **No traces in your backend** — set `OTEL_EXPORTER_OTLP_ENDPOINT`, and check `Tracing__Enabled` has not been turned off; confirm status via `GET /api/v1/admin/observability/telemetry`.
 - **`/healthz/ready` flaps** — usually database connectivity; check `GET /monitoring/health/comprehensive` for the failing dependency. If Redis is configured, an unreachable Redis also fails readiness (durable feature-change event storage); a deployment with no Redis configured runs events in single-node in-memory mode and stays `Ready`.
 
 ## Next steps

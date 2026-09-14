@@ -58,8 +58,8 @@ Provider capabilities and versions: [data sources](data-sources/README.md).
 | `Honua__SceneAccessSigning__SigningKey` | — | HMAC-SHA256 key for protected 3D Tiles scene access envelopes; required when any scene has an `AccessPolicy`. |
 | `Honua__SceneAccessSigning__TokenTtlMinutes` | `15` | Scene access token lifetime. |
 | `Honua__SceneAccessSigning__RefreshAfterFractionOfTtl` | `0.5` | Fraction of the TTL after which clients should refresh. |
-| `HONUA_DEV_AUTH` | `false` | Development auth bypass; only active when `ASPNETCORE_ENVIRONMENT=Test` and the acknowledgement below is set. Production refuses to start when set. |
-| `HONUA_DEV_AUTH_ACK` | — | Must be `i-understand-this-bypasses-auth` for the bypass to activate. |
+| `HONUA_DEV_AUTH` | `false` | Development auth bypass; only active when `ASPNETCORE_ENVIRONMENT=Test` and `HONUA_DEV_AUTH_ALLOW_BYPASS=true` is also set. Production refuses to start when set. |
+| `HONUA_DEV_AUTH_ALLOW_BYPASS` | — | Must be `true` for the bypass to activate. Both this and `HONUA_DEV_AUTH` are required, and both are ignored outside `Test`. |
 | `HONUA_ENABLE_OBSERVABILITY_TEST_SEED` | `false` | Dev/Test-only admin fixture seed endpoint; fails startup in production. |
 | `Compliance__Soc2ReadinessClaimed` / `Compliance__FedRampReadinessClaimed` | unset | Operator readiness claims for the compliance posture report. |
 | `Compliance__DataResidency__Enforced` | `false` | Flips the data-residency policy view and dry-run verdict (does not block egress by itself). |

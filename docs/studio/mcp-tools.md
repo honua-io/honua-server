@@ -1,7 +1,7 @@
 ---
 type: guide
 title: "Studio MCP tools"
-description: "The server publishes 17 typed Studio tools through /mcp."
+description: "The server publishes 19 typed Studio tools through /mcp."
 resource: "honua://capability/ai.mcp-discovery"
 ---
 # Studio MCP tools

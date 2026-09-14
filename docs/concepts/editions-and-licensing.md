@@ -244,7 +244,7 @@ holding it can mint a license for any edition.
 - **The public key is not secret.** Only the public key goes into `Licensing__TrustedKeys`;
   distributing it does not weaken signing.
 
-The hosted-mint admin API (`POST /api/v1/admin/license/mint`) and marketplace adapters
+A hosted-mint admin API and marketplace adapters
 described in [ADR-0033](../internal/contributor/adr/0033-unified-license-format.md) are
 follow-on work; this tool is the offline BYOL minting path and the signing primitive those
 hosted flows reuse.

@@ -2,6 +2,7 @@
 type: guide
 title: "Connect ArcGIS Pro to Honua"
 description: "Add a Honua-hosted feature layer or map service to an ArcGIS Pro project using the ArcGIS-compatible /rest/services endpoints, with optional portal-style token auth."
+resource: "honua://capability/identity.portal-token"
 ---
 # Connect ArcGIS Pro to Honua
 

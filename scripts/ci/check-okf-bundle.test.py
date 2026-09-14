@@ -120,6 +120,26 @@ def test_rejects_the_v01_timestamp_field():
         assert_that("`timestamp` must not be used" in output, output)
 
 
+def test_reads_a_block_sequence_and_still_rejects_a_nested_mapping():
+    """One page can document several capabilities, so `resources:` is a list."""
+    listed = (
+        '---\ntype: reference\ntitle: "x"'
+        '\nresource: "honua://capability/serve.wms"'
+        '\nresources:\n  - "honua://capability/serve.wmts"'
+        '\n  - "honua://capability/serve.wcs"'
+        '\n---\n# x\n'
+    )
+    with synthetic({'a.md': listed}) as (code, output):
+        assert_that(code == 0, output)
+
+    # A nested mapping is still unreadable by this parser, and saying so is
+    # better than silently dropping half a page's frontmatter.
+    nested = '---\ntype: reference\nowner:\n  team: maps\n---\n# x\n'
+    with synthetic({'a.md': nested}) as (code, output):
+        assert_that(code == 1, 'nested mapping passed')
+        assert_that('not a `key: value` scalar' in output, output)
+
+
 def test_rejects_empty_title_and_malformed_dates():
     with synthetic({"a.md": "---\ntype: guide\ntitle:\n---\n# x\n"}) as (code, output):
         assert_that(code == 1, "empty title passed")

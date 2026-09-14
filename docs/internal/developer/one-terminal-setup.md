@@ -12,7 +12,7 @@ provisions and operates infrastructure; Admin CLI and server MCP configure
 resources; server Studio tools own draft state. Browser clients are optional.
 
 For a native PowerShell customer install, use
-[Windows: install published packages](windows-packages.md), including an
+[Windows: install published packages](../../get-started/windows-packages.md), including an
 import/publish/query fixture and restart verification. That guide covers the
 Windows package installation path; the full release journey below retains its
 candidate replay and publication requirements.
@@ -24,7 +24,7 @@ candidate replay and publication requirements.
 > [#3304](https://github.com/honua-io/honua-server/issues/3304).
 > The supported source contracts and blocked stages are distinguished below;
 > do not report a final URL until the canonical publication operation supplies
-> one. See the [acceptance disposition](../internal/contributor/terminal-docs-precut-evidence.md).
+> one. See the [acceptance disposition](../../internal/contributor/terminal-docs-precut-evidence.md).
 
 ## 1. Install and verify the handoff
 
@@ -37,7 +37,7 @@ replacement or invented version pin is a candidate install.
 The local installer entry point required by the release journey is:
 
 ```powershell
-honua admin install local --profile gp-dev
+honua admin install local --profile gp-dev --yes
 ```
 
 Use it only with the candidate-pinned installer and its documented lock
@@ -62,7 +62,7 @@ EKS and Azure are outside this bounded placement path.
 
 These install/handoff commands are the required replay entry points, not a
 claim that this docs lane installed the as-yet uncut candidate. For a separate
-source-development setup, use [source-development quickstart](../internal/developer/source-quickstart.md);
+source-development setup, use [source-development quickstart](../../internal/developer/source-quickstart.md);
 its source build does not qualify this packaged terminal journey.
 
 ## 2. Establish least privilege and server discovery
@@ -78,7 +78,7 @@ Use the discovered Admin key-list operation and
 `getAdminApiKeyEffectivePermissions` to verify the installer-created key's
 ID and effective permissions. Keep secret values in the OS credential store
 or private generated config. The canonical
-[Admin API overview](../reference/admin-api/overview.md) describes discovery;
+[Admin API overview](../../reference/admin-api/overview.md) describes discovery;
 use the candidate's generated CLI reference for command grouping and required
 arguments, rather than inventing a generic `honua_admin_*` tool.
 
@@ -113,7 +113,7 @@ count, attribute values, geometry type, coordinates and CRS from the fixture's
 independent expectations. Also assert denial with a consumer lacking access;
 a publisher's successful read alone does not prove the access policy.
 
-The [first dataset guide](first-dataset.md) supplies the underlying connection
+The [first dataset guide](../../get-started/first-dataset.md) supplies the underlying connection
 and publication workflow. The packaged local and ECS candidate replay must
 retain the actual calls, identities and results for this stage.
 
@@ -138,7 +138,7 @@ published-layer rendering. The clean profile/catalog/style receipt belongs to
 
 ## 5. Discover, execute, wait and read GP
 
-Follow [Geoprocessing with AI](../guides/query-analyze/geoprocessing-with-ai.md):
+Follow [Geoprocessing with AI](../../guides/query-analyze/geoprocessing-with-ai.md):
 describe `geometry.buffer`, validate the plan with `honua_validate_plan`,
 then use `honua_execute_plan` only with its required Pro entitlements and
 `Process.Execute` authority. Community can use the authenticated OGC process
@@ -249,7 +249,7 @@ then use its install receipt's cleanup procedure after deciding what data to
 retain.
 
 Optional Studio/Console clients must read the same server IDs. Configure
-`HONUA_CONSOLE_MODE=witness` only on a compatible pinned Console package
+`HONUA_CONSOLE_MODE=witness` is read by no shipped Console or server build today, so it takes effect only on a compatible pinned Console package
 that supports that mode. The focused witness shows Operate reads, releases,
 deploy status and proposal approval. Configuration writes go through Admin
 CLI or the agent path. The `admin:read`/`admin:approve` recipe still needs

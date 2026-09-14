@@ -2,6 +2,7 @@
 type: reference
 title: "Data formats"
 description: "Import and export format matrix: which formats Honua ingests, and which output formats each query surface serves."
+resource: "honua://capability/format.geoarrow"
 ---
 # Data formats
 
