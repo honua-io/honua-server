@@ -290,7 +290,7 @@ UPDATE honua.services SET service_extent=ST_MakeEnvelope(-1,-1,3,3,4326) WHERE s
             compose_path.write_text(json.dumps({"services": services}))
             compose("up", "-d", "--no-deps", "server")
             readiness()
-            container, receipt["deadlineCandidate"] = verify_candidate()
+            _, receipt["deadlineCandidate"] = verify_candidate()
             monitor = start_monitor()
             join_inputs = {"layerId": 946293, "joinLayerId": 946294}
 

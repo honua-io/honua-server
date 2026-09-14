@@ -61,11 +61,11 @@ published nightly Native AOT image
 `ghcr.io/honua-io/honua-server@sha256:b1669510d574f92cd143fdab00fdf92d3b1e1fbaf873e173ad8f7ae7816b4a5c`
 (source `3d82e8472703474957ab0624a339c4853952c96c`, which contains #4740). Every
 topology, vertex and elapsed-time limit is enforced with the expected message.
-Elapsed-time attempts stop at 7.96 to 8.99 seconds, and dismissal stops the running
-join in 0.08 seconds (CPU 102% to 8%). The receipt still fails because every
+Elapsed-time attempts stop at 7.96 to 8.01 seconds, and dismissal stops the running
+join in 0.07 seconds (CPU 101% to 9%). The receipt still fails because every
 deterministic refusal ran three attempts through the retry policy. Each refusal
-took 91 to 101 seconds from first attempt to terminal outcome, and the
-elapsed-time job spent three deadlines of worker time over 119 seconds. All 2,442
+took 92 to 101 seconds from first attempt to terminal outcome, and the
+elapsed-time job spent three deadlines of worker time over 124 seconds. All 2,495
 serving probes passed, and there was no OOM kill.
 
 `layer-resource-branch-diagnostic-receipt.json` runs the same harness on a
@@ -73,11 +73,11 @@ framework-dependent diagnostic image built from this branch's Debug output, push
 to a local registry so it is addressed by digest. It is not a release candidate.
 It passes every scenario:
 
-- Each refusal is terminal after one attempt (0.1 to 0.3 seconds).
-- The elapsed-time failure runs once, for 8.04 seconds.
+- Each refusal is terminal after one attempt (0.08 to 0.24 seconds).
+- The elapsed-time failure runs once, for 8.03 seconds.
 - Dismissal, including the request, completes in 0.12 seconds, and CPU falls from
-  98% to 26%.
-- All 357 serving probes pass.
+  102% to 10%.
+- All 357 serving probes pass (maximum 2.93 seconds).
 
 The runtime correction makes input, resource-limit and deadline refusals terminal
 (`IsRetryable = false`) in the layer and enrichment executors; transient source-read

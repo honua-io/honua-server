@@ -1,31 +1,31 @@
 {
   "schema": "honua.layer-resource-proof.v1",
   "outcome": "pass",
-  "startedAt": "2026-09-14T21:07:22.856525+00:00",
+  "startedAt": "2026-09-14T21:24:33.822691+00:00",
   "image": "127.0.0.1:5046/honua-diag-4629@sha256:ee037ca2a7a3deadb67d5d650680fcc00480bad68fef8e2a8fad5a701c3036d9",
   "scenarios": [
     {
       "name": "bounded-passthrough",
-      "startedAt": "2026-09-14T21:08:15.409349+00:00",
+      "startedAt": "2026-09-14T21:25:19.802425+00:00",
       "outcome": "pass",
       "job": {
         "processID": "generalization.dissolve",
         "type": "process",
-        "jobID": "gp-b809ab2ad3ac44398f425a08aa986fe9",
+        "jobID": "gp-33bd50fb6b2a4f64a2f8b7e33d3fb69a",
         "status": "successful",
         "message": "Completed",
-        "created": "2026-09-14T21:08:15.9845668+00:00",
-        "updated": "2026-09-14T21:08:18.6750592+00:00",
+        "created": "2026-09-14T21:25:19.9924970+00:00",
+        "updated": "2026-09-14T21:25:24.0209997+00:00",
         "progress": 100,
         "links": [
           {
-            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-b809ab2ad3ac44398f425a08aa986fe9",
+            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-33bd50fb6b2a4f64a2f8b7e33d3fb69a",
             "rel": "self",
             "type": "application/json",
             "title": "Job status"
           },
           {
-            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-b809ab2ad3ac44398f425a08aa986fe9/results",
+            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-33bd50fb6b2a4f64a2f8b7e33d3fb69a/results",
             "rel": "http://www.opengis.net/def/rel/ogc/1.0/results",
             "type": "application/json",
             "title": "Job results"
@@ -33,24 +33,24 @@
         ]
       },
       "outputSha256": "4cf1733be7df319f2dd7cf5a9395fbda3626fce41163376e4465b8913a4218ea",
-      "completedAt": "2026-09-14T21:08:18.893788+00:00"
+      "completedAt": "2026-09-14T21:25:24.281985+00:00"
     },
     {
       "name": "dissolve-work-limit",
-      "startedAt": "2026-09-14T21:08:18.893821+00:00",
+      "startedAt": "2026-09-14T21:25:24.282017+00:00",
       "outcome": "pass",
       "job": {
         "processID": "generalization.dissolve",
         "type": "process",
-        "jobID": "gp-26ca173f0db54a399eddd76b1a486e0b",
+        "jobID": "gp-965acada3ec349df9ebaa7d772804a22",
         "status": "failed",
         "message": "Invalid generalization.dissolve inputs: managed topology for 10 by 10 vertices exceeds Geoprocessing:Executors:MaxTopologyWork=99; stopped before computation. Narrow the selection or simplify the input, then resubmit. Raise this limit only after qualifying the worker's memory and execution time.",
-        "created": "2026-09-14T21:08:18.9176392+00:00",
-        "updated": "2026-09-14T21:08:24.3130129+00:00",
+        "created": "2026-09-14T21:25:24.2997990+00:00",
+        "updated": "2026-09-14T21:25:29.3892084+00:00",
         "progress": 55,
         "links": [
           {
-            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-26ca173f0db54a399eddd76b1a486e0b",
+            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-965acada3ec349df9ebaa7d772804a22",
             "rel": "self",
             "type": "application/json",
             "title": "Job status"
@@ -59,36 +59,36 @@
       },
       "events": [
         {
-          "at": "2026-09-14T21:08:24.064691574Z",
+          "at": "2026-09-14T21:25:29.247662278Z",
           "event": "Job claimed"
         },
         {
-          "at": "2026-09-14T21:08:24.105476360Z",
+          "at": "2026-09-14T21:25:29.280039260Z",
           "event": "Job execution started"
         },
         {
-          "at": "2026-09-14T21:08:24.297810961Z",
+          "at": "2026-09-14T21:25:29.381458305Z",
           "event": "Job executor returned failure"
         }
       ],
-      "completedAt": "2026-09-14T21:08:24.767072+00:00"
+      "completedAt": "2026-09-14T21:25:29.733505+00:00"
     },
     {
       "name": "join-both-sides",
-      "startedAt": "2026-09-14T21:08:24.767104+00:00",
+      "startedAt": "2026-09-14T21:25:29.733534+00:00",
       "outcome": "pass",
       "job": {
         "processID": "analytics.spatial-join",
         "type": "process",
-        "jobID": "gp-4e1c25745c684311bb66fede0b7715d9",
+        "jobID": "gp-6a05a6da2d8246fda597dd88a9611a1a",
         "status": "failed",
         "message": "Invalid analytics.spatial-join inputs: managed topology for 10 by 10 vertices exceeds Geoprocessing:Executors:MaxTopologyWork=99; stopped before computation. Narrow the selection or simplify the input, then resubmit. Raise this limit only after qualifying the worker's memory and execution time.",
-        "created": "2026-09-14T21:08:24.8049839+00:00",
-        "updated": "2026-09-14T21:08:29.6358397+00:00",
+        "created": "2026-09-14T21:25:29.7537998+00:00",
+        "updated": "2026-09-14T21:25:34.5939675+00:00",
         "progress": 55,
         "links": [
           {
-            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-4e1c25745c684311bb66fede0b7715d9",
+            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-6a05a6da2d8246fda597dd88a9611a1a",
             "rel": "self",
             "type": "application/json",
             "title": "Job status"
@@ -97,36 +97,36 @@
       },
       "events": [
         {
-          "at": "2026-09-14T21:08:29.464559926Z",
+          "at": "2026-09-14T21:25:34.474005508Z",
           "event": "Job claimed"
         },
         {
-          "at": "2026-09-14T21:08:29.494653657Z",
+          "at": "2026-09-14T21:25:34.492070314Z",
           "event": "Job execution started"
         },
         {
-          "at": "2026-09-14T21:08:29.633921874Z",
+          "at": "2026-09-14T21:25:34.592368805Z",
           "event": "Job executor returned failure"
         }
       ],
-      "completedAt": "2026-09-14T21:08:29.952825+00:00"
+      "completedAt": "2026-09-14T21:25:34.852435+00:00"
     },
     {
       "name": "buffer-work-limit",
-      "startedAt": "2026-09-14T21:08:29.952854+00:00",
+      "startedAt": "2026-09-14T21:25:34.852465+00:00",
       "outcome": "pass",
       "job": {
         "processID": "analytics.buffer-aggregate",
         "type": "process",
-        "jobID": "gp-39da8b3c418044649088e5daa18fb8bb",
+        "jobID": "gp-246e52269cd643359bb35dc91cbd9a2e",
         "status": "failed",
         "message": "Invalid analytics.buffer-aggregate inputs: managed topology for 74 by 74 vertices exceeds Geoprocessing:Executors:MaxTopologyWork=99; stopped before computation. Narrow the selection or simplify the input, then resubmit. Raise this limit only after qualifying the worker's memory and execution time.",
-        "created": "2026-09-14T21:08:29.9736820+00:00",
-        "updated": "2026-09-14T21:08:35.4944578+00:00",
+        "created": "2026-09-14T21:25:34.8718441+00:00",
+        "updated": "2026-09-14T21:25:40.0524383+00:00",
         "progress": 55,
         "links": [
           {
-            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-39da8b3c418044649088e5daa18fb8bb",
+            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-246e52269cd643359bb35dc91cbd9a2e",
             "rel": "self",
             "type": "application/json",
             "title": "Job status"
@@ -135,36 +135,36 @@
       },
       "events": [
         {
-          "at": "2026-09-14T21:08:35.130941878Z",
+          "at": "2026-09-14T21:25:39.714695850Z",
           "event": "Job claimed"
         },
         {
-          "at": "2026-09-14T21:08:35.171836584Z",
+          "at": "2026-09-14T21:25:39.809771362Z",
           "event": "Job execution started"
         },
         {
-          "at": "2026-09-14T21:08:35.491122519Z",
+          "at": "2026-09-14T21:25:40.049287537Z",
           "event": "Job executor returned failure"
         }
       ],
-      "completedAt": "2026-09-14T21:08:36.167820+00:00"
+      "completedAt": "2026-09-14T21:25:40.440657+00:00"
     },
     {
       "name": "single-geometry",
-      "startedAt": "2026-09-14T21:08:36.167856+00:00",
+      "startedAt": "2026-09-14T21:25:40.440688+00:00",
       "outcome": "pass",
       "job": {
         "processID": "generalization.dissolve",
         "type": "process",
-        "jobID": "gp-78f1e4fb9ab74befa74d0acb721e8028",
+        "jobID": "gp-41e92b37e01c40699edcd54c6435ed6e",
         "status": "failed",
         "message": "Invalid generalization.dissolve inputs: layer 946291 contains a geometry with 1001 vertices, exceeding the configured limit of 100; simplify the source geometry or raise the limit.",
-        "created": "2026-09-14T21:08:36.1871515+00:00",
-        "updated": "2026-09-14T21:08:40.9980306+00:00",
+        "created": "2026-09-14T21:25:40.4546144+00:00",
+        "updated": "2026-09-14T21:25:45.2740235+00:00",
         "progress": 20,
         "links": [
           {
-            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-78f1e4fb9ab74befa74d0acb721e8028",
+            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-41e92b37e01c40699edcd54c6435ed6e",
             "rel": "self",
             "type": "application/json",
             "title": "Job status"
@@ -173,36 +173,36 @@
       },
       "events": [
         {
-          "at": "2026-09-14T21:08:40.901839876Z",
+          "at": "2026-09-14T21:25:45.176236438Z",
           "event": "Job claimed"
         },
         {
-          "at": "2026-09-14T21:08:40.930190884Z",
+          "at": "2026-09-14T21:25:45.194831486Z",
           "event": "Job execution started"
         },
         {
-          "at": "2026-09-14T21:08:40.996311068Z",
+          "at": "2026-09-14T21:25:45.271964003Z",
           "event": "Job executor returned failure"
         }
       ],
-      "completedAt": "2026-09-14T21:08:41.411488+00:00"
+      "completedAt": "2026-09-14T21:25:45.614856+00:00"
     },
     {
       "name": "elapsed-time-limit",
-      "startedAt": "2026-09-14T21:08:59.136459+00:00",
+      "startedAt": "2026-09-14T21:26:01.851415+00:00",
       "outcome": "pass",
       "job": {
         "processID": "analytics.spatial-join",
         "type": "process",
-        "jobID": "gp-bfb9e4b4615f4183b5a4c974cb401cb4",
+        "jobID": "gp-d5bbbbdeeab448b39f4e1e9f0c3ba585",
         "status": "failed",
         "message": "analytics.spatial-join exceeded Geoprocessing:Executors:MaxLayerExecutionSeconds=8; narrow the selection or simplify the input, then resubmit.",
-        "created": "2026-09-14T21:08:59.8227188+00:00",
-        "updated": "2026-09-14T21:09:11.0736605+00:00",
+        "created": "2026-09-14T21:26:02.3624088+00:00",
+        "updated": "2026-09-14T21:26:13.9711831+00:00",
         "progress": 55,
         "links": [
           {
-            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-bfb9e4b4615f4183b5a4c974cb401cb4",
+            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-d5bbbbdeeab448b39f4e1e9f0c3ba585",
             "rel": "self",
             "type": "application/json",
             "title": "Job status"
@@ -211,99 +211,99 @@
       },
       "events": [
         {
-          "at": "2026-09-14T21:09:02.966366410Z",
+          "at": "2026-09-14T21:26:05.864355992Z",
           "event": "Job claimed"
         },
         {
-          "at": "2026-09-14T21:09:03.023203314Z",
+          "at": "2026-09-14T21:26:05.929200198Z",
           "event": "Job execution started"
         },
         {
-          "at": "2026-09-14T21:09:11.058239611Z",
+          "at": "2026-09-14T21:26:13.959454818Z",
           "event": "Job executor returned failure"
         }
       ],
-      "attemptSeconds": 8.035036,
-      "completedAt": "2026-09-14T21:09:11.495186+00:00"
+      "attemptSeconds": 8.030254,
+      "completedAt": "2026-09-14T21:26:14.382782+00:00"
     },
     {
       "name": "dismiss-running-join",
-      "startedAt": "2026-09-14T21:09:29.912111+00:00",
+      "startedAt": "2026-09-14T21:26:30.037037+00:00",
       "outcome": "pass",
       "cpuPercent": [
         {
           "phase": "running",
-          "value": 98.47
+          "value": 102.3
         },
         {
           "phase": "dismissed",
-          "value": 26.35,
-          "secondsAfterDismiss": 2.0181207600035123
+          "value": 9.87,
+          "secondsAfterDismiss": 2.071085329000198
         }
       ],
       "jobAtDismiss": {
         "processID": "analytics.spatial-join",
         "type": "process",
-        "jobID": "gp-4f11775fdf4d44a6a0debfb9a133a7f7",
+        "jobID": "gp-c2eecd38137d4da1ad11a8dcb9893bc8",
         "status": "running",
         "message": "Applying analytics.spatial-join",
-        "created": "2026-09-14T21:09:30.4702556+00:00",
-        "updated": "2026-09-14T21:09:32.9633302+00:00",
+        "created": "2026-09-14T21:26:30.5067125+00:00",
+        "updated": "2026-09-14T21:26:35.3151217+00:00",
         "progress": 55,
         "links": [
           {
-            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-4f11775fdf4d44a6a0debfb9a133a7f7",
+            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-c2eecd38137d4da1ad11a8dcb9893bc8",
             "rel": "self",
             "type": "application/json",
             "title": "Job status"
           },
           {
-            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-4f11775fdf4d44a6a0debfb9a133a7f7",
+            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-c2eecd38137d4da1ad11a8dcb9893bc8",
             "rel": "monitor",
             "type": "application/json",
             "title": "Monitor job status"
           }
         ]
       },
-      "dismissRequestSeconds": 0.10028808000060963,
+      "dismissRequestSeconds": 0.041256113996496424,
       "dismissResponse": {
         "processID": "analytics.spatial-join",
         "type": "process",
-        "jobID": "gp-4f11775fdf4d44a6a0debfb9a133a7f7",
+        "jobID": "gp-c2eecd38137d4da1ad11a8dcb9893bc8",
         "status": "running",
         "message": "Applying analytics.spatial-join",
-        "created": "2026-09-14T21:09:30.4702556+00:00",
-        "updated": "2026-09-14T21:09:32.9633302+00:00",
+        "created": "2026-09-14T21:26:30.5067125+00:00",
+        "updated": "2026-09-14T21:26:35.3151217+00:00",
         "progress": 55,
         "links": [
           {
-            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-4f11775fdf4d44a6a0debfb9a133a7f7",
+            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-c2eecd38137d4da1ad11a8dcb9893bc8",
             "rel": "self",
             "type": "application/json",
             "title": "Job status"
           },
           {
-            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-4f11775fdf4d44a6a0debfb9a133a7f7",
+            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-c2eecd38137d4da1ad11a8dcb9893bc8",
             "rel": "monitor",
             "type": "application/json",
             "title": "Monitor job status"
           }
         ]
       },
-      "secondsToDismissed": 0.12257058599789161,
-      "observedSecondsAfterDismiss": 45.00016671800404,
+      "secondsToDismissed": 0.11584204699465772,
+      "observedSecondsAfterDismiss": 45.000218440000026,
       "job": {
         "processID": "analytics.spatial-join",
         "type": "process",
-        "jobID": "gp-4f11775fdf4d44a6a0debfb9a133a7f7",
+        "jobID": "gp-c2eecd38137d4da1ad11a8dcb9893bc8",
         "status": "dismissed",
         "message": "Cancelled by operator.",
-        "created": "2026-09-14T21:09:30.4702556+00:00",
-        "updated": "2026-09-14T21:09:34.3599626+00:00",
+        "created": "2026-09-14T21:26:30.5067125+00:00",
+        "updated": "2026-09-14T21:26:37.0432580+00:00",
         "progress": 55,
         "links": [
           {
-            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-4f11775fdf4d44a6a0debfb9a133a7f7",
+            "href": "http://[::ffff:172.27.0.4]:8080/ogc/processes/jobs/gp-c2eecd38137d4da1ad11a8dcb9893bc8",
             "rel": "self",
             "type": "application/json",
             "title": "Job status"
@@ -312,20 +312,20 @@
       },
       "events": [
         {
-          "at": "2026-09-14T21:09:31.506482830Z",
+          "at": "2026-09-14T21:26:34.346346653Z",
           "event": "Job claimed"
         },
         {
-          "at": "2026-09-14T21:09:31.558000646Z",
+          "at": "2026-09-14T21:26:34.399924335Z",
           "event": "Job execution started"
         }
       ],
-      "completedAt": "2026-09-14T21:10:19.607440+00:00"
+      "completedAt": "2026-09-14T21:27:22.285944+00:00"
     }
   ],
-  "harnessSha256": "2515dc9e9e37d796db7162a8df59c7f33748bca0072ea79bbb107a5fb6b0235e",
+  "harnessSha256": "c4a41df326806869033abc2f1b65c70d0dd3b85c821fbfde07de3e28c01a4fca",
   "candidate": {
-    "containerId": "aca6045469f9c24f592ee771863d0ee2d9fffe137ccb82c746cdb6c8d67986ec",
+    "containerId": "b75be5a2dc5de1e19a51f61812e660fdc666b02eeb7a412665539914409cda8c",
     "imageId": "sha256:ee037ca2a7a3deadb67d5d650680fcc00480bad68fef8e2a8fad5a701c3036d9",
     "labels": {
       "org.opencontainers.image.version": "24.04"
@@ -363,7 +363,7 @@
     ]
   },
   "deadlineCandidate": {
-    "containerId": "2d5c1f55192c8e337a1ebc637956f2b879a79e0208822fe27b46374bc1491db7",
+    "containerId": "8e122849b24f3ebdcb2e988558390998ffee9b94c95d4854ab37110b9e8e7076",
     "imageId": "sha256:ee037ca2a7a3deadb67d5d650680fcc00480bad68fef8e2a8fad5a701c3036d9",
     "labels": {
       "org.opencontainers.image.version": "24.04"
@@ -381,7 +381,7 @@
     }
   },
   "dismissCandidate": {
-    "containerId": "aac23a690dfd5d6229aeca17c2eb05d47c5be8e15b651db381e3e1ce653c58d0",
+    "containerId": "ad577f95c3997cf41f380f1290aa1ae55882fc50ab02278d931c546ad612f594",
     "imageId": "sha256:ee037ca2a7a3deadb67d5d650680fcc00480bad68fef8e2a8fad5a701c3036d9",
     "labels": {
       "org.opencontainers.image.version": "24.04"
@@ -405,37 +405,37 @@
     "Restarting": false,
     "OOMKilled": false,
     "Dead": false,
-    "Pid": 16172,
+    "Pid": 47963,
     "ExitCode": 0,
     "Error": "",
-    "StartedAt": "2026-09-14T21:09:14.128103966Z",
+    "StartedAt": "2026-09-14T21:26:16.701422388Z",
     "FinishedAt": "0001-01-01T00:00:00Z"
   },
   "cleanup": {
     "outcome": "pass"
   },
-  "completedAt": "2026-09-14T21:10:25.289220+00:00",
+  "completedAt": "2026-09-14T21:27:26.914598+00:00",
   "serving": {
     "samples": 357,
     "failures": [],
-    "maxSeconds": 1.280202094996639,
+    "maxSeconds": 2.9251999400003115,
     "first": {
-      "at": "2026-09-14T21:08:15.408849+00:00",
+      "at": "2026-09-14T21:25:19.802013+00:00",
       "outcome": "pass",
       "response": {
         "count": 2,
         "exceededTransferLimit": false
       },
-      "seconds": 0.048959615000057966
+      "seconds": 0.029454062001605053
     },
     "last": {
-      "at": "2026-09-14T21:10:19.420960+00:00",
+      "at": "2026-09-14T21:27:22.253878+00:00",
       "outcome": "pass",
       "response": {
         "count": 2,
         "exceededTransferLimit": false
       },
-      "seconds": 0.031094224999833386
+      "seconds": 0.042617065002559684
     }
   }
 }
