@@ -28,8 +28,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         await using var source = new NpgsqlConnection(connectionString);
         await source.OpenAsync(cancellationToken).ConfigureAwait(false);
         if (managed is not NpgsqlConnection target ||
-            !source.Host.Equals(target.Host, StringComparison.OrdinalIgnoreCase) ||
-            source.Port != target.Port || !source.Database.Equals(target.Database, StringComparison.Ordinal))
+            !string.Equals(source.Host, target.Host, StringComparison.OrdinalIgnoreCase) ||
+            source.Port != target.Port || !string.Equals(source.Database, target.Database, StringComparison.Ordinal))
         {
             throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
                 "An editable copy must use the configured managed database host, port and database. Import remote data into that database first.");
