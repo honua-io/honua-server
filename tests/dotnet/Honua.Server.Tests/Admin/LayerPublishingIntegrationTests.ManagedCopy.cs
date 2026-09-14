@@ -107,6 +107,10 @@ public sealed partial class LayerPublishingIntegrationTests
         var attributes = initialFeatures[0].GetProperty("attributes");
         attributes.GetProperty("honua_source_id").GetInt64().Should().BeGreaterThan(0);
         var importedTargetId = attributes.GetProperty("id").GetInt64();
+        using var metadata = JsonDocument.Parse(await _client.GetStringAsync($"{featureServer}?f=json"));
+        metadata.RootElement.GetProperty("fields").EnumerateArray()
+            .Single(field => field.GetProperty("name").GetString() == "id")
+            .GetProperty("editable").GetBoolean().Should().BeFalse();
 
         const string createdBody = """
             {"type":"Feature","geometry":{"type":"Point","coordinates":[-122.3,37.8]},"properties":{"properties":{"name":"Created"}}}
@@ -122,6 +126,24 @@ public sealed partial class LayerPublishingIntegrationTests
         using var byPrimaryId = JsonDocument.Parse(await _client.GetStringAsync(
             $"{featureServer}/query?f=json&where=id%3D{Uri.EscapeDataString(createdId)}&outFields=*&returnGeometry=false"));
         byPrimaryId.RootElement.GetProperty("features").GetArrayLength().Should().Be(1);
+
+        // Accepting the addressing ID must not grant writes to other read-only fields.
+        using var identityMutation = new FormUrlEncodedContent(new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            ["updates"] = JsonSerializer.Serialize(new[]
+            {
+                new { attributes = new Dictionary<string, object?> { ["id"] = importedTargetId, ["honua_source_id"] = -1 } }
+            }),
+            ["rollbackOnFailure"] = "true"
+        });
+        var rejectedIdentity = await _client.PostAsync($"{featureServer}/applyEdits", identityMutation);
+        var rejectedPayload = await rejectedIdentity.Content.ReadAsStringAsync();
+        rejectedIdentity.StatusCode.Should().Be(HttpStatusCode.OK, rejectedPayload);
+        using var rejected = JsonDocument.Parse(rejectedPayload);
+        rejected.RootElement.GetProperty("updateResults")[0].GetProperty("success").GetBoolean().Should().BeFalse();
+        rejected.RootElement.GetProperty("updateResults")[0].GetProperty("error").GetProperty("description")
+            .GetString().Should().Contain("honua_source_id");
 
         var updates = JsonSerializer.Serialize(new[]
         {
