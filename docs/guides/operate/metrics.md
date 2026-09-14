@@ -80,7 +80,11 @@ The accepted `7ba4226` image still returns schema `1.0`, as the
 records. A missing `nodeLocalRetainedTail` block on that image is a contract
 version mismatch, not evidence of zero traffic. Its legacy advice to derive an
 error budget from the in-process window must not be used for a platform SLO.
-The corrected contract remains required when qualifying a replacement pin.
+Nightly `ff1a463`, a proposed replacement the manifest does not yet pin, returns
+`1.1` with `slo.configured=false`, `slo.availability=null` and a
+`replica-local`, `isPlatformSli=false` tail
+([read replay](evidence/3302-repin-ff1a463-read-observation.json)).
+Recheck the contract on whichever image the manifest accepts.
 
 The diagnostic reports `scope=replica-local`, `isPlatformSli=false`, retained
 population/capacity, overwritten samples and oldest/newest retained ages. Its

@@ -60,6 +60,60 @@ the joined deployment/recovery transcript, producer failure cases and deployment
 resource-ownership negatives remain unmet. Candidate absence is not a release
 reason; this accepted candidate exists and fails the recorded prerequisite.
 
+## September 14 proposed re-pin replay
+
+Rechecked on trunk `3259cb112c`. The release repository's `platform-manifest.yaml`
+still pins `7ba4226` / `sha256:dd50cd81…`, and release PR #342 (for `9f2f16a`)
+is still draft. The newest imaged nightly is `ff1a463e7d48865239bb7cb13208fc7b65c4adce`,
+index `sha256:75ac7813b541af98fe471701238ff8f8ca8a2687115d0a27d4d114ad95c9f349`
+(tag `nightly-aot-ff1a463`). It contains the staging fix #4663 and the status
+contract #4726; `7ba4226` contains neither. The image was pulled by tag, and
+the harness checked its RepoDigest and OCI revision label against a temporary
+manifest carrying only that server entry.
+
+- [Staging replay](../../guides/operate/evidence/3302-repin-ff1a463-staging.json):
+  the unchanged `metadata-release-installed.py` (SHA-256 `64825397…`, the same
+  bytes that failed on `7ba4226`) passes all five scenarios. At
+  `ServicePublication` the live revision stays at 3 with its ETag, and the
+  operation binds `priorRevision=3`. Kill/start preserves the durable operation
+  without activating. Activation is atomic, and recovery restores the prior graph
+  while keeping the independently seeded Harbor City population of 1000007. A
+  concurrent service policy edit forces one rebase, and owned-only recovery keeps
+  `allowAnonymous=false` and `allowedRoles=["recovery-reviewer"]`. The
+  missing-resource, unregistered-ETL and cancelled-ETL preparations fail with
+  their named blockers and leave the live graph unchanged.
+- [Read replay](../../guides/operate/evidence/3302-repin-ff1a463-read-observation.json):
+  follows the recorded replay procedure plus full catalog pagination in one
+  session. Five REST reads and four MCP calls pass. The independently specified
+  fixture expectations hold on REST and MCP separately: no findings or events,
+  and `alert_dispatch` `notConfigured` with no clocks. Status returns
+  `schemaVersion=1.1` with `slo.configured=false`, `slo.availability=null` and a
+  `replica-local`, `isPlatformSli=false` tail. Five full-view pages hold 58
+  descriptors; all five scenario tools are present, `honua_propose_operation` is
+  absent, and `findingId`/`candidateId` are required. The version response now
+  reports `2026.1.1` but still omits `sourceRevision`.
+
+Both runs removed their containers and network. They are **not accepted-pin
+evidence**: they show what a re-pin must reproduce, and must be replayed once
+the manifest accepts an image. Neither exercises a deployment actuator,
+deployment-source outage, installed CLI/DevOps client or placement.
+
+Two remainders were re-examined against trunk:
+
+- **Producer failure cases** are a code defect, not a documentation gap.
+  `BuildStoreSource` still returns `complete` for `workflow_operations` whenever
+  the store is registered. It is now owned by
+  [#4840](https://github.com/honua-io/honua-server/issues/4840), which requires a
+  real-store complete → unavailable → complete test with zero proposal and
+  actuator calls.
+- **Deployment resource ownership**: `DeployTargetDefinition` has no owner or
+  tenant attribute, and multi-tenant operation is not published for 2026.1
+  (#4757). A deployment finding proposal is authorized by admin policy, operator
+  scope and binding to the finding's target, and each has a zero-proposal
+  negative. Proposal-resource tenant ownership and self-approval have their own
+  fixtures. No further ownership implementation is outstanding. What remains is
+  replaying these negatives on the accepted image.
+
 ## Acceptance disposition
 
 | Acceptance / verification | Disposition |
@@ -95,7 +149,7 @@ Paths are relative to the repository root.
 | No opaque executable model payload | `tests/dotnet/Honua.Ai.Tests/Source/McpTaxonomyAlignmentTests.cs`: `McpComposition_DoesNotExposeOpaqueOperationProposalPath`; schema-closed tools in `src/Honua.Ai/Features/Protocols/Mcp/Mcp/Tools/PlatformOpsTools.cs`. |
 | Self-approval denied; narrow approval grant | `tests/dotnet/Honua.Server.Tests/Features/Admin/ProposalEndpointsTests.cs`: `ApproveProposal_BySameRequester_IsForbiddenForSeparationOfDuties`, `ApproveScopedKey_CanReadAndApproveButCannotMutateOtherAdminSurfaces`, `ReadOnlyScopedKey_ApproveNamesMissingGrant`. |
 | Same actor cannot bypass tenant ownership | `tests/dotnet/Honua.Server.Tests/Features/Admin/ProposalTenantOwnershipTests.cs`: `ProposalResource_ProposerIdentityDoesNotBypassTenantOwnership`. |
-| Finding-proposal actor, scope and target binding | `McpPlatformOpsReaderTests.ProposeFinding_UnauthorizedDeploymentRequest_CreatesNoProposal` calls the finding proposal itself for denied admin policy, a read-only OAuth scope under the real scope authorizer, and a mismatched deployment target. Every case asserts denial, zero proposal/direct-route calls and zero canonical acceptance. Target equality is not tenant/resource ownership; the separate ownership fixtures above and eventual installed-client replay must also pass. |
+| Finding-proposal actor, scope and target binding | `McpPlatformOpsReaderTests.ProposeFinding_UnauthorizedDeploymentRequest_CreatesNoProposal` calls the finding proposal itself for denied admin policy, a read-only OAuth scope under the real scope authorizer, and a mismatched deployment target. Every case asserts denial, zero proposal/direct-route calls and zero canonical acceptance. Deployment targets carry no owner/tenant attribute (see the September 14 section), so target binding plus the proposal ownership fixture above is the complete source-level authorization set; installed-client replay must still pass. |
 
 Route and operation IDs were checked against
 `docs/developer/api-specs/admin-api.json`; MCP names against
@@ -162,9 +216,10 @@ coverage substitutes for installed verification.
 
 The deployment finding producer also still builds store completeness from registration
 through `OpsFindingsService.BuildStoreSource`; the adapter's injected-envelope tests
-do not prove actual partial/unverified/backend-loss collection. Finding-proposal
-actor/scope/target equality assertions do not establish deployment resource ownership.
-These and the joined deployment/placement transcript remain unmet, not waived.
+do not prove actual partial/unverified/backend-loss collection
+([#4840](https://github.com/honua-io/honua-server/issues/4840)). That, the accepted-pin
+replay of the authorization negatives and the joined deployment/placement transcript
+remain unmet, not waived.
 
 Retain exact release lock/hash, image digest/architecture, package hashes,
 deployment target/backend, finding/source observation window, proposal ID,
