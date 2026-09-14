@@ -155,7 +155,9 @@ public sealed class ImageServerMosaicIntegrationTests
             using (var unlocked = await IdentifyJsonAsync(fixture, "geometry=1.5,1&geometryType=esriGeometryPoint&sr=4326"))
             {
                 unlocked.RootElement.GetProperty("value").GetString().Should().Be("5");
-                unlocked.RootElement.GetProperty("objectId").ValueKind.Should().Be(JsonValueKind.Null);
+                // A merged mosaic has no single catalog item, so objectId is null or omitted.
+                (!unlocked.RootElement.TryGetProperty("objectId", out var unlockedObjectId) ||
+                    unlockedObjectId.ValueKind == JsonValueKind.Null).Should().BeTrue();
             }
 
             using (var locked = await IdentifyJsonAsync(

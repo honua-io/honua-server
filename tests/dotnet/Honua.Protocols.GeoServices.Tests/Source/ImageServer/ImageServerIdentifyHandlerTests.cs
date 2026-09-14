@@ -638,8 +638,8 @@ public class ImageServerIdentifyHandlerTests
             .Should().Equal(101);
         await _rasterStore.DidNotReceiveWithAnyArgs().IdentifyMosaicAsync(
             default, default!, default, default, default, default, default, default);
-        await _rasterStore.DidNotReceiveWithAnyArgs().IdentifyAsync(
-            1, 100, default, default, default, default, default);
+        await _rasterStore.DidNotReceive().IdentifyAsync(
+            1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
     }
 
     [UnitTest]
