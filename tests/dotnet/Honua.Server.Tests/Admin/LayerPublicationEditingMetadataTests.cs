@@ -6,12 +6,11 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Admin.Domain;
-using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Admin.Models;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
-using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
 namespace Honua.Server.Tests.Admin;
@@ -51,9 +50,10 @@ public sealed partial class LayerPublishingIntegrationTests
         response.StatusCode.Should().Be(HttpStatusCode.Created, payload);
         _layerId = JsonSerializer.Deserialize<ApiResponse<PublishedLayerSummary>>(payload, _jsonOptions)!.Data!.LayerId;
 
-        using var scope = _fixture.Services.CreateScope();
-        var snapshot = await scope.ServiceProvider.GetRequiredService<IMetadataV2GraphStore>().GetCurrentAsync();
-        var resource = snapshot.Graph.Resources.Single(candidate => candidate.Metadata.Name == _tableName);
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var publication = snapshot.Graph.Publications.Single(candidate =>
+            candidate.LayerIndex == _layerId && candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer);
+        var resource = snapshot.Graph.Resources.Single(candidate => candidate.Metadata.Id == publication.ResourceId);
         resource.Editing!.GlobalIdField.Should().Be("stable_id");
         resource.Editing.SupportsAttachments.Should().Be(supportsAttachments);
         resource.Editing.CanModify.Should().BeFalse();

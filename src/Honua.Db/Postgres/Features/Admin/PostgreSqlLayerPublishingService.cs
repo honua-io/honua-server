@@ -48,7 +48,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     private static readonly string[] _defaultFormats = ["JSON", "GeoJSON"];
     private static readonly string[] _defaultCapabilities = ["Query", "Extract"];
     private static readonly string[] _editableCapabilities = ["Query", "Extract", "Create", "Update", "Delete"];
-    private const string ManagedSourceIdField = "__honua_source_id";
+    private const string ManagedSourceIdField = "honua_source_id";
     private readonly Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider? _managedConnectionProvider = managedConnectionProvider;
     private readonly string _managedFeaturesTable = string.IsNullOrEmpty(metadataSchema)
         ? "features"
