@@ -180,7 +180,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task<int> MaterializeLayerFeaturesAsync(
+    private async Task<int> MaterializeLayerFeaturesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         int layerId,
@@ -218,10 +218,28 @@ internal sealed partial class PostgreSqlLayerPublishingService
         command.Parameters.AddWithValue("@layerId", layerId);
         command.Parameters.AddWithValue("@srid", srid);
 
-        var result = await command.ExecuteScalarAsync(cancellationToken);
+        var result = await ExecuteSnapshotCommandAsync(command, cancellationToken);
         return result is int count
             ? count
             : Convert.ToInt32(result, CultureInfo.InvariantCulture);
+    }
+
+    internal async Task<object?> ExecuteSnapshotCommandAsync(NpgsqlCommand command, CancellationToken cancellationToken)
+    {
+        command.CommandTimeout = _materializationTimeoutSeconds;
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        budget.CancelAfter(TimeSpan.FromSeconds(_materializationTimeoutSeconds));
+
+        try
+        {
+            return await command.ExecuteScalarAsync(budget.Token);
+        }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested && budget.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"Layer snapshot materialization exceeded its {_materializationTimeoutSeconds}-second budget. "
+                + "The publication transaction will roll back; the source table is retained.", exception);
+        }
     }
 
     private static async Task<bool> ServiceExistsAsync(

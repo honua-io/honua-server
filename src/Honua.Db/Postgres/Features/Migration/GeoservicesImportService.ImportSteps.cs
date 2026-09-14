@@ -426,6 +426,7 @@ internal sealed partial class GeoservicesImportService
                 CatalogReconciliation = reconciliation.CatalogReport,
                 CatalogReconciliationExecuted = reconciliation.CatalogCheckExecuted,
                 PublishedTarget = publishedLayer is not null,
+                PublicationRequested = request.AutoPublish,
                 FailedFeatures = failedFeatures,
                 Attachments = attachmentFidelity,
                 SourceSnapshot = sourceSnapshot
@@ -443,7 +444,9 @@ internal sealed partial class GeoservicesImportService
                 Log.ReconciliationGateBlocked(_logger, request.TableName, reviewReason);
 
                 ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.NeedsReview, request,
-                    "Import published but requires operator review (fidelity gate)",
+                    publishedLayer is null
+                        ? "Import retained but requires operator review (fidelity gate)"
+                        : "Import published but requires operator review (fidelity gate)",
                     featuresProcessed,
                     featuresProcessed,
                     layerInfo.Name,

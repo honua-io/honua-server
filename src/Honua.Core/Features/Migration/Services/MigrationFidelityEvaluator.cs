@@ -44,6 +44,9 @@ public sealed record MigrationFidelityEvaluationInput
     /// </summary>
     public bool PublishedTarget { get; init; }
 
+    /// <summary>True when successful publication is part of the requested import outcome.</summary>
+    public bool PublicationRequested { get; init; }
+
     /// <summary>Number of source records read that failed to land in the target table.</summary>
     public int FailedFeatures { get; init; }
 
@@ -168,6 +171,20 @@ public static class MigrationFidelityEvaluator
 
         var differences = new List<MigrationFidelityDifference>();
         var subject = string.IsNullOrWhiteSpace(input.LayerName) ? "layer" : input.LayerName!;
+
+        if (input.PublicationRequested && !input.PublishedTarget)
+        {
+            differences.Add(new MigrationFidelityDifference
+            {
+                Code = MigrationFidelityDifferenceCodes.PublicationMissing,
+                Severity = MigrationFidelityDifferenceSeverities.Blocking,
+                Subject = subject,
+                Expected = "requested target service published",
+                Actual = "no published target",
+                Summary = "Source transfer finished, but requested publication did not complete. "
+                    + "Inspect the publication failure and recover the retained import table before using the service."
+            });
+        }
 
         CollectRecordLoss(input, subject, differences);
         CollectSourceSnapshot(input, subject, differences);
