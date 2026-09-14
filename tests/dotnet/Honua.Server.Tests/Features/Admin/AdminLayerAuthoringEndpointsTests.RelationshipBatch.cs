@@ -36,6 +36,8 @@ public sealed partial class AdminLayerAuthoringEndpointsTests
         var saved = _fixture.GetCurrentV2GraphSnapshot();
         saved.Graph.Revision.Should().Be(before.Graph.Revision + 1);
         var changedIds = before.PublicationsForStorageLayer(0).Concat(before.PublicationsForStorageLayer(1))
+            .Where(publication => before.ResolveResource(publication)?.ResourceType
+                is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table)
             .Select(publication => publication.ResourceId).ToHashSet(StringComparer.Ordinal);
         saved.Graph.Resources.Where(resource => !changedIds.Contains(resource.Metadata.Id))
             .Should().BeEquivalentTo(before.Graph.Resources.Where(resource => !changedIds.Contains(resource.Metadata.Id)));
@@ -156,6 +158,8 @@ public sealed partial class AdminLayerAuthoringEndpointsTests
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
         var resourceIds = snapshot.PublicationsForStorageLayer(0).Concat(snapshot.PublicationsForStorageLayer(1))
+            .Where(publication => snapshot.ResolveResource(publication)?.ResourceType
+                is MetadataV2ResourceType.FeatureDataset or MetadataV2ResourceType.Table)
             .Select(publication => publication.ResourceId).ToHashSet(StringComparer.Ordinal);
         resourceIds.Should().HaveCount(2);
         SetRelationshipBatchGraph(snapshot.Graph with
