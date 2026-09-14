@@ -277,7 +277,7 @@ public sealed class MigrationFidelityEvaluatorTests
     }
 
     [Fact]
-    public void Evaluate_WhenNothingWasPublished_DoesNotInventNotExecutedDifferencesForPostPublishProbes()
+    public void Evaluate_WhenPublicationWasNotRequested_DoesNotInventNotExecutedDifferencesForPostPublishProbes()
     {
         // With no published target there is nothing for the post-publish probes to reconcile
         // against, so they are not applicable rather than skipped.
@@ -288,6 +288,36 @@ public sealed class MigrationFidelityEvaluatorTests
         };
 
         var evaluation = MigrationFidelityEvaluator.Evaluate(input);
+
+        evaluation.Verdict.Should().Be(MigrationFidelityVerdicts.FullFidelity);
+        evaluation.Differences.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Evaluate_WhenRequestedPublicationIsMissing_BlocksWithoutInventingReconciliationResults()
+    {
+        var evaluation = MigrationFidelityEvaluator.Evaluate(new MigrationFidelityEvaluationInput
+        {
+            LayerName = "Flights",
+            PublicationRequested = true,
+            PublishedTarget = false
+        });
+
+        evaluation.IsBlocking.Should().BeTrue();
+        evaluation.Verdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+        var difference = evaluation.Differences.Should().ContainSingle().Subject;
+        difference.Code.Should().Be(MigrationFidelityDifferenceCodes.PublicationMissing);
+        difference.Subject.Should().Be("Flights");
+        difference.Summary.Should().Contain("retained import table");
+    }
+
+    [Fact]
+    public void Evaluate_WhenRequestedPublicationIsVerified_DoesNotBlock()
+    {
+        var evaluation = MigrationFidelityEvaluator.Evaluate(FullyVerifiedInput() with
+        {
+            PublicationRequested = true
+        });
 
         evaluation.Verdict.Should().Be(MigrationFidelityVerdicts.FullFidelity);
         evaluation.Differences.Should().BeEmpty();

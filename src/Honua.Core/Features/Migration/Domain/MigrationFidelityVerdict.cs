@@ -55,6 +55,9 @@ public static class MigrationFidelityDifferenceSeverities
 /// </summary>
 public static class MigrationFidelityDifferenceCodes
 {
+    /// <summary>Publication was requested, but no queryable target was produced.</summary>
+    public const string PublicationMissing = "fidelity.publication.missing";
+
     /// <summary>Source records were read but did not land in the target table.</summary>
     public const string RecordsLost = "fidelity.records.lost";
 

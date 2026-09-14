@@ -31,7 +31,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     IMetadataV2GraphStore metadataGraphStore,
     ILogger<PostgreSqlLayerPublishingService> logger,
     string? metadataSchema = null,
-    Honua.Core.Features.Styling.Abstractions.IStyleCatalog? styleCatalog = null) : ILayerPublishingService
+    Honua.Core.Features.Styling.Abstractions.IStyleCatalog? styleCatalog = null,
+    LayerPublishingOptions? publishingOptions = null) : ILayerPublishingService
 {
     private const string DefaultServiceName = "default";
     private const int CatalogExtentSrid = 4326;
@@ -60,6 +61,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     private readonly Features.Metadata.IMetadataV2GraphWriteBaseReader? _metadataWriteBaseReader =
         metadataGraphStore as Features.Metadata.IMetadataV2GraphWriteBaseReader;
     private readonly ILogger<PostgreSqlLayerPublishingService> _logger = logger;
+    private readonly int _materializationTimeoutSeconds =
+        (publishingOptions ?? new LayerPublishingOptions()).GetValidatedMaterializationTimeoutSeconds();
     private readonly Honua.Core.Features.Styling.Abstractions.IStyleCatalog? _styleCatalog = styleCatalog;
 
     // The Honua-managed metadata schema that owns the shared `features` table
