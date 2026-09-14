@@ -83,8 +83,10 @@ manifest carrying only that server entry.
   missing-resource, unregistered-ETL and cancelled-ETL preparations fail with
   their named blockers and leave the live graph unchanged.
 - [Read replay](../../guides/operate/evidence/3302-repin-ff1a463-read-observation.json):
-  follows the recorded replay procedure plus full catalog pagination in one
-  session. Five REST reads and four MCP calls pass. The independently specified
+  produced by `scripts/qualification/operate-read-observation.py`, which retains
+  the replay procedure and digest encoding in the receipt. It runs the recorded
+  read procedure plus full catalog pagination in one session. Five REST reads
+  and four MCP calls pass. The independently specified
   fixture expectations hold on REST and MCP separately: no findings or events,
   and `alert_dispatch` `notConfigured` with no clocks. Status returns
   `schemaVersion=1.1` with `slo.configured=false`, `slo.availability=null` and a
@@ -106,13 +108,14 @@ Two remainders were re-examined against trunk:
   [#4840](https://github.com/honua-io/honua-server/issues/4840), which requires a
   real-store complete → unavailable → complete test with zero proposal and
   actuator calls.
-- **Deployment resource ownership**: `DeployTargetDefinition` has no owner or
-  tenant attribute, and multi-tenant operation is not published for 2026.1
-  (#4757). A deployment finding proposal is authorized by admin policy, operator
-  scope and binding to the finding's target, and each has a zero-proposal
-  negative. Proposal-resource tenant ownership and self-approval have their own
-  fixtures. No further ownership implementation is outstanding. What remains is
-  replaying these negatives on the accepted image.
+- **Deployment resource ownership** remains **unmet**. `DeployTargetDefinition`
+  has no owner or tenant attribute. `ProposeFindingAsync` checks only admin
+  policy, operator scope and binding to the finding's target. With
+  `MultiTenancy:Enabled=true` (Preview), a tenant-scoped admin can therefore
+  seal a Deploy proposal for a platform target. The proposal-resource ownership
+  fixture governs access to an existing proposal, not authority to create one.
+  The missing enforcement and its negatives are owned by
+  [#4842](https://github.com/honua-io/honua-server/issues/4842).
 
 ## Acceptance disposition
 
@@ -149,7 +152,7 @@ Paths are relative to the repository root.
 | No opaque executable model payload | `tests/dotnet/Honua.Ai.Tests/Source/McpTaxonomyAlignmentTests.cs`: `McpComposition_DoesNotExposeOpaqueOperationProposalPath`; schema-closed tools in `src/Honua.Ai/Features/Protocols/Mcp/Mcp/Tools/PlatformOpsTools.cs`. |
 | Self-approval denied; narrow approval grant | `tests/dotnet/Honua.Server.Tests/Features/Admin/ProposalEndpointsTests.cs`: `ApproveProposal_BySameRequester_IsForbiddenForSeparationOfDuties`, `ApproveScopedKey_CanReadAndApproveButCannotMutateOtherAdminSurfaces`, `ReadOnlyScopedKey_ApproveNamesMissingGrant`. |
 | Same actor cannot bypass tenant ownership | `tests/dotnet/Honua.Server.Tests/Features/Admin/ProposalTenantOwnershipTests.cs`: `ProposalResource_ProposerIdentityDoesNotBypassTenantOwnership`. |
-| Finding-proposal actor, scope and target binding | `McpPlatformOpsReaderTests.ProposeFinding_UnauthorizedDeploymentRequest_CreatesNoProposal` calls the finding proposal itself for denied admin policy, a read-only OAuth scope under the real scope authorizer, and a mismatched deployment target. Every case asserts denial, zero proposal/direct-route calls and zero canonical acceptance. Deployment targets carry no owner/tenant attribute (see the September 14 section), so target binding plus the proposal ownership fixture above is the complete source-level authorization set; installed-client replay must still pass. |
+| Finding-proposal actor, scope and target binding | `McpPlatformOpsReaderTests.ProposeFinding_UnauthorizedDeploymentRequest_CreatesNoProposal` calls the finding proposal itself for denied admin policy, a read-only OAuth scope under the real scope authorizer, and a mismatched deployment target. Every case asserts denial, zero proposal/direct-route calls and zero canonical acceptance. Target equality is not tenant/resource ownership: deployment targets carry no owner/tenant attribute, and a tenant-scoped admin is not denied under multi-tenancy ([#4842](https://github.com/honua-io/honua-server/issues/4842)). That enforcement, its negatives and installed-client replay must also pass. |
 
 Route and operation IDs were checked against
 `docs/developer/api-specs/admin-api.json`; MCP names against
@@ -217,9 +220,10 @@ coverage substitutes for installed verification.
 The deployment finding producer also still builds store completeness from registration
 through `OpsFindingsService.BuildStoreSource`; the adapter's injected-envelope tests
 do not prove actual partial/unverified/backend-loss collection
-([#4840](https://github.com/honua-io/honua-server/issues/4840)). That, the accepted-pin
-replay of the authorization negatives and the joined deployment/placement transcript
-remain unmet, not waived.
+([#4840](https://github.com/honua-io/honua-server/issues/4840)). Deploy proposal creation
+is not bound to tenant or platform-admin authority ([#4842](https://github.com/honua-io/honua-server/issues/4842)).
+Those, accepted-pin replay of the authorization negatives and the joined
+deployment/placement transcript remain unmet, not waived.
 
 Retain exact release lock/hash, image digest/architecture, package hashes,
 deployment target/backend, finding/source observation window, proposal ID,
