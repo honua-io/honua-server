@@ -246,9 +246,9 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
             .Select(static field => field.Name)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
-        // esriFieldTypeDate attributes serialize as epoch-ms integers, matching the main
-        // query path (the serializer downstream has no field-type context).
-        var dateFieldNames = GeoServicesFieldConventions.ResolveDateFieldNames(relatedResource);
+        // Match the main query path's temporal representations before serialization
+        // loses the field-type context.
+        var temporalFieldTypes = GeoServicesFieldConventions.ResolveTemporalFieldTypes(relatedResource);
 
         // Geometry metadata (geometryType / spatialReference / hasZ / hasM) is emitted
         // once at the response top level per the Esri queryRelatedRecords contract, and
@@ -358,7 +358,7 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
                             outFieldSet,
                             allDeclaredAttributeFields,
                             visibleDeclaredAttributeFields,
-                            dateFieldNames,
+                            temporalFieldTypes,
                             effectiveGeometryLimits))
                     ]
                     : []
@@ -471,7 +471,7 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
     /// Converts a Feature to GeoServicesFeature for API responses. Attribute visibility
     /// follows the main query path: internal (__-prefixed) attributes and declared-but-
     /// Hidden schema fields are suppressed, undeclared runtime attributes pass through,
-    /// and esriFieldTypeDate values are coerced to epoch-ms integers.
+    /// and temporal values use timestamp epochs or ISO calendar dates as declared.
     /// </summary>
     private static GeoServicesFeature ConvertToGeoServicesFeature(
         Feature feature,
@@ -483,7 +483,7 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
         HashSet<string>? outFields,
         IReadOnlySet<string> allDeclaredAttributeFields,
         IReadOnlySet<string> visibleDeclaredAttributeFields,
-        IReadOnlyCollection<string> dateFieldNames,
+        IReadOnlyDictionary<string, MetadataV2FieldType> temporalFieldTypes,
         GeometryLimits geometryLimits)
     {
         var attributes = feature.Attributes
@@ -499,7 +499,7 @@ internal sealed class RelatedRecordsService : IRelatedRecordsService
             attributes[objectIdFieldName] = GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName);
         }
 
-        GeoServicesFieldConventions.CoerceDateAttributes(attributes, dateFieldNames);
+        GeoServicesFieldConventions.CoerceTemporalAttributes(attributes, temporalFieldTypes);
 
         return new GeoServicesFeature
         {

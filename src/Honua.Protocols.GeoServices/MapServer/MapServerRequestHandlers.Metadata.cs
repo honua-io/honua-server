@@ -729,7 +729,7 @@ internal static partial class MapServerEndpoints
             MetadataV2FieldType.Float => "esriFieldTypeSingle",
             MetadataV2FieldType.Boolean => "esriFieldTypeSmallInteger",
             MetadataV2FieldType.DateTime => "esriFieldTypeDate",
-            MetadataV2FieldType.Date => "esriFieldTypeDate",
+            MetadataV2FieldType.Date => "esriFieldTypeDateOnly",
             MetadataV2FieldType.Time => "esriFieldTypeString",
             MetadataV2FieldType.Json => "esriFieldTypeString",
             MetadataV2FieldType.Binary => "esriFieldTypeBlob",

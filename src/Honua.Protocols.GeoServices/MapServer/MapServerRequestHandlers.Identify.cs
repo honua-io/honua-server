@@ -421,7 +421,7 @@ internal static partial class MapServerEndpoints
                 // esriFieldTypeDate attributes must serialize as epoch-ms integers uniformly across
                 // rows. JSONB stores dates as either ISO strings (seeds) or epoch-ms longs
                 // (applyEdits); coerce both via the shared GeoServices date convention (matches query).
-                var dateFieldNames = GeoServicesFieldConventions.ResolveDateFieldNames(layer.Resource);
+                var temporalFieldTypes = GeoServicesFieldConventions.ResolveTemporalFieldTypes(layer.Resource);
 
                 foreach (var feature in queryResult.Items)
                 {
@@ -453,7 +453,7 @@ internal static partial class MapServerEndpoints
                         attributes[kvp.Key] = FeatureAttributeValueNormalizer.Normalize(kvp.Value);
                     }
 
-                    GeoServicesFieldConventions.CoerceDateAttributes(attributes, dateFieldNames);
+                    GeoServicesFieldConventions.CoerceTemporalAttributes(attributes, temporalFieldTypes);
 
                     object? geometryResult = null;
                     if (returnGeometry && feature.Geometry != null)
