@@ -517,18 +517,19 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
         (await malformed.Content.ReadAsStringAsync()).Should().Contain("WKT POINT or MULTIPOINT");
 
         // A third token is only a Z ordinate when it is a number; anything else is malformed WKT,
-        // never a silently truncated (x, y) position.
-        foreach (var coords in new[]
+        // never a silently truncated (x, y) position. The bare forms reach the handler's WKT parser;
+        // the parenthesised form is not pure WKT, so input inspection rejects it before dispatch.
+        foreach (var (coords, rejection) in new[]
                  {
-                     "MULTIPOINT(-122.4 37.8 garbage)",
-                     "MULTIPOINT((-122.4 37.8 garbage),(-122.35 37.75))",
-                     "POINT(-122.4 37.8 garbage)"
+                     ("MULTIPOINT(-122.4 37.8 garbage)", "WKT POINT or MULTIPOINT"),
+                     ("POINT(-122.4 37.8 garbage)", "WKT POINT or MULTIPOINT"),
+                     ("MULTIPOINT((-122.4 37.8 garbage),(-122.35 37.75))", "LDAP injection attempt detected")
                  })
         {
             var unparsedOrdinate = await _fixture.Client.GetAsync(
                 $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords={Uri.EscapeDataString(coords)}");
             unparsedOrdinate.StatusCode.Should().Be(HttpStatusCode.BadRequest, coords);
-            (await unparsedOrdinate.Content.ReadAsStringAsync()).Should().Contain("WKT POINT or MULTIPOINT", coords);
+            (await unparsedOrdinate.Content.ReadAsStringAsync()).Should().Contain(rejection, coords);
         }
 
         // The parenthesised MULTIPOINT form is exempt from LDAP inspection only while it is pure WKT;
