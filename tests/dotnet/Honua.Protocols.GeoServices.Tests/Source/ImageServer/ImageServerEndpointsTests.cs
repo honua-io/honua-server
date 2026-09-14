@@ -2701,11 +2701,11 @@ public class ImageServerEndpointsTests
             export.StatusCode.Should().Be(HttpStatusCode.OK);
 
             await store.Received().GetClippedStatisticsAsync(
-                TestLayerId, Arg.Any<long>(), Arg.Any<byte[]>(), Arg.Any<int?>(),
+                Arg.Is(TestLayerId), Arg.Any<long>(), Arg.Any<byte[]>(), Arg.Any<int?>(),
                 Arg.Is<int[]?>(bands => bands != null && bands.Length == 1 && bands[0] == 1),
                 Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
             await store.Received().GetClippedHistogramsAsync(
-                TestLayerId, Arg.Any<long>(), Arg.Any<byte[]>(), Arg.Any<int?>(),
+                Arg.Is(TestLayerId), Arg.Any<long>(), Arg.Any<byte[]>(), Arg.Any<int?>(),
                 Arg.Is<int[]?>(bands => bands != null && bands.Length == 1 && bands[0] == 1),
                 Arg.Any<int>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
             exportQuery.Should().NotBeNull();
