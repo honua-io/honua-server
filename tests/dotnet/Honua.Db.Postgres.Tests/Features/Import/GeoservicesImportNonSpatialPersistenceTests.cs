@@ -83,7 +83,8 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests
                 NullLogger<LayerReconciliationService>.Instance);
             var report = await reconciliation.ReconcileAsync(new LayerReconciliationRequest
             {
-                RunId = "attribute-only-import", SourceKind = "arcgis-geoservices-rest",
+                RunId = "attribute-only-import",
+                SourceKind = "arcgis-geoservices-rest",
                 Layers = [new LayerReconciliationLayerInput
                 {
                     SourceLayerId = "source#0", TargetHonuaLayerId = layerId,

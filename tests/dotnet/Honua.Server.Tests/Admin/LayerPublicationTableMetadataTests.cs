@@ -29,8 +29,11 @@ public sealed partial class LayerPublishingIntegrationTests
 
         var request = new PublishLayerRequest
         {
-            Schema = _schema, Table = _tableName, LayerName = _tableName,
-            PrimaryKey = "id", ServiceName = _serviceName
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = _tableName,
+            PrimaryKey = "id",
+            ServiceName = _serviceName
         };
         using var response = await _client.PostAsync($"/api/v1/admin/connections/{_connectionId}/layers",
             JsonContent.Create(request, options: _jsonOptions));
