@@ -336,12 +336,10 @@ internal static class GeoServicesTemporalQueryBuilder
         }
 
         var trimmed = timeParam.Trim();
-        if (trimmed.StartsWith('[') || trimmed.EndsWith(']'))
+        if ((trimmed.StartsWith('[') || trimmed.EndsWith(']'))
+            && !TryUnwrapBracketedExtent(trimmed, out timeParam))
         {
-            if (!TryUnwrapBracketedExtent(trimmed, out timeParam))
-            {
-                return false;
-            }
+            return false;
         }
 
         if (timeParam.Contains(','))
@@ -387,8 +385,9 @@ internal static class GeoServicesTemporalQueryBuilder
     /// <summary>
     /// Unwraps a bracketed JSON-array time extent (<c>[start, end]</c>) into the plain
     /// <c>start,end</c> form. Each element may be epoch milliseconds, <c>null</c>, or a JSON string
-    /// holding an instant. Anything but exactly two elements inside one balanced pair of brackets
-    /// is malformed, so the caller still answers the Esri 400.
+    /// holding an instant. Anything but exactly two non-empty elements inside one balanced pair of
+    /// brackets is malformed, so the caller still answers the Esri 400. Empty elements are rejected
+    /// here even though the plain form reads an empty bound as open: <c>[,]</c> is not a JSON array.
     /// </summary>
     private static bool TryUnwrapBracketedExtent(string value, out string extent)
     {
@@ -408,14 +407,14 @@ internal static class GeoServicesTemporalQueryBuilder
         for (var i = 0; i < parts.Length; i++)
         {
             var part = parts[i].Trim();
-            if (part.Contains('[') || part.Contains(']'))
+            if (part.Length == 0 || part.Contains('[') || part.Contains(']'))
             {
                 return false;
             }
 
             if (part.Contains('"'))
             {
-                if (part.Length < 2 || part[0] != '"' || part.IndexOf('"', 1) != part.Length - 1)
+                if (part.Length < 3 || part[0] != '"' || part.IndexOf('"', 1) != part.Length - 1)
                 {
                     return false;
                 }

@@ -154,6 +154,10 @@ public sealed class GeoServicesTemporalQueryBuilderTests
     [InlineData("[1728950400000, 1672527600000]")]
     [InlineData("[yesterday, 1728950400000]")]
     [InlineData("[\"2022-12-31T23:00:00Z, 1728950400000]")]
+    [InlineData("[,]")]
+    [InlineData("[null,]")]
+    [InlineData("[, 1728950400000]")]
+    [InlineData("[\"\", 1728950400000]")]
     [Operation(Operations.Query)]
     public void TryParseTimeParameter_MalformedBracketedExtent_IsRejected(string time)
     {
