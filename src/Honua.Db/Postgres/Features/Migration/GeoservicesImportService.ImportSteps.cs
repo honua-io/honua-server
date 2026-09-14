@@ -312,11 +312,15 @@ internal sealed partial class GeoservicesImportService
                 await SwapStagingIntoTargetAsync(connection, targetSchema, loadTable, request.TableName, cancellationToken);
             }
 
-            // Phase 4: Create spatial index
-            ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.Publishing, request,
-                "Creating spatial index", featuresProcessed, totalFeatures, layerInfo.Name);
+            // Attribute-only Esri tables have no geom column to index.
+            if (!string.IsNullOrEmpty(layerInfo.GeometryType))
+            {
+                // Phase 4: Create spatial index
+                ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.Publishing, request,
+                    "Creating spatial index", featuresProcessed, totalFeatures, layerInfo.Name);
 
-            await CreateSpatialIndexAsync(connection, targetSchema, request.TableName, cancellationToken);
+                await CreateSpatialIndexAsync(connection, targetSchema, request.TableName, cancellationToken);
+            }
             await AnalyzeTableAsync(connection, targetSchema, request.TableName, cancellationToken);
 
             await transaction.CommitSafelyAsync(cancellationToken);

@@ -18,6 +18,47 @@ namespace Honua.Core.Tests.Features.Import;
 /// </summary>
 public sealed class LayerReconciliationServiceTests
 {
+    [Theory]
+    [InlineData(false, 100, true, "pass")]
+    [InlineData(false, 10, true, "fail")]
+    [InlineData(false, 100, false, "fail")]
+    [InlineData(true, 100, true, "fail")]
+    public async Task Reconcile_AttributeOnlySource_PreservesCountAndContentChecks(
+        bool sourceHasGeometry, long targetCount, bool hasExpectedField, string expected)
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = targetCount,
+            Sample = BuildSampleInternal(hasExpectedField ? ["NAME"] : ["OTHER"], validGeometry: false, rows: 5)
+        };
+        var request = new LayerReconciliationRequest
+        {
+            RunId = "table-run",
+            SourceKind = "arcgis-geoservices-rest",
+            Layers = [new LayerReconciliationLayerInput
+            {
+                SourceLayerId = "svc#1", TargetHonuaLayerId = 1,
+                SourceFeatureCount = 100, SourceHasGeometry = sourceHasGeometry,
+                SourceFieldNames = ["NAME"]
+            }]
+        };
+
+        var result = await NewService(reader).ReconcileAsync(request);
+
+        result.Classification.Should().Be(expected);
+        if (!sourceHasGeometry)
+        {
+            reader.ExtentQueries.Should().BeEmpty();
+            result.Layers[0].Geometry.Sampled.Should().Be(0);
+            result.Layers[0].Geometry.Reason.Should().Contain("not applicable");
+            result.Layers[0].Extent.Reason.Should().Contain("not applicable");
+        }
+        else
+        {
+            result.Layers[0].Geometry.Classification.Should().Be("fail");
+        }
+    }
+
     [Fact]
     public async Task Reconcile_WhenTargetMatchesSourceSnapshot_ClassifiesPass()
     {

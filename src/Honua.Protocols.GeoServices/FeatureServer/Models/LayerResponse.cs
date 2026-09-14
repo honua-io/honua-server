@@ -26,7 +26,7 @@ public sealed class LayerResponse
     public required string Name { get; init; }
 
     /// <summary>
-    /// Layer type (always "Feature Layer" for feature layers)
+    /// Resource type: "Feature Layer" or attribute-only "Table".
     /// </summary>
     public string Type { get; init; } = "Feature Layer";
 
@@ -50,12 +50,14 @@ public sealed class LayerResponse
     /// <summary>
     /// Geometry type of features in this layer
     /// </summary>
-    public required string GeometryType { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public required string? GeometryType { get; init; }
 
     /// <summary>
     /// Layer's spatial reference system
     /// </summary>
-    public required SpatialReferenceInfo SpatialReference { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public required SpatialReferenceInfo? SpatialReference { get; init; }
 
     /// <summary>
     /// Whether features in this layer carry Z (elevation) ordinates. Sourced from

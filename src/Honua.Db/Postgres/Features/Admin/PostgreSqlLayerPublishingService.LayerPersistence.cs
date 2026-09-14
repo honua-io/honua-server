@@ -76,7 +76,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string schema,
         string table,
         string primaryKeyColumn,
-        string geometryColumn,
+        string? geometryColumn,
         string geometryType,
         int srid,
         int storageSrid,
@@ -127,7 +127,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         command.Parameters.AddWithValue("@schema", schema);
         command.Parameters.AddWithValue("@table", table);
         command.Parameters.AddWithValue("@primaryKeyColumn", primaryKeyColumn);
-        command.Parameters.AddWithValue("@geometryColumn", geometryColumn);
+        command.Parameters.Add("@geometryColumn", NpgsqlDbType.Text).Value = (object?)geometryColumn ?? DBNull.Value;
         command.Parameters.Add("@storageOptions", NpgsqlDbType.Jsonb).Value = SourceBackedStorageOptionsJson;
         command.Parameters.AddWithValue("@geometryType", geometryType);
         command.Parameters.AddWithValue("@srid", srid);
@@ -186,7 +186,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         int layerId,
         string schema,
         string table,
-        string geometryColumn,
+        string? geometryColumn,
         int srid,
         IReadOnlyList<ColumnInfo> attributeColumns,
         CancellationToken cancellationToken)
@@ -194,8 +194,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // TODO(honua-server#974): replace this one-time snapshot with the settled
         // publish refresh/CDC path once source-of-truth policy is finalized.
         var sourceTable = $"{QuoteIdentifier(schema)}.{QuoteIdentifier(table)}";
-        var sourceGeometry = $"src.{QuoteIdentifier(geometryColumn)}";
-        var canonicalGeometry = BuildCanonicalGeometryExpression(sourceGeometry);
+        var canonicalGeometry = string.IsNullOrWhiteSpace(geometryColumn)
+            ? "NULL::geometry"
+            : BuildCanonicalGeometryExpression($"src.{QuoteIdentifier(geometryColumn)}");
         var attributesExpression = BuildAttributesExpression(attributeColumns);
         var featuresTable = await ResolveCanonicalFeaturesTableAsync(connection, transaction, cancellationToken)
             .ConfigureAwait(false);
