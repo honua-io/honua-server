@@ -86,7 +86,8 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
         doc.RootElement.GetProperty("type").GetString().Should().Be("Coverage");
         doc.RootElement.GetProperty("domain").GetProperty("domainType").GetString().Should().Be("PointSeries");
         doc.RootElement.GetProperty("domain").GetProperty("axes").GetProperty("t").GetProperty("values")
-            .EnumerateArray().First().GetString().Should().Contain("2026-06-20");
+            .EnumerateArray().Select(value => value.GetString())
+            .Should().Equal("2026-06-20T00:00:00Z");
 
         var range = doc.RootElement.GetProperty("ranges").GetProperty("band_1");
         range.GetProperty("values").EnumerateArray().First().GetDouble().Should().Be(11.0);
@@ -421,6 +422,10 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
             NoDataValue = -9999,
             GeoTransform = [-122.5, 0.003125, 0, 37.9, 0, -0.003125],
             Extent = new RasterExtent { XMin = -122.5, YMin = 37.7, XMax = -122.3, YMax = 37.9, Srid = 4326 },
+            // The position query's datetime selects this acquisition instant (#4151): it carries
+            // sub-second precision, which the second-resolution t-axis echoes as 00:00:00Z, and
+            // differs from CreatedAt so a handler reading the creation date selects nothing.
+            AcquisitionDate = new DateTimeOffset(2026, 6, 20, 0, 0, 0, 400, TimeSpan.Zero),
             CreatedAt = DateTimeOffset.UtcNow
         };
 }

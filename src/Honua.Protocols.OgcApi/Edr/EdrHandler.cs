@@ -165,13 +165,24 @@ internal sealed class EdrHandler
                 context, "Requested position is outside the collection spatial extent.");
         }
 
-        var instant = ResolveInstant(context.Request.Query["datetime"].ToString(), raster);
+        var datetimeError = ValidateDatetime(context, raster, out var temporallyIntersects);
+        if (datetimeError is not null)
+        {
+            return datetimeError;
+        }
+
         var parameterError = ValidateRequestedParameters(context, raster, out var requestedParameters);
         if (parameterError is not null)
         {
             return parameterError;
         }
 
+        if (!temporallyIntersects)
+        {
+            return Results.NoContent();
+        }
+
+        var instant = Iso(ResolveRasterInstant(raster));
         var pixel = await _rasterStore
             .IdentifyAsync(resolution.StorageLayerId, raster.Id, lon, lat, srid: 4326, rendering: null, cancellationToken)
             .ConfigureAwait(false);
@@ -227,13 +238,24 @@ internal sealed class EdrHandler
 
         var resolutionCount = ResolveCubeSampleCount(context.Request.Query["resolution-x"].ToString());
         var raster = resolution.Raster;
-        var instant = ResolveInstant(context.Request.Query["datetime"].ToString(), raster);
+        var datetimeError = ValidateDatetime(context, raster, out var temporallyIntersects);
+        if (datetimeError is not null)
+        {
+            return datetimeError;
+        }
+
         var parameterError = ValidateRequestedParameters(context, raster, out var requestedParameters);
         if (parameterError is not null)
         {
             return parameterError;
         }
 
+        if (!temporallyIntersects)
+        {
+            return Results.NoContent();
+        }
+
+        var instant = Iso(ResolveRasterInstant(raster));
         var parameters = BuildParameters(raster, requestedParameters);
 
         // Sample a bounded regular grid of cell centres inside the bbox using the canonical
@@ -364,7 +386,15 @@ internal sealed class EdrHandler
         var basePath = $"{baseUrl}/edr/collections/{Uri.EscapeDataString(collectionId)}";
         var outputFormats = ImmutableArray.Create("CoverageJSON");
 
-        Extent? extent = null;
+        // The raster's single instant is its temporal geometry; advertising it lets clients pick a
+        // datetime that selects data instead of receiving 204 for a disjoint request (#4151).
+        var rasterInstant = Iso(ResolveRasterInstant(raster));
+        var temporal = new TemporalExtent
+        {
+            Interval = ImmutableArray.Create(ImmutableArray.Create<string?>(rasterInstant, rasterInstant))
+        };
+
+        var extent = new Extent { Temporal = temporal };
         if (raster.Extent is { } e)
         {
             // The storage-CRS extent is advertised in CRS84 (#4149). If the storage CRS cannot be
@@ -387,7 +417,8 @@ internal sealed class EdrHandler
                         Crs = string.Create(
                             CultureInfo.InvariantCulture,
                             $"http://www.opengis.net/def/crs/EPSG/0/{ResolveStorageSrid(raster)}")
-                    }
+                    },
+                Temporal = temporal
             };
         }
 
@@ -581,19 +612,50 @@ internal sealed class EdrHandler
             ? Array.Empty<string>()
             : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-    private static string ResolveInstant(string datetime, RasterInfo raster)
+    /// <summary>
+    /// Validates the EDR <c>datetime</c> query parameter and decides whether the collection's
+    /// temporal geometry intersects it (#4151).
+    /// </summary>
+    /// <remarks>
+    /// The coverage is a single raster whose temporal geometry is one instant: its acquisition
+    /// date, falling back to its creation date (<see cref="ResolveRasterInstant"/>). OGC API - EDR
+    /// 1.1 <c>/req/edr/datetime-response</c> only returns data whose temporal geometry intersects
+    /// the requested instant or interval, so a disjoint request selects no data and the query
+    /// paths answer <c>204 No Content</c> instead of stamping the requested time onto the raster's
+    /// values. A value that is not an RFC 3339 instant or <c>start/end</c> interval (with
+    /// <c>..</c> open ends) is an invalid parameter value, which OGC API - Common Part 1 maps to
+    /// <c>400</c>. The comparison runs at the one-second resolution the t-axis advertises, so a
+    /// client echoing an advertised instant back always selects it.
+    /// </remarks>
+    private static IResult? ValidateDatetime(HttpContext context, RasterInfo raster, out bool intersects)
     {
-        if (!string.IsNullOrWhiteSpace(datetime) &&
-            DateTimeOffset.TryParse(
-                datetime.Split('/')[0],
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
-                out var parsed))
+        intersects = true;
+        var datetime = context.Request.Query["datetime"].ToString();
+        if (string.IsNullOrWhiteSpace(datetime))
         {
-            return Iso(parsed);
+            return null;
         }
 
-        return Iso(raster.AcquisitionDate ?? raster.CreatedAt);
+        if (!OgcTemporalFilterParser.TryParseRange(datetime, out var start, out var end, out _))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Query parameter 'datetime' must be an RFC 3339 instant or an interval 'start/end' where either end may be '..', e.g. datetime=2024-05-01T00:00:00Z/..");
+        }
+
+        var instant = TruncateToSeconds(ResolveRasterInstant(raster));
+        intersects = (start is not { } from || instant >= TruncateToSeconds(from))
+            && (end is not { } to || instant <= TruncateToSeconds(to));
+        return null;
+    }
+
+    private static DateTimeOffset ResolveRasterInstant(RasterInfo raster)
+        => raster.AcquisitionDate ?? raster.CreatedAt;
+
+    private static DateTimeOffset TruncateToSeconds(DateTimeOffset value)
+    {
+        var utc = value.ToUniversalTime();
+        return utc.AddTicks(-(utc.Ticks % TimeSpan.TicksPerSecond));
     }
 
     private static int ResolveCubeSampleCount(string resolutionX)
