@@ -152,6 +152,56 @@ public sealed class LayerValidationHelpersV2Tests
         context.Response.Headers.WWWAuthenticate.ToString().Should().BeEmpty();
     }
 
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task ValidateLayerWithAccessV2_TenantHiddenLayerWithoutRequiredProtocol_KeepsNotFoundWithoutChallenge()
+    {
+        var context = BuildTenantScopedContext(requestTenant: "public", authenticatedTenant: null);
+
+        var result = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
+            context,
+            layerId: 0,
+            LayerValidationHelpers.ValidationProtocol.OData,
+            requiredProtocol: ServiceProtocols.ImageServer);
+
+        result.IsValid.Should().BeFalse();
+        await result.ErrorResult!.ExecuteAsync(context);
+        context.Response.StatusCode.Should().Be(
+            StatusCodes.Status404NotFound,
+            "authenticating cannot open a protocol the layer's service does not serve, so the layer is not disclosed");
+        context.Response.Headers.WWWAuthenticate.ToString().Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("query")]
+    [InlineData("esri-header")]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.Metadata)]
+    public async Task ValidateLayerWithAccessV2_TenantHiddenLayerWithPortalTokenTransport_ChallengesBearer(string transport)
+    {
+        var context = BuildTenantScopedContext(requestTenant: "public", authenticatedTenant: null);
+        if (transport == "query")
+        {
+            context.Request.QueryString = new QueryString("?token=expired-portal-token");
+        }
+        else
+        {
+            context.Request.Headers["X-Esri-Authorization"] = "Bearer expired-portal-token";
+        }
+
+        var result = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
+            context,
+            layerId: 0,
+            LayerValidationHelpers.ValidationProtocol.OData);
+
+        await result.ErrorResult!.ExecuteAsync(context);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        context.Response.Headers.WWWAuthenticate.ToString().Should().Be(
+            "Bearer",
+            "the challenge names the credential family the caller attempted");
+    }
+
     private static HttpContext BuildTenantScopedContext(string requestTenant, string? authenticatedTenant)
     {
         var (context, graph) = BuildContext(allowAnonymous: false);

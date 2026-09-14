@@ -24,6 +24,8 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 [Operation(Operations.Security, Operations.SecurityTesting)]
 public sealed class PortalTokenIssuerRedisExpiryTests(RedisFixture redis)
 {
+    private const int Attempts = 3;
+
     [IntegrationTest]
     public async Task ValidateAsync_RedisAnswers_TokenValidUntilAdvertisedExpiryAndInvalidFromIt()
     {
@@ -33,37 +35,53 @@ public sealed class PortalTokenIssuerRedisExpiryTests(RedisFixture redis)
             InstanceName = $"portal-expiry-{Guid.NewGuid():N}:",
         }));
         var issuer = new PortalTokenIssuer(new MemoryCache(new MemoryCacheOptions()), NullLogger<PortalTokenIssuer>.Instance, cache);
-        var binding = new PortalTokenBinding(Referer: null, ClientIp: "10.0.0.7");
-
-        // A fractional lifetime is what exposed the defect: Redis keeps key lifetimes in whole
-        // seconds, so a 5.9 s lifetime backed by a 5 s key vanished 900 ms before the expiry the
-        // client was given. Probing between the truncated key lifetime and ExpiresAt separates
-        // the two.
-        var expiresAt = DateTimeOffset.UtcNow + TimeSpan.FromMilliseconds(5900);
-        var issuance = await issuer.IssueAsync(
-            new PortalTokenIssueRequest("alice", null, "tenant-A", ["viewer"], PortalTokenClientType.Ip, "10.0.0.7", expiresAt),
-            CancellationToken.None);
-
         // Another replica has no memory entry, so only the distributed tier can answer it.
         var replica = new PortalTokenIssuer(new MemoryCache(new MemoryCacheOptions()), NullLogger<PortalTokenIssuer>.Instance, cache);
-        await Task.Delay(expiresAt - TimeSpan.FromMilliseconds(500) - DateTimeOffset.UtcNow);
-        var beforeExpiry = await replica.ValidateAsync(issuance.Token, binding, CancellationToken.None);
-        var probedAt = DateTimeOffset.UtcNow;
+        var binding = new PortalTokenBinding(Referer: null, ClientIp: "10.0.0.7");
 
-        probedAt.Should().BeBefore(expiresAt, "the pre-expiry probe must finish inside the advertised lifetime to mean anything");
-        beforeExpiry.Should().NotBeNull("a token must keep validating until the expiry the server advertised");
-        beforeExpiry!.ExpiresAt.Should().Be(expiresAt);
+        // Connect first, so issuance below measures writing the entry rather than opening Redis.
+        await cache.GetAsync("portal-expiry-warm-up", CancellationToken.None);
 
-        // Task.Delay truncates to whole milliseconds and can wake just before the instant, so
-        // wait on the clock the issuer itself compares against.
-        while (DateTimeOffset.UtcNow < expiresAt)
+        // Redis keeps key lifetimes in whole seconds and rounds down, so a 5.95 s lifetime used to
+        // be backed by a 5 s key and the token vanished 950 ms before the expiry the client was
+        // given. The probe runs inside that last partial second. A probe the scheduler delays past
+        // ExpiresAt shows nothing either way, so that attempt is repeated instead of judged.
+        var lifetime = TimeSpan.FromMilliseconds(5950);
+        var probeLead = TimeSpan.FromMilliseconds(850);
+        for (var attempt = 1; ; attempt++)
         {
-            await Task.Delay(TimeSpan.FromMilliseconds(Math.Max(1, (expiresAt - DateTimeOffset.UtcNow).TotalMilliseconds)));
-        }
+            var expiresAt = DateTimeOffset.UtcNow + lifetime;
+            var issuance = await issuer.IssueAsync(
+                new PortalTokenIssueRequest("alice", null, "tenant-A", ["viewer"], PortalTokenClientType.Ip, "10.0.0.7", expiresAt),
+                CancellationToken.None);
 
-        (await replica.ValidateAsync(issuance.Token, binding, CancellationToken.None))
-            .Should().BeNull("the token stops validating at its advertised expiry");
-        (await issuer.ValidateAsync(issuance.Token, binding, CancellationToken.None))
-            .Should().BeNull("the issuing replica's memory tier must not outlive the advertised expiry either");
+            await DelayUntilAsync(expiresAt - probeLead);
+            var beforeExpiry = await replica.ValidateAsync(issuance.Token, binding, CancellationToken.None);
+            if (DateTimeOffset.UtcNow >= expiresAt)
+            {
+                attempt.Should().BeLessThan(Attempts, "the pre-expiry probe never completed inside the advertised lifetime");
+                continue;
+            }
+
+            beforeExpiry.Should().NotBeNull("a token must keep validating until the expiry the server advertised");
+            beforeExpiry!.ExpiresAt.Should().Be(expiresAt);
+
+            await DelayUntilAsync(expiresAt);
+            (await replica.ValidateAsync(issuance.Token, binding, CancellationToken.None))
+                .Should().BeNull("the token stops validating at its advertised expiry");
+            (await issuer.ValidateAsync(issuance.Token, binding, CancellationToken.None))
+                .Should().BeNull("the issuing replica's memory tier must not outlive the advertised expiry either");
+            return;
+        }
+    }
+
+    // Task.Delay truncates to whole milliseconds and can wake just before the instant, so wait on
+    // the clock the issuer compares against. An instant that has already passed returns at once.
+    private static async Task DelayUntilAsync(DateTimeOffset instant)
+    {
+        while (DateTimeOffset.UtcNow < instant)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(Math.Max(1, (instant - DateTimeOffset.UtcNow).TotalMilliseconds)));
+        }
     }
 }

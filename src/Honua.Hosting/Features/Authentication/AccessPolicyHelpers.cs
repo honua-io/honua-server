@@ -9,8 +9,10 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 using System.Security.Claims;
 using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
@@ -61,13 +63,25 @@ internal static class AccessPolicyHelpers
     /// </summary>
     internal static void AppendAuthenticationChallenge(HttpContext context)
     {
-        var authorization = context.Request.Headers.Authorization.FirstOrDefault();
         context.Response.Headers.Append(
             "WWW-Authenticate",
-            !string.IsNullOrWhiteSpace(authorization) &&
-            authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+            AttemptedBearerCredential(context.Request)
                 ? "Bearer"
                 : "ApiKey realm=\"Honua Admin\", header=\"X-API-Key\"");
+    }
+
+    // Portal tokens travel as an Authorization or X-Esri-Authorization bearer, the `token` query
+    // parameter, or a form field the portal-token handler has already parsed. A caller that tried
+    // any of them is told to present a bearer again, not an admin API key (honua-server#4778).
+    private static bool AttemptedBearerCredential(HttpRequest request)
+    {
+        static bool IsBearer(StringValues values) => values.Any(value => value is not null
+            && value.StartsWith(PortalTokenAuthenticationHandler.BearerPrefix, StringComparison.OrdinalIgnoreCase));
+
+        return IsBearer(request.Headers.Authorization)
+            || IsBearer(request.Headers[PortalTokenAuthenticationHandler.EsriAuthorizationHeader])
+            || request.Query.ContainsKey(PortalTokenAuthenticationHandler.TokenQueryParameter)
+            || request.HttpContext.Features.Get<IFormFeature>()?.Form?.ContainsKey(PortalTokenAuthenticationHandler.TokenQueryParameter) == true;
     }
 
     public static AccessDecision EvaluateAccess(

@@ -262,8 +262,13 @@ internal static class LayerValidationHelpers
             return null;
         }
 
-        var (hidden, _, _) = ResolveV2TripleForTenant(snapshot, layerId, requiredProtocol, tenantId: null, applyTenantScope: false);
-        if (hidden is null)
+        // Challenge only what authenticating could open. Resolution falls back to a publication
+        // whose service does not serve the requested protocol, and its own tenant would still
+        // get 404 there, so that layer stays 404 and its existence is not disclosed.
+        var (hidden, _, hiddenService) = ResolveV2TripleForTenant(snapshot, layerId, requiredProtocol, tenantId: null, applyTenantScope: false);
+        if (hidden is null
+            || (!string.IsNullOrWhiteSpace(requiredProtocol) && hiddenService is not null
+                && !MetadataV2ServiceProtocols.IsProtocolEnabled(hiddenService, requiredProtocol)))
         {
             return null;
         }
