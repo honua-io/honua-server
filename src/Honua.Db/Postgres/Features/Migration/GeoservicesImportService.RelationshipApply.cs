@@ -77,11 +77,11 @@ internal sealed partial class GeoservicesImportService
                 }
 
                 // Related: must be resolved through the manifest's source layer ids.
-                if (!TryResolveRelatedSource(relationship, sourceTargets, out var relatedSourceResourceId))
+                if (!TryResolveRelatedSource(target.SourceResourceId, relationship, sourceTargets, out var relatedSourceResourceId))
                 {
                     skipped.Add(BuildSkippedOutcome(
                         relationship.SourceRelationshipId,
-                        "Related layer is not present in the manifest target resources; relationship persistence deferred until the related layer is imported.",
+                        "Related layer cannot be uniquely resolved within the origin service's manifest target resources; relationship persistence deferred until the related layer is imported and identified.",
                         originLayerId,
                         relationship));
                     continue;
@@ -148,15 +148,22 @@ internal sealed partial class GeoservicesImportService
            string.Equals(classification, MigrationManifestRelationshipClassifications.Assisted, StringComparison.Ordinal);
 
     private static bool TryResolveRelatedSource(
+        string originSourceResourceId,
         MigrationManifestRelationshipRecord relationship,
         Dictionary<string, MigrationManifestTargetResource> sourceTargets,
         out string relatedSourceResourceId)
     {
-        // The fidelity record carries the related layer's local identifier as
-        // "layer:{id}"; the manifest target resource ids follow the inventory
-        // convention "resource:{service}:{kind}:{id}". Resolve by suffix match
-        // against the manifest's target resources so unrelated services in the
-        // same graph snapshot are ignored.
+        relatedSourceResourceId = string.Empty;
+        if (!TryGetSourceServiceScope(originSourceResourceId, out var serviceScope))
+        {
+            return false;
+        }
+
+        // ArcGIS layer/table numbers are service-local. A relatedTableId is
+        // recorded as layer:{id} even when the inventory resource is a table.
+        // Resolve both kinds within the exact originating service, and reject
+        // ambiguous manifests rather than choosing by resource enumeration order.
+        var matches = new HashSet<string>(StringComparer.Ordinal);
         foreach (var related in relationship.RelatedLayerIds)
         {
             if (string.IsNullOrWhiteSpace(related))
@@ -165,19 +172,77 @@ internal sealed partial class GeoservicesImportService
             }
 
             var local = related.Trim();
-            foreach (var (sourceResourceId, _) in sourceTargets)
+            if (TryGetSourceServiceScope(local, out var explicitScope))
             {
-                if (sourceResourceId.EndsWith(":" + local, StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(sourceResourceId, local, StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(explicitScope, serviceScope, StringComparison.Ordinal) && sourceTargets.ContainsKey(local))
                 {
-                    relatedSourceResourceId = sourceResourceId;
-                    return true;
+                    matches.Add(local);
+                }
+
+                continue;
+            }
+
+            var separator = local.IndexOf(':');
+            if (separator < 0 ||
+                (local[..separator] != "layer" && local[..separator] != "table"))
+            {
+                continue;
+            }
+
+            var id = local[(separator + 1)..];
+            if (string.IsNullOrWhiteSpace(id) || id.Contains(':'))
+            {
+                continue;
+            }
+
+            foreach (var kind in new[] { "layer", "table" })
+            {
+                var candidate = $"{serviceScope}{kind}:{id}";
+                if (sourceTargets.ContainsKey(candidate))
+                {
+                    matches.Add(candidate);
                 }
             }
         }
 
-        relatedSourceResourceId = string.Empty;
-        return false;
+        if (matches.Count != 1)
+        {
+            return false;
+        }
+
+        relatedSourceResourceId = matches.Single();
+        return true;
+    }
+
+    private static bool TryGetSourceServiceScope(string resourceId, out string serviceScope)
+    {
+        serviceScope = string.Empty;
+        const string prefix = "resource:";
+        if (!resourceId.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        var idSeparator = resourceId.LastIndexOf(':');
+        if (idSeparator <= prefix.Length || idSeparator == resourceId.Length - 1)
+        {
+            return false;
+        }
+
+        var kindSeparator = resourceId.LastIndexOf(':', idSeparator - 1);
+        if (kindSeparator <= prefix.Length)
+        {
+            return false;
+        }
+
+        var kind = resourceId[(kindSeparator + 1)..idSeparator];
+        if (kind != "layer" && kind != "table")
+        {
+            return false;
+        }
+
+        serviceScope = resourceId[..(kindSeparator + 1)];
+        return true;
     }
 
     private static MigrationRelationshipApplyOutcome BuildSkippedOutcome(

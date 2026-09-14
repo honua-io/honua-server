@@ -27,6 +27,109 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// </summary>
 public sealed class GeoservicesRelationshipApplyTests
 {
+    [Theory]
+    [InlineData("layer", "layer:1", true)]
+    [InlineData("layer", "layer:1", false)]
+    [InlineData("table", "layer:1", true)]
+    [InlineData("table", "table:1", false)]
+    [InlineData("table", "resource:Inspections:table:1", true)]
+    [InlineData("layer", "resource:Inspections:layer:1", false)]
+    public async Task ApplyRelationshipsAsync_ServiceLocalIdsResolveWithinOriginService(
+        string relatedKind, string relatedToken, bool foreignFirst)
+    {
+        MigrationRelationshipApplyRequest[]? captured = null;
+        var writer = new Mock<IMigrationCatalogWriter>(MockBehavior.Strict);
+        writer.Setup(w => w.EnsureRelationshipsAsync(
+                It.IsAny<string>(), It.IsAny<IMetadataV2GraphStore?>(),
+                It.IsAny<MigrationRelationshipApplyRequest[]>(), It.IsAny<CancellationToken>()))
+            .Returns<string, IMetadataV2GraphStore?, MigrationRelationshipApplyRequest[], CancellationToken>(
+                (_, _, requests, _) =>
+                {
+                    captured = requests;
+                    return Task.FromResult(Array.Empty<MigrationRelationshipApplyOutcome>());
+                });
+        var manifest = BuildManifestWithRelationship("resource:Inspections:layer:0", relatedToken,
+            "1:N", 3, MigrationManifestRelationshipClassifications.Assisted);
+        var origin = manifest.TargetResources[0];
+        var related = manifest.TargetResources[1] with { SourceResourceId = $"resource:Inspections:{relatedKind}:1" };
+        // Case-distinct service names must not collapse onto the origin either.
+        var foreign = related with { SourceResourceId = "resource:inspections:layer:1" };
+        manifest = manifest with
+        {
+            TargetResources = foreignFirst ? [foreign, origin, related] : [origin, related, foreign]
+        };
+
+        await CreateService(writer.Object).ApplyRelationshipsAsync(manifest,
+            new Dictionary<string, int>(StringComparer.Ordinal)
+            {
+                [origin.SourceResourceId] = 200,
+                [related.SourceResourceId] = 201,
+                [foreign.SourceResourceId] = 999
+            }, graphStore: null);
+
+        captured.Should().NotBeNull();
+        var request = captured!.Should().ContainSingle().Subject;
+        request.OriginLayerId.Should().Be(200);
+        request.RelatedLayerId.Should().Be(201);
+        request.OriginKeyField.Should().Be("INSPECTION_ID");
+        request.DestinationKeyField.Should().Be("INSPECTION_ID");
+    }
+
+    [Theory]
+    [InlineData("layer:1")]
+    [InlineData("resource:Other:layer:1")]
+    public async Task ApplyRelationshipsAsync_ForeignServiceDoesNotSubstituteForMissingRelatedTable(string relatedToken)
+    {
+        var writer = new Mock<IMigrationCatalogWriter>(MockBehavior.Strict);
+        var manifest = BuildManifestWithRelationship("resource:Inspections:layer:0", relatedToken,
+            "1:N", 3, MigrationManifestRelationshipClassifications.Assisted);
+        var origin = manifest.TargetResources[0];
+        var foreign = manifest.TargetResources[1] with { SourceResourceId = "resource:Other:layer:1" };
+        manifest = manifest with { TargetResources = [foreign, origin] };
+
+        var outcomes = await CreateService(writer.Object).ApplyRelationshipsAsync(manifest,
+            new Dictionary<string, int>(StringComparer.Ordinal)
+            {
+                [origin.SourceResourceId] = 200,
+                [foreign.SourceResourceId] = 999
+            }, graphStore: null);
+
+        var outcome = outcomes.Should().ContainSingle().Which;
+        outcome.Message.Should().Contain("origin service");
+        outcome.Deferred.Should().BeTrue();
+        writer.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ApplyRelationshipsAsync_AmbiguousLayerAndTableIdsAreDeferredRegardlessOfOrder(bool tableFirst)
+    {
+        var writer = new Mock<IMigrationCatalogWriter>(MockBehavior.Strict);
+        var manifest = BuildManifestWithRelationship("resource:Inspections:layer:0", "layer:1",
+            "1:N", 3, MigrationManifestRelationshipClassifications.Assisted);
+        var origin = manifest.TargetResources[0];
+        var layer = manifest.TargetResources[1];
+        var table = layer with { SourceResourceId = "resource:Inspections:table:1" };
+        manifest = manifest with
+        {
+            TargetResources = tableFirst ? [origin, table, layer] : [origin, layer, table]
+        };
+
+        var outcomes = await CreateService(writer.Object).ApplyRelationshipsAsync(manifest,
+            new Dictionary<string, int>(StringComparer.Ordinal)
+            {
+                [origin.SourceResourceId] = 200,
+                [layer.SourceResourceId] = 201,
+                [table.SourceResourceId] = 202
+            }, graphStore: null);
+
+        var outcome = outcomes.Should().ContainSingle().Which;
+        outcome.Message.Should().Contain("uniquely resolved");
+        outcome.Deferred.Should().BeTrue();
+        writer.VerifyNoOtherCalls();
+    }
+
     [Fact]
     public async Task ApplyRelationshipsAsync_AutomatedRelationshipWithResolvedLayers_RoutesApplyRequest()
     {
