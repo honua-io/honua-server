@@ -783,7 +783,7 @@ internal static partial class GeoServicesGeometryConverter
         writer.WriteEndObject();
     }
 
-    private static GeoServicesSpatialReference? CreateSpatialReference(int? srid)
+    internal static GeoServicesSpatialReference? CreateSpatialReference(int? srid)
         => srid.HasValue && srid.Value > 0
             ? new GeoServicesSpatialReference { Wkid = srid.Value, LatestWkid = srid.Value }
             : null;
