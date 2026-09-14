@@ -626,6 +626,67 @@ public sealed class MigrationCatalogReconcilerTests
         outcome.Findings.Should().ContainSingle(f => f.Code == MigrationCatalogReconciliationCodes.DomainNameMismatch);
     }
 
+    [Fact]
+    public void Reconcile_NonspatialTable_IgnoresDefaultImportTargetCrs()
+    {
+        var report = MigrationCatalogReconciler.BuildReport("table", "arcgis-geoservices-rest",
+        [
+            new MigrationCatalogReconciliationInput
+            {
+                Resource = BuildInventoryResource() with { GeometryType = null, SpatialReferences = [] },
+                PublishedResource = BuildPublishedResource() with { Spatial = null },
+                PlannedTargetSrid = 4326
+            }
+        ]);
+
+        report.Resources.Single().Classification.Should().Be("pass");
+        report.Resources.Single().Findings.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(4326, 4326, "pass")]
+    [InlineData(null, null, "fail")]
+    [InlineData(4326, null, "fail")]
+    [InlineData(4326, 3857, "fail")]
+    [InlineData(3857, 4326, "fail")]
+    [InlineData(4326, 4326, "fail", double.NaN)]
+    [InlineData(4326, 4326, "fail", double.PositiveInfinity)]
+    public void Reconcile_PlannedReprojection_RequiresMatchingTargetCrsAndExtentObservation(
+        int? plannedSrid, int? observedSrid, string classification, double observedMinX = -118.5)
+    {
+        var inventory = BuildInventoryResource() with
+        {
+            SpatialReferences = [new MigrationSpatialReferenceInfo { Role = "declared", Srid = 26911 }]
+        };
+        var published = BuildPublishedResource() with
+        {
+            Spatial = BuildPublishedResource().Spatial! with
+            {
+                SpatialReference = new MetadataV2SpatialReference { Srid = 4326 },
+                Bbox = new MetadataV2Bbox { West = -118.5, South = 33.75, East = -117.17, North = 34.19 }
+            }
+        };
+        var report = MigrationCatalogReconciler.BuildReport("reprojected", "arcgis-geoservices-rest",
+        [
+            new MigrationCatalogReconciliationInput
+            {
+                Resource = inventory,
+                PublishedResource = published,
+                SourceBbox = [361431.356, 3736037.969, 483556.921, 3783589.624],
+                PlannedTargetSrid = plannedSrid,
+                ObservedTargetExtent = observedSrid is { } srid
+                    ? new ExtentBox { MinX = observedMinX, MinY = 33.75, MaxX = -117.17, MaxY = 34.19, Srid = srid }
+                    : null
+            }
+        ]);
+
+        report.Resources.Single().Classification.Should().Be(classification);
+        if (classification == "pass")
+        {
+            report.Resources.Single().Findings.Should().BeEmpty();
+        }
+    }
+
     private static MetadataV2Subtypes BuildSubtypes(string subtypeField, params (string Code, string Name)[] subtypes)
         => new()
         {

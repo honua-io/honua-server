@@ -79,6 +79,10 @@ internal sealed partial class GeoservicesLayerPublicationService
                 jobId,
                 layerInfo,
                 publishedLayer,
+                request.TargetSrid,
+                artifact.Layers.SingleOrDefault(layer =>
+                    layer.TargetHonuaLayerId == publishedLayer.LayerId &&
+                    layer.SourceLayerId == reconciliationRequest.Layers[0].SourceLayerId)?.Extent.Target,
                 cancellationToken).ConfigureAwait(false);
 
             // Bind the catalog report to the artifact so both travel together through persistence,
@@ -145,6 +149,7 @@ internal sealed partial class GeoservicesLayerPublicationService
             TargetHonuaLayerId = publishedLayer.LayerId,
             SourceFeatureCount = layerInfo.FeatureCount,
             SourceExtent = sourceExtent,
+            PlannedTargetSrid = request.TargetSrid,
             SourceFieldNames = sourceFieldNames,
             // The where-clause supplied to the import is mirrored onto the reconciliation count
             // probe so a partial import (subset of source features) is reconciled apples-to-apples.
@@ -172,6 +177,8 @@ internal sealed partial class GeoservicesLayerPublicationService
         string jobId,
         GeoservicesLayerInfo layerInfo,
         PublishedLayerSummary publishedLayer,
+        int plannedTargetSrid,
+        ExtentBox? observedTargetExtent,
         CancellationToken cancellationToken)
     {
         if (_metadataWriteBaseReader is null)
@@ -212,6 +219,8 @@ internal sealed partial class GeoservicesLayerPublicationService
                     Resource = inventoryResource,
                     PublishedResource = published,
                     SourceBbox = sourceBbox,
+                    PlannedTargetSrid = plannedTargetSrid,
+                    ObservedTargetExtent = observedTargetExtent,
                     TargetResourceId = published.Metadata.Id,
                     // The per-layer geoservices import path does not currently translate relationship
                     // classes here (relationship apply is a separate flow); pass none so relationship

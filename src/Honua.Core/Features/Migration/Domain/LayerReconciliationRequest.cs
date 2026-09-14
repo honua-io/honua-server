@@ -74,6 +74,12 @@ public sealed record LayerReconciliationLayerInput
     public BoundingBox? SourceExtent { get; init; }
 
     /// <summary>
+    /// Target CRS recorded in the reviewed import request. A different observed CRS is a
+    /// failure; when reprojection is planned, compare target rows back in the source CRS.
+    /// </summary>
+    public int? PlannedTargetSrid { get; init; }
+
+    /// <summary>
     /// Source-advertised field names (deduplicated). Empty when the source did not advertise
     /// any schema; the content probe will record <c>pass</c> with a "no baseline" note.
     /// </summary>

@@ -148,17 +148,72 @@ public sealed class LayerReconciliationServiceTests
         return QueryResult<Feature>.Create(rows, items);
     }
 
+    [Theory]
+    [InlineData(0, "pass")]
+    [InlineData(5000, "fail")]
+    public async Task Reconcile_PlannedReprojection_ComparesTargetRowsInSourceCrs(double offset, string expected)
+    {
+        var source = BoundingBox.Create(361431.356, 3736037.969, 483556.921, 3783589.624, 26911);
+        var reader = new StubFeatureReader
+        {
+            Count = 26,
+            Extent = FeatureExtent.Create(-118.5013, 33.7591, -117.1778, 34.1842, 4326),
+            ComparisonExtent = FeatureExtent.Create(source.MinX + offset, source.MinY, source.MaxX + offset, source.MaxY, 26911),
+            Sample = BuildSample(("OBJECTID", "NAME"), validGeometry: true, rows: 26)
+        };
+        var request = BuildRequest(26, source, ["OBJECTID", "NAME"]);
+        request = request with { Layers = [request.Layers[0] with { PlannedTargetSrid = 4326 }] };
+
+        var result = await NewService(reader).ReconcileAsync(request);
+
+        result.Layers[0].Extent.Classification.Should().Be(expected);
+        result.Layers[0].Extent.Source!.Value.Srid.Should().Be(26911);
+        result.Layers[0].Extent.Target!.Value.Srid.Should().Be(4326);
+        result.Layers[0].Extent.ComparisonTarget!.Value.Srid.Should().Be(26911);
+        reader.ExtentQueries.Should().HaveCount(2);
+        reader.ExtentQueries[1]!.Value.OutputSrid.Should().Be(26911);
+    }
+
+    [Theory]
+    [InlineData(null, null)]
+    [InlineData(4326, null)]
+    [InlineData(4326, 3857)]
+    [InlineData(3857, 26911)]
+    public async Task Reconcile_UnplannedOrUnobservedReprojection_CannotPass(int? plannedSrid, int? comparisonSrid)
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 26,
+            // Identical coordinate numbers do not prove parity when their CRSs differ.
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            ComparisonExtent = comparisonSrid is { } srid ? FeatureExtent.Create(0, 0, 10, 10, srid) : null,
+            Sample = BuildSample(("OBJECTID", "NAME"), validGeometry: true, rows: 26)
+        };
+        var request = BuildRequest(26, BoundingBox.Create(0, 0, 10, 10, 26911), ["OBJECTID", "NAME"]);
+        request = request with { Layers = [request.Layers[0] with { PlannedTargetSrid = plannedSrid }] };
+
+        var result = await NewService(reader).ReconcileAsync(request);
+
+        result.Layers[0].Extent.Classification.Should().Be("fail");
+        result.Layers[0].Extent.ComparisonTarget.Should().BeNull();
+    }
+
     private sealed class StubFeatureReader : IFeatureReader
     {
         public long Count { get; init; }
         public FeatureExtent? Extent { get; init; }
+        public FeatureExtent? ComparisonExtent { get; init; }
+        public List<FeatureQuery?> ExtentQueries { get; } = [];
         public QueryResult<Feature> Sample { get; init; } = QueryResult<Feature>.Empty();
 
         public Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
             => Task.FromResult(Count);
 
         public Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
-            => Task.FromResult(Extent);
+        {
+            ExtentQueries.Add(query);
+            return Task.FromResult(query?.OutputSrid is not null ? ComparisonExtent : Extent);
+        }
 
         public Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
             => Task.FromResult(Sample);

@@ -5,6 +5,11 @@ using System.Data;
 using System.Data.Common;
 using System.Net;
 using System.Text;
+using System.Text.Json.Nodes;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
+using Microsoft.Extensions.ObjectPool;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
@@ -93,10 +98,86 @@ public sealed class GeoservicesImportCatalogReconciliationTests(PostgresFixture 
         }
     }
 
-    private GeoservicesImportService CreateService(PostgresMetadataV2GraphStore graphStore, string dataSchema)
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ImportLayerAsync_PlannedReprojection_ValidatesActualTargetRows(bool displaced)
+    {
+        const string tableName = "reprojected_catalog_recon";
+        var serviceName = $"reproject_{Guid.NewGuid():N}";
+        var schemaName = await fixture.CreateIsolatedSchemaAsync("ReprojectCatalogRecon");
+        await EnsureCatalogSchemaAsync();
+        await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, "honua");
+        var provider = new FixtureConnectionProvider(fixture);
+        var graphStore = new PostgresMetadataV2GraphStore(provider, $"Reproject-{Guid.NewGuid():N}",
+            FixtureBypassDatabaseSchemaGuard.Instance);
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "reprojected", Name = "Reprojected" },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.Wgs84,
+                GeometryType = MetadataV2GeometryType.Point,
+                PrimaryGeometryField = "geom"
+            },
+            SchemaFields =
+            [
+                new() { Name = "objectid", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"] },
+                new() { Name = "name", Type = MetadataV2FieldType.String },
+                new() { Name = "status", Type = MetadataV2FieldType.String }
+            ]
+        };
+        var reader = new PostgresStorageMappedFeatureReader(provider,
+            new DefaultObjectPoolProvider().Create(new Honua.Core.Features.Infrastructure.ServiceRegistration.DictionaryPooledObjectPolicy()),
+            resource, new FeatureStorageMapping(TableName: tableName, SchemaName: schemaName,
+                PrimaryKeyColumn: "objectid", GeometryColumn: "geom", StorageSrid: 4326),
+            connection: null, connectionEncryptionService: null);
+        var reconciliation = new LayerReconciliationService(reader, TimeProvider.System,
+            NullLogger<LayerReconciliationService>.Instance);
+        try
+        {
+            var service = CreateService(graphStore, schemaName,
+                new FaithfulFeatureServerHandler(reprojected: true, displaced), reconciliation);
+            var result = await service.ImportLayerAsync(new GeoservicesImportRequest
+            {
+                ServiceUrl = "https://example.com/arcgis/rest/services/Faithful/FeatureServer",
+                LayerId = 0,
+                TableName = tableName,
+                TargetSchema = schemaName,
+                TargetSrid = 4326,
+                BatchSize = 10,
+                RequestTimeoutSeconds = 5,
+                MaxRetries = 0,
+                AutoPublish = true,
+                ServiceName = serviceName,
+                ImportAttachments = false
+            });
+            result.Success.Should().Be(!displaced);
+            result.NeedsReview.Should().Be(displaced);
+            result.ReconciliationArtifact.Should().NotBeNull();
+            var artifact = result.ReconciliationArtifact!;
+            var extent = artifact.Layers.Should().ContainSingle().Subject.Extent;
+            extent.Source!.Value.Srid.Should().Be(3857);
+            extent.Target!.Value.Srid.Should().Be(4326);
+            extent.ComparisonTarget!.Value.Srid.Should().Be(3857);
+            extent.Classification.Should().Be(displaced ? "fail" : "pass");
+            // Catalog bounds agree with the imported rows even in the corrupt case;
+            // source parity must therefore be decided by the independent data gate.
+            artifact.CatalogReconciliation!.Resources.Should().ContainSingle().Subject.Classification.Should().Be("pass");
+        }
+        finally
+        {
+            await CleanupCatalogAsync(serviceName);
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    private GeoservicesImportService CreateService(PostgresMetadataV2GraphStore graphStore, string dataSchema,
+        HttpMessageHandler? handler = null, ILayerReconciliationService? reconciliation = null)
     {
         var restClient = new ArcGisRestClient(
-            new HttpClient(new FaithfulFeatureServerHandler()),
+            new HttpClient(handler ?? new FaithfulFeatureServerHandler()),
             NullLogger<ArcGisRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
 
@@ -127,7 +208,7 @@ public sealed class GeoservicesImportCatalogReconciliationTests(PostgresFixture 
                 layerPublishingService: publishingService,
                 // A pass-through data-reconciliation service so the gate reaches the catalog pass; the
                 // catalog reconciler reads the published entry back through the real graph store.
-                reconciliationService: new PassThroughReconciliationService(),
+                reconciliationService: reconciliation ?? new PassThroughReconciliationService(),
                 metadataGraphStore: graphStore));
     }
 
@@ -185,7 +266,7 @@ public sealed class GeoservicesImportCatalogReconciliationTests(PostgresFixture 
     // Minimal faithful ArcGIS FeatureServer mock: a point layer in WKID 4326 with an OBJECTID, a
     // string attribute, and a small coded-value domain. No subtypes, no attachments — everything the
     // catalog reconciler probes (fields, types, geometry, SRID, identifier, domain) maps cleanly.
-    private sealed class FaithfulFeatureServerHandler : HttpMessageHandler
+    private sealed class FaithfulFeatureServerHandler(bool reprojected = false, bool displaced = false) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -242,6 +323,30 @@ public sealed class GeoservicesImportCatalogReconciliationTests(PostgresFixture 
                     """,
                 _ => throw new InvalidOperationException($"Unexpected ArcGIS request path: {pathAndQuery}")
             };
+
+            if (reprojected)
+            {
+                var document = JsonNode.Parse(payload)!;
+                if (document["extent"] is not null)
+                {
+                    // Independent known Web Mercator coordinates for (0,0) and (1,1).
+                    document["extent"] = JsonNode.Parse("""{"xmin":0,"ymin":0,"xmax":111319.49079327357,"ymax":111325.1428663851,"spatialReference":{"wkid":3857}}""");
+                }
+                if (document["count"] is not null)
+                {
+                    document["count"] = 2;
+                }
+                if (pathAndQuery.Contains("resultOffset=0", StringComparison.Ordinal))
+                {
+                    pathAndQuery.Should().Contain("outSR=4326");
+                    document["features"] = JsonNode.Parse("""[{"attributes":{"OBJECTID":1,"Name":"Alpha","Status":"O"},"geometry":{"x":0,"y":0}},{"attributes":{"OBJECTID":2,"Name":"Beta","Status":"C"},"geometry":{"x":1,"y":1}}]""");
+                    if (displaced)
+                    {
+                        document["features"]![1]!["geometry"]!["x"] = 10;
+                    }
+                }
+                payload = document.ToJsonString();
+            }
 
             // Ownership of the HttpResponseMessage transfers to the HttpClient pipeline that invokes
             // this handler; it is disposed by the caller, not here (cs/local-not-disposed false positive).

@@ -238,6 +238,12 @@ public sealed record MigrationReconciliationExtentProbe
     public ExtentBox? Target { get; init; }
 
     /// <summary>
+    /// Target-row extent queried in the source CRS for an approved reprojection. Native
+    /// source and target extents remain separately available for provenance.
+    /// </summary>
+    public ExtentBox? ComparisonTarget { get; init; }
+
+    /// <summary>
     /// Absolute differences between source and target extents normalized by source dimension.
     /// <c>null</c> when either side is unavailable or source has zero width/height.
     /// </summary>
