@@ -61,6 +61,12 @@ public sealed class LayerPublishRequest
     /// </summary>
     public string? PrimaryKey { get; init; }
 
+    /// <summary>Published UUID column containing imported edit-stable global IDs. Does not grant editing.</summary>
+    public string? GlobalIdField { get; init; }
+
+    /// <summary>Whether this resource exposes the configured attachment store. Does not prove attachment-copy fidelity.</summary>
+    public bool SupportsAttachments { get; init; }
+
     /// <summary>
     /// List of attribute fields to publish (empty means include all).
     /// </summary>
