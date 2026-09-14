@@ -307,6 +307,14 @@
         "GeoServices GPServer and NAServer",
         "GeoServices GPServer Endpoints"
       ]
+    },
+    {
+      "name": "Operator Eval Harness capacity partition",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Eval|FullyQualifiedName~Honua.Server.Tests.Features.Geoprocessing|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc",
+      "children": [
+        "Operator Eval Harness",
+        "gRPC Protocol and Scene"
+      ]
     }
   ],
   "shards": [
@@ -1215,7 +1223,7 @@
     {
       "name": "Operator Eval Harness",
       "shard_name": "Operator Eval Harness",
-      "dispatch_rank": 17.4,
+      "dispatch_rank": 10.2,
       "artifact_suffix": "operator-eval",
       "log_name": "server-tests-operator-eval",
       "timeout_minutes": 30,
@@ -1223,7 +1231,8 @@
       "max_cpu_count": "1",
       "upload_operator_eval_report": true,
       "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Eval|FullyQualifiedName~Honua.Server.Tests.Features.Geoprocessing|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc",
+      "_comment": "Selects the Eval and Geoprocessing namespaces. Capacity split 2026-09-14 (trunk red at 8e62f71, run 34816748596): the shard passed at 1196s of its 20m cap at 0c6c424 (99.7%) and then exhausted it at 1201s with no failing test. The Protocols.Grpc namespace (~580s, SceneGrpcIntegrationTests alone ~550s) moved to gRPC Protocol and Scene; this shard keeps ~610s (51%). Budgets are unchanged; see docs/internal/ci/shard-timeout-budgets.md.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Eval|FullyQualifiedName~Honua.Server.Tests.Features.Geoprocessing",
       "paths": [
         "src/Honua.Geoprocessing/Features/Geoprocessing/",
         "src/Honua.Geoprocessing.Cli/",
@@ -1240,10 +1249,30 @@
         "tests/dotnet/Honua.Geoprocessing.Testing.Tests/",
         "tests/dotnet/Honua.Geoprocessing.Cli.Tests/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/",
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/",
         "src/Honua.Core/Features/Validation/"
+      ]
+    },
+    {
+      "name": "gRPC Protocol and Scene",
+      "shard_name": "gRPC Protocol and Scene",
+      "dispatch_rank": 9.7,
+      "artifact_suffix": "grpc-protocol-scene",
+      "log_name": "server-tests-grpc-protocol-scene",
+      "timeout_minutes": 30,
+      "test_timeout_minutes": 20,
+      "max_cpu_count": "1",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "Capacity split 2026-09-14 from Operator Eval Harness (trunk red at 8e62f71, run 34816748596). The Protocols.Grpc namespace was ~580s of that serial shard's 1196-1201s, and SceneGrpcIntegrationTests alone ~550s, so a whole-namespace move is the smallest one that restores headroom to both halves. Keeps the parent's max_cpu_count and unchanged 20m/30m caps. Ranked just below the parent.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc",
+      "paths": [
+        "src/Honua.Server/Features/Protocols/Grpc/",
+        "src/Honua.Scene/",
+        "src/Honua.Core/Features/Geoprocessing/",
+        "src/Honua.Geoprocessing/Features/Geoprocessing/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/"
       ]
     },
     {
