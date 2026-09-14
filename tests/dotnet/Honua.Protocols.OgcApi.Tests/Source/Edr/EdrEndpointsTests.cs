@@ -460,7 +460,7 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
                  })
         {
             using var doc = await GetJsonAsync(
-                $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords={Uri.EscapeDataString(coords)}&parameter-name=band_1,band_2&datetime=2026-06-20T00:00:00Z");
+                $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords={Uri.EscapeDataString(coords)}&parameter-name=band_1,band_2&datetime=2026-06-20T00:00:00.4Z");
             var root = doc.RootElement;
             root.GetProperty("type").GetString().Should().Be("CoverageCollection", coords);
             root.GetProperty("domainType").GetString().Should().Be("PointSeries");
@@ -477,7 +477,7 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
                 domain.GetProperty("axes").GetProperty("x").GetProperty("values")[0].GetDouble().Should().Be(lon);
                 domain.GetProperty("axes").GetProperty("y").GetProperty("values")[0].GetDouble().Should().Be(lat);
                 domain.GetProperty("axes").GetProperty("t").GetProperty("values")[0].GetString()
-                    .Should().StartWith("2026-06-20");
+                    .Should().Be("2026-06-20T00:00:00.4Z");
 
                 var ranges = coverages[i].GetProperty("ranges");
                 ranges.GetProperty("band_1").GetProperty("values")[0].GetDouble()
@@ -521,7 +521,7 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
         var filter = await _fixture.Client.GetAsync(
             $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords={Uri.EscapeDataString("MULTIPOINT((-122.4 37.8))(|(uid=*))")}");
         filter.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await filter.Content.ReadAsStringAsync()).Should().Contain("attempt detected in query parameter 'coords'");
+        (await filter.Content.ReadAsStringAsync()).Should().Contain("LDAP injection attempt detected");
     }
 
     private void UsePrimaryRaster(RasterInfo raster)
