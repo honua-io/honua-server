@@ -98,6 +98,24 @@ Typing every STAC extension would chase a moving target.
 or other standards. Some of these are informational pass-through from
 ArcGIS Pro / Server imports.
 
+Feature-type import uses the typed `Resource.Subtypes` slot when the source can
+be represented there. Both `subtypeField`/`subtypes` and
+`typeIdField`/`types` encodings are accepted. A single type template contributes
+its prototype attributes as field defaults; string identifiers stay strings,
+and an `inherited` domain leaves the published field domain in force. Multiple
+templates per type and explicit domain clearing are rejected during capture
+because the current typed model cannot preserve those semantics. The existing
+100-subtype capture cap still applies.
+
+An explicit null field default is persisted as `defaultValue: null` with
+`defaultValueIsNull: true`. The additive marker distinguishes a null override
+from an absent default after JSON persistence. Older metadata with a null
+default and no marker retains its existing absent-default meaning. The
+FeatureServer projection emits the ordinary null prototype attribute; the
+marker is part of canonical metadata, not the Esri wire format. Template names,
+descriptions and drawing tools are currently derived by the public mapper;
+capturing defaults does not establish full source-template fidelity.
+
 **Conventions**:
 - Use Esri's JSON shape verbatim under each key.
 - When a value is computed at render time from V2 typed slots (e.g.

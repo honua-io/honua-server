@@ -5,6 +5,7 @@ using System.Data;
 using System.Data.Common;
 using System.Net;
 using System.Text;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -32,8 +33,10 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 [Collection("Database")]
 public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fixture)
 {
-    [Fact]
-    public async Task ImportLayerAsync_WithSubtypeFieldAndSubtypes_PersistsThemOntoPublishedMetadataV2Resource()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ImportLayerAsync_WithSubtypeMetadata_PersistsThemOntoPublishedMetadataV2Resource(bool featureTypes)
     {
         const string tableName = "geoservices_import_subtypes";
         var serviceName = $"subtypes_{Guid.NewGuid():N}";
@@ -50,7 +53,7 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
 
         try
         {
-            var service = CreateService(graphStore, schemaName);
+            var service = CreateService(graphStore, schemaName, featureTypes);
 
             var result = await service.ImportLayerAsync(new GeoservicesImportRequest
             {
@@ -81,8 +84,15 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
             resource!.Subtypes.Should().NotBeNull("the subtype set must survive import → publish → compat-compile");
             var subtypes = resource.Subtypes!;
             subtypes.SubtypeField.Should().Be("buildingtype");
-            subtypes.DefaultSubtypeCode.Should().NotBeNull();
-            subtypes.DefaultSubtypeCode!.Value.GetInt32().Should().Be(1);
+            if (featureTypes)
+            {
+                subtypes.DefaultSubtypeCode.Should().BeNull();
+            }
+            else
+            {
+                subtypes.DefaultSubtypeCode.Should().NotBeNull();
+                subtypes.DefaultSubtypeCode!.Value.GetInt32().Should().Be(1);
+            }
 
             subtypes.Subtypes.Select(s => s.Name)
                 .Should().BeEquivalentTo(["Commercial", "Residential"]);
@@ -114,10 +124,10 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
         }
     }
 
-    private GeoservicesImportService CreateService(PostgresMetadataV2GraphStore graphStore, string dataSchema)
+    private GeoservicesImportService CreateService(PostgresMetadataV2GraphStore graphStore, string dataSchema, bool featureTypes)
     {
         var restClient = new ArcGisRestClient(
-            new HttpClient(new SubtypeFeatureServerHandler()),
+            new HttpClient(new SubtypeFeatureServerHandler(featureTypes)),
             NullLogger<ArcGisRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
 
@@ -184,7 +194,7 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
     // Minimal ArcGIS FeatureServer mock that advertises an integer subtype field
     // 'buildingtype' with two subtypes; the 'Residential' subtype carries a per-subtype
     // default value and a coded-value domain on 'status'.
-    private sealed class SubtypeFeatureServerHandler : HttpMessageHandler
+    private sealed class SubtypeFeatureServerHandler(bool featureTypes) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -251,6 +261,33 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
                     """,
                 _ => throw new InvalidOperationException($"Unexpected ArcGIS request path: {pathAndQuery}")
             };
+
+            if (featureTypes && pathAndQuery == "/arcgis/rest/services/Subtypes/FeatureServer/0?f=json")
+            {
+                var layer = JsonNode.Parse(payload)!.AsObject();
+                var types = new JsonArray();
+                foreach (var subtype in layer["subtypes"]!.AsArray())
+                {
+                    var attributes = new JsonObject { ["STATUS"] = subtype!["defaultValues"]!["status"]!.DeepClone() };
+                    var domains = subtype["domains"]?.DeepClone();
+                    types.Add(new JsonObject
+                    {
+                        ["id"] = subtype["code"]!.DeepClone(),
+                        ["name"] = subtype["name"]!.DeepClone(),
+                        ["domains"] = domains,
+                        ["templates"] = new JsonArray(new JsonObject
+                        {
+                            ["prototype"] = new JsonObject { ["attributes"] = attributes }
+                        })
+                    });
+                }
+                layer.Remove("subtypeField");
+                layer.Remove("subtypes");
+                layer.Remove("defaultSubtypeCode");
+                layer["typeIdField"] = "BUILDINGTYPE";
+                layer["types"] = types;
+                payload = layer.ToJsonString();
+            }
 
             // Ownership of the HttpResponseMessage transfers to the HttpClient pipeline that invokes
             // this handler; it is disposed by the caller, not here (cs/local-not-disposed false positive).

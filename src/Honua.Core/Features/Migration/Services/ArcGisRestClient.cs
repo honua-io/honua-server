@@ -177,6 +177,13 @@ internal sealed partial class ArcGisRestClient
             Log.FeatureCountFailed(_logger, layerId, ex);
         }
 
+        var subtypeResult = EsriSubtypeParser.Parse(
+            layerResponse.SubtypeField, layerResponse.DefaultSubtypeCode, layerResponse.Subtypes);
+        if (subtypeResult.Subtypes is null && !subtypeResult.Truncated)
+        {
+            subtypeResult = EsriSubtypeParser.ParseFeatureTypes(layerResponse.TypeIdField, layerResponse.Types);
+        }
+
         return new GeoservicesLayerInfo
         {
             Id = layerResponse.Id,
@@ -202,10 +209,7 @@ internal sealed partial class ArcGisRestClient
             // Persisted through publish so the subtype field + subtype labels/overrides
             // survive to the served FeatureServer surface. A subtype set over the cap is
             // reported via the inventory warning path and intentionally not persisted.
-            Subtypes = EsriSubtypeParser.Parse(
-                layerResponse.SubtypeField,
-                layerResponse.DefaultSubtypeCode,
-                layerResponse.Subtypes).Subtypes,
+            Subtypes = subtypeResult.Subtypes,
             // Persisted through publish so calculation/constraint/validation rules survive
             // to the served FeatureServer surface and fire on applyEdits. An over-cap rule
             // set is reported via the inventory warning path and intentionally not persisted.
@@ -388,7 +392,11 @@ internal sealed partial class ArcGisRestClient
             "f=json",
             $"where={Uri.EscapeDataString(whereClause ?? "1=1")}",
             $"outFields={Uri.EscapeDataString(outFields != null ? string.Join(",", outFields) : "*")}",
-            "returnGeometry=true"
+            "returnGeometry=true",
+            // Esri omits elevation and measures unless explicitly requested,
+            // even when the layer advertises them. Preserve both on every page.
+            "returnZ=true",
+            "returnM=true"
         };
 
         if (objectIds is null)
@@ -1068,6 +1076,12 @@ internal sealed record ArcGisLayerResponse : IArcGisErrorResponse
 
     [JsonPropertyName("subtypes")]
     public JsonElement? Subtypes { get; init; }
+
+    [JsonPropertyName("typeIdField")]
+    public string? TypeIdField { get; init; }
+
+    [JsonPropertyName("types")]
+    public JsonElement? Types { get; init; }
 
     [JsonPropertyName("attributeRules")]
     public JsonElement? AttributeRules { get; init; }

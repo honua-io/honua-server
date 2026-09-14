@@ -4,6 +4,7 @@
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Migration.Services;
 
 namespace Honua.Core.Tests.Features.Import;
@@ -125,6 +126,92 @@ public sealed class EsriSubtypeParserTests
 
         result.Truncated.Should().BeTrue("an over-cap subtype set is omitted rather than persisted partial");
         result.Subtypes.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("HazardType", "Flooding")]
+    [InlineData("fullclose", "Yes")]
+    [InlineData("status", "Closed")]
+    public void Parse_FeatureTypes_PreservesStringCodesAndTemplateDefaults(string field, string code)
+    {
+        var layer = ParseLayer($$"""
+            {
+              "typeIdField": "{{field}}",
+              "types": [{
+                "id": "{{code}}", "name": "Template label",
+                "domains": { "priority": { "type": "inherited" } },
+                "templates": [{ "prototype": { "attributes": {
+                  "{{field}}": "{{code}}", "priority": null, "description": "Default text"
+                } } }]
+              }]
+            }
+            """);
+
+        var parsed = EsriSubtypeParser.Parse(layer).Subtypes!;
+        parsed.Should().NotBeNull();
+        parsed.SubtypeField.Should().Be(field);
+        parsed.DefaultSubtypeCode.Should().BeNull("feature types do not imply a layer default");
+        var type = parsed.Subtypes.Single();
+        type.Code.GetString().Should().Be(code);
+        type.Name.Should().Be("Template label");
+        type.FieldOverrides[field].DefaultValue!.Value.GetString().Should().Be(code);
+        type.FieldOverrides["description"].DefaultValue!.Value.GetString().Should().Be("Default text");
+        type.FieldOverrides["priority"].DefaultValue!.Value.ValueKind.Should().Be(JsonValueKind.Null);
+        type.FieldOverrides["priority"].Domain.Should().BeNull("inherited means keep the field domain");
+    }
+
+    [Fact]
+    public void Parse_FeatureTypesWithNumericCodeAndDomain_PreservesBoth()
+    {
+        var layer = ParseLayer("""
+            { "typeIdField": "kind", "types": [{ "id": 7, "name": "Seven",
+              "domains": { "status": { "type": "codedValue", "name": "Status",
+                "codedValues": [{ "code": "new", "name": "New" }] } }
+            }] }
+            """);
+        var type = EsriSubtypeParser.Parse(layer).Subtypes!.Subtypes.Single();
+        type.Code.GetInt32().Should().Be(7);
+        type.FieldOverrides["status"].Domain!.CodedValues.Single().Code.GetString().Should().Be("new");
+    }
+
+    [Fact]
+    public void Parse_MultipleFeatureTemplates_RejectsAmbiguousReduction()
+    {
+        var layer = ParseLayer("""
+            { "typeIdField": "kind", "types": [{ "id": 1, "name": "One",
+              "templates": [{ "name": "A" }, { "name": "B" }] }] }
+            """);
+        var act = () => EsriSubtypeParser.Parse(layer);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*multiple editing templates*");
+    }
+
+    [Fact]
+    public void Parse_ExplicitNullDefault_SurvivesCanonicalJsonRoundTripWithoutChangingLegacyNull()
+    {
+        var layer = ParseLayer("""
+            { "typeIdField": "kind", "types": [{ "id": 1, "name": "One",
+              "templates": [{ "prototype": { "attributes": { "description": null } } }] }] }
+            """);
+        var original = EsriSubtypeParser.Parse(layer).Subtypes!.Subtypes.Single().FieldOverrides["description"];
+        var json = JsonSerializer.Serialize(original, MetadataV2JsonContext.Default.MetadataV2SubtypeFieldOverride);
+        var restored = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2SubtypeFieldOverride)!;
+        restored.DefaultValue.Should().NotBeNull();
+        restored.DefaultValue!.Value.ValueKind.Should().Be(JsonValueKind.Null);
+
+        var legacy = JsonSerializer.Deserialize("""{"defaultValue":null,"domain":null}""",
+            MetadataV2JsonContext.Default.MetadataV2SubtypeFieldOverride)!;
+        legacy.DefaultValue.Should().BeNull();
+    }
+
+    [Fact]
+    public void Parse_ExplicitDomainClearing_RejectsUnsupportedReduction()
+    {
+        var layer = ParseLayer("""
+            { "typeIdField": "kind", "types": [{ "id": 1, "name": "One",
+              "domains": { "status": null } }] }
+            """);
+        var act = () => EsriSubtypeParser.Parse(layer);
+        act.Should().Throw<InvalidOperationException>().WithMessage("*clears a domain*");
     }
 
     private static JsonElement ParseLayer(string json)

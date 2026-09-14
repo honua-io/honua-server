@@ -52,7 +52,89 @@ public static class EsriSubtypeParser
         var defaultSubtypeCode = layerElement.TryGetProperty("defaultSubtypeCode", out var defaultCode)
             ? defaultCode
             : (JsonElement?)null;
-        return Parse(subtypeField, defaultSubtypeCode, subtypesElement);
+        var parsed = Parse(subtypeField, defaultSubtypeCode, subtypesElement);
+        return parsed.Subtypes is not null || parsed.Truncated
+            ? parsed
+            : ParseFeatureTypes(GetString(layerElement, "typeIdField"),
+                layerElement.TryGetProperty("types", out var types) ? types : null);
+    }
+
+    /// <summary>
+    /// Captures the FeatureServer <c>typeIdField</c>/<c>types</c> encoding, including
+    /// the prototype defaults of a single template per type. Ambiguous templates and
+    /// domain-clearing semantics that the canonical model cannot represent are rejected
+    /// explicitly rather than silently reducing the source editing model.
+    /// </summary>
+    /// <param name="typeIdField">Field selecting the feature type.</param>
+    /// <param name="typesElement">FeatureServer type definitions.</param>
+    /// <returns>The canonical subtype projection.</returns>
+    public static EsriSubtypeParseResult ParseFeatureTypes(string? typeIdField, JsonElement? typesElement)
+    {
+        if (string.IsNullOrWhiteSpace(typeIdField) ||
+            typesElement is not { ValueKind: JsonValueKind.Array } types || types.GetArrayLength() == 0)
+        {
+            return EsriSubtypeParseResult.None;
+        }
+        if (types.GetArrayLength() > SubtypeCap)
+        {
+            return EsriSubtypeParseResult.OverCap;
+        }
+
+        var normalized = new List<Dictionary<string, JsonElement>>();
+        foreach (var type in types.EnumerateArray())
+        {
+            if (type.ValueKind != JsonValueKind.Object ||
+                !type.TryGetProperty("id", out var id) || !IsSupportedCode(id) ||
+                string.IsNullOrWhiteSpace(GetString(type, "name")))
+            {
+                throw new InvalidOperationException("Source feature type has no supported identifier or name.");
+            }
+            var entry = new Dictionary<string, JsonElement>
+            {
+                ["code"] = id.Clone(),
+                ["name"] = type.GetProperty("name").Clone()
+            };
+            if (ReadObject(type, "domains") is { } domains)
+            {
+                if (domains.EnumerateObject().Any(property => property.Value.ValueKind == JsonValueKind.Null))
+                {
+                    throw new InvalidOperationException("Source feature type explicitly clears a domain; this editing construct requires manual migration.");
+                }
+                entry["domains"] = domains.Clone();
+            }
+            if (type.TryGetProperty("templates", out var templates) && templates.ValueKind == JsonValueKind.Array)
+            {
+                if (templates.GetArrayLength() > 1)
+                {
+                    throw new InvalidOperationException("Source feature type has multiple editing templates; this editing construct requires manual migration.");
+                }
+                if (templates.GetArrayLength() == 1 &&
+                    ReadObject(templates[0], "prototype") is { } prototype &&
+                    ReadObject(prototype, "attributes") is { } attributes)
+                {
+                    entry["defaultValues"] = attributes.Clone();
+                }
+            }
+            normalized.Add(entry);
+        }
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer))
+        {
+            writer.WriteStartArray();
+            foreach (var entry in normalized)
+            {
+                writer.WriteStartObject();
+                foreach (var (key, value) in entry)
+                {
+                    writer.WritePropertyName(key);
+                    value.WriteTo(writer);
+                }
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+        }
+        using var document = JsonDocument.Parse(buffer.ToArray());
+        return Parse(typeIdField, null, document.RootElement);
     }
 
     /// <summary>
@@ -159,6 +241,14 @@ public static class EsriSubtypeParser
                     continue;
                 }
 
+                // Inheritance is the absence of a subtype override, not a new
+                // domain kind. Keep the published field's own domain in force.
+                if (property.Value.ValueKind == JsonValueKind.Object &&
+                    string.Equals(GetString(property.Value, "type"), "inherited", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 // Reuse the shared domain parser so the same cap/consistency rules apply.
                 // An over-cap per-subtype domain is dropped rather than persisted partial.
                 var domain = EsriFieldDomainParser.ParseDomain(property.Value).Domain;
@@ -175,7 +265,7 @@ public static class EsriSubtypeParser
         {
             foreach (var property in defaultsObject.EnumerateObject())
             {
-                if (string.IsNullOrWhiteSpace(property.Name) || property.Value.ValueKind == JsonValueKind.Null)
+                if (string.IsNullOrWhiteSpace(property.Name))
                 {
                     continue;
                 }
@@ -203,6 +293,8 @@ public static class EsriSubtypeParser
         return current with
         {
             Domain = domain ?? current.Domain,
+            DefaultValueIsNull = defaultValue is { ValueKind: JsonValueKind.Null } ||
+                (!defaultValue.HasValue && current.DefaultValueIsNull),
             DefaultValue = defaultValue ?? current.DefaultValue
         };
     }
