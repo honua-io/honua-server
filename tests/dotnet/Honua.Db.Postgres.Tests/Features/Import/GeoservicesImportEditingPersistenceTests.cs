@@ -39,9 +39,16 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests
             var result = await importer.ImportLayerAsync(new GeoservicesImportRequest
             {
                 ServiceUrl = "https://example.com/arcgis/rest/services/Editing/FeatureServer",
-                LayerId = 0, TableName = "editing_identity", TargetSchema = schemaName,
-                TargetSrid = 4326, BatchSize = 10, RequestTimeoutSeconds = 5, MaxRetries = 0,
-                AutoPublish = true, ServiceName = serviceName, ImportAttachments = importAttachments
+                LayerId = 0,
+                TableName = "editing_identity",
+                TargetSchema = schemaName,
+                TargetSrid = 4326,
+                BatchSize = 10,
+                RequestTimeoutSeconds = 5,
+                MaxRetries = 0,
+                AutoPublish = true,
+                ServiceName = serviceName,
+                ImportAttachments = importAttachments
             });
 
             result.PublishedLayerId.Should().NotBeNull();
