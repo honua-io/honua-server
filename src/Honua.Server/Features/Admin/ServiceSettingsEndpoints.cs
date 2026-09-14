@@ -503,7 +503,8 @@ internal static class ServiceSettingsEndpoints
                     ApiResponse<object>.Failure($"Layer {layerId} not found in service '{serviceName}'."));
             }
 
-            await InvalidateServiceCatalogCacheAsync(context, graphProvider, serviceName, logger).ConfigureAwait(false);
+            await InvalidateServiceCatalogCacheAsync(context, graphProvider, serviceName, logger,
+                request.Editing is not null ? persistedResource.Metadata.Id : null).ConfigureAwait(false);
 
             var response = BuildLayerMetadataResponse(
                 layerId,
@@ -811,7 +812,8 @@ internal static class ServiceSettingsEndpoints
         HttpContext context,
         IMetadataV2GraphProvider graphProvider,
         string serviceName,
-        ILogger<ServiceSettingsEndpointsLog> logger)
+        ILogger<ServiceSettingsEndpointsLog> logger,
+        string? resourceId = null)
     {
         var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
         if (cacheInvalidator == null)
@@ -830,7 +832,7 @@ internal static class ServiceSettingsEndpoints
                 .Select(s => s.Metadata.Id)
                 .ToHashSet(StringComparer.Ordinal);
             var layerIds = snapshot.Graph.Publications
-                .Where(p => serviceIds.Contains(p.ServiceId))
+                .Where(p => serviceIds.Contains(p.ServiceId) || (resourceId is not null && p.ResourceId == resourceId))
                 .Select(p => p.LayerIndex)
                 .Where(layerIndex => layerIndex.HasValue)
                 .Select(layerIndex => layerIndex!.Value)
@@ -838,7 +840,7 @@ internal static class ServiceSettingsEndpoints
                 .ToArray();
 
             await cacheInvalidator.InvalidateServiceCatalogAsync(
-                serviceName,
+                resourceId is null ? serviceName : null,
                 layerIds,
                 context.RequestAborted).ConfigureAwait(false);
         }

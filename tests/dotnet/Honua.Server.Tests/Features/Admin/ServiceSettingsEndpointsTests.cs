@@ -303,6 +303,50 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_AdminCannotEnableCompositeOwnershipEdits()
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var publication = snapshot.Graph.Publications.First(candidate =>
+            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer && candidate.LayerIndex == 0);
+        var parent = snapshot.Graph.Resources.Single(resource => resource.Metadata.Id == publication.ResourceId);
+        var child = snapshot.Graph.Resources.First(resource => resource.Metadata.Id != parent.Metadata.Id && resource.SchemaFields.Count > 0);
+        var relationship = new MetadataV2Relationship
+        {
+            Id = "composite-parent", RelatedResourceId = child.Metadata.Id, Composite = true,
+            OriginField = parent.SchemaFields[0].Name, DestinationField = child.SchemaFields[0].Name,
+            Role = "esriRelRoleOrigin"
+        };
+        var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
+        provider.SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Resources = snapshot.Graph.Resources.Select(resource => resource.Metadata.Id == parent.Metadata.Id
+                ? resource with { Editing = new MetadataV2ResourceEditing { CanModify = false }, Relationships = [relationship] }
+                : resource.Metadata.Id == child.Metadata.Id
+                    ? resource with
+                    {
+                        Editing = new MetadataV2ResourceEditing { CanModify = false },
+                        Relationships = [relationship with
+                        {
+                            Id = "composite-child", RelatedResourceId = parent.Metadata.Id,
+                            OriginField = relationship.DestinationField, DestinationField = relationship.OriginField,
+                            Role = "esriRelRoleDestination"
+                        }]
+                    }
+                    : resource).ToArray()
+        }, schema: _fixture.MetadataGraphSchema);
+        var before = _fixture.GetCurrentV2GraphSnapshot().Graph;
+
+        using var content = new StringContent("""{"editing":{"create":true,"update":true,"delete":true}}""", Encoding.UTF8, "application/json");
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/0/metadata", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("Composite relationship ownership edits");
+        _fixture.GetCurrentV2GraphSnapshot().Graph.Should().BeEquivalentTo(before);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
     [Endpoint("GET /rest/services/{serviceName}/FeatureServer/{layerId}")]
     public async Task UpdateLayerMetadata_WithSourceGovernance_UpdatesPublicMetadata()
     {
