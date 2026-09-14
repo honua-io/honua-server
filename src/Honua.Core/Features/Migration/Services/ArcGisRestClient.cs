@@ -197,6 +197,7 @@ internal sealed partial class ArcGisRestClient
             SpatialReferenceWkid = layerResponse.Extent?.SpatialReference?.Wkid,
             MaxRecordCount = layerResponse.MaxRecordCount,
             Fields = ParseFields(layerResponse.Fields),
+            Relationships = layerResponse.Relationships ?? [],
             Type = layerResponse.Type,
             HasAttachments = layerResponse.HasAttachments,
             GlobalIdField = layerResponse.GlobalIdField,
@@ -1096,6 +1097,9 @@ internal sealed record ArcGisLayerResponse : IArcGisErrorResponse
 
     [JsonPropertyName("fields")]
     public ArcGisField[]? Fields { get; init; }
+
+    [JsonPropertyName("relationships")]
+    public GeoservicesRelationshipInfo?[]? Relationships { get; init; }
 
     [JsonPropertyName("drawingInfo")]
     public JsonElement? DrawingInfo { get; init; }

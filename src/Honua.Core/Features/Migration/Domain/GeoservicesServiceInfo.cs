@@ -121,6 +121,12 @@ public sealed record GeoservicesLayerInfo
     public GeoservicesFieldInfo[] Fields { get; init; } = [];
 
     /// <summary>
+    /// Source relationship declarations, including incomplete records. Importing this
+    /// resource alone does not recreate these cross-resource bindings.
+    /// </summary>
+    public GeoservicesRelationshipInfo?[] Relationships { get; init; } = [];
+
+    /// <summary>
     /// The type of layer (e.g., "Feature Layer", "Table").
     /// </summary>
     public string? Type { get; init; }
