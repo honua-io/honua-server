@@ -355,6 +355,13 @@ public sealed class LayerChanges
     public int Deletes { get; set; }
 
     /// <summary>
+    /// Spatial reference of every geometry in <see cref="AddFeatures"/> and
+    /// <see cref="UpdateFeatures"/>: the layer's storage spatial reference (#4027).
+    /// </summary>
+    [JsonPropertyName("spatialReference")]
+    public GeoServicesSpatialReference? SpatialReference { get; set; }
+
+    /// <summary>
     /// Actual feature data for inserts since last sync.
     /// </summary>
     [JsonPropertyName("addFeatures")]
@@ -399,10 +406,11 @@ public sealed class SynchronizeReplicaRequest
     /// <summary>
     /// When true, each layer's uploaded edits are applied atomically: a single failing edit rolls back
     /// that layer's whole batch, leaving the server state unchanged. Mirrors the Esri
-    /// <c>rollbackOnFailure</c> sync parameter. Defaults to false (best-effort per-row apply) (#2136).
+    /// <c>rollbackOnFailure</c> sync parameter (#2136). Defaults to true, the Esri default (#4031);
+    /// best-effort per-row apply requires an explicit false.
     /// </summary>
     [JsonPropertyName("rollbackOnFailure")]
-    public bool RollbackOnFailure { get; set; }
+    public bool RollbackOnFailure { get; set; } = true;
 
     /// <summary>
     /// Output format parameter.
