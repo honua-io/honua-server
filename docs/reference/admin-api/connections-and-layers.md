@@ -151,7 +151,7 @@ and Delete on its FeatureServer publication. Normal authentication and edit
 authorization still apply. The source table and its existing publications are
 unchanged. Omitting this option retains ordinary source-backed publication.
 
-The copy receives new object IDs. Its read-only `__honua_source_id` field records
+The copy receives new object IDs. Its read-only `honua_source_id` field records
 each imported source ID, so migration can map attachments and relationships to
 the corresponding new target ID. New features have no source ID. This reserved
 field cannot already be part of the selected source schema. The option does not

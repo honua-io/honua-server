@@ -11,7 +11,7 @@ public sealed class LayerPublishRequest
     /// <summary>
     /// Publish an independent editable copy in the server's managed feature store.
     /// The source remains unchanged. Source object IDs are retained in
-    /// <c>__honua_source_id</c>; the copy receives its own stable object IDs.
+    /// <c>honua_source_id</c>; the copy receives its own stable object IDs.
     /// </summary>
     public bool CreateEditableCopy { get; init; }
 

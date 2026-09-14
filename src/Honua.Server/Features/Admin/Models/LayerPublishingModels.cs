@@ -14,7 +14,7 @@ public sealed class PublishLayerRequest
 {
     /// <summary>
     /// Create an independent editable managed copy. The connection must resolve
-    /// to this server's managed database. Source IDs remain in __honua_source_id;
+    /// to this server's managed database. Source IDs remain in honua_source_id;
     /// attachments and relationships require mapping to the copy's new IDs.
     /// </summary>
     public bool CreateEditableCopy { get; init; }

@@ -105,7 +105,7 @@ public sealed partial class LayerPublishingIntegrationTests
         var initialFeatures = initial.RootElement.GetProperty("features");
         initialFeatures.GetArrayLength().Should().Be(1);
         var attributes = initialFeatures[0].GetProperty("attributes");
-        attributes.GetProperty("__honua_source_id").GetInt64().Should().BeGreaterThan(0);
+        attributes.GetProperty("honua_source_id").GetInt64().Should().BeGreaterThan(0);
         var importedTargetId = attributes.GetProperty("id").GetInt64();
 
         const string createdBody = """
@@ -147,7 +147,7 @@ public sealed partial class LayerPublishingIntegrationTests
         updated.RootElement.GetProperty("updateResults")[0].GetProperty("success").GetBoolean().Should().BeTrue(updatedPayload);
         using var readback = JsonDocument.Parse(await _client.GetStringAsync($"{collection}/{importedTargetId}"));
         readback.RootElement.GetProperty("properties").GetProperty("properties").GetProperty("name").GetString().Should().Be("Updated imported feature");
-        readback.RootElement.GetProperty("properties").GetProperty("__honua_source_id").GetInt64().Should().Be(attributes.GetProperty("__honua_source_id").GetInt64());
+        readback.RootElement.GetProperty("properties").GetProperty("honua_source_id").GetInt64().Should().Be(attributes.GetProperty("honua_source_id").GetInt64());
 
         // The source-snapshot refresh operation must never overwrite managed edits.
         var refresh = await _client.PostAsync($"/api/v1/admin/connections/{_connectionId}/layers/{_layerId}/features/refresh", null);
