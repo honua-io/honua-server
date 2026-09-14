@@ -440,6 +440,15 @@ internal sealed class PbfQueryFormatter
             }
             else
             {
+                var temporalType = field.Type switch
+                {
+                    "esriFieldTypeDate" => (MetadataV2FieldType?)MetadataV2FieldType.DateTime,
+                    "esriFieldTypeDateOnly" => MetadataV2FieldType.Date,
+                    _ => null
+                };
+                if (temporalType.HasValue
+                    && GeoServicesFieldConventions.TryConvertTemporalValue(value, temporalType.Value, out var converted))
+                    value = converted!;
                 WriteAttributeValue(ref valueMsg, value);
             }
 
