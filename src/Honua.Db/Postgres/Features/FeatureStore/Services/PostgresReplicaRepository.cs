@@ -166,7 +166,7 @@ internal sealed class PostgresReplicaRepository : IReplicaRepository
             LastSyncTime = reader.GetFieldValue<DateTimeOffset>(7),
             LastSyncGeneration = reader.GetInt64(8),
             UploadBaseGeneration = reader.GetInt64(9),
-                ScopeDefinition = reader.IsDBNull(10) ? null : reader.GetString(10)
+            ScopeDefinition = reader.IsDBNull(10) ? null : reader.GetString(10)
         };
     }
 
