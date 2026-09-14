@@ -115,7 +115,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && deadline.IsCancellationRequested)
         {
-            return JobExecutionResult.Failed(
+            return LayerComputationBudget.Refusal(
                 $"{ProcessId} exceeded Geoprocessing:Executors:MaxLayerExecutionSeconds={seconds}; " +
                 "narrow the selection or simplify the input, then resubmit.");
         }
@@ -145,7 +145,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         }
         catch (TransformInputException ex)
         {
-            return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: {ex.PublicMessage}");
+            return LayerComputationBudget.Refusal($"Invalid {ProcessId} inputs: {ex.PublicMessage}");
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -167,7 +167,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         }
         catch (TransformInputException ex)
         {
-            return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: {ex.PublicMessage}");
+            return LayerComputationBudget.Refusal($"Invalid {ProcessId} inputs: {ex.PublicMessage}");
         }
 
         cancellationToken.ThrowIfCancellationRequested();
@@ -198,13 +198,13 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
             // The feature/vertex-count budgets surface here with concrete remedies (narrow
             // where/bbox, raise the configured limit), so the message must reach the caller
             // verbatim rather than collapsing to a bare exception type name.
-            return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: {ex.PublicMessage}");
+            return LayerComputationBudget.Refusal($"Invalid {ProcessId} inputs: {ex.PublicMessage}");
         }
         catch (DagSourceSelectionException ex)
         {
             // A geometry/time selector the canonical translator rejected (or could not
             // evaluate in this deployment): caller-facing, so surface it verbatim (#4624).
-            return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: {ex.Message}");
+            return LayerComputationBudget.Refusal($"Invalid {ProcessId} inputs: {ex.Message}");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -230,7 +230,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         }
         catch (TransformInputException ex)
         {
-            return JobExecutionResult.Failed($"Invalid {ProcessId} inputs: {ex.PublicMessage}");
+            return LayerComputationBudget.Refusal($"Invalid {ProcessId} inputs: {ex.PublicMessage}");
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -249,7 +249,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         {
             await context.ReportProgressAsync(80, $"{ProcessId} stopped: output exceeds the artifact budget", cancellationToken)
                 .ConfigureAwait(false);
-            return JobExecutionResult.Failed(
+            return LayerComputationBudget.Refusal(
                 $"{ProcessId} output has {outputVertices} vertices across {output.Count} features, which needs at least " +
                 $"{outputVertices * MinSerializedBytesPerVertex} bytes once serialized and exceeds the configured " +
                 $"MaxArtifactBytes={maxBytes}; stopped before serialization. Narrow the selection (where/objectIds/geometry/time), " +
@@ -266,7 +266,7 @@ internal abstract partial class LayerSourcedFeatureExecutor : IProcessExecutor
         }
         catch (TransformInputException ex)
         {
-            return JobExecutionResult.Failed($"{ProcessId} {ex.PublicMessage}");
+            return LayerComputationBudget.Refusal($"{ProcessId} {ex.PublicMessage}");
         }
 
         var artifactUri = FeatureCollectionArtifact.BuildDataUri(payload);
