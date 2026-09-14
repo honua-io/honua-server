@@ -2469,7 +2469,7 @@
           {
             "name": "bandIds",
             "status": "implemented (Honua extension)",
-            "notes": "Accepts CSV or JSON array of 0-based band indices, the same base as exportImage bandIds (#4068); each index is shifted to the raster store's 1-based band selector. The caller-supplied order is preserved when aligning the parallel statistics[]/histograms[] arrays."
+            "notes": "Accepts CSV or JSON array of 0-based band indices, the same base as exportImage bandIds (#4068); each index is shifted to the raster store\u0027s 1-based band selector. The caller-supplied order is preserved when aligning the parallel statistics[]/histograms[] arrays."
           },
           {
             "name": "histogramParameters.size",
