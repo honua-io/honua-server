@@ -103,7 +103,11 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IFeatureReader>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
         services.AddScoped<IFeatureWriter>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
         services.AddScoped<ITileProvider>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
-        services.AddScoped<IRelationshipStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+        services.AddScoped<IRelationshipStore>(provider => new SourceBackedRelationshipStore(
+            provider.GetRequiredService<PostgresFeatureStoreRefactored>(),
+            provider.GetRequiredService<IMetadataV2GraphProvider>(),
+            provider.GetRequiredService<Honua.Core.Features.FeatureStore.Services.FeatureProviderQueryRouter>(),
+            provider.GetRequiredService<IFilterExpressionService>()));
         services.AddScoped<IGeoJsonFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
         services.AddScoped<IGeobufFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
         services.AddScoped<IGmlFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
