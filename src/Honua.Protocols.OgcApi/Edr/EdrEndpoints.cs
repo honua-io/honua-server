@@ -54,8 +54,9 @@ public static class EdrEndpoints
             .WithDisplayName("EDR Position Query")
             .WithName("GetEdrPosition")
             .WithSummary("EDR position (point time-series) query")
-            .WithDescription("Returns a CoverageJSON time-series at coords=POINT(lon lat). Optional: datetime, parameter-name.")
+            .WithDescription("Returns a CoverageJSON time-series at coords=POINT(lon lat). Optional: datetime, parameter-name. Returns 204 when datetime does not intersect the collection's temporal extent.")
             .Produces(StatusCodes.Status200OK, contentType: "application/prs.coveragejson+json")
+            .Produces(StatusCodes.Status204NoContent)
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound);
 
@@ -63,8 +64,9 @@ public static class EdrEndpoints
             .WithDisplayName("EDR Cube Query")
             .WithName("GetEdrCube")
             .WithSummary("EDR cube (area/subset) query")
-            .WithDescription("Returns a CoverageJSON grid subset for bbox=minLon,minLat,maxLon,maxLat. Optional: datetime, parameter-name, resolution-x.")
+            .WithDescription("Returns a CoverageJSON grid subset for bbox=minLon,minLat,maxLon,maxLat. Optional: datetime, parameter-name, resolution-x. Returns 204 when datetime does not intersect the collection's temporal extent.")
             .Produces(StatusCodes.Status200OK, contentType: "application/prs.coveragejson+json")
+            .Produces(StatusCodes.Status204NoContent)
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound);
     }
