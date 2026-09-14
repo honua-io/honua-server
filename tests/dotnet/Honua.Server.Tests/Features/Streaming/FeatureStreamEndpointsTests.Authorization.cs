@@ -108,12 +108,17 @@ public sealed partial class FeatureStreamEndpointsTests
 
     [IntegrationTheory]
     [Operation(Operations.Query)]
-    [InlineData("anonymous")]
-    [InlineData("invalid")]
-    [InlineData("expired")]
-    [InlineData("revoked")]
+    [InlineData("anonymous", false)]
+    [InlineData("invalid", false)]
+    [InlineData("expired", false)]
+    [InlineData("revoked", false)]
+    [InlineData("anonymous", true)]
+    [InlineData("invalid", true)]
+    [InlineData("expired", true)]
+    [InlineData("revoked", true)]
     [Endpoint("GET /odata/Features({layerId})")]
-    public async Task ODataRead_TenantScopedProtectedLayerUnderDefaultTenant_ChallengesMissingOrEndedCredential(string credentialState)
+    public async Task ODataRead_TenantScopedProtectedLayerUnderDefaultTenant_ChallengesMissingOrEndedCredential(
+        string credentialState, bool candidateAuthentication)
     {
         // Production leaves MultiTenancy:DefaultTenantId at "public", so a request without a
         // valid credential resolves a tenant that cannot see tenant-a's layer. That is still an
@@ -123,6 +128,24 @@ public sealed partial class FeatureStreamEndpointsTests
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
             builder.UseSetting("MultiTenancy:DefaultTenantId", "public");
+            if (candidateAuthentication)
+            {
+                // The receipt candidate also validates OIDC bearers, so every bearer request is
+                // routed through the composite scheme before the portal-token bridge sees it.
+                const string issuer = "https://live-authorization-issuer.example";
+                const string audience = "live-authorization-candidate";
+                builder.UseSetting("Oidc:Enabled", "true");
+                builder.UseSetting("Oidc:RequireHttps", "true");
+                builder.UseSetting("Oidc:Generic:Enabled", "true");
+                builder.UseSetting("Oidc:Generic:Authority", issuer);
+                builder.UseSetting("Oidc:Generic:ClientId", audience);
+                builder.UseSetting("Oidc:Generic:ClientSecret", "unused-static-key-issuer");
+                builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", "LiveAuthorizationCandidateSigningKeyForHS256Only!");
+                builder.UseSetting("Oidc:TokenValidation:EnableTokenReplayProtection", "false");
+                builder.UseSetting("Oidc:TokenValidation:ValidIssuers:0", issuer);
+                builder.UseSetting("Oidc:TokenValidation:ValidAudiences:0", audience);
+                builder.UseSetting("Authentication:PortalCredentialVerifier:UseOidc", "true");
+            }
         });
         await fixture.InitializeAsync();
         fixture.MutateV2ResourceObjectMetadata(0, metadata => metadata with { Tenant = "tenant-a" });
