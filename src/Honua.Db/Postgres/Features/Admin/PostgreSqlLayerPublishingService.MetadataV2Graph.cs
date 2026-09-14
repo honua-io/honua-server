@@ -50,7 +50,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string schema,
         string table,
         string primaryKeyColumn,
-        string geometryColumn,
+        string? geometryColumn,
         string geometryType,
         int srid,
         int storageSrid,
@@ -95,7 +95,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             request.Enabled,
             now,
             editable: request.CreateEditableCopy);
-        var stacPublication = BuildPublishedPublication(
+        var stacPublication = string.IsNullOrWhiteSpace(geometryColumn) ? null : BuildPublishedPublication(
             service,
             resource,
             binding,
@@ -111,7 +111,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             PublicationIds = service.PublicationIds
                 .Append(featurePublication.Metadata.Id)
-                .Append(stacPublication.Metadata.Id)
+                .Concat(stacPublication is null ? [] : new[] { stacPublication.Metadata.Id })
                 .Distinct(StringComparer.Ordinal)
                 .ToArray()
         };
@@ -141,7 +141,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
             Services = UpsertById(graph.Services, service, static item => item.Metadata.Id),
             Resources = resourcesWithStyles,
             StorageBindings = UpsertById(graph.StorageBindings, binding, static item => item.Metadata.Id),
-            Publications = UpsertPublication(
+            Publications = stacPublication is null
+                ? UpsertPublication(graph.Publications, featurePublication)
+                : UpsertPublication(
                 UpsertPublication(graph.Publications, featurePublication),
                 stacPublication),
             Connections = connection is null
@@ -3110,7 +3112,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         LayerPublishRequest request,
         int layerId,
         string primaryKeyColumn,
-        string geometryColumn,
+        string? geometryColumn,
         string geometryType,
         int srid,
         int storageSrid,
@@ -3134,7 +3136,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 CreatedAt = now,
                 UpdatedAt = now
             },
-            Type = MetadataV2ResourceType.FeatureDataset,
+            Type = string.IsNullOrWhiteSpace(geometryColumn) ? MetadataV2ResourceType.Table : MetadataV2ResourceType.FeatureDataset,
             StorageBindingIds = [bindingId],
             PrimaryStorageBindingId = bindingId,
             SchemaFields = fields
@@ -3147,7 +3149,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                         : mapped;
                 })
                 .ToArray(),
-            Spatial = new MetadataV2ResourceSpatial
+            Spatial = string.IsNullOrWhiteSpace(geometryColumn) ? null : new MetadataV2ResourceSpatial
             {
                 SpatialReference = CreateSpatialReference(srid),
                 GeometryType = MapMetadataV2GeometryType(geometryType),
@@ -3291,7 +3293,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string schema,
         string table,
         string primaryKeyColumn,
-        string geometryColumn,
+        string? geometryColumn,
         int storageSrid,
         DateTimeOffset now)
     {
@@ -3301,10 +3303,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
             [FeatureStorageMapping.SourceBackedOption] = BoolOption(!request.CreateEditableCopy),
             ["schemaName"] = StringOption(schema),
             ["tableName"] = StringOption(table),
-            ["primaryKeyColumn"] = StringOption(request.CreateEditableCopy ? "objectid" : primaryKeyColumn),
-            ["geometryColumn"] = StringOption(request.CreateEditableCopy ? "geometry" : geometryColumn),
-            ["storageSrid"] = IntOption(storageSrid)
+            ["primaryKeyColumn"] = StringOption(request.CreateEditableCopy ? "objectid" : primaryKeyColumn)
         };
+        if (!string.IsNullOrWhiteSpace(geometryColumn))
+        {
+            options["geometryColumn"] = StringOption(request.CreateEditableCopy ? "geometry" : geometryColumn);
+            options["storageSrid"] = IntOption(storageSrid);
+        }
 
         // Layers published onto the shared Honua 'features' table store their non-key
         // attributes as keys inside the 'features.attributes' JSONB column (not as
@@ -3428,7 +3433,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private static MetadataV2Field MapLayerFieldToMetadataV2(
         LayerFieldInsert field,
         string primaryKeyColumn,
-        string geometryColumn)
+        string? geometryColumn)
     {
         var semanticRoles = new List<string>(capacity: 2);
         if (string.Equals(field.Name, primaryKeyColumn, StringComparison.OrdinalIgnoreCase))

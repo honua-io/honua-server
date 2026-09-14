@@ -115,7 +115,7 @@ internal sealed partial class GeoservicesLayerPublicationService
                 Table = request.TableName,
                 LayerName = string.IsNullOrWhiteSpace(layerInfo.Name) ? request.TableName : layerInfo.Name,
                 Description = layerInfo.Description,
-                GeometryColumn = "geom",
+                GeometryColumn = string.IsNullOrEmpty(layerInfo.GeometryType) ? null : "geom",
                 GeometryType = string.IsNullOrWhiteSpace(layerInfo.GeometryType)
                     ? null
                     : GeoservicesImportService.MapEsriGeometryType(

@@ -423,6 +423,12 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<ITableDiscoveryService, PostgreSqlTableDiscoveryService>();
 
         // Register layer publishing implementation
+        services.AddOptions<LayerPublishingOptions>()
+            .Bind(configuration.GetSection(LayerPublishingOptions.SectionName))
+            .Validate(options => options.MaterializationTimeoutSeconds is >= 1
+                and <= LayerPublishingOptions.MaximumMaterializationTimeoutSeconds,
+                "LayerPublishing:MaterializationTimeoutSeconds must be between 1 and 3600.")
+            .ValidateOnStart();
         services.AddScoped<ILayerPublishingService>(serviceProvider =>
             new PostgreSqlLayerPublishingService(
                 serviceProvider.GetRequiredService<ITableDiscoveryService>(),
@@ -430,7 +436,8 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<ILogger<PostgreSqlLayerPublishingService>>(),
                 configuration["Database:Schema"],
                 serviceProvider.GetService<IStyleCatalog>(),
-                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>()));
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<LayerPublishingOptions>>().Value));
 
         // Register health checker
         services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();

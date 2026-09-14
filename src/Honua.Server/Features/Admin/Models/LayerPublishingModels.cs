@@ -3,6 +3,7 @@
 
 using System.ComponentModel.DataAnnotations;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Server.Features.Admin.Models;
 
@@ -77,6 +78,12 @@ public sealed class PublishLayerRequest
     [StringLength(64)]
     public string? GeometryType { get; init; }
 
+    /// <summary>Whether source geometries contain elevation ordinates.</summary>
+    public bool HasZ { get; init; }
+
+    /// <summary>Whether source geometries contain measure ordinates.</summary>
+    public bool HasM { get; init; }
+
     /// <summary>
     /// Spatial reference identifier.
     /// </summary>
@@ -100,6 +107,16 @@ public sealed class PublishLayerRequest
     /// Selected attribute fields to publish (empty means include all).
     /// </summary>
     public IReadOnlyList<string> Fields { get; init; } = Array.Empty<string>();
+
+    /// <summary>Captured source domains keyed by published field name.</summary>
+    public IReadOnlyDictionary<string, MetadataV2FieldDomain> FieldDomains { get; init; }
+        = new Dictionary<string, MetadataV2FieldDomain>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Captured subtype definitions and their default code.</summary>
+    public MetadataV2Subtypes? Subtypes { get; init; }
+
+    /// <summary>Captured calculation, constraint and validation rules.</summary>
+    public IReadOnlyList<MetadataV2AttributeRule>? AttributeRules { get; init; }
 
     /// <summary>
     /// Optional service name (defaults to "default").

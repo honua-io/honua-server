@@ -90,7 +90,10 @@ internal static partial class FeatureServerEndpoints
             License = service.Metadata.License,
             Publisher = service.Metadata.Publisher,
             Links = GeoServicesGovernanceProjection.ProjectLinks(service.Metadata),
-            Layers = [.. publications.Select(pair => MapLayerInfoV2(pair.Resource, pair.Publication, snapshot))],
+            Layers = [.. publications.Where(pair => pair.Resource.Type != MetadataV2ResourceType.Table)
+                .Select(pair => MapLayerInfoV2(pair.Resource, pair.Publication, snapshot))],
+            Tables = [.. publications.Where(pair => pair.Resource.Type == MetadataV2ResourceType.Table)
+                .Select(pair => MapLayerInfoV2(pair.Resource, pair.Publication, snapshot))],
             SpatialReference = spatialReference,
             InitialExtent = serviceExtent,
             FullExtent = serviceExtent,
@@ -160,7 +163,8 @@ internal static partial class FeatureServerEndpoints
             supportsDistinct,
             supportsPagination,
             supportsQueryAttachments,
-            supportsReturningGeometryCentroid);
+            supportsReturningGeometryCentroid,
+            hasGeometry: resource.Type != MetadataV2ResourceType.Table);
 
         var srid = resource.ReadSrid();
         var spatialReference = srid.HasValue
@@ -182,15 +186,16 @@ internal static partial class FeatureServerEndpoints
             License = governance.License,
             Publisher = governance.Publisher,
             Links = GeoServicesGovernanceProjection.ProjectLinks(governance),
-            Type = "Feature Layer",
-            GeometryType = MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None),
-            SpatialReference = spatialReference,
+            Type = resource.Type == MetadataV2ResourceType.Table ? "Table" : "Feature Layer",
+            GeometryType = resource.Type == MetadataV2ResourceType.Table
+                ? null : MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None),
+            SpatialReference = resource.Type == MetadataV2ResourceType.Table ? null : spatialReference,
             // Advertise hasZ/hasM from the authored Metadata v2 display flags so 3D/measured
             // layers self-describe to Esri clients (#1877 Part C). Both default to false and are
             // omitted from the response when unset to keep 2D documents CITE/byte-stable.
             HasZ = resource.Display?.HasZ ?? false,
             HasM = resource.Display?.HasM ?? false,
-            Extent = extent,
+            Extent = resource.Type == MetadataV2ResourceType.Table ? null : extent,
             TimeInfo = timeInfo,
             ExtrusionInfo = extrusionInfo,
             Fields = [.. ResolveVisibleFieldsV2(resource).Select(field => MapFieldInfoV2(field, objectIdField, globalIdField))],
@@ -209,7 +214,7 @@ internal static partial class FeatureServerEndpoints
             SupportsDistinct = supportsDistinct,
             SupportsPagination = supportsPagination,
             SupportsTrueCurve = false,
-            SupportsReturningQueryExtent = supportsAdvancedQueries,
+            SupportsReturningQueryExtent = supportsAdvancedQueries && resource.Type != MetadataV2ResourceType.Table,
             SupportsRollbackOnFailureParameter = supportsEditing,
             SupportsApplyEditsWithGlobalIds = false,
             HasAttachments = supportsQueryAttachments,
@@ -284,7 +289,9 @@ internal static partial class FeatureServerEndpoints
             SubLayerIds = null,
             MinScale = null,
             MaxScale = null,
-            GeometryType = MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None)
+            Type = resource.Type == MetadataV2ResourceType.Table ? "Table" : "Feature Layer",
+            GeometryType = resource.Type == MetadataV2ResourceType.Table
+                ? null : MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None)
         };
     }
 
@@ -319,9 +326,7 @@ internal static partial class FeatureServerEndpoints
                 : field.Length,
             Nullable = field.Nullable && !isObjectId,
             Editable = !isGeometry && !isObjectId && !isGlobalId,
-            // V2 has no default-value slot on the canonical field; the catalog/admin layer
-            // owns insertion defaults.
-            DefaultValue = null,
+            DefaultValue = GeoServicesFieldConventions.NormalizeFieldDefault(field),
             Domain = GeoServicesFieldDomainMapper.Map(field.Domain),
             Visible = !field.Hidden
         };
@@ -830,7 +835,7 @@ internal static partial class FeatureServerEndpoints
             MetadataV2FieldType.Float => "esriFieldTypeSingle",
             MetadataV2FieldType.Boolean => "esriFieldTypeSmallInteger",
             MetadataV2FieldType.DateTime => "esriFieldTypeDate",
-            MetadataV2FieldType.Date => "esriFieldTypeDate",
+            MetadataV2FieldType.Date => "esriFieldTypeDateOnly",
             MetadataV2FieldType.Time => "esriFieldTypeString",
             MetadataV2FieldType.Json => "esriFieldTypeString",
             MetadataV2FieldType.Binary => "esriFieldTypeBlob",

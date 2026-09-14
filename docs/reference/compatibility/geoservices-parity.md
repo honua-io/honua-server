@@ -9,6 +9,19 @@ resources:
 ---
 # GeoServices REST parity
 
+## Attribute-only tables
+
+Imported Esri tables publish as canonical Table resources. FeatureServer discovery
+lists them in `tables`; their individual metadata identifies `type: Table` and
+omits geometry type and spatial reference. They retain attribute query, count and
+paging behavior without creating a geometry column or spatial index.
+
+Data reconciliation uses the source's declared geometry capability: geometry and
+extent checks are marked as not applicable for attribute-only sources, while row
+count and attribute checks remain active. An absent geometry on a spatial source
+still fails geometry validation. Importing a table alone does not establish its
+cross-resource relationships; those bindings require separate migration evidence.
+
 Honua provides protocol-level compatibility at Esri GeoServices REST paths for
 selected, operation-scoped workflows. Client support is bounded by this matrix and
 the [cross-client certification matrix](../../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md),
@@ -43,6 +56,31 @@ Status vocabulary:
 - **Preview** — the operation is available for evaluation but is not a GA contract in the current release. Preview is a lifecycle maturity, separate from the implementation-completeness status in the machine-readable matrix.
 - **Stub** — the route exists and returns the spec-shaped response, but the backing data model is deferred; read-style stubs return empty/`false` results and mutation stubs return HTTP 400 rather than fabricating success.
 - **Not implemented** — the operation is not exposed.
+
+## Spatial query input budgets
+
+FeatureServer and MapServer layer and service `query` routes declare the
+`geometry` parameter as structured spatial input for both GET and POST. Its
+decoded UTF-8 size is bounded by `Limits:Geometry:MaxGeometrySize`, and coordinates
+across all parts are bounded by `Limits:Geometry:MaxVerticesPerGeometry`.
+The existing GeoServices geometry parser also validates shape and JSON depth;
+positions must contain finite ordinates. These limits do not simplify geometry.
+
+For POST, the same parameter validation applies to URL-encoded forms, multipart
+forms and supported JSON media types, using the query handler's body conversion
+rules. The body remains available to that handler after validation. Supported
+true-curve filters retain their original definition in the request; validation
+uses the existing densifier with an output-vertex budget shared across all parts.
+Expansion stops at that budget rather than allocating an oversized result first.
+
+Other text parameters and headers retain their existing limits and injection
+validation. A parameter named `geometry` on an unrelated route does not receive
+the spatial allowance. Clients should use the SDK's POST query transport for
+large geometries because intermediary URL limits still apply to GET requests.
+Oversized or invalid geometry returns the established validation error response
+with the applicable budget or shape error. Admission alone does not establish
+source-to-target result parity; migrated applications must reconcile their
+spatial query results against their source services.
 
 ## Service summary
 
@@ -84,7 +122,7 @@ Esri spec: [Feature Service](https://developers.arcgis.com/rest/services-referen
 | Service metadata; layer metadata | Implemented | Dynamic capabilities string; `editFieldsInfo`, `editingInfo`, `timeInfo`, `allowGeometryUpdates`, `supportsStatistics`, normalized `supportedQueryFormats` incl. binary formats. Subtype-bearing layers surface Esri-style editing `types` (one per subtype, each carrying per-field `domains` and an editing template whose `prototype` seeds the subtype code + field default values) and a layer-level `contingentValuesDefinition`, both projected from the canonical Metadata v2 graph and omitted byte-stably when unauthored. The layer-root `templates` array stays empty (in the Esri model, subtype-driven templates live inside `types[]`; no standalone template authoring exists on the canonical graph). |
 | Query (service + layer), queryDomains, relationships, getEstimates (service + layer) | Implemented | Service-level query delegates to a target layer via `layerId`/`layers`. |
 | applyEdits (service + layer), addFeatures, updateFeatures, deleteFeatures, append (service + layer), calculate, validateSQL | Implemented | Multi-layer batch edits; `rollbackOnFailure` defaults `false` for applyEdits, `true` for standalone endpoints; deleteFeatures supports `objectIds`, `where`, and spatial filters. |
-| queryRelatedRecords, queryAttachments | Implemented | Full filter facets (`attachmentTypes`, `keywords`, `size`, `definitionExpression`); `globalIds` rejected with 400 (integer object IDs only). Canonical composite relationships retain `composite: true` in layer metadata and require reciprocal declarations. They are read-only: shared resource/write authorization denies mutations even with write grants, and graph validation rejects enabling edits. Automated composite migration and editable ownership/cascade semantics remain unsupported. |
+| queryRelatedRecords, queryAttachments | Implemented | Full filter facets (`attachmentTypes`, `keywords`, `size`, `definitionExpression`); `globalIds` rejected with 400 (integer object IDs only). Canonical composite relationships retain `composite: true` in layer metadata and require reciprocal declarations. They are read-only: shared resource/write authorization denies mutations even with write grants, and graph validation rejects enabling edits. Automated composite migration and editable ownership/cascade semantics remain unsupported. Attachment parent visibility resolves through the publication's storage binding, including queries without `definitionExpression`. Per-feature attachment reads and mutations use the same bound reader for parent existence and owner-policy checks; stale rows in the default snapshot cannot authorize access to a deleted bound parent. |
 | addAttachment, updateAttachment, deleteAttachments, attachment infos, attachment download | Implemented | All attachment operations are **per-feature**: the route carries `{featureId}` — `POST .../{layerId}/{featureId}/addAttachment`, `.../updateAttachment`, `.../deleteAttachments`. Multipart form-data upload; `GET .../{layerId}/{featureId}/attachments` lists `attachmentInfos`; binary download at `.../{layerId}/{featureId}/attachments/{attachmentId}`. |
 | createReplica, extractChanges, synchronizeReplica, unRegisterReplica | Preview | Explicit opt-in Preview surface in 2026.1. Security/isolation and lifecycle truth are maintained; broader Esri offline-sync parity is deferred to release/2026.2. |
 | generateRenderer | Implemented | Simple renderer by default; `classificationDef` generates class-breaks (equal interval, quantile, natural breaks, standard deviation) or unique-value renderers. |

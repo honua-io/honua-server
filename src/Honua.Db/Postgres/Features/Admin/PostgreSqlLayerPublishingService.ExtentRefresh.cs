@@ -23,10 +23,15 @@ internal sealed partial class PostgreSqlLayerPublishingService
         NpgsqlTransaction transaction,
         string schema,
         string table,
-        string geometryColumn,
+        string? geometryColumn,
         int sourceSrid,
         CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(geometryColumn))
+        {
+            return null;
+        }
+
         var qualifiedTable = $"{QuoteIdentifier(schema)}.{QuoteIdentifier(table)}";
         var quotedGeometryColumn = QuoteIdentifier(geometryColumn);
         var normalizedSourceSrid = sourceSrid > 0 ? sourceSrid : CatalogExtentSrid;

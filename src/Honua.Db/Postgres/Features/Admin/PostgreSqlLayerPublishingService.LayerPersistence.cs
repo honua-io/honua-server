@@ -76,7 +76,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string schema,
         string table,
         string primaryKeyColumn,
-        string geometryColumn,
+        string? geometryColumn,
         string geometryType,
         int srid,
         int storageSrid,
@@ -127,7 +127,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         command.Parameters.AddWithValue("@schema", schema);
         command.Parameters.AddWithValue("@table", table);
         command.Parameters.AddWithValue("@primaryKeyColumn", primaryKeyColumn);
-        command.Parameters.AddWithValue("@geometryColumn", geometryColumn);
+        command.Parameters.Add("@geometryColumn", NpgsqlDbType.Text).Value = (object?)geometryColumn ?? DBNull.Value;
         command.Parameters.Add("@storageOptions", NpgsqlDbType.Jsonb).Value = SourceBackedStorageOptionsJson;
         command.Parameters.AddWithValue("@geometryType", geometryType);
         command.Parameters.AddWithValue("@srid", srid);
@@ -180,13 +180,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task<int> MaterializeLayerFeaturesAsync(
+    private async Task<int> MaterializeLayerFeaturesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         int layerId,
         string schema,
         string table,
-        string geometryColumn,
+        string? geometryColumn,
         int srid,
         IReadOnlyList<ColumnInfo> attributeColumns,
         CancellationToken cancellationToken)
@@ -194,8 +194,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // TODO(honua-server#974): replace this one-time snapshot with the settled
         // publish refresh/CDC path once source-of-truth policy is finalized.
         var sourceTable = $"{QuoteIdentifier(schema)}.{QuoteIdentifier(table)}";
-        var sourceGeometry = $"src.{QuoteIdentifier(geometryColumn)}";
-        var canonicalGeometry = BuildCanonicalGeometryExpression(sourceGeometry);
+        var canonicalGeometry = string.IsNullOrWhiteSpace(geometryColumn)
+            ? "NULL::geometry"
+            : BuildCanonicalGeometryExpression($"src.{QuoteIdentifier(geometryColumn)}");
         var attributesExpression = BuildAttributesExpression(attributeColumns);
         var featuresTable = await ResolveCanonicalFeaturesTableAsync(connection, transaction, cancellationToken)
             .ConfigureAwait(false);
@@ -218,10 +219,28 @@ internal sealed partial class PostgreSqlLayerPublishingService
         command.Parameters.AddWithValue("@layerId", layerId);
         command.Parameters.AddWithValue("@srid", srid);
 
-        var result = await command.ExecuteScalarAsync(cancellationToken);
+        var result = await ExecuteSnapshotCommandAsync(command, cancellationToken);
         return result is int count
             ? count
             : Convert.ToInt32(result, CultureInfo.InvariantCulture);
+    }
+
+    internal async Task<object?> ExecuteSnapshotCommandAsync(NpgsqlCommand command, CancellationToken cancellationToken)
+    {
+        command.CommandTimeout = _materializationTimeoutSeconds;
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        budget.CancelAfter(TimeSpan.FromSeconds(_materializationTimeoutSeconds));
+
+        try
+        {
+            return await command.ExecuteScalarAsync(budget.Token);
+        }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested && budget.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"Layer snapshot materialization exceeded its {_materializationTimeoutSeconds}-second budget. "
+                + "The publication transaction will roll back; the source table is retained.", exception);
+        }
     }
 
     private static async Task<bool> ServiceExistsAsync(

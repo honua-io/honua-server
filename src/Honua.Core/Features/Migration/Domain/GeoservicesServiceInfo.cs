@@ -49,7 +49,8 @@ public sealed record GeoservicesServiceInfo
     public string[] Capabilities { get; init; } = [];
 
     /// <summary>
-    /// Layers available in this service.
+    /// Spatial layers and standalone tables available in this service.
+    /// Each resource retains its source <see cref="GeoservicesLayerInfo.Type"/>.
     /// </summary>
     public GeoservicesLayerInfo[] Layers { get; init; } = [];
 
@@ -119,6 +120,12 @@ public sealed record GeoservicesLayerInfo
     /// Fields available in the layer.
     /// </summary>
     public GeoservicesFieldInfo[] Fields { get; init; } = [];
+
+    /// <summary>
+    /// Source relationship declarations, including incomplete records. Importing this
+    /// resource alone does not recreate these cross-resource bindings.
+    /// </summary>
+    public GeoservicesRelationshipInfo?[] Relationships { get; init; } = [];
 
     /// <summary>
     /// The type of layer (e.g., "Feature Layer", "Table").

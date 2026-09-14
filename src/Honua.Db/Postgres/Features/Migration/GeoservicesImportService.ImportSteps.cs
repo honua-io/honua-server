@@ -312,11 +312,15 @@ internal sealed partial class GeoservicesImportService
                 await SwapStagingIntoTargetAsync(connection, targetSchema, loadTable, request.TableName, cancellationToken);
             }
 
-            // Phase 4: Create spatial index
-            ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.Publishing, request,
-                "Creating spatial index", featuresProcessed, totalFeatures, layerInfo.Name);
+            // Attribute-only Esri tables have no geom column to index.
+            if (!string.IsNullOrEmpty(layerInfo.GeometryType))
+            {
+                // Phase 4: Create spatial index
+                ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.Publishing, request,
+                    "Creating spatial index", featuresProcessed, totalFeatures, layerInfo.Name);
 
-            await CreateSpatialIndexAsync(connection, targetSchema, request.TableName, cancellationToken);
+                await CreateSpatialIndexAsync(connection, targetSchema, request.TableName, cancellationToken);
+            }
             await AnalyzeTableAsync(connection, targetSchema, request.TableName, cancellationToken);
 
             await transaction.CommitSafelyAsync(cancellationToken);
@@ -428,8 +432,10 @@ internal sealed partial class GeoservicesImportService
                 CatalogReconciliation = reconciliation.CatalogReport,
                 CatalogReconciliationExecuted = reconciliation.CatalogCheckExecuted,
                 PublishedTarget = publishedLayer is not null,
+                PublicationRequested = request.AutoPublish,
                 FailedFeatures = failedFeatures,
                 Attachments = attachmentFidelity,
+                Relationships = DescribeUnappliedSourceRelationships(layerInfo, publishedLayer?.LayerId),
                 SourceSnapshot = sourceSnapshot
             });
 
@@ -445,7 +451,9 @@ internal sealed partial class GeoservicesImportService
                 Log.ReconciliationGateBlocked(_logger, request.TableName, reviewReason);
 
                 ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.NeedsReview, request,
-                    "Import published but requires operator review (fidelity gate)",
+                    publishedLayer is null
+                        ? "Import retained but requires operator review (fidelity gate)"
+                        : "Import published but requires operator review (fidelity gate)",
                     featuresProcessed,
                     featuresProcessed,
                     layerInfo.Name,
