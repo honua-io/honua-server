@@ -54,6 +54,17 @@ public sealed class ImageServerMosaicHelpersTimeTests
     }
 
     [UnitTest]
+    public void TryParseTime_BracketedEpochMillisecondExtent_ReturnsStartAndEnd()
+    {
+        // The ArcGIS API for Python sends timeInfo.timeExtent as a JSON array (#4782).
+        ImageServerMosaicHelpers.TryParseTime($"[{Jan10Ms}, {Jan20Ms}]", out var timestamp, out var timeStart, out var error)
+            .Should().BeTrue(error ?? string.Empty);
+
+        timeStart.Should().Be(Jan10);
+        timestamp.Should().Be(Jan20);
+    }
+
+    [UnitTest]
     public void TryParseTime_OpenEndedExtent_ReturnsStartOnly()
     {
         ImageServerMosaicHelpers.TryParseTime($"{Jan10Ms},null", out var timestamp, out var timeStart, out var error)

@@ -100,6 +100,87 @@ public sealed class GeoServicesTemporalQueryBuilderTests
         act.Should().NotThrow();
     }
 
+    [Theory]
+    [InlineData("[1672527600000, 1728950400000]", "1672527600000,1728950400000", true, true)]
+    [InlineData("[1672527600000,1728950400000]", "1672527600000,1728950400000", true, true)]
+    [InlineData(" [ 1672527600000 , 1728950400000 ] ", "1672527600000,1728950400000", true, true)]
+    [InlineData("[null, 1728950400000]", "null,1728950400000", false, true)]
+    [InlineData("[1672527600000, null]", "1672527600000,null", true, false)]
+    [InlineData("[\"2022-12-31T23:00:00Z\", \"2024-10-15T00:00:00Z\"]", "2022-12-31T23:00:00Z,2024-10-15T00:00:00Z", true, true)]
+    [Operation(Operations.Query)]
+    public void TryParseTimeParameter_BracketedExtent_ParsesToSameBoundsAsPlainExtent(
+        string bracketed,
+        string plain,
+        bool hasStart,
+        bool hasEnd)
+    {
+        // The ArcGIS API for Python sends a layer's timeInfo.timeExtent as a JSON array (#4782).
+        // 1672527600000 ms is 2022-12-31T23:00:00Z (2023-01-01T00:00:00Z = 1672531200000, less
+        // one hour) and 1728950400000 ms is 2024-10-15T00:00:00Z (2024-01-01 = 1704067200000,
+        // plus 288 days).
+        var expectedStart = hasStart ? new DateTimeOffset(2022, 12, 31, 23, 0, 0, TimeSpan.Zero) : (DateTimeOffset?)null;
+        var expectedEnd = hasEnd ? new DateTimeOffset(2024, 10, 15, 0, 0, 0, TimeSpan.Zero) : (DateTimeOffset?)null;
+
+        GeoServicesTemporalQueryBuilder.TryParseTimeParameter(bracketed, out var bracketedStart, out var bracketedEnd)
+            .Should().BeTrue();
+        GeoServicesTemporalQueryBuilder.TryParseTimeParameter(plain, out var plainStart, out var plainEnd)
+            .Should().BeTrue();
+
+        bracketedStart.Should().Be(expectedStart);
+        bracketedEnd.Should().Be(expectedEnd);
+        plainStart.Should().Be(expectedStart);
+        plainEnd.Should().Be(expectedEnd);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void TryParseTimeParameter_BracketedNullExtent_IsTheNoFilterForm()
+    {
+        GeoServicesTemporalQueryBuilder.TryParseTimeParameter("[null, null]", out var start, out var end)
+            .Should().BeTrue();
+
+        start.Should().BeNull();
+        end.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("[1672527600000, 1728950400000")]
+    [InlineData("1672527600000, 1728950400000]")]
+    [InlineData("[]")]
+    [InlineData("[1672527600000]")]
+    [InlineData("[1672527600000 1728950400000]")]
+    [InlineData("[1672527600000, 1700000000000, 1728950400000]")]
+    [InlineData("[[1672527600000, 1728950400000]]")]
+    [InlineData("[1728950400000, 1672527600000]")]
+    [InlineData("[yesterday, 1728950400000]")]
+    [InlineData("[\"2022-12-31T23:00:00Z, 1728950400000]")]
+    [Operation(Operations.Query)]
+    public void TryParseTimeParameter_MalformedBracketedExtent_IsRejected(string time)
+    {
+        GeoServicesTemporalQueryBuilder.TryParseTimeParameter(time, out _, out _)
+            .Should().BeFalse();
+
+        var act = () => GeoServicesTemporalQueryBuilder.BuildTemporalExpression(
+            time, timeRelation: null, BuildTemporalResource());
+
+        act.Should().Throw<ArgumentException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public void BuildTemporalExpression_BracketedExtent_BuildsSamePredicateAsPlainExtent()
+    {
+        var resource = BuildTemporalResource();
+
+        var bracketed = GeoServicesTemporalQueryBuilder.BuildTemporalExpression(
+            "[1672527600000, 1728950400000]", timeRelation: null, resource);
+        var plain = GeoServicesTemporalQueryBuilder.BuildTemporalExpression(
+            "1672527600000,1728950400000", timeRelation: null, resource);
+
+        bracketed.Should().NotBeNull();
+        bracketed.Should().BeEquivalentTo(plain, options => options.RespectingRuntimeTypes());
+    }
+
     private static MetadataV2Resource BuildNonTemporalResource()
         => new()
         {
