@@ -19,7 +19,7 @@ namespace Honua.Server.Tests.Features.Admin;
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
-public sealed class AdminLayerAuthoringEndpointsTests : IAsyncLifetime
+public sealed partial class AdminLayerAuthoringEndpointsTests : IAsyncLifetime
 {
     private readonly WebAppFixture _fixture = new();
 
