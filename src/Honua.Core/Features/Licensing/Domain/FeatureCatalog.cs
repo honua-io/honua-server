@@ -584,8 +584,8 @@ public static class FeatureCatalog
         new(RecoveryReportingKey, "RTO/RPO Reporting", Categories.DisasterRecovery,
             HonuaEdition.Enterprise, "Enterprise automated RTO/RPO reporting and recovery-readiness dashboards. Documented recovery expectations and verified restores remain baseline obligations in every edition."),
 
-        // Control plane — Enterprise Preview
-        new(MultiTenancyKey, "Multi-Tenant Operation", Categories.ControlPlane,
-            HonuaEdition.Enterprise, "Preview/trial-only tenant lifecycle, schema routing, and usage surfaces for non-production evaluation. Honua 2026.1 GA deployments are single-tenant; do not use customer production data. There is no GA, availability, performance, durability, SLO, or scale commitment, and Preview status never lowers the security severity of cross-tenant disclosure. Honua does not provide SaaS, hosting, or a managed service, and the Elastic License 2.0 prohibits providing Honua to third parties as a hosted or managed service."),
+        // Internal — Honua's own hosted operation; not offered to licensees
+        new(MultiTenancyKey, "Multi-Tenant Operation", Categories.Internal,
+            HonuaEdition.Enterprise, "Internal to Honua's own hosted operation; not part of the customer-deployable surface and not offered to licensees. Honua deployments are single-tenant. This has no path to general availability as a customer capability: the Elastic License 2.0 prohibits providing Honua to third parties as a hosted or managed service, so a licensee can never be the party operating it. Cross-tenant disclosure remains a full-severity security defect regardless."),
     ];
 }
