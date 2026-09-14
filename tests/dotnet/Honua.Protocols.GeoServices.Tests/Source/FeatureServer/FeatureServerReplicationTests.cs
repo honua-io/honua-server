@@ -254,6 +254,79 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
         root.GetProperty("creationDate").GetInt64().Should().BeGreaterThan(0);
         root.GetProperty("lastSyncDate").GetInt64().Should().BeGreaterThan(0);
         root.GetProperty("layers").EnumerateArray().Should().Contain(layer => layer.GetProperty("id").GetInt32() == 0);
+        if (root.TryGetProperty("layerServerGens", out var perReplicaLayerGens))
+        {
+            perReplicaLayerGens.ValueKind.Should().Be(JsonValueKind.Null, "per-replica replicas carry replicaServerGen instead");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ReplicaInfo, Operations.SynchronizeReplica)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/replicas/{replicaId}")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task ReplicaInfo_PerLayerReplica_EmitsLayerServerGensAsArray()
+    {
+        // #4020: layerServerGens was a JSON-encoded string, so info['layerServerGens'][0]['serverGen']
+        // failed in every client. The expected generations come from the createReplica and
+        // synchronizeReplica responses, not from the info resource under test.
+        var createPayload = JsonSerializer.Serialize(new
+        {
+            replicaName = "ReplicaInfoPerLayer",
+            layers = "0",
+            syncModel = "perLayer",
+            f = "json"
+        });
+        using var createContent = new StringContent(createPayload, Encoding.UTF8, "application/json");
+        var createResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica",
+            createContent);
+        var createBody = await createResponse.Content.ReadAsStringAsync();
+        createResponse.StatusCode.Should().Be(HttpStatusCode.OK, createBody);
+        using var createDoc = JsonDocument.Parse(createBody);
+        var replicaId = createDoc.RootElement.GetProperty("replicaID").GetString()!;
+        var createdLayerGen = createDoc.RootElement.GetProperty("layers").EnumerateArray()
+            .Single(layer => layer.GetProperty("id").GetInt32() == 0)
+            .GetProperty("serverGen").GetInt64();
+
+        var created = await ReadLayerServerGensAsync(replicaId);
+        created.Should().Equal([(0, createdLayerGen)]);
+
+        var syncPayload = JsonSerializer.Serialize(new
+        {
+            replicaID = replicaId,
+            syncDirection = "download",
+            replicaServerGen = createdLayerGen,
+            f = "json"
+        });
+        using var syncContent = new StringContent(syncPayload, Encoding.UTF8, "application/json");
+        var syncResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica",
+            syncContent);
+        var syncBody = await syncResponse.Content.ReadAsStringAsync();
+        syncResponse.StatusCode.Should().Be(HttpStatusCode.OK, syncBody);
+        using var syncDoc = JsonDocument.Parse(syncBody);
+        var syncedGen = syncDoc.RootElement.GetProperty("layerServerGens").EnumerateArray()
+            .Single(layer => layer.GetProperty("id").GetInt32() == 0)
+            .GetProperty("serverGen").GetInt64();
+
+        var synced = await ReadLayerServerGensAsync(replicaId);
+        synced.Should().Equal([(0, syncedGen)], "replica info must report the generation the last sync delivered");
+    }
+
+    private async Task<List<(int Id, long ServerGen)>> ReadLayerServerGensAsync(string replicaId)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/replicas/{replicaId}?f=json");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        var root = document.RootElement;
+        root.GetProperty("syncModel").GetString().Should().Be("perLayer");
+        var layerServerGens = root.GetProperty("layerServerGens");
+        layerServerGens.ValueKind.Should().Be(JsonValueKind.Array, body);
+        return layerServerGens.EnumerateArray()
+            .Select(layer => (layer.GetProperty("id").GetInt32(), layer.GetProperty("serverGen").GetInt64()))
+            .ToList();
     }
 
     [IntegrationTest]

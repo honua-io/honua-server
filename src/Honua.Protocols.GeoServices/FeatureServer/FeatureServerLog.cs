@@ -285,6 +285,17 @@ internal static partial class FeatureServerLog
     public static partial void ApplyEditsIdempotencyConflict(ILogger logger, string serviceId, int layerId);
 
     /// <summary>
+    /// Logs when the synchronizeReplica upload replay store is unavailable (#4026). Best-effort: the
+    /// upload still proceeds, but a retried upload may be re-applied rather than replayed.
+    /// </summary>
+    /// <param name="logger">The logger instance.</param>
+    /// <param name="serviceId">The service identifier.</param>
+    /// <param name="replicaId">The replica identifier.</param>
+    /// <param name="exception">The exception raised by the store.</param>
+    [LoggerMessage(EventId = 2409, Level = LogLevel.Warning, Message = "Replica upload idempotency store unavailable for service '{ServiceId}' replica '{ReplicaId}'; retry deduplication is degraded")]
+    public static partial void ReplicaUploadIdempotencyStoreUnavailable(ILogger logger, string serviceId, string replicaId, Exception exception);
+
+    /// <summary>
     /// Logs when adding a feature fails.
     /// </summary>
     /// <param name="logger">The logger instance.</param>

@@ -138,6 +138,27 @@ Contract details:
   same-key retry receives `409`; this safety bias prevents duplicating rows that may already
   have committed (#3052).
 
+#### synchronizeReplica upload retries
+
+`synchronizeReplica` uploads (`syncDirection=upload` or `bidirectional`) are at-most-once too
+(#4026). Field clients on flaky links re-send an upload whose response they never received, and
+that retry used to insert its adds a second time. The first upload that applies is recorded for
+the dedupe window (24 hours). A retry returns the recorded `appliedAdds`, `appliedUpdates`,
+`appliedDeletes`, `conflicts` and, with `returnIdsForAdds=true`, `editResults` instead of applying
+the edits again. A bidirectional retry still assembles its download half fresh.
+
+- A client key identifies the upload: the `Idempotency-Key` header or the Esri `editsUploadID`
+  parameter, under the key rules above. When both are sent they must match. A key already used for
+  different edits is rejected with a 400. Edits differ when their `syncDirection`,
+  `rollbackOnFailure`, `conflictHandling` or `edits` differ.
+- Without a key, a fingerprint of those same inputs identifies the upload. It replays only while the
+  replica has acknowledged no later upload, so identical edits sent again after another upload apply
+  as new data. A client that deliberately sends identical edits back to back should send a new key
+  each time.
+- The key is scoped to the principal, service and replica. The reservation, the Redis or in-process
+  backing, the `409` for an in-flight duplicate, and the release when the upload provably committed
+  nothing all follow the applyEdits contract above.
+
 ### applyEdits per-feature error codes
 
 `applyEdits` (and the standalone `addFeatures`/`updateFeatures`/`deleteFeatures`
