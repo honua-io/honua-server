@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
@@ -251,10 +252,12 @@ internal static partial class FeatureServerEndpoints
             .Select(pair => (pair.Publication, Resource: pair.Resource!))
             .ToArray();
 
-        return AccessPolicyHelpers.RequireAnyResourceAccess(
+        return await AccessPolicyHelpers.RequireAnyResourceAccessAsync(
             context,
             allPairs.Select(pair => pair.Resource),
-            service);
+            service,
+            AuthorizationOperation.Query,
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -291,17 +294,20 @@ internal static partial class FeatureServerEndpoints
             .Select(pair => (pair.Publication, Resource: pair.Resource!))
             .ToArray();
 
-        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+        var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
             context,
             allPairs.Select(pair => pair.Resource),
-            service);
+            service,
+            AuthorizationOperation.Query,
+            cancellationToken).ConfigureAwait(false);
+        var accessError = access.RequireAny(allPairs.Select(pair => pair.Resource));
         if (accessError != null)
         {
             return (null, accessError);
         }
 
         var layers = allPairs
-            .Where(pair => AccessPolicyHelpers.IsResourceAccessible(context, pair.Resource, service))
+            .Where(pair => access.IsAccessible(pair.Resource))
             .Select(pair => (
                 PublicLayerId: pair.Publication.LayerIndex ?? snapshot.ResolveStorageLayerId(pair.Resource) ?? -1,
                 pair.Resource))

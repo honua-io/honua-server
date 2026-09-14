@@ -659,11 +659,75 @@ internal static class AccessPolicyHelpers
             : null);
     }
 
+    /// <summary>
+    /// Resolves the canonical per-operation decision (#1376) once for each supplied resource so
+    /// synchronous layer selection shares it with the async handlers (#4783).
+    /// </summary>
+    /// <param name="context">The request context.</param>
+    /// <param name="resources">The resources the request may touch.</param>
+    /// <param name="service">The owning service, when known.</param>
+    /// <param name="operation">The canonical operation being authorized.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The per-resource decisions.</returns>
+    public static async Task<ResourceAccessSet> EvaluateResourceAccessSetAsync(
+        HttpContext context,
+        IEnumerable<MetadataV2Resource> resources,
+        MetadataV2Service? service,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(resources);
+        var decisions = new Dictionary<MetadataV2Resource, AccessDecision>(ReferenceEqualityComparer.Instance);
+        foreach (var resource in resources)
+        {
+            if (!decisions.ContainsKey(resource))
+            {
+                decisions[resource] = await EvaluateResourceAccessAsync(
+                    context, resource, service, operation, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        return new ResourceAccessSet(context, service, ScopeForOperation(operation), decisions);
+    }
+
+    /// <summary>
+    /// Operation-aware counterpart of <see cref="RequireAnyResourceAccess"/>: allows the request
+    /// when the canonical resolver or the coarse policy admits any of the resources (#4783).
+    /// </summary>
+    /// <param name="context">The request context.</param>
+    /// <param name="resources">The candidate resources.</param>
+    /// <param name="service">The owning service, when known.</param>
+    /// <param name="operation">The canonical operation being authorized.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>An error result when every resource is denied, otherwise <see langword="null"/>.</returns>
+    public static async Task<IResult?> RequireAnyResourceAccessAsync(
+        HttpContext context,
+        IEnumerable<MetadataV2Resource> resources,
+        MetadataV2Service? service,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(resources);
+        IReadOnlyCollection<MetadataV2Resource> candidates = resources as IReadOnlyCollection<MetadataV2Resource> ?? [.. resources];
+        var access = await EvaluateResourceAccessSetAsync(
+            context, candidates, service, operation, cancellationToken).ConfigureAwait(false);
+        return access.RequireAny(candidates);
+    }
+
     public static IResult? RequireAnyResourceAccess(
         HttpContext context,
         IEnumerable<MetadataV2Resource> resources,
         MetadataV2Service? service = null,
         AccessScope scope = AccessScope.Read)
+        => RequireAnyDecision(
+            context,
+            resources,
+            resource => EvaluateResourceAccess(context, resource, service, scope));
+
+    internal static IResult? RequireAnyDecision(
+        HttpContext context,
+        IEnumerable<MetadataV2Resource> resources,
+        Func<MetadataV2Resource, AccessDecision> evaluate)
     {
         ArgumentNullException.ThrowIfNull(resources);
         var requiresAuth = false;
@@ -671,7 +735,7 @@ internal static class AccessPolicyHelpers
 
         foreach (var resource in resources)
         {
-            var decision = EvaluateResourceAccess(context, resource, service, scope);
+            var decision = evaluate(resource);
             if (decision.IsAllowed)
             {
                 return null;

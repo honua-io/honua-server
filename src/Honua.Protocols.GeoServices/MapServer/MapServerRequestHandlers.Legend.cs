@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
@@ -120,10 +121,13 @@ internal static partial class MapServerEndpoints
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var legendLayerDescriptors = ResolveLegendLayers(snapshot, service);
 
-        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+        var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
             context,
             legendLayerDescriptors.Select(static layer => layer.Resource),
-            service);
+            service,
+            AuthorizationOperation.Metadata,
+            cancellationToken).ConfigureAwait(false);
+        var accessError = access.RequireAny(legendLayerDescriptors.Select(static layer => layer.Resource));
         if (accessError != null)
         {
             return accessError;
@@ -156,13 +160,13 @@ internal static partial class MapServerEndpoints
                     LayerId = dynamicLayer.Id,
                     DrawingInfoJson = dynamicLayer.DrawingInfoJson
                 })
-                .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
+                .Where(layer => access.IsAccessible(layer.Resource))
                 .ToArray();
         }
         else
         {
             visibleLayers = legendLayerDescriptors
-                .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
+                .Where(layer => access.IsAccessible(layer.Resource))
                 .ToArray();
         }
 

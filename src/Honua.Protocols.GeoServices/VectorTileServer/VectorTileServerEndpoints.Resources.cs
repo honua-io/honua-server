@@ -15,6 +15,7 @@
 // 0-255 range (other ranges 404). These are deterministic in-process stubs (VectorTileEmbeddedAssets).
 
 using System.Diagnostics;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Styling.Abstractions;
@@ -156,7 +157,8 @@ internal static partial class VectorTileServerEndpoints
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
 
-            var primary = ResolvePrimaryVectorTilePublication(snapshot, service, context);
+            var primary = await ResolvePrimaryVectorTilePublicationAsync(
+                snapshot, service, context, AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false);
             if (primary is null)
             {
                 return StandardErrorHelpers.CreateNotFound(
@@ -209,10 +211,12 @@ internal static partial class VectorTileServerEndpoints
     /// with its backing resource. The tile route and root.json both call this so the style always
     /// describes the layer the tiles render (honua-server#4112).
     /// </summary>
-    private static (MetadataV2Publication Publication, MetadataV2Resource Resource)? ResolvePrimaryVectorTilePublication(
+    private static async Task<(MetadataV2Publication Publication, MetadataV2Resource Resource)?> ResolvePrimaryVectorTilePublicationAsync(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Service service,
-        HttpContext context)
+        HttpContext context,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken)
     {
         (MetadataV2Publication Publication, MetadataV2Resource Resource)? best = null;
         foreach (var publication in snapshot.Index.PublicationsByService[service.Metadata.Id])
@@ -223,7 +227,8 @@ internal static partial class VectorTileServerEndpoints
                 continue;
             }
 
-            if (!AccessPolicyHelpers.IsResourceAccessible(context, resource!, service))
+            if (!await AccessPolicyHelpers.IsResourceAccessibleAsync(
+                    context, resource!, service, operation, cancellationToken).ConfigureAwait(false))
             {
                 continue;
             }

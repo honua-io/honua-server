@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -174,10 +175,13 @@ internal static partial class FeatureServerEndpoints
         var service = serviceValidationResult.Service!;
         var snapshot = serviceValidationResult.Snapshot!;
         var serviceLayers = ResolveServiceReplicaLayersV2(service, snapshot);
-        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+        var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
             context,
             serviceLayers.Select(layer => layer.Resource),
-            service);
+            service,
+            AuthorizationOperation.Query,
+            cancellationToken).ConfigureAwait(false);
+        var accessError = access.RequireAny(serviceLayers.Select(layer => layer.Resource));
         if (accessError != null)
         {
             return accessError;
@@ -190,7 +194,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         var accessibleLayerIds = serviceLayers
-            .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
+            .Where(layer => access.IsAccessible(layer.Resource))
             .Select(layer => layer.PublicLayerId)
             .ToHashSet();
 
@@ -265,7 +269,8 @@ internal static partial class FeatureServerEndpoints
         }
 
         var replica = ToReplicaState(replicaRecord);
-        if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, AccessScope.Read, out var replicaLayers, out var replicaLayerError))
+        var replicaAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Read, cancellationToken).ConfigureAwait(false);
+        if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, replicaAccess, out var replicaLayers, out var replicaLayerError))
         {
             return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
                 context,
@@ -407,14 +412,15 @@ internal static partial class FeatureServerEndpoints
                 ["This server does not replicate attachments. Omit returnAttachments or pass returnAttachments=false, and synchronize attachments through the FeatureServer attachment endpoints."]);
         }
 
+        var replicaAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Write, cancellationToken).ConfigureAwait(false);
         if (!TryResolveReplicaLayerIdsV2(
                 context,
                 service,
                 snapshot,
+                replicaAccess,
                 layersParam,
                 out var layerIds,
-                out var layerError,
-                AccessScope.Write))
+                out var layerError))
         {
             return layerError ?? StandardErrorHelpers.CreateBadRequest(
                 context,
@@ -537,7 +543,9 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
-        if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, AccessScope.Read, out var replicaLayers, out var replicaLayerError))
+        var replicaAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Read, cancellationToken).ConfigureAwait(false);
+
+        if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, replicaAccess, out var replicaLayers, out var replicaLayerError))
         {
             return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
                 context,
@@ -834,7 +842,8 @@ internal static partial class FeatureServerEndpoints
         // accessible service layers. This reuses the same access-checked resolution the
         // replica flow uses for the layers parameter.
         var layersParam = GetValueString(values, "layers");
-        if (!TryResolveReplicaLayerIdsV2(context, service, snapshot, layersParam, out var requestedLayerIds, out var layerError))
+        var replicaAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Read, cancellationToken).ConfigureAwait(false);
+        if (!TryResolveReplicaLayerIdsV2(context, service, snapshot, replicaAccess, layersParam, out var requestedLayerIds, out var layerError))
         {
             return layerError ?? StandardErrorHelpers.CreateBadRequest(context,
                 "Unable to resolve layers for extractChanges.");
@@ -1129,7 +1138,9 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
-        if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, AccessScope.Write, out var replicaLayers, out var replicaLayerError))
+        var replicaAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Write, cancellationToken).ConfigureAwait(false);
+
+        if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, replicaAccess, out var replicaLayers, out var replicaLayerError))
         {
             return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
                 context,
@@ -2281,7 +2292,9 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
-        if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, AccessScope.Write, out var replicaLayers, out var replicaLayerError))
+        var replicaAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Write, cancellationToken).ConfigureAwait(false);
+
+        if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, replicaAccess, out var replicaLayers, out var replicaLayerError))
         {
             return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
                 context,
@@ -2383,14 +2396,32 @@ internal static partial class FeatureServerEndpoints
         ];
     }
 
+    /// <summary>
+    /// Resolves the canonical per-operation access decisions (#4783) for every replica-eligible layer
+    /// of the service, so the synchronous replica layer resolution applies permission grants as well
+    /// as the coarse access policy.
+    /// </summary>
+    private static Task<ResourceAccessSet> ResolveReplicaLayerAccessAsync(
+        HttpContext context,
+        MetadataV2Service service,
+        MetadataV2GraphSnapshot snapshot,
+        AccessScope scope,
+        CancellationToken cancellationToken)
+        => AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
+            context,
+            ResolveServiceReplicaLayersV2(service, snapshot).Select(layer => layer.Resource),
+            service,
+            AccessPolicyHelpers.DefaultOperationForScope(scope),
+            cancellationToken);
+
     private static bool TryResolveReplicaLayerIdsV2(
         HttpContext context,
         MetadataV2Service service,
         MetadataV2GraphSnapshot snapshot,
+        ResourceAccessSet access,
         string? layersParam,
         out int[] layerIds,
-        out IResult? error,
-        AccessScope scope = AccessScope.Read)
+        out IResult? error)
     {
         layerIds = [];
         error = null;
@@ -2399,17 +2430,13 @@ internal static partial class FeatureServerEndpoints
         {
             var serviceLayers = ResolveServiceReplicaLayersV2(service, snapshot);
             var accessibleLayers = serviceLayers
-                .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service, scope))
+                .Where(layer => access.IsAccessible(layer.Resource))
                 .Select(layer => layer.PublicLayerId)
                 .ToArray();
 
             if (accessibleLayers.Length == 0)
             {
-                error = AccessPolicyHelpers.RequireAnyResourceAccess(
-                            context,
-                            serviceLayers.Select(layer => layer.Resource),
-                            service,
-                            scope)
+                error = access.RequireAny(serviceLayers.Select(layer => layer.Resource))
                         ?? StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage);
                 return false;
             }
@@ -2453,7 +2480,7 @@ internal static partial class FeatureServerEndpoints
                 return false;
             }
 
-            var accessError = AccessPolicyHelpers.RequireResourceAccess(context, layer.Resource, service, scope);
+            var accessError = access.RequireAccess(layer.Resource);
             if (accessError != null)
             {
                 error = accessError;
@@ -2480,7 +2507,7 @@ internal static partial class FeatureServerEndpoints
         MetadataV2Service service,
         MetadataV2GraphSnapshot snapshot,
         ReplicaState replica,
-        AccessScope scope,
+        ResourceAccessSet access,
         out ReplicaLayerV2[] layers,
         out IResult? error)
     {
@@ -2501,7 +2528,7 @@ internal static partial class FeatureServerEndpoints
                 return false;
             }
 
-            var accessError = AccessPolicyHelpers.RequireResourceAccess(context, layer.Resource, service, scope);
+            var accessError = access.RequireAccess(layer.Resource);
             if (accessError != null)
             {
                 error = accessError;

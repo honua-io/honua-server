@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
@@ -67,18 +68,17 @@ internal static partial class MapServerEndpoints
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var publishedLayers = ResolveMapServerMetadataLayers(snapshot, service);
 
-            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            var (visibleLayers, accessError) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
                 context,
-                publishedLayers.Select(static layer => layer.Resource),
-                service);
+                publishedLayers,
+                static layer => layer.Resource,
+                service,
+                AuthorizationOperation.Metadata,
+                cancellationToken).ConfigureAwait(false);
             if (accessError != null)
             {
                 return accessError;
             }
-
-            var visibleLayers = publishedLayers
-                .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
-                .ToArray();
 
             var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
             var maxRecordCount = limitsOptions.Query.MaxRecordCount;
@@ -188,18 +188,17 @@ internal static partial class MapServerEndpoints
                 return StandardErrorHelpers.CreateBadRequest(context, selectionError ?? "Invalid layers parameter.");
             }
 
-            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            var (accessibleLayers, accessError) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
                 context,
-                selectedLayers.Select(static layer => layer.Resource),
-                service);
+                selectedLayers,
+                static layer => layer.Resource,
+                service,
+                AuthorizationOperation.Metadata,
+                cancellationToken).ConfigureAwait(false);
             if (accessError != null)
             {
                 return accessError;
             }
-
-            var accessibleLayers = selectedLayers
-                .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
-                .ToArray();
 
             // Esri MapServer queryDomains returns each distinct domain once across
             // the requested layers; de-duplicate by (domain name, field name).
