@@ -8,6 +8,13 @@ namespace Honua.Core.Features.Admin.Domain;
 /// </summary>
 public sealed class LayerPublishRequest
 {
+    /// <summary>
+    /// Publish an independent editable copy in the server's managed feature store.
+    /// The source remains unchanged. Source object IDs are retained in
+    /// <c>honua_source_id</c>; the copy receives its own stable object IDs.
+    /// </summary>
+    public bool CreateEditableCopy { get; init; }
+
     /// <summary>Allow an empty generated output with a known schema. Ordinary publication requires rows.</summary>
     public bool AllowEmptyTable { get; init; }
 
@@ -60,6 +67,12 @@ public sealed class LayerPublishRequest
     /// Primary key column name.
     /// </summary>
     public string? PrimaryKey { get; init; }
+
+    /// <summary>Published UUID column containing imported edit-stable global IDs. Does not grant editing.</summary>
+    public string? GlobalIdField { get; init; }
+
+    /// <summary>Whether this resource exposes the configured attachment store. Does not prove attachment-copy fidelity.</summary>
+    public bool SupportsAttachments { get; init; }
 
     /// <summary>
     /// List of attribute fields to publish (empty means include all).

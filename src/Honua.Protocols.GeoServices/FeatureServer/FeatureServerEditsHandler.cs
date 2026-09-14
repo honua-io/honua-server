@@ -1754,6 +1754,17 @@ internal sealed class FeatureServerEditsHandler(
                 .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.OrdinalIgnoreCase);
         }
 
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+        if (existingFeature is not null)
+        {
+            // The update's object-ID attribute addressed the row during the pre-read.
+            // It is not a mutation of that row's identity, including when a custom
+            // primary field is correctly advertised as non-editable.
+            attributesToValidate = attributesToValidate
+                .Where(entry => !entry.Key.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase))
+                .ToDictionary(entry => entry.Key, entry => entry.Value, StringComparer.OrdinalIgnoreCase);
+        }
+
         var attributesResult = _mutationValidator.ValidateAttributes(
             resource,
             attributesToValidate,
@@ -1782,10 +1793,14 @@ internal sealed class FeatureServerEditsHandler(
             attributes[key] = value;
         }
 
-        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         if (objectIdFieldName.Equals(FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase))
         {
             attributes.Remove(objectIdFieldName);
+        }
+        else if (existingFeature is { } currentFeature &&
+                 currentFeature.Attributes.TryGetValue(objectIdFieldName, out var currentObjectId))
+        {
+            attributes[objectIdFieldName] = currentObjectId;
         }
 
         // Esri attribute rules fire on the shared edit path after attribute validation

@@ -31,7 +31,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     IMetadataV2GraphStore metadataGraphStore,
     ILogger<PostgreSqlLayerPublishingService> logger,
     string? metadataSchema = null,
-    Honua.Core.Features.Styling.Abstractions.IStyleCatalog? styleCatalog = null) : ILayerPublishingService
+    Honua.Core.Features.Styling.Abstractions.IStyleCatalog? styleCatalog = null,
+    Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider? managedConnectionProvider = null) : ILayerPublishingService
 {
     private const string DefaultServiceName = "default";
     private const int CatalogExtentSrid = 4326;
@@ -46,6 +47,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     private const int MaxJsonbBuildObjectPairs = 50;
     private static readonly string[] _defaultFormats = ["JSON", "GeoJSON"];
     private static readonly string[] _defaultCapabilities = ["Query", "Extract"];
+    private static readonly string[] _editableCapabilities = ["Query", "Extract", "Create", "Update", "Delete"];
+    private const string ManagedSourceIdField = "honua_source_id";
+    private readonly Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider? _managedConnectionProvider = managedConnectionProvider;
+    private readonly string _managedFeaturesTable = string.IsNullOrEmpty(metadataSchema)
+        ? "features"
+        : SchemaSearchPath.QualifyTable("features", metadataSchema);
 
     private readonly ITableDiscoveryService _tableDiscoveryService = tableDiscoveryService;
     private readonly IMetadataV2GraphStore _metadataGraphStore = metadataGraphStore;
@@ -205,7 +212,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 },
                 cancellationToken)
             .ConfigureAwait(false);
-        ThrowIfPublishValidationFailed(validation);
+        ThrowIfPublishValidationFailed(validation, request.CreateEditableCopy);
 
         var tableInfo = await ResolveTableInfoAsync(connectionString, schema, table, cancellationToken)
             ?? throw new LayerPublishingException(
@@ -287,6 +294,17 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         var fields = BuildLayerFields(selectedColumns, primaryKeyColumn, geometryColumn, request.FieldDomains);
 
+        var managedSchema = request.CreateEditableCopy
+            ? await ValidateManagedCopyTargetAsync(connectionString, fields, cancellationToken).ConfigureAwait(false)
+            : null;
+        if (request.CreateEditableCopy)
+        {
+            var primaryIndex = fields.FindIndex(field => field.Name.Equals(primaryKeyColumn.Name, StringComparison.OrdinalIgnoreCase));
+            fields[primaryIndex] = fields[primaryIndex] with { Type = MetadataV2FieldType.BigInteger };
+            fields.Add(new LayerFieldInsert(ManagedSourceIdField, MetadataV2FieldType.BigInteger, null, true,
+                "Original source object ID for migration identity mapping; null for newly created features."));
+        }
+
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -297,7 +315,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         await EnsureServiceAsync(connection, transaction, serviceName, srid, request.ConnectionId, cancellationToken);
         await AcquireLayerPublishLockAsync(connection, transaction, schema, table, cancellationToken);
         var existingLayerId = await FindExistingLayerAsync(connection, transaction, schema, table, cancellationToken);
-        if (existingLayerId.HasValue)
+        if (existingLayerId.HasValue && !request.CreateEditableCopy)
         {
             throw new LayerPublishingException(
                 LayerPublishingErrorKind.Conflict,
@@ -347,6 +365,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             cancellationToken);
         Log.LayerMaterialized(_logger, layerId, materializedCount);
 
+        if (managedSchema is not null)
+        {
+            await PrepareManagedCopyAsync(connection, transaction, layerId, managedSchema, primaryKeyColumn.Name,
+                srid, cancellationToken).ConfigureAwait(false);
+        }
+
         await RefreshLayerExtentAsync(connection, transaction, layerId, cancellationToken);
 
         await EnsureServiceLayerAsync(connection, transaction, serviceName, layerId, cancellationToken);
@@ -364,13 +388,13 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                     serviceName,
                     request,
                     layerId,
-                    schema,
-                    table,
+                    managedSchema ?? schema,
+                    managedSchema is null ? table : "features",
                     primaryKeyColumn.Name,
                     geometryColumn,
                     geometryType,
                     srid,
-                    storageSrid,
+                    managedSchema is null ? storageSrid : srid,
                     fields,
                     extent,
                     cancellationToken)

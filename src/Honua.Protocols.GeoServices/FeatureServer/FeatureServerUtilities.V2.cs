@@ -138,6 +138,7 @@ internal static partial class FeatureServerEndpoints
 
         var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
         var displayField = ResolveDisplayFieldFromResource(resource, objectIdField);
+        var globalIdField = ResolveGlobalIdFieldV2(resource);
         var supportsStatistics = true;
         var supportsAdvancedQueries = ServiceSupportsAdvancedQueriesV2(service);
         var supportsRelated = resource.Relationships.Count > 0;
@@ -192,10 +193,11 @@ internal static partial class FeatureServerEndpoints
             Extent = extent,
             TimeInfo = timeInfo,
             ExtrusionInfo = extrusionInfo,
-            Fields = [.. ResolveVisibleFieldsV2(resource).Select(field => MapFieldInfoV2(field, objectIdField))],
+            Fields = [.. ResolveVisibleFieldsV2(resource).Select(field => MapFieldInfoV2(field, objectIdField, globalIdField))],
             MaxRecordCount = queryLimits.MaxRecordCount,
             ObjectIdField = objectIdField,
             DisplayField = displayField,
+            GlobalIdField = globalIdField,
             UniqueIdField = new UniqueIdFieldInfo { Name = objectIdField, IsSystemMaintained = true },
             DrawingInfo = drawingInfo.HasValue ? drawingInfo.Value : null,
             PopupInfo = popupInfo.HasValue ? popupInfo.Value : null,
@@ -292,12 +294,13 @@ internal static partial class FeatureServerEndpoints
     /// <c>esriFieldTypeOID</c> regardless of its SQL type so that Esri clients can
     /// locate the OID field by type (see issue #1299).
     /// </summary>
-    internal static GeoServicesFieldInfo MapFieldInfoV2(MetadataV2Field field, string objectIdFieldName)
+    internal static GeoServicesFieldInfo MapFieldInfoV2(MetadataV2Field field, string objectIdFieldName, string? globalIdFieldName = null)
     {
         ArgumentNullException.ThrowIfNull(field);
 
         var isObjectId = field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase);
-        var geoServicesType = isObjectId ? "esriFieldTypeOID" : MapFieldTypeToGeoServicesV2(field.Type);
+        var isGlobalId = field.Type == MetadataV2FieldType.Uuid && field.Name.Equals(globalIdFieldName, StringComparison.OrdinalIgnoreCase);
+        var geoServicesType = isObjectId ? "esriFieldTypeOID" : isGlobalId ? "esriFieldTypeGlobalID" : MapFieldTypeToGeoServicesV2(field.Type);
         var sqlType = MapFieldTypeToSqlV2(field.Type);
         var isGeometry = field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography;
 
@@ -315,7 +318,7 @@ internal static partial class FeatureServerEndpoints
                 ? GeoServicesFieldConventions.ResolveStringFieldLength(field.Length)
                 : field.Length,
             Nullable = field.Nullable && !isObjectId,
-            Editable = !isGeometry && !isObjectId,
+            Editable = !isGeometry && !isObjectId && !isGlobalId,
             // V2 has no default-value slot on the canonical field; the catalog/admin layer
             // owns insertion defaults.
             DefaultValue = null,
@@ -760,8 +763,8 @@ internal static partial class FeatureServerEndpoints
                 RelatedTableId = relatedLayerId,
                 Role = relationship.Role,
                 Cardinality = MapEsriCardinality(relationship.Cardinality),
-                Composite = false,
-                KeyField = relationship.DestinationField,
+                Composite = relationship.Composite,
+                KeyField = relationship.OriginField,
                 OriginKeyField = relationship.OriginField,
                 DestinationKeyField = relationship.DestinationField,
                 Description = relationship.Description
@@ -942,13 +945,13 @@ internal static partial class FeatureServerEndpoints
     {
         var hasPublications = publications is { Count: > 0 };
         var supportsCreate = hasPublications
-            ? publications!.Any(pair => ServiceSupportsOperationV2(service, "Create", pair.Publication))
+            ? publications!.Any(pair => !MetadataV2RelationshipEditPolicy.RequiresReadOnly(pair.Resource) && ServiceSupportsOperationV2(service, "Create", pair.Publication))
             : ServiceSupportsOperationV2(service, "Create");
         var supportsUpdate = hasPublications
-            ? publications!.Any(pair => ServiceSupportsOperationV2(service, "Update", pair.Publication))
+            ? publications!.Any(pair => !MetadataV2RelationshipEditPolicy.RequiresReadOnly(pair.Resource) && ServiceSupportsOperationV2(service, "Update", pair.Publication))
             : ServiceSupportsOperationV2(service, "Update");
         var supportsDelete = hasPublications
-            ? publications!.Any(pair => ServiceSupportsOperationV2(service, "Delete", pair.Publication))
+            ? publications!.Any(pair => !MetadataV2RelationshipEditPolicy.RequiresReadOnly(pair.Resource) && ServiceSupportsOperationV2(service, "Delete", pair.Publication))
             : ServiceSupportsOperationV2(service, "Delete");
 
         if (supportsCreate)
@@ -985,15 +988,20 @@ internal static partial class FeatureServerEndpoints
             .Any(capability => capability.Equals("Sync", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
-    /// V2 equivalent of <c>layer.SupportsAttachments</c>. V2 doesn't model attachments on the
-    /// canonical resource shape; the resource opts in via <c>resource.Metadata.Annotations</c>
-    /// (<c>honua.io/attachments=true</c>) or the legacy <c>"supportsAttachments"</c> annotation.
+    /// Resolves only declared, visible UUID fields as the public GlobalID binding.
+    /// </summary>
+    internal static string? ResolveGlobalIdFieldV2(MetadataV2Resource resource)
+        => resource.SchemaFields.FirstOrDefault(field => !field.Hidden && field.Type == MetadataV2FieldType.Uuid &&
+            field.Name.Equals(resource.Editing?.GlobalIdField, StringComparison.OrdinalIgnoreCase))?.Name;
+
+    /// <summary>
+    /// Reads canonical attachment support. Legacy annotations remain a fallback for
+    /// resources predating the canonical Editing object.
     /// </summary>
     internal static bool ResourceSupportsAttachmentsV2(MetadataV2Resource resource)
     {
-        // Canonical annotation key. Keep the legacy spelling alongside so resources migrated
-        // verbatim from v1 still resolve.
-        return TryReadBoolAnnotation(resource.Metadata.Annotations, "honua.io/attachments") ??
+        return resource.Editing?.SupportsAttachments ??
+               TryReadBoolAnnotation(resource.Metadata.Annotations, "honua.io/attachments") ??
                TryReadBoolAnnotation(resource.Metadata.Annotations, "supportsAttachments") ??
                false;
     }

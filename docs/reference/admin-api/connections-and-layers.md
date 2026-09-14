@@ -84,13 +84,86 @@ All fields are optional and absent by default. Honua does not infer license righ
 | PUT | `/api/v1/admin/services/{serviceName}/mapserver` | Update MapServer defaults and limits |
 | PUT | `/api/v1/admin/services/{serviceName}/access-policy` | Update service access policy (read/write roles, anonymous access) |
 | PUT | `/api/v1/admin/services/{serviceName}/timeinfo` | Update service-level temporal metadata |
-| PUT | `/api/v1/admin/services/{serviceName}/layers/{layerId}/metadata` | Patch layer-level governance, access policy, time info, and raster mosaic defaults |
+| PUT | `/api/v1/admin/services/{serviceName}/layers/{layerId}/metadata` | Patch layer-level governance, editing bindings, access policy, time info, and raster mosaic defaults |
 
 Layer metadata accepts `rasterMosaic.mergeStrategy` values `newest`, `oldest`, `average`, `max`, and `min` (case-insensitive). An empty string clears the layer default; a missing or `null` field preserves the existing value; unknown values return `400`.
 
 The layer metadata update accepts the same `license`, `attribution`, `publisher`, `licenseUrl`, and `sourceUrl` fields and limits as publish. It is a patch: an omitted or `null` governance field preserves its current value, while an empty string clears that field (or removes the corresponding link). A license-only patch derives or refreshes the canonical link for a standalone SPDX identifier unless an explicit custom license URL already exists. Malformed SPDX expressions, over-limit text, non-HTTP(S)/relative URLs, embedded URL credentials, and control characters return `400`; rejected values are not copied into canonical metadata.
 
 Run `PUT /api/v1/admin/services/city/access-policy` with `{"readRole":"viewer","writeRole":"editor","allowAnonymousRead":false}`.
+
+### Repair imported editing metadata
+
+Use the layer metadata endpoint's `editing` object to repair a cached import:
+
+```json
+{
+  "editing": {
+    "globalIdField": "globalid",
+    "supportsAttachments": true
+  }
+}
+```
+
+The GlobalID must name a declared UUID field; comparison is case-insensitive and
+the stored binding uses the field's declared spelling. An empty string clears
+the binding. Omitted or null fields preserve existing values. Attachment support
+is a declaration: independently verify the imported attachment inventory and
+bytes before treating the migration as complete.
+
+This operation changes canonical metadata, preserving stored rows, attachment
+parent IDs, storage bindings, filters and access policies. The response includes
+the persisted `editing` object. The update uses the current graph revision and
+revalidates the service/layer binding on concurrency retries. Invalid repairs
+return `400` without persisting other fields in the same patch.
+
+To change edit policy explicitly, include nullable `create`, `update` and `delete`
+booleans in `editing`. These affect only the selected service's FeatureServer
+publication, preserve unrelated capability tokens and publications, and do not
+grant a user write permission. Resource attachment and GlobalID bindings are
+shared by its publications. Enabling writes requires the selected storage binding
+to declare edit support; Query-only imported table bindings currently do not.
+Repairing metadata alone does not make their writer available. Composite
+relationships remain read-only even when the underlying storage supports edits.
+
+## Publish an editable managed copy
+
+`POST /api/v1/admin/connections/{id}/layers` accepts `createEditableCopy: true`.
+Use this after importing a source into the server's database when the target
+should own its data and support editing:
+
+```json
+{
+  "schema": "honua_data",
+  "table": "imported_points",
+  "layerName": "Editable points",
+  "serviceName": "editable-points",
+  "primaryKey": "id",
+  "geometryColumn": "geom",
+  "geometryType": "Point",
+  "srid": 4326,
+  "createEditableCopy": true
+}
+```
+
+The copy reads and writes the managed feature store and declares Create, Update
+and Delete on its FeatureServer publication. Normal authentication and edit
+authorization still apply. The source table and its existing publications are
+unchanged. Omitting this option retains ordinary source-backed publication.
+
+The copy receives new object IDs. Its read-only `honua_source_id` field records
+each imported source ID, so migration can map attachments and relationships to
+the corresponding new target ID. New features have no source ID. This reserved
+field cannot already be part of the selected source schema. The option does not
+copy attachments or establish relationships; those migration steps must use the
+mapping and be independently verified. It does not repair an existing layer in
+place or preserve its numeric object IDs.
+
+The connection must use the managed writer's configured database host, port,
+database and feature table search path; a mismatched destination is rejected.
+Managed copies are excluded from source snapshot refresh, so that operation
+cannot overwrite edits. The per-layer refresh endpoint returns 404 for a
+managed copy, which has no source snapshot to refresh.
 
 ## Related guides
 
