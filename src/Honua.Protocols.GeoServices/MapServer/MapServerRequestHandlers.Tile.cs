@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -82,10 +83,13 @@ internal static partial class MapServerEndpoints
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var publishedLayers = ResolveTileLayerDescriptors(snapshot, service);
 
-            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
                 context,
                 publishedLayers.Select(static layer => layer.Resource),
-                service);
+                service,
+                AuthorizationOperation.Export,
+                cancellationToken).ConfigureAwait(false);
+            var accessError = access.RequireAny(publishedLayers.Select(static layer => layer.Resource));
             if (accessError != null)
             {
                 return accessError;
@@ -105,7 +109,7 @@ internal static partial class MapServerEndpoints
             var renderResources = publishedLayers
                 .Where(layer => IsTileLayerVisibleByDefault(layer.Resource))
                 .Where(layer => IsTileLayerVisibleAtScale(layer.Resource, z))
-                .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
+                .Where(layer => access.IsAccessible(layer.Resource))
                 .ToArray();
             var renderLayers = renderResources
                 .Select(BuildTileRenderDescriptor)

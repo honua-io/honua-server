@@ -590,16 +590,19 @@ internal static partial class FeatureServerEndpoints
                 [selectionError ?? "Invalid layer selection."]);
         }
 
-        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+        var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
             context,
             selectedLayers.Select(pair => pair.Resource),
-            service);
+            service,
+            AuthorizationOperation.Metadata,
+            cancellationToken).ConfigureAwait(false);
+        var accessError = access.RequireAny(selectedLayers.Select(pair => pair.Resource));
         if (accessError != null)
         {
             return accessError;
         }
 
-        var accessibleLayers = FilterAccessibleLayersV2(context, snapshot, service, selectedLayers);
+        var accessibleLayers = FilterAccessibleLayersV2(access, snapshot, selectedLayers);
         var domains = accessibleLayers
             .SelectMany(pair => pair.Resource.SchemaFields
                 .Where(static field => !field.Hidden && field.Domain is not null)
@@ -702,16 +705,19 @@ internal static partial class FeatureServerEndpoints
             .Select(pair => (pair.Publication, Resource: pair.Resource!))
             .ToArray();
 
-        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+        var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
             context,
             allPairs.Select(pair => pair.Resource),
-            service);
+            service,
+            AuthorizationOperation.Metadata,
+            cancellationToken).ConfigureAwait(false);
+        var accessError = access.RequireAny(allPairs.Select(pair => pair.Resource));
         if (accessError != null)
         {
             return accessError;
         }
 
-        var accessibleLayers = FilterAccessibleLayersV2(context, snapshot, service, allPairs);
+        var accessibleLayers = FilterAccessibleLayersV2(access, snapshot, allPairs);
 
         // Layer ids of accessible publications. Relationships pointing at non-accessible
         // resources are filtered out (matching the v1 path which gated on layer access).
@@ -1434,16 +1440,19 @@ internal static partial class FeatureServerEndpoints
                 [selectionError ?? "Invalid layer selection."]);
         }
 
-        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+        var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
             context,
             selectedLayers.Select(pair => pair.Resource),
-            service);
+            service,
+            AuthorizationOperation.Query,
+            cancellationToken).ConfigureAwait(false);
+        var accessError = access.RequireAny(selectedLayers.Select(pair => pair.Resource));
         if (accessError != null)
         {
             return accessError;
         }
 
-        var accessibleLayers = FilterAccessibleLayersV2(context, snapshot, service, selectedLayers);
+        var accessibleLayers = FilterAccessibleLayersV2(access, snapshot, selectedLayers);
         if (accessibleLayers.Length == 0)
         {
             return StandardErrorHelpers.CreateNotFound(context,
