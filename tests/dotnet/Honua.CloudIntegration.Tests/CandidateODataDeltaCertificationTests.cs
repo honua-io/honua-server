@@ -40,9 +40,9 @@ namespace Honua.CloudIntegration.Tests;
 /// (<c>PostgresMetadataV2LegacyCatalogProjector</c> / <c>CloudDemoServiceSeeder</c>) — executed
 /// here as the equivalent SQL function the shared test fixture already ships
 /// (<c>tests/seed/base-schema.sql</c>'s <c>honua.seed_metadata_v2_compat_snapshot()</c>), applied
-/// against the target database <em>before</em> the candidate's first boot so the very first
-/// request already resolves the seeded layer through the real, unmodified read path exactly as it
-/// would after a real publish, with no cache-invalidation race.
+/// against the target database once the candidate's own migrations have created the schema, so
+/// the next request already resolves the seeded layer through the real, unmodified read path
+/// exactly as it would after a real publish, with no restart or cache-invalidation race observed.
 /// </para>
 /// </remarks>
 [Trait(CloudIntegrationTraits.Category, CloudIntegrationTraits.CandidateCertification)]
@@ -93,7 +93,10 @@ public sealed class CandidateODataDeltaCertificationTests
             var pages = 0;
             while (true)
             {
-                (++pages).Should().BeLessThan(20, "paging must terminate without unbounded duplicates");
+                // The baseline set carries the odata.yaml fixture's 15 pre-existing cities plus this
+                // scenario's own rows, so the bound must clear that count with headroom, not just
+                // the scenario's own six rows.
+                (++pages).Should().BeLessThan(40, "paging must terminate without unbounded duplicates");
                 // The candidate advertises links with its own container-internal host; only the
                 // path and query are stable across the real front door this harness talks to.
                 var pathAndQuery = link.StartsWith('/') ? link : new Uri(link).PathAndQuery;
@@ -131,8 +134,11 @@ public sealed class CandidateODataDeltaCertificationTests
                             geometry.GetProperty("coordinates").EnumerateArray().Select(item => item.GetDouble())
                                 .Should().Equal(expectedPoint, "longitude/latitude ordinates are independently specified by the SQL fixture");
                         }
-                        else
+                        else if (id is >= 73000 and <= 73006)
                         {
+                            // The scenario's own null-geometry rows (73003/73004/73005/73006); the
+                            // pre-existing odata.yaml baseline cities (1-15) keep their real points
+                            // and are not part of this scenario's geometry assertions.
                             geometry.ValueKind.Should().Be(JsonValueKind.Null);
                         }
                     }
@@ -270,9 +276,11 @@ public sealed class CandidateODataDeltaCertificationTests
                 var postgresConnectionStringFromHost =
                     $"Host=127.0.0.1;Port={hostPort.ToString(CultureInfo.InvariantCulture)};Database=honua;Username=honua;Password={DatabasePassword}";
 
-                await SeedV1CatalogAsync(postgresConnectionStringFromHost);
-                await ActivateCompatSnapshotAsync(postgresConnectionStringFromHost);
-
+                // Boot the candidate first so its own migrations create the schema (including the
+                // metadata_v2_snapshots family the compat activation below writes into) exactly as
+                // a real deployment would; only then seed and activate the V1-to-V2 projection
+                // against the live database, which the running candidate resolves on its very next
+                // request with no restart or cache-invalidation race.
                 var candidateHostPort = LocalSubstrateDockerFixture.GetFreeTcpPort();
                 await Docker.RunCheckedAsync(
                 [
@@ -295,6 +303,10 @@ public sealed class CandidateODataDeltaCertificationTests
                     postgresConnectionStringFromHost,
                     candidateHostPort);
                 await env.WaitForCandidateReadyAsync();
+
+                await SeedV1CatalogAsync(postgresConnectionStringFromHost);
+                await ActivateCompatSnapshotAsync(postgresConnectionStringFromHost);
+
                 return env;
             }
             catch
@@ -417,7 +429,11 @@ public sealed class CandidateODataDeltaCertificationTests
             var deadline = DateTimeOffset.UtcNow + TimeSpan.FromMinutes(2);
             while (DateTimeOffset.UtcNow < deadline)
             {
-                var (exitCode, _, _) = await Docker.RunAsync(["exec", containerName, "pg_isready", "-U", "honua", "-d", "honua"]);
+                // pg_isready over TCP, not the default local socket: the image's init phase answers
+                // on the unix socket before the final server the harness connects to is listening,
+                // and the container restarts once after initdb (see CandidateTelemetryGateCertificationTests'
+                // StartPostgresAsync in the sibling deploy-gate certification lane, same lesson).
+                var (exitCode, _, _) = await Docker.RunAsync(["exec", containerName, "pg_isready", "-h", "127.0.0.1", "-U", "honua", "-d", "honua"]);
                 if (exitCode == 0)
                 {
                     return;
