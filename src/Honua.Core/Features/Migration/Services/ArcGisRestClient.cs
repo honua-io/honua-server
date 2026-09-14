@@ -241,6 +241,34 @@ internal sealed partial class ArcGisRestClient
     }
 
     /// <summary>
+    /// Counts the source features matching <paramref name="whereClause"/> (all features when it is
+    /// empty). Unlike the best-effort count on <see cref="GetLayerInfoAsync"/>, failures propagate so
+    /// callers can distinguish "unreadable" from a real count.
+    /// </summary>
+    public async Task<long> QueryFeatureCountAsync(
+        string serviceUrl,
+        int layerId,
+        string? whereClause,
+        int timeoutSeconds,
+        int maxRetries,
+        CancellationToken cancellationToken,
+        GeoservicesCredentialDescriptor? credentials = null)
+    {
+        var normalizedUrl = NormalizeServiceUrl(serviceUrl);
+        var where = string.IsNullOrWhiteSpace(whereClause) ? "1=1" : Uri.EscapeDataString(whereClause);
+        var url = $"{normalizedUrl}/{layerId}/query?where={where}&returnCountOnly=true&f=json";
+        var response = await GetJsonAsync(
+            url,
+            ArcGisJsonContext.Default.ArcGisCountResponse,
+            maxRetries,
+            timeoutSeconds,
+            credentials,
+            cancellationToken);
+
+        return response.Count;
+    }
+
+    /// <summary>
     /// Query attachment metadata for one or more features in a layer.
     /// </summary>
     /// <param name="serviceUrl">Service root URL (FeatureServer or MapServer).</param>
