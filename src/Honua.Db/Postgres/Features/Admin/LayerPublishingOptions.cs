@@ -4,7 +4,7 @@
 namespace Honua.Db.Postgres.Features.Admin;
 
 /// <summary>Budgets for PostgreSQL layer publication and snapshot refresh.</summary>
-public sealed class LayerPublishingOptions
+internal sealed class LayerPublishingOptions
 {
     /// <summary>Configuration section for layer publication.</summary>
     public const string SectionName = "LayerPublishing";
