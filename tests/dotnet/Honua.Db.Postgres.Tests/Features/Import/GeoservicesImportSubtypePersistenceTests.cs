@@ -73,7 +73,7 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
             result.Warnings.Should().NotContain(warning =>
                 warning.Contains("publishing did not complete", StringComparison.OrdinalIgnoreCase));
 
-            // Read the activated current snapshot — exactly the compat-compiled graph
+            // Read the activated current snapshot â€” exactly the compat-compiled graph
             // the serving side reads. If subtypes were dropped at publish this fails.
             var snapshot = await graphStore.GetCurrentAsync();
             var resource = snapshot.Graph.Resources
@@ -81,7 +81,7 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
                     f.Name.Equals("buildingtype", StringComparison.OrdinalIgnoreCase)));
             resource.Should().NotBeNull("the imported layer should be projected into the Metadata v2 graph");
 
-            resource!.Subtypes.Should().NotBeNull("the subtype set must survive import → publish → compat-compile");
+            resource!.Subtypes.Should().NotBeNull("the subtype set must survive import â†’ publish â†’ compat-compile");
             var subtypes = resource.Subtypes!;
             subtypes.SubtypeField.Should().Be("buildingtype");
             if (featureTypes)

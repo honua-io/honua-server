@@ -28,10 +28,12 @@ namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Edr;
 public sealed class EdrDepthTests : IClassFixture<EdrDepthTestsFixture>
 {
     private readonly WebAppFixture _fixture;
+    private readonly IRasterStore _rasterStore;
 
     public EdrDepthTests(EdrDepthTestsFixture fixture)
     {
         _fixture = fixture.App;
+        _rasterStore = fixture.RasterStore;
     }
 
     private static string CollectionPath => $"/edr/collections/{WebAppFixture.TestLayerId}";
@@ -159,6 +161,112 @@ public sealed class EdrDepthTests : IClassFixture<EdrDepthTestsFixture>
     }
 
     [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /edr/collections/{collectionId}")]
+    public async Task Edr_Collection_AdvertisesRasterInstantAsTemporalExtent()
+    {
+        using var doc = await GetJsonAsync(CollectionPath);
+
+        var temporal = doc.RootElement.GetProperty("extent").GetProperty("temporal");
+        temporal.GetProperty("interval")[0].EnumerateArray()
+            .Select(value => value.GetString())
+            .Should().Equal(EdrDepthTestsFixture.RasterCreatedAtIso, EdrDepthTestsFixture.RasterCreatedAtIso);
+    }
+
+    // #4151: the raster's only temporal geometry is 2026-01-05T00:00:00Z. Each datetime below
+    // intersects that instant, so the pixel values are returned and the t-axis carries the
+    // raster's own time — never the requested instant or interval start.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /edr/collections/{collectionId}/position")]
+    public async Task Edr_Position_DatetimeIntersectingRasterTime_ReturnsValuesStampedWithRasterTime()
+    {
+        var intersecting = new[]
+        {
+            "2026-01-05T00:00:00Z",
+            "2026-01-05T00:00:00.000Z",
+            "2025-12-01T00:00:00Z/2026-02-01T00:00:00Z",
+            "2026-01-05T00:00:00Z/2026-01-05T00:00:00Z",
+            "../2026-01-05T00:00:00Z",
+            "2026-01-05T00:00:00Z/..",
+            "2026-01-05T09:00:00+09:00"
+        };
+
+        foreach (var datetime in intersecting)
+        {
+            using var doc = await GetJsonAsync(
+                $"{CollectionPath}/position?coords={Uri.EscapeDataString("POINT(-122.4 37.8)")}&datetime={Uri.EscapeDataString(datetime)}");
+
+            doc.RootElement.GetProperty("domain").GetProperty("axes").GetProperty("t").GetProperty("values")
+                .EnumerateArray()
+                .Select(value => value.GetString())
+                .Should().Equal([EdrDepthTestsFixture.RasterCreatedAtIso], $"datetime '{datetime}' intersects the raster instant");
+
+            var ranges = doc.RootElement.GetProperty("ranges");
+            ranges.GetProperty("band_1").GetProperty("values").EnumerateArray().Select(value => value.GetDouble())
+                .Should().Equal(11.0);
+            ranges.GetProperty("band_2").GetProperty("values").EnumerateArray().Select(value => value.GetDouble())
+                .Should().Equal(12.0);
+            ranges.GetProperty("band_3").GetProperty("values").EnumerateArray().Select(value => value.GetDouble())
+                .Should().Equal(13.0);
+        }
+    }
+
+    // #4151 repro: a datetime disjoint from the raster instant selects no data. The handler must
+    // not sample the raster and stamp the requested time on its values; it answers 204.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /edr/collections/{collectionId}/position")]
+    public async Task Edr_Position_DatetimeDisjointFromRasterTime_ReturnsNoContentWithoutSampling()
+    {
+        var disjoint = new[]
+        {
+            "1999-01-01T00:00:00Z",
+            "1999-01-01T00:00:00Z/2000-01-01T00:00:00Z",
+            "2026-01-05T00:00:01Z",
+            "2026-01-05T00:00:01Z/..",
+            "../2026-01-04T23:59:59Z",
+            // The intersection is exact: a millisecond either side of the instant misses it.
+            "2026-01-05T00:00:00.001Z",
+            "../2026-01-04T23:59:59.999Z"
+        };
+
+        foreach (var datetime in disjoint)
+        {
+            _rasterStore.ClearReceivedCalls();
+
+            var response = await _fixture.Client.GetAsync(
+                $"{CollectionPath}/position?coords={Uri.EscapeDataString("POINT(-122.4 37.8)")}&datetime={Uri.EscapeDataString(datetime)}");
+            var content = await response.Content.ReadAsStringAsync();
+
+            response.StatusCode.Should().Be(HttpStatusCode.NoContent, $"datetime '{datetime}' is disjoint from the raster instant: {content}");
+            content.Should().BeEmpty();
+            await _rasterStore.DidNotReceiveWithAnyArgs().IdentifyAsync(
+                default, default, default, default, default, default, default);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /edr/collections/{collectionId}/position")]
+    public async Task Edr_Position_MalformedDatetime_ReturnsBadRequest()
+    {
+        foreach (var datetime in MalformedDatetimes)
+        {
+            _rasterStore.ClearReceivedCalls();
+
+            var response = await _fixture.Client.GetAsync(
+                $"{CollectionPath}/position?coords={Uri.EscapeDataString("POINT(-122.4 37.8)")}&datetime={Uri.EscapeDataString(datetime)}");
+            var content = await response.Content.ReadAsStringAsync();
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"datetime '{datetime}' is malformed: {content}");
+            content.Should().Contain("datetime");
+            await _rasterStore.DidNotReceiveWithAnyArgs().IdentifyAsync(
+                default, default, default, default, default, default, default);
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.Query)]
     [Endpoint("GET /edr/collections/{collectionId}/position")]
     public async Task Edr_Position_NoDataPixel_ReturnsNullValues()
@@ -279,6 +387,63 @@ public sealed class EdrDepthTests : IClassFixture<EdrDepthTestsFixture>
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /edr/collections/{collectionId}/cube")]
+    public async Task Edr_Cube_DatetimeSelectsOnlyIntersectingRasterTime()
+    {
+        using (var doc = await GetJsonAsync(
+            $"{CollectionPath}/cube?bbox=-122.5,37.7,-122.3,37.9&resolution-x=2&datetime={Uri.EscapeDataString("2025-06-01T00:00:00Z/..")}"))
+        {
+            doc.RootElement.GetProperty("domain").GetProperty("axes").GetProperty("t").GetProperty("values")
+                .EnumerateArray()
+                .Select(value => value.GetString())
+                .Should().Equal(EdrDepthTestsFixture.RasterCreatedAtIso);
+            doc.RootElement.GetProperty("ranges").GetProperty("band_2").GetProperty("values").EnumerateArray()
+                .Select(value => value.GetDouble())
+                .Should().Equal(12.0, 12.0, 12.0, 12.0);
+        }
+
+        _rasterStore.ClearReceivedCalls();
+        var disjoint = await _fixture.Client.GetAsync(
+            $"{CollectionPath}/cube?bbox=-122.5,37.7,-122.3,37.9&resolution-x=2&datetime={Uri.EscapeDataString("1999-01-01T00:00:00Z/2000-01-01T00:00:00Z")}");
+        var disjointContent = await disjoint.Content.ReadAsStringAsync();
+
+        disjoint.StatusCode.Should().Be(HttpStatusCode.NoContent, disjointContent);
+        disjointContent.Should().BeEmpty();
+        await _rasterStore.DidNotReceiveWithAnyArgs().IdentifyAsync(
+            default, default, default, default, default, default, default);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /edr/collections/{collectionId}/cube")]
+    public async Task Edr_Cube_MalformedDatetime_ReturnsBadRequest()
+    {
+        foreach (var datetime in MalformedDatetimes)
+        {
+            var response = await _fixture.Client.GetAsync(
+                $"{CollectionPath}/cube?bbox=-122.5,37.7,-122.3,37.9&resolution-x=2&datetime={Uri.EscapeDataString(datetime)}");
+            var content = await response.Content.ReadAsStringAsync();
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"datetime '{datetime}' is malformed: {content}");
+            content.Should().Contain("datetime");
+        }
+    }
+
+    private static readonly string[] MalformedDatetimes =
+    [
+        "not-a-date",
+        "2026-02-01T00:00:00Z/2026-01-01T00:00:00Z", // start after end
+        "../..",
+        "2026-01-01T00:00:00Z/garbage",
+        "2026-01-01T00:00:00Z/2026-01-02T00:00:00Z/2026-01-03T00:00:00Z",
+        // Not RFC 3339 date-times, although DateTimeOffset.TryParse would accept them.
+        "2026-01-05",
+        "2026-01-05T00:00:00",
+        "01/05/2026 00:00:00 +00:00"
+    ];
+
     private async Task<JsonDocument> GetJsonAsync(string uri)
     {
         var response = await _fixture.Client.GetAsync(uri);
@@ -305,15 +470,18 @@ public sealed class EdrDepthTestsFixture : IAsyncLifetime
 
     public EdrDepthTestsFixture()
     {
-        var rasterStore = Substitute.For<IRasterStore>();
-        ConfigureRasterStore(rasterStore);
+        RasterStore = Substitute.For<IRasterStore>();
+        ConfigureRasterStore(RasterStore);
         App = new WebAppFixture()
             .ConfigureWebHost(builder => builder.UseSetting(
                 "Capabilities:Experimental:serve.ogc-api-edr:Enabled", "true"))
-            .ReplaceService(rasterStore);
+            .ReplaceService(RasterStore);
     }
 
     public WebAppFixture App { get; }
+
+    /// <summary>The mocked raster store, exposed so tests can assert no sample was read.</summary>
+    public IRasterStore RasterStore { get; }
 
     public Task InitializeAsync() => App.InitializeAsync();
 
