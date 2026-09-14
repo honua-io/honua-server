@@ -39,6 +39,7 @@ namespace Honua.Protocols.GeoServices.NAServer.Models;
 [JsonSerializable(typeof(NAServerDirectionFeature[]))]
 [JsonSerializable(typeof(NAServerDirectionAttributes))]
 [JsonSerializable(typeof(NAServerDirectionSummary))]
+[JsonSerializable(typeof(NAServerEnvelope))]
 [JsonSerializable(typeof(NAServerSaPolygonsFeatureSet))]
 [JsonSerializable(typeof(NAServerSaPolygonFeature))]
 [JsonSerializable(typeof(NAServerSaPolygonFeature[]))]

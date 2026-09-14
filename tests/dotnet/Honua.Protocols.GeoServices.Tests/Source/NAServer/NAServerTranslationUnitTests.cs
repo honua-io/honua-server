@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Protocols.GeoServices.NAServer;
+using Honua.Protocols.GeoServices.NAServer.Models;
 using Honua.Routing.Features.Routing.Domain;
 using Honua.TestKit.Attributes;
 
@@ -105,6 +107,128 @@ public sealed class NAServerTranslationUnitTests
         feature.Attributes.TotalTravelTime.Should().Be(6.7);
         feature.Geometry.SpatialReference!.Wkid.Should().Be(4326);
         response.Directions.Should().ContainSingle();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Directions)]
+    public void MapRoute_Directions_NameTheirRouteAndSummarizeIt()
+    {
+        // #4035: a three-vertex route whose extent is xmin -157.86, ymin 21.29, xmax -157.84,
+        // ymax 21.31 (read off the coordinates below), with totals 2500 m / 9.5 min.
+        var result = new RouteSolveResult(
+            "{\"type\":\"LineString\",\"coordinates\":[[-157.85,21.30],[-157.86,21.31],[-157.84,21.29]]}",
+            TotalLengthMeters: 2500,
+            TotalTimeMinutes: 9.5,
+            Directions:
+            [
+                new RouteDirectionStep("Depart", 0, 0, "depart"),
+                new RouteDirectionStep("Travel", 2500, 9.5, "straight"),
+            ]);
+
+        var response = NAServerResultMapping.MapRoute(result, outSrid: 4326, includeRoutes: true, includeDirections: true);
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(
+            response, NAServerJsonContext.Default.NAServerRouteSolveResponse));
+        var root = document.RootElement;
+
+        var direction = root.GetProperty("directions").EnumerateArray().Should().ContainSingle().Subject;
+        direction.GetProperty("routeId").GetInt32().Should().Be(1);
+        direction.GetProperty("routeName").GetString().Should().Be("Route 1");
+        var summary = direction.GetProperty("summary");
+        summary.GetProperty("totalLength").GetDouble().Should().Be(2500);
+        summary.GetProperty("totalTime").GetDouble().Should().Be(9.5);
+        summary.GetProperty("totalDriveTime").GetDouble().Should().Be(9.5);
+        var envelope = summary.GetProperty("envelope");
+        envelope.GetProperty("xmin").GetDouble().Should().Be(-157.86);
+        envelope.GetProperty("ymin").GetDouble().Should().Be(21.29);
+        envelope.GetProperty("xmax").GetDouble().Should().Be(-157.84);
+        envelope.GetProperty("ymax").GetDouble().Should().Be(21.31);
+        envelope.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+        direction.GetProperty("features").EnumerateArray()
+            .Select(static step => step.GetProperty("attributes").GetProperty("text").GetString())
+            .Should().Equal("Depart", "Travel");
+
+        // Pair routes and directions the way the ArcGIS Maps SDK for JavaScript does
+        // (rest/route: route results keyed by the route feature's attributes.Name, each
+        // directions entry attached by its routeName). One solved route must yield exactly
+        // one route result carrying both the route and its directions.
+        var routeResults = PairLikeJsSdk(
+            root.GetProperty("routes").GetProperty("features"),
+            root.GetProperty("directions"));
+        var paired = routeResults.Should().ContainSingle().Subject;
+        paired.HasRoute.Should().BeTrue();
+        paired.HasDirections.Should().BeTrue();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Directions)]
+    public void MapClosestFacility_Directions_OneNamedSetPerRoute()
+    {
+        // #4035: two ranked routes with distinct steps must produce two direction sets, each
+        // named after its own route, not one unnamed set holding both routes' steps.
+        var result = new ClosestFacilitySolveResult(
+        [
+            new ClosestFacilityRoute(0, 1, 1, "{\"type\":\"LineString\",\"coordinates\":[[0,0],[1,2]]}", 100, 2,
+                [new RouteDirectionStep("to facility 2", 100, 2, "straight")]),
+            new ClosestFacilityRoute(0, 0, 2, "{\"type\":\"LineString\",\"coordinates\":[[0,0],[-3,4]]}", 300, 6,
+                [new RouteDirectionStep("to facility 1 a", 150, 3, "straight"), new RouteDirectionStep("to facility 1 b", 150, 3, "arrive")]),
+        ]);
+
+        var response = NAServerResultMapping.MapClosestFacility(result, outSrid: 4326, includeDirections: true);
+        using var document = JsonDocument.Parse(JsonSerializer.Serialize(
+            response, NAServerJsonContext.Default.NAServerClosestFacilityResponse));
+        var root = document.RootElement;
+
+        var directions = root.GetProperty("directions").EnumerateArray().ToArray();
+        directions.Should().HaveCount(2);
+
+        directions[0].GetProperty("routeId").GetInt32().Should().Be(1);
+        directions[0].GetProperty("routeName").GetString().Should().Be("Incident 1 - Facility 2");
+        directions[0].GetProperty("summary").GetProperty("totalLength").GetDouble().Should().Be(100);
+        directions[0].GetProperty("summary").GetProperty("totalTime").GetDouble().Should().Be(2);
+        directions[0].GetProperty("summary").GetProperty("envelope").GetProperty("xmax").GetDouble().Should().Be(1);
+        directions[0].GetProperty("summary").GetProperty("envelope").GetProperty("ymax").GetDouble().Should().Be(2);
+        directions[0].GetProperty("features").GetArrayLength().Should().Be(1);
+
+        directions[1].GetProperty("routeId").GetInt32().Should().Be(2);
+        directions[1].GetProperty("routeName").GetString().Should().Be("Incident 1 - Facility 1");
+        directions[1].GetProperty("summary").GetProperty("totalLength").GetDouble().Should().Be(300);
+        directions[1].GetProperty("summary").GetProperty("totalTime").GetDouble().Should().Be(6);
+        directions[1].GetProperty("summary").GetProperty("envelope").GetProperty("xmin").GetDouble().Should().Be(-3);
+        directions[1].GetProperty("summary").GetProperty("envelope").GetProperty("ymax").GetDouble().Should().Be(4);
+        directions[1].GetProperty("features").GetArrayLength().Should().Be(2);
+
+        var routeNames = root.GetProperty("routes").GetProperty("features").EnumerateArray()
+            .Select(static feature => feature.GetProperty("attributes").GetProperty("Name").GetString())
+            .ToArray();
+        directions.Select(static direction => direction.GetProperty("routeName").GetString())
+            .Should().Equal(routeNames);
+    }
+
+    private static List<(string? Name, bool HasRoute, bool HasDirections)> PairLikeJsSdk(
+        JsonElement routeFeatures,
+        JsonElement directions)
+    {
+        var results = new List<(string? Name, bool HasRoute, bool HasDirections)>();
+        foreach (var feature in routeFeatures.EnumerateArray())
+        {
+            results.Add((feature.GetProperty("attributes").GetProperty("Name").GetString(), true, false));
+        }
+
+        foreach (var direction in directions.EnumerateArray())
+        {
+            var routeName = direction.TryGetProperty("routeName", out var name) ? name.GetString() : null;
+            var index = results.FindIndex(result => result.Name == routeName);
+            if (index < 0)
+            {
+                results.Add((routeName, false, true));
+            }
+            else
+            {
+                results[index] = results[index] with { HasDirections = true };
+            }
+        }
+
+        return results;
     }
 
     [UnitTest]
