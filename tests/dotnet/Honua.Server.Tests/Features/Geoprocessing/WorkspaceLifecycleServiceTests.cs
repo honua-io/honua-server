@@ -58,6 +58,51 @@ public class WorkspaceLifecycleServiceTests
     }
 
     [Fact]
+    public async Task NamedWorkspace_UnscopedLookupDoesNotReuseScopedRecord()
+    {
+        _workspaceStore.ListByOwnerAsync("owner-1", Arg.Any<CancellationToken>()).Returns(new[]
+        {
+            new Workspace
+            {
+                WorkspaceId = "existing", OwnerId = "owner-1", ScopeId = "existing-scope", Label = "analysis",
+                Kind = WorkspaceKind.Scratch, State = WorkspaceLifecycleState.Active, CreatedAt = Now
+            }
+        });
+        var workspace = await _service.GetOrCreateNamedWorkspaceAsync("owner-1", "analysis");
+        Assert.NotEqual("existing", workspace.WorkspaceId);
+        Assert.Null(workspace.ScopeId);
+    }
+
+    [Fact]
+    public async Task NamedWorkspace_AtomicProviderReceivesPolicyAndExistingOptionalScope()
+    {
+        var store = Substitute.For<IWorkspaceStore, IArtifactStore, IAtomicWorkspaceStore>();
+        var atomic = (IAtomicWorkspaceStore)store;
+        atomic.GetOrCreateNamedAsync(Arg.Any<Workspace>(), Arg.Any<CancellationToken>()).Returns(call => call.Arg<Workspace>());
+        _retentionPolicy.ComputeExpiration(WorkspaceKind.Scratch, Now).Returns(Now.AddHours(2));
+        var service = new WorkspaceLifecycleService(store, (IArtifactStore)store, _retentionPolicy,
+            Options.Create(new WorkspaceOptions()), _timeProvider, NullLogger<WorkspaceLifecycleService>.Instance);
+        var workspace = await service.GetOrCreateScopedWorkspaceAsync("owner-1", "analysis", "existing-scope");
+        Assert.Equal("existing-scope", workspace.ScopeId);
+        Assert.Equal(Now.AddHours(2), workspace.ExpiresAt);
+        await store.DidNotReceive().ListByOwnerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await store.DidNotReceive().CreateAsync(Arg.Any<Workspace>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Overwrite_AtomicProviderCollisionDoesNotDeleteOrInsertSeparately()
+    {
+        var store = Substitute.For<IWorkspaceStore, IArtifactStore, IAtomicWorkspaceStore>();
+        ((IAtomicWorkspaceStore)store).AddOrReplaceAsync(Arg.Any<Artifact>(), false, Arg.Any<CancellationToken>())
+            .Returns((Artifact?)null);
+        var service = new WorkspaceLifecycleService(store, (IArtifactStore)store, _retentionPolicy,
+            Options.Create(new WorkspaceOptions()), _timeProvider, NullLogger<WorkspaceLifecycleService>.Instance);
+        await Assert.ThrowsAsync<ArtifactAlreadyExistsException>(() => service.AddOrReplaceArtifactAsync("workspace", ArtifactKind.File, "output", false));
+        await ((IArtifactStore)store).DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await ((IArtifactStore)store).DidNotReceive().CreateAsync(Arg.Any<Artifact>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task CreateWorkspace_WithCustomTtl_ClampsToPolicy()
     {
         var clamped = Now.AddHours(24);

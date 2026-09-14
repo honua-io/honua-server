@@ -165,6 +165,165 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
         }
     }
 
+    [IntegrationTheory]
+    [InlineData("submitJob")]
+    [InlineData("execute")]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}")]
+    public async Task Workspace_ProductionStorePreservesOutputAcrossRestartAndHonorsOverwrite(string operation)
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        var fixture = CreateDurableFixture(productionExecutor: true)
+            // The default Test host delays provider registration until after the
+            // feature graph. Use its existing opt-in for the production composition order.
+            .ConfigureWebHost(builder => builder.UseSetting("HONUA_REGISTER_TEST_INFRASTRUCTURE", "true"))
+            .ConfigureServices(services => services.Configure<WorkspaceOptions>(options => options.EnableAutomaticCleanup = false));
+        await fixture.InitializeAsync();
+        string? workspaceId = null;
+        var migrationApplied = false;
+        var label = "workspace-proof-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            // Test hosts skip production DbUp. Apply the actual embedded migration,
+            // not a hand-written schema, before using the normally registered provider.
+            await using var migration = typeof(Program).Assembly.GetManifestResourceStream(
+                "Honua.Server.Migrations.118_CreateGeoprocessingWorkspaces.sql")!;
+            using var reader = new StreamReader(migration);
+            await fixture.Postgres.ExecuteDdlUnderLockAsync(await reader.ReadToEndAsync());
+            migrationApplied = true;
+            fixture.GetService<IWorkspaceLifecycleService>().Should().NotBeNull();
+
+            await RunAreaAsync(3, overwrite: false, expectSuccess: true);
+            await using (var connection = await fixture.Postgres.DataSource.OpenConnectionAsync())
+            {
+                await using var query = connection.CreateCommand();
+                query.CommandText = "SELECT workspace_id FROM honua.gp_workspaces WHERE label = @label";
+                query.Parameters.AddWithValue("label", label);
+                workspaceId = await query.ExecuteScalarAsync() as string;
+            }
+            workspaceId.Should().NotBeNullOrWhiteSpace();
+            var before = await fixture.GetService<IArtifactStore>().ListByWorkspaceAsync(workspaceId!);
+            var original = before.Should().ContainSingle().Subject;
+            AssertArea(original.Uri!, 12);
+
+            await fixture.RestartHostAsync();
+            var reopened = await fixture.GetService<IWorkspaceStore>().GetAsync(workspaceId!);
+            reopened.Should().NotBeNull();
+            reopened!.Label.Should().Be(label);
+            reopened.Artifacts.Should().ContainSingle().Which.Should().BeEquivalentTo(original);
+
+            await RunAreaAsync(5, overwrite: false, expectSuccess: false);
+            var denied = await fixture.GetService<IArtifactStore>().ListByWorkspaceAsync(workspaceId!);
+            denied.Should().ContainSingle().Which.Should().BeEquivalentTo(original);
+
+            await RunAreaAsync(5, overwrite: true, expectSuccess: true);
+            var replaced = await fixture.GetService<IArtifactStore>().ListByWorkspaceAsync(workspaceId!);
+            var replacement = replaced.Should().ContainSingle().Subject;
+            replacement.ArtifactId.Should().NotBe(original.ArtifactId);
+            AssertArea(replacement.Uri!, 20);
+
+            async Task RunAreaAsync(double width, bool overwrite, bool expectSuccess)
+            {
+                using var client = fixture.CreateAdminClient();
+                client.Timeout = TimeSpan.FromSeconds(45);
+                using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["f"] = "json",
+                    ["wkb"] = PolygonWkb((0, 0), (width, 0), (width, 4), (0, 4), (0, 0)),
+                    ["srid"] = "3857",
+                    ["env:workspace"] = label,
+                    ["env:overwriteOutput"] = overwrite ? "true" : "false"
+                });
+                using var response = await client.PostAsync($"/rest/services/{ServiceId}/GPServer/geometry.area/{operation}", content);
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                using var submitted = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                if (operation == "execute")
+                {
+                    if (!expectSuccess)
+                    {
+                        submitted.RootElement.TryGetProperty("error", out _).Should().BeTrue();
+                        submitted.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
+                            .Select(detail => detail.GetString()).Should().Contain(detail => detail != null && detail.Contains("already exists", StringComparison.Ordinal));
+                        return;
+                    }
+                    submitted.RootElement.TryGetProperty("error", out _).Should().BeFalse(submitted.RootElement.GetRawText());
+                    var scalar = submitted.RootElement.GetProperty("results").EnumerateArray()
+                        .Single(r => r.GetProperty("paramName").GetString() == "outputScalar");
+                    AssertArea(scalar.GetProperty("value").GetString()!, width * 4);
+                    return;
+                }
+                var jobId = submitted.RootElement.GetProperty("jobId").GetString();
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(35));
+                while (true)
+                {
+                    using var statusResponse = await client.GetAsync($"/rest/services/{ServiceId}/GPServer/geometry.area/jobs/{jobId}?f=json", timeout.Token);
+                    using var status = JsonDocument.Parse(await statusResponse.Content.ReadAsStringAsync(timeout.Token));
+                    var state = status.RootElement.GetProperty("jobStatus").GetString();
+                    if (state is "esriJobSucceeded" or "esriJobFailed" or "esriJobCancelled")
+                    {
+                        state.Should().Be(expectSuccess ? "esriJobSucceeded" : "esriJobFailed", status.RootElement.GetRawText());
+                        var durable = await fixture.GetService<IExecutionJobStore>().GetAsync(jobId!);
+                        durable!.AttemptCount.Should().Be(1);
+                        if (!expectSuccess)
+                        {
+                            durable.ErrorMessage.Should().Contain("already exists");
+                        }
+                        if (expectSuccess)
+                        {
+                            using var outputResponse = await client.GetAsync($"/rest/services/{ServiceId}/GPServer/geometry.area/jobs/{jobId}/results/outputScalar?f=json", timeout.Token);
+                            using var output = JsonDocument.Parse(await outputResponse.Content.ReadAsStringAsync(timeout.Token));
+                            AssertArea(output.RootElement.GetProperty("value").GetString()!, width * 4);
+                        }
+                        break;
+                    }
+                    await Task.Delay(100, timeout.Token);
+                }
+            }
+        }
+        finally
+        {
+            try
+            {
+                // An assertion may fail after a job creates the workspace but before
+                // the successful-path lookup. Recover only this test's unique fixture.
+                if (workspaceId is null && migrationApplied)
+                {
+                    await using var connection = await fixture.Postgres.DataSource.OpenConnectionAsync();
+                    await using var query = connection.CreateCommand();
+                    query.CommandText = "SELECT workspace_id FROM honua.gp_workspaces WHERE label = @label";
+                    query.Parameters.AddWithValue("label", label);
+                    workspaceId = await query.ExecuteScalarAsync() as string;
+                }
+                if (workspaceId is not null)
+                {
+                    var artifacts = fixture.GetService<IArtifactStore>();
+                    foreach (var artifact in await artifacts.ListByWorkspaceAsync(workspaceId))
+                    {
+                        (await artifacts.DeleteAsync(artifact.ArtifactId)).Should().BeTrue();
+                    }
+                    (await fixture.GetService<IWorkspaceStore>().DeleteAsync(workspaceId)).Should().BeTrue();
+                }
+            }
+            finally
+            {
+                await fixture.DisposeAsync();
+                await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            }
+        }
+
+        static void AssertArea(string uri, double expected)
+        {
+            const string prefix = "data:application/json;base64,";
+            uri.Should().StartWith(prefix);
+            using var decoded = JsonDocument.Parse(Convert.FromBase64String(uri[prefix.Length..]));
+            decoded.RootElement.GetProperty("value").GetDouble().Should().Be(expected);
+            decoded.RootElement.GetProperty("processId").GetString().Should().Be("geometry.area");
+            decoded.RootElement.GetProperty("inputSrid").GetInt32().Should().Be(3857);
+        }
+    }
+
     private static async Task<JsonDocument> PollUntilSucceededAsync(HttpClient client, string jobId)
     {
         var deadline = DateTimeOffset.UtcNow.AddSeconds(30);

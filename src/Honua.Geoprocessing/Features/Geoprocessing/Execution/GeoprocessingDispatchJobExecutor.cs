@@ -214,9 +214,10 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         Workspace resolvedWorkspace;
         try
         {
-            resolvedWorkspace = await workspaceLifecycle
-                .GetOrCreateNamedWorkspaceAsync(ownerId, requestedLabel, cancellationToken)
-                .ConfigureAwait(false);
+            var scopeId = job.Audit.SubmitterSecurityContext?.TenantId;
+            resolvedWorkspace = scopeId is null
+                ? await workspaceLifecycle.GetOrCreateNamedWorkspaceAsync(ownerId, requestedLabel, cancellationToken).ConfigureAwait(false)
+                : await workspaceLifecycle.GetOrCreateScopedWorkspaceAsync(ownerId, requestedLabel, scopeId, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
