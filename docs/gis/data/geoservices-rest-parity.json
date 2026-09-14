@@ -2036,7 +2036,7 @@
             "capabilityMaturity": [
               "preview"
             ],
-            "notes": "Returns per-band statistics ({min,max,mean,standardDeviation,count}) and per-band histograms ({size,min,max,counts[]}). Supports rasterIds (CSV/JSON array of catalog object IDs; defaults to the selected layer mosaic), the Honua-extension bandIds selector (1-based), mosaicRule, single-instant time filtering to the newest layer-wide effective acquisition batch, and histogramParameters.size (default 256, capped at 1024). The parallel statistics[] and histograms[] arrays are aligned positionally: index i on both sides describes the same band. Multiple rasterIds are appended in request order. A band is only dropped from both arrays when neither the statistics nor the histograms result contained an entry for it; when a band is present on only one side, the missing side is zero-filled (an all-zero BandStatistic, or a BandHistogram with empty counts[]) so the parallel arrays stay index-aligned. An AOI geometry/geometryType clips the analysis to that area (envelope-scoped) for both single rasters and mosaics; without a geometry the full selected raster or mosaic is analysed. Stretch, Colormap, and Clip renderingRule chains are applied; ExtractBand, BandArithmetic, and pixelSize remain deferred."
+            "notes": "Returns per-band statistics ({min,max,mean,standardDeviation,count}) and per-band histograms ({size,min,max,counts[]}). Supports rasterIds (CSV/JSON array of catalog object IDs; defaults to the selected layer mosaic), the Honua-extension bandIds selector (0-based, the same base as exportImage bandIds), mosaicRule, single-instant time filtering to the newest layer-wide effective acquisition batch, and histogramParameters.size (default 256, capped at 1024). The parallel statistics[] and histograms[] arrays are aligned positionally: index i on both sides describes the same band. Multiple rasterIds are appended in request order. A band is only dropped from both arrays when neither the statistics nor the histograms result contained an entry for it; when a band is present on only one side, the missing side is zero-filled (an all-zero BandStatistic, or a BandHistogram with empty counts[]) so the parallel arrays stay index-aligned. An AOI geometry/geometryType clips the analysis to that area (envelope-scoped) for both single rasters and mosaics; without a geometry the full selected raster or mosaic is analysed. Stretch, Colormap, and Clip renderingRule chains are applied; ExtractBand, BandArithmetic, and pixelSize remain deferred."
           },
           {
             "name": "Compute Tie Points",
@@ -2458,7 +2458,7 @@
           {
             "name": "bandIds",
             "status": "implemented (Honua extension)",
-            "notes": "Accepts CSV or JSON array of 1-based band indices. Forwarded to the raster store as the band selector. The caller-supplied order is preserved when aligning the parallel statistics[]/histograms[] arrays."
+            "notes": "Accepts CSV or JSON array of 0-based band indices, the same base as exportImage bandIds (#4068); each index is shifted to the raster store's 1-based band selector. The caller-supplied order is preserved when aligning the parallel statistics[]/histograms[] arrays."
           },
           {
             "name": "histogramParameters.size",
