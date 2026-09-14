@@ -98,7 +98,10 @@ public sealed class SourceBackedRelationshipStoreIntegrationTests(PostgresFixtur
         }).ToArray();
         var snapshot = new MetadataV2GraphSnapshot(new MetadataV2Graph
         {
-            Resources = resources, StorageBindings = bindings, Services = [service], Publications = publications
+            Resources = resources,
+            StorageBindings = bindings,
+            Services = [service],
+            Publications = publications
         }, "test", DateTimeOffset.UtcNow);
         var graph = Substitute.For<IMetadataV2GraphProvider>();
         graph.GetCurrentAsync(Arg.Any<CancellationToken>()).Returns(snapshot);
