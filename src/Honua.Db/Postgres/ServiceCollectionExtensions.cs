@@ -429,7 +429,8 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<IMetadataV2GraphStore>(),
                 serviceProvider.GetRequiredService<ILogger<PostgreSqlLayerPublishingService>>(),
                 configuration["Database:Schema"],
-                serviceProvider.GetService<IStyleCatalog>()));
+                serviceProvider.GetService<IStyleCatalog>(),
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>()));
 
         // Register health checker
         services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();

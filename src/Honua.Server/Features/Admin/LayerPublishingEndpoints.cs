@@ -196,6 +196,7 @@ internal static class LayerPublishingEndpoints
 
             var publishRequest = new LayerPublishRequest
             {
+                CreateEditableCopy = request.CreateEditableCopy,
                 Schema = request.Schema,
                 Table = request.Table,
                 LayerName = request.LayerName,

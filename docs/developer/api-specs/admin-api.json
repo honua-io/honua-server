@@ -23018,6 +23018,11 @@
             "type": "boolean",
             "description": "Enable layer after publish",
             "default": true
+          },
+          "createEditableCopy": {
+            "type": "boolean",
+            "default": false,
+            "description": "Create an independent editable copy in the configured managed feature store. Source rows are unchanged; new target object IDs map to source IDs through the read-only __honua_source_id field. Attachment and relationship migration must use that mapping. The publication connection must resolve the same database and features table as the managed writer."
           }
         }
       },

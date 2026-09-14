@@ -93,7 +93,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
             isPrimary: true,
             idPrefix: "pub",
             request.Enabled,
-            now);
+            now,
+            editable: request.CreateEditableCopy);
         var stacPublication = BuildPublishedPublication(
             service,
             resource,
@@ -3137,7 +3138,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
             StorageBindingIds = [bindingId],
             PrimaryStorageBindingId = bindingId,
             SchemaFields = fields
-                .Select(field => MapLayerFieldToMetadataV2(field, primaryKeyColumn, geometryColumn))
+                .Select(field =>
+                {
+                    var mapped = MapLayerFieldToMetadataV2(field, primaryKeyColumn, geometryColumn);
+                    return request.CreateEditableCopy &&
+                        (field.Name.Equals(primaryKeyColumn, StringComparison.OrdinalIgnoreCase) || field.Name == ManagedSourceIdField)
+                        ? mapped with { Editable = false }
+                        : mapped;
+                })
                 .ToArray(),
             Spatial = new MetadataV2ResourceSpatial
             {
@@ -3183,7 +3191,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private static MetadataV2ResourceEditing? ResolveEditingForPublish(
         LayerPublishRequest request, IReadOnlyList<LayerFieldInsert> fields)
     {
-        if (string.IsNullOrWhiteSpace(request.GlobalIdField) && !request.SupportsAttachments)
+        if (string.IsNullOrWhiteSpace(request.GlobalIdField) && !request.SupportsAttachments && !request.CreateEditableCopy)
         {
             return null;
         }
@@ -3200,7 +3208,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             GlobalIdField = globalId?.Name,
             SupportsAttachments = request.SupportsAttachments,
-            CanModify = false,
+            CanModify = request.CreateEditableCopy,
             SupportsRelatedRecords = false
         };
     }
@@ -3287,14 +3295,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
         int storageSrid,
         DateTimeOffset now)
     {
-        var connectionId = request.ConnectionId?.ToString("D");
+        var connectionId = request.CreateEditableCopy ? null : request.ConnectionId?.ToString("D");
         var options = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
         {
-            [FeatureStorageMapping.SourceBackedOption] = BoolOption(true),
+            [FeatureStorageMapping.SourceBackedOption] = BoolOption(!request.CreateEditableCopy),
             ["schemaName"] = StringOption(schema),
             ["tableName"] = StringOption(table),
-            ["primaryKeyColumn"] = StringOption(primaryKeyColumn),
-            ["geometryColumn"] = StringOption(geometryColumn),
+            ["primaryKeyColumn"] = StringOption(request.CreateEditableCopy ? "objectid" : primaryKeyColumn),
+            ["geometryColumn"] = StringOption(request.CreateEditableCopy ? "geometry" : geometryColumn),
             ["storageSrid"] = IntOption(storageSrid)
         };
 
@@ -3311,8 +3319,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // 'features' in another schema (e.g. public.features) has neither the JSONB
         // 'attributes' column nor 'layer_id', so applying these options there would make
         // the reader emit columns the table lacks and fail with 42703. (honua-server#1238.)
-        if (string.Equals(table, DatabaseSchema.FeaturesTable, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(schema, _metadataSchema, StringComparison.OrdinalIgnoreCase))
+        if (request.CreateEditableCopy ||
+            (string.Equals(table, DatabaseSchema.FeaturesTable, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(schema, _metadataSchema, StringComparison.OrdinalIgnoreCase)))
         {
             options["attributesColumn"] = StringOption("attributes");
             options["layerDiscriminatorColumn"] = StringOption(DatabaseSchema.LayerIdColumn);
@@ -3333,7 +3342,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
             StorageType = MetadataV2StorageType.RelationalTable,
             Locator = $"{schema}.{table}",
             StorageLayerId = layerId,
-            Capabilities =
+            Capabilities = request.CreateEditableCopy ?
+            [
+                MetadataV2StorageBindingCapability.Query,
+                MetadataV2StorageBindingCapability.Filter,
+                MetadataV2StorageBindingCapability.Sort,
+                MetadataV2StorageBindingCapability.Aggregate,
+                MetadataV2StorageBindingCapability.Edit
+            ] :
             [
                 MetadataV2StorageBindingCapability.Query,
                 MetadataV2StorageBindingCapability.Filter,
@@ -3355,7 +3371,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         bool isPrimary,
         string idPrefix,
         bool enabled,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        bool editable = false)
     {
         return new MetadataV2Publication
         {
@@ -3378,7 +3395,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
             },
             IsPrimary = isPrimary,
             SupportedFormats = _defaultFormats,
-            Capabilities = _defaultCapabilities,
+            Capabilities = editable && publicationType == MetadataV2PublicationType.EsriFeatureLayer
+                ? _editableCapabilities : _defaultCapabilities,
             Status = LayerReadyStatus(enabled, now)
         };
     }

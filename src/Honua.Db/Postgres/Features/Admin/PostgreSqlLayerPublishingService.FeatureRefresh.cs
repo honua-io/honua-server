@@ -177,7 +177,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
             .ConfigureAwait(false);
         var sql = $"""
             DELETE FROM {featuresTable}
-            WHERE layer_id = @layerId;
+            WHERE layer_id = @layerId
+              AND COALESCE(storage_options->>'managedCopy', 'false') <> 'true';
             """;
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
@@ -248,6 +249,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             FROM honua.layers
             WHERE table_name = @table
               AND (@schema IS NULL OR table_schema = @schema)
+              AND COALESCE(storage_options->>'managedCopy', 'false') <> 'true'
             ORDER BY layer_id;
             """;
 
