@@ -99,18 +99,21 @@ public sealed class ImageServerServiceInfo
     [JsonPropertyName("supportsStatistics")]
     public bool SupportsStatistics { get; init; } = true;
 
+    // Unprefixed Esri vocabulary describing the ordering a rule-less request actually executes
+    // (newest acquisition first), not an aspirational method (#4063).
     [JsonPropertyName("defaultMosaicMethod")]
-    public string DefaultMosaicMethod { get; init; } = "esriMosaicNorthwest";
+    public string DefaultMosaicMethod { get; init; } = Services.ImageServerMosaicRule.DefaultMosaicMethod;
 
     // Esri serializes allowedMosaicMethods as a comma-separated STRING, not an
     // array. The ArcGIS Maps SDK for .NET native runtime parses the ImageServer
     // config with a strict reader that rejects an array here ("Invalid
-    // configuration file"), so emit the Esri string form (#1456).
+    // configuration file"), so emit the Esri string form (#1456). The tokens are the unprefixed
+    // Esri names of the methods the mosaic-rule parser executes (#4063).
     [JsonPropertyName("allowedMosaicMethods")]
-    public string AllowedMosaicMethods { get; init; } = "esriMosaicNorthwest,esriMosaicCenter";
+    public string AllowedMosaicMethods { get; init; } = Services.ImageServerMosaicRule.AllowedMosaicMethods;
 
     [JsonPropertyName("sortField")]
-    public string? SortField { get; init; }
+    public string? SortField { get; init; } = Services.ImageServerMosaicRule.DefaultSortField;
 
     [JsonPropertyName("sortValue")]
     public string? SortValue { get; init; }
@@ -181,8 +184,10 @@ public sealed class ImageServerServiceInfo
     [JsonPropertyName("cacheType")]
     public string? CacheType { get; init; }
 
+    // renderingRule chains are executed by exportImage/identify/computeStatisticsHistograms and
+    // advertised at /rasterFunctionInfos, so the service accepts raster functions (#4063).
     [JsonPropertyName("allowRasterFunction")]
-    public bool AllowRasterFunction { get; init; } = false;
+    public bool AllowRasterFunction { get; init; } = true;
 
     [JsonPropertyName("rasterFunctionInfos")]
     public RasterFunctionInfo[]? RasterFunctionInfos { get; init; }
@@ -622,6 +627,15 @@ public sealed class Point
 
     [JsonPropertyName("y")]
     public required double Y { get; init; }
+
+    /// <summary>
+    /// Spatial reference of the coordinates. Esri identify locations carry it so clients do not
+    /// default a projected location to WGS84 (#4064); omitted when unset (for example a tile
+    /// scheme origin, whose reference is the enclosing tileInfo spatialReference).
+    /// </summary>
+    [JsonPropertyName("spatialReference")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public SpatialReference? SpatialReference { get; init; }
 }
 
 /// <summary>

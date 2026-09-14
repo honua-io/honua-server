@@ -216,6 +216,15 @@ internal sealed class ImageServerMetadataHandler
                 CacheType = null,
                 TileInfo = tileInfo,
                 HasHistograms = true,
+                // Capability fields describe what the request pipeline executes (#4063): raster
+                // functions run through renderingRule, the mosaic methods are exactly those the
+                // mosaic-rule parser executes, and a rule-less request composites newest
+                // acquisition first under the resource merge strategy.
+                AllowRasterFunction = true,
+                AllowedMosaicMethods = ImageServerMosaicRule.AllowedMosaicMethods,
+                DefaultMosaicMethod = ImageServerMosaicRule.DefaultMosaicMethod,
+                SortField = ImageServerMosaicRule.DefaultSortField,
+                MosaicOperator = MapMosaicOperator(mergeStrategy),
                 TimeInfo = BuildTimeInfo(ImageServerV2Lookups.ReadTimeFieldHints(resolved.Resource), rasters),
                 HasMultidimensions = multidimensionalInfo is { Variables.Length: > 0 },
                 MultidimensionalInfo = multidimensionalInfo is { Variables.Length: > 0 } ? multidimensionalInfo : null
@@ -289,6 +298,17 @@ internal sealed class ImageServerMetadataHandler
             ? (extent.YMax - extent.YMin) / pixelCount
             : (extent.XMax - extent.XMin) / pixelCount;
     }
+
+    // Esri mosaicOperator for the merge strategy that resolves contested pixels. The default
+    // ordering is newest acquisition first, so Newest keeps the first raster and Oldest the last.
+    private static string MapMosaicOperator(RasterMergeStrategy mergeStrategy) => mergeStrategy switch
+    {
+        RasterMergeStrategy.Oldest => "Last",
+        RasterMergeStrategy.Average => "Mean",
+        RasterMergeStrategy.Max => "Max",
+        RasterMergeStrategy.Min => "Min",
+        _ => "First"
+    };
 
     private static string MapPixelType(string postgisPixelType)
     {
