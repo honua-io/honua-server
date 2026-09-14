@@ -1524,6 +1524,78 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         }
     }
 
+    // #4063: SOAP GetServiceInfo advertises the same AllowedMosaicMethods as REST, so every advertised
+    // method must be accepted by SOAP ExportImage; Center is not advertised and stays a fault.
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.ImageServer, "ExportImage")]
+    [Endpoint("POST /services/{serviceId}/ImageServer")]
+    public async Task PostSoapImageServer_ExportImage_AcceptsEveryAdvertisedMosaicMethod()
+    {
+        var rasterStore = CreateSoapRasterStore();
+        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
+        await fixture.InitializeAsync();
+        try
+        {
+            static string Operation(string mosaicRule) => $"""
+                <ExportImage xmlns="http://www.esri.com/schemas/ArcGIS/10.8"
+                             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+                  <ImageDescription xsi:type="GeoImageDescription">
+                    <Extent xsi:type="EnvelopeN">
+                      <XMin>-180</XMin><YMin>-90</YMin><XMax>180</XMax><YMax>90</YMax>
+                      <SpatialReference xsi:type="GeographicCoordinateSystem"><WKID>4326</WKID></SpatialReference>
+                    </Extent>
+                    <Width>128</Width><Height>64</Height>
+                  </ImageDescription>
+                  <MosaicRule xsi:type="MosaicRule">{mosaicRule}</MosaicRule>
+                  <ImageType xsi:type="ImageType">
+                    <ImageFormat>esriImagePNG</ImageFormat>
+                    <ImageReturnType>esriImageReturnURL</ImageReturnType>
+                  </ImageType>
+                </ExportImage>
+                """;
+
+            foreach (var mosaicRule in new[]
+                     {
+                         "<MosaicMethod>None</MosaicMethod>",
+                         "<MosaicMethod>NorthWest</MosaicMethod>",
+                         "<MosaicMethod>esriMosaicNadir</MosaicMethod>",
+                         "<MosaicMethod>Seamline</MosaicMethod>",
+                         "<MosaicMethod>esriMosaicByAttribute</MosaicMethod><SortField>AcquisitionDate</SortField><Ascending>true</Ascending>",
+                         "<MosaicMethod>ByAttribute</MosaicMethod><SortField>OBJECTID</SortField>"
+                     })
+            {
+                using var response = await PostSoapOperationAsync(
+                    fixture.Client,
+                    $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                    Operation(mosaicRule));
+
+                var content = await response.Content.ReadAsStringAsync();
+                response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK, $"{mosaicRule}: {content}");
+                XDocument.Parse(content).Descendants()
+                    .Single(element => element.Name.LocalName == "ImageURL")
+                    .Value.Should().StartWith("http://localhost/temp/");
+            }
+
+            using var center = await PostSoapOperationAsync(
+                fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                Operation("<MosaicMethod>esriMosaicCenter</MosaicMethod>"));
+            center.IsSuccessStatusCode.Should().BeFalse();
+            (await center.Content.ReadAsStringAsync()).Should().Contain("esriMosaicCenter is not supported");
+
+            using var badAscending = await PostSoapOperationAsync(
+                fixture.Client,
+                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
+                Operation("<MosaicMethod>ByAttribute</MosaicMethod><Ascending>sometimes</Ascending>"));
+            badAscending.IsSuccessStatusCode.Should().BeFalse();
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     [IntegrationTest]
     [Operation(Operations.Export)]
     [InterfaceOperation(TestProtocols.ImageServer, "ExportImage")]
