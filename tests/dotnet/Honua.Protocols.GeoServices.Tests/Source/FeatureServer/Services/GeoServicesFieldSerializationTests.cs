@@ -307,9 +307,10 @@ public sealed class GeoServicesFieldSerializationTests
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Json_CalendarDatesRemainIsoAndTimestampsRemainEpochs(bool streaming)
+    [InlineData("buffered")]
+    [InlineData("streaming")]
+    [InlineData("top-features")]
+    public async Task Json_CalendarDatesRemainIsoAndTimestampsRemainEpochs(string path)
     {
         var fields = new[]
         {
@@ -339,7 +340,13 @@ public sealed class GeoServicesFieldSerializationTests
                 ["timestamp"] = "2024-02-29T00:00:00Z"
             }.ToImmutableDictionary());
             string json;
-            if (streaming)
+            if (path == "top-features")
+            {
+                var response = FeatureServerEndpoints.BuildTopFeaturesJsonResponse(
+                    QueryResult<Feature>.Create(1, [feature]), resource, false, null);
+                json = JsonSerializer.Serialize(response, FeatureServerJsonContext.Default.QueryResponse);
+            }
+            else if (path == "streaming")
                 json = await StreamGeoServicesJsonAsync(new StreamingQueryFormatter(Options.Create(new LimitsOptions())), feature, resource);
             else
             {
