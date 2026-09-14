@@ -54,7 +54,13 @@ public sealed class PortalTokenIssuerRedisExpiryTests(RedisFixture redis)
         beforeExpiry.Should().NotBeNull("a token must keep validating until the expiry the server advertised");
         beforeExpiry!.ExpiresAt.Should().Be(expiresAt);
 
-        await Task.Delay(expiresAt - DateTimeOffset.UtcNow);
+        // Task.Delay truncates to whole milliseconds and can wake just before the instant, so
+        // wait on the clock the issuer itself compares against.
+        while (DateTimeOffset.UtcNow < expiresAt)
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(Math.Max(1, (expiresAt - DateTimeOffset.UtcNow).TotalMilliseconds)));
+        }
+
         (await replica.ValidateAsync(issuance.Token, binding, CancellationToken.None))
             .Should().BeNull("the token stops validating at its advertised expiry");
         (await issuer.ValidateAsync(issuance.Token, binding, CancellationToken.None))
