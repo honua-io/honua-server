@@ -34,9 +34,15 @@ public sealed partial class LayerPublishingIntegrationTests
 
         var request = new PublishLayerRequest
         {
-            Schema = _schema, Table = _tableName, LayerName = _tableName,
-            GeometryColumn = "geom", GeometryType = "Point", Srid = 4326, PrimaryKey = "id",
-            GlobalIdField = "STABLE_ID", SupportsAttachments = supportsAttachments,
+            Schema = _schema,
+            Table = _tableName,
+            LayerName = _tableName,
+            GeometryColumn = "geom",
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            GlobalIdField = "STABLE_ID",
+            SupportsAttachments = supportsAttachments,
             ServiceName = _serviceName
         };
         var response = await _client.PostAsync($"/api/v1/admin/connections/{_connectionId}/layers",
