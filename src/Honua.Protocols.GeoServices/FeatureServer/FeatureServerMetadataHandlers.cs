@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -102,16 +103,17 @@ internal static partial class FeatureServerEndpoints
             return StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage);
         }
 
-        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+        var (visiblePairs, accessError) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
             context,
-            allPairs.Select(pair => pair.Resource),
-            service);
+            allPairs,
+            static pair => pair.Resource,
+            service,
+            AuthorizationOperation.Metadata,
+            cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return accessError;
         }
-
-        var visiblePairs = FilterAccessibleLayersV2(context, snapshot, service, allPairs);
 
         return await GetServiceMetadataAsync(
             context,
@@ -266,7 +268,8 @@ internal static partial class FeatureServerEndpoints
             return StandardErrorHelpers.CreateUnauthorized(context, AccessPolicyHelpers.AuthRequiredMessage);
         }
 
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, AuthorizationOperation.Metadata, service, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return accessError;

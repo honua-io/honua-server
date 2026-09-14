@@ -13,6 +13,7 @@
 
 using System.Diagnostics;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
@@ -122,18 +123,17 @@ internal static partial class VectorTileServerEndpoints
 
             var publications = ResolveVectorTilePublications(snapshot, service);
 
-            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            var (visiblePublications, accessError) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
                 context,
-                publications.Select(static publication => publication.Resource),
-                service);
+                publications,
+                static publication => publication.Resource,
+                service,
+                AuthorizationOperation.Metadata,
+                cancellationToken).ConfigureAwait(false);
             if (accessError != null)
             {
                 return accessError;
             }
-
-            var visiblePublications = publications
-                .Where(publication => AccessPolicyHelpers.IsResourceAccessible(context, publication.Resource, service))
-                .ToArray();
 
             var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
             var response = BuildMetadataResponse(service, visiblePublications, limitsOptions.Tiles.MaxTileZoom);

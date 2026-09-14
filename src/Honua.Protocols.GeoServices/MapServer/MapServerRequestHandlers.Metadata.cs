@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -79,18 +80,17 @@ internal static partial class MapServerEndpoints
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var publishedLayers = ResolveMapServerMetadataLayers(snapshot, service);
 
-            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            var (visibleLayers, accessError) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
                 context,
-                publishedLayers.Select(static layer => layer.Resource),
-                service);
+                publishedLayers,
+                static layer => layer.Resource,
+                service,
+                AuthorizationOperation.Metadata,
+                cancellationToken).ConfigureAwait(false);
             if (accessError != null)
             {
                 return accessError;
             }
-
-            var visibleLayers = publishedLayers
-                .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
-                .ToArray();
 
             var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
             var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
@@ -178,7 +178,8 @@ internal static partial class MapServerEndpoints
             var publication = serviceLayerResult.Publication!;
             var resource = serviceLayerResult.Resource!;
 
-            var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+            var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+                context, resource, AuthorizationOperation.Metadata, service, cancellationToken).ConfigureAwait(false);
             if (accessError != null)
             {
                 return accessError;

@@ -60,6 +60,19 @@ Status vocabulary:
 | [Catalog / REST Info](#catalog--rest-info) | Partial | Shared RBAC-filtered `/rest/services` and SOAP `/services` discovery, with SOAP 1.1/1.2 WSDL and REST handoffs | `/rest/info` always reports `isTokenBasedSecurity: false` and omits `tokenServicesUrl`; no named `folders`; `/rest/info` reports `currentVersion: 10.8`; service catalogs and service descriptors omit it |
 | [Portal Sharing](#portal-sharing) | Partial | `generateToken` opaque tokens consumable on `/rest/services/*`; `/sharing/rest/info` auth discovery; OAuth2 **named-user** flow at `/sharing/rest/oauth2/{authorize,callback,token}` — `authorization_code` + PKCE and rotating `refresh_token` (OIDC-delegated) — the opt-in `client_credentials` grant with optional IdP/OIDC federation (#1889), optional JWT access tokens + RFC 7662 `oauth2/introspect` (#1890, opt-in), RFC 7009 `oauth2/revoke`, and read/search/community projections over the Metadata v2 graph | Portal/community `self` and item documents are partly hardcoded (portal id/name, `role`, item `owner`); `search` honours a small `q` grammar and ignores `bbox`/`filter`/`categories`; the group + item-sharing overlay is **in-memory, single-node, and never read back** — sharing an item or joining a group changes nothing any client can observe; `/content/items/{id}/data` returns the item document, not the data payload — see [authentication](../../guides/secure/authentication.md) |
 
+## Catalog authorization and metadata handoffs
+
+REST and SOAP catalog discovery and FeatureServer, MapServer and VectorTileServer
+metadata use the canonical permission resolver for the Metadata operation. An
+administrator grant applies consistently when opening a discovered service and
+its FeatureServer or MapServer layer metadata; tenant visibility remains enforced
+before permission grants. Matching read roles retain access, and wrong-role and
+anonymous callers receive the existing denial documents without layer or task
+metadata. GPServer service and task metadata retain their shared service gate.
+`GeoservicesSoapCatalogDiscoveryTests` exercises these four principals across
+catalog, service, layer and GP task handoffs. These server integration checks do
+not establish a native desktop certification pass.
+
 ## FeatureServer
 
 Esri spec: [Feature Service](https://developers.arcgis.com/rest/services-reference/enterprise/feature-service/).

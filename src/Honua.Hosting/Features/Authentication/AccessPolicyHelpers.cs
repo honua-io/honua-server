@@ -609,6 +609,42 @@ internal static class AccessPolicyHelpers
         return updateError;
     }
 
+    /// <summary>
+    /// Projects visible resources using the canonical operation resolver and returns
+    /// the authentication/authorization error when every candidate is denied.
+    /// Evaluation and projection share one decision per resource.
+    /// </summary>
+    public static async Task<(T[] Resources, IResult? Error)> FilterAccessibleResourcesAsync<T>(
+        HttpContext context,
+        IEnumerable<T> candidates,
+        Func<T, MetadataV2Resource> resourceSelector,
+        MetadataV2Service service,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(candidates);
+        ArgumentNullException.ThrowIfNull(resourceSelector);
+        var visible = new List<T>();
+        AccessDecision? denial = null;
+        foreach (var candidate in candidates)
+        {
+            var decision = await EvaluateResourceAccessAsync(
+                context, resourceSelector(candidate), service, operation, cancellationToken).ConfigureAwait(false);
+            if (decision.IsAllowed)
+            {
+                visible.Add(candidate);
+            }
+            else if (denial is null || decision.RequiresAuthentication)
+            {
+                denial = decision;
+            }
+        }
+
+        return (visible.ToArray(), visible.Count == 0 && denial is not null
+            ? CreateAccessDeniedResult(context, denial.Value)
+            : null);
+    }
+
     public static IResult? RequireAnyResourceAccess(
         HttpContext context,
         IEnumerable<MetadataV2Resource> resources,
