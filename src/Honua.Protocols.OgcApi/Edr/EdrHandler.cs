@@ -691,21 +691,14 @@ internal sealed partial class EdrHandler
             return false;
         }
 
-        var members = body[1..^1].Split(',', StringSplitOptions.TrimEntries);
-        var parsed = new List<(double Lon, double Lat)>(members.Length);
-        foreach (var member in members)
+        var members = body[1..^1]
+            .Split(',', StringSplitOptions.TrimEntries)
+            .Select(static member => member.StartsWith('(') && member.EndsWith(')') ? member[1..^1].Trim() : member);
+        var parsed = new List<(double Lon, double Lat)>();
+        foreach (var inner in members)
         {
-            var inner = member;
-            if (inner.StartsWith('(') && inner.EndsWith(')'))
-            {
-                inner = inner[1..^1].Trim();
-            }
-
-            var ordinates = inner.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-            if (ordinates.Length is < 2 or > 3
-                || inner.Contains('(') || inner.Contains(')')
-                || !double.TryParse(ordinates[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var lon)
-                || !double.TryParse(ordinates[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var lat))
+            if (inner.Contains('(') || inner.Contains(')')
+                || !TryParseOrdinates(inner.Split(' ', StringSplitOptions.RemoveEmptyEntries), out var lon, out var lat))
             {
                 return false;
             }
@@ -735,10 +728,25 @@ internal sealed partial class EdrHandler
         }
 
         var inner = trimmed[(open + 1)..close];
-        var parts = inner.Split([' ', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return parts.Length >= 2
-            && double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out lon)
-            && double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out lat);
+        return TryParseOrdinates(
+            inner.Split([' ', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+            out lon,
+            out lat);
+    }
+
+    /// <summary>
+    /// Parses a WKT position as <c>x y</c> or <c>x y z</c>. Every token must be a number: a third
+    /// token is a Z ordinate (ignored for 2D sampling), never unvalidated trailing text.
+    /// </summary>
+    private static bool TryParseOrdinates(string[] ordinates, out double lon, out double lat)
+    {
+        lon = 0;
+        lat = 0;
+        return ordinates.Length is 2 or 3
+            && double.TryParse(ordinates[0], NumberStyles.Float, CultureInfo.InvariantCulture, out lon)
+            && double.TryParse(ordinates[1], NumberStyles.Float, CultureInfo.InvariantCulture, out lat)
+            && (ordinates.Length == 2
+                || double.TryParse(ordinates[2], NumberStyles.Float, CultureInfo.InvariantCulture, out _));
     }
 
     private static bool TryParseBbox(string bbox, out double minX, out double minY, out double maxX, out double maxY)
