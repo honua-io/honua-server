@@ -250,7 +250,7 @@ public sealed class GeometryInputBudgetTests
                 using var multipart = new MultipartFormDataContent("geometry-budget-boundary");
                 multipart.Add(new StringContent(value, Encoding.UTF8), name);
                 context.Request.ContentType = multipart.Headers.ContentType!.ToString();
-                var bytes = await multipart.ReadAsByteArrayAsync();
+                var bytes = await multipart.ReadAsByteArrayAsync(CancellationToken.None);
                 context.Request.Body = new MemoryStream(bytes);
                 context.Request.ContentLength = bytes.Length;
             }
@@ -302,6 +302,6 @@ public sealed class GeometryInputBudgetTests
         await middleware.InvokeAsync(context);
         context.Response.Body.Position = 0;
         using var reader = new StreamReader(context.Response.Body);
-        return (passed, forwarded, await reader.ReadToEndAsync());
+        return (passed, forwarded, await reader.ReadToEndAsync(CancellationToken.None));
     }
 }
