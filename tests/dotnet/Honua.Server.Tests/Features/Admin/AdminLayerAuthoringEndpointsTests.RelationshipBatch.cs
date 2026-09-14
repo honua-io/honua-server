@@ -109,7 +109,7 @@ public sealed partial class AdminLayerAuthoringEndpointsTests
         SetRelationshipBatchGraph(before.Graph with
         {
             Publications = before.Graph.Publications.Select(publication => publication.Identifier.IsNumeric
-                ? publication with { Identifier = publication.Identifier with { Value = (publication.LayerIndex + 100).ToString(System.Globalization.CultureInfo.InvariantCulture) } }
+                ? publication with { Identifier = publication.Identifier with { Value = (publication.LayerIndex.GetValueOrDefault() + 100).ToString(System.Globalization.CultureInfo.InvariantCulture) } }
                 : publication).ToArray(),
         });
         using var client = _fixture.CreateAdminClient();
