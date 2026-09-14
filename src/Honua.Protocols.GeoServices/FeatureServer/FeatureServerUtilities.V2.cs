@@ -287,7 +287,9 @@ internal static partial class FeatureServerEndpoints
             SubLayerIds = null,
             MinScale = null,
             MaxScale = null,
-            GeometryType = MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None)
+            Type = resource.Type == MetadataV2ResourceType.Table ? "Table" : "Feature Layer",
+            GeometryType = resource.Type == MetadataV2ResourceType.Table
+                ? null : MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None)
         };
     }
 

@@ -43,8 +43,10 @@ public sealed partial class LayerPublishingIntegrationTests
         serviceResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         using var service = JsonDocument.Parse(await serviceResponse.Content.ReadAsStringAsync());
         service.RootElement.GetProperty("layers").GetArrayLength().Should().Be(0);
-        service.RootElement.GetProperty("tables").EnumerateArray().Should().ContainSingle()
-            .Which.GetProperty("id").GetInt32().Should().Be(_layerId);
+        var table = service.RootElement.GetProperty("tables").EnumerateArray().Should().ContainSingle().Which;
+        table.GetProperty("id").GetInt32().Should().Be(_layerId);
+        table.GetProperty("type").GetString().Should().Be("Table");
+        table.TryGetProperty("geometryType", out _).Should().BeFalse();
 
         using var metadataResponse = await _client.GetAsync($"{serviceUrl}/{_layerId}?f=json");
         metadataResponse.StatusCode.Should().Be(HttpStatusCode.OK);
