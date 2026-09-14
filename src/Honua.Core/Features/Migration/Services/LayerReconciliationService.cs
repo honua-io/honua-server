@@ -143,9 +143,12 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
 
         try
         {
-            targetExtent = await _featureReader
-                .GetExtentAsync(targetLayerId, BuildCountQuery(layer), cancellationToken)
-                .ConfigureAwait(false);
+            if (layer.SourceHasGeometry)
+            {
+                targetExtent = await _featureReader
+                    .GetExtentAsync(targetLayerId, BuildCountQuery(layer), cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -187,9 +190,26 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         }
 
         var count = BuildCountProbe(layer, options, targetCount, readerFailure);
-        var geometry = BuildGeometryProbe(sample, options, readerFailure);
+        var geometry = layer.SourceHasGeometry
+            ? BuildGeometryProbe(sample, options, readerFailure)
+            : new MigrationReconciliationGeometryProbe
+            {
+                Sampled = 0,
+                Valid = 0,
+                Ratio = 1d,
+                Classification = MigrationReconciliationClassifications.Pass,
+                Reason = "Geometry validity is not applicable: the source is an attribute-only table."
+            };
         var content = BuildContentProbe(layer, sample, readerFailure);
-        var extent = BuildExtentProbe(layer, targetExtent, options, readerFailure, comparisonExtent);
+        var extent = layer.SourceHasGeometry
+            ? BuildExtentProbe(layer, targetExtent, options, readerFailure, comparisonExtent)
+            : new MigrationReconciliationExtentProbe
+            {
+                Source = null,
+                Target = null,
+                Classification = MigrationReconciliationClassifications.Pass,
+                Reason = "Extent comparison is not applicable: the source is an attribute-only table."
+            };
 
         return new MigrationReconciliationLayerReport
         {
