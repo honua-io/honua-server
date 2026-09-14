@@ -459,9 +459,12 @@ internal sealed class InputValidationMiddleware
             return false;
         }
 
+        // OGC API - EDR shares the OGC API datetime grammar, so its position/cube queries accept
+        // the same open-start interval (#4151).
         var path = request.Path.Value;
         return path?.StartsWith("/ogc/", StringComparison.OrdinalIgnoreCase) == true ||
-               path?.StartsWith("/stac", StringComparison.OrdinalIgnoreCase) == true;
+               path?.StartsWith("/stac", StringComparison.OrdinalIgnoreCase) == true ||
+               path?.StartsWith("/edr/", StringComparison.OrdinalIgnoreCase) == true;
     }
 
     private static bool IsODataSystemQueryOption(HttpRequest request, string paramType, string name)
