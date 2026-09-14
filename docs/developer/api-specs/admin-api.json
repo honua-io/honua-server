@@ -22923,6 +22923,23 @@
           "serviceName": {
             "type": "string",
             "description": "Service name"
+          },
+          "storageMode": {
+            "type": "string",
+            "enum": [
+              "source",
+              "managed"
+            ],
+            "nullable": true,
+            "description": "Storage the layer was published with. Set on publish responses; null on listings."
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "description": "Capability tokens declared on the layer's feature publication. Set on publish responses; null on listings."
           }
         }
       },
@@ -23018,6 +23035,31 @@
             "type": "boolean",
             "description": "Enable layer after publish",
             "default": true
+          },
+          "storageMode": {
+            "type": "string",
+            "enum": [
+              "source",
+              "managed"
+            ],
+            "default": "source",
+            "maxLength": 16,
+            "description": "Where the layer's features live. source serves the live source table read-only. managed copies the source rows into the managed feature store, which is then authoritative for the layer and accepts edits; the layer no longer tracks the source table."
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Query",
+                "Extract",
+                "Create",
+                "Update",
+                "Delete",
+                "Editing"
+              ]
+            },
+            "description": "Capability tokens declared on the feature publication (case-insensitive). Omit for the read-only default [\"Query\",\"Extract\"]. Must include Query. Create, Update, Delete and Editing require storageMode managed; otherwise the request is rejected with 400."
           }
         }
       },

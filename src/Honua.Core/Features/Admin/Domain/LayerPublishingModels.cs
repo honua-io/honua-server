@@ -116,6 +116,41 @@ public sealed class LayerPublishRequest
     /// Null when the source layer declared none.
     /// </summary>
     public IReadOnlyList<Honua.Core.Features.Metadata.Domain.V2.MetadataV2AttributeRule>? AttributeRules { get; init; }
+
+    /// <summary>
+    /// Where the published layer's features live. <see cref="LayerStorageMode.Source"/> (the
+    /// default) serves the live source table; <see cref="LayerStorageMode.Managed"/> copies the
+    /// source rows into the managed feature store, which then owns the layer's features and
+    /// accepts edits.
+    /// </summary>
+    public LayerStorageMode StorageMode { get; init; } = LayerStorageMode.Source;
+
+    /// <summary>
+    /// Capability tokens declared on the layer's feature publication (for example
+    /// <c>Query</c>, <c>Create</c>, <c>Update</c>, <c>Delete</c>). Null or empty keeps the
+    /// read-only default <c>["Query","Extract"]</c>. Edit tokens require
+    /// <see cref="LayerStorageMode.Managed"/>.
+    /// </summary>
+    public IReadOnlyList<string>? Capabilities { get; init; }
+}
+
+/// <summary>
+/// Storage a published layer's features are served from and written to.
+/// </summary>
+public enum LayerStorageMode
+{
+    /// <summary>
+    /// Features are read from the live source table. The server cannot write through a
+    /// source table, so edits are refused (honua-server#4707).
+    /// </summary>
+    Source,
+
+    /// <summary>
+    /// Source rows are copied into the managed feature store at publish time. The managed
+    /// store is then authoritative for the layer: reads and edits both use it, and the
+    /// layer no longer tracks the source table (honua-server#4859).
+    /// </summary>
+    Managed
 }
 
 /// <summary>
@@ -414,6 +449,18 @@ public sealed class PublishedLayerSummary
     /// Name of the service this layer belongs to.
     /// </summary>
     public required string ServiceName { get; init; }
+
+    /// <summary>
+    /// Storage mode the layer was published with (<c>source</c> or <c>managed</c>). Set on
+    /// publish responses; null on listings.
+    /// </summary>
+    public string? StorageMode { get; init; }
+
+    /// <summary>
+    /// Capability tokens declared on the layer's feature publication. Set on publish
+    /// responses; null on listings.
+    /// </summary>
+    public IReadOnlyList<string>? Capabilities { get; init; }
 }
 
 /// <summary>
