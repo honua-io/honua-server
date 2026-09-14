@@ -156,11 +156,18 @@ public sealed partial class FeatureStreamEndpointsTests
             return await fixture.Client.SendAsync(request, ct);
         }
 
-        var credential = await IssueAsync(credentialState == "expired" ? TimeSpan.FromSeconds(3) : TimeSpan.FromMinutes(1), "tenant-a");
-        using (var admitted = await ReadAsync(credential.Token))
+        // The positive control also warms the host, so a short-lived credential below is not
+        // spent on the first request's startup cost.
+        using (var admitted = await ReadAsync((await IssueAsync(TimeSpan.FromMinutes(1), "tenant-a")).Token))
         {
             admitted.StatusCode.Should().Be(HttpStatusCode.OK, "the tenant-a reader is the positive control");
             (await admitted.Content.ReadAsStringAsync(ct)).Should().Contain("tenant-a-secret");
+        }
+
+        var credential = await IssueAsync(credentialState == "expired" ? TimeSpan.FromSeconds(6) : TimeSpan.FromMinutes(1), "tenant-a");
+        using (var admitted = await ReadAsync(credential.Token))
+        {
+            admitted.StatusCode.Should().Be(HttpStatusCode.OK, "the credential under test is valid before its boundary");
         }
 
         string? presented = credentialState switch
@@ -368,26 +375,36 @@ public sealed partial class FeatureStreamEndpointsTests
         const string referer = "https://kestrel-stream-proof.example/";
         var server = fixture.Client.BaseAddress!;
         server.IsLoopback.Should().BeTrue("the fixture must be serving through loopback Kestrel, not TestServer");
-
-        // The candidate dropped the close frame on three of four runs; repeat so a race cannot pass by luck.
-        for (var attempt = 0; attempt < 3; attempt++)
+        async Task<PortalTokenIssuance> IssueAsync(TimeSpan ttl) => await issuer.IssueAsync(new PortalTokenIssueRequest(
+            "kestrel-proof", "Kestrel proof", "tenant-a", ["reader"], PortalTokenClientType.Referer, referer, DateTimeOffset.UtcNow + ttl), ct);
+        async Task<ClientWebSocket> ConnectAsync(string token)
         {
-            var credential = await issuer.IssueAsync(new PortalTokenIssueRequest("kestrel-proof", "Kestrel proof", "tenant-a",
-                ["reader"], PortalTokenClientType.Referer, referer,
-                DateTimeOffset.UtcNow + (expire ? TimeSpan.FromSeconds(3) : TimeSpan.FromMinutes(1))), ct);
-            using var socket = new ClientWebSocket();
+            var socket = new ClientWebSocket();
             socket.Options.SetRequestHeader("Referer", referer);
             foreach (var header in fixture.Client.DefaultRequestHeaders)
             {
                 socket.Options.SetRequestHeader(header.Key, string.Join(",", header.Value));
             }
-            var address = new UriBuilder(server)
+            await socket.ConnectAsync(new UriBuilder(server)
             {
                 Scheme = "ws",
                 Path = "/api/v1/streaming/features",
-                Query = $"serviceId=test&layers=0&token={credential.Token}",
-            }.Uri;
-            await socket.ConnectAsync(address, ct);
+                Query = $"serviceId=test&layers=0&token={token}",
+            }.Uri, ct);
+            return socket;
+        }
+
+        // Warm the stream path first so a short-lived credential is not spent on startup cost.
+        using (var warm = await ConnectAsync((await IssueAsync(TimeSpan.FromMinutes(1))).Token))
+        {
+            await warm.CloseAsync(WebSocketCloseStatus.NormalClosure, "warm-up", ct);
+        }
+
+        // The candidate dropped the close frame on three of four runs; repeat so a race cannot pass by luck.
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            var credential = await IssueAsync(expire ? TimeSpan.FromSeconds(6) : TimeSpan.FromMinutes(1));
+            using var socket = await ConnectAsync(credential.Token);
 
             DateTimeOffset boundary;
             if (expire)
