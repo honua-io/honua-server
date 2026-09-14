@@ -162,7 +162,7 @@
             "capabilityMaturity": [
               "preview"
             ],
-            "notes": "Preview/opt-in in 2026.1. Registers offline replica state in distributed cache when available, otherwise in memory; full parity is deferred to release/2026.2."
+            "notes": "Preview/opt-in in 2026.1. Returns the replica data embedded in layers[].features, scoped by geometry/geometryType/inSR, layerQueries (queryOption, where, useGeometry) and projected to replicaSR; the scope is persisted with the replica and applied to every later extract and download. syncModel is perReplica, perLayer or none (none returns the data without registering). esriTransportTypeUrl is answered with the embedded transport, which the response declares. async=true, dataFormat other than json (no runtime geodatabase), returnAttachments=true, includeRelated=true and replicaOptions are rejected with 400. A scope above Limits:Replica:MaxChangesPerLayer per layer returns a bounded first window (exceededTransferLimit) that synchronizeReplica downloads continue. Broader parity is deferred to release/2026.2."
           },
           {
             "name": "Extract Changes",
@@ -176,7 +176,7 @@
             "capabilityMaturity": [
               "preview"
             ],
-            "notes": "Preview/opt-in in 2026.1. Full Esri offline-sync parity is deferred to release/2026.2."
+            "notes": "Preview/opt-in in 2026.1. Honors layerServerGens, serverGen and serverGens [min,max], returnInserts/returnUpdates/returnDeletes, returnIdsOnly, geometry and layerQueries, and answers with the Esri layerServerGens/transportType/responseType/edits envelope beside the legacy Honua layerChanges projection. A backlog above Limits:Replica:MaxChangesPerLayer per layer returns a bounded generation window flagged exceededTransferLimit. async=true, dataFormat other than json, returnAttachments=true and returnExtentOnly=true are rejected with 400. Broader Esri offline-sync parity is deferred to release/2026.2."
           },
           {
             "name": "Get Estimates (service)",
@@ -278,7 +278,7 @@
             "capabilityMaturity": [
               "preview"
             ],
-            "notes": "Preview/opt-in in 2026.1. Supports download, upload, and bidirectional sync directions; broader parity is deferred to release/2026.2."
+            "notes": "Preview/opt-in in 2026.1. Supports download, upload, and bidirectional sync directions. Downloads apply the replica\u0027s stored scope, and a backlog above Limits:Replica:MaxChangesPerLayer per layer is delivered in consecutive generation windows (exceededTransferLimit; the cursor advances to the generation reached). Broader parity is deferred to release/2026.2."
           },
           {
             "name": "Unregister Replica",
