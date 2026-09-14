@@ -10,6 +10,8 @@ using Honua.Ai.Protocols.Mcp.Resources;
 using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.Operations.Abstractions;
+using Honua.Core.Features.Operations.Services;
 using Honua.Geoprocessing;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
@@ -178,6 +180,160 @@ public sealed class McpRegistryCompositionTests
 
         await check.Invoking(c => c.StartAsync(CancellationToken.None))
             .Should().NotThrowAsync("catalog-published tools are bound through their canonical operation descriptor");
+    }
+
+    [UnitTest]
+    public async Task ProductionOperationsComposition_ByDefault_PublishesExactlyTheAuditedAdminProjection()
+    {
+        // honua-server#3363 (coordinator ruling 2026-09-14): eligible Admin operation
+        // publication is on by default for the production composition — no
+        // Mcp:PublishOperations configuration at all. The committed projection manifest is
+        // the contract: its 66 rows are the Admin API and access catalogs minus the 13
+        // audited exclusions (digest below). Other admin.* providers (connections, import,
+        // cache, configuration, license, metadata releases) and the non-admin honua_op_*
+        // families are not audited for MCP and publish only with the explicit
+        // Mcp:PublishOperations:Enabled opt-in.
+        const int ExpectedPublishedTools = 66;
+        const int ExpectedExclusions = 13;
+        const string ExpectedExclusionDigest = "52ec32f9e4c942b11057f779c664f33df180ff17ff975c62bbed5a8848907fe0";
+
+        await using var provider = BuildProductionOperationsComposition(new Dictionary<string, string?>());
+        var surface = BuildOperationsSurface(provider);
+        var published = await PublishedToolNamesAsync(surface);
+
+        using var manifest = JsonDocument.Parse(File.ReadAllText(
+            Honua.TestKit.RepositoryPaths.Resolve("docs", "gis", "data", "admin-mcp-projection-manifest.json")));
+        var manifestToolNames = manifest.RootElement.GetProperty("operations").EnumerateArray()
+            .Select(operation => operation.GetProperty("toolName").GetString()!)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+        var manifestExclusions = manifest.RootElement.GetProperty("exclusions");
+
+        // One comparison so a drift reports every measured count at once.
+        new
+        {
+            Published = published.Length,
+            ManifestRows = manifestToolNames.Length,
+            Exclusions = AdminMcpOperationExclusions.All.Count,
+            ManifestExclusions = manifestExclusions.GetProperty("operations").GetArrayLength(),
+        }.Should().BeEquivalentTo(new
+        {
+            Published = ExpectedPublishedTools,
+            ManifestRows = ExpectedPublishedTools,
+            Exclusions = ExpectedExclusions,
+            ManifestExclusions = ExpectedExclusions,
+        });
+
+        published.Should().Equal(manifestToolNames,
+            "the default production composition publishes exactly the committed audited Admin projection");
+        AdminMcpOperationExclusions.Digest.Should().Be(ExpectedExclusionDigest);
+        manifestExclusions.GetProperty("digest").GetString().Should().Be(ExpectedExclusionDigest);
+        published.Should().NotIntersectWith(
+            AdminMcpOperationExclusions.All.Select(exclusion => exclusion.ToolName),
+            "audited one-time-secret, secret-input and browser-session operations never publish");
+        published.Should().NotContain("honua_admin_connections_test_draft",
+            "connection operations accept a plaintext password and are outside the audited projection");
+
+        // #3813/#3819: publication does not restore default full enumeration — no
+        // published Admin tool joins the bounded default view.
+        published.Should().OnlyContain(
+            name => Honua.Ai.Protocols.Mcp.Views.McpWorkflowViewCatalog.Default.FindStageIndex(name) < 0);
+
+        var check = new McpRegistryBindingStartupCheck(
+            surface,
+            Registry,
+            Options.Create(new CapabilityRegistryBindingOptions { RegistryBinding = true }));
+        await check.Invoking(c => c.StartAsync(CancellationToken.None))
+            .Should().NotThrowAsync("the default published projection is bound through its operation descriptors");
+    }
+
+    [UnitTest]
+    public async Task ProductionOperationsComposition_WithFullCatalogOptIn_PublishesEveryNonExcludedOperation()
+    {
+        // The explicit full-catalog opt-in keeps its pre-#3363 meaning: every eligible
+        // descriptor publishes except the audited exclusions and hand-authored duplicates.
+        const int ExpectedCatalogAdminOperations = 110;
+        const int ExpectedExclusionsInCatalog = 5;
+        const int ExpectedPublishedAdminTools = 105;
+
+        await using var provider = BuildProductionOperationsComposition(new Dictionary<string, string?>
+        {
+            ["Mcp:PublishOperations:Enabled"] = "true",
+        });
+        var published = await PublishedToolNamesAsync(BuildOperationsSurface(provider));
+        var publishedAdminTools = published
+            .Where(name => name.StartsWith(PublishedOperationTool.AdminNamePrefix, StringComparison.Ordinal))
+            .ToArray();
+        var catalogOperationIds = (await provider.GetRequiredService<IOperationCatalog>().GetSnapshotAsync())
+            .Operations
+            .Select(descriptor => descriptor.OperationId)
+            .ToArray();
+        var catalogAdminOperationIds = catalogOperationIds
+            .Where(operationId => operationId.StartsWith("admin.", StringComparison.Ordinal))
+            .ToArray();
+
+        // Exclusions that are not catalog operations (embed keys, browser sessions) can
+        // never publish; the ones that are catalog operations are withheld.
+        new
+        {
+            CatalogAdminOperations = catalogAdminOperationIds.Length,
+            ExclusionsInCatalog = catalogAdminOperationIds.Count(AdminMcpOperationExclusions.ContainsOperation),
+            PublishedAdminTools = publishedAdminTools.Length,
+        }.Should().BeEquivalentTo(new
+        {
+            CatalogAdminOperations = ExpectedCatalogAdminOperations,
+            ExclusionsInCatalog = ExpectedExclusionsInCatalog,
+            PublishedAdminTools = ExpectedPublishedAdminTools,
+        });
+        publishedAdminTools.Should().BeEquivalentTo(
+            catalogAdminOperationIds
+                .Where(operationId => !AdminMcpOperationExclusions.ContainsOperation(operationId))
+                .Select(PublishedOperationTool.ProjectName));
+
+        // honua_studio_propose_publication owns Studio publication with owner authorization;
+        // the generic projection of the same operation is never published.
+        catalogOperationIds.Should().Contain("studio.content.create-publication-request");
+        published.Should().NotContain(PublishedOperationTool.ProjectName("studio.content.create-publication-request"));
+        published.Should().Contain(name => name.StartsWith(PublishedOperationTool.NamePrefix, StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public async Task ProductionOperationsComposition_WithAdminProjectionDisabled_PublishesNoOperationTools()
+    {
+        // The operator opt-out stays honored after #3363 turned the audited projection on by default.
+        await using var provider = BuildProductionOperationsComposition(new Dictionary<string, string?>
+        {
+            ["Mcp:PublishOperations:AdminProjection"] = "false",
+        });
+
+        (await PublishedToolNamesAsync(BuildOperationsSurface(provider))).Should().BeEmpty();
+    }
+
+    private static McpDataAccessSurface BuildOperationsSurface(IServiceProvider provider) => new(
+        Honua.Server.Tests.Features.Protocols.Mcp.McpTaxonomyAlignmentTests.BuildTools(),
+        [],
+        NullLogger<McpDataAccessSurface>.Instance,
+        toolSources: provider.GetServices<IMcpToolSource>());
+
+    private static async Task<string[]> PublishedToolNamesAsync(McpDataAccessSurface surface) =>
+        (await surface.GetAllToolsAsync())
+            .OfType<PublishedOperationTool>()
+            .Select(tool => tool.Name)
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+    private static ServiceProvider BuildProductionOperationsComposition(Dictionary<string, string?> settings)
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
+        var environment = Substitute.For<IHostEnvironment>();
+        environment.EnvironmentName.Returns(Environments.Production);
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton(Substitute.For<IOperationProposalStore>());
+        services.AddOperationsToolset(configuration, environment);
+        services.AddAdminAccessOperations();
+        McpServiceCollectionExtensions.AddMcpPublishedOperationTools(services, configuration);
+        return services.BuildServiceProvider();
     }
 
     [UnitTest]
