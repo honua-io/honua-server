@@ -18,7 +18,7 @@ Discover the GeoServices REST catalog root and service-directory info.
 | Edition | Community |
 | Surface maturity | 4 implemented |
 | Registry entries | 4 |
-| Proving tests | 44 |
+| Proving tests | 46 |
 
 The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, both generated from the server's own registry and test evidence. This page is a pure function of those two files — nothing in it depends on what the prose happens to say, so an unrelated documentation edit cannot stale it.
 
