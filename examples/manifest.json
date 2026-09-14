@@ -4500,7 +4500,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 30,
+      "line": 42,
       "language": "js"
     },
     {
@@ -4513,7 +4513,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 47,
+      "line": 59,
       "language": "js"
     },
     {
@@ -13345,7 +13345,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 360,
+      "line": 398,
       "language": "sql"
     },
     {

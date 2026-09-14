@@ -1039,3 +1039,59 @@ sizing:
 The GeoServices test project's exact-head cache writer is still
 `GeoServices ImageServer` (rank 26.9), so this split does not move the #4453
 static-asset hazard.
+
+## Operator Eval Harness capacity split (2026-09-14)
+
+Trunk went red at `8e62f71` on run
+[34816748596](https://github.com/honua-io/honua-server/actions/runs/34816748596):
+`Operator Eval Harness` hit `HONUA_SHARD_CAPACITY_EXHAUSTED` at its 20m budget
+(1201s, 4s idle), and the failed-jobs rerun did the same. Neither log has a
+failing test.
+
+### Evidence: the shard was already at the cap
+
+`8e62f71` (#4837) adds no test this shard selects. Its new
+`GPServerDurableRuntimeTests` case lives in `Honua.Protocols.GeoServices.Tests`,
+outside the shard's `Honua.Server.Tests.Features.*` filter. The last trunk run
+that actually ran the shard, at `0c6c424`
+([34805451238](https://github.com/honua-io/honua-server/actions/runs/34805451238)),
+passed at 1196s, 99.7% of the cap (`low_headroom`). The intervening run at
+`ff1a463` skipped the shard. The red run is the same workload four seconds
+longer, killed ten cases short (267 of 277).
+
+The run uploads no TRX, so the sizing below comes from the console log: the
+time between consecutive test results, placed by the nearest structured-log
+timestamp and charged to the test's class. That totals 1187s at `0c6c424` and
+1190s at `8e62f71`, which matches the shard's wall time. It is an
+approximation. The shard runs some xUnit collections side by side, so
+neighbouring classes can trade seconds.
+
+| Namespace | `0c6c424` | `8e62f71` |
+|---|---:|---:|
+| `Features.Protocols.Grpc` | 580s | 580s |
+| (of which `SceneGrpcIntegrationTests`) | 533s | 568s |
+| `Features.Geoprocessing` (incl. `Execution`) | 575s | 573s |
+| `Features.Eval` | 33s | 37s |
+
+About 430s of that wall time is ~60 host teardowns that each wait ~10s between
+`File storage cleanup service stopped` and `Adaptive sampler disposed`. That
+cost is spread across every class that boots a `WebApplicationFactory`, so no
+single class move removes it.
+
+### The split
+
+The whole `Honua.Server.Tests.Features.Protocols.Grpc` namespace moves to a new
+`gRPC Protocol and Scene` shard. `Operator Eval Harness` keeps `Features.Eval`
+and `Features.Geoprocessing`, including `GrpcProcessServiceIntegrationTests`,
+and still uploads the operator eval report. Both keep `max_cpu_count: 1` and
+the unchanged 20m test and 30m job caps. gRPC source changes select both
+shards. The `Operator Eval Harness capacity partition` contract preserves the
+original class surface with exactly one owner per class.
+
+| Shard | Estimated wall | Cap | Util |
+|---|---:|---:|---:|
+| gRPC Protocol and Scene **(new)** | ~9.7m | 20m | ~48% |
+| Operator Eval Harness | ~10.2m | 20m | ~51% |
+
+These are single-run estimates. The first trunk matrix after landing replaces
+them with measured `*.timing.json` values.

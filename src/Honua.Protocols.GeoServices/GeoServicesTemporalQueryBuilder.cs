@@ -322,6 +322,8 @@ internal static class GeoServicesTemporalQueryBuilder
     /// <summary>
     /// Parses time parameter string into start/end times.
     /// Supports Unix timestamps in milliseconds, ISO 8601, and open intervals using null/empty.
+    /// An extent may also be written as a bracketed JSON array (<c>[start, end]</c>), the form
+    /// the ArcGIS API for Python sends from a layer's <c>timeInfo.timeExtent</c> (#4782).
     /// </summary>
     internal static bool TryParseTimeParameter(string timeParam, out DateTimeOffset? start, out DateTimeOffset? end)
     {
@@ -329,6 +331,13 @@ internal static class GeoServicesTemporalQueryBuilder
         end = null;
 
         if (string.IsNullOrWhiteSpace(timeParam))
+        {
+            return false;
+        }
+
+        var trimmed = timeParam.Trim();
+        if ((trimmed.StartsWith('[') || trimmed.EndsWith(']'))
+            && !TryUnwrapBracketedExtent(trimmed, out timeParam))
         {
             return false;
         }
@@ -370,6 +379,53 @@ internal static class GeoServicesTemporalQueryBuilder
         }
 
         end = start;
+        return true;
+    }
+
+    /// <summary>
+    /// Unwraps a bracketed JSON-array time extent (<c>[start, end]</c>) into the plain
+    /// <c>start,end</c> form. Each element may be epoch milliseconds, <c>null</c>, or a JSON string
+    /// holding an instant. Anything but exactly two non-empty elements inside one balanced pair of
+    /// brackets is malformed, so the caller still answers the Esri 400. Empty elements are rejected
+    /// here even though the plain form reads an empty bound as open: <c>[,]</c> is not a JSON array.
+    /// </summary>
+    private static bool TryUnwrapBracketedExtent(string value, out string extent)
+    {
+        extent = string.Empty;
+
+        if (value.Length < 2 || value[0] != '[' || value[^1] != ']')
+        {
+            return false;
+        }
+
+        var parts = value[1..^1].Split(',');
+        if (parts.Length != 2)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < parts.Length; i++)
+        {
+            var part = parts[i].Trim();
+            if (part.Length == 0 || part.Contains('[') || part.Contains(']'))
+            {
+                return false;
+            }
+
+            if (part.Contains('"'))
+            {
+                if (part.Length < 3 || part[0] != '"' || part.IndexOf('"', 1) != part.Length - 1)
+                {
+                    return false;
+                }
+
+                part = part[1..^1];
+            }
+
+            parts[i] = part;
+        }
+
+        extent = string.Concat(parts[0], ",", parts[1]);
         return true;
     }
 

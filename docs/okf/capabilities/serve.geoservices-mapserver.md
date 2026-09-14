@@ -18,7 +18,7 @@ Serve map images, identify, and export through the Esri GeoServices MapServer su
 | Edition | Community |
 | Surface maturity | 43 implemented, 2 preview |
 | Registry entries | 45 |
-| Proving tests | 358 |
+| Proving tests | 359 |
 
 The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, both generated from the server's own registry and test evidence. This page is a pure function of those two files — nothing in it depends on what the prose happens to say, so an unrelated documentation edit cannot stale it.
 

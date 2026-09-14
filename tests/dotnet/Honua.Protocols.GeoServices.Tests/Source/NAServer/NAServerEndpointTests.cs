@@ -58,7 +58,20 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
         attributes.GetProperty("Total_Length").GetDouble().Should().BeGreaterThan(0);
         attributes.GetProperty("Total_TravelTime").GetDouble().Should().BeGreaterThan(0);
 
-        root.GetProperty("directions").GetArrayLength().Should().BeGreaterThan(0);
+        // #4035: Esri clients attach a direction set to the route whose Name equals its
+        // routeName; an unnamed set becomes a phantom second route result.
+        var direction = root.GetProperty("directions").EnumerateArray().Should().ContainSingle().Subject;
+        direction.GetProperty("routeId").GetInt32().Should().Be(1);
+        direction.GetProperty("routeName").GetString().Should().Be(attributes.GetProperty("Name").GetString());
+        var summary = direction.GetProperty("summary");
+        summary.GetProperty("totalLength").GetDouble().Should().Be(attributes.GetProperty("Total_Length").GetDouble());
+        summary.GetProperty("totalTime").GetDouble().Should().Be(attributes.GetProperty("Total_TravelTime").GetDouble());
+        var envelope = summary.GetProperty("envelope");
+        envelope.GetProperty("xmin").GetDouble().Should().Be(-157.862);
+        envelope.GetProperty("ymin").GetDouble().Should().Be(21.306944);
+        envelope.GetProperty("xmax").GetDouble().Should().Be(-157.858333);
+        envelope.GetProperty("ymax").GetDouble().Should().Be(21.31);
+        direction.GetProperty("features").GetArrayLength().Should().Be(3);
     }
 
     [IntegrationTest]
