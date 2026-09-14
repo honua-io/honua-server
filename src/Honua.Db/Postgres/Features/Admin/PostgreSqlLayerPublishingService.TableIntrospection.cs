@@ -255,7 +255,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private static List<LayerFieldInsert> BuildLayerFields(
         List<ColumnInfo> selectedColumns,
         ColumnInfo primaryKeyColumn,
-        string geometryColumn,
+        string? geometryColumn,
         IReadOnlyDictionary<string, MetadataV2FieldDomain> fieldDomains)
     {
         var fields = new List<LayerFieldInsert>();
@@ -290,7 +290,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             _ = added.Add(column.Name);
         }
 
-        if (!added.Contains(geometryColumn))
+        if (!string.IsNullOrWhiteSpace(geometryColumn) && !added.Contains(geometryColumn))
         {
             fields.Add(new LayerFieldInsert(
                 geometryColumn,
