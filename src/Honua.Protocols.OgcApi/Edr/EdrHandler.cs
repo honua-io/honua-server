@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -25,7 +26,7 @@ namespace Honua.Protocols.Ogc.Api.Edr;
 /// and cube subsetting samples the canonical raster read pipeline on a bounded grid. Results
 /// are returned as CoverageJSON.
 /// </summary>
-internal sealed class EdrHandler
+internal sealed partial class EdrHandler
 {
     private const string CoveragesProtocol = "OGC-API-Coverages";
     private const string Crs84 = "http://www.opengis.net/def/crs/OGC/1.3/CRS84";
@@ -622,10 +623,11 @@ internal sealed class EdrHandler
     /// 1.1 <c>/req/edr/datetime-response</c> only returns data whose temporal geometry intersects
     /// the requested instant or interval, so a disjoint request selects no data and the query
     /// paths answer <c>204 No Content</c> instead of stamping the requested time onto the raster's
-    /// values. A value that is not an RFC 3339 instant or <c>start/end</c> interval (with
-    /// <c>..</c> open ends) is an invalid parameter value, which OGC API - Common Part 1 maps to
-    /// <c>400</c>. The comparison runs at the one-second resolution the t-axis advertises, so a
-    /// client echoing an advertised instant back always selects it.
+    /// values. A value that is not an RFC 3339 date-time or <c>start/end</c> interval (with
+    /// <c>..</c> or empty open ends) is an invalid parameter value, which OGC API - Common Part 1
+    /// maps to <c>400</c>; the grammar is checked here because the shared range parser accepts any
+    /// <see cref="DateTimeOffset"/> text. The intersection is exact to the tick, and the t-axis
+    /// advertises the instant with its fractional seconds, so echoing it back selects it.
     /// </remarks>
     private static IResult? ValidateDatetime(HttpContext context, RasterInfo raster, out bool intersects)
     {
@@ -636,27 +638,38 @@ internal sealed class EdrHandler
             return null;
         }
 
-        if (!OgcTemporalFilterParser.TryParseRange(datetime, out var start, out var end, out _))
+        if (!IsRfc3339InstantOrInterval(datetime) ||
+            !OgcTemporalFilterParser.TryParseRange(datetime, out var start, out var end, out _))
         {
             return StandardErrorHelpers.CreateBadRequest(
                 context,
                 "Query parameter 'datetime' must be an RFC 3339 instant or an interval 'start/end' where either end may be '..', e.g. datetime=2024-05-01T00:00:00Z/..");
         }
 
-        var instant = TruncateToSeconds(ResolveRasterInstant(raster));
-        intersects = (start is not { } from || instant >= TruncateToSeconds(from))
-            && (end is not { } to || instant <= TruncateToSeconds(to));
+        var instant = ResolveRasterInstant(raster);
+        intersects = (start is not { } from || instant >= from)
+            && (end is not { } to || instant <= to);
         return null;
     }
 
+    private static bool IsRfc3339InstantOrInterval(string datetime)
+    {
+        var parts = datetime.Split('/');
+        return parts.Length switch
+        {
+            1 => Rfc3339DateTime().IsMatch(parts[0]),
+            2 => parts.All(static part => part is "" or ".." || Rfc3339DateTime().IsMatch(part)),
+            _ => false
+        };
+    }
+
+    // RFC 3339 date-time: full-date "T" partial-time with optional fractional seconds and a
+    // mandatory "Z" or numeric UTC offset.
+    [GeneratedRegex(@"^[0-9]{4}-[0-9]{2}-[0-9]{2}[Tt][0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?([Zz]|[+-][0-9]{2}:[0-9]{2})$", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 100)]
+    private static partial Regex Rfc3339DateTime();
+
     private static DateTimeOffset ResolveRasterInstant(RasterInfo raster)
         => raster.AcquisitionDate ?? raster.CreatedAt;
-
-    private static DateTimeOffset TruncateToSeconds(DateTimeOffset value)
-    {
-        var utc = value.ToUniversalTime();
-        return utc.AddTicks(-(utc.Ticks % TimeSpan.TicksPerSecond));
-    }
 
     private static int ResolveCubeSampleCount(string resolutionX)
     {
@@ -748,8 +761,10 @@ internal sealed class EdrHandler
         _ => null
     };
 
+    // UTC RFC 3339 instant. Fractional seconds are kept (and omitted with their period when zero)
+    // so an advertised time round-trips exactly through the datetime parameter (#4151).
     private static string Iso(DateTimeOffset value) =>
-        value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+        value.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'", CultureInfo.InvariantCulture);
 
     private static bool IsProtocolEnabled(MetadataV2Service? service, string protocol) =>
         service?.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase)) == true;

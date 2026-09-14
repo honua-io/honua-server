@@ -76,7 +76,7 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
     public async Task Edr_Position_ReturnsCoverageJsonPointSeries()
     {
         var response = await _fixture.Client.GetAsync(
-            $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords=POINT(-122.4 37.8)&datetime=2026-06-20T00:00:00Z");
+            $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords=POINT(-122.4 37.8)&datetime=2026-06-20T00:00:00.4Z");
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
@@ -87,10 +87,19 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
         doc.RootElement.GetProperty("domain").GetProperty("domainType").GetString().Should().Be("PointSeries");
         doc.RootElement.GetProperty("domain").GetProperty("axes").GetProperty("t").GetProperty("values")
             .EnumerateArray().Select(value => value.GetString())
-            .Should().Equal("2026-06-20T00:00:00Z");
+            .Should().Equal("2026-06-20T00:00:00.4Z");
 
         var range = doc.RootElement.GetProperty("ranges").GetProperty("band_1");
         range.GetProperty("values").EnumerateArray().First().GetDouble().Should().Be(11.0);
+
+        // Sub-second precision decides intersection (#4151): the whole second and an interval
+        // ending 300 ms before the acquisition instant both select no data.
+        foreach (var disjoint in new[] { "2026-06-20T00:00:00Z", "../2026-06-20T00:00:00.100Z" })
+        {
+            var disjointResponse = await _fixture.Client.GetAsync(
+                $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords=POINT(-122.4 37.8)&datetime={Uri.EscapeDataString(disjoint)}");
+            disjointResponse.StatusCode.Should().Be(HttpStatusCode.NoContent, disjoint);
+        }
     }
 
     [IntegrationTest]
@@ -423,8 +432,8 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
             GeoTransform = [-122.5, 0.003125, 0, 37.9, 0, -0.003125],
             Extent = new RasterExtent { XMin = -122.5, YMin = 37.7, XMax = -122.3, YMax = 37.9, Srid = 4326 },
             // The position query's datetime selects this acquisition instant (#4151): it carries
-            // sub-second precision, which the second-resolution t-axis echoes as 00:00:00Z, and
-            // differs from CreatedAt so a handler reading the creation date selects nothing.
+            // sub-second precision, which the t-axis must echo exactly, and differs from CreatedAt
+            // so a handler reading the creation date selects nothing.
             AcquisitionDate = new DateTimeOffset(2026, 6, 20, 0, 0, 0, 400, TimeSpan.Zero),
             CreatedAt = DateTimeOffset.UtcNow
         };

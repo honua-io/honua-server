@@ -184,7 +184,7 @@ public sealed class EdrDepthTests : IClassFixture<EdrDepthTestsFixture>
         var intersecting = new[]
         {
             "2026-01-05T00:00:00Z",
-            "2026-01-05T00:00:00.999Z",
+            "2026-01-05T00:00:00.000Z",
             "2025-12-01T00:00:00Z/2026-02-01T00:00:00Z",
             "2026-01-05T00:00:00Z/2026-01-05T00:00:00Z",
             "../2026-01-05T00:00:00Z",
@@ -225,7 +225,10 @@ public sealed class EdrDepthTests : IClassFixture<EdrDepthTestsFixture>
             "1999-01-01T00:00:00Z/2000-01-01T00:00:00Z",
             "2026-01-05T00:00:01Z",
             "2026-01-05T00:00:01Z/..",
-            "../2026-01-04T23:59:59Z"
+            "../2026-01-04T23:59:59Z",
+            // The intersection is exact: a millisecond either side of the instant misses it.
+            "2026-01-05T00:00:00.001Z",
+            "../2026-01-04T23:59:59.999Z"
         };
 
         foreach (var datetime in disjoint)
@@ -434,7 +437,11 @@ public sealed class EdrDepthTests : IClassFixture<EdrDepthTestsFixture>
         "2026-02-01T00:00:00Z/2026-01-01T00:00:00Z", // start after end
         "../..",
         "2026-01-01T00:00:00Z/garbage",
-        "2026-01-01T00:00:00Z/2026-01-02T00:00:00Z/2026-01-03T00:00:00Z"
+        "2026-01-01T00:00:00Z/2026-01-02T00:00:00Z/2026-01-03T00:00:00Z",
+        // Not RFC 3339 date-times, although DateTimeOffset.TryParse would accept them.
+        "2026-01-05",
+        "2026-01-05T00:00:00",
+        "01/05/2026 00:00:00 +00:00"
     ];
 
     private async Task<JsonDocument> GetJsonAsync(string uri)
