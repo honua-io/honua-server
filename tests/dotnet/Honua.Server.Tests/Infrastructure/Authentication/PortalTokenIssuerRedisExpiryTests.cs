@@ -21,7 +21,7 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 [Collection(RedisFixture.CollectionName)]
 [SecurityTest]
 [Protocol(TestProtocols.FeatureServer)]
-[Operation(Operations.Security)]
+[Operation(Operations.Security, Operations.SecurityTesting)]
 public sealed class PortalTokenIssuerRedisExpiryTests(RedisFixture redis)
 {
     [IntegrationTest]
