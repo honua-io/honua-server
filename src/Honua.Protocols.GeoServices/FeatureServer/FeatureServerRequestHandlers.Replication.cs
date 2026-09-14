@@ -685,6 +685,7 @@ internal static partial class FeatureServerEndpoints
                 layerChanges.Add(new LayerChanges
                 {
                     Id = layer.PublicLayerId,
+                    SpatialReference = CreateReplicaLayerSpatialReference(layer.Resource),
                     Adds = insertIds.Length,
                     Updates = updateIds.Length,
                     Deletes = deleteIds.Length,
@@ -714,6 +715,7 @@ internal static partial class FeatureServerEndpoints
                 layerChanges.Add(new LayerChanges
                 {
                     Id = layer.PublicLayerId,
+                    SpatialReference = CreateReplicaLayerSpatialReference(layer.Resource),
                     Adds = 0,
                     Updates = 0,
                     Deletes = 0
@@ -800,6 +802,7 @@ internal static partial class FeatureServerEndpoints
         return (new LayerChanges
         {
             Id = layer.PublicLayerId,
+            SpatialReference = CreateReplicaLayerSpatialReference(layer.Resource),
             Adds = addFeatures.Length,
             Updates = 0,
             Deletes = 0,
@@ -900,6 +903,7 @@ internal static partial class FeatureServerEndpoints
                 layerChanges.Add(new LayerChanges
                 {
                     Id = layer.PublicLayerId,
+                    SpatialReference = CreateReplicaLayerSpatialReference(layer.Resource),
                     Adds = 0,
                     Updates = 0,
                     Deletes = 0
@@ -952,6 +956,7 @@ internal static partial class FeatureServerEndpoints
             layerChanges.Add(new LayerChanges
             {
                 Id = layer.PublicLayerId,
+                SpatialReference = CreateReplicaLayerSpatialReference(layer.Resource),
                 Adds = insertIds.Length,
                 Updates = updateIds.Length,
                 Deletes = deleteIds.Length,
@@ -1179,8 +1184,10 @@ internal static partial class FeatureServerEndpoints
 
         // Esri sync parameter: rollbackOnFailure=true applies each layer's uploaded edits atomically so
         // a single failing row rolls back that layer's whole batch, leaving the server state unchanged
-        // (#2136). Defaults to false (best-effort per-row), matching the prior synchronize behavior.
-        if (!TryParseBoolValue(values, "rollbackOnFailure", false, out var rollbackOnFailure, out var rollbackError))
+        // (#2136). Defaults to true, the Esri Synchronize Replica default (#4031): a client that omits
+        // the parameter must never get a partially applied upload. Best-effort per-row apply is opt-in
+        // with an explicit rollbackOnFailure=false.
+        if (!TryParseBoolValue(values, "rollbackOnFailure", true, out var rollbackOnFailure, out var rollbackError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid rollbackOnFailure parameter",
@@ -2639,6 +2646,12 @@ internal static partial class FeatureServerEndpoints
     /// (JSONB stores dates as ISO strings from seeds or epoch-ms longs from applyEdits) via the
     /// shared GeoServices date convention, matching the query/identify serialization.
     /// </summary>
+    /// <remarks>
+    /// Z and M are always kept and the geometry carries the layer's spatial reference (#4027). A
+    /// replica download is not display output: the client stores these geometries offline and uploads
+    /// them back as updates, so flattening a 3D or measured feature here would write the 2D geometry
+    /// back to the server. This matches <see cref="CaptureStateEnvelope"/>.
+    /// </remarks>
     private static GeoServicesFeature ConvertFeatureToGeoServices(Feature feature, MetadataV2Resource resource)
     {
         var attributes = feature.Attributes
@@ -2652,7 +2665,21 @@ internal static partial class FeatureServerEndpoints
         {
             Attributes = attributes,
             Geometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
-                feature.Geometry, null, null, false, false)
+                feature.Geometry,
+                srid: ResolveReplicaLayerSrid(resource),
+                geometryLimits: null,
+                includeZ: true,
+                includeM: true)
         };
     }
+
+    /// <summary>
+    /// The spatial reference replica features are delivered in: the layer's declared storage SRID,
+    /// falling back to WGS 84 exactly as the query path does (#4027).
+    /// </summary>
+    private static int ResolveReplicaLayerSrid(MetadataV2Resource resource)
+        => resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
+
+    private static GeoServicesSpatialReference? CreateReplicaLayerSpatialReference(MetadataV2Resource resource)
+        => GeoServicesGeometryConverter.CreateSpatialReference(ResolveReplicaLayerSrid(resource));
 }

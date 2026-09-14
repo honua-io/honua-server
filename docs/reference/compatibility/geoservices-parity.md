@@ -175,9 +175,10 @@ the edits again. A bidirectional retry still assembles its download half fresh.
   each time.
 - A replayed bidirectional retry acknowledges the live server generation of the download half it
   delivers, so the next download does not repeat it.
-- An upload that fails after committing some rows is recorded too. This happens in the default
-  best-effort mode (`rollbackOnFailure=false`). Its retry returns the same error instead of applying
-  the committed rows again. An upload that provably committed nothing frees its key, so the retry
+- An upload that fails after committing some rows is recorded too. This happens only in the opt-in
+  best-effort mode (`rollbackOnFailure=false`). Like Esri, `rollbackOnFailure` defaults to `true`, so
+  an upload that omits it rolls back each failing layer's whole batch (#4031). Its retry returns the
+  same error instead of applying the committed rows again. An upload that provably committed nothing frees its key, so the retry
   runs fresh.
 - The key is scoped to the principal, the replica's service and the replica. A retry reaches the same
   record whatever the casing of the service in the path.
