@@ -3163,7 +3163,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
                         !string.Equals(field.Name, primaryKeyColumn, StringComparison.OrdinalIgnoreCase))
                     ?.Name,
                 Queryable = true,
-                DefaultVisibility = request.Enabled
+                DefaultVisibility = request.Enabled,
+                HasZ = request.HasZ,
+                HasM = request.HasM
             },
             // Carry the captured Esri subtypes into the canonical graph so they survive
             // the compat-compile snapshot and are served on the FeatureServer layer

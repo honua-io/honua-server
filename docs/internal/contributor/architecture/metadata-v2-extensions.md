@@ -116,6 +116,14 @@ marker is part of canonical metadata, not the Esri wire format. Template names,
 descriptions and drawing tools are currently derived by the public mapper;
 capturing defaults does not establish full source-template fidelity.
 
+Imported geometry dimensions use the typed `Resource.Display.HasZ`/`HasM`
+properties. The GeoServices importer requests both source ordinates and passes
+the source flags through `LayerPublishRequest.HasZ`/`HasM` into the canonical
+resource. Geometry topology is normalized separately, including PostGIS types
+such as `POINTM`. Ordinary publish requests default both flags to false; callers
+publishing dimensional data must supply the matching flags. This metadata does
+not invent missing ordinates or flatten stored geometry.
+
 **Conventions**:
 - Use Esri's JSON shape verbatim under each key.
 - When a value is computed at render time from V2 typed slots (e.g.
