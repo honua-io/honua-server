@@ -486,6 +486,7 @@ internal static class ServiceSettingsEndpoints
                     // GET responses can still echo what the caller PUT.
                     return next;
                 },
+                request.Editing,
                 context.RequestAborted).ConfigureAwait(false);
             if (mutation.BindingConflict)
             {
@@ -510,8 +511,13 @@ internal static class ServiceSettingsEndpoints
                 persistedResource.Metadata,
                 persistedResource.AccessPolicy,
                 persistedResource.Temporal,
-                updatedRasterMosaic);
+                updatedRasterMosaic,
+                persistedResource.Editing);
             return TypedResults.Ok(ApiResponse<LayerMetadataResponse>.CreateSuccess(response));
+        }
+        catch (ArgumentException ex) when (request.Editing is not null)
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(ex.Message));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -604,12 +610,14 @@ internal static class ServiceSettingsEndpoints
         MetadataV2ObjectMetadata metadata,
         AccessPolicy? accessPolicy,
         MetadataV2ResourceTemporal? timeInfo,
-        RasterMosaicResponse? rasterMosaic)
+        RasterMosaicResponse? rasterMosaic,
+        MetadataV2ResourceEditing? editing)
     {
         return new LayerMetadataResponse
         {
             LayerId = layerId,
             LayerName = layerName,
+            Editing = editing,
             License = metadata.License,
             Attribution = metadata.Attribution,
             Publisher = metadata.Publisher,
@@ -914,6 +922,7 @@ internal static class ServiceSettingsEndpoints
         int layerId,
         string resourceId,
         Func<MetadataV2Resource, MetadataV2Resource> mutate,
+        MetadataV2EditingPatch? editingPatch,
         CancellationToken cancellationToken)
     {
         for (var attempt = 1; ; attempt++)
@@ -949,6 +958,21 @@ internal static class ServiceSettingsEndpoints
                 Resources = resources,
                 Revision = snapshot.Graph.Revision + 1,
             };
+
+            if (editingPatch is not null)
+            {
+                var serviceIds = snapshot.Graph.Services.Where(service =>
+                        string.Equals(service.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase) &&
+                        ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.FeatureServer))
+                    .Select(service => service.Metadata.Id).ToHashSet(StringComparer.Ordinal);
+                var publicationIds = snapshot.Graph.Publications.Where(publication =>
+                        publication.ResourceId == resourceId && serviceIds.Contains(publication.ServiceId) &&
+                        publication.PublicationType == MetadataV2PublicationType.EsriFeatureLayer &&
+                        publication.LayerIndex == layerId && snapshot.IsRoutable(publication))
+                    .Select(publication => publication.Metadata.Id).ToHashSet(StringComparer.Ordinal);
+                updated = MetadataV2EditingConfiguration.Apply(updated, resourceId, publicationIds, editingPatch);
+                mutatedResource = updated.Resources.Single(resource => resource.Metadata.Id == resourceId);
+            }
 
             try
             {

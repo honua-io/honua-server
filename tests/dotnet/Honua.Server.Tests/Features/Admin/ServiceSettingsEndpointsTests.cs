@@ -233,6 +233,76 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_RepairsAttachmentBindingWithoutChangingStorageOrPublicationPolicy()
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var publication = snapshot.Graph.Publications.First(candidate =>
+            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer && candidate.LayerIndex == 0);
+        var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
+        provider.SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Resources = snapshot.Graph.Resources.Select(resource => resource.Metadata.Id == publication.ResourceId
+                ? resource with { Editing = new MetadataV2ResourceEditing { CanModify = false } } : resource).ToArray()
+        }, schema: _fixture.MetadataGraphSchema);
+        var before = _fixture.GetCurrentV2GraphSnapshot().Graph;
+
+        using var content = new StringContent("""{"editing":{"supportsAttachments":true}}""", Encoding.UTF8, "application/json");
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/0/metadata", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("data").GetProperty("editing").GetProperty("supportsAttachments").GetBoolean().Should().BeTrue();
+        var after = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var repaired = after.Resources.Single(resource => resource.Metadata.Id == publication.ResourceId);
+        repaired.Editing!.SupportsAttachments.Should().BeTrue();
+        repaired.Editing.CanModify.Should().BeFalse();
+        after.Publications.Should().BeEquivalentTo(before.Publications);
+        after.StorageBindings.Should().BeEquivalentTo(before.StorageBindings);
+        repaired.AccessPolicy.Should().BeEquivalentTo(before.Resources.Single(resource => resource.Metadata.Id == publication.ResourceId).AccessPolicy);
+        after.Resources.Where(resource => resource.Metadata.Id != publication.ResourceId)
+            .Should().BeEquivalentTo(before.Resources.Where(resource => resource.Metadata.Id != publication.ResourceId));
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_RejectsWriteEnablementOnReadOnlyStorageAtomically()
+    {
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var publication = snapshot.Graph.Publications.First(candidate =>
+            candidate.PublicationType == MetadataV2PublicationType.EsriFeatureLayer && candidate.LayerIndex == 0);
+        var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
+        provider.SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            StorageBindings = snapshot.Graph.StorageBindings.Select(binding => binding.ResourceId == publication.ResourceId
+                ? binding with { Capabilities = [MetadataV2StorageBindingCapability.Query] } : binding).ToArray()
+        }, schema: _fixture.MetadataGraphSchema);
+        var before = _fixture.GetCurrentV2GraphSnapshot().Graph;
+
+        using var content = new StringContent("""{"editing":{"create":true,"supportsAttachments":true}}""", Encoding.UTF8, "application/json");
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/0/metadata", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("storage binding does not declare edit support");
+        _fixture.GetCurrentV2GraphSnapshot().Graph.Should().BeEquivalentTo(before);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
+    public async Task UpdateLayerMetadata_RejectsInvalidGlobalIdWithoutPartialPolicyChange()
+    {
+        var before = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        using var content = new StringContent("""{"license":"CC0-1.0","editing":{"globalIdField":"does_not_exist"}}""", Encoding.UTF8, "application/json");
+        var response = await _client.PutAsync("/api/v1/admin/services/test/layers/0/metadata", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("declared UUID field");
+        _fixture.GetCurrentV2GraphSnapshot().Graph.Should().BeEquivalentTo(before);
+    }
+
+    [IntegrationTest]
+    [Endpoint("PUT /api/v1/admin/services/{serviceName}/layers/{layerId}/metadata")]
     [Endpoint("GET /rest/services/{serviceName}/FeatureServer/{layerId}")]
     public async Task UpdateLayerMetadata_WithSourceGovernance_UpdatesPublicMetadata()
     {
