@@ -702,7 +702,11 @@ public sealed class EnrichmentJobExecutorTests
         status.Should().Be(ExecutionJobStatus.Failed);
         uri.Should().BeNull();
         error.Should().Contain("MaxLayerVertices");
+        // The same input is refused again on every attempt, so the budget failure is terminal (#4629).
+        _lastRetryable.Should().BeFalse();
     }
+
+    private static bool _lastRetryable;
 
     private static async Task<(ExecutionJobStatus Status, string? Uri, string? Error)> ExecuteAsync(
         ServiceProvider services,
@@ -764,6 +768,7 @@ public sealed class EnrichmentJobExecutorTests
         };
 
         var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
+        _lastRetryable = result.IsRetryable;
         return (result.Status, publishedUri, result.ErrorMessage);
     }
 
