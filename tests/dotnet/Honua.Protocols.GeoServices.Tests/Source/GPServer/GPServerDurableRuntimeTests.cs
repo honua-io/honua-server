@@ -8,6 +8,7 @@ using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Geoprocessing;
 using Honua.ControlPlane;
 using Honua.TestKit;
@@ -88,6 +89,74 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
             durableJob.Spec.Parameters.Should().Contain(new KeyValuePair<string, string>("submittedVia", "GPServer"));
             durableJob.Spec.Parameters.Should().Contain(new KeyValuePair<string, string>("gpserver.serviceId", ServiceId));
             durableJob.Spec.Parameters.Should().Contain(new KeyValuePair<string, string>("gpserver.taskName", "geometry.buffer"));
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
+    public async Task SubmitJob_WorkspaceProviderUnavailable_FailsDurablyAfterOneAttempt()
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        var fixture = CreateDurableFixture(productionExecutor: true)
+            .ConfigureServices(services =>
+            {
+                // Exercise the unavailable-provider profile even after a provider ships.
+                services.RemoveAll<IWorkspaceLifecycleService>();
+                services.Configure<WorkspaceOptions>(options => options.EnableAutomaticCleanup = false);
+            });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            client.Timeout = TimeSpan.FromSeconds(30);
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["f"] = "json",
+                ["wkb"] = PointWkbBase64,
+                ["srid"] = "4326",
+                ["distance"] = "25.5",
+                ["env:workspace"] = "retry-regression"
+            });
+            using var submit = await client.PostAsync(
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/submitJob", content);
+            submit.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var submitted = JsonDocument.Parse(await submit.Content.ReadAsStringAsync());
+            var jobId = submitted.RootElement.GetProperty("jobId").GetString();
+            jobId.Should().NotBeNullOrWhiteSpace();
+
+            string? terminalStatus = null;
+            var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
+            while (DateTimeOffset.UtcNow < deadline)
+            {
+                using var response = await client.GetAsync(
+                    $"/rest/services/{ServiceId}/GPServer/geometry.buffer/jobs/{jobId}?f=json");
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                using var status = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                terminalStatus = status.RootElement.GetProperty("jobStatus").GetString();
+                if (terminalStatus is "esriJobFailed" or "esriJobSucceeded" or "esriJobCancelled")
+                {
+                    break;
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(100));
+            }
+
+            terminalStatus.Should().Be("esriJobFailed");
+            var durableJob = await fixture.GetService<IExecutionJobStore>().GetAsync(jobId!);
+            durableJob.Should().NotBeNull();
+            durableJob!.Status.Should().Be(ExecutionJobStatus.Failed);
+            durableJob.AttemptCount.Should().Be(1);
+            (durableJob.RetryPolicy ?? JobRetryPolicy.Default).MaxAttempts.Should().BeGreaterThan(1);
+            durableJob.CompletedAt.Should().NotBeNull();
+            durableJob.ErrorMessage.Should().Contain("no workspace storage provider");
+            durableJob.ArtifactReferences.Should().BeEmpty();
         }
         finally
         {
