@@ -204,6 +204,8 @@ internal static class LayerPublishingEndpoints
                 GeometryType = request.GeometryType,
                 Srid = request.Srid,
                 PrimaryKey = request.PrimaryKey,
+                GlobalIdField = request.GlobalIdField,
+                SupportsAttachments = request.SupportsAttachments,
                 Fields = request.Fields ?? Array.Empty<string>(),
                 ServiceName = request.ServiceName,
                 ConnectionId = connectionId,

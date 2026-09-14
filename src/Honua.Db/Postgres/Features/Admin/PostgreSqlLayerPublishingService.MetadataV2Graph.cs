@@ -3171,11 +3171,37 @@ internal sealed partial class PostgreSqlLayerPublishingService
             // the compat-compile snapshot and are served on the FeatureServer layer
             // metadata (subtypeField / subtypes / defaultSubtypeCode) (honua-server#1378).
             Subtypes = ResolveSubtypesForPublish(request.Subtypes, fields),
+            Editing = ResolveEditingForPublish(request, fields),
             // Carry the captured Esri attribute rules into the canonical graph so they
             // fire on the shared edit path (FeatureServer applyEdits). Calculation rules
             // whose target column was not published are dropped (honua-server#1271).
             AttributeRules = ResolveAttributeRulesForPublish(request.AttributeRules, fields),
             Status = LayerReadyStatus(request.Enabled, now)
+        };
+    }
+
+    private static MetadataV2ResourceEditing? ResolveEditingForPublish(
+        LayerPublishRequest request, IReadOnlyList<LayerFieldInsert> fields)
+    {
+        if (string.IsNullOrWhiteSpace(request.GlobalIdField) && !request.SupportsAttachments)
+        {
+            return null;
+        }
+
+        var globalId = string.IsNullOrWhiteSpace(request.GlobalIdField) ? null : fields.FirstOrDefault(field =>
+            field.Name.Equals(request.GlobalIdField, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(request.GlobalIdField) && globalId?.Type != MetadataV2FieldType.Uuid)
+        {
+            throw new LayerPublishingException(LayerPublishingErrorKind.Validation,
+                "GlobalIdField must reference a published UUID column.");
+        }
+
+        return new MetadataV2ResourceEditing
+        {
+            GlobalIdField = globalId?.Name,
+            SupportsAttachments = request.SupportsAttachments,
+            CanModify = false,
+            SupportsRelatedRecords = false
         };
     }
 
