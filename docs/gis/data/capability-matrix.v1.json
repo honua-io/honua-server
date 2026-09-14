@@ -1983,7 +1983,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 30,
-      "provingTestCount": 227,
+      "provingTestCount": 228,
       "maturity": {
         "implemented": 30
       },
@@ -2576,7 +2576,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 5,
-      "provingTestCount": 112,
+      "provingTestCount": 113,
       "maturity": {
         "implemented": 3,
         "preview": 2

@@ -5503,6 +5503,7 @@
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_DefaultSubscription_DoesNotDuplicateStaleQueuedFrameAfterReplay",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_DurablePoll_FiresUnderContinuousOutboundTraffic",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_LiveSendsToControlSubscription_AdvanceDurablePollWatermark",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_OnKestrel_CredentialExpiresOrIsRevoked_ClosesAuthorizationEndedBeforeTransportEnds",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_OversizedControlFrame_ReturnsErrorAndCloses",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_OversizedSubscriptionId_ReturnsErrorAndStaysOpen",
         "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.WebSocket_QueuedFrames_AfterUnsubscribe_AreNotDelivered",
@@ -6410,7 +6411,8 @@
         "Honua.Server.Tests.Features.Protocols.OData.ODataTemporalFilteringTests.ODataFilter_InvalidDateFormat_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.OData.ODataTemporalFilteringTests.ODataFilter_NullDateField_HandlesNullComparisons",
         "Honua.Server.Tests.Features.Security.DeniedPrincipalZeroRecordsTests.DeniedPrincipal_ReadingAResourceHoldingRealRows_ReceivesZeroRecords",
-        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.ODataPoll_RealPortalCredential_RequiresValidSameTenantReplacement"
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.ODataPoll_RealPortalCredential_RequiresValidSameTenantReplacement",
+        "Honua.Server.Tests.Features.Streaming.FeatureStreamEndpointsTests.ODataRead_TenantScopedProtectedLayerUnderDefaultTenant_ChallengesMissingOrEndedCredential"
       ],
       "proof_ledger_surface": "odata-v4",
       "maturity": "implemented",
