@@ -63,7 +63,8 @@ def main():
             headers={"Content-Type": "application/json", "X-API-Key": "gp-bounds-local",
                      "Prefer": "respond-async"})
         try:
-            with urllib.request.urlopen(request, timeout=40) as response:
+            # Dismissal may wait for the worker's confirmation; every other call keeps the serving bound.
+            with urllib.request.urlopen(request, timeout=40 if method == "DELETE" else 10) as response:
                 return json.load(response)
         except urllib.error.HTTPError as error:
             raise AssertionError(f"{request.method} {path}: {error.code} {error.read().decode()}") from error
