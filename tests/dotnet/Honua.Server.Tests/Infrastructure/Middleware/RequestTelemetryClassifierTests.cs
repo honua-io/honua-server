@@ -29,6 +29,7 @@ public sealed class RequestTelemetryClassifierTests
     [InlineData("/ogc/services/test/wms", HonuaTelemetry.Protocols.OgcMaps)]
     [InlineData("/wfs", HonuaTelemetry.Protocols.Wfs20)]
     [InlineData("/ogc/services/test/wcs", HonuaTelemetry.Protocols.Wcs20)]
+    [InlineData("/ogc/wcs/test", HonuaTelemetry.Protocols.Wcs20)]
     [InlineData("/rest/services/0/ImageServer/WCS", HonuaTelemetry.Protocols.Wcs20)]
     [InlineData("/stac", HonuaTelemetry.Protocols.Stac)]
     [InlineData("/stac/search", HonuaTelemetry.Protocols.Stac)]
@@ -53,6 +54,7 @@ public sealed class RequestTelemetryClassifierTests
     [InlineData("/ogc/processes2")]
     [InlineData("/ogc/records2")]
     [InlineData("/ogc/featuresx")]
+    [InlineData("/ogc/wcsx/test")]
     [InlineData("/collectionsx")]
     [InlineData("/odatax")]
     [InlineData("/stacx")]
@@ -70,6 +72,7 @@ public sealed class RequestTelemetryClassifierTests
     [InlineData("/ogc/processes2")]
     [InlineData("/ogc/records2")]
     [InlineData("/ogc/featuresx")]
+    [InlineData("/ogc/wcsx/test")]
     [InlineData("/odatax")]
     [InlineData("/stacx")]
     public void ResolveOperation_PrefixWithoutSegmentBoundary_ReturnsNull(string path)

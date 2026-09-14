@@ -33,7 +33,7 @@ Honua serves every published layer through multiple protocols at once — the sa
 | OGC SensorThings v1.1 (Preview) | `/sta/v1.1` | IoT/observation clients | Service discovery and linked REST access to Things, Datastreams, Sensors, ObservedProperties, and Observations; FeaturesOfInterest and Locations are not exposed; enable `Capabilities:Experimental:serve.sensorthings:Enabled=true` |
 | WMS 1.3 / 1.1.1 | `/rest/services/{serviceId}/MapServer/WMS` or `/ogc/services/{serviceId}/wms` | QGIS, legacy OGC clients | Clients expect classic GetMap/GetFeatureInfo |
 | WFS 2.0 / 1.1.0 / 1.0.0 | `/wfs` | QGIS, GDAL/OGR, legacy stacks | Clients expect classic GetFeature with GML output |
-| WCS 2.0.1 | `/rest/services/{serviceId}/ImageServer/WCS` or `/ogc/services/{serviceId}/wcs` | Science/elevation tooling | Clients need raw subsetted coverage values |
+| WCS 2.0.1 | `/rest/services/{serviceId}/ImageServer/WCS`, `/ogc/services/{serviceId}/wcs`, or `/ogc/wcs/{serviceId}` for ArcGIS Pro | Science/elevation tooling | Clients need raw subsetted coverage values |
 | WMTS 1.0 | `/rest/services/{serviceId}/MapServer/WMTS` or `/ogc/services/{serviceId}/wmts` | QGIS, legacy tile clients | Clients expect classic GetTile |
 | WPS 2.0 | `/wps` | Classic OGC processing clients | Clients expect classic WPS Execute/GetStatus/GetResult over the same job runtime |
 | OData v4 | `/odata` | Excel, Power BI, Tableau | BI tools consume spatial tables as entity sets |

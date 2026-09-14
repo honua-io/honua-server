@@ -101,6 +101,11 @@ internal static class RequestTelemetryClassifier
             return HonuaTelemetry.Protocols.Wcs20;
         }
 
+        if (StartsWithPathSegment(value, "/ogc/wcs"))
+        {
+            return HonuaTelemetry.Protocols.Wcs20;
+        }
+
         if (value.StartsWith("/rest/services/", StringComparison.OrdinalIgnoreCase) &&
             value.Contains("/MapServer/", StringComparison.OrdinalIgnoreCase) &&
             value.EndsWith("/wmts", StringComparison.OrdinalIgnoreCase))
@@ -276,8 +281,9 @@ internal static class RequestTelemetryClassifier
             return ResolveMapServerOgcOperation(context, "wms");
         }
 
-        if (path.StartsWith("/ogc/services/", StringComparison.OrdinalIgnoreCase) &&
-            path.EndsWith("/wcs", StringComparison.OrdinalIgnoreCase))
+        if ((path.StartsWith("/ogc/services/", StringComparison.OrdinalIgnoreCase) &&
+             path.EndsWith("/wcs", StringComparison.OrdinalIgnoreCase)) ||
+            StartsWithPathSegment(path, "/ogc/wcs"))
         {
             return ResolveQueryRequestOperation(context, "wcs");
         }

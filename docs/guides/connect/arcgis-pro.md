@@ -14,6 +14,7 @@ Honua exposes each published service as:
 
 - Feature data: `http://localhost:8080/rest/services/{serviceId}/FeatureServer`
 - Rendered maps: `http://localhost:8080/rest/services/{serviceId}/MapServer`
+- Raster coverages (WCS 2.0.1): `http://localhost:8080/ogc/wcs/{serviceId}`
 
 ## Steps
 
@@ -22,6 +23,17 @@ Honua exposes each published service as:
 3. Paste the FeatureServer layer URL, for example `http://localhost:8080/rest/services/my-service/FeatureServer/0`, and click **Add**. The layer draws and appears in the Contents pane.
 4. Repeat with the `MapServer` URL to add the server-rendered map service instead.
 5. To filter, right-click the layer → **Properties → Definition Query** and add a query such as `OBJECTID > 0`; the expression is evaluated server-side by Honua's `query` endpoint.
+
+### Raster coverages over WCS
+
+On the **Insert** ribbon, click **Connections → Server → New WCS Server** and enter
+`http://localhost:8080/ogc/wcs/{serviceId}` with version 2.0.1. In ArcPy, use the same URL
+with **Make WCS Layer**, for example
+`arcpy.management.MakeWCSLayer("http://localhost:8080/ogc/wcs/my-service?coverage=coverage_0&version=2.0.1", "coverage")`.
+
+Use the `/ogc/wcs/{serviceId}` form, not `/ogc/services/{serviceId}/wcs`. Over HTTPS,
+ArcGIS Pro treats a URL containing `/services/{name}/` as an ArcGIS Server site, and the
+connection fails with `ERROR 999999`. See [Connecting ArcGIS Pro](../../reference/protocols/wms-wfs-wcs-wmts.md#connecting-arcgis-pro).
 
 ### Token auth (if authentication is enabled)
 
@@ -63,6 +75,7 @@ In ArcGIS Pro, the layer should draw, the attribute table should open, and a def
 - **"Cannot add data" / 404 on the URL** — check the service id with `honua services`. See [troubleshooting](../deploy/troubleshooting.md).
 - **Credential prompt loops or 401** — run the `PortalCompat.generateToken` example in **Token auth** above with the same account. Token issuance returns 403 over plain HTTP unless `RequireHttps` is disabled.
 - **`generateToken` returns 402 Payment Required** — the `identity.portal-token` entitlement is not active in your edition configuration.
+- **WCS connection fails with `ERROR 999999`** — the URL contains `/services/`. Use `/ogc/wcs/{serviceId}` (see **Raster coverages over WCS** above).
 - **Layer draws but some operations fail** — Honua implements broad but not total GeoServices parity; check the operation in the [GeoServices parity reference](../../reference/compatibility/geoservices-parity.md) before debugging further.
 - **Scene layers (I3S/SceneServer) return 404 or 402** — the default is 404 until experimental capability `serve.i3s-scene` is enabled; an enabled route without the Enterprise entitlement returns 402.
 

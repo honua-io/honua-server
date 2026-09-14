@@ -30,6 +30,7 @@ Honua serves the classic OGC KVP/XML web services for clients that have not move
 | GET | `/ogc/services/{serviceId}/wmts` | WMTS KVP. |
 | GET | `/rest/services/{serviceId}/MapServer/WMTS`, `.../WMTS/{**restPath}` | WMTS KVP + RESTful tile paths. |
 | GET | `/ogc/services/{serviceId}/wcs` | WCS 2.0.1, scoped to one service. |
+| GET | `/ogc/wcs/{serviceId}` | The same service-scoped WCS 2.0.1 without a `services` segment. Use this form in ArcGIS Pro. |
 | GET | `/rest/services/{serviceId}/ImageServer/WCS` | WCS 2.0.1, layer-scoped (`COVERAGEID` is the bare integer layer id). |
 
 ### Why WFS has no `/ogc/services/{serviceId}/wfs`
@@ -165,6 +166,18 @@ Two intentional divergences apply to the Zarr slice path (they are covered by de
 When the coverage's native grid exceeds the per-axis pixel limit and no scaling operator is supplied, the oversize `InvalidParameterValue` reports locator `COVERAGEID` (the coverage must be down-scaled); when a scaling operator produced the oversize, it reports `SCALESIZE`.
 
 > Open `https://server.example.com/rest/services/0/ImageServer/WCS?SERVICE=WCS&VERSION=2.0.1&REQUEST=GetCoverage&COVERAGEID=0&FORMAT=image/tiff&SUBSET=Long(-122.4,-122.3)&SUBSET=Lat(37.7,37.8)` in a browser.
+
+### Connecting ArcGIS Pro
+
+Add the WCS server connection (or run `MakeWCSLayer`) with
+`https://server.example.com/ogc/wcs/{serviceId}`, not the `/ogc/services/{serviceId}/wcs`
+form. Over HTTPS, ArcGIS Pro 3.7 reads a URL containing `/services/{name}/` as an ArcGIS
+Server site. It probes discovery resources such as `{root}/rest/info` and
+`{root}/rest/services/`, and when those are not ArcGIS Server resources it fails with
+`ERROR 999999`. The `/ogc/wcs/{serviceId}` form serves the same service, access policy
+and bytes, and its `GetCapabilities` advertises operation URLs in the same form, so Pro
+never re-enters the `/services/` shape. See
+[ADR-0079](../../internal/contributor/adr/0079-protocol-route-scoping.md#amendment-2026-09-13-a-wcs-path-without-a-services-segment).
 
 ## WMTS operations
 

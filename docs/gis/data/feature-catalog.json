@@ -7975,6 +7975,24 @@
       "capability": "serve.ogc-api-tiles"
     },
     {
+      "id": "get-ogc-wcs-serviceid",
+      "route": "/ogc/wcs/{serviceId}",
+      "method": "GET",
+      "family": "WCS 2.0.1",
+      "protocol": "nested-standard",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20AuthorizationProofTests.Wcs_GetCoverage_DesktopPathWithoutReadRole_IsRefusedLikeTheServiceRoute",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_DescribeCoverage_DesktopPathUnknownService_ReturnsServiceNotFoundException",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_DescribeCoverage_DesktopPath_MatchesServiceRouteDescription",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCapabilities_DesktopPath_AdvertisesOperationsWithoutServicesSegment",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_DesktopPath_ExportsTheServiceRouteCoverage"
+      ],
+      "proof_ledger_surface": "wcs-2.0.1",
+      "maturity": "implemented",
+      "capability": "serve.wcs"
+    },
+    {
       "id": "get-openapi-json",
       "route": "/openapi.json",
       "method": "GET",
