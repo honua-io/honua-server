@@ -27,6 +27,59 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services")]
+    [Endpoint("POST /services")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer")]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/{layerId}")]
+    [Endpoint("GET /rest/services/{serviceId}/VectorTileServer")]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
+    public async Task PostSoapCatalog_AdminAndRoleControlsAgreeWithServiceAndLayerHandoffs()
+    {
+        var restricted = ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["catalog-reader"]);
+        using var factory = CreateFactory(new RbacTestLayerCatalog(
+            alphaServiceMetadata: restricted, betaServiceMetadata: restricted,
+            alphaLayerMetadata: restricted, betaLayerMetadata: restricted));
+        foreach (var role in new[] { "admin", "catalog-reader" })
+        {
+            using var client = ServiceRbacTestFixture.CreateClient(factory, role);
+            await AssertCatalogParityAsync(client, [ServiceRbacTestFixture.AlphaService, ServiceRbacTestFixture.BetaService]);
+            foreach (var (service, layer) in new[]
+            {
+                (ServiceRbacTestFixture.AlphaService, ServiceRbacTestFixture.AlphaLayerId),
+                (ServiceRbacTestFixture.BetaService, ServiceRbacTestFixture.BetaLayerId)
+            })
+            {
+                using var taskResponse = await client.GetAsync($"/rest/services/{service}/GPServer/Buffer?f=json");
+                var taskBody = await taskResponse.Content.ReadAsStringAsync();
+                taskResponse.StatusCode.Should().Be(HttpStatusCode.OK, taskBody);
+                using var taskPayload = JsonDocument.Parse(taskBody);
+                taskPayload.RootElement.TryGetProperty("error", out _).Should().BeFalse(taskBody);
+                taskPayload.RootElement.GetProperty("parameters").ValueKind.Should().Be(JsonValueKind.Array);
+
+                foreach (var protocol in new[] { "FeatureServer", "MapServer" })
+                {
+                    using var response = await client.GetAsync($"/rest/services/{service}/{protocol}/{layer}?f=json");
+                    var body = await response.Content.ReadAsStringAsync();
+                    response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+                    using var payload = JsonDocument.Parse(body);
+                    payload.RootElement.TryGetProperty("error", out _).Should().BeFalse(body);
+                    payload.RootElement.GetProperty("id").GetInt32().Should().Be(layer);
+                }
+            }
+        }
+        using var wrongRole = ServiceRbacTestFixture.CreateClient(factory, "other-role");
+        await AssertDeniedParityAsync(wrongRole, HttpStatusCode.Forbidden);
+        await AssertDeniedChildMetadataAsync(wrongRole, HttpStatusCode.Forbidden);
+        using var anonymous = factory.CreateClient();
+        await AssertDeniedParityAsync(anonymous, HttpStatusCode.Unauthorized);
+        await AssertDeniedChildMetadataAsync(anonymous, HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
     [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptions")]
     [Endpoint("GET /rest/services")]
     [Endpoint("POST /services")]
@@ -271,6 +324,26 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
                         ServiceRbacTestFixture.GetPropertyCaseInsensitive(payload.RootElement, "error"), "code")
                     .GetInt32().Should().Be(expectedStatus == HttpStatusCode.Unauthorized ? 499 : 403);
                 body.Should().NotContain("Alpha Layer").And.NotContain("Beta Layer");
+            }
+        }
+    }
+
+    private static async Task AssertDeniedChildMetadataAsync(HttpClient client, HttpStatusCode expectedStatus)
+    {
+        foreach (var (service, layer) in new[]
+        {
+            (ServiceRbacTestFixture.AlphaService, ServiceRbacTestFixture.AlphaLayerId),
+            (ServiceRbacTestFixture.BetaService, ServiceRbacTestFixture.BetaLayerId)
+        })
+        {
+            foreach (var child in new[] { $"FeatureServer/{layer}", $"MapServer/{layer}", "GPServer/Buffer" })
+            {
+                using var response = await client.GetAsync($"/rest/services/{service}/{child}?f=json");
+                await ServiceRbacTestFixture.AssertStatusAsync(response, expectedStatus);
+                var body = await response.Content.ReadAsStringAsync();
+                using var payload = JsonDocument.Parse(body);
+                payload.RootElement.EnumerateObject().Select(property => property.Name).Should().Equal("error");
+                body.Should().NotContain("Alpha Layer").And.NotContain("Beta Layer").And.NotContain("parameters");
             }
         }
     }
