@@ -52,6 +52,13 @@ Run `GET /api/v1/admin/import/geoservices/jobs/{jobId}`, substituting the id ret
 
 Progress reports the current phase and feature counts. Cancel with `POST .../jobs/{jobId}/cancel`; list active jobs with `GET .../jobs`.
 
+### Replace, cancel and retry
+
+- With `overwriteExisting: true`, an existing table stays readable while the job runs and is replaced only when the transfer finishes. If any record fails to load, or the job is cancelled or interrupted, the existing table is left unchanged.
+- Without `overwriteExisting`, the job fails when the table already exists.
+- Only one job can import into a table at a time. A second job for the same table fails without changing it; retry once the first finishes.
+- If the source gains or loses records while the job runs, the job reports `needs-review` with a `fidelity.source.changed-during-transfer` difference. Re-run it once the source is quiet. See [fidelity verdicts](../migrate/from-arcgis-server.md#replacements-retries-and-live-sources) for the full semantics.
+
 ## Verify
 
 Once the job status is `Completed`, the auto-published layer is live:

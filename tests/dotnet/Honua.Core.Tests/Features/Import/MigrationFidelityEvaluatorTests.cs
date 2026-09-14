@@ -410,6 +410,92 @@ public sealed class MigrationFidelityEvaluatorTests
     }
 
     [Fact]
+    public void Evaluate_WhenSourceCountChangedDuringTransfer_BlocksWithBothCounts()
+    {
+        // AC5: a live source is not a snapshot. Three records appeared between the first and the last
+        // page, so the target matches no single moment of the source.
+        var input = FullyVerifiedInput() with
+        {
+            SourceSnapshot = new MigrationFidelitySourceSnapshotInput
+            {
+                CountBeforeTransfer = 120,
+                CountAfterTransfer = 123
+            }
+        };
+
+        var evaluation = MigrationFidelityEvaluator.Evaluate(input);
+
+        evaluation.Verdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+        var difference = evaluation.Differences.Should().ContainSingle().Subject;
+        difference.Code.Should().Be(MigrationFidelityDifferenceCodes.SourceChangedDuringTransfer);
+        difference.Severity.Should().Be(MigrationFidelityDifferenceSeverities.Blocking);
+        difference.Subject.Should().Be("Inspections");
+        difference.Expected.Should().Be("120 source records when the transfer started");
+        difference.Actual.Should().Be("123 source records when the transfer finished");
+    }
+
+    [Fact]
+    public void Evaluate_WhenSourceObjectIdsChangedButCountDidNot_StillBlocks()
+    {
+        // One record deleted and another added mid-transfer: equal counts, different populations.
+        var input = FullyVerifiedInput() with
+        {
+            SourceSnapshot = new MigrationFidelitySourceSnapshotInput
+            {
+                CountBeforeTransfer = 40,
+                CountAfterTransfer = 40,
+                MembershipChanged = true
+            }
+        };
+
+        var evaluation = MigrationFidelityEvaluator.Evaluate(input);
+
+        evaluation.Verdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+        evaluation.Differences.Should().ContainSingle().Which.Actual
+            .Should().Be("40 source records when the transfer finished (different object IDs)");
+    }
+
+    [Fact]
+    public void Evaluate_WhenSourcePopulationWasStableAcrossTheTransfer_AddsNoDifference()
+    {
+        var input = FullyVerifiedInput() with
+        {
+            SourceSnapshot = new MigrationFidelitySourceSnapshotInput
+            {
+                CountBeforeTransfer = 57,
+                CountAfterTransfer = 57
+            }
+        };
+
+        var evaluation = MigrationFidelityEvaluator.Evaluate(input);
+
+        evaluation.Verdict.Should().Be(MigrationFidelityVerdicts.FullFidelity);
+        evaluation.Differences.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Evaluate_WhenSourceCountCouldNotBeReadAfterTheTransfer_IsUnverifiedNotFullFidelity()
+    {
+        var input = FullyVerifiedInput() with
+        {
+            SourceSnapshot = new MigrationFidelitySourceSnapshotInput
+            {
+                CountBeforeTransfer = 57,
+                CountAfterTransfer = null
+            }
+        };
+
+        var evaluation = MigrationFidelityEvaluator.Evaluate(input);
+
+        evaluation.Verdict.Should().Be(MigrationFidelityVerdicts.Unverified);
+        evaluation.IsBlocking.Should().BeFalse();
+        var difference = evaluation.Differences.Should().ContainSingle().Subject;
+        difference.Code.Should().Be(MigrationFidelityDifferenceCodes.SourceSnapshotUnverified);
+        difference.Severity.Should().Be(MigrationFidelityDifferenceSeverities.Unverified);
+        difference.Actual.Should().Be("source record count unavailable after the transfer");
+    }
+
+    [Fact]
     public void Evaluate_IsDeterministic()
     {
         var input = FullyVerifiedInput() with

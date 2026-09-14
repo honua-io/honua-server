@@ -401,7 +401,20 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
         MigrationBatchChildRecord child,
         CancellationToken cancellationToken)
     {
-        var jobId = Guid.NewGuid().ToString("N")[..12];
+        // #4600: the job identity derives from the batch child instead of being minted per call.
+        // Advancing is re-entrant (StartAsync and the background tick both advance) and a crash can
+        // land between queueing the job and recording its id on the child row, so a fresh id queued a
+        // second import of the same layer into the same table. A derived id lets a repeat call
+        // recognise the job it already queued: once a worker has picked it up it is left alone; while
+        // it is still queued it is queued again, which cannot strand the child on a lost enqueue and is
+        // harmless otherwise because the single-leader worker skips a job that is already terminal.
+        var jobId = BuildChildJobId(child.BatchId, child.Ordinal);
+        var existing = await jobManager.ProgressStore.GetProgressAsync(jobId, cancellationToken).ConfigureAwait(false);
+        if (existing is not null && existing.Status != GeoservicesImportStatus.Queued)
+        {
+            return jobId;
+        }
+
         var importRequest = new GeoservicesImportRequest
         {
             JobId = jobId,
@@ -426,6 +439,16 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
         await jobManager.ProgressStore.SetProgressAsync(jobId, progress, ChildJobTtl, cancellationToken).ConfigureAwait(false);
         await jobManager.JobQueue.EnqueueAsync(jobId, cancellationToken).ConfigureAwait(false);
         return jobId;
+    }
+
+    /// <summary>
+    /// Import job id for a batch child: stable for the child, distinct across batches and ordinals.
+    /// </summary>
+    internal static string BuildChildJobId(string batchId, int ordinal)
+    {
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(
+            string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{batchId}:{ordinal}")));
+        return Convert.ToHexStringLower(hash.AsSpan(0, 6));
     }
 
     private static MigrationBatchChildStatus? MapChildStatus(GeoservicesImportStatus? status) => status switch

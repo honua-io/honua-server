@@ -55,6 +55,34 @@ public sealed record MigrationFidelityEvaluationInput
     /// omissions: a migration that silently drops a relationship is not full fidelity.
     /// </summary>
     public MigrationRelationshipApplyOutcome[] Relationships { get; init; } = [];
+
+    /// <summary>
+    /// Source record population observed when the transfer started and when it finished, or
+    /// <c>null</c> when the importer does not capture one. A live source is not a snapshot: records
+    /// added or deleted while pages are being read leave the target matching no single moment of the
+    /// source, so the change is reported rather than implied away.
+    /// </summary>
+    public MigrationFidelitySourceSnapshotInput? SourceSnapshot { get; init; }
+}
+
+/// <summary>
+/// Source population facts bracketing a transfer (issue #4600 acceptance criterion 5). Counts are
+/// taken with the import's own filter applied, so a filtered import is compared with the filtered
+/// source.
+/// </summary>
+public sealed record MigrationFidelitySourceSnapshotInput
+{
+    /// <summary>Source records matching the import filter when the transfer started, or <c>null</c> when unreadable.</summary>
+    public long? CountBeforeTransfer { get; init; }
+
+    /// <summary>Source records matching the import filter when the transfer finished, or <c>null</c> when unreadable.</summary>
+    public long? CountAfterTransfer { get; init; }
+
+    /// <summary>
+    /// True when the source object-ID set itself changed (records swapped in and out) even though the
+    /// count may be unchanged. Only captured on the object-ID window path, which enumerates the IDs.
+    /// </summary>
+    public bool MembershipChanged { get; init; }
 }
 
 /// <summary>
@@ -142,6 +170,7 @@ public static class MigrationFidelityEvaluator
         var subject = string.IsNullOrWhiteSpace(input.LayerName) ? "layer" : input.LayerName!;
 
         CollectRecordLoss(input, subject, differences);
+        CollectSourceSnapshot(input, subject, differences);
         CollectAttachmentDifferences(input, differences);
         CollectRelationshipOmissions(input, differences);
         CollectDataReconciliation(input, subject, differences);
@@ -214,6 +243,53 @@ public static class MigrationFidelityEvaluator
             Summary =
                 $"{Format(input.FailedFeatures)} source record(s) were read but did not land in the target table; "
                 + "the migrated layer holds strictly less data than the source."
+        });
+    }
+
+    private static void CollectSourceSnapshot(
+        MigrationFidelityEvaluationInput input,
+        string subject,
+        List<MigrationFidelityDifference> differences)
+    {
+        if (input.SourceSnapshot is not { } snapshot)
+        {
+            return;
+        }
+
+        if (snapshot.CountBeforeTransfer is not { } before || snapshot.CountAfterTransfer is not { } after)
+        {
+            var missing = snapshot.CountBeforeTransfer is null ? "before" : "after";
+            differences.Add(new MigrationFidelityDifference
+            {
+                Code = MigrationFidelityDifferenceCodes.SourceSnapshotUnverified,
+                Severity = MigrationFidelityDifferenceSeverities.Unverified,
+                Subject = subject,
+                Expected = "source record count read before and after the transfer",
+                Actual = $"source record count unavailable {missing} the transfer",
+                Summary =
+                    $"The source record count could not be read {missing} the transfer, so changes made to the "
+                    + "source while it was being copied cannot be ruled out."
+            });
+            return;
+        }
+
+        if (before == after && !snapshot.MembershipChanged)
+        {
+            return;
+        }
+
+        differences.Add(new MigrationFidelityDifference
+        {
+            Code = MigrationFidelityDifferenceCodes.SourceChangedDuringTransfer,
+            Severity = MigrationFidelityDifferenceSeverities.Blocking,
+            Subject = subject,
+            Expected = Format(before) + " source records when the transfer started",
+            Actual = Format(after) + " source records when the transfer finished"
+                + (before == after ? " (different object IDs)" : string.Empty),
+            Summary =
+                "The source changed while it was being copied, so the target is not a consistent snapshot of "
+                + "the source: records added or removed mid-transfer may be missing or retained. Re-run the "
+                + "import once the source is quiescent."
         });
     }
 
@@ -449,4 +525,6 @@ public static class MigrationFidelityEvaluator
     private static string Quote(string value) => "'" + value + "'";
 
     private static string Format(int value) => value.ToString(CultureInfo.InvariantCulture);
+
+    private static string Format(long value) => value.ToString(CultureInfo.InvariantCulture);
 }
