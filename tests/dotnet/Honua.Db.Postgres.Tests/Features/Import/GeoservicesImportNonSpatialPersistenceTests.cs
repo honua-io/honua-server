@@ -71,7 +71,9 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests
             all.Items[1].Attributes["status"].Should().Be("occupied");
             var page = await reader.QueryAsync(layerId, new FeatureQuery
             {
-                OrderBy = [OrderByClause.Asc("objectid")], Offset = 1, Limit = 1
+                OrderBy = [OrderByClause.Asc("objectid")],
+                Offset = 1,
+                Limit = 1
             });
             page.Items.Should().ContainSingle().Which.Attributes["join_id"].Should().Be("002-B");
 
