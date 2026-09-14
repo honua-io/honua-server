@@ -338,7 +338,8 @@ public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
         => AssertFeatureValues(features, OrdinateTolerance, expected);
 
     private static void AssertProjectedFeatures(JsonElement features, params (long Id, string Name, double Longitude, double Latitude)[] expected)
-        => AssertFeatureValues(
+    {
+        AssertFeatureValues(
             features,
             ProjectedTolerance,
             [.. expected.Select(row =>
@@ -346,6 +347,13 @@ public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
                 var (x, y) = ToWebMercator(row.Longitude, row.Latitude);
                 return (row.Id, row.Name, x, y);
             })]);
+
+        // The label must match the reprojected coordinates: replicaSR, not the layer's 4326 (#4018, #4027).
+        foreach (var feature in features.EnumerateArray())
+        {
+            feature.GetProperty("geometry").GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
+        }
+    }
 
     private static void AssertFeatureValues(JsonElement features, double tolerance, (long Id, string Name, double X, double Y)[] expected)
     {

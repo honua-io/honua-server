@@ -378,7 +378,11 @@ public sealed class ReplicationDurabilityTests : IAsyncLifetime
             var adds = root.GetProperty("edits").EnumerateArray().Should().ContainSingle().Subject
                 .GetProperty("features").GetProperty("adds");
             adds.GetArrayLength().Should().BeGreaterThan(100, "the layer holds more rows than the query record cap");
-            var delivered = adds.EnumerateArray().ToDictionary(
+            // The baseline also carries the large dataset's own rows (a different attribute schema); the
+            // value oracle is the rows this test inserted, read back from SQL.
+            var delivered = adds.EnumerateArray()
+                .Where(feature => inserted.ContainsKey(feature.GetProperty("attributes").GetProperty("objectid").GetInt64()))
+                .ToDictionary(
                 feature => feature.GetProperty("attributes").GetProperty("objectid").GetInt64(),
                 feature => (
                     Name: feature.GetProperty("attributes").GetProperty("Name").GetString(),
