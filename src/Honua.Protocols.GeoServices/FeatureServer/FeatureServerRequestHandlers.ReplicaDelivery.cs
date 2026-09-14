@@ -456,24 +456,50 @@ internal static partial class FeatureServerEndpoints
         var requestedThrough = Math.Max(sinceGeneration, throughGeneration);
         var through = requestedThrough;
         var storageLayerIds = layers.Select(static layer => layer.StorageLayerId).Distinct().ToArray();
-        var changes = await changeTracker.GetChangesInWindowAsync(
-            sinceGeneration, through, storageLayerIds, recipientReplicaId, cancellationToken).ConfigureAwait(false);
 
-        // Narrow the window until every layer fits. The collapsed feed is ordered by each object's last
-        // generation, so the generation of a layer's MaxChangesPerLayer-th change bounds a window that
-        // usually fits; the window is re-read (collapse over the narrower window can differ) until it
-        // does. Generations are allocated per row, so this converges; a single generation holding more
-        // changes (a pre-change-tracking baseline) cannot be split and is delivered whole.
-        while (TryFindNarrowerReplicaWindow(changes, maxChangesPerLayer, through, out var narrowed))
+        // Narrow the window until every layer's deliverable changes fit. Only changes that survive the
+        // replica scope and the caller's row visibility count, so a small scoped replica on a layer with a
+        // long unrelated history is neither windowed nor refused. The generation of a layer's
+        // MaxChangesPerLayer-th deliverable change bounds a window that usually fits; the window is re-read
+        // and re-filtered (collapse over the narrower window can differ) until it does. Generations are
+        // allocated per row, so this converges; a single generation holding more changes (a
+        // pre-change-tracking baseline) cannot be split and is delivered whole.
+        Dictionary<int, List<FeatureChange>> changesByLayer;
+        Dictionary<int, (long[] InsertIds, long[] UpdateIds, long[] DeleteIds)> filteredByLayer;
+        while (true)
         {
-            through = narrowed;
-            changes = await changeTracker.GetChangesInWindowAsync(
+            var changes = await changeTracker.GetChangesInWindowAsync(
                 sinceGeneration, through, storageLayerIds, recipientReplicaId, cancellationToken).ConfigureAwait(false);
-        }
+            changesByLayer = changes
+                .GroupBy(static change => change.LayerId)
+                .ToDictionary(static group => group.Key, static group => group.ToList());
+            filteredByLayer = new Dictionary<int, (long[] InsertIds, long[] UpdateIds, long[] DeleteIds)>(layers.Length);
+            var deliverableGenerations = new List<long[]>(layers.Length);
+            foreach (var layer in layers)
+            {
+                var layerScope = layerScopes[layer.PublicLayerId];
+                if (!layerScope.IncludeData || !changesByLayer.TryGetValue(layer.StorageLayerId, out var layerChangeList))
+                {
+                    continue;
+                }
 
-        var changesByLayer = changes
-            .GroupBy(static change => change.LayerId)
-            .ToDictionary(static group => group.Key, static group => group.ToList());
+                var filtered = await FilterChangesForReadAsync(
+                    context, layer, layerChangeList, featureReader, layerScope, pageSize, cancellationToken).ConfigureAwait(false);
+                filteredByLayer[layer.PublicLayerId] = filtered;
+                var deliverableIds = new HashSet<long>(filtered.InsertIds);
+                deliverableIds.UnionWith(filtered.UpdateIds);
+                deliverableIds.UnionWith(filtered.DeleteIds);
+                deliverableGenerations.Add(
+                    [.. layerChangeList.Where(change => deliverableIds.Contains(change.ObjectId)).Select(static change => change.Generation)]);
+            }
+
+            if (!TryFindNarrowerReplicaWindow(deliverableGenerations, maxChangesPerLayer, through, out var narrowed))
+            {
+                break;
+            }
+
+            through = narrowed;
+        }
 
         var deliveries = new List<ReplicaLayerDelivery>(layers.Length);
         foreach (var layer in layers)
@@ -489,10 +515,9 @@ internal static partial class FeatureServerEndpoints
             long[] updateIds;
             long[] deleteIds;
             GeoServicesFeature[]? snapshotFeatures = null;
-            if (changesByLayer.TryGetValue(layer.StorageLayerId, out var layerChangeList))
+            if (filteredByLayer.TryGetValue(layer.PublicLayerId, out var filteredChanges))
             {
-                (insertIds, updateIds, deleteIds) = await FilterChangesForReadAsync(
-                    context, layer, layerChangeList, featureReader, layerScope, pageSize, cancellationToken).ConfigureAwait(false);
+                (insertIds, updateIds, deleteIds) = filteredChanges;
             }
             else if (sinceGeneration == 0 &&
                      (await changeTracker.GetChangesSinceAsync(0, [layer.StorageLayerId], cancellationToken).ConfigureAwait(false)).Count == 0)
@@ -546,6 +571,9 @@ internal static partial class FeatureServerEndpoints
                 }
             }
 
+            // Rows are read by storage id; every id array a client receives carries the protocol-facing id.
+            var layerChangeLog = changesByLayer.GetValueOrDefault(layer.StorageLayerId);
+            var publicDeleteIds = ToPublicObjectIds(layerChangeLog, deleteIds);
             deliveries.Add(new ReplicaLayerDelivery(
                 new LayerChanges
                 {
@@ -556,31 +584,31 @@ internal static partial class FeatureServerEndpoints
                     Deletes = deleteIds.Length,
                     AddFeatures = addFeatures,
                     UpdateFeatures = updateFeatures,
-                    DeleteIds = deleteIds.Length > 0 ? deleteIds : null
+                    DeleteIds = publicDeleteIds.Length > 0 ? publicDeleteIds : null
                 },
-                insertIds,
-                updateIds));
+                ToPublicObjectIds(layerChangeLog, insertIds),
+                ToPublicObjectIds(layerChangeLog, updateIds)));
         }
 
         return (new ReplicaDelivery([.. deliveries], through, through < requestedThrough), null);
     }
 
     /// <summary>
-    /// Returns a narrower upper bound when a layer in <paramref name="changes"/> exceeds
+    /// Returns a narrower upper bound when a layer's deliverable change generations exceed
     /// <paramref name="maxChangesPerLayer"/> and a narrower bound exists.
     /// </summary>
-    private static bool TryFindNarrowerReplicaWindow(
-        IReadOnlyList<FeatureChange> changes,
+    internal static bool TryFindNarrowerReplicaWindow(
+        IEnumerable<long[]> deliverableGenerationsByLayer,
         int maxChangesPerLayer,
         long currentThrough,
         out long narrowedThrough)
     {
         narrowedThrough = currentThrough;
-        foreach (var layerChanges in changes.GroupBy(static change => change.LayerId))
+        foreach (var generations in deliverableGenerationsByLayer)
         {
-            var ordered = layerChanges.Select(static change => change.Generation).Order().ToArray();
-            if (ordered.Length > maxChangesPerLayer)
+            if (generations.Length > maxChangesPerLayer)
             {
+                var ordered = generations.Order().ToArray();
                 narrowedThrough = Math.Min(narrowedThrough, ordered[maxChangesPerLayer - 1]);
             }
         }
@@ -599,6 +627,32 @@ internal static partial class FeatureServerEndpoints
             Updates = 0,
             Deletes = 0
         }, [], []);
+
+    /// <summary>
+    /// Projects storage object ids onto the protocol-facing ids clients hold (#4017): the change log's
+    /// <see cref="FeatureChange.PublicObjectId"/> where the layer's primary id differs from the storage
+    /// identity, otherwise the storage id itself.
+    /// </summary>
+    internal static long[] ToPublicObjectIds(IReadOnlyList<FeatureChange>? changes, long[] storageIds)
+    {
+        if (storageIds.Length == 0 || changes is null)
+        {
+            return storageIds;
+        }
+
+        var publicByStorage = new Dictionary<long, long>();
+        foreach (var change in changes)
+        {
+            if (change.PublicObjectId is { } publicObjectId)
+            {
+                publicByStorage[change.ObjectId] = publicObjectId;
+            }
+        }
+
+        return publicByStorage.Count == 0
+            ? storageIds
+            : [.. storageIds.Select(id => publicByStorage.GetValueOrDefault(id, id))];
+    }
 
     /// <summary>
     /// The SRID replica features are delivered and labelled in: the replica's <c>replicaSR</c> when one

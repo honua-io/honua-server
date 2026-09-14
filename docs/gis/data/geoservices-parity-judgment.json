@@ -159,7 +159,7 @@
           "esriPaths": [
             "/FeatureServer/synchronizeReplica"
           ],
-          "notes": "Preview/opt-in in 2026.1. Supports download, upload, and bidirectional sync directions. Downloads apply the replica's stored scope, and a backlog above Limits:Replica:MaxChangesPerLayer per layer is delivered in consecutive generation windows (exceededTransferLimit; the cursor advances to the generation reached). Broader parity is deferred to release/2026.2."
+          "notes": "Preview/opt-in in 2026.1. Supports download, upload, and bidirectional sync directions. Downloads apply the replica's stored scope, and a backlog above Limits:Replica:MaxChangesPerLayer per layer is delivered in consecutive generation windows (exceededTransferLimit; the cursor advances to the generation reached). An update that moves a row out of a scoped replica is delivered as a delete; because the change log keeps no pre-change state, a row updated into the scope arrives as an update. Esri id arrays carry the layer's protocol-facing object ids. Broader parity is deferred to release/2026.2."
         },
         {
           "name": "Unregister Replica",

@@ -266,6 +266,56 @@ public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.CreateReplica, Operations.SynchronizeReplica, Operations.ApplyEdits)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
+    public async Task SynchronizeReplica_UpdateAcrossTheScopeBoundary_DeletesRowsThatLeftTheScope()
+    {
+        var leaving = await AddFeatureAsync("boundary-leaving", 60.25, 10.5);
+        var staying = await AddFeatureAsync("boundary-staying", 60.75, 10.25);
+        var entering = await AddFeatureAsync("boundary-entering", 62.5, 10.5);
+
+        var created = await PostFormAsync("createReplica", new Dictionary<string, string>
+        {
+            ["replicaName"] = "boundary",
+            ["layers"] = "0",
+            ["geometry"] = "{\"xmin\":60,\"ymin\":10,\"xmax\":61,\"ymax\":11}",
+            ["geometryType"] = "esriGeometryEnvelope",
+            ["inSR"] = "4326",
+            ["syncModel"] = "perReplica",
+            ["f"] = "json"
+        });
+        var replicaId = created.GetProperty("replicaID").GetString();
+        AssertFeatures(
+            created.GetProperty("layers")[0].GetProperty("features"),
+            (leaving, "boundary-leaving", 60.25, 10.5),
+            (staying, "boundary-staying", 60.75, 10.25));
+
+        await UpdateFeatureAsync(leaving, "boundary-left", 62.25, 10.5);
+        await UpdateFeatureAsync(staying, "boundary-stayed", 60.5, 10.75);
+        await UpdateFeatureAsync(entering, "boundary-entered", 60.25, 10.75);
+
+        var synced = await PostJsonAsync("synchronizeReplica", new
+        {
+            replicaID = replicaId,
+            syncDirection = "download",
+            replicaServerGen = created.GetProperty("serverGen").GetInt64(),
+            f = "json"
+        });
+        var delta = synced.GetProperty("edits").EnumerateArray().Should().ContainSingle().Subject;
+
+        // The row that left the scope is deleted from the client instead of lingering there.
+        delta.GetProperty("deleteIds").EnumerateArray().Select(id => id.GetInt64()).Should().BeEquivalentTo(new[] { leaving });
+        // The change log keeps no pre-change state, so a row updated into the scope arrives as an update
+        // beside the in-scope edit (documented in the parity notes).
+        AssertFeatures(
+            delta.GetProperty("updateFeatures"),
+            (staying, "boundary-stayed", 60.5, 10.75),
+            (entering, "boundary-entered", 60.25, 10.75));
+    }
+
+    [IntegrationTest]
     [Operation(Operations.CreateReplica, Operations.ListReplicas, Operations.GetMetadata)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/replicas")]

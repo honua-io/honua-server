@@ -120,4 +120,46 @@ public sealed class FeatureServerReplicaDownloadContractTests
         path[0].Should().Equal(1d, 2d);
         path[1].Should().Equal(3d, 4d);
     }
+
+    [UnitTest]
+    public void ToPublicObjectIds_CustomPrimaryId_ProjectsTheChangeLogPublicIdAndKeepsUnmappedStorageIds()
+    {
+        // A layer whose id.primary differs from the storage identity: clients hold the public id (#4017).
+        var changes = new[]
+        {
+            Change(objectId: 11, publicObjectId: 9001, FeatureChangeOperation.Insert),
+            Change(objectId: 12, publicObjectId: 9002, FeatureChangeOperation.Delete),
+            Change(objectId: 13, publicObjectId: null, FeatureChangeOperation.Update)
+        };
+
+        FeatureServerEndpoints.ToPublicObjectIds(changes, [11, 12, 13]).Should().Equal(9001, 9002, 13);
+        FeatureServerEndpoints.ToPublicObjectIds(null, [11]).Should().Equal(11);
+    }
+
+    [UnitTest]
+    public void TryFindNarrowerReplicaWindow_CountsOnlyDeliverableGenerationsPerLayer()
+    {
+        // Layer A has 3 deliverable changes against a limit of 2: the window ends at its second generation.
+        FeatureServerEndpoints.TryFindNarrowerReplicaWindow([[40, 10, 30], [5]], 2, 50, out var narrowed).Should().BeTrue();
+        narrowed.Should().Be(30);
+
+        // Every layer fits (a large unrelated history is filtered out before this call): no narrowing.
+        FeatureServerEndpoints.TryFindNarrowerReplicaWindow([[10, 20], [5]], 2, 50, out var unchanged).Should().BeFalse();
+        unchanged.Should().Be(50);
+
+        // The limit falls inside the first generation, which cannot be split.
+        FeatureServerEndpoints.TryFindNarrowerReplicaWindow([[50, 50, 50]], 2, 50, out _).Should().BeFalse();
+    }
+
+    private static FeatureChange Change(long objectId, long? publicObjectId, FeatureChangeOperation operation)
+        => new()
+        {
+            ChangeId = objectId,
+            Generation = objectId,
+            LayerId = 1,
+            ObjectId = objectId,
+            PublicObjectId = publicObjectId,
+            Operation = operation,
+            ChangedAt = DateTimeOffset.UnixEpoch
+        };
 }

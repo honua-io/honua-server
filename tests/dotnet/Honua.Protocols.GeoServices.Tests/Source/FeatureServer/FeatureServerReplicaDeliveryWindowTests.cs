@@ -108,6 +108,37 @@ public sealed class FeatureServerReplicaDeliveryWindowTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.CreateReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    public async Task CreateReplica_SmallScopeOnLayerWithLargeUnrelatedHistory_ReturnsTheWholeSnapshot()
+    {
+        // The window limit counts only changes the replica can receive. 300 changes outside the scope used to
+        // narrow the window before scope filtering, which a syncModel=none snapshot cannot continue, so a
+        // two-row snapshot was refused with 400.
+        await InsertFeaturesAsync(firstObjectId: 7_430_000_000, count: 300, longitude: 160.0, latitude: -40.0);
+        await InsertFeaturesAsync(firstObjectId: 7_431_000_000, count: 2, longitude: -60.0, latitude: -60.0);
+        var expected = await ReadRowsAsync(7_431_000_000, 7_431_000_001);
+        expected.Should().HaveCount(2);
+
+        var created = await PostJsonAsync("createReplica", new
+        {
+            replicaName = "tiny-snapshot",
+            layers = "0",
+            syncModel = "none",
+            geometry = "{\"xmin\":-60.5,\"ymin\":-60.5,\"xmax\":-59.5,\"ymax\":-59.5}",
+            geometryType = "esriGeometryEnvelope",
+            inSR = "4326",
+            f = "json"
+        });
+
+        created.TryGetProperty("error", out _).Should().BeFalse(created.GetRawText());
+        (created.TryGetProperty("exceededTransferLimit", out var flag) && flag.GetBoolean()).Should().BeFalse();
+        var client = new Dictionary<long, (string? Name, double X, double Y)>();
+        ApplyAdds(client, created.GetProperty("layers")[0].GetProperty("features"));
+        client.Should().BeEquivalentTo(expected, "the snapshot must carry exactly the scoped rows as stored");
+    }
+
+    [IntegrationTest]
     [Operation(Operations.CreateReplica, Operations.SynchronizeReplica)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
@@ -165,9 +196,8 @@ public sealed class FeatureServerReplicaDeliveryWindowTests : IAsyncLifetime
 
             if (layer.TryGetProperty("updateFeatures", out var updateFeatures))
             {
-                foreach (var feature in updateFeatures.EnumerateArray())
+                foreach (var row in updateFeatures.EnumerateArray().Select(ReadFeature))
                 {
-                    var row = ReadFeature(feature);
                     client.Should().ContainKey(row.Id, "an update must never arrive for a row the client has not received");
                     client[row.Id] = (row.Name, row.X, row.Y);
                 }
@@ -198,9 +228,8 @@ public sealed class FeatureServerReplicaDeliveryWindowTests : IAsyncLifetime
 
     private static void ApplyAdds(Dictionary<long, (string? Name, double X, double Y)> client, JsonElement features)
     {
-        foreach (var feature in features.EnumerateArray())
+        foreach (var row in features.EnumerateArray().Select(ReadFeature))
         {
-            var row = ReadFeature(feature);
             client.Should().NotContainKey(row.Id, "a row must be added exactly once across windows");
             client[row.Id] = (row.Name, row.X, row.Y);
         }

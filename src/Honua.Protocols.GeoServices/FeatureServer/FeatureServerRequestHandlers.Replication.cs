@@ -482,16 +482,29 @@ internal static partial class FeatureServerEndpoints
         // (every current row as an add), bounded per layer by Limits:Replica:MaxChangesPerLayer. A larger
         // scope is not rejected: the replica cursor is set to the generation the data reached and the
         // remainder arrives through synchronizeReplica downloads (#4019).
-        var (delivery, deliveryError) = await AssembleReplicaDeliveryAsync(
-            context,
-            recipientReplicaId: null,
-            sinceGeneration: 0,
-            dataGeneration,
-            createLayers,
-            scope,
-            ReplicaChangeSelection.All,
-            returnIdsOnly: false,
-            cancellationToken);
+        ReplicaDelivery? delivery;
+        IResult? deliveryError;
+        try
+        {
+            (delivery, deliveryError) = await AssembleReplicaDeliveryAsync(
+                context,
+                recipientReplicaId: null,
+                sinceGeneration: 0,
+                dataGeneration,
+                createLayers,
+                scope,
+                ReplicaChangeSelection.All,
+                returnIdsOnly: false,
+                cancellationToken);
+        }
+        catch (Exception) when (registered is not null)
+        {
+            // The registration is committed but this request fails before returning its replica ID, so
+            // the caller could never unregister it: remove it instead of leaving an orphan.
+            await replicaStore.RemoveAsync(registered.ReplicaId, CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
+
         if (deliveryError is not null || delivery!.ExceededTransferLimit && registered is null)
         {
             if (registered is not null)
@@ -705,8 +718,65 @@ internal static partial class FeatureServerEndpoints
             .Select(change => change.ObjectId)
             .Distinct()
             .ToArray();
-        var visibleSet = new HashSet<long>();
-        foreach (var page in candidateIds.Chunk(pageSize))
+        var visibleSet = await QueryReadableReplicaIdsAsync(featureReader, layer, layerScope, candidateIds, pageSize, cancellationToken)
+            .ConfigureAwait(false);
+
+        var rlsSource = context.RequestServices.GetService<IRowLevelSecurityFilterSource>();
+        var hasVisibilityPolicy = !string.IsNullOrWhiteSpace(layer.Resource.PermanentFilter?.Expression) ||
+                                  rlsSource is not null &&
+                                  await rlsSource.ResolveAsync(layer.Resource, cancellationToken).ConfigureAwait(false) is not null;
+        // A deleted row is no longer queryable, so its former owner/claims cannot be
+        // re-authorized. Suppressing delete IDs is the only fail-closed behavior until
+        // the change log carries a pre-delete row snapshot.
+
+        var filtered = ReplicaSecurity.FilterChangeIds(changes, visibleSet, hasVisibilityPolicy);
+        if (layerScope.SqlFilter is null && layerScope.SpatialFilter is null)
+        {
+            return filtered;
+        }
+
+        // An update that moved a row out of the replica scope leaves the client holding a row the scope no
+        // longer covers, so it is delivered as a delete, like a deleted row. Only rows the caller can still
+        // read qualify, so nothing is disclosed that the caller's own query would not show. The change log
+        // keeps no pre-change state, so an update to a row that was never in scope is reported the same
+        // way (a no-op delete for the client), and a row updated into the scope arrives as an update.
+        var outOfScopeUpdateIds = changes
+            .Where(change => change.Operation == FeatureChangeOperation.Update && !visibleSet.Contains(change.ObjectId))
+            .Select(change => change.ObjectId)
+            .Distinct()
+            .ToArray();
+        if (outOfScopeUpdateIds.Length == 0)
+        {
+            return filtered;
+        }
+
+        var readable = await QueryReadableReplicaIdsAsync(
+                featureReader,
+                layer,
+                layerScope with { SqlFilter = null, SpatialFilter = null },
+                outOfScopeUpdateIds,
+                pageSize,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return readable.Count == 0
+            ? filtered
+            : (filtered.InsertIds, filtered.UpdateIds, [.. filtered.DeleteIds, .. outOfScopeUpdateIds.Where(readable.Contains)]);
+    }
+
+    /// <summary>
+    /// Returns which of <paramref name="objectIds"/> currently exist inside <paramref name="layerScope"/>
+    /// and the caller's row visibility, queried through the shared reader in pages of <paramref name="pageSize"/>.
+    /// </summary>
+    private static async Task<HashSet<long>> QueryReadableReplicaIdsAsync(
+        IFeatureReader featureReader,
+        ReplicaLayerV2 layer,
+        ReplicaLayerScope layerScope,
+        long[] objectIds,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        var readable = new HashSet<long>();
+        foreach (var page in objectIds.Chunk(pageSize))
         {
             var visible = await featureReader.QueryObjectIdsAsync(
                     layer.StorageLayerId,
@@ -719,18 +789,10 @@ internal static partial class FeatureServerEndpoints
                     },
                     cancellationToken)
                 .ConfigureAwait(false);
-            visibleSet.UnionWith(visible);
+            readable.UnionWith(visible);
         }
 
-        var rlsSource = context.RequestServices.GetService<IRowLevelSecurityFilterSource>();
-        var hasVisibilityPolicy = !string.IsNullOrWhiteSpace(layer.Resource.PermanentFilter?.Expression) ||
-                                  rlsSource is not null &&
-                                  await rlsSource.ResolveAsync(layer.Resource, cancellationToken).ConfigureAwait(false) is not null;
-        // A deleted row is no longer queryable, so its former owner/claims cannot be
-        // re-authorized. Suppressing delete IDs is the only fail-closed behavior until
-        // the change log carries a pre-delete row snapshot.
-
-        return ReplicaSecurity.FilterChangeIds(changes, visibleSet, hasVisibilityPolicy);
+        return readable;
     }
 
     /// <summary>
