@@ -317,8 +317,11 @@ public sealed class ServiceSettingsEndpointsTests : IAsyncLifetime
         var child = snapshot.Graph.Resources.First(resource => resource.Metadata.Id != parent.Metadata.Id && resource.SchemaFields.Count > 0);
         var relationship = new MetadataV2Relationship
         {
-            Id = "composite-parent", RelatedResourceId = child.Metadata.Id, Composite = true,
-            OriginField = parent.SchemaFields[0].Name, DestinationField = child.SchemaFields[0].Name,
+            Id = "composite-parent",
+            RelatedResourceId = child.Metadata.Id,
+            Composite = true,
+            OriginField = parent.SchemaFields[0].Name,
+            DestinationField = child.SchemaFields[0].Name,
             Role = "esriRelRoleOrigin"
         };
         var provider = _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>();
