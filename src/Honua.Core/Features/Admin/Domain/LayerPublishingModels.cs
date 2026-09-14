@@ -162,6 +162,13 @@ public sealed class TablePublishValidationRequest
     public bool AllowEmptyTable { get; init; }
 
     /// <summary>
+    /// Validate for a managed-store publication: the managed store assigns object ids, so the
+    /// source key may be of any type or absent, and an existing layer over the same table is
+    /// not a conflict. Defaults to false.
+    /// </summary>
+    public bool ManagedStore { get; init; }
+
+    /// <summary>
     /// Schema containing the source table.
     /// </summary>
     public required string Schema { get; init; }

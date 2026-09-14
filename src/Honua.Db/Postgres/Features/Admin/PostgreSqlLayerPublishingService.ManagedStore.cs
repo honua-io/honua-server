@@ -11,8 +11,11 @@
 // partial holds the storage descriptor, the managed field projection and the publish-time
 // capability contract that ties edit tokens to managed storage.
 
+using System.Data.Common;
+using System.Globalization;
 using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Admin;
 
@@ -22,6 +25,18 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private const string ManagedFeaturesTableName = "features";
     private const string ManagedPrimaryKeyColumn = "objectid";
     private const string ManagedGeometryColumn = "geometry";
+    private const string ManagedLayerDiscriminatorColumn = "layer_id";
+
+    // Identifies the relation a features-table name resolves to on a connection: the
+    // database, the server instance (postmaster start time) and the relation itself.
+    private const string ManagedStoreIdentitySql = """
+        SELECT
+            database.oid::bigint,
+            pg_postmaster_start_time(),
+            to_regclass(@managedTable)::oid::bigint
+        FROM pg_database AS database
+        WHERE database.datname = current_database();
+        """;
     private const string SourceStorageModeName = "source";
     private const string ManagedStorageModeName = "managed";
     private const string QueryCapability = "Query";
@@ -63,9 +78,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
 
         var resolved = new List<string>(requested.Count);
-        foreach (var token in requested)
+        foreach (var trimmed in requested.Select(token => token?.Trim()))
         {
-            var trimmed = token?.Trim();
             var canonical = string.IsNullOrEmpty(trimmed)
                 ? null
                 : Array.Find(
@@ -109,7 +123,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     /// </summary>
     private static List<LayerFieldInsert> BuildManagedLayerFields(
         List<ColumnInfo> selectedColumns,
-        ColumnInfo sourcePrimaryKeyColumn,
+        ColumnInfo? sourcePrimaryKeyColumn,
         string sourceGeometryColumn,
         IReadOnlyDictionary<string, MetadataV2FieldDomain> fieldDomains)
     {
@@ -120,7 +134,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         foreach (var column in SelectManagedAttributeColumns(selectedColumns, sourcePrimaryKeyColumn, sourceGeometryColumn))
         {
-            var isSourceKey = string.Equals(column.Name, sourcePrimaryKeyColumn.Name, StringComparison.OrdinalIgnoreCase);
+            var isSourceKey = IsSourceKey(column, sourcePrimaryKeyColumn);
             fields.Add(new LayerFieldInsert(
                 column.Name,
                 MapPostgresType(column.DataType),
@@ -147,7 +161,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     /// </summary>
     private static List<ColumnInfo> SelectManagedAttributeColumns(
         List<ColumnInfo> selectedColumns,
-        ColumnInfo sourcePrimaryKeyColumn,
+        ColumnInfo? sourcePrimaryKeyColumn,
         string sourceGeometryColumn)
     {
         var attributes = new List<ColumnInfo>(selectedColumns.Count);
@@ -163,7 +177,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             if (string.Equals(column.Name, ManagedPrimaryKeyColumn, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(column.Name, ManagedGeometryColumn, StringComparison.OrdinalIgnoreCase))
             {
-                if (string.Equals(column.Name, sourcePrimaryKeyColumn.Name, StringComparison.OrdinalIgnoreCase))
+                if (IsSourceKey(column, sourcePrimaryKeyColumn))
                 {
                     continue;
                 }
@@ -177,6 +191,103 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
 
         return attributes;
+    }
+
+    private static bool IsSourceKey(ColumnInfo column, ColumnInfo? sourcePrimaryKeyColumn)
+        => sourcePrimaryKeyColumn is not null
+            && string.Equals(column.Name, sourcePrimaryKeyColumn.Name, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Records the primary-key validation check for a managed-store publication. The managed
+    /// store assigns object ids, so the source key is optional and may be of any type; only a
+    /// named key that does not exist on the source table is an error.
+    /// </summary>
+    private static string? ResolveManagedSourceKeyForValidation(
+        List<ColumnInfo> columns,
+        string? requestedPrimaryKey,
+        string? primaryKeyName,
+        List<TablePublishValidationCheck> checks)
+    {
+        var requested = requestedPrimaryKey?.Trim();
+        if (!string.IsNullOrEmpty(requested)
+            && !columns.Exists(column => string.Equals(column.Name, requested, StringComparison.OrdinalIgnoreCase)))
+        {
+            checks.Add(Error(
+                "primary-key",
+                $"Primary key field '{requested}' was not found on the source table.",
+                requested,
+                null));
+            return requested;
+        }
+
+        checks.Add(Pass(
+            "primary-key",
+            "Managed-store publications assign their own object ids; the source key is kept as an ordinary attribute."));
+        return primaryKeyName;
+    }
+
+    /// <summary>
+    /// Proves the publish connection reaches the managed features table the server's own
+    /// feature writer writes. The copy runs on the publish connection while reads and edits
+    /// use the server's connection; if the two resolve different tables, the layer would
+    /// serve none of its copied rows and its edits would land elsewhere.
+    /// </summary>
+    /// <exception cref="LayerPublishingException">The connections resolve different tables.</exception>
+    private async Task VerifyManagedStoreConnectionAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        CancellationToken cancellationToken)
+    {
+        if (_featureStoreConnections is null)
+        {
+            return;
+        }
+
+        var managedTable = _configuredFeatureSchema is null
+            ? ManagedFeaturesTableName
+            : $"{QuoteIdentifier(_configuredFeatureSchema)}.{QuoteIdentifier(ManagedFeaturesTableName)}";
+
+        string? publishIdentity;
+        await using (var command = new NpgsqlCommand(ManagedStoreIdentitySql, connection, transaction))
+        {
+            command.Parameters.AddWithValue("managedTable", managedTable);
+            publishIdentity = await ReadManagedStoreIdentityAsync(command, cancellationToken).ConfigureAwait(false);
+        }
+
+        string? serverIdentity;
+        var serverConnection = await _featureStoreConnections.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using (serverConnection.ConfigureAwait(false))
+        {
+            await using var command = serverConnection.CreateCommand();
+            command.CommandText = ManagedStoreIdentitySql;
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "managedTable";
+            parameter.Value = managedTable;
+            command.Parameters.Add(parameter);
+            serverIdentity = await ReadManagedStoreIdentityAsync(command, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (publishIdentity is null || !string.Equals(publishIdentity, serverIdentity, StringComparison.Ordinal))
+        {
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Validation,
+                "storageMode managed needs a connection to the server's own feature database; this connection does not reach the managed features table the server writes.");
+        }
+    }
+
+    private static async Task<string?> ReadManagedStoreIdentityAsync(
+        DbCommand command,
+        CancellationToken cancellationToken)
+    {
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false) || reader.IsDBNull(2))
+        {
+            return null;
+        }
+
+        return string.Create(
+            CultureInfo.InvariantCulture,
+            $"{reader.GetInt64(0)}:{reader.GetFieldValue<DateTime>(1):O}:{reader.GetInt64(2)}");
     }
 
     /// <summary>
