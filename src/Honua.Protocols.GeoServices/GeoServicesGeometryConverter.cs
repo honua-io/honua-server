@@ -808,7 +808,7 @@ internal static partial class GeoServicesGeometryConverter
         for (var i = 0; i < multiPoint.NumGeometries; i++)
         {
             var point = (Point)multiPoint.GetGeometryN(i);
-            points[i] = BuildCoordinateArray(point.CoordinateSequence, 0);
+            points[i] = BuildCoordinateArray(point.CoordinateSequence, 0, hasZ, hasM);
         }
 
         return new GeoServicesGeometry
@@ -827,7 +827,7 @@ internal static partial class GeoServicesGeometryConverter
         {
             HasZ = hasZ,
             HasM = hasM,
-            Paths = [BuildLineCoordinates(lineString)],
+            Paths = [BuildLineCoordinates(lineString, hasZ, hasM)],
             SpatialReference = spatialReference
         };
     }
@@ -838,7 +838,7 @@ internal static partial class GeoServicesGeometryConverter
         var paths = new double[multiLineString.NumGeometries][][];
         for (var i = 0; i < multiLineString.NumGeometries; i++)
         {
-            paths[i] = BuildLineCoordinates((LineString)multiLineString.GetGeometryN(i));
+            paths[i] = BuildLineCoordinates((LineString)multiLineString.GetGeometryN(i), hasZ, hasM);
         }
 
         return new GeoServicesGeometry
@@ -857,7 +857,7 @@ internal static partial class GeoServicesGeometryConverter
         {
             HasZ = hasZ,
             HasM = hasM,
-            Rings = BuildPolygonRings(polygon).ToArray(),
+            Rings = BuildPolygonRings(polygon, hasZ, hasM).ToArray(),
             SpatialReference = spatialReference
         };
     }
@@ -869,7 +869,7 @@ internal static partial class GeoServicesGeometryConverter
         for (var i = 0; i < multiPolygon.NumGeometries; i++)
         {
             var polygon = (Polygon)multiPolygon.GetGeometryN(i);
-            rings.AddRange(BuildPolygonRings(polygon));
+            rings.AddRange(BuildPolygonRings(polygon, hasZ, hasM));
         }
 
         return new GeoServicesGeometry
@@ -935,11 +935,11 @@ internal static partial class GeoServicesGeometryConverter
         return null;
     }
 
-    private static IEnumerable<double[][]> BuildPolygonRings(Polygon polygon)
+    private static IEnumerable<double[][]> BuildPolygonRings(Polygon polygon, bool hasZ, bool hasM)
     {
         if (polygon.ExteriorRing != null && !polygon.ExteriorRing.IsEmpty)
         {
-            yield return BuildRingCoordinates(polygon.ExteriorRing, clockwise: true);
+            yield return BuildRingCoordinates(polygon.ExteriorRing, clockwise: true, hasZ, hasM);
         }
 
         for (var i = 0; i < polygon.NumInteriorRings; i++)
@@ -947,14 +947,14 @@ internal static partial class GeoServicesGeometryConverter
             var interiorRing = polygon.GetInteriorRingN(i);
             if (interiorRing != null && !interiorRing.IsEmpty)
             {
-                yield return BuildRingCoordinates(interiorRing, clockwise: false);
+                yield return BuildRingCoordinates(interiorRing, clockwise: false, hasZ, hasM);
             }
         }
     }
 
-    private static double[][] BuildRingCoordinates(LineString ring, bool clockwise)
+    private static double[][] BuildRingCoordinates(LineString ring, bool clockwise, bool hasZ, bool hasM)
     {
-        var coords = BuildLineCoordinates(ring);
+        var coords = BuildLineCoordinates(ring, hasZ, hasM);
         if (coords.Length < 4)
         {
             return coords;
@@ -969,13 +969,13 @@ internal static partial class GeoServicesGeometryConverter
         return coords;
     }
 
-    private static double[][] BuildLineCoordinates(LineString lineString)
+    private static double[][] BuildLineCoordinates(LineString lineString, bool hasZ, bool hasM)
     {
         var sequence = lineString.CoordinateSequence;
         var coords = new double[sequence.Count][];
         for (var i = 0; i < sequence.Count; i++)
         {
-            coords[i] = BuildCoordinateArray(sequence, i);
+            coords[i] = BuildCoordinateArray(sequence, i, hasZ, hasM);
         }
 
         return coords;
@@ -1022,27 +1022,27 @@ internal static partial class GeoServicesGeometryConverter
     private const string UnsupportedGeometryMessage =
         "Invalid GeoServices JSON geometry format. Supported types: Point (x, y), Polygon (rings), LineString (paths), MultiPoint (points), Envelope (xmin, ymin, xmax, ymax)";
 
-    private static double[] BuildCoordinateArray(CoordinateSequence sequence, int index)
+    /// <summary>
+    /// Builds one Esri JSON vertex. The Z and M slots are positional and follow the geometry's
+    /// <c>hasZ</c>/<c>hasM</c> flags, not the vertex: a vertex without a Z in a ZM geometry keeps a NaN Z
+    /// slot (serialized as "NaN") so its M is not read back as the elevation.
+    /// </summary>
+    private static double[] BuildCoordinateArray(CoordinateSequence sequence, int index, bool hasZ, bool hasM)
     {
-        var values = new List<double>(4)
+        var values = new double[2 + (hasZ ? 1 : 0) + (hasM ? 1 : 0)];
+        values[0] = sequence.GetX(index);
+        values[1] = sequence.GetY(index);
+        if (hasZ)
         {
-            sequence.GetX(index),
-            sequence.GetY(index)
-        };
-
-        var z = sequence.GetOrdinate(index, Ordinate.Z);
-        if (!double.IsNaN(z))
-        {
-            values.Add(z);
+            values[2] = sequence.GetOrdinate(index, Ordinate.Z);
         }
 
-        var m = sequence.GetOrdinate(index, Ordinate.M);
-        if (!double.IsNaN(m))
+        if (hasM)
         {
-            values.Add(m);
+            values[hasZ ? 3 : 2] = sequence.GetOrdinate(index, Ordinate.M);
         }
 
-        return values.ToArray();
+        return values;
     }
 
 }
