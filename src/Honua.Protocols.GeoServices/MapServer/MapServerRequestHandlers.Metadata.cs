@@ -715,7 +715,7 @@ internal static partial class MapServerEndpoints
             Nullable = field.Nullable && !isObjectId,
             Editable = field.Editable && !isObjectId
                 && field.Type is not MetadataV2FieldType.Geometry and not MetadataV2FieldType.Geography,
-            DefaultValue = field.DefaultValue.HasValue ? field.DefaultValue.Value : null
+            DefaultValue = GeoServicesFieldConventions.NormalizeFieldDefault(field)
         };
     }
 

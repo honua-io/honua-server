@@ -162,6 +162,29 @@ internal static class GeoServicesFieldConventions
         return false;
     }
 
+    internal static object? NormalizeFieldDefault(MetadataV2Field field)
+    {
+        if (field.DefaultValue is not { } value || value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return null;
+        }
+
+        if (TryConvertTemporalValue(value, field.Type, out var converted))
+        {
+            return converted;
+        }
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.Number => value.TryGetInt64(out var integer) ? integer :
+                value.TryGetDouble(out var number) ? number : value.GetDecimal(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => value.Clone()
+        };
+    }
+
     private static bool TryConvertCalendarDate(object value, out DateOnly date)
     {
         switch (value)

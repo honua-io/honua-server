@@ -646,7 +646,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             Length = isString ? GeoServicesFieldConventions.ResolveStringFieldLength(field.Length) : field.Length,
             Nullable = field.Nullable && !isObjectId,
             Editable = field.Editable && !isGeometry && !isObjectId,
-            DefaultValue = field.DefaultValue.HasValue ? ConvertJsonElement(field.DefaultValue.Value) : null,
+            DefaultValue = GeoServicesFieldConventions.NormalizeFieldDefault(field),
             Domain = GeoServicesFieldDomainMapper.Map(field.Domain),
             Visible = !field.Hidden
         };
@@ -692,19 +692,6 @@ internal sealed class QueryFormatter : IQueryFormatter
             MetadataV2FieldType.Geometry => "GEOMETRY",
             MetadataV2FieldType.Geography => "GEOGRAPHY",
             _ => "TEXT"
-        };
-
-    private static object? ConvertJsonElement(JsonElement element)
-        => element.ValueKind switch
-        {
-            JsonValueKind.String => element.GetString(),
-            JsonValueKind.Number => element.TryGetInt64(out var longValue) ? longValue :
-                                    element.TryGetDouble(out var doubleValue) ? doubleValue :
-                                    element.GetDecimal(),
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
-            JsonValueKind.Null => null,
-            _ => element.Clone()
         };
 
     /// <summary>

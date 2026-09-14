@@ -685,6 +685,7 @@ public static class MigrationCatalogReconciler
                 "double" => MetadataV2FieldType.Double,
                 "string" => MetadataV2FieldType.String,
                 "date" => MetadataV2FieldType.DateTime,
+                "dateonly" => MetadataV2FieldType.Date,
                 "blob" or "raster" or "xml" => MetadataV2FieldType.Binary,
                 "guid" or "globalid" => MetadataV2FieldType.Uuid,
                 "geometry" => MetadataV2FieldType.Geometry,

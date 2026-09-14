@@ -316,9 +316,7 @@ internal static partial class FeatureServerEndpoints
                 : field.Length,
             Nullable = field.Nullable && !isObjectId,
             Editable = !isGeometry && !isObjectId,
-            // V2 has no default-value slot on the canonical field; the catalog/admin layer
-            // owns insertion defaults.
-            DefaultValue = null,
+            DefaultValue = GeoServicesFieldConventions.NormalizeFieldDefault(field),
             Domain = GeoServicesFieldDomainMapper.Map(field.Domain),
             Visible = !field.Hidden
         };

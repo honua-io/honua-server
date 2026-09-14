@@ -315,11 +315,17 @@ public sealed class GeoServicesFieldSerializationTests
         var fields = new[]
         {
             new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger },
-            new MetadataV2Field { Name = "day", Type = MetadataV2FieldType.Date },
+            new MetadataV2Field
+            {
+                Name = "day", Type = MetadataV2FieldType.Date,
+                DefaultValue = JsonSerializer.SerializeToElement(
+                    new DateTimeOffset(2024, 2, 29, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds())
+            },
             new MetadataV2Field { Name = "nullable_day", Type = MetadataV2FieldType.Date, Nullable = true },
             new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime }
         };
         FeatureServerEndpoints.MapFieldInfoV2(fields[1], "objectid").Type.Should().Be("esriFieldTypeDateOnly");
+        FeatureServerEndpoints.MapFieldInfoV2(fields[1], "objectid").DefaultValue.Should().Be("2024-02-29");
         var resource = CreateResource(fields);
         var epoch = new DateTimeOffset(2024, 2, 29, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
         object[] calendarValues =
@@ -363,6 +369,9 @@ public sealed class GeoServicesFieldSerializationTests
             document.RootElement.GetProperty("fields").EnumerateArray()
                 .Single(field => field.GetProperty("name").GetString() == "day")
                 .GetProperty("type").GetString().Should().Be("esriFieldTypeDateOnly");
+            document.RootElement.GetProperty("fields").EnumerateArray()
+                .Single(field => field.GetProperty("name").GetString() == "day")
+                .GetProperty("defaultValue").GetString().Should().Be("2024-02-29");
         }
     }
 
