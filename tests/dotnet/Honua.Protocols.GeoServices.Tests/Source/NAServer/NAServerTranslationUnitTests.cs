@@ -202,6 +202,137 @@ public sealed class NAServerTranslationUnitTests
         requestWithInSr.InSrid.Should().Be(4326);
     }
 
+    // #4025: lon/lat (0,0) and (0.01,0.01) projected to EPSG:3857 with the spherical Mercator
+    // formulas x = R*lon, y = R*ln(tan(pi/4 + lat/2)), R = 6378137.
+    private const string WebMercatorFeatureSet = """
+        {
+          "spatialReference": { "wkid": 102100, "latestWkid": 3857 },
+          "features": [
+            { "geometry": { "x": 0.0, "y": 0.0 } },
+            { "geometry": { "x": 1113.1949079327358, "y": 1113.1949135842704 } }
+          ]
+        }
+        """;
+
+    private static Dictionary<string, string> Parameters(params (string Key, string Value)[] values)
+        => values.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+
+    [UnitTest]
+    [Operation(Operations.Directions)]
+    public void BuildRouteSolveRequest_StopsFeatureSetSpatialReference_IsTheInputSrid()
+    {
+        // No inSR: the FeatureSet declaration, not the WGS84 outSR default, describes the ordinates.
+        var request = NAServerParameterTranslation.BuildRouteSolveRequest(Parameters(("stops", WebMercatorFeatureSet)));
+
+        request.InSrid.Should().Be(3857, "Web Mercator alias 102100 resolves to EPSG:3857");
+        request.OutSrid.Should().Be(4326);
+        request.Stops.Should().HaveCount(2);
+        request.Stops[1].Lon.Should().Be(1113.1949079327358);
+        request.Stops[1].Lat.Should().Be(1113.1949135842704);
+    }
+
+    [UnitTest]
+    [Operation(Operations.ClosestFacility)]
+    public void BuildClosestFacilitySolveRequest_GeometryLevelSpatialReference_AppliesToUndeclaredInputs()
+    {
+        const string incidents = """
+            { "features": [ { "geometry": { "x": 1113.1949079327358, "y": 0.0, "spatialReference": { "wkid": 3857 } } } ] }
+            """;
+
+        var request = NAServerParameterTranslation.BuildClosestFacilitySolveRequest(
+            Parameters(("incidents", incidents), ("facilities", "0,0;2226.3898158654715,0")));
+
+        request.InSrid.Should().Be(3857);
+        request.Facilities[1].Lon.Should().Be(2226.3898158654715);
+    }
+
+    [UnitTest]
+    [Operation(Operations.OdCostMatrix)]
+    public void BuildOdCostMatrixSolveRequest_FeatureSetSpatialReference_IsTheInputSrid()
+    {
+        const string nztm = """
+            { "spatialReference": { "wkid": 2193 }, "features": [ { "geometry": { "x": 1748735.5, "y": 5427916.0 } } ] }
+            """;
+
+        var request = NAServerParameterTranslation.BuildOdCostMatrixSolveRequest(
+            Parameters(("origins", nztm), ("destinations", nztm), ("outSR", "4326")));
+
+        request.InSrid.Should().Be(2193);
+        request.Origins[0].Lon.Should().Be(1748735.5);
+    }
+
+    [UnitTest]
+    [Operation(Operations.ServiceArea)]
+    public void BuildServiceAreaSolveRequest_FeatureSetSpatialReference_IsTheInputSrid()
+    {
+        var request = NAServerParameterTranslation.BuildServiceAreaSolveRequest(
+            Parameters(("facilities", WebMercatorFeatureSet), ("defaultBreaks", "5")));
+
+        request.InSrid.Should().Be(3857);
+    }
+
+    [UnitTest]
+    [Operation(Operations.LocationAllocation)]
+    public void BuildLocationAllocationSolveRequest_DemandPointsSpatialReference_IsTheInputSrid()
+    {
+        var request = NAServerParameterTranslation.BuildLocationAllocationSolveRequest(
+            Parameters(("facilities", "0,0"), ("demandPoints", WebMercatorFeatureSet)));
+
+        request.InSrid.Should().Be(3857);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Directions)]
+    public void BuildRouteSolveRequest_MatchingInSrAlias_IsAcceptedAndNormalized()
+    {
+        NAServerParameterTranslation.BuildRouteSolveRequest(
+                Parameters(("stops", WebMercatorFeatureSet), ("inSR", "3857")))
+            .InSrid.Should().Be(3857);
+        NAServerParameterTranslation.BuildRouteSolveRequest(
+                Parameters(("stops", "0,0;1113.19,1113.19"), ("inSR", "{\"wkid\":102100,\"latestWkid\":3857}")))
+            .InSrid.Should().Be(3857);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Directions)]
+    public void BuildRouteSolveRequest_InSrConflictsWithFeatureSetSpatialReference_Throws()
+    {
+        var act = () => NAServerParameterTranslation.BuildRouteSolveRequest(
+            Parameters(("stops", WebMercatorFeatureSet), ("inSR", "4326")));
+
+        act.Should().Throw<NAServerParameterTranslation.NAServerParameterException>()
+            .WithMessage("*'inSR' 4326 conflicts with spatial reference 3857 declared by 'stops'*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Directions)]
+    public void BuildRouteSolveRequest_BarrierSpatialReferenceDiffersFromStops_Throws()
+    {
+        const string wgs84Barriers = """
+            { "spatialReference": { "wkid": 4326 }, "features": [ { "geometry": { "x": 0.005, "y": 0.005 } } ] }
+            """;
+
+        var act = () => NAServerParameterTranslation.BuildRouteSolveRequest(
+            Parameters(("stops", WebMercatorFeatureSet), ("barriers", wgs84Barriers)));
+
+        act.Should().Throw<NAServerParameterTranslation.NAServerParameterException>()
+            .WithMessage("*'barriers' declares spatial reference 4326 but 'stops' declares 3857*");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Directions)]
+    public void BuildRouteSolveRequest_SpatialReferenceWithoutWkid_Throws()
+    {
+        const string wktOnly = """
+            { "spatialReference": { "wkt": "PROJCS[\"custom\"]" }, "features": [ { "geometry": { "x": 0, "y": 0 } }, { "geometry": { "x": 1, "y": 1 } } ] }
+            """;
+
+        var act = () => NAServerParameterTranslation.BuildRouteSolveRequest(Parameters(("stops", wktOnly)));
+
+        act.Should().Throw<NAServerParameterTranslation.NAServerParameterException>()
+            .WithMessage("*'stops' spatialReference must carry a positive 'wkid' or 'latestWkid'*");
+    }
+
     [UnitTest]
     [Operation(Operations.ServiceArea)]
     public void MapServiceArea_GeoJsonCcwOuterRing_IsNormalizedToClockwiseForEsri()

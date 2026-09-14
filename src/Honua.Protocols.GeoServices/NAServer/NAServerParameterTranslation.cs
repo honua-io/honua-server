@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.Shared.Models;
 using Honua.Routing.Features.Routing.Domain;
 
 namespace Honua.Protocols.GeoServices.NAServer;
@@ -898,12 +899,131 @@ internal static class NAServerParameterTranslation
         => ParseSpatialReference(parameters, "outSR") ?? DefaultSrid;
 
     /// <summary>
-    /// Reads the input spatial reference from <c>inSR</c>, falling back to the
-    /// resolved output SRID when <c>inSR</c> is absent. Input ordinates are
+    /// Resolves the spatial reference of the input geometries. Input ordinates are
     /// interpreted in this SRID and transformed to the graph SRID before snapping.
     /// </summary>
+    /// <remarks>
+    /// Esri clients describe input coordinates with the <c>spatialReference</c> carried by
+    /// each stops/facilities/incidents/origins/destinations/demandPoints/barriers FeatureSet
+    /// (or by its geometries); the Esri solve operations define no <c>inSR</c> parameter.
+    /// Ignoring that declaration solved Web Mercator input as if it were WGS84 (#4025), so a
+    /// declared reference is authoritative. The Honua <c>inSR</c> extension applies only to
+    /// undeclared input, then falls back to the output SRID. Conflicting declarations — two
+    /// inputs, or a declaration and <c>inSR</c>, naming different references — are rejected
+    /// rather than guessed. Web Mercator aliases (<c>102100</c>) resolve to EPSG:3857.
+    /// </remarks>
     private static int ParseInSr(IReadOnlyDictionary<string, string> parameters, int outSrid)
-        => ParseSpatialReference(parameters, "inSR") ?? outSrid;
+    {
+        var explicitInSr = ParseSpatialReference(parameters, "inSR");
+        int? declaredSrid = null;
+        string? declaredBy = null;
+        foreach (var parameterName in GeometryInputParameters)
+        {
+            foreach (var srid in ReadDeclaredSpatialReferences(GetValue(parameters, parameterName), parameterName))
+            {
+                if (declaredSrid is { } existing && existing != srid)
+                {
+                    throw new NAServerParameterException(
+                        $"'{parameterName}' declares spatial reference {srid} but '{declaredBy}' declares {existing}; " +
+                        "all input geometries must share one spatial reference.");
+                }
+
+                declaredSrid = srid;
+                declaredBy ??= parameterName;
+            }
+        }
+
+        if (declaredSrid is { } declared)
+        {
+            if (explicitInSr is { } inSr && SpatialReferenceExtensions.NormalizeWebMercatorSrid(inSr) != declared)
+            {
+                throw new NAServerParameterException(
+                    $"'inSR' {inSr} conflicts with spatial reference {declared} declared by '{declaredBy}'.");
+            }
+
+            return declared;
+        }
+
+        return SpatialReferenceExtensions.NormalizeWebMercatorSrid(explicitInSr ?? outSrid);
+    }
+
+    /// <summary>
+    /// NAServer parameters whose Esri FeatureSet value can declare the input spatial reference.
+    /// </summary>
+    private static readonly string[] GeometryInputParameters =
+    [
+        "stops", "facilities", "incidents", "origins", "destinations", "demandPoints",
+        "barriers", "polylineBarriers", "polygonBarriers",
+    ];
+
+    /// <summary>
+    /// Returns the normalized SRIDs declared by a FeatureSet or geometry JSON value: the
+    /// top-level <c>spatialReference</c>, and one on each feature geometry or collection
+    /// geometry. Non-JSON values declare nothing; malformed JSON is left to the point and
+    /// barrier parsers, which report it against the parameter.
+    /// </summary>
+    private static List<int> ReadDeclaredSpatialReferences(string? value, string parameterName)
+    {
+        var declared = new List<int>();
+        if (string.IsNullOrWhiteSpace(value) || value.TrimStart()[0] != '{')
+        {
+            return declared;
+        }
+
+        JsonDocument doc;
+        try
+        {
+            doc = JsonDocument.Parse(value);
+        }
+        catch (JsonException)
+        {
+            return declared;
+        }
+
+        using (doc)
+        {
+            var root = doc.RootElement;
+            AddDeclared(root);
+            if (root.TryGetProperty("features", out var features) && features.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var feature in features.EnumerateArray())
+                {
+                    if (feature.ValueKind == JsonValueKind.Object && feature.TryGetProperty("geometry", out var geometry))
+                    {
+                        AddDeclared(geometry);
+                    }
+                }
+            }
+
+            if (root.TryGetProperty("geometries", out var geometries) && geometries.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var geometry in geometries.EnumerateArray())
+                {
+                    AddDeclared(geometry);
+                }
+            }
+        }
+
+        return declared;
+
+        void AddDeclared(JsonElement element)
+        {
+            if (element.ValueKind != JsonValueKind.Object ||
+                !element.TryGetProperty("spatialReference", out var spatialReference) ||
+                spatialReference.ValueKind == JsonValueKind.Null)
+            {
+                return;
+            }
+
+            if (!TryReadWkid(spatialReference, out var wkid))
+            {
+                throw new NAServerParameterException(
+                    $"'{parameterName}' spatialReference must carry a positive 'wkid' or 'latestWkid'.");
+            }
+
+            declared.Add(SpatialReferenceExtensions.NormalizeWebMercatorSrid(wkid));
+        }
+    }
 
     /// <summary>
     /// Reads a spatial-reference parameter. Accepts a bare WKID or a
@@ -930,20 +1050,9 @@ internal static class NAServerParameterTranslation
             try
             {
                 using var doc = JsonDocument.Parse(trimmed);
-                var root = doc.RootElement;
-                if (root.ValueKind == JsonValueKind.Object)
+                if (TryReadWkid(doc.RootElement, out var wkid))
                 {
-                    if (root.TryGetProperty("wkid", out var wkid) && wkid.ValueKind == JsonValueKind.Number &&
-                        wkid.TryGetInt32(out var wkidValue) && wkidValue > 0)
-                    {
-                        return wkidValue;
-                    }
-
-                    if (root.TryGetProperty("latestWkid", out var latest) && latest.ValueKind == JsonValueKind.Number &&
-                        latest.TryGetInt32(out var latestValue) && latestValue > 0)
-                    {
-                        return latestValue;
-                    }
+                    return wkid;
                 }
             }
             catch (JsonException)
@@ -955,6 +1064,31 @@ internal static class NAServerParameterTranslation
 
         throw new NAServerParameterException(
             $"'{key}' value '{value}' is not a valid WKID or spatial-reference object.");
+    }
+
+    /// <summary>
+    /// Reads the positive <c>wkid</c> (preferred) or <c>latestWkid</c> from an Esri
+    /// spatial-reference object.
+    /// </summary>
+    private static bool TryReadWkid(JsonElement spatialReference, out int wkid)
+    {
+        wkid = 0;
+        if (spatialReference.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        foreach (var name in (ReadOnlySpan<string>)["wkid", "latestWkid"])
+        {
+            if (spatialReference.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.Number &&
+                value.TryGetInt32(out var parsed) && parsed > 0)
+            {
+                wkid = parsed;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

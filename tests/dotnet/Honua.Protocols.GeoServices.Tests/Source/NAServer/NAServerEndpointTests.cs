@@ -279,6 +279,102 @@ public sealed class NAServerEndpointTests : IClassFixture<NAServerEndpointTestsF
     }
 
     [IntegrationTest]
+    [Operation(Operations.Directions)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/Route/solve")]
+    public async Task RouteSolve_StopsFeatureSetSpatialReference_ReachesProviderAsInputSrid()
+    {
+        // #4025: an Esri client declares Web Mercator stops on the FeatureSet and sends no inSR. The
+        // canonical request must carry EPSG:3857 with the ordinates untouched, not the WGS84 fallback.
+        RouteSolveRequest? captured = null;
+        var provider = new TestRoutingProvider(
+            new RoutingProviderCapabilities(SupportsRoute: true, SupportsServiceArea: true),
+            request =>
+            {
+                captured = request;
+                return null;
+            });
+        var fixture = await CreateFixtureWithRoutingProviderAsync(provider);
+        try
+        {
+            using var payload = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("stops", WebMercatorStops),
+            ]);
+
+            var response = await fixture.Client.PostAsync("/rest/services/Routing/NAServer/Route/solve", payload);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            var body = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(body);
+            document.RootElement.TryGetProperty("error", out _).Should().BeFalse(body);
+            document.RootElement.GetProperty("routes").GetProperty("features").GetArrayLength().Should().Be(1);
+
+            captured.Should().NotBeNull();
+            captured!.InSrid.Should().Be(3857);
+            captured.OutSrid.Should().Be(4326);
+            captured.Stops.Should().HaveCount(2);
+            captured.Stops[1].Lon.Should().Be(1113.1949079327358);
+            captured.Stops[1].Lat.Should().Be(1113.1949135842704);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Directions)]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/Route/solve")]
+    public async Task RouteSolve_InSrConflictingWithFeatureSetSpatialReference_Returns400WithoutSolving()
+    {
+        // #4025: a declared FeatureSet reference and a different inSR cannot both describe the same
+        // ordinates; the adapter must reject the request instead of solving one guess.
+        RouteSolveRequest? captured = null;
+        var provider = new TestRoutingProvider(
+            new RoutingProviderCapabilities(SupportsRoute: true, SupportsServiceArea: true),
+            request =>
+            {
+                captured = request;
+                return null;
+            });
+        var fixture = await CreateFixtureWithRoutingProviderAsync(provider);
+        try
+        {
+            using var payload = new FormUrlEncodedContent(
+            [
+                new KeyValuePair<string, string>("f", "json"),
+                new KeyValuePair<string, string>("stops", WebMercatorStops),
+                new KeyValuePair<string, string>("inSR", "4326"),
+            ]);
+
+            var response = await fixture.Client.PostAsync("/rest/services/Routing/NAServer/Route/solve", payload);
+
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
+            document.RootElement.TryGetProperty("routes", out _).Should().BeFalse();
+            captured.Should().BeNull("the provider must never receive a request with an ambiguous input reference");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    // Stops at lon/lat (0,0) and (0.01,0.01) projected to EPSG:3857 with the spherical Mercator
+    // formulas x = R*lon, y = R*ln(tan(pi/4 + lat/2)), R = 6378137.
+    private const string WebMercatorStops = """
+        {
+          "spatialReference": { "wkid": 102100, "latestWkid": 3857 },
+          "features": [
+            { "geometry": { "x": 0.0, "y": 0.0 } },
+            { "geometry": { "x": 1113.1949079327358, "y": 1113.1949135842704 } }
+          ]
+        }
+        """;
+
+    [IntegrationTest]
     [Operation(Operations.ServiceArea)]
     [Endpoint("POST /rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea")]
     public async Task ServiceArea_UnsupportedTravelDirection_Returns400()
