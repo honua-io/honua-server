@@ -970,43 +970,103 @@ public sealed class DeployWorkflowServiceTests
                 [
                     new DeployTelemetryConnectionOptions { ConnectionId = "prod-prom", Provider = "prometheus", BaseUrl = "https://example.com" },
                     new DeployTelemetryConnectionOptions { ConnectionId = "prod-cw", Provider = "cloudwatch", BaseUrl = "https://monitoring.us-east-1.amazonaws.com" },
-                    new DeployTelemetryConnectionOptions { ConnectionId = "prod-az", Provider = "azuremonitor", Region = "workspace-id" }
+                    new DeployTelemetryConnectionOptions { ConnectionId = "prod-az", Provider = "azuremonitor", Region = "workspace-id" },
+                    new DeployTelemetryConnectionOptions { ConnectionId = "prod-custom", Provider = "victoriametrics", BaseUrl = "https://example.com" }
                 ]
             }));
 
-        Dictionary<string, string> Gate(string connectionId, string? maxStalenessSeconds)
-        {
-            var parameters = new Dictionary<string, string>
-            {
-                ["telemetry.connection"] = connectionId,
-                ["telemetry.error_rate.query"] = "errors / requests",
-                ["telemetry.error_rate.threshold"] = "0.05",
-                ["telemetry.sample_count.query"] = "request_count",
-                ["telemetry.sample_count.minimum"] = "10"
-            };
-            if (maxStalenessSeconds != null)
-            {
-                parameters["telemetry.max_staleness_seconds"] = maxStalenessSeconds;
-            }
-
-            return parameters;
-        }
-
-        var cloudWatchBounded = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: Gate("prod-cw", "60"));
-        var azureBounded = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: Gate("prod-az", "60"));
-        var cloudWatchDefault = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: Gate("prod-cw", null));
-        var prometheusBounded = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: Gate("prod-prom", "60"));
+        var cloudWatchBounded = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: MetricGate("prod-cw", "60"));
+        var azureBounded = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: MetricGate("prod-az", "60"));
+        var cloudWatchDefault = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: MetricGate("prod-cw", null));
+        var prometheusBounded = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: MetricGate("prod-prom", "60"));
+        var customBounded = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: MetricGate("prod-custom", "60"));
 
         cloudWatchBounded!.Plan.IsReadyToSubmit.Should().BeFalse();
         cloudWatchBounded.Plan.BlockingReasons.Should().ContainSingle()
-            .Which.Should().Contain("telemetry.max_staleness_seconds is only honored by the prometheus provider")
-            .And.Contain("connection 'prod-cw' uses 'cloudwatch'");
+            .Which.Should().Contain("telemetry.max_staleness_seconds is not honored by connection 'prod-cw'")
+            .And.Contain("its 'cloudwatch' provider reads a fixed 300-second query window");
         azureBounded!.Plan.IsReadyToSubmit.Should().BeFalse();
         azureBounded.Plan.BlockingReasons.Should().ContainSingle()
-            .Which.Should().Contain("connection 'prod-az' uses 'azuremonitor'");
+            .Which.Should().Contain("its 'azuremonitor' provider reads a fixed 300-second query window");
         cloudWatchDefault!.Plan.IsReadyToSubmit.Should().BeTrue("without an explicit bound nothing is ignored");
         prometheusBounded!.Plan.IsReadyToSubmit.Should().BeTrue("the prometheus provider checks each sample's observation time");
+        customBounded!.Plan.IsReadyToSubmit.Should().BeTrue("a host-registered provider is not assumed to ignore the bound");
         backend.StartCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task SubmitAsync_WhenConnectionChangedToFixedWindowProviderAfterPlanning_RefusesBeforeMutation()
+    {
+        var backend = new ImmediateDeployBackend();
+        var options = new ControlPlaneOptions
+        {
+            TelemetryConnections =
+            [
+                new DeployTelemetryConnectionOptions { ConnectionId = "prod-prom", Provider = "prometheus", BaseUrl = "https://example.com" }
+            ]
+        };
+        var service = new DeployWorkflowService(
+            new TestDeployTargetRegistry(),
+            [new TestWorkflowOperationStore()],
+            [backend],
+            new StubApprovalEvaluator(),
+            NullLogger<DeployWorkflowService>.Instance,
+            new TestControlPlaneOptionsMonitor(options));
+
+        var operation = await service.CreateAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            "alice",
+            "Ship it",
+            "gate-provider-swap",
+            "corr-provider-swap",
+            OperationPriority.Normal,
+            submitImmediately: false,
+            parameterOverrides: MetricGate("prod-prom", "60"));
+
+        operation.Should().NotBeNull();
+        operation!.Status.Should().Be(WorkflowOperationStatus.Planned);
+        operation.BlockingReasons.Should().BeEmpty("the bound is honored by the provider configured at plan time");
+
+        // An options reload between plan and submit points the same connection id at CloudWatch.
+        options.TelemetryConnections =
+        [
+            new DeployTelemetryConnectionOptions { ConnectionId = "prod-prom", Provider = "cloudwatch", BaseUrl = "https://monitoring.us-east-1.amazonaws.com" }
+        ];
+
+        var submit = () => service.SubmitAsync(operation.OperationId, "alice", "submit");
+        (await submit.Should().ThrowAsync<ResourceConflictException>())
+            .WithMessage("*its 'cloudwatch' provider reads a fixed 300-second query window*");
+        backend.StartCount.Should().Be(0, "the gate is re-checked before the operation is claimed or the backend is started");
+
+        // The same operation submits once the configuration honors the bound again.
+        options.TelemetryConnections =
+        [
+            new DeployTelemetryConnectionOptions { ConnectionId = "prod-prom", Provider = "prometheus", BaseUrl = "https://example.com" }
+        ];
+        var submitted = await service.SubmitAsync(operation.OperationId, "alice", "submit");
+
+        submitted!.Status.Should().NotBe(WorkflowOperationStatus.Planned);
+        backend.StartCount.Should().Be(1);
+    }
+
+    private static Dictionary<string, string> MetricGate(string connectionId, string? maxStalenessSeconds)
+    {
+        var parameters = new Dictionary<string, string>
+        {
+            ["telemetry.connection"] = connectionId,
+            ["telemetry.error_rate.query"] = "errors / requests",
+            ["telemetry.error_rate.threshold"] = "0.05",
+            ["telemetry.sample_count.query"] = "request_count",
+            ["telemetry.sample_count.minimum"] = "10"
+        };
+        if (maxStalenessSeconds != null)
+        {
+            parameters["telemetry.max_staleness_seconds"] = maxStalenessSeconds;
+        }
+
+        return parameters;
     }
 
     [Fact]

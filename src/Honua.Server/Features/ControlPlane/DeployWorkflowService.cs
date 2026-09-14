@@ -25,6 +25,17 @@ internal sealed partial class DeployWorkflowService
     private const string RollbackSubmissionPendingPhase = "Rollback request accepted; submitting to deploy backend.";
     private const string RollbackSubmissionRetryablePhase = "Rollback provider submission was not confirmed; retry is allowed.";
     private const string MaxStalenessParameterKey = "telemetry.max_staleness_seconds";
+
+    /// <summary>
+    /// Built-in providers that query a fixed window and never read a sample's observation time, so they
+    /// cannot honor <see cref="MaxStalenessParameterKey"/> (#4617). Host-registered providers are not
+    /// assumed to share that limitation.
+    /// </summary>
+    private static readonly HashSet<string> FixedWindowTelemetryProviders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "cloudwatch",
+        "azuremonitor"
+    };
     private static readonly Regex UnsafeOperationIdCharacters = new("[^a-z0-9]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly IDeployTargetRegistry _targetRegistry;
     private readonly IWorkflowOperationStore? _workflowStore;
@@ -171,15 +182,14 @@ internal sealed partial class DeployWorkflowService
                 "ControlPlane:TelemetryConnections, so the metric gate could never be satisfied.";
         }
 
-        // Only the Prometheus provider reads each sample's observation time. CloudWatch and Azure Monitor
-        // query a fixed 300-second window, so an explicit staleness bound on them would be silently
-        // ignored (#4617).
+        // CloudWatch and Azure Monitor query a fixed 300-second window and never read a sample's observation
+        // time, so an explicit staleness bound on them would be silently ignored (#4617).
         if (spec.Parameters.TryGetValue(MaxStalenessParameterKey, out var staleness) &&
             !string.IsNullOrWhiteSpace(staleness) &&
-            !string.Equals(connection.Provider?.Trim(), "prometheus", StringComparison.OrdinalIgnoreCase))
+            FixedWindowTelemetryProviders.Contains(connection.Provider?.Trim() ?? string.Empty))
         {
-            return $"Telemetry gate configuration rejected: {MaxStalenessParameterKey} is only honored by the prometheus provider; " +
-                $"connection '{connection.ConnectionId}' uses '{connection.Provider}', which reads a fixed 300-second query window, " +
+            return $"Telemetry gate configuration rejected: {MaxStalenessParameterKey} is not honored by connection " +
+                $"'{connection.ConnectionId}': its '{connection.Provider}' provider reads a fixed 300-second query window, " +
                 "so the bound would be silently ignored.";
         }
 
@@ -408,6 +418,15 @@ internal sealed partial class DeployWorkflowService
         {
             throw new ResourceConflictException(
                 $"Deploy operation '{operation.OperationId}' cannot be submitted: {string.Join(" ", operation.BlockingReasons)}");
+        }
+
+        // The persisted blocking reasons describe the connections as they were at plan time. A reload or
+        // restart can remove a connection or change its provider before submission, so check the gate again
+        // against the current configuration before anything is claimed or mutated (#4617).
+        if (DescribeTelemetryGateBlock(operation.Deploy) is { } gateBlock)
+        {
+            throw new ResourceConflictException(
+                $"Deploy operation '{operation.OperationId}' cannot be submitted: {gateBlock}");
         }
 
         var target = await _targetRegistry.GetAsync(operation.Deploy.TargetId, cancellationToken).ConfigureAwait(false);
