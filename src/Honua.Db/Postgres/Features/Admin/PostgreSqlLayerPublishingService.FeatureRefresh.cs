@@ -39,6 +39,16 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return null;
         }
 
+        if (metadata.IsManagedStore)
+        {
+            // A managed-store layer has no source table: its rows ARE the managed store and
+            // carry the layer's edits, so rebuilding them would delete every edit
+            // (honua-server#4859).
+            throw new LayerPublishingException(
+                LayerPublishingErrorKind.Validation,
+                $"Layer {layerId.ToString(CultureInfo.InvariantCulture)} keeps its features in the managed feature store and has no source table to refresh from.");
+        }
+
         return await RebuildLayerSnapshotAsync(connectionString, metadata, cancellationToken)
             .ConfigureAwait(false);
     }
@@ -119,6 +129,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 metadata.GeometryColumn,
                 metadata.Srid,
                 attributeColumns,
+                featuresSchema: null,
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -200,7 +211,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 table_schema,
                 table_name,
                 geometry_column,
-                COALESCE(NULLIF(srid, 0), NULLIF(storage_srid, 0), @catalogSrid) AS layer_srid
+                COALESCE(NULLIF(srid, 0), NULLIF(storage_srid, 0), @catalogSrid) AS layer_srid,
+                COALESCE(storage_options ->> 'managedStore', 'false') = 'true' AS managed_store
             FROM honua.layers
             WHERE layer_id = @layerId;
             """;
@@ -244,10 +256,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 table_schema,
                 table_name,
                 geometry_column,
-                COALESCE(NULLIF(srid, 0), NULLIF(storage_srid, 0), @catalogSrid) AS layer_srid
+                COALESCE(NULLIF(srid, 0), NULLIF(storage_srid, 0), @catalogSrid) AS layer_srid,
+                COALESCE(storage_options ->> 'managedStore', 'false') = 'true' AS managed_store
             FROM honua.layers
             WHERE table_name = @table
               AND (@schema IS NULL OR table_schema = @schema)
+              -- Managed-store layers own their rows; a source-table refresh must never
+              -- rebuild them (honua-server#4859).
+              AND COALESCE(storage_options ->> 'managedStore', 'false') <> 'true'
             ORDER BY layer_id;
             """;
 
@@ -313,6 +329,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             reader.GetString(3),
             reader.GetString(4),
             reader.GetInt32(5),
+            reader.GetBoolean(6),
             []);
     }
 
@@ -347,5 +364,6 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string Table,
         string GeometryColumn,
         int Srid,
+        bool IsManagedStore,
         IReadOnlyList<string> FieldNames);
 }
