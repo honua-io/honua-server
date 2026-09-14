@@ -25,6 +25,15 @@ DEADLINE_SECONDS = 8
 # managed predicate calls, which take microseconds here, plus log-line emission.
 DEADLINE_SLACK_SECONDS = 4
 IDLE_CPU_PERCENT = 50.0
+# Dismissal, including the DELETE request itself, must stop the running join within this bound.
+DISMISS_BOUND_SECONDS = 10
+# JobRetryPolicy.Default schedules the first retry 30 seconds after a failed attempt; the
+# dismissed job is observed past that point before asserting it ran only once.
+FIRST_RETRY_BACKOFF_SECONDS = 30
+RETRY_OBSERVATION_MARGIN_SECONDS = 15
+# The dismissal profile's elapsed-time limit stays far beyond the dismissal bound and the
+# retry observation window, so only dismissal can stop the join in that scenario.
+DISMISS_PROFILE_DEADLINE_SECONDS = 300
 
 
 def utc():
@@ -225,7 +234,7 @@ UPDATE honua.services SET service_extent=ST_MakeEnvelope(-1,-1,3,3,4326) WHERE s
             compose("exec", "-T", "redis", "redis-cli", "FLUSHDB")
             compose("restart", "server")
             readiness()
-            container, receipt["candidate"] = verify_candidate()
+            _, receipt["candidate"] = verify_candidate()
             # Verify serving before making any resource-outcome claims.
             receipt["catalog"] = api("/rest/services?f=json")
             serving = api("/rest/services/gp-bounds/FeatureServer/946290/query?where=1%3D1&returnCountOnly=true&f=json")
@@ -305,6 +314,17 @@ UPDATE honua.services SET service_extent=ST_MakeEnvelope(-1,-1,3,3,4326) WHERE s
                 scenario["error"] = str(error)
             scenario["completedAt"] = utc()
 
+            # Dismissal profile: the same admitted join with a deadline far beyond the observation
+            # window, so only dismissal can stop it and the scenario never races the elapsed-time bound.
+            stop_monitor(monitor)
+            monitor = None
+            services["server"]["environment"]["Geoprocessing__Executors__MaxLayerExecutionSeconds"] = str(DISMISS_PROFILE_DEADLINE_SECONDS)
+            compose_path.write_text(json.dumps({"services": services}))
+            compose("up", "-d", "--no-deps", "server")
+            readiness()
+            container, receipt["dismissCandidate"] = verify_candidate()
+            monitor = start_monitor()
+
             scenario = {"name": "dismiss-running-join", "startedAt": utc(), "outcome": "fail", "cpuPercent": []}
             receipt["scenarios"].append(scenario)
             try:
@@ -313,33 +333,38 @@ UPDATE honua.services SET service_extent=ST_MakeEnvelope(-1,-1,3,3,4326) WHERE s
                 while api("/ogc/processes/jobs/" + job_id)["status"] != "running":
                     assert time.monotonic() < running_by, "join never started running"
                     time.sleep(0.1)
-                running_at = time.monotonic()
                 time.sleep(1.5)
                 busy = cpu_percent(container)
                 scenario["cpuPercent"].append({"phase": "running", "value": busy})
                 # The oracle is not vacuous only if the join was consuming the worker when dismissed.
                 assert busy >= IDLE_CPU_PERCENT, busy
-                assert time.monotonic() - running_at < DEADLINE_SECONDS - 1, "dismissal would race the deadline"
                 scenario["jobAtDismiss"] = api("/ogc/processes/jobs/" + job_id)
+                assert scenario["jobAtDismiss"]["status"] == "running", scenario["jobAtDismiss"]
+                # The bound starts before DELETE: the endpoint may itself wait for the worker.
+                dismiss_started = time.monotonic()
                 dismissed = api("/ogc/processes/jobs/" + job_id, method="DELETE")
-                dismissed_at = time.monotonic()
+                scenario["dismissRequestSeconds"] = time.monotonic() - dismiss_started
                 scenario["dismissResponse"] = dismissed
                 # 200 dismissed when already stopped; 202 with the running status when cancellation
                 # is delegated to the executing worker. Either way the job must reach dismissed promptly.
                 assert dismissed["status"] in ["dismissed", "running"], dismissed
                 while api("/ogc/processes/jobs/" + job_id)["status"] != "dismissed":
-                    assert time.monotonic() - dismissed_at < 10, "dismissal was not confirmed by the worker"
+                    assert time.monotonic() - dismiss_started < DISMISS_BOUND_SECONDS, "dismissal was not confirmed by the worker"
                     time.sleep(0.1)
-                scenario["secondsToDismissed"] = time.monotonic() - dismissed_at
+                scenario["secondsToDismissed"] = time.monotonic() - dismiss_started
+                assert scenario["secondsToDismissed"] < DISMISS_BOUND_SECONDS, scenario["secondsToDismissed"]
                 while True:
                     value = cpu_percent(container)
                     scenario["cpuPercent"].append({"phase": "dismissed", "value": value,
-                                                   "secondsAfterDismiss": time.monotonic() - dismissed_at})
+                                                   "secondsAfterDismiss": time.monotonic() - dismiss_started})
                     if value < IDLE_CPU_PERCENT:
                         break
-                    assert time.monotonic() - dismissed_at < 10, "worker stayed busy after dismissal"
-                # Wait past the deadline and a retry backoff: the dismissed job must neither resume nor complete.
-                time.sleep(max(0.0, DEADLINE_SECONDS * 3 - (time.monotonic() - running_at)))
+                    assert time.monotonic() - dismiss_started < DISMISS_BOUND_SECONDS, "worker stayed busy after dismissal"
+                # Observe past the production first-retry backoff, measured from dismissal: a
+                # dismissed job must neither be retried nor complete.
+                time.sleep(max(0.0, FIRST_RETRY_BACKOFF_SECONDS + RETRY_OBSERVATION_MARGIN_SECONDS
+                                    - (time.monotonic() - dismiss_started)))
+                scenario["observedSecondsAfterDismiss"] = time.monotonic() - dismiss_started
                 job = api("/ogc/processes/jobs/" + job_id)
                 scenario["job"] = job
                 scenario["events"] = job_events(job_id)

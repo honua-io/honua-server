@@ -16,7 +16,10 @@ python3 tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/qualify
 Port 18459 must be free, or supply `--port`. The runner retains timestamped server
 logs next to the receipt and removes its containers and volumes even when
 qualification fails. Python optimization flags are rejected because assertions are
-the oracle.
+the oracle. Run it on a host without other heavy work: serving probes and job
+submission keep a 10-second bound.
+
+## Limit profile
 
 The literal fixture has two area-4 squares overlapping by area 1, a second layer
 with the same squares for joining, and one 1,001-vertex ring. The configured
@@ -28,18 +31,22 @@ topology refusal must reach terminal failure with an actionable message after
 exactly one execution attempt, read from the server's job log. Concurrent
 FeatureServer count queries must keep returning exactly 2.
 
-The runner then recreates the server from configuration with a deadline profile:
-`MaxLayerExecutionSeconds=8`, and input and topology budgets that admit a spatial
-join of two 6,000-feature layers of overlapping five-vertex diamonds. That join is
-36 million exact predicate calls, well beyond the deadline on one CPU, so only the
-elapsed-time bound and dismissal can stop it:
+## Deadline and dismissal profiles
 
-- `elapsed-time-limit`: the job fails naming `MaxLayerExecutionSeconds=8`, after one
-  attempt that lasts at most the deadline plus 4 seconds.
-- `dismiss-running-join`: the join is dismissed while it is computing (progress 55,
-  container CPU at least 50%). The job reaches `dismissed` within 10 seconds, the
-  container CPU drops below 50%, and three deadlines later the job is still
-  dismissed with no second attempt.
+The runner then recreates the server from configuration with budgets that admit a
+spatial join of two 6,000-feature layers of overlapping five-vertex diamonds: 36
+million exact predicate calls, well beyond any deadline below on one CPU, and
+30,000 x 30,000 vertices inside `MaxTopologyWork`.
+
+- `elapsed-time-limit` (`MaxLayerExecutionSeconds=8`): the job fails naming the
+  setting, after one attempt that lasts at most the deadline plus 4 seconds.
+- `dismiss-running-join` (recreated again with `MaxLayerExecutionSeconds=300`, so
+  only dismissal can stop the join): the join is dismissed while it is computing,
+  with container CPU at 50% or more and the job still `running`. From just before the
+  `DELETE` request, the job must reach `dismissed` and container CPU must fall below
+  50% within 10 seconds. The job is then observed for 45 seconds after dismissal,
+  past the default policy's 30-second first retry, and must still be dismissed with
+  one attempt.
 
 ## Receipts
 
@@ -53,19 +60,24 @@ predates #4740 and completed those jobs despite the declared topology ceiling.
 published nightly Native AOT image
 `ghcr.io/honua-io/honua-server@sha256:b1669510d574f92cd143fdab00fdf92d3b1e1fbaf873e173ad8f7ae7816b4a5c`
 (source `3d82e8472703474957ab0624a339c4853952c96c`, which contains #4740). Every
-topology, vertex and elapsed-time limit is enforced with the expected message, each
-elapsed-time attempt stops at the 8-second deadline, and dismissal stops the running
-join within 0.1 seconds. The receipt still fails: every deterministic refusal was
-re-run three times through the retry policy, about 95 seconds of backoff before the
-terminal outcome, and the elapsed-time job spent three deadlines of worker time on
-the same input. All 2,259 serving probes passed, with no OOM kill.
+topology, vertex and elapsed-time limit is enforced with the expected message.
+Elapsed-time attempts stop at 7.96 to 8.99 seconds, and dismissal stops the running
+join in 0.08 seconds (CPU 102% to 8%). The receipt still fails because every
+deterministic refusal ran three attempts through the retry policy. Each refusal
+took 91 to 101 seconds from first attempt to terminal outcome, and the
+elapsed-time job spent three deadlines of worker time over 119 seconds. All 2,442
+serving probes passed, and there was no OOM kill.
 
 `layer-resource-branch-diagnostic-receipt.json` runs the same harness on a
 framework-dependent diagnostic image built from this branch's Debug output, pushed
 to a local registry so it is addressed by digest. It is not a release candidate.
-It passes every scenario: each refusal and the elapsed-time failure run once (8.5
-seconds), dismissal is confirmed in 0.07 seconds and CPU falls from 99% to 30%,
-and all 264 serving probes pass.
+It passes every scenario:
+
+- Each refusal is terminal after one attempt (0.1 to 0.3 seconds).
+- The elapsed-time failure runs once, for 8.04 seconds.
+- Dismissal, including the request, completes in 0.12 seconds, and CPU falls from
+  98% to 26%.
+- All 357 serving probes pass.
 
 The runtime correction makes input, resource-limit and deadline refusals terminal
 (`IsRetryable = false`) in the layer and enrichment executors; transient source-read

@@ -257,6 +257,8 @@ public sealed class EnrichmentJobExecutorTests
         status.Should().Be(ExecutionJobStatus.Failed);
         error.Should().Contain("where");
         error.Should().Contain("layerId", "the failure must name the source form the filter belongs to");
+        // A deterministic input refusal is terminal; a retry would repeat it after backoff (#4629).
+        _lastRetryable.Should().BeFalse();
     }
 
     [UnitTest]
@@ -402,6 +404,8 @@ public sealed class EnrichmentJobExecutorTests
 
         status.Should().Be(ExecutionJobStatus.Failed);
         error.Should().Contain("no-such-dataset");
+        // A deterministic input refusal is terminal; a retry would repeat it after backoff (#4629).
+        _lastRetryable.Should().BeFalse();
     }
 
     /// <summary>
@@ -527,6 +531,8 @@ public sealed class EnrichmentJobExecutorTests
 
         status.Should().Be(ExecutionJobStatus.Failed);
         error.Should().Contain("exactly one source");
+        // A deterministic input refusal is terminal; a retry would repeat it after backoff (#4629).
+        _lastRetryable.Should().BeFalse();
     }
 
     [UnitTest]

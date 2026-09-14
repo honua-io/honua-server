@@ -195,7 +195,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         var hasInline = inputs.TryGet("input", out var inlineUri);
         if (hasLayerId == hasInline)
         {
-            return JobExecutionResult.Failed(
+            return LayerComputationBudget.Refusal(
                 $"Invalid {HandledProcessId} inputs: supply exactly one source — 'layerId' (registered source layer) "
                 + "or 'input' (staged FeatureCollection data URI).");
         }
@@ -208,7 +208,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         // as layer-source-only, so the combination is refused rather than quietly ignored.
         if (hasInline && FindLayerOnlySourceFilter(inputs) is { } layerOnlyFilter)
         {
-            return JobExecutionResult.Failed(
+            return LayerComputationBudget.Refusal(
                 $"Invalid {HandledProcessId} inputs: '{layerOnlyFilter}' windows the registered source layer read "
                 + "and is only valid with 'layerId'; a staged 'input' FeatureCollection is enriched verbatim. "
                 + $"Remove '{layerOnlyFilter}', or filter the staged collection before submitting it.");
@@ -216,7 +216,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
 
         if (!inputs.TryGetRequired("datasetId", out var datasetId, out var missingDataset))
         {
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {missingDataset}.");
+            return LayerComputationBudget.Refusal($"Invalid {HandledProcessId} inputs: {missingDataset}.");
         }
 
         using var scope = _serviceScopeFactory.CreateScope();
@@ -237,7 +237,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         var dataset = await resolver.ResolveAsync(datasetId, cancellationToken).ConfigureAwait(false);
         if (dataset is null)
         {
-            return JobExecutionResult.Failed(
+            return LayerComputationBudget.Refusal(
                 $"Unknown enrichment dataset '{datasetId}': no managed or configured dataset matches this id.");
         }
 
