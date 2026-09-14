@@ -1292,9 +1292,10 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task SynchronizeReplica_RetriedPartiallyFailedUpload_ReplaysFailureWithoutDuplicatingCommittedAdd()
     {
-        // #4026: in the default best-effort mode the valid add commits while the update of a missing object
-        // fails, so the upload reports failure after committing a row. Its retry must replay that failure,
-        // not re-insert the add once a short-lived reservation lapses.
+        // #4026: in best-effort mode the valid add commits while the update of a missing object fails, so the
+        // upload reports failure after committing a row. Its retry must replay that failure, not re-insert the
+        // add once a short-lived reservation lapses. Best-effort is opt-in since rollbackOnFailure defaults to
+        // true (#4031), so the payload asks for it explicitly.
         var replicaId = await CreateReplicaAsync("PartialFailureRetry", "0");
         const string committedName = "partial-retry-committed";
         var edits = JsonSerializer.Serialize(new object[]
@@ -1309,7 +1310,7 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
                 }
             }
         });
-        var payload = new { replicaID = replicaId, syncDirection = "upload", edits, f = "json" };
+        var payload = new { replicaID = replicaId, syncDirection = "upload", rollbackOnFailure = false, edits, f = "json" };
 
         var first = await PostSynchronizeReplicaAsync(payload);
         first.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400, first.ToString());

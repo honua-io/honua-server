@@ -5922,7 +5922,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 123,
+      "line": 143,
       "language": "json"
     },
     {
@@ -5935,7 +5935,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 119,
+      "line": 139,
       "language": "json"
     },
     {
@@ -5948,7 +5948,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 196,
+      "line": 216,
       "language": "json"
     },
     {
@@ -5961,7 +5961,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 127,
+      "line": 147,
       "language": "json"
     },
     {
@@ -5974,7 +5974,7 @@
         "check": "inventory-classification"
       },
       "fence": 9,
-      "line": 256,
+      "line": 276,
       "language": "powershell"
     },
     {
@@ -5987,7 +5987,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 208,
+      "line": 228,
       "language": "powershell"
     },
     {
@@ -6000,7 +6000,7 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 225,
+      "line": 245,
       "language": "powershell"
     },
     {
@@ -6013,7 +6013,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 131,
+      "line": 151,
       "language": "json"
     },
     {
@@ -6026,7 +6026,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 113,
+      "line": 133,
       "language": "json"
     },
     {
@@ -6078,7 +6078,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 71,
+      "line": 78,
       "language": "json"
     },
     {
@@ -6104,7 +6104,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 61,
+      "line": 68,
       "language": "json"
     },
     {
@@ -13358,7 +13358,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 403,
+      "line": 404,
       "language": "sql"
     },
     {

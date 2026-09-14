@@ -49,6 +49,26 @@ image and replaying these checks is still required; updating the documentation
 does not qualify the current pin. This observation uses isolated Docker fixtures
 and does not certify ECS-small, the installed DevOps client, or Console.
 
+### Proposed replacement image
+
+Nightly `ff1a463` (`sha256:75ac7813…`) contains the staging and status fixes,
+but the accepted manifest does not pin it yet. On September 14 the unchanged
+harness passed all five installed scenarios on that image
+([staging replay](evidence/3302-repin-ff1a463-staging.json)). During staging the
+live revision stayed at 3 with its ETag, and the operation bound that prior
+identity. A forced restart activated nothing. Recovery restored the prior graph
+while keeping an independently seeded committed edit and an unrelated service's
+access policy. Rejected preparations left the live graph unchanged. The
+[read replay](evidence/3302-repin-ff1a463-read-observation.json) passed the same
+REST/MCP fixture checks and returned status `schemaVersion=1.1` with
+`slo.configured=false` and a `replica-local` tail. It also found all five
+scenario tools among 58 full-view descriptors.
+
+These receipts show what a re-pin must reproduce; they are not qualification.
+Once the manifest accepts an image, replay both against that exact digest. They
+cover metadata service staging only, not a deployment actuator, ECS-small, the
+DevOps client or Console.
+
 ## Progress and protection
 
 These are the required client descriptions of server truth, not additional API
