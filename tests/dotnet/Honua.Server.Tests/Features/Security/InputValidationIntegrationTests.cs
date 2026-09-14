@@ -47,6 +47,68 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
     [IntegrationTest]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/{layerId}/query")]
+    public async Task Query_DetailedGeometry_PreservesSpatialSelectionThroughInputValidation()
+    {
+        var name = $"geometry-budget-{Guid.NewGuid():N}";
+        var adds = JsonSerializer.Serialize(new[]
+        {
+            new { geometry = new { x = -122.4194, y = 37.7749 }, attributes = new { name } },
+            new { geometry = new { x = -110.0, y = 20.0 }, attributes = new { name } }
+        });
+        using var editRequest = new HttpRequestMessage(HttpMethod.Post, "/rest/services/test/FeatureServer/0/applyEdits")
+        {
+            Content = new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json", ["adds"] = adds })
+        };
+        editRequest.Headers.Add("X-API-Key", AdminPassword);
+        using var editResponse = await _fixture.Client.SendAsync(editRequest);
+        using var edit = JsonDocument.Parse(await editResponse.Content.ReadAsStringAsync());
+        var added = edit.RootElement.GetProperty("addResults");
+        Assert.All(added.EnumerateArray(), result => Assert.True(result.GetProperty("success").GetBoolean()));
+        var expectedId = added[0].GetProperty("objectId").GetInt64();
+
+        var ring = Enumerable.Range(0, 401).Select(i =>
+        {
+            var angle = -(i % 400) * Math.PI * 2 / 400;
+            return new[] { -122.4194 + Math.Cos(angle) / 100, 37.7749 + Math.Sin(angle) / 100 };
+        }).ToArray();
+        var geometry = JsonSerializer.Serialize(new { rings = new[] { ring }, spatialReference = new { wkid = 4326 } });
+        Assert.True(geometry.Length > 8192);
+
+        foreach (var protocol in new[] { "FeatureServer", "MapServer" })
+        {
+            foreach (var resultKind in new[] { "returnIdsOnly", "returnCountOnly" })
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, $"/rest/services/test/{protocol}/0/query")
+                {
+                    Content = new FormUrlEncodedContent(new Dictionary<string, string>
+                    {
+                        ["f"] = "json",
+                        ["where"] = $"name = '{name}'",
+                        ["geometry"] = geometry,
+                        ["geometryType"] = "esriGeometryPolygon",
+                        ["spatialRel"] = "esriSpatialRelIntersects",
+                        [resultKind] = "true"
+                    })
+                };
+                request.Headers.Add("X-API-Key", AdminPassword);
+                using var response = await _fixture.Client.SendAsync(request);
+                using var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                Assert.False(result.RootElement.TryGetProperty("error", out _), result.RootElement.ToString());
+                if (resultKind == "returnIdsOnly")
+                {
+                    Assert.Equal(new[] { expectedId }, result.RootElement.GetProperty("objectIds").EnumerateArray().Select(id => id.GetInt64()));
+                }
+                else
+                {
+                    Assert.Equal(1, result.RootElement.GetProperty("count").GetInt32());
+                }
+            }
+        }
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task Query_WithSqlInjectionPattern_ReturnsBadRequest()
     {
