@@ -82,7 +82,9 @@ public sealed class EsriFeatureSetExecutionTests
         var translated = GPServerEsriInputTranslation.Translate(
             new Dictionary<string, string>
             {
-                ["wkb"] = $$"""{"x":{{x.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}},"y":{{y.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}},"spatialReference":{"wkid":{{esriWkid}}}}""",
+                ["wkb"] = string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    $$$"""{"x":{{{x:R}}},"y":{{{y:R}}},"spatialReference":{"wkid":{{{esriWkid}}}}}"""),
                 ["fromSrid"] = fromSrid.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 ["toSrid"] = toSrid.ToString(System.Globalization.CultureInfo.InvariantCulture)
             },
