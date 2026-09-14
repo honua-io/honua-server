@@ -10,6 +10,9 @@ using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
 using Honua.Protocols.GeoServices.GPServer;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Logging.Abstractions;
+using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 using static Honua.Server.Tests.Features.Geoprocessing.Execution.ManagedExecutorTestHarness;
 
 namespace Honua.Server.Tests.Features.Geoprocessing.Execution;
@@ -64,6 +67,86 @@ public sealed class EsriFeatureSetExecutionTests
         coordinates.Should().HaveCount(5);
         coordinates.Distinct().Should().BeEquivalentTo(new[] { (2d, 0d), (2d, 4d), (4d, 4d), (4d, 0d) });
     }
+
+    [Theory]
+    [InlineData(4326)]
+    [InlineData(102100)]
+    public async Task Project_EsriGeometryWithoutSridInput_ExecutesWithExpectedMercatorOrdinates(int esriWkid)
+    {
+        // #4033: geometry.project declares fromSrid/toSrid but no 'srid'. The GPServer adapter translates
+        // an esriGeometry without adding one (the task declares none), and the spatial reference travels
+        // inside the EWKB, which the executor checks against fromSrid. 102100 is Esri's Web Mercator alias.
+        var (x, y, fromSrid, toSrid) = esriWkid == 4326
+            ? (-118.15, 33.8, 4326, 3857)
+            : (MercatorX(-118.15), MercatorY(33.8), 3857, 4326);
+        var translated = GPServerEsriInputTranslation.Translate(
+            new Dictionary<string, string>
+            {
+                ["wkb"] = $$"""{"x":{{x.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}},"y":{{y.ToString("R", System.Globalization.CultureInfo.InvariantCulture)}},"spatialReference":{"wkid":{{esriWkid}}}}""",
+                ["fromSrid"] = fromSrid.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                ["toSrid"] = toSrid.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            },
+            featureCollectionParameters: null,
+            includeDerivedSrid: DeclaresSrid("geometry.project"));
+        translated.CapabilityMessage.Should().BeNull();
+        translated.Inputs.Should().NotContainKey("srid");
+
+        var (status, uri) = await RunAsync(
+            new GeometryProjectJobExecutor(Options(), NullLogger<GeometryProjectJobExecutor>.Instance),
+            "geometry.project",
+            [.. translated.Inputs.Select(input => (input.Key, input.Value))]);
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        using var document = JsonDocument.Parse(Convert.FromBase64String(uri![DataUriPrefix.Length..]));
+        var coordinates = document.RootElement.GetProperty("geometry").GetProperty("coordinates");
+        // Independently computed spherical Web Mercator: x = R*lon, y = R*ln(tan(pi/4 + lat/2)).
+        var (expectedX, expectedY) = esriWkid == 4326 ? (MercatorX(-118.15), MercatorY(33.8)) : (-118.15, 33.8);
+        var tolerance = esriWkid == 4326 ? 1e-3 : 1e-9;
+        coordinates[0].GetDouble().Should().BeApproximately(expectedX, tolerance);
+        coordinates[1].GetDouble().Should().BeApproximately(expectedY, tolerance);
+    }
+
+    [UnitTest]
+    public async Task GeometryFormat_EsriGeometryWithoutSridInput_ExecutesAndKeepsTheSpatialReference()
+    {
+        // #4033: conversion.geometry-format declares no 'srid'; the esriGeometry spatial reference must
+        // still reach the executor through the EWKB and come back on the result envelope.
+        var translated = GPServerEsriInputTranslation.Translate(
+            new Dictionary<string, string>
+            {
+                ["geometry"] = """{"x":-118.15,"y":33.8,"spatialReference":{"wkid":4326}}""",
+                ["target"] = "ewkt"
+            },
+            featureCollectionParameters: null,
+            includeDerivedSrid: DeclaresSrid("conversion.geometry-format"));
+        translated.CapabilityMessage.Should().BeNull();
+        translated.Inputs.Should().NotContainKey("srid");
+
+        var (status, uri) = await RunAsync(
+            new GeometryFormatConvertJobExecutor(Options(), NullLogger<GeometryFormatConvertJobExecutor>.Instance),
+            "conversion.geometry-format",
+            [.. translated.Inputs.Select(input => (input.Key, input.Value))]);
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        const string ScalarPrefix = "data:application/json;base64,";
+        using var document = JsonDocument.Parse(Convert.FromBase64String(uri![ScalarPrefix.Length..]));
+        document.RootElement.GetProperty("srid").GetInt32().Should().Be(4326);
+        var value = document.RootElement.GetProperty("value").GetString()!;
+        value.Should().StartWith("SRID=4326;");
+        var point = (Point)new WKTReader().Read(value["SRID=4326;".Length..]);
+        point.X.Should().Be(-118.15);
+        point.Y.Should().Be(33.8);
+    }
+
+    private static bool DeclaresSrid(string processId)
+        => new BuiltInProcessCatalog().GetProcess(processId)!.Parameters
+            .Any(parameter => parameter.Name.Equals("srid", StringComparison.OrdinalIgnoreCase));
+
+    private const double EarthRadius = 6378137d;
+
+    private static double MercatorX(double longitude) => EarthRadius * longitude * Math.PI / 180d;
+
+    private static double MercatorY(double latitude) => EarthRadius * Math.Log(Math.Tan((Math.PI / 4d) + (latitude * Math.PI / 360d)));
 
     [UnitTest]
     public void Output_PointZAndNullAttributes_PreservesOrdinateAndFieldMetadata()
