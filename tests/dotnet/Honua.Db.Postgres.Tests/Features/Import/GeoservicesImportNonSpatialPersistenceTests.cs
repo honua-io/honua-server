@@ -4,10 +4,12 @@
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.Migration.Services;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Metadata;
 using Honua.TestKit;
 using Microsoft.Extensions.ObjectPool;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
 
@@ -76,6 +78,22 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests
                 Limit = 1
             });
             page.Items.Should().ContainSingle().Which.Attributes["join_id"].Should().Be("002-B");
+
+            var reconciliation = new LayerReconciliationService(reader, TimeProvider.System,
+                NullLogger<LayerReconciliationService>.Instance);
+            var report = await reconciliation.ReconcileAsync(new LayerReconciliationRequest
+            {
+                RunId = "attribute-only-import", SourceKind = "arcgis-geoservices-rest",
+                Layers = [new LayerReconciliationLayerInput
+                {
+                    SourceLayerId = "source#0", TargetHonuaLayerId = layerId,
+                    SourceFeatureCount = 2, SourceHasGeometry = false,
+                    SourceFieldNames = ["join_id", "status"]
+                }]
+            });
+            report.Classification.Should().Be(MigrationReconciliationClassifications.Pass);
+            report.Layers[0].Geometry.Sampled.Should().Be(0);
+            report.Layers[0].Geometry.Reason.Should().Contain("not applicable");
 
             await using var connection = await fixture.DataSource.OpenConnectionAsync();
             await using var command = connection.CreateCommand();

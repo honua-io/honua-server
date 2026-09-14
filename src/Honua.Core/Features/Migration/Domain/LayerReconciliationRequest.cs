@@ -68,6 +68,12 @@ public sealed record LayerReconciliationLayerInput
     public long? SourceFeatureCount { get; init; }
 
     /// <summary>
+    /// Whether the source resource declares geometry. Attribute-only tables do not require
+    /// geometry-validity or extent probes. Defaults to true for existing spatial callers.
+    /// </summary>
+    public bool SourceHasGeometry { get; init; } = true;
+
+    /// <summary>
     /// Source-side bounding box snapshot. <c>null</c> when the source did not advertise an
     /// extent; the extent probe will record a <c>warn</c> with a "no baseline" reason.
     /// </summary>
