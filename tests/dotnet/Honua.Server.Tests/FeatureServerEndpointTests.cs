@@ -3174,6 +3174,9 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
     [InlineData("async", "false", true)]
     [InlineData("useUniqueIds", "false", false)]
     [InlineData("assetMaps", "[]", false)]
+    [InlineData("assetMaps", "[ ]", true)]
+    [InlineData("attachments", "[\n  ]", false)]
+    [InlineData("attachments", " null ", true)]
     [Operation(Operations.ApplyEdits)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task ApplyEdits_NoOpEsriClientControl_IsAcceptedAndEditApplies(
@@ -3236,9 +3239,10 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         // edit session; the server reports its own clock after committing, so the moment lies between
         // wall-clock readings taken before and after the request.
         var name = $"moment-{Guid.NewGuid():N}";
+        var idempotencyKey = Guid.NewGuid().ToString("N");
         var before = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-        var response = await PostLayerApplyEditsFormAsync(name, "returnEditMoment", "true", onQueryString);
+        var response = await PostLayerApplyEditsFormAsync(name, "returnEditMoment", "true", onQueryString, idempotencyKey);
 
         var after = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         response.Be200Ok();
@@ -3246,7 +3250,23 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         var root = document.RootElement;
         root.GetProperty("success").GetBoolean().Should().BeTrue();
         root.GetProperty("addResults")[0].GetProperty("success").GetBoolean().Should().BeTrue();
-        root.GetProperty("editMoment").GetInt64().Should().BeInRange(before, after);
+        var editMoment = root.GetProperty("editMoment").GetInt64();
+        editMoment.Should().BeInRange(before, after);
+
+        // A retry with the same Idempotency-Key replays the recorded response (#2250); the moment it
+        // reports is when the edits were originally applied, not when the retry arrived.
+        await Task.Delay(TimeSpan.FromMilliseconds(20));
+        var replay = await PostLayerApplyEditsFormAsync(name, "returnEditMoment", "true", onQueryString, idempotencyKey);
+        replay.Be200Ok();
+        using var replayDocument = JsonDocument.Parse(await replay.Content.ReadAsStringAsync());
+        replayDocument.RootElement.GetProperty("editMoment").GetInt64().Should().Be(editMoment);
+
+        // The recorded moment is only emitted when the caller asks for it.
+        var replayWithoutMoment = await PostLayerApplyEditsFormAsync(name, "returnEditMoment", "false", onQueryString, idempotencyKey);
+        replayWithoutMoment.Be200Ok();
+        using var withoutMomentDocument = JsonDocument.Parse(await replayWithoutMoment.Content.ReadAsStringAsync());
+        withoutMomentDocument.RootElement.TryGetProperty("editMoment", out _).Should().BeFalse();
+
         (await CountFeaturesNamedAsync(name)).Should().Be(1);
     }
 
@@ -3281,7 +3301,8 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
         string featureName,
         string control,
         string value,
-        bool onQueryString)
+        bool onQueryString,
+        string? idempotencyKey = null)
     {
         var fields = new Dictionary<string, string>
         {
@@ -3298,8 +3319,16 @@ public sealed class FeatureServerEndpointTests : IAsyncLifetime
             fields[control] = value;
         }
 
-        using var form = new FormUrlEncodedContent(fields);
-        return await _fixture.Client.PostAsync(url, form);
+        using var requestMessage = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new FormUrlEncodedContent(fields)
+        };
+        if (idempotencyKey is not null)
+        {
+            requestMessage.Headers.Add("Idempotency-Key", idempotencyKey);
+        }
+
+        return await _fixture.Client.SendAsync(requestMessage);
     }
 
     private async Task<long> CountFeaturesNamedAsync(string featureName)
