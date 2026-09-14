@@ -281,6 +281,7 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         result.Status.Should().Be(ExecutionJobStatus.Failed);
         result.ErrorMessage.Should().Contain("artifact1");
         result.ErrorMessage.Should().Contain("overwriteOutput");
+        result.IsRetryable.Should().BeFalse();
         // The durable job-record publish is the gate (finding #1): it runs first, and
         // only then does the workspace-routing collision surface and fail the job —
         // so the workspace is never mutated for output that wasn't durably published.
@@ -505,8 +506,64 @@ public sealed class GeoprocessingDispatchJobExecutorTests
         var result = await dispatcher.ExecuteAsync(record, context, CancellationToken.None);
 
         result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.IsRetryable.Should().BeFalse();
         result.ErrorMessage.Should().Contain("ws-1");
         result.ErrorMessage.Should().Contain("no workspace storage provider");
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_WorkspaceProviderNotRegistered_FailsPermanentlyWithoutRunningHandler()
+    {
+        using var services = new ServiceCollection().BuildServiceProvider();
+        var dispatcher = CreateFakeExecutorDispatcher(services.GetRequiredService<IServiceScopeFactory>());
+        var context = Substitute.For<IJobExecutionContext>();
+        var record = CreateFakeExecutorJobRecord(workspaceId: "ws-1", overwriteOutput: null);
+
+        var result = await dispatcher.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.IsRetryable.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("no workspace storage provider");
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_WorkspaceResolutionThrows_RetainsRetryAndSanitizesFailure()
+    {
+        var workspaceLifecycle = Substitute.For<IWorkspaceLifecycleService>();
+        workspaceLifecycle.GetOrCreateNamedWorkspaceAsync("admin", "ws-1", Arg.Any<CancellationToken>())
+            .ThrowsAsync(new IOException("Private provider connection detail"));
+        var dispatcher = CreateFakeExecutorDispatcher(BuildScopeFactory(workspaceLifecycle));
+        var context = Substitute.For<IJobExecutionContext>();
+        var record = CreateFakeExecutorJobRecord(workspaceId: "ws-1", overwriteOutput: null);
+
+        var result = await dispatcher.ExecuteAsync(record, context, CancellationToken.None);
+
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.IsRetryable.Should().BeTrue();
+        result.ErrorMessage.Should().Be("env:workspace='ws-1' could not be resolved.");
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
+    public async Task ExecuteAsync_WorkspaceResolutionCancelled_PropagatesCancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var workspaceLifecycle = Substitute.For<IWorkspaceLifecycleService>();
+        workspaceLifecycle.GetOrCreateNamedWorkspaceAsync("admin", "ws-1", Arg.Any<CancellationToken>())
+            .Returns<Workspace>(_ =>
+            {
+                cancellation.Cancel();
+                throw new OperationCanceledException(cancellation.Token);
+            });
+        var dispatcher = CreateFakeExecutorDispatcher(BuildScopeFactory(workspaceLifecycle));
+        var context = Substitute.For<IJobExecutionContext>();
+        var record = CreateFakeExecutorJobRecord(workspaceId: "ws-1", overwriteOutput: null);
+
+        var act = () => dispatcher.ExecuteAsync(record, context, cancellation.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
         await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
     }
 
