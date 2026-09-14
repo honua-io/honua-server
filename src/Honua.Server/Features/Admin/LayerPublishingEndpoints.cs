@@ -206,6 +206,8 @@ internal static class LayerPublishingEndpoints
                 HasM = request.HasM,
                 Srid = request.Srid,
                 PrimaryKey = request.PrimaryKey,
+                GlobalIdField = request.GlobalIdField,
+                SupportsAttachments = request.SupportsAttachments,
                 Fields = request.Fields ?? Array.Empty<string>(),
                 FieldDomains = request.FieldDomains
                     ?? new Dictionary<string, Honua.Core.Features.Metadata.Domain.V2.MetadataV2FieldDomain>(StringComparer.OrdinalIgnoreCase),
