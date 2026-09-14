@@ -227,6 +227,7 @@ internal static partial class MapServerEndpoints
             .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/{layerId:int}/query", HandleLayerQueryGet)
+            .WithMetadata(GeoServicesQueryGeometryMetadata.Instance)
             .WithDisplayName("Query MapServer Layer (GET)")
             .WithName("MapServerQueryGet")
             .WithSummary("Query features from a MapServer layer using GET")
@@ -234,6 +235,7 @@ internal static partial class MapServerEndpoints
             .WithTags("MapServer");
 
         endpoints.MapPost("/rest/services/{serviceId}/MapServer/{layerId:int}/query", HandleLayerQueryPost)
+            .WithMetadata(GeoServicesQueryGeometryMetadata.Instance)
             .WithDisplayName("Query MapServer Layer (POST)")
             .WithName("MapServerQueryPost")
             .WithSummary("Query features from a MapServer layer using POST")
@@ -242,6 +244,7 @@ internal static partial class MapServerEndpoints
             .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/query", HandleServiceQueryGet)
+            .WithMetadata(GeoServicesQueryGeometryMetadata.Instance)
             .WithDisplayName("Query MapServer Service (GET)")
             .WithName("MapServerServiceQueryGet")
             .WithSummary("Query features from a MapServer service using GET")
@@ -249,6 +252,7 @@ internal static partial class MapServerEndpoints
             .WithTags("MapServer");
 
         endpoints.MapPost("/rest/services/{serviceId}/MapServer/query", HandleServiceQueryPost)
+            .WithMetadata(GeoServicesQueryGeometryMetadata.Instance)
             .WithDisplayName("Query MapServer Service (POST)")
             .WithName("MapServerServiceQueryPost")
             .WithSummary("Query features from a MapServer service using POST")
