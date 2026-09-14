@@ -106,4 +106,10 @@ public sealed class ServiceLayerEditResult
     /// </summary>
     [JsonPropertyName("deleteResults")]
     public EditResult[]? DeleteResults { get; set; }
+
+    /// <summary>
+    /// When returnEditMoment=true, the time the layer's edits were applied, in epoch milliseconds (#4105).
+    /// </summary>
+    [JsonPropertyName("editMoment")]
+    public long? EditMoment { get; set; }
 }

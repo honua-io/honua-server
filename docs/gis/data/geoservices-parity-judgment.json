@@ -654,17 +654,28 @@
             "status": "implemented"
           },
           {
+            "name": "returnEditMoment",
+            "status": "implemented",
+            "notes": "returnEditMoment=true adds editMoment (epoch milliseconds, server clock when the edits were applied) to the response (#4105)."
+          },
+          {
             "name": "useGlobalIds, gdbVersion",
             "status": "rejected"
           },
           {
-            "name": "returnEditMoment, attachments, assetMaps, trueCurveClient, sessionID, usePreviousEditMoment, timeReferenceUnknownClient, async, returnEditResults, editsUploadId, editsUploadFormat, useUniqueIds",
-            "status": "ignored"
+            "name": "sessionID, trueCurveClient, usePreviousEditMoment, timeReferenceUnknownClient, returnEditResults",
+            "status": "ignored",
+            "notes": "Accepted on the query string or in the request body and have no effect: there are no branch-version edit sessions or true curves, and per-edit results are always returned (#4105)."
+          },
+          {
+            "name": "attachments, assetMaps, async, useUniqueIds, editsUploadId, editsUploadFormat",
+            "status": "rejected",
+            "notes": "A non-empty attachments or assetMaps payload, async=true, useUniqueIds=true, or any editsUploadId or editsUploadFormat value returns HTTP 400 instead of dropping edits; empty or false values are accepted (#4105)."
           },
           {
             "name": "datumTransformation",
             "status": "rejected",
-            "notes": "Geometry must already match the layer SRID."
+            "notes": "Geometry must already match the layer SRID; any datumTransformation value returns HTTP 400."
           }
         ],
         "queryRelatedRecords": [
