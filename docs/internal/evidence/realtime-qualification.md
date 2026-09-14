@@ -101,6 +101,11 @@ validates until that instant and fails from it, whichever cache tier answers. Re
 key lifetimes in whole seconds and rounds down, so the distributed entry is kept past the
 advertised expiry and the explicit expiry check decides (server#4777).
 
+OData reports an ended credential as an authentication failure. A request without a valid
+credential resolves the default tenant, which cannot see another tenant's layer. The shared
+layer validator answers that request `401` with a `WWW-Authenticate` challenge instead of
+`404`, while an authenticated principal of another tenant still receives `404` (server#4778).
+
 Every `token-expiry`, `token-revocation`, `tenant-isolation`, and `tenant-scope-change` row
 must retain an `authorization` object containing the SHA-256 issuer/configuration fingerprint,
 two distinct `tenantIds`, distinct tenant-qualified layer/datastream `resourceIds`,
