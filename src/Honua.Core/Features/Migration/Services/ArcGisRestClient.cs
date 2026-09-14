@@ -89,28 +89,30 @@ internal sealed partial class ArcGisRestClient
 
         var layers = new List<GeoservicesLayerInfo>();
 
-        if (serviceResponse.Layers != null)
+        // Esri lists nonspatial resources separately, but they use the same
+        // metadata/query endpoints and must be available to the import planner.
+        var resources = (serviceResponse.Layers ?? [])
+            .Concat(serviceResponse.Tables ?? [])
+            .DistinctBy(resource => resource.Id);
+        foreach (var layer in resources)
         {
-            foreach (var layer in serviceResponse.Layers)
+            try
             {
-                try
-                {
-                    var layerInfo = await GetLayerInfoAsync(
-                        normalizedUrl,
-                        layer.Id,
-                        timeoutSeconds,
-                        maxRetries,
-                        cancellationToken,
-                        credentials);
-                    layers.Add(layerInfo);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
-                {
-                    // Per-layer failures (including per-request timeouts) degrade to a
-                    // warning, but caller cancellation must abort the whole discovery
-                    // instead of logging every remaining layer as failed.
-                    Log.LayerDiscoveryFailed(_logger, layer.Id, layer.Name ?? "unknown", ex);
-                }
+                var layerInfo = await GetLayerInfoAsync(
+                    normalizedUrl,
+                    layer.Id,
+                    timeoutSeconds,
+                    maxRetries,
+                    cancellationToken,
+                    credentials);
+                layers.Add(layerInfo);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+            {
+                // Per-resource failures (including per-request timeouts) degrade to a
+                // warning, but caller cancellation must abort the whole discovery
+                // instead of logging every remaining resource as failed.
+                Log.LayerDiscoveryFailed(_logger, layer.Id, layer.Name ?? "unknown", ex);
             }
         }
 
@@ -1034,6 +1036,9 @@ internal sealed record ArcGisServiceResponse : IArcGisErrorResponse
 
     [JsonPropertyName("layers")]
     public ArcGisLayerRef[]? Layers { get; init; }
+
+    [JsonPropertyName("tables")]
+    public ArcGisLayerRef[]? Tables { get; init; }
 
     [JsonPropertyName("error")]
     public ArcGisError? Error { get; init; }
