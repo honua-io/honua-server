@@ -46,10 +46,13 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    [IntegrationTest]
+    [Theory]
+    [InlineData("form")]
+    [InlineData("json")]
+    [InlineData("multipart")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     [Endpoint("POST /rest/services/{serviceId}/MapServer/{layerId}/query")]
-    public async Task Query_DetailedGeometry_PreservesSpatialSelectionThroughInputValidation()
+    public async Task Query_DetailedGeometry_PreservesSpatialSelectionThroughInputValidation(string encoding)
     {
         var name = $"geometry-budget-{Guid.NewGuid():N}";
         var adds = JsonSerializer.Serialize(new[]
@@ -80,17 +83,31 @@ public sealed class InputValidationIntegrationTests : IAsyncLifetime
         {
             foreach (var resultKind in new[] { "returnIdsOnly", "returnCountOnly" })
             {
-                using var request = new HttpRequestMessage(HttpMethod.Post, $"/rest/services/test/{protocol}/0/query")
+                var parameters = new Dictionary<string, string>
                 {
-                    Content = new FormUrlEncodedContent(new Dictionary<string, string>
+                    ["f"] = "json",
+                    ["where"] = $"name = '{name}'",
+                    ["geometry"] = geometry,
+                    ["geometryType"] = "esriGeometryPolygon",
+                    ["spatialRel"] = "esriSpatialRelIntersects",
+                    [resultKind] = "true"
+                };
+                HttpContent content = encoding switch
+                {
+                    "json" => new StringContent(JsonSerializer.Serialize(parameters), System.Text.Encoding.UTF8, "application/json"),
+                    "multipart" => new MultipartFormDataContent(),
+                    _ => new FormUrlEncodedContent(parameters)
+                };
+                if (content is MultipartFormDataContent multipart)
+                {
+                    foreach (var parameter in parameters)
                     {
-                        ["f"] = "json",
-                        ["where"] = $"name = '{name}'",
-                        ["geometry"] = geometry,
-                        ["geometryType"] = "esriGeometryPolygon",
-                        ["spatialRel"] = "esriSpatialRelIntersects",
-                        [resultKind] = "true"
-                    })
+                        multipart.Add(new StringContent(parameter.Value), parameter.Key);
+                    }
+                }
+                using var request = new HttpRequestMessage(HttpMethod.Post, $"/rest/services/test/{protocol}/0/query?geometry=0,0")
+                {
+                    Content = content
                 };
                 request.Headers.Add("X-API-Key", AdminPassword);
                 using var response = await _fixture.Client.SendAsync(request);
