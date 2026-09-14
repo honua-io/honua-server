@@ -151,13 +151,22 @@ the edits again. A bidirectional retry still assembles its download half fresh.
   parameter, under the key rules above. When both are sent they must match. A key already used for
   different edits is rejected with a 400. Edits differ when their `syncDirection`,
   `rollbackOnFailure`, `conflictHandling` or `edits` differ.
-- Without a key, a fingerprint of those same inputs identifies the upload. It replays only while the
-  replica has acknowledged no later upload, so identical edits sent again after another upload apply
+- Without a key, a fingerprint of those same inputs, taken at the replica's upload cursor, identifies
+  the upload. A retry therefore replays, while identical edits sent again after another upload apply
   as new data. A client that deliberately sends identical edits back to back should send a new key
   each time.
-- The key is scoped to the principal, service and replica. The reservation, the Redis or in-process
-  backing, the `409` for an in-flight duplicate, and the release when the upload provably committed
-  nothing all follow the applyEdits contract above.
+- A replayed bidirectional retry acknowledges the live server generation of the download half it
+  delivers, so the next download does not repeat it.
+- An upload that fails after committing some rows is recorded too. This happens in the default
+  best-effort mode (`rollbackOnFailure=false`). Its retry returns the same error instead of applying
+  the committed rows again. An upload that provably committed nothing frees its key, so the retry
+  runs fresh.
+- The key is scoped to the principal, the replica's service and the replica. A retry reaches the same
+  record whatever the casing of the service in the path.
+- A `409` answers an identical upload that is still in flight. Its reservation lasts the configured
+  `Limits:Connections:RequestTimeout` plus 30 seconds, and never less than 60 seconds. A request that
+  outlives its reservation never overwrites another request's reservation or record. The Redis or
+  in-process backing follows the applyEdits contract above.
 
 ### applyEdits per-feature error codes
 

@@ -1223,6 +1223,7 @@ internal static partial class FeatureServerEndpoints
         // when supported. Download-only syncs and empty uploads skip the pipeline entirely (#1272).
         long uploadServerGen = 0;
         var didUpload = false;
+        var uploadReplayed = false;
         if (isUploadDirection && !string.IsNullOrWhiteSpace(editsJson))
         {
             if (!TryParseSynchronizeReplicaEdits(editsJson!, replicaLayers, out var layerEdits, out var parseError))
@@ -1235,13 +1236,16 @@ internal static partial class FeatureServerEndpoints
             // committed, so its adds were inserted a second time. Each applied upload is recorded under
             // the client's key (Idempotency-Key header or Esri editsUploadID) or, without one, under a
             // fingerprint of its inputs, and a retry replays the recorded outcome instead of re-applying.
-            // A fingerprint replays only while this replica has acknowledged no later upload, so the same
-            // edits deliberately sent again after other uploads still apply. An in-flight duplicate is
-            // held off by a reservation and gets 409 rather than racing the first attempt.
+            // A fingerprint key includes the replica's upload cursor, so a retry finds the record written
+            // for the cursor the first attempt committed, while the same edits deliberately sent again after
+            // another upload get a fresh key. An in-flight duplicate is held off by a reservation and gets
+            // 409 rather than racing the first attempt. Every upload that committed rows is recorded, a
+            // partially failed one included, so a retry never applies committed rows a second time.
             IReplicaUploadIdempotencyStore? uploadStore = null;
             ReplicaUploadIdempotencyScope? uploadScope = null;
             string? uploadFingerprint = null;
             string? uploadReservation = null;
+            var keylessUpload = false;
             ReplicaUploadRecord? replayedUpload = null;
             if (!layerEdits.IsDefaultOrEmpty)
             {
@@ -1254,28 +1258,40 @@ internal static partial class FeatureServerEndpoints
 
                 uploadStore = context.RequestServices.GetRequiredService<IReplicaUploadIdempotencyStore>();
                 uploadFingerprint = ComputeReplicaUploadFingerprint(syncDirection, rollbackOnFailure, lastWriteWins, editsJson!);
+                keylessUpload = explicitUploadKey is null;
+                // The replica's stored service id, not the route value: service lookup is case-insensitive,
+                // so path casing must not fork the key.
                 var scope = new ReplicaUploadIdempotencyScope(
-                    serviceId,
+                    replica.ServiceId,
                     replicaId,
                     string.IsNullOrEmpty(context.User?.Identity?.Name) ? "anonymous" : context.User.Identity.Name,
-                    explicitUploadKey is null ? "fingerprint:" + uploadFingerprint : "key:" + explicitUploadKey);
+                    keylessUpload
+                        ? FingerprintUploadKey(uploadFingerprint, replica.UploadBaseGeneration)
+                        : "key:" + explicitUploadKey);
                 uploadScope = scope;
 
                 var recordedUpload = await uploadStore.TryGetAsync(scope, cancellationToken);
-                if (recordedUpload is not null &&
-                    !string.Equals(recordedUpload.Fingerprint, uploadFingerprint, StringComparison.Ordinal))
+                if (recordedUpload is not null)
                 {
-                    return StandardErrorHelpers.CreateBadRequest(context,
-                        "Invalid synchronizeReplica request",
-                        ["The upload key was already used for a different upload. Send new edits with a new key."]);
-                }
+                    if (!string.Equals(recordedUpload.Fingerprint, uploadFingerprint, StringComparison.Ordinal))
+                    {
+                        return StandardErrorHelpers.CreateBadRequest(context,
+                            "Invalid synchronizeReplica request",
+                            ["The upload key was already used for a different upload. Send new edits with a new key."]);
+                    }
 
-                if (recordedUpload is not null &&
-                    (explicitUploadKey is not null || replica.UploadBaseGeneration <= recordedUpload.ServerGeneration))
-                {
+                    if (recordedUpload.Failed)
+                    {
+                        // The original attempt failed after committing some rows; the retry gets the same
+                        // failure instead of inserting those rows a second time.
+                        return StandardErrorHelpers.CreateBadRequest(
+                            context,
+                            "Uploaded replica edits failed to apply.");
+                    }
+
                     replayedUpload = recordedUpload;
                 }
-                else if (recordedUpload is null)
+                else
                 {
                     uploadReservation = await uploadStore.TryReserveAsync(scope, cancellationToken);
                     if (uploadReservation is null)
@@ -1298,12 +1314,14 @@ internal static partial class FeatureServerEndpoints
                     addEditResults = replayedUpload.AddResults ?? [];
                 }
 
-                // Never move either cursor backwards: another sync of this replica may have advanced
-                // them after the original upload was recorded.
+                // The download half of a replay is assembled fresh from the live change log, so it must be
+                // acknowledged at the live generation; the recorded upload generation would make the client
+                // receive everything committed since then a second time. Never move a cursor backwards.
                 uploadServerGen = Math.Max(
-                    replayedUpload.ServerGeneration,
-                    Math.Max(replica.LastSyncGeneration, replica.UploadBaseGeneration));
+                    await changeTracker.GetCurrentGenerationAsync(cancellationToken),
+                    Math.Max(replayedUpload.ServerGeneration, replica.LastSyncGeneration));
                 didUpload = true;
+                uploadReplayed = true;
             }
 
             if (!layerEdits.IsDefaultOrEmpty && replayedUpload is null)
@@ -1401,14 +1419,26 @@ internal static partial class FeatureServerEndpoints
 
                 if (!report.Success)
                 {
-                    // Free the key only when the failed upload provably committed nothing, so its retry
-                    // re-attempts it. A partial or indeterminate commit keeps the reservation until it
-                    // expires, because re-running it could duplicate the rows that landed (#4026).
+                    // A failed upload that provably committed nothing frees its key so the retry re-attempts
+                    // it. One that committed, or may have committed, rows records the failure instead, so a
+                    // retry replays this error rather than applying the rows that landed again (#4026).
                     if (report.AppliedAdds + report.AppliedUpdates + report.AppliedDeletes == 0 &&
                         (report.LayerResults.IsDefaultOrEmpty ||
                          report.LayerResults.All(static result => result.IndeterminateEditIndexes.IsDefaultOrEmpty)))
                     {
                         await ReleaseReplicaUploadReservationAsync(uploadStore, uploadScope, uploadReservation);
+                    }
+                    else
+                    {
+                        await RecordReplicaUploadAsync(uploadStore, uploadScope, uploadReservation, new ReplicaUploadRecord
+                        {
+                            Fingerprint = uploadFingerprint!,
+                            Failed = true,
+                            AppliedAdds = report.AppliedAdds,
+                            AppliedUpdates = report.AppliedUpdates,
+                            AppliedDeletes = report.AppliedDeletes,
+                            ServerGeneration = report.ServerGeneration
+                        });
                     }
 
                     return StandardErrorHelpers.CreateBadRequest(
@@ -1419,18 +1449,27 @@ internal static partial class FeatureServerEndpoints
                 // Record the applied upload before the cursor compare-and-set below: the edits are
                 // committed whether or not this request's cursor update wins, so a retry must replay them
                 // rather than apply them again (#4026). Uncancellable for the same reason.
-                if (uploadStore is not null && uploadScope is { } recordScope)
+                var uploadRecord = new ReplicaUploadRecord
                 {
-                    await uploadStore.SetAsync(recordScope, new ReplicaUploadRecord
-                    {
-                        Fingerprint = uploadFingerprint!,
-                        AppliedAdds = report.AppliedAdds,
-                        AppliedUpdates = report.AppliedUpdates,
-                        AppliedDeletes = report.AppliedDeletes,
-                        AddResults = [.. applier.AddResults],
-                        Conflicts = conflicts,
-                        ServerGeneration = report.ServerGeneration
-                    }, CancellationToken.None);
+                    Fingerprint = uploadFingerprint!,
+                    AppliedAdds = report.AppliedAdds,
+                    AppliedUpdates = report.AppliedUpdates,
+                    AppliedDeletes = report.AppliedDeletes,
+                    AddResults = [.. applier.AddResults],
+                    Conflicts = conflicts,
+                    ServerGeneration = report.ServerGeneration
+                };
+                await RecordReplicaUploadAsync(uploadStore, uploadScope, uploadReservation, uploadRecord);
+
+                // A keyless retry that arrives after the cursor update commits reads the advanced upload
+                // cursor, so the record is also written under the fingerprint key for that cursor.
+                if (keylessUpload && uploadScope is { } committedScope && report.ServerGeneration != replica.UploadBaseGeneration)
+                {
+                    await RecordReplicaUploadAsync(
+                        uploadStore,
+                        committedScope with { UploadKey = FingerprintUploadKey(uploadFingerprint!, report.ServerGeneration) },
+                        uploadReservation,
+                        uploadRecord);
                 }
 
                 appliedAdds = report.AppliedAdds;
@@ -1507,7 +1546,8 @@ internal static partial class FeatureServerEndpoints
         {
             LastSyncTime = DateTimeOffset.UtcNow,
             LastSyncGeneration = isDownloadDirection ? currentGen : replica.LastSyncGeneration,
-            UploadBaseGeneration = didUpload ? currentGen : replica.UploadBaseGeneration
+            // A replayed upload applied nothing, so it keeps the upload cursor its fingerprint record is keyed to.
+            UploadBaseGeneration = didUpload && !uploadReplayed ? currentGen : replica.UploadBaseGeneration
         };
 
         // Compare-and-set against the cursors read at the top of the handler: a concurrent
@@ -1599,6 +1639,26 @@ internal static partial class FeatureServerEndpoints
             editsJson);
         return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(material)));
     }
+
+    /// <summary>
+    /// Key of a keyless upload: its fingerprint at the replica upload cursor it was sent from (#4026).
+    /// </summary>
+    private static string FingerprintUploadKey(string fingerprint, long uploadCursor)
+        => string.Concat("fingerprint:", fingerprint, ":", uploadCursor.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+    /// <summary>
+    /// Records an upload that committed rows under the reservation this request holds (#4026). The store
+    /// refuses the write when another request now owns the key, so a request that outlived its
+    /// reservation cannot overwrite a newer reservation or record.
+    /// </summary>
+    private static Task RecordReplicaUploadAsync(
+        IReplicaUploadIdempotencyStore? store,
+        ReplicaUploadIdempotencyScope? scope,
+        string? reservationToken,
+        ReplicaUploadRecord record)
+        => store is not null && scope is { } heldScope && reservationToken is not null
+            ? store.RecordAsync(heldScope, reservationToken, record)
+            : Task.CompletedTask;
 
     /// <summary>
     /// Releases the upload reservation this request holds, if any (#4026). Release is compare-and-delete

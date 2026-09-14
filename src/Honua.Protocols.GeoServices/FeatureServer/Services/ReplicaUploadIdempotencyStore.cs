@@ -13,8 +13,8 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Services;
 /// At-most-once store for <c>synchronizeReplica</c> uploads (#4026). A field client that times out
 /// re-sends the identical upload; the retry passes the replica cursor compare-and-set because it reads
 /// the cursor the first attempt committed, so without this store its adds were inserted again. The
-/// first successful upload's outcome is recorded so a retry replays it, and a concurrent duplicate is
-/// held off by a reservation while the first is still applying.
+/// outcome of every upload that committed rows is recorded so a retry replays it, and a concurrent
+/// duplicate is held off by a reservation while the first is still applying.
 /// </summary>
 internal interface IReplicaUploadIdempotencyStore
 {
@@ -25,15 +25,17 @@ internal interface IReplicaUploadIdempotencyStore
     Task<ReplicaUploadRecord?> TryGetAsync(ReplicaUploadIdempotencyScope scope, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Atomically reserves <paramref name="scope"/>; returns an ownership token, or
-    /// <see langword="null"/> when another in-flight upload already holds it.
+    /// Atomically reserves <paramref name="scope"/> for long enough to cover the request; returns an
+    /// ownership token, or <see langword="null"/> when another in-flight upload already holds it.
     /// </summary>
     Task<string?> TryReserveAsync(ReplicaUploadIdempotencyScope scope, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Records a successfully applied upload, replacing the reservation. Best-effort.
+    /// Records the outcome of an upload that committed rows under <paramref name="scope"/>, unless a
+    /// different request now holds that key. Takes no cancellation token: it runs after the edits
+    /// committed, when abandoning the record is what would let a retry duplicate them. Best-effort.
     /// </summary>
-    Task SetAsync(ReplicaUploadIdempotencyScope scope, ReplicaUploadRecord record, CancellationToken cancellationToken = default);
+    Task<bool> RecordAsync(ReplicaUploadIdempotencyScope scope, string reservationToken, ReplicaUploadRecord record);
 
     /// <summary>
     /// Releases a reservation whose upload provably committed nothing, so a retry re-attempts it.
@@ -45,12 +47,12 @@ internal interface IReplicaUploadIdempotencyStore
 /// Identifies one replica upload. Scoped to the service, replica and principal so one caller's upload
 /// can never replay another's, and the same key on a different replica is a distinct upload.
 /// </summary>
-/// <param name="ServiceId">The service the replica belongs to.</param>
+/// <param name="ServiceId">The replica's stored service id, so request path casing cannot fork the key.</param>
 /// <param name="ReplicaId">The replica being synchronized.</param>
 /// <param name="Principal">The authenticated principal name, or <c>anonymous</c>.</param>
 /// <param name="UploadKey">
 /// <c>key:</c> followed by the client-supplied key, or <c>fingerprint:</c> followed by the upload
-/// fingerprint when the client supplied none; the prefixes keep the two key spaces apart.
+/// fingerprint and the replica upload cursor it was sent at; the prefixes keep the key spaces apart.
 /// </param>
 internal readonly record struct ReplicaUploadIdempotencyScope(
     string ServiceId,
@@ -59,13 +61,20 @@ internal readonly record struct ReplicaUploadIdempotencyScope(
     string UploadKey);
 
 /// <summary>
-/// The recorded outcome of an applied replica upload, replayed to a retry of the same upload.
+/// The recorded outcome of a replica upload that committed rows, replayed to a retry of the same upload.
 /// </summary>
 internal sealed class ReplicaUploadRecord
 {
     /// <summary>SHA-256 fingerprint of the upload inputs, so a reused key with new edits is detected.</summary>
     [JsonPropertyName("fingerprint")]
     public string Fingerprint { get; set; } = string.Empty;
+
+    /// <summary>
+    /// True when the upload failed after committing some rows; a retry replays the failure instead of
+    /// applying the committed rows again.
+    /// </summary>
+    [JsonPropertyName("failed")]
+    public bool Failed { get; set; }
 
     /// <summary>Uploaded adds applied by the original request.</summary>
     [JsonPropertyName("appliedAdds")]
@@ -100,16 +109,39 @@ internal sealed class DistributedReplicaUploadIdempotencyStore : IReplicaUploadI
 {
     private const string KeyPrefix = "featureserver:replica-upload:idem:";
 
+    /// <summary>
+    /// Margin added to the request timeout when sizing the reservation, covering the work a request
+    /// still finishes after its timeout token fires (uncancellable conflict attachment and recording).
+    /// </summary>
+    private static readonly TimeSpan ReservationGrace = TimeSpan.FromSeconds(30);
+
     private readonly IdempotencyPayloadStore _payloads;
+    private readonly TimeSpan _reservationWindow;
     private readonly ILogger<DistributedReplicaUploadIdempotencyStore> _logger;
 
     public DistributedReplicaUploadIdempotencyStore(
         IConnectionMultiplexer? multiplexer,
         IDistributedCache? cache,
-        ILogger<DistributedReplicaUploadIdempotencyStore> logger)
+        ILogger<DistributedReplicaUploadIdempotencyStore> logger,
+        TimeSpan? reservationWindow = null,
+        TimeProvider? timeProvider = null)
     {
-        _payloads = new IdempotencyPayloadStore(multiplexer, cache);
+        _payloads = new IdempotencyPayloadStore(multiplexer, cache, timeProvider);
+        _reservationWindow = reservationWindow is { } window && window > IdempotencyPayloadStore.ReservationWindow
+            ? window
+            : IdempotencyPayloadStore.ReservationWindow;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Reservation window for uploads bounded by <paramref name="requestTimeout"/>: the timeout plus a
+    /// grace margin, and never shorter than the default window. A reservation that expired while its
+    /// upload was still applying would let a retry run concurrently and duplicate the adds.
+    /// </summary>
+    internal static TimeSpan ReservationWindowFor(TimeSpan requestTimeout)
+    {
+        var window = requestTimeout + ReservationGrace;
+        return window > IdempotencyPayloadStore.ReservationWindow ? window : IdempotencyPayloadStore.ReservationWindow;
     }
 
     public async Task<ReplicaUploadRecord?> TryGetAsync(
@@ -136,19 +168,20 @@ internal sealed class DistributedReplicaUploadIdempotencyStore : IReplicaUploadI
     public Task<string?> TryReserveAsync(
         ReplicaUploadIdempotencyScope scope,
         CancellationToken cancellationToken = default)
-        => _payloads.TryReserveAsync(BuildKey(scope), ex => LogUnavailable(scope, ex), cancellationToken);
+        => _payloads.TryReserveAsync(BuildKey(scope), _reservationWindow, ex => LogUnavailable(scope, ex), cancellationToken);
 
-    public Task SetAsync(
+    public Task<bool> RecordAsync(
         ReplicaUploadIdempotencyScope scope,
-        ReplicaUploadRecord record,
-        CancellationToken cancellationToken = default)
+        string reservationToken,
+        ReplicaUploadRecord record)
     {
         ArgumentNullException.ThrowIfNull(record);
-        return _payloads.SetAsync(
+        return _payloads.SetIfAbsentOrOwnedAsync(
             BuildKey(scope),
+            reservationToken,
             JsonSerializer.SerializeToUtf8Bytes(record, FeatureServerJsonContext.Default.ReplicaUploadRecord),
             ex => LogUnavailable(scope, ex),
-            cancellationToken);
+            CancellationToken.None);
     }
 
     public Task ReleaseAsync(ReplicaUploadIdempotencyScope scope, string reservationToken)

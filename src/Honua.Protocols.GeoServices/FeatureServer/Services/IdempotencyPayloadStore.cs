@@ -38,9 +38,9 @@ internal sealed class IdempotencyPayloadStore
     internal static readonly TimeSpan DedupeWindow = TimeSpan.FromHours(24);
 
     /// <summary>
-    /// Reservation window: how long a reservation is kept before it expires if the owning
-    /// request never completes. Generous to accommodate slow edits; the in-flight request
-    /// replaces the reservation with the real record via <see cref="SetAsync"/>.
+    /// Default reservation window: how long a reservation is kept before it expires if the owning
+    /// request never completes. Callers whose requests can run longer pass a larger window to
+    /// <see cref="TryReserveAsync(string, TimeSpan, Action{Exception}, CancellationToken)"/>.
     /// </summary>
     internal static readonly TimeSpan ReservationWindow = TimeSpan.FromSeconds(60);
 
@@ -53,14 +53,25 @@ internal sealed class IdempotencyPayloadStore
     private const string ReleaseIfOwnedScript =
         "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0";
 
+    /// <summary>
+    /// Set-if-absent-or-owned: writes the record <c>ARGV[2]</c> with a <c>ARGV[3]</c> millisecond expiry
+    /// only when the key is empty or still holds this request's reservation <c>ARGV[1]</c>, so a request
+    /// that outlived its reservation can never overwrite a newer owner's reservation or record.
+    /// </summary>
+    private const string SetIfAbsentOrOwnedScript =
+        "local current = redis.call('GET', KEYS[1]) " +
+        "if (not current) or current == ARGV[1] then redis.call('SET', KEYS[1], ARGV[2], 'PX', ARGV[3]) return 1 end return 0";
+
     private readonly IDatabase? _redisDatabase;
     private readonly IDistributedCache? _cache;
+    private readonly TimeProvider _time;
     private readonly ConcurrentDictionary<string, FallbackEntry> _fallback = new(StringComparer.Ordinal);
 
-    public IdempotencyPayloadStore(IConnectionMultiplexer? multiplexer, IDistributedCache? cache)
+    public IdempotencyPayloadStore(IConnectionMultiplexer? multiplexer, IDistributedCache? cache, TimeProvider? timeProvider = null)
     {
         _redisDatabase = multiplexer?.GetDatabase();
         _cache = cache;
+        _time = timeProvider ?? TimeProvider.System;
     }
 
     /// <summary>
@@ -74,7 +85,7 @@ internal sealed class IdempotencyPayloadStore
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var now = DateTimeOffset.UtcNow;
+        var now = _time.GetUtcNow();
 
         if (_redisDatabase != null)
         {
@@ -122,16 +133,27 @@ internal sealed class IdempotencyPayloadStore
     }
 
     /// <summary>
-    /// Atomically reserves <paramref name="key"/>. Returns a unique ownership token when the
-    /// reservation is won, or <see langword="null"/> when another request already holds the key.
+    /// Atomically reserves <paramref name="key"/> for the default <see cref="ReservationWindow"/>.
+    /// </summary>
+    public Task<string?> TryReserveAsync(
+        string key,
+        Action<Exception> onStoreUnavailable,
+        CancellationToken cancellationToken)
+        => TryReserveAsync(key, ReservationWindow, onStoreUnavailable, cancellationToken);
+
+    /// <summary>
+    /// Atomically reserves <paramref name="key"/> for <paramref name="reservationWindow"/>. Returns a
+    /// unique ownership token when the reservation is won, or <see langword="null"/> when another
+    /// request already holds the key.
     /// </summary>
     public async Task<string?> TryReserveAsync(
         string key,
+        TimeSpan reservationWindow,
         Action<Exception> onStoreUnavailable,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var now = DateTimeOffset.UtcNow;
+        var now = _time.GetUtcNow();
 
         // Unique per reservation (#3052). Storing a shared sentinel made two owners of the same
         // key indistinguishable, so a request whose reservation had already lapsed could delete a
@@ -148,7 +170,7 @@ internal sealed class IdempotencyPayloadStore
                 var won = await _redisDatabase.StringSetAsync(
                     key,
                     payload,
-                    ReservationWindow,
+                    reservationWindow,
                     when: When.NotExists).ConfigureAwait(false);
                 return won ? token : null;
             }
@@ -164,13 +186,21 @@ internal sealed class IdempotencyPayloadStore
             }
         }
 
+        // An entry past its expiry is dead: TryGetAsync already ignores it, and the periodic sweep only
+        // runs when something is recorded, so on a quiet node it would otherwise block this key forever.
+        // The KeyValuePair overload removes it only while it is still that same expired entry.
+        if (_fallback.TryGetValue(key, out var existing) && existing.ExpiresAt <= now)
+        {
+            _fallback.TryRemove(new KeyValuePair<string, FallbackEntry>(key, existing));
+        }
+
         // In-process fallback: ConcurrentDictionary.TryAdd is atomic — only one concurrent
         // caller wins; the loser gets null.
         // This covers both the no-cache path (_cache == null) and the non-Redis
         // IDistributedCache path: a MemoryDistributedCache / SQL-session-store / Memcached
         // cache has no set-if-absent primitive, so treating it the same as no-cache
         // gives us a single process-level mutex via ConcurrentDictionary. (BH7-002)
-        return _fallback.TryAdd(key, new FallbackEntry(payload, now.Add(ReservationWindow)))
+        return _fallback.TryAdd(key, new FallbackEntry(payload, now.Add(reservationWindow)))
             ? token
             : null;
     }
@@ -187,7 +217,7 @@ internal sealed class IdempotencyPayloadStore
     {
         ArgumentNullException.ThrowIfNull(payload);
         cancellationToken.ThrowIfCancellationRequested();
-        var now = DateTimeOffset.UtcNow;
+        var now = _time.GetUtcNow();
 
         if (_redisDatabase != null)
         {
@@ -235,9 +265,77 @@ internal sealed class IdempotencyPayloadStore
     }
 
     /// <summary>
-    /// Releases a reservation taken by <see cref="TryReserveAsync"/> with a compare-and-delete against
-    /// <paramref name="reservationToken"/>, so a recorded payload or another request's reservation is
-    /// never removed. Takes no cancellation token so a cancelled owner can still free its key.
+    /// Records <paramref name="payload"/> for the dedupe window only when <paramref name="key"/> is empty,
+    /// expired, or still holds the reservation proven by <paramref name="reservationToken"/>. Returns
+    /// <see langword="false"/> — writing nothing — when another request's reservation or record now
+    /// occupies the key, which happens only when this request outlived its own reservation. Best-effort:
+    /// a store failure is reported and reads as not recorded.
+    /// </summary>
+    public async Task<bool> SetIfAbsentOrOwnedAsync(
+        string key,
+        string reservationToken,
+        byte[] payload,
+        Action<Exception> onStoreUnavailable,
+        CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(reservationToken);
+        ArgumentNullException.ThrowIfNull(payload);
+        cancellationToken.ThrowIfCancellationRequested();
+        var ownedPayload = BuildReservationPayload(reservationToken);
+        var now = _time.GetUtcNow();
+
+        if (_redisDatabase != null)
+        {
+            try
+            {
+                var written = await _redisDatabase.ScriptEvaluateAsync(
+                    SetIfAbsentOrOwnedScript,
+                    [key],
+                    [ownedPayload, payload, (long)DedupeWindow.TotalMilliseconds]).ConfigureAwait(false);
+                return (long)written == 1;
+            }
+            // Intentionally generic: Redis can throw a wide range of transport/timeout/auth
+            // exceptions here; best-effort — failing to record must not fail an already-applied edit.
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                onStoreUnavailable(ex);
+                return false;
+            }
+        }
+
+        // Non-Redis paths keep reservations in the fallback dictionary (BH7-002), so ownership is decided
+        // there before anything is written to the cache.
+        if (!TrySetFallbackIfAbsentOrOwned(key, ownedPayload, new FallbackEntry(payload, now.Add(DedupeWindow)), now))
+        {
+            return false;
+        }
+
+        if (_cache != null)
+        {
+            try
+            {
+                await _cache.SetAsync(key, payload, new DistributedCacheEntryOptions
+                {
+                    AbsoluteExpirationRelativeToNow = DedupeWindow
+                }, cancellationToken).ConfigureAwait(false);
+            }
+            // Intentionally generic: the configured IDistributedCache implementation can throw a
+            // wide range of provider-specific exceptions; best-effort.
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                onStoreUnavailable(ex);
+            }
+        }
+
+        CleanupFallback(now);
+        return true;
+    }
+
+    /// <summary>
+    /// Releases a reservation taken by <see cref="TryReserveAsync(string, TimeSpan, Action{Exception}, CancellationToken)"/>
+    /// with a compare-and-delete against <paramref name="reservationToken"/>, so a recorded payload or
+    /// another request's reservation is never removed. Takes no cancellation token so a cancelled owner
+    /// can still free its key.
     /// </summary>
     public async Task ReleaseAsync(string key, string reservationToken, Action<Exception> onStoreUnavailable)
     {
@@ -282,6 +380,38 @@ internal sealed class IdempotencyPayloadStore
         if (_fallback.TryGetValue(key, out var entry) && entry.Payload.AsSpan().SequenceEqual(ownedPayload))
         {
             _fallback.TryRemove(new KeyValuePair<string, FallbackEntry>(key, entry));
+        }
+    }
+
+    /// <summary>
+    /// In-process equivalent of <see cref="SetIfAbsentOrOwnedScript"/>: adds the record when the key is
+    /// empty, or swaps it in for an entry that is expired or is this request's reservation. Each step is
+    /// an atomic dictionary primitive conditioned on the entry just read, so a concurrent reservation or
+    /// record is never overwritten.
+    /// </summary>
+    private bool TrySetFallbackIfAbsentOrOwned(string key, byte[] ownedPayload, FallbackEntry record, DateTimeOffset now)
+    {
+        while (true)
+        {
+            if (!_fallback.TryGetValue(key, out var current))
+            {
+                if (_fallback.TryAdd(key, record))
+                {
+                    return true;
+                }
+
+                continue;
+            }
+
+            if (current.ExpiresAt > now && !current.Payload.AsSpan().SequenceEqual(ownedPayload))
+            {
+                return false;
+            }
+
+            if (_fallback.TryUpdate(key, record, current))
+            {
+                return true;
+            }
         }
     }
 
