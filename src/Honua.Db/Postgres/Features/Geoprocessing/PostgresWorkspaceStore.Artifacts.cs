@@ -15,27 +15,48 @@ internal sealed partial class PostgresWorkspaceStore
 {
     private const string ArtifactColumns = "artifact_id, workspace_id, kind, label, state, uri, content_type, size_bytes, created_at, metadata";
 
-    public async Task<Artifact> CreateAsync(Artifact artifact, CancellationToken cancellationToken = default)
+    public Task<Artifact> CreateAsync(Artifact artifact, CancellationToken cancellationToken = default)
+        => CreateArtifactWithQuotaAsync(artifact, WorkspaceQuota.Default, cancellationToken);
+
+    public async Task<Artifact> CreateArtifactWithQuotaAsync(Artifact artifact, WorkspaceQuota quota, CancellationToken cancellationToken = default)
+        => await WriteArtifactAsync(artifact, false, quota, null, false, cancellationToken).ConfigureAwait(false)
+            ?? throw new ArtifactAlreadyExistsException(artifact.WorkspaceId, artifact.Label);
+
+    public Task<Artifact?> AddOrReplaceAsync(Artifact artifact, bool overwrite, CancellationToken cancellationToken = default)
+        => AddOrReplaceWithQuotaAsync(artifact, overwrite, WorkspaceQuota.Default, cancellationToken);
+
+    public Task<Artifact?> AddOrReplaceWithQuotaAsync(Artifact artifact, bool overwrite, WorkspaceQuota quota, CancellationToken cancellationToken = default)
+        => WriteArtifactAsync(artifact, overwrite, quota, null, true, cancellationToken);
+
+    public Task<Artifact?> PublishAsync(Artifact artifact, bool overwrite, WorkspaceQuota quota,
+        Func<CancellationToken, Task<bool>> publishReference, CancellationToken cancellationToken = default)
     {
-        ValidateArtifact(artifact);
-        await using var connection = await _connections.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        await LockWritableWorkspaceAsync(connection, transaction, artifact.WorkspaceId, cancellationToken).ConfigureAwait(false);
-        await InsertArtifactAsync(connection, transaction, artifact, cancellationToken).ConfigureAwait(false);
-        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
-        return artifact;
+        ArgumentNullException.ThrowIfNull(publishReference);
+        return WriteArtifactAsync(artifact, overwrite, quota, publishReference, true, cancellationToken);
     }
 
-    public async Task<Artifact?> AddOrReplaceAsync(Artifact artifact, bool overwrite, CancellationToken cancellationToken = default)
+    private async Task<Artifact?> WriteArtifactAsync(Artifact artifact, bool overwrite, WorkspaceQuota quota,
+        Func<CancellationToken, Task<bool>>? publishReference, bool namedOutput, CancellationToken cancellationToken)
     {
         ValidateArtifact(artifact);
-        if (artifact.State != ArtifactLifecycleState.Available)
+        ArgumentNullException.ThrowIfNull(quota);
+        if (namedOutput && artifact.State != ArtifactLifecycleState.Available)
         {
             throw new ArgumentException("A named output must be Available.", nameof(artifact));
         }
         await using var connection = await _connections.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        await LockWritableWorkspaceAsync(connection, transaction, artifact.WorkspaceId, cancellationToken).ConfigureAwait(false);
+        string owner;
+        await using (var lookup = new NpgsqlCommand($"SELECT owner_id FROM {_workspaces} WHERE workspace_id = @id", connection, transaction))
+        {
+            lookup.Parameters.AddWithValue("id", artifact.WorkspaceId);
+            owner = await lookup.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) as string
+                ?? throw new InvalidOperationException("Workspace not found.");
+        }
+        // Owner precedes workspace, matching workspace creation. Different workspace
+        // labels cannot race past the same owner's aggregate artifact limits.
+        await LockOwnerAsync(connection, transaction, owner, cancellationToken).ConfigureAwait(false);
+        await LockWritableWorkspaceAsync(connection, transaction, artifact.WorkspaceId, owner, cancellationToken).ConfigureAwait(false);
         string? existing;
         await using (var command = new NpgsqlCommand($"SELECT artifact_id FROM {_artifacts} WHERE workspace_id = @workspace AND label_key = @label AND state = @available", connection, transaction))
         {
@@ -44,14 +65,31 @@ internal sealed partial class PostgresWorkspaceStore
             command.Parameters.AddWithValue("available", (int)ArtifactLifecycleState.Available);
             existing = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) as string;
         }
+        var ownedRetry = publishReference is not null && existing == artifact.ArtifactId;
+        if (existing is not null && artifact.State == ArtifactLifecycleState.Available
+            && (!namedOutput || (!overwrite && !ownedRetry)))
+        {
+            if (publishReference is not null || !namedOutput)
+            {
+                throw new ArtifactAlreadyExistsException(artifact.WorkspaceId, artifact.Label);
+            }
+            return null;
+        }
+        if (!namedOutput)
+        {
+            existing = null;
+        }
+        await CheckArtifactQuotaAsync(connection, transaction, owner, artifact, existing, quota, cancellationToken).ConfigureAwait(false);
+        // Keep the storage gate through durable acceptance: an accepted old writer
+        // cannot wait outside the gate then overwrite a newer attempt's output.
+        // Redis acceptance and the PostgreSQL commit are not a distributed transaction;
+        // stable operation/output identities permit recovery after a commit failure.
+        if (publishReference is not null && !await publishReference(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
         if (existing is not null)
         {
-            if (!overwrite)
-            {
-                return null;
-            }
-            // Both changes commit together. An insert failure restores the old record
-            // when the transaction is disposed; no intermediate deletion is visible.
             await using var deletion = new NpgsqlCommand($"DELETE FROM {_artifacts} WHERE artifact_id = @id", connection, transaction);
             deletion.Parameters.AddWithValue("id", existing);
             await deletion.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
@@ -59,6 +97,33 @@ internal sealed partial class PostgresWorkspaceStore
         await InsertArtifactAsync(connection, transaction, artifact, cancellationToken).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return artifact;
+    }
+
+    private async Task CheckArtifactQuotaAsync(NpgsqlConnection connection, NpgsqlTransaction transaction,
+        string owner, Artifact artifact, string? replacedId, WorkspaceQuota quota, CancellationToken cancellationToken)
+    {
+        await using var command = new NpgsqlCommand($"""
+            SELECT COUNT(*), COALESCE(SUM(a.size_bytes), 0)
+            FROM {_artifacts} a JOIN {_workspaces} w ON a.workspace_id = w.workspace_id
+            WHERE w.owner_id = @owner AND w.state = @active
+              AND (w.expires_at IS NULL OR w.expires_at > @now)
+              AND a.state <> @deleted AND a.artifact_id IS DISTINCT FROM @replaced
+            """, connection, transaction);
+        command.Parameters.AddWithValue("owner", owner);
+        command.Parameters.AddWithValue("active", (int)WorkspaceLifecycleState.Active);
+        command.Parameters.AddWithValue("now", _clock.GetUtcNow());
+        command.Parameters.AddWithValue("deleted", (int)ArtifactLifecycleState.Deleted);
+        command.Parameters.Add(Text("replaced", replacedId));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        await reader.ReadAsync(cancellationToken).ConfigureAwait(false);
+        var count = reader.GetInt64(0);
+        var bytes = reader.GetFieldValue<decimal>(1);
+        var counted = artifact.State != ArtifactLifecycleState.Deleted;
+        if ((quota.MaxArtifactCount is { } maxCount && count + (counted ? 1 : 0) > maxCount)
+            || (quota.MaxStorageBytes is { } maxBytes && bytes + (counted ? artifact.SizeBytes : 0) > maxBytes))
+        {
+            throw new WorkspaceQuotaExceededException("The workspace artifact count or recorded storage limit has been reached.");
+        }
     }
 
     async Task<Artifact?> IArtifactStore.GetAsync(string artifactId, CancellationToken cancellationToken)
@@ -114,10 +179,11 @@ internal sealed partial class PostgresWorkspaceStore
         return changed;
     }
 
-    private async Task LockWritableWorkspaceAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, string workspaceId, CancellationToken cancellationToken)
+    private async Task LockWritableWorkspaceAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, string workspaceId, string ownerId, CancellationToken cancellationToken)
     {
-        await using var command = new NpgsqlCommand($"SELECT state, expires_at FROM {_workspaces} WHERE workspace_id = @id FOR UPDATE", connection, transaction);
+        await using var command = new NpgsqlCommand($"SELECT state, expires_at FROM {_workspaces} WHERE workspace_id = @id AND owner_id = @owner FOR UPDATE", connection, transaction);
         command.Parameters.AddWithValue("id", workspaceId);
+        command.Parameters.AddWithValue("owner", ownerId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
             || reader.GetInt32(0) != (int)WorkspaceLifecycleState.Active

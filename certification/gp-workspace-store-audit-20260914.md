@@ -66,3 +66,30 @@ The canonical emitter passes (1 check), and all 12 architecture drift/evidence
 checks pass. The emitted catalog adds one proving-test reference for native-worker
 control rejection; all other fields are unchanged. The full pre-PR gate, including
 final formatting, remains separate and is not claimed passed.
+
+## Publication and quota review
+
+The next review is relative to `2fa38131d675a36c09fcec6f6cca08d83783f58e`.
+Within the 89 catalog-digest source files, only the dispatcher and workspace
+routing context change. The dispatcher makes artifact-quota rejection permanent.
+The routing context uses a stable workspace/operation/output-slot identity and
+an explicit durable-publication acceptance callback. PostgreSQL holds the owner
+and workspace write gates through quota/collision checks and that callback;
+rejected publications do not create or replace a workspace reference. Accepted
+same-operation retries can replace their own output without authorizing a
+collision with another operation. Redis acceptance and PostgreSQL commit remain
+separate operations; this is not a distributed-transaction guarantee.
+
+All 98 operation rows and all 69 referenced evidence/fixture paths are unchanged
+relative to that base. Individual algorithms, catalog membership, entry points,
+output-slot selection and destructive classification are unchanged. Existing
+semantic verdicts keep their original scope. Shared workspace behavior requires
+its own proof and does not certify every operation with every workspace control.
+
+On the formatted correction patch, PostgreSQL provider/registration checks passed
+12/12, lifecycle/dispatcher/durable-job/admin checks 157/157, composed GP checks
+8/8 and native-worker negative controls 7/7, all without skips. The catalog emitter
+passed; the first architecture run passed 11/12 and correctly rejected the stale
+source digest. The refreshed digest records this impact review. Its subsequent
+verification, the additional admin URL-credential regression and the full local
+gate are separate obligations. No shipping or native desktop pass is inferred.

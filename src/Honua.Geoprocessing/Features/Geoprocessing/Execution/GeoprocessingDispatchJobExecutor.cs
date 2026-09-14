@@ -148,6 +148,11 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
                 activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 return JobExecutionResult.Failed(ex.Message) with { IsRetryable = false };
             }
+            catch (WorkspaceQuotaExceededException ex)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                return JobExecutionResult.Failed(ex.Message) with { IsRetryable = false };
+            }
             catch (ArtifactReplacementFailedException ex)
             {
                 Log.OutputCollision(_logger, job.OperationId, ex.Message);

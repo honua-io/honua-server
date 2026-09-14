@@ -30,4 +30,20 @@ public interface IAtomicWorkspaceStore
     /// the previous artifact. The workspace must still be active and unexpired at write time.
     /// </summary>
     Task<Artifact?> AddOrReplaceAsync(Artifact artifact, bool overwrite, CancellationToken cancellationToken = default);
+
+    /// <summary>Creates an artifact while enforcing projected owner count and byte limits atomically.</summary>
+    Task<Artifact> CreateArtifactWithQuotaAsync(Artifact artifact, WorkspaceQuota quota, CancellationToken cancellationToken = default);
+
+    /// <summary>Adds or replaces an output while enforcing projected owner count and byte limits atomically.</summary>
+    Task<Artifact?> AddOrReplaceWithQuotaAsync(Artifact artifact, bool overwrite, WorkspaceQuota quota, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Publishes an operation-owned output. Holds the owner/workspace write gates
+    /// while checking quotas and invoking the durable publication fence, then commits
+    /// only accepted output. A stable artifact identity allows the same operation's
+    /// retry to replace its own output without granting overwrite of another output.
+    /// Returns null when publication is rejected; other collisions throw.
+    /// </summary>
+    Task<Artifact?> PublishAsync(Artifact artifact, bool overwrite, WorkspaceQuota quota,
+        Func<CancellationToken, Task<bool>> publishReference, CancellationToken cancellationToken = default);
 }

@@ -108,13 +108,54 @@ public class WorkspaceLifecycleServiceTests
     public async Task Overwrite_AtomicProviderCollisionDoesNotDeleteOrInsertSeparately()
     {
         var store = Substitute.For<IWorkspaceStore, IArtifactStore, IAtomicWorkspaceStore>();
-        ((IAtomicWorkspaceStore)store).AddOrReplaceAsync(Arg.Any<Artifact>(), false, Arg.Any<CancellationToken>())
+        ((IAtomicWorkspaceStore)store).AddOrReplaceWithQuotaAsync(Arg.Any<Artifact>(), false, Arg.Any<WorkspaceQuota>(), Arg.Any<CancellationToken>())
             .Returns((Artifact?)null);
         var service = new WorkspaceLifecycleService(store, (IArtifactStore)store, _retentionPolicy,
             Options.Create(new WorkspaceOptions()), _timeProvider, NullLogger<WorkspaceLifecycleService>.Instance);
         await Assert.ThrowsAsync<ArtifactAlreadyExistsException>(() => service.AddOrReplaceArtifactAsync("workspace", ArtifactKind.File, "output", false));
         await ((IArtifactStore)store).DidNotReceive().DeleteAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
         await ((IArtifactStore)store).DidNotReceive().CreateAsync(Arg.Any<Artifact>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Publication_StableIdentitySeparatesOperationSlotAndWorkspaceAndPropagatesQuota()
+    {
+        var store = Substitute.For<IArtifactStore, IAtomicWorkspaceStore>();
+        var atomic = (IAtomicWorkspaceStore)store;
+        atomic.PublishAsync(Arg.Any<Artifact>(), Arg.Any<bool>(), Arg.Any<WorkspaceQuota>(),
+                Arg.Any<Func<CancellationToken, Task<bool>>>(), Arg.Any<CancellationToken>())
+            .Returns(async call => await call.Arg<Func<CancellationToken, Task<bool>>>()(call.Arg<CancellationToken>())
+                ? call.Arg<Artifact>() : null);
+        var service = new WorkspaceLifecycleService(_workspaceStore, store, _retentionPolicy,
+            Options.Create(new WorkspaceOptions { MaxArtifactCount = 7, MaxStorageBytes = 100 }),
+            _timeProvider, NullLogger<WorkspaceLifecycleService>.Instance);
+        var output = new WorkspaceArtifactPublication("workspace", "operation", 0, ArtifactKind.File, "result", false, "data:,\u96ea");
+        var first = await service.PublishArtifactAsync(output, _ => Task.FromResult(true));
+        var retry = await service.PublishArtifactAsync(output, _ => Task.FromResult(true));
+        Assert.Equal(first!.ArtifactId, retry!.ArtifactId);
+        Assert.Equal(9, first.SizeBytes);
+        foreach (var distinct in new[]
+        {
+            output with { OperationId = "another" }, output with { OutputSlot = 1 }, output with { WorkspaceId = "another" }
+        })
+        {
+            var other = await service.PublishArtifactAsync(distinct, _ => Task.FromResult(true));
+            Assert.NotEqual(first.ArtifactId, other!.ArtifactId);
+        }
+        Assert.Null(await service.PublishArtifactAsync(output, _ => Task.FromResult(false)));
+        await atomic.Received(6).PublishAsync(Arg.Any<Artifact>(), false,
+            Arg.Is<WorkspaceQuota>(q => q.MaxArtifactCount == 7 && q.MaxStorageBytes == 100),
+            Arg.Any<Func<CancellationToken, Task<bool>>>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task Publication_NonAtomicProviderFailsBeforeDurableCallback()
+    {
+        var called = false;
+        await Assert.ThrowsAsync<NotSupportedException>(() => _service.PublishArtifactAsync(
+            new WorkspaceArtifactPublication("workspace", "operation", 0, ArtifactKind.File, "result", false, "data:,result"),
+            _ => { called = true; return Task.FromResult(true); }));
+        Assert.False(called);
     }
 
     [Fact]

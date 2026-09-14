@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Microsoft.Extensions.Logging;
@@ -130,7 +133,9 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
             WorkspaceId = workspaceId
         };
 
-        var created = await _artifactStore.CreateAsync(artifact, cancellationToken);
+        var created = _artifactStore is IAtomicWorkspaceStore atomicStore
+            ? await atomicStore.CreateArtifactWithQuotaAsync(artifact, EffectiveQuota, cancellationToken)
+            : await _artifactStore.CreateAsync(artifact, cancellationToken);
         WorkspaceLifecycleLog.ArtifactAdded(_logger, created.ArtifactId, workspaceId, kind);
         return created;
     }
@@ -165,7 +170,7 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
                 CreatedAt = _timeProvider.GetUtcNow(),
                 Metadata = metadata ?? new Dictionary<string, string>()
             };
-            return await atomicStore.AddOrReplaceAsync(artifact, overwrite, cancellationToken).ConfigureAwait(false)
+            return await atomicStore.AddOrReplaceWithQuotaAsync(artifact, overwrite, EffectiveQuota, cancellationToken).ConfigureAwait(false)
                 ?? throw new ArtifactAlreadyExistsException(workspaceId, label);
         }
 
@@ -202,6 +207,43 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
         return await AddArtifactAsync(
             workspaceId, kind, label, uri, contentType, sizeBytes, metadata, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    private WorkspaceQuota EffectiveQuota => new()
+    {
+        MaxWorkspaceCount = _options.MaxWorkspaceCount ?? WorkspaceQuota.Default.MaxWorkspaceCount,
+        MaxArtifactCount = _options.MaxArtifactCount ?? WorkspaceQuota.Default.MaxArtifactCount,
+        MaxStorageBytes = _options.MaxStorageBytes ?? WorkspaceQuota.Default.MaxStorageBytes
+    };
+
+    public Task<Artifact?> PublishArtifactAsync(WorkspaceArtifactPublication publication,
+        Func<CancellationToken, Task<bool>> publishReference, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(publication);
+        ArgumentException.ThrowIfNullOrWhiteSpace(publication.WorkspaceId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(publication.OperationId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(publication.Reference);
+        ArgumentOutOfRangeException.ThrowIfNegative(publication.OutputSlot);
+        if (_artifactStore is not IAtomicWorkspaceStore atomicStore)
+        {
+            throw new NotSupportedException("Atomic workspace publication is unavailable.");
+        }
+        var identity = string.Create(CultureInfo.InvariantCulture,
+            $"{publication.WorkspaceId.Length}:{publication.WorkspaceId}{publication.OperationId.Length}:{publication.OperationId}:{publication.OutputSlot}");
+        var artifact = new Artifact
+        {
+            ArtifactId = "output-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(identity))),
+            WorkspaceId = publication.WorkspaceId,
+            Kind = publication.Kind,
+            Label = publication.Label,
+            State = ArtifactLifecycleState.Available,
+            Uri = publication.Reference,
+            // Account for the stored reference, including inline data. External resource
+            // sizes are not fetched or represented as physical storage consumption.
+            SizeBytes = Encoding.UTF8.GetByteCount(publication.Reference),
+            CreatedAt = _timeProvider.GetUtcNow()
+        };
+        return atomicStore.PublishAsync(artifact, publication.Overwrite, EffectiveQuota, publishReference, cancellationToken);
     }
 
     public Task<Workspace> GetOrCreateNamedWorkspaceAsync(
@@ -317,7 +359,9 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
             WorkspaceId = request.TargetWorkspaceId
         };
 
-        var created = await _artifactStore.CreateAsync(promoted, cancellationToken);
+        var created = _artifactStore is IAtomicWorkspaceStore atomicStore
+            ? await atomicStore.CreateArtifactWithQuotaAsync(promoted, EffectiveQuota, cancellationToken)
+            : await _artifactStore.CreateAsync(promoted, cancellationToken);
 
         bool transitioned;
         try

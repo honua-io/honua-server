@@ -178,6 +178,95 @@ public sealed class PostgresWorkspaceStoreTests(PostgresFixture fixture)
             (await ((IArtifactStore)stores[2]).GetAsync(original.ArtifactId)).Should().BeEquivalentTo(original);
         });
 
+    [IntegrationTest]
+    public Task Artifact_ConcurrentOwnerWritesEnforceCountAndBytesAcrossWorkspaces()
+        => WithStoresAsync(async stores =>
+        {
+            var first = await stores[0].CreateAsync(Workspace("owner", "first"));
+            var second = await stores[1].CreateAsync(Workspace("owner", "second"));
+            foreach (var quota in new[]
+            {
+                new WorkspaceQuota { MaxArtifactCount = 3 },
+                new WorkspaceQuota { MaxStorageBytes = 9 }
+            })
+            {
+                var attempts = await Task.WhenAll(Enumerable.Range(0, 12).Select(async i =>
+                {
+                    try
+                    {
+                        return await stores[i % 4].CreateArtifactWithQuotaAsync(
+                            Artifact(i % 2 == 0 ? first.WorkspaceId : second.WorkspaceId, "out-" + i, "data:,abc") with { SizeBytes = 3 }, quota);
+                    }
+                    catch (WorkspaceQuotaExceededException)
+                    {
+                        return null;
+                    }
+                }));
+                attempts.OfType<Artifact>().Should().HaveCount(3);
+                var usage = await stores[2].GetUsageSummaryAsync("owner");
+                usage.TotalArtifactCount.Should().Be(3);
+                usage.TotalStorageBytes.Should().Be(9);
+                foreach (var artifact in attempts.OfType<Artifact>())
+                {
+                    await ((IArtifactStore)stores[3]).DeleteAsync(artifact.ArtifactId);
+                }
+            }
+        });
+
+    [IntegrationTest]
+    public Task Artifact_PublicationRetryAndQuotaDenialPreserveOwnedOutput()
+        => WithStoresAsync(async stores =>
+        {
+            var workspace = await stores[0].CreateAsync(Workspace("owner", "scratch"));
+            var output = Artifact(workspace.WorkspaceId, "result", "data:,abc") with { SizeBytes = 3 };
+            var quota = new WorkspaceQuota { MaxArtifactCount = 1, MaxStorageBytes = 3 };
+            var accepted = 0;
+            Task<bool> Accept(CancellationToken _) { accepted++; return Task.FromResult(true); }
+            await stores[0].PublishAsync(output, false, quota, Accept);
+            await stores[1].PublishAsync(output, false, quota, Accept);
+            accepted.Should().Be(2);
+            (await stores[2].ListByWorkspaceAsync(workspace.WorkspaceId)).Should().ContainSingle().Which.Should().BeEquivalentTo(output);
+            var collision = () => stores[2].PublishAsync(output with { ArtifactId = "another-operation" }, false, quota, Accept);
+            await collision.Should().ThrowAsync<ArtifactAlreadyExistsException>();
+            var tooLarge = () => stores[2].PublishAsync(output with { SizeBytes = 4 }, true, quota, Accept);
+            await tooLarge.Should().ThrowAsync<WorkspaceQuotaExceededException>();
+            accepted.Should().Be(2, "collision and quota validation precede durable publication");
+            var denied = await stores[2].PublishAsync(output with { Uri = "data:,stale" }, true, quota, _ => Task.FromResult(false));
+            denied.Should().BeNull();
+            (await ((IArtifactStore)stores[3]).GetAsync(output.ArtifactId)).Should().BeEquivalentTo(output);
+            var replacement = output with { ArtifactId = "new-operation", Uri = "data:,new" };
+            await stores[3].PublishAsync(replacement, true, quota, Accept);
+            (await stores[0].GetUsageSummaryAsync("owner")).TotalStorageBytes.Should().Be(3);
+            (await ((IArtifactStore)stores[0]).GetAsync(output.ArtifactId)).Should().BeNull();
+        });
+
+    [IntegrationTest]
+    public Task Artifact_PublicationGateSerializesFenceAndStorageAcrossAttempts()
+        => WithStoresAsync(async stores =>
+        {
+            var workspace = await stores[0].CreateAsync(Workspace("owner", "scratch"));
+            var old = Artifact(workspace.WorkspaceId, "result", "data:,old");
+            var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var oldWrite = stores[0].PublishAsync(old, true, WorkspaceQuota.Default, async ct =>
+            {
+                entered.SetResult();
+                await release.Task.WaitAsync(TimeSpan.FromSeconds(20), ct);
+                return true;
+            });
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(20));
+            var newer = old with { ArtifactId = "new-attempt", Uri = "data:,new" };
+            var newWrite = stores[1].PublishAsync(newer, true, WorkspaceQuota.Default, _ => Task.FromResult(true));
+            release.SetResult();
+            await Task.WhenAll(oldWrite, newWrite);
+            (await stores[2].ListByWorkspaceAsync(workspace.WorkspaceId)).Should().ContainSingle().Which.Should().BeEquivalentTo(newer);
+            (await stores[3].PublishAsync(old, true, WorkspaceQuota.Default, _ => Task.FromResult(false))).Should().BeNull();
+            (await stores[2].ListByWorkspaceAsync(workspace.WorkspaceId)).Should().ContainSingle().Which.Should().BeEquivalentTo(newer);
+            var empty = await stores[0].CreateAsync(Workspace("owner", "empty"));
+            await stores[0].PublishAsync(old with { WorkspaceId = empty.WorkspaceId }, false, WorkspaceQuota.Default, _ => Task.FromResult(false));
+            (await stores[1].ListByWorkspaceAsync(empty.WorkspaceId)).Should().BeEmpty();
+        });
+
     private async Task WithStoresAsync(Func<PostgresWorkspaceStore[], Task> action)
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresWorkspaceStoreTests));

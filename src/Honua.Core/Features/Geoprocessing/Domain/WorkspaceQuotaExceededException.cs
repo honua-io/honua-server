@@ -4,12 +4,16 @@
 namespace Honua.Core.Features.Geoprocessing.Domain;
 
 /// <summary>
-/// A workspace creation was refused because the owner's active count is at its limit.
+/// A workspace write was refused because an owner quota would be exceeded.
 /// </summary>
 public sealed class WorkspaceQuotaExceededException : InvalidOperationException
 {
     /// <summary>Creates a provider-detail-free quota failure.</summary>
     public WorkspaceQuotaExceededException() : base("The active workspace count limit has been reached.")
+    {
+    }
+    /// <summary>Creates a quota failure with a curated, provider-detail-free explanation.</summary>
+    public WorkspaceQuotaExceededException(string message) : base(message)
     {
     }
 }

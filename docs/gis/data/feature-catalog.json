@@ -2410,7 +2410,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetArtifacts_MapsAvailabilityStates"
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetArtifacts_DirectReferencesRemainUsableWithMetadataProvider",
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetArtifacts_MapsAvailabilityStates",
+        "Honua.Server.Tests.Features.Admin.Jobs.ConsoleJobEndpointsTests.GetArtifacts_ProviderFailureDoesNotEchoUnsafeReference"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",

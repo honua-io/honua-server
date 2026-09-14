@@ -121,6 +121,34 @@ Installed-client execution observations are retained with the GPServer tests in
 an independently verified rectangle area; a native Pro desktop compatibility
 claim additionally requires fresh candidate and desktop UI receipts.
 
+### Workspace output retention and limits
+
+For managed jobs using `env:workspace`, PostgreSQL retains workspace output
+references across process restart. Workspace labels resolve within the calling
+owner's deployment context. A retry of the same job and output slot can recover
+its own output; replacing another job's output requires `env:overwriteOutput=true`.
+The native GDAL worker currently rejects these workspace controls.
+
+The `Geoprocessing:Workspace` settings bound each owner's active, unexpired
+workspaces and their artifact records:
+
+| Setting | Default | Meaning |
+| --- | ---: | --- |
+| `MaxWorkspaceCount` | 100 | Active workspaces; logically expired rows stop counting before cleanup runs. |
+| `MaxArtifactCount` | 1,000 | Artifact records across active, unexpired workspaces, including promoted records. |
+| `MaxStorageBytes` | 10 GiB | Recorded artifact bytes across those workspaces. Managed workspace publication counts the UTF-8 reference, including inline data. |
+
+Artifact writes serialize per owner and check projected usage before publication.
+An overwrite subtracts the replaced record when checking the limit. A quota
+rejection leaves the previous output intact and fails the job without automatic
+retry. Raising these limits does not change the separate executor output limit.
+
+The provider owns reference records. It neither measures nor deletes external
+files, layers, or cloud objects by following a reference, so recorded bytes are
+not a physical storage quota for those assets. Durable job acceptance and the
+PostgreSQL write use separate stores; a failed database commit requires retry
+recovery and is not a distributed transaction.
+
 ## Verify
 
 Run `GET /ogc/processes/jobs/{jobId}` again in the explorer.
