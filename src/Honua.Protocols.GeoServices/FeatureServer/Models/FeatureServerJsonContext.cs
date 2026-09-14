@@ -137,6 +137,7 @@ namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 [JsonSerializable(typeof(SynchronizeReplicaResponse))]
 [JsonSerializable(typeof(SynchronizeReplicaConflict))]
 [JsonSerializable(typeof(SynchronizeReplicaConflict[]))]
+[JsonSerializable(typeof(Services.ReplicaUploadRecord))]
 [JsonSerializable(typeof(SynchronizeReplicaLayerEdits))]
 [JsonSerializable(typeof(SynchronizeReplicaLayerEdits[]), TypeInfoPropertyName = "SynchronizeReplicaLayerEditsArray")]
 [JsonSerializable(typeof(UnRegisterReplicaRequest))]

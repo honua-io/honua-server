@@ -155,10 +155,12 @@ public sealed class ReplicaInfoResponse
     public long? ReplicaServerGen { get; set; }
 
     /// <summary>
-    /// Layer generation metadata encoded using the ArcGIS replicas resource shape.
+    /// Per-layer server generations for per-layer sync models, emitted as a JSON array of
+    /// <c>{id, serverGen, serverSibGen}</c> objects like the ArcGIS replica resource and the
+    /// <c>synchronizeReplica</c> response (#4020). Omitted for per-replica sync models.
     /// </summary>
     [JsonPropertyName("layerServerGens")]
-    public string? LayerServerGens { get; set; }
+    public ReplicaInfoLayerServerGeneration[]? LayerServerGens { get; set; }
 
     /// <summary>
     /// Timestamp when the replica was created, in Unix milliseconds.

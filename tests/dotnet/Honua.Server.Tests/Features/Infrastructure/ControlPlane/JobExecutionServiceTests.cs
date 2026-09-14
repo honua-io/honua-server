@@ -784,6 +784,42 @@ public sealed class JobExecutionServiceTests
             () => context.PublishArtifactAsync("s3://bucket/artifact.zip", CancellationToken.None));
     }
 
+    [UnitTest]
+    public async Task ProcessJob_PermanentFailure_StopsAtFirstAttemptAndPreservesDetails()
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            AttemptCount = 1,
+            RetryPolicy = new JobRetryPolicy { MaxAttempts = 3 }
+        };
+        var jobStore = Substitute.For<IExecutionJobStore>().WithTrySet();
+        jobStore.GetAsync(provisioning.OperationId, Arg.Any<CancellationToken>()).Returns(provisioning);
+        var jobQueue = Substitute.For<IJobQueue>();
+        var executor = Substitute.For<IJobExecutor>();
+        executor.Kind.Returns(ExecutionJobKind.Geoprocessing);
+        executor.ExecuteAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<IJobExecutionContext>(), Arg.Any<CancellationToken>())
+            .Returns(JobExecutionResult.Failed("Workspace provider is unavailable.", ["Output was not created."])
+                with
+            { IsRetryable = false });
+        var terminalCallback = Substitute.For<IJobTerminalCallback>();
+        using var service = new JobExecutionService(
+            jobQueue, jobStore, [executor], new ExecutionJobCancellationTokens(),
+            [terminalCallback], null, NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        await jobStore.Received().TrySetAsync(Arg.Is<ExecutionJobRecord>(job =>
+            job.Status == ExecutionJobStatus.Failed && job.AttemptCount == 1 && job.CompletedAt.HasValue &&
+            job.ErrorMessage == "Workspace provider is unavailable." &&
+            job.Warnings.SequenceEqual(new[] { "Output was not created." })),
+            Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+        await jobQueue.DidNotReceiveWithAnyArgs().RequeueAsync(default!, default, default, default);
+        await jobQueue.Received().RemoveAsync(provisioning.OperationId, Arg.Any<CancellationToken>());
+        await terminalCallback.Received(1).OnTerminalAsync(
+            Arg.Is<ExecutionJobRecord>(job => job.Status == ExecutionJobStatus.Failed && job.AttemptCount == 1),
+            Arg.Any<CancellationToken>());
+    }
+
     /// <summary>
     /// Regression: executor warnings must be persisted on the terminal failed
     /// record when no retries remain, so clients rendering job.Warnings see them.
@@ -2218,12 +2254,15 @@ public sealed class JobExecutionServiceTests
     /// Regression: a durable cancellation signal that arrives before the terminal
     /// fail write (retries exhausted) must be honoured by the pre-fail re-read.
     /// </summary>
-    [UnitTest]
-    public async Task AbandonJob_HonoursCancellation_WhenSignalArrivesBeforeFailWrite()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Tier", "Fast")]
+    public async Task AbandonJob_HonoursCancellation_WhenSignalArrivesBeforeFailWrite(bool permanentFailure)
     {
         var provisioning = CreateProvisioningJob() with
         {
-            RetryPolicy = JobRetryPolicy.None
+            RetryPolicy = permanentFailure ? new JobRetryPolicy { MaxAttempts = 3 } : JobRetryPolicy.None
         };
 
         var withCancel = provisioning with
@@ -2249,7 +2288,7 @@ public sealed class JobExecutionServiceTests
                 Arg.Any<ExecutionJobRecord>(),
                 Arg.Any<IJobExecutionContext>(),
                 Arg.Any<CancellationToken>())
-            .Returns(JobExecutionResult.Failed("Permanent failure"));
+            .Returns(JobExecutionResult.Failed("Permanent failure") with { IsRetryable = !permanentFailure });
 
         var cancellationTokens = new ExecutionJobCancellationTokens();
 

@@ -114,4 +114,74 @@ public class ImageServerMosaicRuleTests
         rule.Method.Should().Be(MosaicMethod.Unsupported);
         rule.ToAttributeSort().Should().BeNull();
     }
+
+    // #4063: the raster store orders ByAttribute by the attribute itself, not by distance from a
+    // base sortValue, so a base value is unsupported while a direction token still executes.
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Operation(Operations.Export)]
+    [InlineData("AcquisitionDate", "2024/01/01", MosaicMethod.Unsupported, false)]
+    [InlineData("OBJECTID", "5", MosaicMethod.Unsupported, false)]
+    [InlineData("AcquisitionDate", "asc", MosaicMethod.ByDate, true)]
+    [InlineData("AcquisitionDate", "Descending", MosaicMethod.ByDate, false)]
+    [InlineData("OBJECTID", "", MosaicMethod.Attribute, false)]
+    public void TryParse_ByAttributeSortValue_OnlyDirectionTokensExecute(
+        string sortField, string sortValue, MosaicMethod expectedMethod, bool expectedAscending)
+    {
+        var ok = ImageServerMosaicRule.TryParse(
+            $"{{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"{sortField}\",\"sortValue\":\"{sortValue}\"}}",
+            out var rule, out _, out _);
+
+        ok.Should().BeTrue();
+        rule.Method.Should().Be(expectedMethod);
+        rule.Ascending.Should().Be(expectedAscending);
+    }
+
+    // #4063: service metadata advertises exactly the methods the parser executes. Every advertised
+    // token, sent back as its esriMosaic* rule, must classify as executable; the Esri methods the
+    // service cannot execute (501 on a multi-raster request) must not be advertised.
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public void AllowedMosaicMethods_AdvertisesExactlyTheExecutableEsriMethods()
+    {
+        var advertised = ImageServerMosaicRule.AllowedMosaicMethods.Split(',');
+        advertised.Should().Equal("None", "NorthWest", "LockRaster", "ByAttribute", "Nadir", "Seamline");
+
+        foreach (var token in advertised)
+        {
+            var json = token == "LockRaster"
+                ? "{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[1]}"
+                : $"{{\"mosaicMethod\":\"esriMosaic{token}\"}}";
+
+            var ok = ImageServerMosaicRule.TryParse(json, out var rule, out var error, out var notImplemented);
+
+            ok.Should().BeTrue($"advertised method {token} must parse: {error}");
+            notImplemented.Should().BeFalse();
+            rule.Method.Should().NotBe(MosaicMethod.Unsupported, $"advertised method {token} must be executable");
+        }
+
+        foreach (var token in new[] { "Center", "Viewpoint" })
+        {
+            ImageServerMosaicRule.TryParse($"{{\"mosaicMethod\":\"esriMosaic{token}\"}}", out var rule, out _, out _)
+                .Should().BeTrue();
+            rule.Method.Should().Be(MosaicMethod.Unsupported);
+            advertised.Should().NotContain(token);
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    public void DefaultMosaicMethod_DescribesTheOrderingOfARuleLessRequest()
+    {
+        ImageServerMosaicRule.TryParse(null, out var ruleLess, out _, out _).Should().BeTrue();
+
+        var ok = ImageServerMosaicRule.TryParse(
+            $"{{\"mosaicMethod\":\"esriMosaic{ImageServerMosaicRule.DefaultMosaicMethod}\",\"sortField\":\"{ImageServerMosaicRule.DefaultSortField}\"}}",
+            out var advertisedDefault, out _, out _);
+
+        ok.Should().BeTrue();
+        advertisedDefault.Method.Should().Be(MosaicMethod.ByDate);
+        advertisedDefault.ToOrdering().Should().Be(RasterMosaicOrdering.AcquisitionNewest);
+        advertisedDefault.ToOrdering().Should().Be(ruleLess.ToOrdering());
+    }
 }

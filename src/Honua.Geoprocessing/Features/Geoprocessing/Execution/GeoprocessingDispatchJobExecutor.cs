@@ -127,7 +127,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         using var securityScope = JobSecurityScope.Begin(job.Audit.SubmitterSecurityContext);
 
         JobExecutionResult result;
-        var (workspaceScope, effectiveContext, workspaceError) =
+        var (workspaceScope, effectiveContext, workspaceError, workspaceErrorIsRetryable) =
             await TryResolveWorkspaceRoutingAsync(job, context, cancellationToken).ConfigureAwait(false);
         using (workspaceScope)
         {
@@ -135,7 +135,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             {
                 Log.WorkspaceProviderUnavailable(_logger, job.OperationId, workspaceError);
                 activity?.SetStatus(ActivityStatusCode.Error, "env:workspace could not be resolved");
-                return JobExecutionResult.Failed(workspaceError);
+                return JobExecutionResult.Failed(workspaceError) with { IsRetryable = workspaceErrorIsRetryable };
             }
 
             try
@@ -146,7 +146,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             {
                 Log.OutputCollision(_logger, job.OperationId, ex.Message);
                 activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-                return JobExecutionResult.Failed(ex.Message);
+                return JobExecutionResult.Failed(ex.Message) with { IsRetryable = false };
             }
             catch (ArtifactReplacementFailedException ex)
             {
@@ -188,7 +188,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
     /// free" through the context they already call <c>PublishArtifactAsync</c>
     /// on — no executor needs its own workspace logic.
     /// </summary>
-    private async Task<(IDisposable? Scope, IJobExecutionContext EffectiveContext, string? Error)>
+    private async Task<(IDisposable? Scope, IJobExecutionContext EffectiveContext, string? Error, bool IsRetryable)>
         TryResolveWorkspaceRoutingAsync(
             ExecutionJobRecord job,
             IJobExecutionContext context,
@@ -197,7 +197,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         var requestedLabel = job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerWorkspace);
         if (string.IsNullOrWhiteSpace(requestedLabel))
         {
-            return (null, context, null);
+            return (null, context, null, true);
         }
 
         var scope = _serviceScopeFactory?.CreateScope();
@@ -206,7 +206,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         {
             scope?.Dispose();
             return (null, context,
-                $"env:workspace='{requestedLabel}' was requested but no workspace storage provider is configured for this deployment.");
+                $"env:workspace='{requestedLabel}' was requested but no workspace storage provider is configured for this deployment.", false);
         }
 
         var ownerId = string.IsNullOrWhiteSpace(job.Audit.RequestedBy) ? "anonymous" : job.Audit.RequestedBy;
@@ -218,6 +218,11 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
                 .GetOrCreateNamedWorkspaceAsync(ownerId, requestedLabel, cancellationToken)
                 .ConfigureAwait(false);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            scope?.Dispose();
+            throw;
+        }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: workspace resolution can fail for many storage-provider
@@ -226,7 +231,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             // stays provider-detail-free so it is safe to surface on the job status.
             scope?.Dispose();
             Log.WorkspaceResolutionFailed(_logger, job.OperationId, requestedLabel, ex);
-            return (null, context, $"env:workspace='{requestedLabel}' could not be resolved.");
+            return (null, context, $"env:workspace='{requestedLabel}' could not be resolved.", true);
         }
 
         var overwrite =
@@ -236,7 +241,7 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
 
         var effectiveContext = new WorkspaceRoutingJobExecutionContext(
             context, job, resolvedWorkspace.WorkspaceId, overwrite, workspaceLifecycle);
-        return (scope, effectiveContext, null);
+        return (scope, effectiveContext, null, true);
     }
 
     private static partial class Log

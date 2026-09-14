@@ -73,6 +73,30 @@ public enum MosaicMethod
 /// </summary>
 public readonly record struct ImageServerMosaicRule
 {
+    /// <summary>
+    /// The <c>allowedMosaicMethods</c> the service advertises (#4063): the unprefixed Esri
+    /// vocabulary (<c>None,Center,NorthWest,LockRaster,ByAttribute,Nadir,Viewpoint,Seamline</c>)
+    /// narrowed to the methods <see cref="TryParse"/> classifies as executable. <c>Center</c> and
+    /// <c>Viewpoint</c> classify as <see cref="MosaicMethod.Unsupported"/> (501 on a multi-raster
+    /// request), so they are not advertised. REST and SOAP service metadata share this value.
+    /// </summary>
+    public const string AllowedMosaicMethods = "None,NorthWest,LockRaster,ByAttribute,Nadir,Seamline";
+
+    /// <summary>
+    /// The <c>defaultMosaicMethod</c> the service advertises (#4063). A request without a
+    /// <c>mosaicRule</c> composites newest acquisition first (<see cref="ToOrdering"/> falls back to
+    /// <see cref="RasterMosaicOrdering.AcquisitionNewest"/>), which in Esri terms is a
+    /// <c>ByAttribute</c> mosaic over <see cref="DefaultSortField"/>, not <c>NorthWest</c>.
+    /// </summary>
+    public const string DefaultMosaicMethod = "ByAttribute";
+
+    /// <summary>
+    /// The raster-catalog date field the default <see cref="DefaultMosaicMethod"/> sorts on. It is
+    /// the catalog attribute field name, and <see cref="TryParse"/> resolves it to the
+    /// acquisition ordering.
+    /// </summary>
+    public const string DefaultSortField = "AcquisitionDate";
+
     /// <summary>The normalized mosaic method requested by the rule.</summary>
     public MosaicMethod Method { get; init; }
 
@@ -201,7 +225,7 @@ public readonly record struct ImageServerMosaicRule
             var sortValue = ReadString(root, "sortValue");
 
             var methodName = ReadString(root, "mosaicMethod");
-            var method = ClassifyMethod(methodName, sortField, out var attributeSortColumn);
+            var method = ClassifyMethod(methodName, sortField, sortValue, out var attributeSortColumn);
 
             if (method == MosaicMethod.LockRaster)
             {
@@ -236,7 +260,7 @@ public readonly record struct ImageServerMosaicRule
         }
     }
 
-    private static MosaicMethod ClassifyMethod(string? methodName, string? sortField, out string? attributeSortColumn)
+    private static MosaicMethod ClassifyMethod(string? methodName, string? sortField, string? sortValue, out string? attributeSortColumn)
     {
         attributeSortColumn = null;
 
@@ -276,6 +300,14 @@ public readonly record struct ImageServerMosaicRule
         if (methodName.Equals("esriMosaicAttribute", StringComparison.OrdinalIgnoreCase) ||
             methodName.Equals("esriMosaicByAttribute", StringComparison.OrdinalIgnoreCase))
         {
+            // Esri ByAttribute with a base sortValue ranks rasters by their distance from that
+            // value. The raster store only orders by the attribute itself, so a base value is a
+            // recognized-but-unsupported form (#4063); a direction token ("asc"/"desc") is not.
+            if (!string.IsNullOrWhiteSpace(sortValue) && !IsSortDirectionToken(sortValue))
+            {
+                return MosaicMethod.Unsupported;
+            }
+
             // A date/acquisition attribute sort uses the temporal ordering path.
             if (IsDateSortField(sortField))
             {
@@ -357,6 +389,9 @@ public readonly record struct ImageServerMosaicRule
             || sortField.Equals("created_at", StringComparison.OrdinalIgnoreCase)
             || sortField.Equals("createddate", StringComparison.OrdinalIgnoreCase);
     }
+
+    private static bool IsSortDirectionToken(string sortValue)
+        => sortValue.Trim().ToLowerInvariant() is "asc" or "ascending" or "desc" or "descending";
 
     // Esri sortValue/ascending semantics: an explicit "ascending": true wins. Otherwise a
     // sortValue of "asc"/"ascending" requests an ascending (oldest-first) ordering. The

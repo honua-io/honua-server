@@ -269,9 +269,17 @@ public class ImageServerMetadataHandlerTests
         info.BlockWidth.Should().BeNull();
         info.BlockHeight.Should().BeNull();
 
-        // Esri serializes allowedMosaicMethods as a comma-separated string, not an array.
+        // Esri serializes allowedMosaicMethods as a comma-separated string, not an array, using
+        // the unprefixed method vocabulary (#4063).
         info.AllowedMosaicMethods.Should().BeOfType<string>();
-        info.AllowedMosaicMethods.Should().Contain("esriMosaic");
+        info.AllowedMosaicMethods.Should().Be("None,NorthWest,LockRaster,ByAttribute,Nadir,Seamline");
+
+        // renderingRule raster functions execute, so they are allowed; a rule-less request composites
+        // newest acquisition first with the default Newest merge keeping the first raster (#4063).
+        info.AllowRasterFunction.Should().BeTrue();
+        info.DefaultMosaicMethod.Should().Be("ByAttribute");
+        info.SortField.Should().Be("AcquisitionDate");
+        info.MosaicOperator.Should().Be("First");
     }
 
     [UnitTest]

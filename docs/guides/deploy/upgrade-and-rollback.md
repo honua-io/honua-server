@@ -137,6 +137,7 @@ The telemetry gate is validated when a rollout is planned, before anything is su
 - a named preset is not supported, even alongside explicit query overrides;
 - telemetry parameters are set without `telemetry.connection` (outside the `health-only` profile), or the connection is not configured under `ControlPlane__TelemetryConnections`;
 - error-rate or latency signals have no sample floor (`telemetry.sample_count.query` + `telemetry.sample_count.minimum`);
+- `telemetry.max_staleness_seconds` is set on a CloudWatch or Azure Monitor connection. Only Prometheus checks each sample's observation time; the other providers query a fixed 300-second window, so the bound would be ignored;
 - the rollout splits traffic (a canary weight or ramp) but its metrics are aggregate. Set `telemetry.prometheus.canary_selector` or `telemetry.prometheus.canary_job`, a canary preset, or explicit candidate-scoped queries, so the stable revision's traffic cannot mask a failing candidate;
 - probe settings or golden-query expectations are set without their URL, or `telemetry.healthz.failure_threshold` exceeds `telemetry.healthz.samples`;
 - `deployment.promotion_gate` is not `telemetry`, `health`, or `manual`.
@@ -145,7 +146,7 @@ At runtime, a reading only counts as evidence when it is present, finite, non-ne
 
 | Parameter | Default | Purpose |
 |---|---|---|
-| `telemetry.max_staleness_seconds` | `300` | Freshness bound for provider samples, in (0, 3600]. |
+| `telemetry.max_staleness_seconds` | `300` | Freshness bound for Prometheus samples, in (0, 3600]. CloudWatch and Azure Monitor read only the last 300 seconds and reject this key at plan time. |
 | `telemetry.warmup_seconds` | preset (`120` for `honua-http`) | Bake time after the candidate first receives traffic, in (0, 21600]. |
 | `telemetry.evidence_grace_seconds` | `900` | How long missing or invalid evidence (provider outage, unconfigured connection, stale or ambiguous data, unreachable probe) is tolerated after warmup before the rollout is rolled back, in (0, 3600]. |
 | `telemetry.exposure_deadline_seconds` | `1800` | How long a submitted rollout may wait for the candidate to receive traffic. Past it, the rollout is rolled back without the candidate ever being activated. In (0, 7200]. |

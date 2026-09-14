@@ -1200,6 +1200,208 @@ public sealed class FeatureServerReplicaSyncTests : IAsyncLifetime
         followUpLayer.GetProperty("adds").GetInt32().Should().Be(0);
     }
 
+    [IntegrationTheory]
+    [InlineData("upload")]
+    [InlineData("bidirectional")]
+    [Operation(Operations.SynchronizeReplica, Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task SynchronizeReplica_RetriedIdenticalUpload_ReplaysWithoutReapplyingAdds(string syncDirection)
+    {
+        // #4026 repro: a client whose first response was lost re-sends the identical upload, with no key.
+        // The retry must return the original outcome and leave exactly one row, counted by a query.
+        var createRoot = await CreateReplicaWithResponseAsync($"RetriedUpload-{syncDirection}", "0");
+        var replicaId = createRoot.GetProperty("replicaID").GetString()!;
+        var name = $"retry-dup-{syncDirection}";
+        var payload = new
+        {
+            replicaID = replicaId,
+            syncDirection,
+            replicaServerGen = createRoot.GetProperty("serverGen").GetInt64(),
+            returnIdsForAdds = true,
+            edits = AddEdits(name),
+            f = "json"
+        };
+
+        var first = await PostSynchronizeReplicaAsync(payload);
+        // Another client edits between the lost response and the retry, so a bidirectional retry's
+        // download half must be assembled fresh rather than replayed.
+        var foreignId = await AddFeatureAsync($"retry-foreign-{syncDirection}");
+        var retry = await PostSynchronizeReplicaAsync(payload);
+
+        first.TryGetProperty("error", out _).Should().BeFalse(first.ToString());
+        retry.TryGetProperty("error", out _).Should().BeFalse(retry.ToString());
+        var createdId = SingleAddedObjectId(first);
+        first.GetProperty("appliedAdds").GetInt32().Should().Be(1);
+        retry.GetProperty("appliedAdds").GetInt32().Should().Be(1, "the retry reports the original outcome");
+        SingleAddedObjectId(retry).Should().Be(createdId, "the retry must hand back the row the first attempt created");
+        (await QueryObjectIdsByNameAsync(name)).Should().Equal([createdId], "the retried upload must not insert the add again");
+
+        if (syncDirection == "bidirectional")
+        {
+            var delivered = retry.GetProperty("edits").EnumerateArray()
+                .Single(layer => layer.GetProperty("id").GetInt32() == 0)
+                .GetProperty("addFeatures").EnumerateArray()
+                .Select(feature => feature.GetProperty("attributes").GetProperty("objectid").GetInt64());
+            delivered.Should().Equal([foreignId],
+                "the retry delivers the other client's add and never echoes the replica's own replayed add");
+
+            // The replay acknowledged the generation of the delta it delivered, so the next download must
+            // not hand the other client's add over a second time.
+            var followUp = await SynchronizeDownloadWithResponseAsync(replicaId, retry.GetProperty("serverGen").GetInt64());
+            followUp.GetProperty("edits").EnumerateArray()
+                .Single(layer => layer.GetProperty("id").GetInt32() == 0)
+                .GetProperty("adds").GetInt32().Should().Be(0, "a replay must not acknowledge a generation older than its delta");
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Operation(Operations.SynchronizeReplica, Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task SynchronizeReplica_UploadKeyReusedForDifferentEdits_RejectsWithoutApplying(bool keyInHeader)
+    {
+        // #4026: a client key (Idempotency-Key header or Esri editsUploadID) replays its upload, and the
+        // same key carrying different edits is refused instead of silently replaying or applying them.
+        var replicaId = await CreateReplicaAsync($"UploadKey-{keyInHeader}", "0");
+        const string key = "field-upload-0001";
+        var keptName = $"keyed-kept-{keyInHeader}";
+        var refusedName = $"keyed-refused-{keyInHeader}";
+        object Payload(string name) => keyInHeader
+            ? new { replicaID = replicaId, syncDirection = "upload", edits = AddEdits(name), f = "json" }
+            : new { replicaID = replicaId, syncDirection = "upload", editsUploadID = key, edits = AddEdits(name), f = "json" };
+        var header = keyInHeader ? key : null;
+
+        var first = await PostSynchronizeReplicaAsync(Payload(keptName), header);
+        var retry = await PostSynchronizeReplicaAsync(Payload(keptName), header);
+        first.GetProperty("appliedAdds").GetInt32().Should().Be(1, first.ToString());
+        retry.GetProperty("appliedAdds").GetInt32().Should().Be(1, retry.ToString());
+        (await QueryObjectIdsByNameAsync(keptName)).Should().HaveCount(1, "a same-key retry replays");
+
+        var reused = await PostSynchronizeReplicaAsync(Payload(refusedName), header);
+        reused.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400, reused.ToString());
+        (await QueryObjectIdsByNameAsync(refusedName)).Should().BeEmpty("edits sent under a spent key are refused, not applied");
+        (await QueryObjectIdsByNameAsync(keptName)).Should().HaveCount(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica, Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task SynchronizeReplica_RetriedPartiallyFailedUpload_ReplaysFailureWithoutDuplicatingCommittedAdd()
+    {
+        // #4026: in the default best-effort mode the valid add commits while the update of a missing object
+        // fails, so the upload reports failure after committing a row. Its retry must replay that failure,
+        // not re-insert the add once a short-lived reservation lapses.
+        var replicaId = await CreateReplicaAsync("PartialFailureRetry", "0");
+        const string committedName = "partial-retry-committed";
+        var edits = JsonSerializer.Serialize(new object[]
+        {
+            new
+            {
+                id = 0,
+                adds = new[] { new { attributes = new { name = committedName } } },
+                updates = new[]
+                {
+                    new { attributes = new Dictionary<string, object?> { ["objectid"] = 999_999_999L, ["name"] = "missing" } }
+                }
+            }
+        });
+        var payload = new { replicaID = replicaId, syncDirection = "upload", edits, f = "json" };
+
+        var first = await PostSynchronizeReplicaAsync(payload);
+        first.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400, first.ToString());
+        (await QueryObjectIdsByNameAsync(committedName)).Should().HaveCount(1, "best-effort mode commits the valid add");
+
+        var retry = await PostSynchronizeReplicaAsync(payload);
+        retry.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400,
+            "the recorded failure is replayed rather than a 409 for a lingering reservation: {0}", retry);
+        (await QueryObjectIdsByNameAsync(committedName)).Should().HaveCount(1, "the retry must not insert the committed add again");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica, Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task SynchronizeReplica_RetryThroughDifferentServicePathCasing_StillReplays()
+    {
+        // #4026: the service resolves case-insensitively, so the replay key must not depend on path casing.
+        var replicaId = await CreateReplicaAsync("RetryPathCasing", "0");
+        var payload = new { replicaID = replicaId, syncDirection = "upload", edits = AddEdits("retry-path-casing"), f = "json" };
+
+        var first = await PostSynchronizeReplicaAsync(payload);
+        var retry = await PostSynchronizeReplicaAsync(payload, serviceId: WebAppFixture.TestServiceId.ToUpperInvariant());
+
+        first.GetProperty("appliedAdds").GetInt32().Should().Be(1, first.ToString());
+        retry.GetProperty("appliedAdds").GetInt32().Should().Be(1, retry.ToString());
+        (await QueryObjectIdsByNameAsync("retry-path-casing")).Should().HaveCount(1);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica, Operations.Query)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task SynchronizeReplica_IdenticalUploadAfterAnotherUpload_AppliesAgain()
+    {
+        // #4026: without a key an identical upload replays only while the replica has acknowledged no
+        // later upload. Sent again after a different upload it is new data and must apply.
+        var replicaId = await CreateReplicaAsync("RepeatAfterOtherUpload", "0");
+        var repeated = AddEdits("repeat-after-other");
+
+        (await SynchronizeUploadAsync(replicaId, repeated)).GetProperty("appliedAdds").GetInt32().Should().Be(1);
+        (await SynchronizeUploadAsync(replicaId, AddEdits("repeat-between"))).GetProperty("appliedAdds").GetInt32().Should().Be(1);
+        (await SynchronizeUploadAsync(replicaId, repeated)).GetProperty("appliedAdds").GetInt32().Should().Be(1);
+
+        (await QueryObjectIdsByNameAsync("repeat-after-other")).Should().HaveCount(2);
+        (await QueryObjectIdsByNameAsync("repeat-between")).Should().HaveCount(1);
+    }
+
+    private static string AddEdits(string name)
+        => JsonSerializer.Serialize(new[] { new { id = 0, adds = new[] { new { attributes = new { name } } } } });
+
+    private static long SingleAddedObjectId(JsonElement syncRoot)
+    {
+        var layerResult = syncRoot.GetProperty("editResults").EnumerateArray().Should().ContainSingle().Subject;
+        var addResult = layerResult.GetProperty("addResults").EnumerateArray().Should().ContainSingle().Subject;
+        addResult.GetProperty("success").GetBoolean().Should().BeTrue();
+        return addResult.GetProperty("objectId").GetInt64();
+    }
+
+    private async Task<JsonElement> PostSynchronizeReplicaAsync(object payload, string? idempotencyKey = null, string? serviceId = null)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"/rest/services/{serviceId ?? WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica")
+        {
+            Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+        };
+        if (idempotencyKey is not null)
+        {
+            request.Headers.Add("Idempotency-Key", idempotencyKey);
+        }
+
+        using var response = await _fixture.Client.SendAsync(request);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        return document.RootElement.Clone();
+    }
+
+    private async Task<List<long>> QueryObjectIdsByNameAsync(string name)
+    {
+        using var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
+            $"?where=name%3D%27{Uri.EscapeDataString(name)}%27&outFields=objectid&returnGeometry=false&f=json");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        return document.RootElement.GetProperty("features").EnumerateArray()
+            .Select(feature => feature.GetProperty("attributes").GetProperty("objectid").GetInt64())
+            .ToList();
+    }
+
     private async Task<int> CountAllFeaturesAsync()
     {
         var response = await _fixture.Client.GetAsync(

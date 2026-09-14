@@ -362,13 +362,13 @@ internal static class ImageServerSoapEndpoints
             new XElement("ServiceSourceType", "esriImageServiceSourceTypeMosaicDataset"),
             new XElement("AllowedFields", "OBJECTID,Shape,Name"),
             new XElement("AllowedCompressions", "None"),
-            new XElement("AllowedMosaicMethods", "NorthWest,LockRaster,None"),
+            new XElement("AllowedMosaicMethods", ImageServerMosaicRule.AllowedMosaicMethods),
             new XElement("MaxRecordCount", 1000),
             new XElement("MaxMosaicImageCount", 20),
             new XElement("DefaultCompression", "None"),
             new XElement("DefaultCompressionQuality", 75),
             new XElement("DefaultResamplingMethod", "RSP_BilinearInterpolation"),
-            new XElement("DefaultMosaicMethod", "esriMosaicNorthwest"),
+            new XElement("DefaultMosaicMethod", "esriMosaic" + ImageServerMosaicRule.DefaultMosaicMethod),
             new XElement("SupportBSQ", false),
             new XElement("SupportsTime", false),
             new XElement("MensurationCapabilities", "Basic"),
@@ -837,6 +837,9 @@ internal static class ImageServerSoapEndpoints
             return true;
         }
 
+        // SOAP accepts every method the service advertises in AllowedMosaicMethods (#4063), as
+        // either the advertised token or its esriMosaic* enum name, and forwards it to the shared
+        // REST mosaic-rule parser.
         var requested = FindDescendantValue(element, "MosaicMethod");
         var canonical = requested?.Trim() switch
         {
@@ -846,12 +849,48 @@ internal static class ImageServerSoapEndpoints
                 || value.Equals("esriMosaicNorthwest", StringComparison.OrdinalIgnoreCase) => "esriMosaicNorthwest",
             string value when value.Equals("LockRaster", StringComparison.OrdinalIgnoreCase)
                 || value.Equals("esriMosaicLockRaster", StringComparison.OrdinalIgnoreCase) => "esriMosaicLockRaster",
+            string value when value.Equals("ByAttribute", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("esriMosaicByAttribute", StringComparison.OrdinalIgnoreCase) => "esriMosaicByAttribute",
+            string value when value.Equals("Nadir", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("esriMosaicNadir", StringComparison.OrdinalIgnoreCase) => "esriMosaicNadir",
+            string value when value.Equals("Seamline", StringComparison.OrdinalIgnoreCase)
+                || value.Equals("esriMosaicSeamline", StringComparison.OrdinalIgnoreCase) => "esriMosaicSeamline",
             _ => null
         };
         if (canonical is null)
         {
             error = $"SOAP MosaicMethod {requested ?? "<missing>"} is not supported.";
             return false;
+        }
+
+        if (canonical == "esriMosaicByAttribute")
+        {
+            var ascendingValue = NormalizeOptionalValue(FindDescendantValue(element, "Ascending"));
+            bool? ascending = null;
+            if (ascendingValue is not null)
+            {
+                // xsd:boolean lexical space is true, false, 1 and 0.
+                ascending = ascendingValue switch
+                {
+                    "1" => true,
+                    "0" => false,
+                    _ when bool.TryParse(ascendingValue, out var parsedAscending) => parsedAscending,
+                    _ => null
+                };
+                if (ascending is null)
+                {
+                    error = "SOAP ByAttribute mosaic Ascending must be an xsd:boolean (true, false, 1 or 0).";
+                    return false;
+                }
+            }
+
+            serialized = SerializeSoapMosaicRule(
+                canonical,
+                null,
+                NormalizeOptionalValue(FindDescendantValue(element, "SortField")),
+                NormalizeOptionalValue(FindDescendantValue(element, "SortValue")),
+                ascending);
+            return true;
         }
 
         if (canonical != "esriMosaicLockRaster")
@@ -880,13 +919,33 @@ internal static class ImageServerSoapEndpoints
         return true;
     }
 
-    private static string SerializeSoapMosaicRule(string mosaicMethod, long[]? lockRasterIds)
+    private static string SerializeSoapMosaicRule(
+        string mosaicMethod,
+        long[]? lockRasterIds,
+        string? sortField = null,
+        string? sortValue = null,
+        bool? ascending = null)
     {
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream))
         {
             writer.WriteStartObject();
             writer.WriteString("mosaicMethod", mosaicMethod);
+            if (sortField is not null)
+            {
+                writer.WriteString("sortField", sortField);
+            }
+
+            if (sortValue is not null)
+            {
+                writer.WriteString("sortValue", sortValue);
+            }
+
+            if (ascending is { } ascendingValue)
+            {
+                writer.WriteBoolean("ascending", ascendingValue);
+            }
+
             if (lockRasterIds is not null)
             {
                 writer.WritePropertyName("lockRasterIds");

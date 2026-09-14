@@ -517,7 +517,7 @@ internal sealed partial class JobExecutionService(
                     : result.ErrorMessage!;
 
                 await AbandonJobAsync(running, workerId, failureReason,
-                    CancellationToken.None, result.Warnings).ConfigureAwait(false);
+                    CancellationToken.None, result.Warnings, allowRetry: result.IsRetryable).ConfigureAwait(false);
             }
         }
         catch (Exception ex) when (licenseCancellation.IsCancellationRequested && ex is not OutOfMemoryException)
@@ -904,7 +904,8 @@ internal sealed partial class JobExecutionService(
         IReadOnlyList<string>? warnings = null,
         bool forceRequeue = false,
         TimeSpan? requeueDelayOverride = null,
-        bool restoreClaimAttempt = false)
+        bool restoreClaimAttempt = false,
+        bool allowRetry = true)
     {
         // Re-read to capture progress and artifact updates made during execution.
         var current = await jobStore.GetAsync(job.OperationId, cancellationToken).ConfigureAwait(false) ?? job;
@@ -967,7 +968,7 @@ internal sealed partial class JobExecutionService(
 
         var retryPolicy = current.RetryPolicy ?? JobRetryPolicy.Default;
 
-        if (forceRequeue || retryPolicy.ShouldRetry(current.AttemptCount))
+        if (allowRetry && (forceRequeue || retryPolicy.ShouldRetry(current.AttemptCount)))
         {
             Log.JobAbandoned(logger, current.OperationId, reason);
 
@@ -1084,7 +1085,7 @@ internal sealed partial class JobExecutionService(
                 // unexpected thrown exceptions. Never a raw exception string.
                 ErrorMessage = reason,
                 Warnings = warnings ?? latestBeforeFail.Warnings,
-                CurrentPhase = "Failed (abandoned)"
+                CurrentPhase = allowRetry ? "Failed (abandoned)" : "Failed"
             };
             if (!await jobStore.TrySetAsync(failed, cancellationToken: cancellationToken).ConfigureAwait(false))
             {

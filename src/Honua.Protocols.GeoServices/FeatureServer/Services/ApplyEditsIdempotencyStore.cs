@@ -2,7 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
-using System.Text;
 using System.Text.Json;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Microsoft.Extensions.Caching.Distributed;
@@ -101,48 +100,35 @@ internal readonly record struct ApplyEditsIdempotencyScope(
 /// <summary>
 /// Distributed (Redis-backed) at-most-once store for applyEdits with an in-process fallback when no
 /// <see cref="IDistributedCache"/> is configured, mirroring <see cref="DistributedReplicaStore"/>. The
-/// distributed path uses Redis SET NX for atomic reservation (BH5-001): concurrent requests carrying the
-/// same key race on the reserve; the loser returns 409. The in-process fallback uses
-/// <see cref="ConcurrentDictionary{TKey,TValue}.TryAdd"/> which is natively atomic within a process.
+/// reservation, recording, expiry and release mechanics live in <see cref="IdempotencyPayloadStore"/>,
+/// which the synchronizeReplica upload store shares (#4026); this type owns the applyEdits key shape and
+/// response serialization.
 /// </summary>
 internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempotencyStore
 {
     private const string KeyPrefix = "featureserver:applyedits:idem:";
-    private const int MaxFallbackEntries = 10_000;
-
-    /// <summary>
-    /// Leading byte of a pending-reservation payload. The rest of the payload is the reservation's
-    /// unique ownership token (#3052), so two owners of the same key are always distinguishable. The
-    /// 0xFF prefix is not valid UTF-8 JSON, so <see cref="Deserialize"/> returns
-    /// <see langword="null"/> if a pending payload is ever read back as a response.
-    /// </summary>
-    private const byte PendingPrefix = 0xFF;
 
     /// <summary>
     /// Default dedupe window. A retry within this window of the original request replays the stored
     /// response; after it the key is forgotten and a re-submission is treated as a fresh edit.
     /// </summary>
-    internal static readonly TimeSpan DedupeWindow = TimeSpan.FromHours(24);
+    internal static readonly TimeSpan DedupeWindow = IdempotencyPayloadStore.DedupeWindow;
 
     /// <summary>
     /// Reservation window: how long a reservation is kept before it expires if the owning
-    /// request never completes. Generous to accommodate slow edits; the in-flight request
-    /// replaces the reservation with the real response via <see cref="SetAsync"/>.
+    /// request never completes.
     /// </summary>
-    internal static readonly TimeSpan ReservationWindow = TimeSpan.FromSeconds(60);
+    internal static readonly TimeSpan ReservationWindow = IdempotencyPayloadStore.ReservationWindow;
 
-    private readonly IDatabase? _redisDatabase;
-    private readonly IDistributedCache? _cache;
+    private readonly IdempotencyPayloadStore _payloads;
     private readonly ILogger<DistributedApplyEditsIdempotencyStore> _logger;
-    private readonly ConcurrentDictionary<string, FallbackEntry> _fallback = new(StringComparer.Ordinal);
 
     public DistributedApplyEditsIdempotencyStore(
         IConnectionMultiplexer? multiplexer,
         IDistributedCache? cache,
         ILogger<DistributedApplyEditsIdempotencyStore> logger)
     {
-        _redisDatabase = multiplexer?.GetDatabase();
-        _cache = cache;
+        _payloads = new IdempotencyPayloadStore(multiplexer, cache);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -158,244 +144,30 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
         ApplyEditsIdempotencyScope scope,
         CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        var key = BuildKey(scope);
-        var now = DateTimeOffset.UtcNow;
-
-        if (_redisDatabase != null)
-        {
-            try
-            {
-                var payload = await _redisDatabase.StringGetAsync(key).ConfigureAwait(false);
-                if (!payload.HasValue) return null;
-                var bytes = (byte[])payload!;
-                if (IsPendingReservation(bytes)) return null; // another request is in-flight
-                return Deserialize(bytes);
-            }
-            // Intentionally generic: Redis can throw a wide range of transport/timeout/auth
-            // exceptions here; best-effort — a lookup failure simply means the retry is
-            // re-applied rather than deduped.
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.LayerId, ex);
-                return null;
-            }
-        }
-
-        if (_cache == null)
-        {
-            if (_fallback.TryGetValue(key, out var entry) && entry.ExpiresAt > now)
-            {
-                if (IsPendingReservation(entry.Payload))
-                    return null; // a reservation is held - another request is in-flight
-                return Deserialize(entry.Payload);
-            }
-
-            return null;
-        }
-
-        try
-        {
-            var payload = await _cache.GetAsync(key, cancellationToken).ConfigureAwait(false);
-            if (payload is null) return null;
-            if (IsPendingReservation(payload)) return null; // another request is in-flight
-            return Deserialize(payload);
-        }
-        // Intentionally generic: the configured IDistributedCache implementation can throw a
-        // wide range of provider-specific exceptions; best-effort — a lookup failure simply
-        // means the retry is re-applied rather than deduped.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.LayerId, ex);
-            return null;
-        }
+        var payload = await _payloads.TryGetAsync(BuildKey(scope), ex => LogUnavailable(scope, ex), cancellationToken)
+            .ConfigureAwait(false);
+        return payload is null ? null : Deserialize(payload);
     }
 
-    public async Task<string?> TryReserveAsync(
+    public Task<string?> TryReserveAsync(
         ApplyEditsIdempotencyScope scope,
         CancellationToken cancellationToken = default)
-    {
-        cancellationToken.ThrowIfCancellationRequested();
-        var key = BuildKey(scope);
-        var now = DateTimeOffset.UtcNow;
+        => _payloads.TryReserveAsync(BuildKey(scope), ex => LogUnavailable(scope, ex), cancellationToken);
 
-        // Unique per reservation (#3052). Storing a shared sentinel made two owners of the same
-        // key indistinguishable, so a request whose reservation had already lapsed could delete a
-        // retry's live reservation and let a third request execute alongside it.
-        var token = Guid.NewGuid().ToString("N");
-        var payload = BuildReservationPayload(token);
-
-        if (_redisDatabase != null)
-        {
-            try
-            {
-                // Redis SET NX: atomic set-if-absent. Returns true when the key did not exist
-                // (reservation won), false when another request already holds the key.
-                var won = await _redisDatabase.StringSetAsync(
-                    key,
-                    payload,
-                    ReservationWindow,
-                    when: When.NotExists).ConfigureAwait(false);
-                return won ? token : null;
-            }
-            // Intentionally generic: Redis can throw a wide range of transport/timeout/auth
-            // exceptions here; fail-open rather than blocking the edit request.
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.LayerId, ex);
-                // Fail-open: let the request proceed; worst case is a duplicate on Redis failure.
-                // The token is still returned so the caller's release path is uniform — releasing a
-                // key that was never written is a no-op.
-                return token;
-            }
-        }
-
-        // In-process fallback: ConcurrentDictionary.TryAdd is atomic — only one concurrent
-        // caller wins; the loser gets null and should return 409.
-        // This covers both the no-cache path (_cache == null) and the non-Redis
-        // IDistributedCache path: a MemoryDistributedCache / SQL-session-store / Memcached
-        // cache has no set-if-absent primitive, so treating it the same as no-cache
-        // gives us a single process-level mutex via ConcurrentDictionary. (BH7-002)
-        return _fallback.TryAdd(key, new FallbackEntry(payload, now.Add(ReservationWindow)))
-            ? token
-            : null;
-    }
-
-    public async Task SetAsync(
+    public Task SetAsync(
         ApplyEditsIdempotencyScope scope,
         ApplyEditsResponse response,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(response);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        var key = BuildKey(scope);
-        var payload = Serialize(response);
-        var now = DateTimeOffset.UtcNow;
-
-        if (_redisDatabase != null)
-        {
-            try
-            {
-                await _redisDatabase.StringSetAsync(key, payload, DedupeWindow).ConfigureAwait(false);
-            }
-            // Intentionally generic: Redis can throw a wide range of transport/timeout/auth
-            // exceptions here; best-effort — failing to record the response must not fail an
-            // already-applied edit.
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.LayerId, ex);
-            }
-            return;
-        }
-
-        if (_cache == null)
-        {
-            // Assignment replaces any existing entry including a held reservation.
-            _fallback[key] = new FallbackEntry(payload, now.Add(DedupeWindow));
-            CleanupFallback(now);
-            return;
-        }
-
-        try
-        {
-            await _cache.SetAsync(key, payload, new DistributedCacheEntryOptions
-            {
-                AbsoluteExpirationRelativeToNow = DedupeWindow
-            }, cancellationToken).ConfigureAwait(false);
-        }
-        // Intentionally generic: the configured IDistributedCache implementation can throw a
-        // wide range of provider-specific exceptions; best-effort — failing to record the
-        // response must not fail an already-applied edit.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.LayerId, ex);
-        }
-
-        // TryReserveAsync uses _fallback for the non-Redis IDistributedCache path (BH7-002).
-        // Replace the held reservation with the committed response so it does not
-        // linger for the full ReservationWindow, and trigger CleanupFallback to bound growth.
-        _fallback[key] = new FallbackEntry(payload, now.Add(DedupeWindow));
-        CleanupFallback(now);
+        return _payloads.SetAsync(BuildKey(scope), Serialize(response), ex => LogUnavailable(scope, ex), cancellationToken);
     }
 
-    public async Task ReleaseAsync(ApplyEditsIdempotencyScope scope, string reservationToken)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(reservationToken);
+    public Task ReleaseAsync(ApplyEditsIdempotencyScope scope, string reservationToken)
+        => _payloads.ReleaseAsync(BuildKey(scope), reservationToken, ex => LogUnavailable(scope, ex));
 
-        var key = BuildKey(scope);
-        var ownedPayload = BuildReservationPayload(reservationToken);
-
-        if (_redisDatabase != null)
-        {
-            try
-            {
-                // Atomic compare-and-delete: only remove the key while it still holds THIS
-                // reservation's token. Two other states must survive — a recorded response, and a
-                // reservation belonging to a different request because this one's window lapsed and
-                // a retry re-reserved the key. Deleting either would re-open the duplicate-edit
-                // window the reservation exists to close.
-                await _redisDatabase.ScriptEvaluateAsync(
-                    ReleaseIfOwnedScript,
-                    [key],
-                    [ownedPayload]).ConfigureAwait(false);
-            }
-            // Intentionally generic: Redis can throw a wide range of transport/timeout/auth
-            // exceptions here; best-effort — a failed release only means the reservation lingers
-            // until it expires, which is the pre-fix behavior, and must never mask the original
-            // failure that triggered the release.
-            catch (Exception ex) when (ex is not OutOfMemoryException)
-            {
-                FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.LayerId, ex);
-            }
-
-            return;
-        }
-
-        // Non-Redis paths: TryReserveAsync always writes the reservation to the in-process fallback
-        // dictionary (BH7-002), never to IDistributedCache, so the reservation is released from the
-        // fallback only. Recorded responses (which SetAsync writes to both the cache and the
-        // fallback) are left in place by the token check.
-        //
-        // The KeyValuePair overload of TryRemove is the in-process equivalent of the Redis script
-        // above: it removes the entry only while it is still exactly the one just read, so a
-        // SetAsync or a fresh reservation landing between the read and the remove cannot be
-        // deleted by this release.
-        if (_fallback.TryGetValue(key, out var entry) && entry.Payload.AsSpan().SequenceEqual(ownedPayload))
-        {
-            _fallback.TryRemove(new KeyValuePair<string, FallbackEntry>(key, entry));
-        }
-    }
-
-    /// <summary>
-    /// Compare-and-delete: removes the reservation key only while it still holds the exact
-    /// reservation payload supplied as <c>ARGV[1]</c>, leaving a recorded response — or a
-    /// reservation owned by a different request — untouched. Runs server-side so the read and the
-    /// delete cannot interleave with another request.
-    /// </summary>
-    private const string ReleaseIfOwnedScript =
-        "if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0";
-
-    /// <summary>
-    /// Builds the stored value for a reservation: the pending prefix followed by the owner's
-    /// unique token, so a release can prove it owns what it is deleting (#3052).
-    /// </summary>
-    private static byte[] BuildReservationPayload(string reservationToken)
-    {
-        var tokenBytes = Encoding.UTF8.GetBytes(reservationToken);
-        var payload = new byte[tokenBytes.Length + 1];
-        payload[0] = PendingPrefix;
-        tokenBytes.CopyTo(payload, 1);
-        return payload;
-    }
-
-    /// <summary>
-    /// True when the stored value is a reservation rather than a recorded response. Matches a bare
-    /// prefix byte as well as a prefix+token payload so a node running the pre-token build during a
-    /// rolling upgrade is still recognised as holding the key.
-    /// </summary>
-    private static bool IsPendingReservation(byte[] payload)
-        => payload.Length >= 1 && payload[0] == PendingPrefix;
+    private void LogUnavailable(ApplyEditsIdempotencyScope scope, Exception exception)
+        => FeatureServerLog.ApplyEditsIdempotencyStoreUnavailable(_logger, scope.ServiceId, scope.LayerId, exception);
 
     private static string BuildKey(ApplyEditsIdempotencyScope scope)
     {
@@ -430,27 +202,6 @@ internal sealed class DistributedApplyEditsIdempotencyStore : IApplyEditsIdempot
             return null;
         }
     }
-
-    private void CleanupFallback(DateTimeOffset now)
-    {
-        foreach (var pair in _fallback.Where(p => p.Value.ExpiresAt <= now))
-        {
-            _fallback.TryRemove(pair.Key, out _);
-        }
-
-        if (_fallback.Count <= MaxFallbackEntries)
-        {
-            return;
-        }
-
-        // Bound memory growth on the no-cache path by evicting the soonest-to-expire entries.
-        foreach (var pair in _fallback.OrderBy(static p => p.Value.ExpiresAt).Take(_fallback.Count - MaxFallbackEntries))
-        {
-            _fallback.TryRemove(pair.Key, out _);
-        }
-    }
-
-    private readonly record struct FallbackEntry(byte[] Payload, DateTimeOffset ExpiresAt);
 }
 
 /// <summary>
@@ -484,23 +235,36 @@ internal static class ApplyEditsIdempotency
             return true;
         }
 
-        var raw = values.Count > 0 ? values[0] : null;
+        return TryValidateKey(values.Count > 0 ? values[0] : null, $"{HeaderName} header", out key, out error);
+    }
+
+    /// <summary>
+    /// Validates a client-supplied at-most-once key from any carrier (the header, or the Esri
+    /// <c>editsUploadID</c> parameter of synchronizeReplica, #4026) with the same rules: not empty, at
+    /// most <see cref="MaxKeyLength"/> characters, no control characters. <paramref name="label"/> names
+    /// the carrier in the error message.
+    /// </summary>
+    public static bool TryValidateKey(string? raw, string label, out string? key, out string? error)
+    {
+        key = null;
+        error = null;
+
         if (string.IsNullOrWhiteSpace(raw))
         {
-            error = $"{HeaderName} header must not be empty.";
+            error = $"{label} must not be empty.";
             return false;
         }
 
         var trimmed = raw.Trim();
         if (trimmed.Length > MaxKeyLength)
         {
-            error = $"{HeaderName} header must be at most {MaxKeyLength} characters.";
+            error = $"{label} must be at most {MaxKeyLength} characters.";
             return false;
         }
 
         if (trimmed.Any(char.IsControl))
         {
-            error = $"{HeaderName} header must not contain control characters.";
+            error = $"{label} must not contain control characters.";
             return false;
         }
 

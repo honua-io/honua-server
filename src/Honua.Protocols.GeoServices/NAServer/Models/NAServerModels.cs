@@ -322,15 +322,24 @@ internal sealed class NAServerRouteAttributes
 }
 
 /// <summary>
-/// Direction result wrapper.
+/// Direction result wrapper: one entry per solved route. Esri clients pair a direction set
+/// with its route by <see cref="RouteName"/> (the ArcGIS Maps SDK for JavaScript keys route
+/// results on the route feature's <c>Name</c> attribute), so an entry without a route name
+/// surfaces as a second, route-less result (#4035).
 /// </summary>
 internal sealed class NAServerDirection
 {
+    /// <summary>1-based identifier of the route these directions describe.</summary>
+    public int RouteId { get; init; }
+
+    /// <summary>Name of the route these directions describe; equals the route feature's <c>Name</c>.</summary>
+    public string RouteName { get; init; } = string.Empty;
+
+    /// <summary>Route totals and extent.</summary>
+    public NAServerDirectionSummary? Summary { get; init; }
+
     /// <summary>Direction features.</summary>
     public NAServerDirectionFeature[]? Features { get; init; }
-
-    /// <summary>Direction summary.</summary>
-    public NAServerDirectionSummary? Summary { get; init; }
 }
 
 /// <summary>
@@ -361,18 +370,43 @@ internal sealed class NAServerDirectionAttributes
 }
 
 /// <summary>
-/// Closest-facility direction summary.
+/// Direction-set summary, read by Esri clients as the directions' total length, total time,
+/// total drive time and extent.
 /// </summary>
 internal sealed class NAServerDirectionSummary
 {
-    /// <summary>Route name.</summary>
-    public string RouteName { get; init; } = string.Empty;
-
-    /// <summary>Total length.</summary>
+    /// <summary>Total route length in meters (the same unit as the direction features' <c>length</c>).</summary>
     public double TotalLength { get; init; }
 
-    /// <summary>Total travel time.</summary>
+    /// <summary>Total travel time in minutes.</summary>
     public double TotalTime { get; init; }
+
+    /// <summary>Total drive time in minutes.</summary>
+    public double TotalDriveTime { get; init; }
+
+    /// <summary>Extent of the route geometry; omitted when the route has no geometry.</summary>
+    public NAServerEnvelope? Envelope { get; init; }
+}
+
+/// <summary>
+/// Esri JSON envelope.
+/// </summary>
+internal sealed class NAServerEnvelope
+{
+    /// <summary>Minimum x.</summary>
+    public double Xmin { get; init; }
+
+    /// <summary>Minimum y.</summary>
+    public double Ymin { get; init; }
+
+    /// <summary>Maximum x.</summary>
+    public double Xmax { get; init; }
+
+    /// <summary>Maximum y.</summary>
+    public double Ymax { get; init; }
+
+    /// <summary>Spatial reference of the envelope.</summary>
+    public NAServerSpatialReference? SpatialReference { get; init; }
 }
 
 /// <summary>

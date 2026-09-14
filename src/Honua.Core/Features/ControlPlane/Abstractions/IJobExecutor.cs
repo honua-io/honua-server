@@ -78,6 +78,12 @@ public sealed record JobExecutionResult
     public string? ErrorMessage { get; init; }
 
     /// <summary>
+    /// Whether a failed execution may consume the remaining retry budget.
+    /// Deterministic capability or input failures set this to false.
+    /// </summary>
+    public bool IsRetryable { get; init; } = true;
+
+    /// <summary>
     /// Warnings collected during execution.
     /// </summary>
     public IReadOnlyList<string> Warnings { get; init; } = [];
