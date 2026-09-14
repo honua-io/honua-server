@@ -55,7 +55,7 @@ public sealed class LayerPublicationBudgetTests(PostgresFixture fixture)
                 connection, transaction);
             var execute = () => CreateService(1).ExecuteSnapshotCommandAsync(command, CancellationToken.None);
             await execute.Should().ThrowAsync<Exception>()
-                .Where(exception => exception is TimeoutException or NpgsqlException);
+                .Where(exception => exception is TimeoutException || exception is NpgsqlException);
             await transaction.RollbackAsync();
         }
 
