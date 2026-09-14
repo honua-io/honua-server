@@ -878,6 +878,7 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
     [InlineData("geometry.project", "wkb", """{"x":-118.15,"y":33.8,"spatialReference":{"wkid":4326}}""", "fromSrid", "4326", "toSrid", "3857")]
     [InlineData("conversion.geometry-format", "geometry", """{"x":-118.15,"y":33.8,"spatialReference":{"wkid":4326}}""", "target", "wkt", null, null)]
     [InlineData("raster.clip", "boundary", """{"rings":[[[0,0],[0,10],[10,10],[10,0],[0,0]]],"spatialReference":{"wkid":4326}}""", "source", InlineRasterSourceBase64, null, null)]
+    [InlineData("raster.clip", "boundary", """{"geometryType":"esriGeometryPolygon","spatialReference":{"wkid":4326},"features":[{"attributes":{},"geometry":{"rings":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}}]}""", "source", InlineRasterSourceBase64, null, null)]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
     public async Task SubmitJob_EsriGeometryInputForTaskWithoutSridParameter_IsAdmittedWithoutAnInjectedSrid(
