@@ -138,6 +138,13 @@ public interface IRasterStore
     /// Identifies pixel values against a composited layer mosaic. When <paramref name="rendering"/>
     /// is supplied, the returned value reflects the rendered pixel instead of the raw source value.
     /// </summary>
+    /// <param name="layerId">Layer identifier containing the rasters.</param>
+    /// <param name="rasterIds">Raster identifiers to composite.</param>
+    /// <param name="mergeStrategy">Pixel-resolution operation applied to overlapping pixels.</param>
+    /// <param name="x">X coordinate of the query point.</param>
+    /// <param name="y">Y coordinate of the query point.</param>
+    /// <param name="srid">Spatial reference system of the coordinates (WGS84 when null).</param>
+    /// <param name="rendering">Optional rendering rule applied to the merged pixel.</param>
     /// <param name="ordering">
     /// Ordering that resolves a contested pixel, with the same semantics as
     /// <see cref="ExportMosaicAsync"/>, so identify samples the pixel exportImage would render for
@@ -147,6 +154,7 @@ public interface IRasterStore
     /// Optional non-date attribute ordering, used only when <paramref name="ordering"/> is
     /// <see cref="RasterMosaicOrdering.Attribute"/>.
     /// </param>
+    /// <param name="cancellationToken">Cancellation token.</param>
     Task<PixelValueResult> IdentifyMosaicAsync(
         int layerId,
         long[] rasterIds,
