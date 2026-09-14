@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Infrastructure.Validation;
+using Microsoft.Extensions.Primitives;
 
 namespace Honua.Protocols.GeoServices;
 
@@ -15,7 +16,33 @@ internal sealed class GeoServicesQueryGeometryMetadata : GeometryParameterMetada
 
     public override string ParameterName => "geometry";
 
-    public override string? Validate(string value, int maxVertices)
+    public override async Task<(IReadOnlyDictionary<string, StringValues>? Values, string? Error)> ReadBodyParametersAsync(
+        HttpRequest request, CancellationToken cancellationToken)
+    {
+        if (!HttpMethods.IsPost(request.Method) ||
+            !GeoServicesRequestValueHelpers.TryValidateRequestContentType(request, out _))
+        {
+            // Preserve the handler's existing unsupported-content-type response.
+            return (null, null);
+        }
+
+        request.EnableBuffering();
+        var position = request.Body.Position;
+        try
+        {
+            return await GeoServicesRequestValueHelpers.TryReadRequestValuesAsync(request, cancellationToken);
+        }
+        catch (InvalidDataException)
+        {
+            return (null, "Invalid query form payload.");
+        }
+        finally
+        {
+            request.Body.Position = position;
+        }
+    }
+
+    public override string? Validate(string value, int maxVertices, CancellationToken cancellationToken = default)
     {
         if (!GeoServicesGeometryParser.TryParseGeoServicesGeometry(value, null, out var geometry, out var error))
         {
@@ -25,6 +52,18 @@ internal sealed class GeoServicesQueryGeometryMetadata : GeometryParameterMetada
         if (geometry == null)
         {
             return null;
+        }
+
+        if (GeoServicesGeometryConverter.HasTrueCurves(geometry))
+        {
+            try
+            {
+                geometry = GeoServicesGeometryConverter.DensifyCurves(geometry, maxVertices, cancellationToken);
+            }
+            catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or FormatException or OverflowException)
+            {
+                return $"{exception.Message} (Limits:Geometry:MaxVerticesPerGeometry: {maxVertices}).";
+            }
         }
 
         var vertexCount = 0;

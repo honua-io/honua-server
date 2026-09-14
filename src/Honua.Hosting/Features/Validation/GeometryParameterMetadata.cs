@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Microsoft.Extensions.Primitives;
+
 namespace Honua.Infrastructure.Validation;
 
 /// <summary>
@@ -16,5 +18,12 @@ internal abstract class GeometryParameterMetadata
     /// Returns a validation error, or null for a bounded geometry accepted by
     /// the protocol parser. Called only after the geometry byte limit passes.
     /// </summary>
-    public abstract string? Validate(string value, int maxVertices);
+    public abstract string? Validate(string value, int maxVertices, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Reads supported query body encodings with the protocol's own parameter
+    /// conversion rules, preserving the body for the downstream handler.
+    /// </summary>
+    public abstract Task<(IReadOnlyDictionary<string, StringValues>? Values, string? Error)> ReadBodyParametersAsync(
+        HttpRequest request, CancellationToken cancellationToken);
 }

@@ -26,15 +26,23 @@ internal static partial class GeoServicesGeometryConverter
     /// Thrown when a segment object uses an unsupported key or is malformed.
     /// </exception>
     public static GeoServicesGeometry DensifyCurves(GeoServicesGeometry geometry)
+        => DensifyCurves(geometry, int.MaxValue);
+
+    /// <summary>Densifies true curves with one output budget shared by every part.</summary>
+    public static GeoServicesGeometry DensifyCurves(GeoServicesGeometry geometry, int maxVertices, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(geometry);
+        ArgumentOutOfRangeException.ThrowIfNegative(maxVertices);
+        cancellationToken.ThrowIfCancellationRequested();
+        var remaining = maxVertices;
 
         if (geometry.CurvePaths is { Length: > 0 } curvePaths)
         {
             var paths = new double[curvePaths.Length][][];
             for (var i = 0; i < curvePaths.Length; i++)
             {
-                paths[i] = CurveGeometryConverter.Densify(curvePaths[i]);
+                paths[i] = CurveGeometryConverter.Densify(curvePaths[i], remaining, cancellationToken);
+                remaining -= paths[i].Length;
             }
 
             return CloneWithLinear(geometry, paths: paths, rings: null);
@@ -45,7 +53,8 @@ internal static partial class GeoServicesGeometryConverter
             var rings = new double[curveRings.Length][][];
             for (var i = 0; i < curveRings.Length; i++)
             {
-                rings[i] = CurveGeometryConverter.Densify(curveRings[i]);
+                rings[i] = CurveGeometryConverter.Densify(curveRings[i], remaining, cancellationToken);
+                remaining -= rings[i].Length;
             }
 
             return CloneWithLinear(geometry, paths: null, rings: rings);

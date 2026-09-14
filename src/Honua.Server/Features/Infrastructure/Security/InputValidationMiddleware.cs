@@ -128,6 +128,28 @@ internal sealed class InputValidationMiddleware
 
         // Validate request inputs
         var validationResult = ValidateRequest(context.Request);
+        var geometryMetadata = context.GetEndpoint()?.Metadata.GetMetadata<GeometryParameterMetadata>();
+        if (validationResult.IsValid && geometryMetadata != null)
+        {
+            var body = await geometryMetadata.ReadBodyParametersAsync(context.Request, context.RequestAborted);
+            if (body.Error != null)
+            {
+                validationResult = InputValidationResult.Invalid(body.Error, isSuspicious: false);
+            }
+            else if (body.Values != null)
+            {
+                foreach (var parameter in body.Values)
+                {
+                    // The protocol parser uses the same conversions for JSON and form
+                    // values. Apply the existing form-parameter security semantics to both.
+                    validationResult = ValidateParameter(context.Request, "form", parameter.Key, parameter.Value);
+                    if (!validationResult.IsValid)
+                    {
+                        break;
+                    }
+                }
+            }
+        }
         if (!validationResult.IsValid)
         {
             if (validationResult.IsSuspicious)
@@ -171,7 +193,8 @@ internal sealed class InputValidationMiddleware
         }
 
         // Validate form data if applicable
-        if (request.HasFormContentType && !IsMultipartFormData(request.ContentType) && request.Form != null)
+        if (request.HasFormContentType && !IsMultipartFormData(request.ContentType) && request.Form != null &&
+            !(HttpMethods.IsPost(request.Method) && request.HttpContext.GetEndpoint()?.Metadata.GetMetadata<GeometryParameterMetadata>() != null))
         {
             // Not a pure filter: returns the first invalid ValidateParameter result immediately
             // (short-circuiting the remaining parameters), so this doesn't reduce to '.Where(...)'.
@@ -267,7 +290,7 @@ internal sealed class InputValidationMiddleware
                         isSuspicious: false);
                 }
                 request.HttpContext.RequestAborted.ThrowIfCancellationRequested();
-                var geometryError = geometryMetadata.Validate(value, _geometryLimits.MaxVerticesPerGeometry);
+                var geometryError = geometryMetadata.Validate(value, _geometryLimits.MaxVerticesPerGeometry, request.HttpContext.RequestAborted);
                 if (geometryError != null)
                 {
                     return InputValidationResult.Invalid(geometryError, isSuspicious: false);

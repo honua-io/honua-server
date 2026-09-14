@@ -53,6 +53,13 @@ across all parts are bounded by `Limits:Geometry:MaxVerticesPerGeometry`.
 The existing GeoServices geometry parser also validates shape and JSON depth;
 positions must contain finite ordinates. These limits do not simplify geometry.
 
+For POST, the same parameter validation applies to URL-encoded forms, multipart
+forms and supported JSON media types, using the query handler's body conversion
+rules. The body remains available to that handler after validation. Supported
+true-curve filters retain their original definition in the request; validation
+uses the existing densifier with an output-vertex budget shared across all parts.
+Expansion stops at that budget rather than allocating an oversized result first.
+
 Other text parameters and headers retain their existing limits and injection
 validation. A parameter named `geometry` on an unrelated route does not receive
 the spatial allowance. Clients should use the SDK's POST query transport for
