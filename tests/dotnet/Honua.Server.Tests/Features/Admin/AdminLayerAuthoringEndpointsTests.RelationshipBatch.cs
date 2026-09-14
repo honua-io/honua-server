@@ -27,7 +27,7 @@ public sealed partial class AdminLayerAuthoringEndpointsTests
         using var client = _fixture.CreateAdminClient();
         var request = CompositeBatch();
         using var content = JsonContent.Create(request, LayerAuthoringJsonContext.Default.LayerRelationshipBatchUpdateRequest);
-        using var response = await client.PutAsync(RelationshipBatchPath, content);
+        using var response = await client.PutAsync("/api/v1/admin/metadata/layers/relationships/batch", content);
         response.Be200Ok();
         var payload = JsonSerializer.Deserialize(await response.Content.ReadAsStringAsync(),
             LayerAuthoringJsonContext.Default.ApiResponseLayerRelationshipBatchResponse);
