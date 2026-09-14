@@ -7,17 +7,20 @@ using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
 using FluentAssertions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.Shared.Models;
 using Honua.Db.Postgres.Features.Admin;
+using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Metadata;
 using Honua.Db.Postgres.Features.Migration;
 using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.ObjectPool;
 using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
@@ -239,6 +242,27 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
             var snapshot = await graphStore.GetCurrentAsync();
             var resource = snapshot.Graph.Resources.Single(r => r.Metadata.Name == "Subtype Layer");
             resource.SchemaFields.Single(f => f.Name == "dateofflight").Type.Should().Be(MetadataV2FieldType.Date);
+            var dictionaryPool = new DefaultObjectPoolProvider().Create(
+                new Honua.Core.Features.Infrastructure.ServiceRegistration.DictionaryPooledObjectPolicy());
+            var mappedReader = new PostgresStorageMappedFeatureReader(
+                new FixtureConnectionProvider(fixture), dictionaryPool, resource,
+                new FeatureStorageMapping(TableName: tableName, SchemaName: schemaName,
+                    PrimaryKeyColumn: "objectid", GeometryColumn: "geom", StorageSrid: 4326),
+                connection: null, connectionEncryptionService: null);
+            var calendar = await mappedReader.QueryStatisticsAsync(1, new FeatureQuery
+            {
+                GroupByFields = ["dateofflight"],
+                OutStatistics = [new StatisticDefinition
+                {
+                    StatisticType = StatisticType.Count,
+                    OnStatisticField = "objectid",
+                    OutStatisticFieldName = "record_count"
+                }]
+            });
+            calendar.Should().HaveCount(4);
+            calendar.Select(row => row["dateofflight"]).Should().BeEquivalentTo(
+                new object?[] { "2024-02-28", "2024-02-29", "2024-03-01", null });
+            calendar.Should().OnlyContain(row => Equals(row["record_count"], 1L));
         }
         finally
         {
