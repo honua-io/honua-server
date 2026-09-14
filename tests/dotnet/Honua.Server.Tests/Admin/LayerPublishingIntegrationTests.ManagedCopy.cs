@@ -85,6 +85,23 @@ public sealed partial class LayerPublishingIntegrationTests
         using var discovery = JsonDocument.Parse(await _client.GetStringAsync($"/api/v1/admin/connections/{_connectionId}/tables"));
         var table = discovery.RootElement.GetProperty("tables").EnumerateArray().Single(item =>
             item.GetProperty("schema").GetString() == _importedTableSchema && item.GetProperty("table").GetString() == _importedTableName);
+        // Service import has already published the retained table. Converting that
+        // read-only publication into an independent managed copy is the onboarding path.
+        var sourcePublication = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = _importedTableSchema!,
+            Table = _importedTableName!,
+            LayerName = $"Source {_serviceName}",
+            ServiceName = $"{_serviceName}-source",
+            GeometryColumn = table.GetProperty("geometryColumn").GetString(),
+            GeometryType = "Point",
+            Srid = 4326,
+            PrimaryKey = "id",
+            Fields = ["id", "properties"]
+        }, _connectionName);
+        var sourceQuery = $"/rest/services/{_serviceName}-source/FeatureServer/{sourcePublication.LayerId}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true";
+        using var sourceBefore = JsonDocument.Parse(await _client.GetStringAsync(sourceQuery));
+        var originalSourceFeatures = sourceBefore.RootElement.GetProperty("features").GetRawText();
         var published = await PublishLayerAsync(new PublishLayerRequest
         {
             Schema = _importedTableSchema!,
@@ -192,5 +209,7 @@ public sealed partial class LayerPublishingIntegrationTests
         using var finalQuery = JsonDocument.Parse(await _client.GetStringAsync($"{featureServer}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true"));
         finalQuery.RootElement.GetProperty("features").GetArrayLength().Should().Be(1);
         finalQuery.RootElement.GetProperty("features")[0].GetProperty("attributes").GetProperty("properties").GetProperty("name").GetString().Should().Be("Created");
+        using var sourceAfter = JsonDocument.Parse(await _client.GetStringAsync(sourceQuery));
+        sourceAfter.RootElement.GetProperty("features").GetRawText().Should().Be(originalSourceFeatures);
     }
 }
