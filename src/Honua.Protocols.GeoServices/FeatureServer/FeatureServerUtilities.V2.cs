@@ -162,7 +162,8 @@ internal static partial class FeatureServerEndpoints
             supportsDistinct,
             supportsPagination,
             supportsQueryAttachments,
-            supportsReturningGeometryCentroid);
+            supportsReturningGeometryCentroid,
+            hasGeometry: resource.Type != MetadataV2ResourceType.Table);
 
         var srid = resource.ReadSrid();
         var spatialReference = srid.HasValue
