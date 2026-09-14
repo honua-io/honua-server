@@ -113,3 +113,39 @@ are meaningless without naming the composition to render.
 
 **Leave it undocumented and fix callers as they break.** That is the status quo
 that produced this ADR, and it had already cost two unpublished releases.
+
+## Amendment (2026-09-13): a WCS path without a `services` segment
+
+WCS is also served at `/ogc/wcs/{serviceId}` (honua-server#4584).
+
+Over HTTPS, ArcGIS Pro 3.7.1 `MakeWCSLayer` cannot open
+`/ogc/services/{serviceId}/wcs`. Pro reads a URL shaped `{root}/services/{name}/…` as
+an ArcGIS Server site. In the 2026-09-08 proxy traces it probed `{root}/rest/info`,
+`{root}/services/{name}`, `{root}/rest/services/` and `{root}/services`. Those are not
+ArcGIS Server resources, so the tool fails with `ERROR 999999`.
+
+The honua-esri-compat route investigation (2026-09-08) held the server bytes
+fixed and varied only the request path. Every path with a `services` segment
+failed, including a fresh service name and a fresh root. `/ogc/wcs/{name}` and a
+two-segment control exported all 32 expected Float32 values at the exact extent.
+
+A replay against a server built with this route (2026-09-13) confirmed the split
+over trusted HTTPS: `/ogc/services/cite/wcs` failed with `ERROR 999999` twice,
+and `/ogc/wcs/cite` exported all 256 expected values three times, including after
+each failure. Over plain HTTP on loopback, both paths exported. Production is
+served over HTTPS, so the HTTPS behavior is the one that decides this.
+
+This is consistent with the decision above:
+
+- **It adds no scope.** The alias carries exactly the service scope WCS needs. It
+  does not add a segment the protocol does not need.
+- **It is a compatibility surface that copies.** Like the GeoServices aliases, it
+  exists because a real client requires it. It resolves through the same handler
+  and service lookup, so access policy, output caching (none) and telemetry
+  (`WCS 2.0.1`, same service tag) are identical by construction.
+- **It keeps one URL per client session.** GetCapabilities advertises the
+  operation URL a client actually requested. A client that starts on the alias
+  stays on it.
+
+This amendment does not extend to WMS, WMTS or WFS. Add a sibling alias only on
+a client receipt that shows the same failure.

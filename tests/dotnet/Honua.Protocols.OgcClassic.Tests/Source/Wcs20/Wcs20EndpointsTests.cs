@@ -3,6 +3,7 @@
 
 using System.Net;
 using System.Globalization;
+using System.Text;
 using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Core.Features.Raster.Abstractions;
@@ -722,6 +723,98 @@ public sealed class Wcs20EndpointsTests : IAsyncLifetime
         content.Should().Contain("exceptionCode=\"NoApplicableCode\"");
         content.Should().Contain("Service 'missing' was not found.");
         content.Should().NotContain("exceptionCode=\"NoSuchCoverage\"");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCapabilities")]
+    [Endpoint("GET /ogc/wcs/{serviceId}")]
+    public async Task Wcs_GetCapabilities_DesktopPath_AdvertisesOperationsWithoutServicesSegment()
+    {
+        // ArcGIS Pro treats any {root}/services/{name}/ URL as an ArcGIS Server site
+        // (#4584), so every operation URL a client follows must stay on this form.
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/wcs/{WebAppFixture.TestServiceId}?SERVICE=WCS&REQUEST=GetCapabilities&VERSION=2.0.1");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        var document = XDocument.Parse(content);
+        XNamespace ows = "http://www.opengis.net/ows/2.0";
+        XNamespace xlink = "http://www.w3.org/1999/xlink";
+        document.Descendants(ows + "Get").Select(get => get.Attribute(xlink + "href")!.Value)
+            .Should().HaveCount(3)
+            .And.OnlyContain(href => href == $"http://localhost/ogc/wcs/{WebAppFixture.TestServiceId}");
+        document.Descendants(XName.Get("CoverageId", "http://www.opengis.net/wcs/2.0"))
+            .Select(element => element.Value).Should().Equal("coverage_0");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs201, "DescribeCoverage")]
+    [Endpoint("GET /ogc/wcs/{serviceId}")]
+    public async Task Wcs_DescribeCoverage_DesktopPath_MatchesServiceRouteDescription()
+    {
+        var query = "?SERVICE=WCS&REQUEST=DescribeCoverage&VERSION=2.0.1&COVERAGEID=coverage_0";
+        var desktop = await _fixture.Client.GetAsync($"/ogc/wcs/{WebAppFixture.TestServiceId}{query}");
+        var canonical = await _fixture.Client.GetAsync($"/ogc/services/{WebAppFixture.TestServiceId}/wcs{query}");
+
+        var content = await desktop.Content.ReadAsStringAsync();
+        desktop.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        canonical.StatusCode.Should().Be(HttpStatusCode.OK);
+        content.Should().Be(await canonical.Content.ReadAsStringAsync());
+
+        // 64x64 grid anchored at (-122.5, 37.84) with a (0.00234375, -0.0021875) cell:
+        // the first pixel center is half a cell in from that corner on each axis.
+        XNamespace gml = "http://www.opengis.net/gml/3.2";
+        var position = XDocument.Parse(content).Descendants(gml + "pos").Single().Value.Split(' ')
+            .Select(value => double.Parse(value, CultureInfo.InvariantCulture)).ToArray();
+        position[0].Should().BeApproximately(-122.5 + (0.00234375 / 2), 1e-10);
+        position[1].Should().BeApproximately(37.84 - (0.0021875 / 2), 1e-10);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /ogc/wcs/{serviceId}")]
+    public async Task Wcs_GetCoverage_DesktopPath_ExportsTheServiceRouteCoverage()
+    {
+        var query = "?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=coverage_0&FORMAT=image/tiff" +
+            "&SUBSET=Long(-122.4,-122.3)&SUBSET=Lat(37.7,37.8)";
+        var desktop = await _fixture.Client.GetAsync($"/ogc/wcs/{WebAppFixture.TestServiceId}{query}");
+        var canonical = await _fixture.Client.GetAsync($"/ogc/services/{WebAppFixture.TestServiceId}/wcs{query}");
+
+        var bytes = await desktop.Content.ReadAsByteArrayAsync();
+        desktop.StatusCode.Should().Be(HttpStatusCode.OK, Encoding.UTF8.GetString(bytes));
+        canonical.StatusCode.Should().Be(HttpStatusCode.OK);
+        bytes.Should().Equal(await canonical.Content.ReadAsByteArrayAsync());
+
+        _exportQueries.Should().HaveCount(2);
+        foreach (var exportQuery in _exportQueries)
+        {
+            exportQuery.OutputFormat.Should().Be(RasterFormat.TIFF);
+            var clip = new WKBReader().Read(exportQuery.ClipRegion!.Value.Geometry).EnvelopeInternal;
+            clip.MinX.Should().BeApproximately(-122.4, 1e-9);
+            clip.MaxX.Should().BeApproximately(-122.3, 1e-9);
+            clip.MinY.Should().BeApproximately(37.7, 1e-9);
+            clip.MaxY.Should().BeApproximately(37.8, 1e-9);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [InterfaceOperation(TestProtocols.Wcs201, "DescribeCoverage")]
+    [Endpoint("GET /ogc/wcs/{serviceId}")]
+    public async Task Wcs_DescribeCoverage_DesktopPathUnknownService_ReturnsServiceNotFoundException()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/ogc/wcs/missing?SERVICE=WCS&REQUEST=DescribeCoverage&VERSION=2.0.1&COVERAGEID=0");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        content.Should().Contain("<ows:ExceptionReport");
+        content.Should().Contain("exceptionCode=\"NoApplicableCode\"");
+        content.Should().Contain("Service 'missing' was not found.");
     }
 
     [IntegrationTest]

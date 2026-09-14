@@ -49,6 +49,26 @@ internal static class Wcs20Endpoints
             .Produces(StatusCodes.Status501NotImplemented, contentType: Wcs20Utilities.XmlContentType)
             .CacheOutput(policy => policy.NoCache());
 
+        // Same service scope without a "services" segment. ArcGIS Pro reads
+        // {root}/services/{name}/... as an ArcGIS Server site and fails MakeWCSLayer
+        // on its discovery probes (#4584, ADR-0079 amendment).
+        endpoints.MapGet("/ogc/wcs/{serviceId}",
+                static (HttpContext context, string serviceId, Wcs20Handler handler) =>
+                    handler.HandleAsync(context, Wcs20RouteScope.ForService(serviceId)))
+            .WithDisplayName("WCS 2.0.1 Service (desktop path)")
+            .WithName("OgcServiceWcs20DesktopPath")
+            .WithSummary("OGC Web Coverage Service 2.0.1")
+            .WithDescription("Service-scoped WCS 2.0.1 endpoint without a services path segment, for ArcGIS Pro WCS connections")
+            .WithTags("WCS", "OGC")
+            .Produces(StatusCodes.Status200OK, contentType: Wcs20Utilities.XmlContentType)
+            .Produces(StatusCodes.Status200OK, contentType: Wcs20Utilities.TiffContentType)
+            .Produces(StatusCodes.Status200OK, contentType: Wcs20Utilities.PngContentType)
+            .Produces(StatusCodes.Status200OK, contentType: Wcs20Utilities.JpegContentType)
+            .Produces(StatusCodes.Status400BadRequest, contentType: Wcs20Utilities.XmlContentType)
+            .Produces(StatusCodes.Status404NotFound, contentType: Wcs20Utilities.XmlContentType)
+            .Produces(StatusCodes.Status501NotImplemented, contentType: Wcs20Utilities.XmlContentType)
+            .CacheOutput(policy => policy.NoCache());
+
         return endpoints;
     }
 }

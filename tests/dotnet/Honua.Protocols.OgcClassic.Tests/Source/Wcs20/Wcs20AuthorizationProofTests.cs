@@ -60,6 +60,34 @@ public sealed class Wcs20AuthorizationProofTests : OgcClassicAuthorizationProofT
         await AssertImageAsync(allowed);
     }
 
+    [IntegrationTest]
+    [Protocol(TestProtocols.Wcs201)]
+    [Operation(Operations.SecurityTesting)]
+    [Endpoint("GET /ogc/wcs/{serviceId}")]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    public async Task Wcs_GetCoverage_DesktopPathWithoutReadRole_IsRefusedLikeTheServiceRoute()
+    {
+        // The desktop path (#4584) must enforce the service policy exactly as the
+        // canonical service route does: same refusal, no coverage bytes, and the
+        // same coverage for a principal that holds the read role.
+        const string query =
+            "?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=0&FORMAT=image/png" +
+            "&SUBSET=Long(-122.45,-122.40)&SUBSET=Lat(37.75,37.80)";
+        var desktopUrl = $"/ogc/wcs/{WebAppFixture.TestServiceId}{query}";
+        var canonicalUrl = $"/ogc/services/{WebAppFixture.TestServiceId}/wcs{query}";
+
+        using var canonicalDenied = await Outsider().GetAsync(canonicalUrl);
+        using var denied = await Outsider().GetAsync(desktopUrl);
+        var body = await AssertRefusedWithoutPayloadAsync(denied, HttpStatusCode.Forbidden);
+        body.Should().Contain("ExceptionReport");
+        denied.StatusCode.Should().Be(canonicalDenied.StatusCode);
+
+        using var canonicalAllowed = await Viewer().GetAsync(canonicalUrl);
+        using var allowed = await Viewer().GetAsync(desktopUrl);
+        var image = await AssertImageAsync(allowed);
+        image.Should().Equal(await AssertImageAsync(canonicalAllowed));
+    }
+
     /// <summary>
     /// WCS refuses differently from WMS and WMTS, and this asserts what it actually
     /// does rather than what the other two do. The layer-scoped

@@ -77,7 +77,7 @@ Every published layer is reachable through every protocol its service enables. T
 | OGC SensorThings v1.1 | `/sta/v1.1` | IoT / observations clients |
 | WMS 1.3 / 1.1.1 | `/ogc/services/{id}/wms`, `/rest/services/{id}/MapServer/WMS` | QGIS, legacy OGC clients |
 | WFS 2.0 / 1.1.0 / 1.0.0 | `/wfs` | QGIS, GDAL/OGR, legacy stacks |
-| WCS 2.0.1 | `/ogc/services/{id}/wcs`, `/rest/services/{id}/ImageServer/WCS` | Science, elevation, coverage clients |
+| WCS 2.0.1 | `/ogc/services/{id}/wcs`, `/ogc/wcs/{id}` (ArcGIS Pro), `/rest/services/{id}/ImageServer/WCS` | Science, elevation, coverage clients |
 | WMTS 1.0 **(Preview)** | `/ogc/services/{id}/wmts`, `/rest/services/{id}/MapServer/WMTS` | QGIS, legacy tile clients |
 | WPS 2.0 | `/wps` | Classic OGC processing clients |
 | OData v4 | `/odata` | Excel, Power BI, Tableau, SAP |

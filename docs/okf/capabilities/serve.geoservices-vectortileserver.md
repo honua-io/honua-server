@@ -18,7 +18,7 @@ Serve Esri vector tile services through the GeoServices VectorTileServer surface
 | Edition | Community |
 | Surface maturity | 9 implemented |
 | Registry entries | 9 |
-| Proving tests | 32 |
+| Proving tests | 33 |
 
 The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, both generated from the server's own registry and test evidence. This page is a pure function of those two files — nothing in it depends on what the prose happens to say, so an unrelated documentation edit cannot stale it.
 

@@ -2471,10 +2471,11 @@
       "displayName": "WCS 2.0.1",
       "surfaceKind": "nested-standard",
       "protocol": "WCS 2.0.1",
-      "canonicalIdentifier": "/rest/services/{id}/ImageServer/WCS + /ogc/services/{serviceId}/wcs",
+      "canonicalIdentifier": "/rest/services/{id}/ImageServer/WCS + /ogc/services/{serviceId}/wcs + /ogc/wcs/{serviceId}",
       "parentSurfaceId": "image-server",
       "endpointPrefixes": [
-        "/ogc/services/{serviceId}/wcs"
+        "/ogc/services/{serviceId}/wcs",
+        "/ogc/wcs/"
       ],
       "endpointExactMatches": [],
       "endpointContains": [

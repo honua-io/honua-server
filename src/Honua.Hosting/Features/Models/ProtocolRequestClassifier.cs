@@ -77,6 +77,14 @@ internal static class ProtocolRequestClassifier
                    string.Equals(segments[1], "wcs", StringComparison.OrdinalIgnoreCase);
         }
 
+        // /ogc/wcs/{serviceId}: the same service-scoped WCS without a "services"
+        // segment, for clients that read /services/ as an ArcGIS Server site (ADR-0079).
+        if (path.StartsWithSegments("/ogc/wcs", out var aliasRemaining))
+        {
+            var segments = aliasRemaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            return segments is { Length: 1 };
+        }
+
         if (path.StartsWithSegments("/rest/services", out var restRemaining))
         {
             var segments = restRemaining.Value?.Split('/', StringSplitOptions.RemoveEmptyEntries);
