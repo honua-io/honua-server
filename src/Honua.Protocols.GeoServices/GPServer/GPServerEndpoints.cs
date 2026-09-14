@@ -342,6 +342,15 @@ internal static partial class GPServerEndpoints
                     "Task not found");
             }
 
+            if (definition.RuntimeProfile == RuntimeProfiles.Native
+                && (envControls.Workspace is not null || envControls.OverwriteOutput is not null))
+            {
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateBadRequest(context,
+                        "env:workspace and env:overwriteOutput are not supported by the native GDAL worker runtime."),
+                    "Native workspace controls unavailable");
+            }
+
             var planResult = BuildSubmissionPlan(definition, serviceId, parameters);
             if (planResult.CapabilityError is not null)
             {
@@ -475,6 +484,15 @@ internal static partial class GPServerEndpoints
                         "Use the submitJob route and poll the job status; the synchronous execute route is only " +
                         "available for sync-eligible (deterministic single-geometry) tasks."),
                     "Task is not sync-eligible");
+            }
+
+            if (definition.RuntimeProfile == RuntimeProfiles.Native
+                && (envControls.Workspace is not null || envControls.OverwriteOutput is not null))
+            {
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateBadRequest(context,
+                        "env:workspace and env:overwriteOutput are not supported by the native GDAL worker runtime."),
+                    "Native workspace controls unavailable");
             }
 
             var planResult = BuildSubmissionPlan(definition, serviceId, parameters);

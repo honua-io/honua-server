@@ -46,6 +46,12 @@ internal static class GdalWorkerParameterKeys
     /// </summary>
     public const string PlanId = "honua.geoprocessing.plan_id";
 
+    /// <summary>GP workspace control persisted by the serving protocol adapter.</summary>
+    public const string GPServerWorkspace = "gpserver.env.workspace";
+
+    /// <summary>GP overwrite control persisted by the serving protocol adapter.</summary>
+    public const string GPServerOverwriteOutput = "gpserver.env.overwriteOutput";
+
     /// <summary>
     /// Prefix of the per-slot output names recorded by the OGC Processes submit path
     /// (mirrors <c>GeoprocessingProtocolMetadataKeys.OutputNamePrefix</c>).

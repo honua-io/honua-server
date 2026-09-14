@@ -63,7 +63,7 @@ internal static class GeoprocessingServiceCollectionExtensions
 
         // Lifecycle orchestration and cleanup require concrete store implementations.
         // Guard registration so the hosted service does not throw at startup when
-        // IWorkspaceStore / IArtifactStore are not yet provided by a storage provider.
+        // IWorkspaceStore / IArtifactStore are absent on a non-workspace provider.
         if (services.Any(d => d.ServiceType == typeof(IWorkspaceStore))
             && services.Any(d => d.ServiceType == typeof(IArtifactStore)))
         {
