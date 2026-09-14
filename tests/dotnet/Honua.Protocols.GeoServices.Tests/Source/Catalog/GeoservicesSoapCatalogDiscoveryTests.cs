@@ -339,10 +339,12 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
             foreach (var child in new[] { $"FeatureServer/{layer}", $"MapServer/{layer}", "GPServer/Buffer" })
             {
                 using var response = await client.GetAsync($"/rest/services/{service}/{child}?f=json");
-                await ServiceRbacTestFixture.AssertStatusAsync(response, expectedStatus);
                 var body = await response.Content.ReadAsStringAsync();
+                response.StatusCode.Should().Be(HttpStatusCode.OK, body);
                 using var payload = JsonDocument.Parse(body);
                 payload.RootElement.EnumerateObject().Select(property => property.Name).Should().Equal("error");
+                payload.RootElement.GetProperty("error").GetProperty("code").GetInt32()
+                    .Should().Be(expectedStatus == HttpStatusCode.Unauthorized ? 499 : 403);
                 body.Should().NotContain("Alpha Layer").And.NotContain("Beta Layer").And.NotContain("parameters");
             }
         }
