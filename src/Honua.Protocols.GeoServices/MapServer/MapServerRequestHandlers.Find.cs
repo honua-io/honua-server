@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -190,10 +191,13 @@ internal static partial class MapServerEndpoints
             var results = new List<FindResult>();
 
             var findLayers = ResolveFindLayers(publishedLayers, requestedLayerIds, dynamicLayers);
-            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
                 context,
                 findLayers.Select(static entry => entry.Resource),
-                service);
+                service,
+                AuthorizationOperation.Query,
+                cancellationToken).ConfigureAwait(false);
+            var accessError = access.RequireAny(findLayers.Select(static entry => entry.Resource));
             if (accessError != null)
             {
                 return accessError;
@@ -206,7 +210,7 @@ internal static partial class MapServerEndpoints
                     break;
                 }
 
-                if (!AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
+                if (!access.IsAccessible(layer.Resource))
                 {
                     continue;
                 }

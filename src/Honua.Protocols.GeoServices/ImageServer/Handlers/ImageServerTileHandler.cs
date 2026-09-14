@@ -4,6 +4,7 @@
 using System.Collections.Immutable;
 using System.Globalization;
 using System.Security.Claims;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -122,7 +123,7 @@ internal sealed class ImageServerTileHandler
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
-            if (publicationId is not null && RequireCurrentPublicationAccess(snapshot, resolvedLayer, context) is { } accessError)
+            if (publicationId is not null && await RequireCurrentPublicationAccessAsync(snapshot, resolvedLayer, context, cancellationToken).ConfigureAwait(false) is { } accessError)
             {
                 return accessError;
             }
@@ -360,7 +361,7 @@ internal sealed class ImageServerTileHandler
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
             }
 
-            if (publicationId is not null && RequireCurrentPublicationAccess(snapshot, resolvedLayer, context) is { } accessError)
+            if (publicationId is not null && await RequireCurrentPublicationAccessAsync(snapshot, resolvedLayer, context, cancellationToken).ConfigureAwait(false) is { } accessError)
             {
                 return accessError;
             }
@@ -516,10 +517,11 @@ internal sealed class ImageServerTileHandler
             && currentCacheLayerId == (expectedCacheLayerId ?? expectedStorageLayerId);
     }
 
-    private static IResult? RequireCurrentPublicationAccess(
+    private static async Task<IResult?> RequireCurrentPublicationAccessAsync(
         MetadataV2GraphSnapshot snapshot,
         ImageServerV2Lookups.ResolvedImageLayer resolvedLayer,
-        HttpContext context)
+        HttpContext context,
+        CancellationToken cancellationToken)
     {
         if (resolvedLayer.Resource is null ||
             !snapshot.Index.ServicesById.TryGetValue(resolvedLayer.Publication.ServiceId, out var service))
@@ -536,7 +538,10 @@ internal sealed class ImageServerTileHandler
             return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
         }
 
-        return AccessPolicyHelpers.RequireResourceAccess(context, resolvedLayer.Resource, service);
+        // Authorize the same operation the tile and WMTS routes resolved this publication with
+        // (ImageServerLayerResolver defaults to Query), so both checks admit the same principals.
+        return await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resolvedLayer.Resource, AuthorizationOperation.Query, service, cancellationToken).ConfigureAwait(false);
     }
 
     private static byte[] CreateTileEnvelope(int level, int row, int col)

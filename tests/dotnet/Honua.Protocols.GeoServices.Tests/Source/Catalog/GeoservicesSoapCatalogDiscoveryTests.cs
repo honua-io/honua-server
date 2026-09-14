@@ -6,14 +6,18 @@ using System.Text;
 using System.Text.Json;
 using System.Xml.Linq;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Styling.Abstractions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
@@ -76,6 +80,119 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
         using var anonymous = factory.CreateClient();
         await AssertDeniedParityAsync(anonymous, HttpStatusCode.Unauthorized);
         await AssertDeniedChildMetadataAsync(anonymous, HttpStatusCode.Unauthorized);
+    }
+
+    /// <summary>
+    /// honua-server#4783: the catalog handoff must hold past metadata. A caller the catalog
+    /// lists a role-restricted service to (admin through its built-in wildcard grant, or the
+    /// role the policy names) must not be refused by the FeatureServer and MapServer
+    /// operations a client runs next, while a wrong role and anonymous stay refused.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/query")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/queryDomains")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/find")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/legend")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/layers")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/queryDomains")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/{layerId}/query")]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}")]
+    public async Task RestCatalog_AdminAndRoleOperationHandoffsAgreeWithCatalogVisibility()
+    {
+        var restricted = ServiceRbacTestFixture.CreateServiceMetadata(readRoles: ["catalog-reader"]);
+        var catalog = new RbacTestLayerCatalog(
+            alphaServiceMetadata: restricted, betaServiceMetadata: restricted,
+            alphaLayerMetadata: restricted, betaLayerMetadata: restricted);
+        using var factory = ServiceRbacTestFixture.CreateFactory(
+            () => catalog,
+            services =>
+            {
+                services.AddSingleton(Substitute.For<IRasterStore>());
+                services.RemoveAll<ICrsDetectionService>();
+                services.AddSingleton<ICrsDetectionService, NoopCrsDetectionService>();
+                services.RemoveAll<ILayerStyleCatalog>();
+                services.AddSingleton(Substitute.For<ILayerStyleCatalog>());
+            });
+
+        foreach (var role in new[] { "admin", "catalog-reader" })
+        {
+            using var client = ServiceRbacTestFixture.CreateClient(factory, role);
+            await AssertCatalogParityAsync(client, [ServiceRbacTestFixture.AlphaService, ServiceRbacTestFixture.BetaService]);
+            var outcomes = await ReadOperationHandoffOutcomesAsync(client);
+            outcomes.Where(outcome => outcome.Value != 0)
+                .Should().BeEmpty($"the catalog lists both services to '{role}'");
+        }
+
+        using var wrongRole = ServiceRbacTestFixture.CreateClient(factory, "other-role");
+        await AssertDeniedParityAsync(wrongRole, HttpStatusCode.Forbidden);
+        (await ReadOperationHandoffOutcomesAsync(wrongRole)).Should().OnlyContain(outcome => outcome.Value == 403);
+
+        using var anonymous = factory.CreateClient();
+        await AssertDeniedParityAsync(anonymous, HttpStatusCode.Unauthorized);
+        (await ReadOperationHandoffOutcomesAsync(anonymous)).Should().OnlyContain(outcome => outcome.Value == 499);
+    }
+
+    private static IEnumerable<string> OperationHandoffPaths()
+    {
+        foreach (var (service, layer) in new[]
+        {
+            (ServiceRbacTestFixture.AlphaService, ServiceRbacTestFixture.AlphaLayerId),
+            (ServiceRbacTestFixture.BetaService, ServiceRbacTestFixture.BetaLayerId)
+        })
+        {
+            var root = $"/rest/services/{service}";
+            yield return $"{root}/FeatureServer/query?layerDefs=%7B%22{layer}%22%3A%221%3D1%22%7D&returnGeometry=false&f=json";
+            yield return $"{root}/FeatureServer/{layer}/query?where=1%3D1&returnGeometry=false&f=json";
+            yield return $"{root}/FeatureServer/queryDomains?layers={layer}&f=json";
+            yield return $"{root}/MapServer/export?bbox=-180,-90,180,90&size=256,256&f=json";
+            yield return $"{root}/MapServer/identify?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90&imageDisplay=800,600,96&layers=all&tolerance=2&f=json";
+            yield return $"{root}/MapServer/find?searchText=test&layers={layer}&f=json";
+            yield return $"{root}/MapServer/legend?f=json";
+            yield return $"{root}/MapServer/layers?f=json";
+            yield return $"{root}/MapServer/queryDomains?layers={layer}&f=json";
+            yield return $"{root}/MapServer/{layer}/query?where=1%3D1&returnGeometry=false&f=json";
+            yield return $"{root}/GPServer/Buffer?f=json";
+        }
+    }
+
+    /// <summary>
+    /// Returns the outcome of every operation handoff keyed by path: 0 for a successful JSON
+    /// response, otherwise the Esri error code (403 forbidden, 499 token required) or the HTTP
+    /// status. A refusal must not carry layer content.
+    /// </summary>
+    private static async Task<Dictionary<string, int>> ReadOperationHandoffOutcomesAsync(HttpClient client)
+    {
+        var outcomes = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var path in OperationHandoffPaths())
+        {
+            using var response = await client.GetAsync(path);
+            var body = await response.Content.ReadAsStringAsync();
+            var outcome = response.StatusCode == HttpStatusCode.OK ? 0 : (int)response.StatusCode;
+            if (outcome == 0)
+            {
+                using var payload = JsonDocument.Parse(body);
+                if (payload.RootElement.TryGetProperty("error", out var error))
+                {
+                    outcome = error.TryGetProperty("code", out var code) && code.ValueKind == JsonValueKind.Number
+                        ? code.GetInt32()
+                        : -1;
+                }
+            }
+
+            if (outcome is 403 or 499)
+            {
+                body.Should().NotContain("Alpha Layer").And.NotContain("Beta Layer", path);
+            }
+
+            outcomes[path] = outcome;
+        }
+
+        return outcomes;
     }
 
     [IntegrationTest]

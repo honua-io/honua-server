@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -294,16 +295,21 @@ internal static partial class MapServerEndpoints
                 layersParam,
                 dynamicLayers,
                 scaleDenominator);
-            var identifyAccessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            var identifyAccess = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
                 context,
-                identifyAccessCandidates.Select(static layer => layer.Resource),
-                service);
+                publishedLayers.Select(static layer => layer.Resource)
+                    .Concat(identifyAccessCandidates.Select(static layer => layer.Resource)),
+                service,
+                AuthorizationOperation.Query,
+                cancellationToken).ConfigureAwait(false);
+            var identifyAccessError = identifyAccess.RequireAny(
+                identifyAccessCandidates.Select(static layer => layer.Resource));
             if (identifyAccessError != null)
             {
                 return identifyAccessError;
             }
 
-            var identifySelection = ResolveIdentifyLayers(publishedLayers, service, layersParam, dynamicLayers, context, scaleDenominator);
+            var identifySelection = ResolveIdentifyLayers(publishedLayers, identifyAccess, layersParam, dynamicLayers, scaleDenominator);
 
             var searchTolerance = CoordinateTransformer.PixelToMapUnits(tolerance, mapExtent, imageWidth);
             if (!TryBuildIdentifySpatialFilter(
@@ -399,8 +405,7 @@ internal static partial class MapServerEndpoints
                 {
                     if (!TryResolveIdentifyJoinRightLayer(
                             publishedLayers,
-                            service,
-                            context,
+                            identifyAccess,
                             join,
                             out var rightLayer,
                             out var joinError))
@@ -1060,14 +1065,13 @@ internal static partial class MapServerEndpoints
 
     private static IdentifyLayerSelection ResolveIdentifyLayers(
         IReadOnlyList<IdentifyLayerDescriptor> publishedLayers,
-        MetadataV2Service service,
+        ResourceAccessSet access,
         string? layersParam,
         IReadOnlyList<DynamicLayerDefinition> dynamicLayers,
-        HttpContext context,
         double scaleDenominator)
     {
         var accessibleLayers = publishedLayers
-            .Where(l => AccessPolicyHelpers.IsResourceAccessible(context, l.Resource, service))
+            .Where(l => access.IsAccessible(l.Resource))
             .ToArray();
 
         IdentifyLayerMode mode = IdentifyLayerMode.Top;
@@ -1117,7 +1121,7 @@ internal static partial class MapServerEndpoints
                     continue;
                 }
 
-                if (!AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
+                if (!access.IsAccessible(layer.Resource))
                 {
                     continue;
                 }
@@ -1510,8 +1514,7 @@ internal static partial class MapServerEndpoints
     /// </summary>
     private static bool TryResolveIdentifyJoinRightLayer(
         IReadOnlyList<IdentifyLayerDescriptor> publishedLayers,
-        MetadataV2Service service,
-        HttpContext context,
+        ResourceAccessSet access,
         DynamicLayerJoinDefinition join,
         out IdentifyLayerDescriptor? rightLayer,
         out string? error)
@@ -1526,7 +1529,7 @@ internal static partial class MapServerEndpoints
             return false;
         }
 
-        if (!AccessPolicyHelpers.IsResourceAccessible(context, rightLayer.Resource, service))
+        if (!access.IsAccessible(rightLayer.Resource))
         {
             error = "dynamicLayers join references an inaccessible right layer.";
             return false;

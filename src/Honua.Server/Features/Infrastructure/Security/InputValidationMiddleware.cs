@@ -61,6 +61,12 @@ internal sealed class InputValidationMiddleware
         @"|(\.%2f)|(\.\%5c)|(\.%252f)|(\.%255c)",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
+    // A WKT POINT/MULTIPOINT built only from numbers and WKT punctuation. No LDAP filter operator
+    // (| & ! * =) can appear in a value this matches.
+    private static readonly Regex _edrWktCoordsPattern = new(
+        @"^\s*(?:MULTI)?POINT\s*(?:Z\s*)?\(\s*[-+0-9.e\s,()]+\)\s*$",
+        RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private static readonly Regex _odataSystemOptionPattern = new(
         @"\$(select|filter|orderby|top|skip|count|expand|levels|search|compute|apply|deltatoken|format)\b",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -338,7 +344,7 @@ internal sealed class InputValidationMiddleware
 
             // LDAP injection detection
             if (_options.DetectLdapInjection &&
-                !ShouldSkipLdapInspection(request, paramType, name) &&
+                !ShouldSkipLdapInspection(request, paramType, name, value) &&
                 ContainsPotentialLdapInjection(value))
             {
                 return InputValidationResult.Invalid($"LDAP injection attempt detected in {paramType} parameter '{name}'");
@@ -485,9 +491,21 @@ internal sealed class InputValidationMiddleware
                name.Equals("filter", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool ShouldSkipLdapInspection(HttpRequest request, string paramType, string name)
+    private static bool ShouldSkipLdapInspection(HttpRequest request, string paramType, string name, string value)
         => IsODataSystemQueryOption(request, paramType, name) ||
-           IsProtocolFilterQueryOption(request, paramType, name);
+           IsProtocolFilterQueryOption(request, paramType, name) ||
+           IsEdrWktCoordsQueryOption(request, paramType, name, value);
+
+    private static bool IsEdrWktCoordsQueryOption(HttpRequest request, string paramType, string name, string value)
+    {
+        // OGC API - EDR position coords are WKT, and the EDR 1.1 MULTIPOINT((x y),(x y)) form carries
+        // the "((" and "))" tokens the LDAP heuristic flags (#4153). Exempt only a pure WKT value so
+        // anything carrying filter syntax is still inspected.
+        return paramType.Equals("query", StringComparison.Ordinal) &&
+               name.Equals("coords", StringComparison.OrdinalIgnoreCase) &&
+               request.Path.Value?.StartsWith("/edr/", StringComparison.OrdinalIgnoreCase) == true &&
+               _edrWktCoordsPattern.IsMatch(value);
+    }
 
     private static bool ShouldSkipPathTraversalInspection(HttpRequest request, string paramType, string name, string value)
         => IsProtocolDatetimeQueryOption(request, paramType, name) &&
