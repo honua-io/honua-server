@@ -869,13 +869,19 @@ internal static class ImageServerSoapEndpoints
             bool? ascending = null;
             if (ascendingValue is not null)
             {
-                if (!bool.TryParse(ascendingValue, out var parsedAscending))
+                // xsd:boolean lexical space is true, false, 1 and 0.
+                ascending = ascendingValue switch
                 {
-                    error = "SOAP ByAttribute mosaic Ascending must be true or false.";
+                    "1" => true,
+                    "0" => false,
+                    _ when bool.TryParse(ascendingValue, out var parsedAscending) => parsedAscending,
+                    _ => null
+                };
+                if (ascending is null)
+                {
+                    error = "SOAP ByAttribute mosaic Ascending must be an xsd:boolean (true, false, 1 or 0).";
                     return false;
                 }
-
-                ascending = parsedAscending;
             }
 
             serialized = SerializeSoapMosaicRule(

@@ -138,6 +138,15 @@ public interface IRasterStore
     /// Identifies pixel values against a composited layer mosaic. When <paramref name="rendering"/>
     /// is supplied, the returned value reflects the rendered pixel instead of the raw source value.
     /// </summary>
+    /// <param name="ordering">
+    /// Ordering that resolves a contested pixel, with the same semantics as
+    /// <see cref="ExportMosaicAsync"/>, so identify samples the pixel exportImage would render for
+    /// the same mosaic rule.
+    /// </param>
+    /// <param name="attributeSort">
+    /// Optional non-date attribute ordering, used only when <paramref name="ordering"/> is
+    /// <see cref="RasterMosaicOrdering.Attribute"/>.
+    /// </param>
     Task<PixelValueResult> IdentifyMosaicAsync(
         int layerId,
         long[] rasterIds,
@@ -146,6 +155,8 @@ public interface IRasterStore
         double y,
         int? srid = null,
         RasterIdentifyRendering? rendering = null,
+        RasterMosaicOrdering ordering = RasterMosaicOrdering.AcquisitionNewest,
+        RasterMosaicAttributeSort? attributeSort = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

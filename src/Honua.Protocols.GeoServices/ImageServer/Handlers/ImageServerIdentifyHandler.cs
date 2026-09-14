@@ -188,11 +188,13 @@ internal sealed class ImageServerIdentifyHandler
                     ObjectId = null,
                     Name = resolved.DisplayName,
                     Value = "NoData",
+                    // No raster was sampled, and raster selection reads an sr-less geometry in each
+                    // raster's own CRS, so the reference is only stated when the request supplied one.
                     Location = new Point
                     {
                         X = x.Value,
                         Y = y.Value,
-                        SpatialReference = CreateLocationSpatialReference(srid)
+                        SpatialReference = srid is null ? null : CreateLocationSpatialReference(srid)
                     },
                     Properties = new Dictionary<string, object?>
                     {
@@ -209,6 +211,15 @@ internal sealed class ImageServerIdentifyHandler
                 return Results.Json(noDataResponse, ImageServerJsonContext.Default.IdentifyResponse);
             }
 
+            // A method this service cannot execute only changes a composited pixel, so it is rejected
+            // (as in exportImage) when more than one raster would be merged.
+            if (mosaicRule.Method == MosaicMethod.Unsupported && selectedRasters.Length > 1)
+            {
+                const string unsupportedMessage = "mosaicRule mosaicMethod is not implemented on this service.";
+                ImageServerLog.InvalidIdentifyParameters(_logger, layerId, unsupportedMessage);
+                return StandardErrorHelpers.CreateNotImplemented(context, unsupportedMessage);
+            }
+
             ImageServerLog.IdentifyStarted(_logger, layerId, x.Value, y.Value);
 
             // Identify pixel values
@@ -222,6 +233,8 @@ internal sealed class ImageServerIdentifyHandler
                     y.Value,
                     srid,
                     rendering,
+                    mosaicRule.ToOrdering(),
+                    mosaicRule.ToAttributeSort(),
                     cancellationToken);
 
             // returnGeometry controls whether catalog item footprints are emitted. ArcGIS

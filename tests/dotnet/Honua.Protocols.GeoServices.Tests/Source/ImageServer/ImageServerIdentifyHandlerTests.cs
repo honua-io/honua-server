@@ -76,6 +76,8 @@ public class ImageServerIdentifyHandlerTests
         responseJson.RootElement.GetProperty("properties").GetProperty("HasData").GetBoolean().Should().BeFalse();
         responseJson.RootElement.GetProperty("location").GetProperty("x").GetDouble().Should().Be(10);
         responseJson.RootElement.GetProperty("location").GetProperty("y").GetDouble().Should().Be(20);
+        // Nothing was sampled and the request named no sr, so no reference is fabricated (#4064).
+        responseJson.RootElement.GetProperty("location").TryGetProperty("spatialReference", out _).Should().BeFalse();
     }
 
     [UnitTest]
@@ -637,9 +639,81 @@ public class ImageServerIdentifyHandlerTests
             .Select(item => item.GetProperty("id").GetInt64())
             .Should().Equal(101);
         await _rasterStore.DidNotReceiveWithAnyArgs().IdentifyMosaicAsync(
-            default, default!, default, default, default, default, default, default);
+            default, default!, default, default, default, default, default, default, default, default);
         await _rasterStore.DidNotReceive().IdentifyAsync(
             1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
+    }
+
+    // #4064: identify resolves a contested pixel with the same ordering exportImage renders, so the
+    // parsed method (and non-date attribute sort) reaches the mosaic identify call.
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_OrderingMosaicRule_PassesParsedOrderingToMosaicIdentify()
+    {
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo(), CreateTestRasterInfo() with { Id = 101 }]);
+        _rasterStore.IdentifyMosaicAsync(default, default!, default, default, default, default, default, default, default, default)
+            .ReturnsForAnyArgs(new PixelValueResult
+            {
+                X = 10,
+                Y = 20,
+                Srid = 4326,
+                HasData = true,
+                BandValues = new Dictionary<int, object?> { [1] = 9.0 }
+            });
+
+        foreach (var (mosaicRule, ordering, attributeSort) in new (string, RasterMosaicOrdering, RasterMosaicAttributeSort?)[]
+                 {
+                     ("{\"mosaicMethod\":\"esriMosaicNorthwest\"}", RasterMosaicOrdering.Northwest, null),
+                     ("{\"mosaicMethod\":\"esriMosaicNadir\"}", RasterMosaicOrdering.Nadir, null),
+                     ("{\"mosaicMethod\":\"esriMosaicSeamline\"}", RasterMosaicOrdering.Seamline, null),
+                     ("{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"AcquisitionDate\",\"ascending\":true}", RasterMosaicOrdering.AcquisitionOldest, null),
+                     ("{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"OBJECTID\",\"ascending\":true}", RasterMosaicOrdering.Attribute, new RasterMosaicAttributeSort("id", true))
+                 })
+        {
+            _rasterStore.ClearReceivedCalls();
+            var request = new IdentifyRequest { Geometry = "10,20", Sr = "4326", MosaicRule = mosaicRule, F = "json" };
+
+            using var json = await ExecuteIdentifyJsonAsync(request);
+
+            json.RootElement.GetProperty("value").GetString().Should().Be("9");
+            await _rasterStore.Received(1).IdentifyMosaicAsync(
+                1,
+                Arg.Is<long[]>(ids => ids.SequenceEqual(new long[] { 100, 101 })),
+                RasterMergeStrategy.Newest,
+                10,
+                20,
+                4326,
+                null,
+                ordering,
+                attributeSort,
+                Arg.Any<CancellationToken>());
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_UnsupportedMosaicMethodOverSeveralRasters_ReturnsNotImplemented()
+    {
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo(), CreateTestRasterInfo() with { Id = 101 }]);
+
+        foreach (var mosaicRule in new[]
+                 {
+                     "{\"mosaicMethod\":\"esriMosaicCenter\"}",
+                     "{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"AcquisitionDate\",\"sortValue\":\"2024/01/01\"}"
+                 })
+        {
+            var context = CreateImageServerContext();
+            var request = new IdentifyRequest { Geometry = "10,20", MosaicRule = mosaicRule, F = "json" };
+
+            var result = await _handler.IdentifyAsync(context, 1, request);
+
+            await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status501NotImplemented);
+        }
+
+        await _rasterStore.DidNotReceiveWithAnyArgs().IdentifyMosaicAsync(
+            default, default!, default, default, default, default, default, default, default, default);
     }
 
     [UnitTest]

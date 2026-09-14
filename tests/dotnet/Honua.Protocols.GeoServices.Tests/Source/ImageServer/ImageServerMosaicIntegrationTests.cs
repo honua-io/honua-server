@@ -186,6 +186,53 @@ public sealed class ImageServerMosaicIntegrationTests
         }
     }
 
+    // #4064: identify resolves the contested pixel at (1.5, 1) with the same ordering exportImage
+    // renders. "west" (constant 20, x in [0, 2], inserted first so it has the lower OBJECTID) and
+    // "overlap-newest" (constant 5, x in [1, 3]) both cover the point with equal YMax.
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer/identify")]
+    [Operation(Operations.Identify)]
+    public async Task Identify_WithOrderingMosaicMethods_ResolvesContestedPixelLikeExport()
+    {
+        var fixture = await CreateFixtureAsync();
+        try
+        {
+            foreach (var (mosaicRule, expected) in new[]
+                     {
+                         // Northwest: equal YMax, so the lower XMin ("west") wins.
+                         ("{\"mosaicMethod\":\"esriMosaicNorthwest\"}", "20"),
+                         // ByAttribute OBJECTID ascending: the lowest OBJECTID ("west") wins.
+                         ("{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"OBJECTID\",\"ascending\":true}", "20"),
+                         // ByAttribute OBJECTID descending (Esri default): the highest OBJECTID wins.
+                         ("{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"OBJECTID\"}", "5")
+                     })
+            {
+                using var json = await IdentifyJsonAsync(
+                    fixture,
+                    "geometry=1.5,1&geometryType=esriGeometryPoint&sr=4326&mosaicRule=" + Uri.EscapeDataString(mosaicRule));
+
+                json.RootElement.GetProperty("value").GetString().Should().Be(expected, mosaicRule);
+            }
+
+            foreach (var unsupported in new[]
+                     {
+                         "{\"mosaicMethod\":\"esriMosaicCenter\"}",
+                         "{\"mosaicMethod\":\"esriMosaicByAttribute\",\"sortField\":\"AcquisitionDate\",\"sortValue\":\"2024/01/10\"}"
+                     })
+            {
+                var response = await fixture.Client.GetAsync(
+                    $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer/identify?geometry=1.5,1&geometryType=esriGeometryPoint&sr=4326&f=json&mosaicRule={Uri.EscapeDataString(unsupported)}");
+                var content = await response.Content.ReadAsStringAsync();
+                using var error = JsonDocument.Parse(content);
+                error.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(501, content);
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     // #4064: a real 4-band PostGIS raster with constant bands 17, 22.5, 39, 45 over lon/lat [0, 2].
     // Identifying the Web Mercator point for (0.5°, 1.5°) must return the Esri "v1, v2, v3, v4"
     // value and label the location with the request's spatial reference (3857), not a bare x/y.

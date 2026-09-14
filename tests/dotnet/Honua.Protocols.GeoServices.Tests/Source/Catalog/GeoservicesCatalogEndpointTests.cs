@@ -1562,7 +1562,8 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                          "<MosaicMethod>esriMosaicNadir</MosaicMethod>",
                          "<MosaicMethod>Seamline</MosaicMethod>",
                          "<MosaicMethod>esriMosaicByAttribute</MosaicMethod><SortField>AcquisitionDate</SortField><Ascending>true</Ascending>",
-                         "<MosaicMethod>ByAttribute</MosaicMethod><SortField>OBJECTID</SortField>"
+                         "<MosaicMethod>ByAttribute</MosaicMethod><SortField>OBJECTID</SortField>",
+                         "<MosaicMethod>ByAttribute</MosaicMethod><SortField>AcquisitionDate</SortField><Ascending>1</Ascending>"
                      })
             {
                 using var response = await PostSoapOperationAsync(

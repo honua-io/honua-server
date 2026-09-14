@@ -1910,71 +1910,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             creationOptionsClause = BuildCreationOptionsClause(BuildExportCreationOptions(query, effectiveFormat));
         }
 
-        // esriMosaicSeamline (#1804): clip each raster to its persisted seamline (cutline) before
-        // the union so a contested pixel is resolved by the per-raster seamline geometry rather
-        // than ordering alone. A raster without a seamline row contributes its full pixels
-        // (COALESCE to the raw clip expression). Other orderings read the raster column directly.
-        var seamlineRequested = ordering == RasterMosaicOrdering.Seamline;
-        var (sourceFromClause, sourceSelectExpr) = seamlineRequested
-            ? ($"""
-                {_rasterDataTable} rd
-                LEFT JOIN {_rasterFootprintsTable} fp ON fp.raster_data_id = rd.id
-               """,
-               // The seamline geometry carries its own SRID; transform it into the raster SRID so
-               // the clip aligns. The seamline column name is a compile-time constant.
-               $"CASE WHEN fp.seamline IS NOT NULL " +
-               $"THEN ST_Clip({sourceRasterExpr}, ST_Transform(ST_SetSRID(fp.seamline, fp.srid), ST_SRID(rd.raster))) " +
-               $"ELSE {sourceRasterExpr} END")
-            : ($"{_rasterDataTable}", sourceRasterExpr);
-
-        // The seamline JOIN aliases the raster table as rd; the non-seamline path keeps the bare
-        // column references the other clip/band expressions were built against.
-        var idColumn = seamlineRequested ? "rd.id" : "id";
-        var createdAtColumn = seamlineRequested ? "rd.created_at" : "created_at";
-        var acquisitionColumn = seamlineRequested ? "rd.acquisition_date" : "acquisition_date";
-        var layerIdColumn = seamlineRequested ? "rd.layer_id" : "layer_id";
-
-        // esriMosaicByAttribute over a non-date attribute needs the allowlisted attribute column
-        // projected into the source CTE so the union's ORDER BY can reference it. The column name
-        // is strictly allowlisted upstream (never caller free text). 'id' is already projected, so
-        // skip the extra projection to avoid a duplicate column. Attribute ordering and seamline
-        // ordering are mutually exclusive (single `ordering` value), so under the attribute path
-        // the source FROM is always the bare raster table and the column needs no `rd.` alias.
-        var attributeProjection = ordering == RasterMosaicOrdering.Attribute
-            && attributeSort is { } sort
-            && !string.Equals(sort.Column, "id", StringComparison.OrdinalIgnoreCase)
-            ? $",\n                       {sort.Column} AS {sort.Column}"
-            : string.Empty;
-
-        // esriMosaicNadir (#1870): the union's ORDER BY references an off_nadir column, so project
-        // the off-nadir angle from the per-raster sensor metadata into the source CTE. The angle
-        // lives in the exterior_orientation JSONB payload (offNadirAngle / off_nadir_angle); a LEFT
-        // JOIN keeps rasters without a sensor row (their off_nadir is NULL and ranks last). The
-        // JSONB keys are compile-time constants, never caller free text. Nadir and seamline ordering
-        // are mutually exclusive, so this join is added only on the bare-table (non-seamline) path
-        // and uses the bare `id` column the source select already references.
-        var nadirRequested = ordering == RasterMosaicOrdering.Nadir;
-        if (nadirRequested)
-        {
-            sourceFromClause = $"""
-                {_rasterDataTable}
-                LEFT JOIN {_rasterSensorMetadataTable} sm ON sm.raster_data_id = {_rasterDataTable}.id
-                """;
-        }
-
-        var nadirProjection = nadirRequested
-            ? ",\n                       NULLIF(COALESCE(sm.exterior_orientation->>'offNadirAngle', sm.exterior_orientation->>'off_nadir_angle'), '')::double precision AS off_nadir"
-            : string.Empty;
-
-        // The nadir LEFT JOIN makes the bare column names ambiguous; qualify them with the raster
-        // table name (the join alias is `sm`, so the table name still resolves unambiguously).
-        if (nadirRequested)
-        {
-            idColumn = $"{_rasterDataTable}.id";
-            createdAtColumn = $"{_rasterDataTable}.created_at";
-            acquisitionColumn = $"{_rasterDataTable}.acquisition_date";
-            layerIdColumn = $"{_rasterDataTable}.layer_id";
-        }
+        var mosaicSource = BuildMosaicSourceSelect(sourceRasterExpr, ordering, attributeSort);
 
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
@@ -1982,13 +1918,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 SELECT unnest(@rasterIds) AS raster_id
             ),
             source AS (
-                SELECT {sourceSelectExpr} AS rast,
-                       {idColumn} AS id,
-                       {createdAtColumn} AS created_at,
-                       COALESCE({acquisitionColumn}, {createdAtColumn}) AS effective_acquisition{attributeProjection}{nadirProjection}
-                FROM {sourceFromClause}
-                WHERE {layerIdColumn} = @layerId
-                  AND {idColumn} IN (SELECT raster_id FROM requested)
+                {mosaicSource}
             ),
             merged AS (
                 SELECT {CreateMosaicAggregateExpression(mergeStrategy, ordering, attributeSort)} AS rast
@@ -2153,6 +2083,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         double y,
         int? srid = null,
         RasterIdentifyRendering? rendering = null,
+        RasterMosaicOrdering ordering = RasterMosaicOrdering.AcquisitionNewest,
+        RasterMosaicAttributeSort? attributeSort = null,
         CancellationToken cancellationToken = default)
     {
         if (rasterIds.Length == 0)
@@ -2184,22 +2116,20 @@ internal sealed class PostgresRasterStore : IRasterStore
                 extraParams, cancellationToken).ConfigureAwait(false);
         }
 
+        // Resolve a contested pixel with the ordering exportImage renders for the same mosaic rule
+        // (#4064): seamline clips, nadir/attribute projections and the ordered union are shared.
+        var mosaicSource = BuildMosaicSourceSelect("raster", ordering, attributeSort);
+
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
             WITH requested AS (
                 SELECT unnest(@rasterIds) AS raster_id
             ),
             source AS (
-                SELECT raster AS rast,
-                       id,
-                       created_at,
-                       COALESCE(acquisition_date, created_at) AS effective_acquisition
-                FROM {_rasterDataTable}
-                WHERE layer_id = @layerId
-                  AND id IN (SELECT raster_id FROM requested)
+                {mosaicSource}
             ),
             merged AS (
-                SELECT {CreateMosaicAggregateExpression(mergeStrategy)} AS rast
+                SELECT {CreateMosaicAggregateExpression(mergeStrategy, ordering, attributeSort)} AS rast
                 FROM source
                 WHERE rast IS NOT NULL
             ),
@@ -4726,6 +4656,95 @@ internal sealed class PostgresRasterStore : IRasterStore
             CreatedAt = reader.GetDateTime(createdAtOrd),
             ModifiedAt = reader.IsDBNull(updatedOrd) ? null : reader.GetDateTime(updatedOrd)
         };
+    }
+
+    /// <summary>
+    /// Builds the per-raster <c>source</c> CTE body (select list, FROM and WHERE) for a mosaic union
+    /// under <paramref name="ordering"/>: the seamline clip and join, the nadir sensor-metadata join
+    /// and the allowlisted attribute projection the ordered union reads. Shared by mosaic export and
+    /// mosaic identify so a contested pixel resolves identically in both (#4064). The CTE expects
+    /// <c>@layerId</c> and a <c>requested</c> CTE of raster ids.
+    /// </summary>
+    private string BuildMosaicSourceSelect(
+        string sourceRasterExpr,
+        RasterMosaicOrdering ordering,
+        RasterMosaicAttributeSort? attributeSort)
+    {
+        // esriMosaicSeamline (#1804): clip each raster to its persisted seamline (cutline) before
+        // the union so a contested pixel is resolved by the per-raster seamline geometry rather
+        // than ordering alone. A raster without a seamline row contributes its full pixels
+        // (COALESCE to the raw clip expression). Other orderings read the raster column directly.
+        var seamlineRequested = ordering == RasterMosaicOrdering.Seamline;
+        var (sourceFromClause, sourceSelectExpr) = seamlineRequested
+            ? ($"""
+                {_rasterDataTable} rd
+                LEFT JOIN {_rasterFootprintsTable} fp ON fp.raster_data_id = rd.id
+               """,
+               // The seamline geometry carries its own SRID; transform it into the raster SRID so
+               // the clip aligns. The seamline column name is a compile-time constant.
+               $"CASE WHEN fp.seamline IS NOT NULL " +
+               $"THEN ST_Clip({sourceRasterExpr}, ST_Transform(ST_SetSRID(fp.seamline, fp.srid), ST_SRID(rd.raster))) " +
+               $"ELSE {sourceRasterExpr} END")
+            : ($"{_rasterDataTable}", sourceRasterExpr);
+
+        // The seamline JOIN aliases the raster table as rd; the non-seamline path keeps the bare
+        // column references the other clip/band expressions were built against.
+        var idColumn = seamlineRequested ? "rd.id" : "id";
+        var createdAtColumn = seamlineRequested ? "rd.created_at" : "created_at";
+        var acquisitionColumn = seamlineRequested ? "rd.acquisition_date" : "acquisition_date";
+        var layerIdColumn = seamlineRequested ? "rd.layer_id" : "layer_id";
+
+        // esriMosaicByAttribute over a non-date attribute needs the allowlisted attribute column
+        // projected into the source CTE so the union's ORDER BY can reference it. The column name
+        // is strictly allowlisted upstream (never caller free text). 'id' is already projected, so
+        // skip the extra projection to avoid a duplicate column. Attribute ordering and seamline
+        // ordering are mutually exclusive (single `ordering` value), so under the attribute path
+        // the source FROM is always the bare raster table and the column needs no `rd.` alias.
+        var attributeProjection = ordering == RasterMosaicOrdering.Attribute
+            && attributeSort is { } sort
+            && !string.Equals(sort.Column, "id", StringComparison.OrdinalIgnoreCase)
+            ? $",\n                       {sort.Column} AS {sort.Column}"
+            : string.Empty;
+
+        // esriMosaicNadir (#1870): the union's ORDER BY references an off_nadir column, so project
+        // the off-nadir angle from the per-raster sensor metadata into the source CTE. The angle
+        // lives in the exterior_orientation JSONB payload (offNadirAngle / off_nadir_angle); a LEFT
+        // JOIN keeps rasters without a sensor row (their off_nadir is NULL and ranks last). The
+        // JSONB keys are compile-time constants, never caller free text. Nadir and seamline ordering
+        // are mutually exclusive, so this join is added only on the bare-table (non-seamline) path
+        // and uses the bare `id` column the source select already references.
+        var nadirRequested = ordering == RasterMosaicOrdering.Nadir;
+        if (nadirRequested)
+        {
+            sourceFromClause = $"""
+                {_rasterDataTable}
+                LEFT JOIN {_rasterSensorMetadataTable} sm ON sm.raster_data_id = {_rasterDataTable}.id
+                """;
+        }
+
+        var nadirProjection = nadirRequested
+            ? ",\n                       NULLIF(COALESCE(sm.exterior_orientation->>'offNadirAngle', sm.exterior_orientation->>'off_nadir_angle'), '')::double precision AS off_nadir"
+            : string.Empty;
+
+        // The nadir LEFT JOIN makes the bare column names ambiguous; qualify them with the raster
+        // table name (the join alias is `sm`, so the table name still resolves unambiguously).
+        if (nadirRequested)
+        {
+            idColumn = $"{_rasterDataTable}.id";
+            createdAtColumn = $"{_rasterDataTable}.created_at";
+            acquisitionColumn = $"{_rasterDataTable}.acquisition_date";
+            layerIdColumn = $"{_rasterDataTable}.layer_id";
+        }
+
+        return $"""
+            SELECT {sourceSelectExpr} AS rast,
+                   {idColumn} AS id,
+                   {createdAtColumn} AS created_at,
+                   COALESCE({acquisitionColumn}, {createdAtColumn}) AS effective_acquisition{attributeProjection}{nadirProjection}
+            FROM {sourceFromClause}
+            WHERE {layerIdColumn} = @layerId
+              AND {idColumn} IN (SELECT raster_id FROM requested)
+            """;
     }
 
     private static string CreateMosaicAggregateExpression(
