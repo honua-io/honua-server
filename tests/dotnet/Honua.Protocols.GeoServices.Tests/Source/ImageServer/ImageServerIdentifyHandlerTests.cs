@@ -526,6 +526,157 @@ public class ImageServerIdentifyHandlerTests
             .Should().Be(StatusCodes.Status400BadRequest);
     }
 
+    // #4064: Esri identify reports a multi-band pixel as "v1, v2, v3" (invariant culture) and labels
+    // the location with its spatial reference.
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_MultiBandPixel_ReturnsEsriCommaSeparatedValueAndLocationSpatialReference()
+    {
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo()]);
+        _rasterStore.IdentifyAsync(1, 100, 10, 20, 4326, Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns(new PixelValueResult
+            {
+                X = 10,
+                Y = 20,
+                Srid = 4326,
+                HasData = true,
+                BandValues = new Dictionary<int, object?> { [3] = 32.0, [1] = 128.0, [2] = 64.25 }
+            });
+
+        using var json = await ExecuteIdentifyJsonAsync(CreateRequest("10,20", sr: "4326"));
+
+        json.RootElement.GetProperty("value").GetString().Should().Be("128, 64.25, 32");
+        var location = json.RootElement.GetProperty("location");
+        location.GetProperty("x").GetDouble().Should().Be(10);
+        location.GetProperty("y").GetDouble().Should().Be(20);
+        location.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_ProjectedPoint_LabelsLocationWithRequestSpatialReference()
+    {
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo()]);
+        _rasterStore.IdentifyAsync(1, 100, 1113194.9, 1118889.97, 3857, Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns(new PixelValueResult
+            {
+                X = 1113194.9,
+                Y = 1118889.97,
+                Srid = 3857,
+                HasData = true,
+                BandValues = new Dictionary<int, object?> { [1] = 7.0 }
+            });
+
+        using var json = await ExecuteIdentifyJsonAsync(
+            CreateRequest("{\"x\":1113194.9,\"y\":1118889.97,\"spatialReference\":{\"wkid\":3857}}"));
+
+        json.RootElement.GetProperty("value").GetString().Should().Be("7");
+        json.RootElement.GetProperty("location").GetProperty("spatialReference").GetProperty("wkid").GetInt32()
+            .Should().Be(3857);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_AllBandsNoData_ReturnsNoDataValue()
+    {
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo()]);
+        _rasterStore.IdentifyAsync(1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns(new PixelValueResult
+            {
+                X = 10,
+                Y = 20,
+                Srid = null,
+                HasData = false,
+                BandValues = new Dictionary<int, object?> { [1] = null, [2] = null, [3] = null }
+            });
+
+        using var json = await ExecuteIdentifyJsonAsync(CreateRequest("10,20"));
+
+        json.RootElement.GetProperty("value").GetString().Should().Be("NoData");
+        // An sr-less identify is sampled as WGS84 by the raster store.
+        json.RootElement.GetProperty("location").GetProperty("spatialReference").GetProperty("wkid").GetInt32()
+            .Should().Be(4326);
+    }
+
+    // #4064: esriMosaicLockRaster pins the identified catalog item, as exportImage does, instead of
+    // returning the merged mosaic value.
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_LockRasterMosaicRule_IdentifiesOnlyTheLockedRaster()
+    {
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo(), CreateTestRasterInfo() with { Id = 101, Name = "locked-raster" }]);
+        _rasterStore.IdentifyAsync(1, 101, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns(new PixelValueResult
+            {
+                X = 10,
+                Y = 20,
+                Srid = 4326,
+                HasData = true,
+                BandValues = new Dictionary<int, object?> { [1] = 2.0 }
+            });
+        var request = new IdentifyRequest
+        {
+            Geometry = "10,20",
+            GeometryType = "esriGeometryPoint",
+            Sr = "4326",
+            MosaicRule = "{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[101]}",
+            ReturnCatalogItems = true,
+            F = "json"
+        };
+
+        using var json = await ExecuteIdentifyJsonAsync(request);
+
+        json.RootElement.GetProperty("objectId").GetInt64().Should().Be(101);
+        json.RootElement.GetProperty("name").GetString().Should().Be("locked-raster");
+        json.RootElement.GetProperty("value").GetString().Should().Be("2");
+        json.RootElement.GetProperty("catalogItems").EnumerateArray()
+            .Select(item => item.GetProperty("id").GetInt64())
+            .Should().Equal(101);
+        await _rasterStore.DidNotReceiveWithAnyArgs().IdentifyMosaicAsync(
+            default, default!, default, default, default, default, default, default);
+        await _rasterStore.DidNotReceiveWithAnyArgs().IdentifyAsync(
+            1, 100, default, default, default, default, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_MalformedMosaicRule_ReturnsBadRequest()
+    {
+        SetupSuccessfulIdentify();
+
+        foreach (var mosaicRule in new[]
+                 {
+                     "{\"mosaicMethod\":",
+                     "{\"mosaicMethod\":\"esriMosaicLockRaster\"}",
+                     "{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[\"x\"]}"
+                 })
+        {
+            var context = CreateImageServerContext();
+            var request = new IdentifyRequest { Geometry = "10,20", MosaicRule = mosaicRule, F = "json" };
+
+            var result = await _handler.IdentifyAsync(context, 1, request);
+
+            await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
+        }
+    }
+
+    private async Task<JsonDocument> ExecuteIdentifyJsonAsync(IdentifyRequest request)
+    {
+        var context = CreateImageServerContext();
+        var result = await _handler.IdentifyAsync(context, 1, request);
+        await result.ExecuteAsync(context);
+
+        context.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        context.Response.Body.Position = 0;
+        var json = await JsonDocument.ParseAsync(context.Response.Body);
+        json.RootElement.TryGetProperty("error", out var error).Should().BeFalse(error.ToString());
+        return json;
+    }
+
     private static DefaultHttpContext CreateImageServerContext()
     {
         var services = new ServiceCollection();

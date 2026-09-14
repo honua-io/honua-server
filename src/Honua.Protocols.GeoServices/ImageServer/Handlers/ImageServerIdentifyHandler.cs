@@ -340,7 +340,9 @@ internal sealed class ImageServerIdentifyHandler
             ObjectId = null,
             Name = read.Variable ?? displayName,
             Value = hasData ? value.ToString(CultureInfo.InvariantCulture) : "NoData",
-            Location = new Point { X = x, Y = y, SpatialReference = CreateLocationSpatialReference(srid) },
+            // The slice reader samples an sr-less point in the coverage's native CRS, so the
+            // location reference is only stated when the request supplied one.
+            Location = new Point { X = x, Y = y, SpatialReference = srid is null ? null : CreateLocationSpatialReference(srid) },
             Properties = new Dictionary<string, object?>
             {
                 ["HasData"] = hasData,
