@@ -123,6 +123,7 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         var targetLayerId = layer.TargetHonuaLayerId.Value;
         long? targetCount = null;
         FeatureExtent? targetExtent = null;
+        FeatureExtent? comparisonExtent = null;
         QueryResult<Feature>? sample = null;
         string? readerFailure = null;
 
@@ -152,6 +153,27 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
             Log.ProbeFailed(_logger, layer.SourceLayerId, "extent", ex);
         }
 
+        if (targetExtent is { } observed &&
+            layer.PlannedTargetSrid == observed.SpatialReference &&
+            layer.SourceExtent?.SpatialReferenceId is > 0 and var sourceSrid &&
+            sourceSrid != observed.SpatialReference)
+        {
+            try
+            {
+                // The canonical query pipeline transforms each geometry before aggregating
+                // its extent. Transforming an already aggregated bbox would inflate bounds.
+                comparisonExtent = await _featureReader.GetExtentAsync(
+                    targetLayerId,
+                    BuildCountQuery(layer) with { OutputSrid = sourceSrid },
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                readerFailure ??= "Target extent could not be queried in the source CRS; manual review required.";
+                Log.ProbeFailed(_logger, layer.SourceLayerId, "extent-reprojection", ex);
+            }
+        }
+
         try
         {
             sample = await _featureReader
@@ -167,7 +189,7 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         var count = BuildCountProbe(layer, options, targetCount, readerFailure);
         var geometry = BuildGeometryProbe(sample, options, readerFailure);
         var content = BuildContentProbe(layer, sample, readerFailure);
-        var extent = BuildExtentProbe(layer, targetExtent, options, readerFailure);
+        var extent = BuildExtentProbe(layer, targetExtent, options, readerFailure, comparisonExtent);
 
         return new MigrationReconciliationLayerReport
         {
@@ -436,7 +458,8 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         LayerReconciliationLayerInput layer,
         FeatureExtent? targetExtent,
         LayerReconciliationOptions options,
-        string? readerFailure)
+        string? readerFailure,
+        FeatureExtent? comparisonExtent)
     {
         var source = layer.SourceExtent is { } s
             ? new ExtentBox
@@ -488,6 +511,42 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
 
         var sourceBox = source.Value;
         var targetBox = target.Value;
+        ExtentBox? comparisonTarget = null;
+        if (layer.PlannedTargetSrid is { } plannedSrid && plannedSrid != targetBox.Srid)
+        {
+            return new MigrationReconciliationExtentProbe
+            {
+                Source = source,
+                Target = target,
+                Classification = MigrationReconciliationClassifications.Fail,
+                Reason = "Target extent CRS does not match the reviewed import target CRS."
+            };
+        }
+
+        if (sourceBox.Srid != targetBox.Srid)
+        {
+            if (layer.PlannedTargetSrid is null ||
+                comparisonExtent is not { } projected || projected.SpatialReference != sourceBox.Srid)
+            {
+                return new MigrationReconciliationExtentProbe
+                {
+                    Source = source,
+                    Target = target,
+                    Classification = MigrationReconciliationClassifications.Fail,
+                    Reason = readerFailure ?? "Different source and target CRSs require an approved reprojection and a common-CRS extent observation."
+                };
+            }
+
+            targetBox = new ExtentBox
+            {
+                MinX = projected.MinX,
+                MinY = projected.MinY,
+                MaxX = projected.MaxX,
+                MaxY = projected.MaxY,
+                Srid = projected.SpatialReference
+            };
+            comparisonTarget = targetBox;
+        }
         var width = Math.Abs(sourceBox.MaxX - sourceBox.MinX);
         var height = Math.Abs(sourceBox.MaxY - sourceBox.MinY);
 
@@ -504,6 +563,7 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
             {
                 Source = source,
                 Target = target,
+                ComparisonTarget = comparisonTarget,
                 MaxDimensionDelta = matches ? 0d : null,
                 Classification = matches
                     ? MigrationReconciliationClassifications.Pass
@@ -545,6 +605,7 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         {
             Source = source,
             Target = target,
+            ComparisonTarget = comparisonTarget,
             MaxDimensionDelta = ratio,
             Classification = classification,
             Reason = reason

@@ -67,7 +67,9 @@ public static class MigrationCatalogReconciler
                     input.ExpectedRelationships,
                     input.SourceBbox,
                     input.TargetResourceId,
-                    input.ExpectedSubtypes);
+                    input.ExpectedSubtypes,
+                    input.PlannedTargetSrid,
+                    input.ObservedTargetExtent);
             })
             .OrderBy(static outcome => outcome.SourceResourceId, StringComparer.Ordinal)
             .ToArray();
@@ -104,7 +106,9 @@ public static class MigrationCatalogReconciler
         MigrationManifestRelationshipRecord[] expectedRelationships,
         double[]? sourceBbox,
         string? targetResourceId,
-        MetadataV2Subtypes? expectedSubtypes)
+        MetadataV2Subtypes? expectedSubtypes,
+        int? plannedTargetSrid = null,
+        ExtentBox? observedTargetExtent = null)
     {
         if (published is null)
         {
@@ -129,7 +133,7 @@ public static class MigrationCatalogReconciler
         var findings = new List<MigrationCatalogReconciliationFinding>();
 
         CollectSchemaFindings(resource, published, findings);
-        CollectSpatialFindings(resource, published, sourceBbox, findings);
+        CollectSpatialFindings(resource, published, sourceBbox, findings, plannedTargetSrid, observedTargetExtent);
         CollectIdentifierFindings(resource, published, findings);
         CollectRelationshipFindings(expectedRelationships, published, findings);
         CollectAttachmentFindings(resource, published, findings);
@@ -299,7 +303,9 @@ public static class MigrationCatalogReconciler
         MigrationInventoryResource resource,
         MetadataV2Resource published,
         double[]? sourceBbox,
-        List<MigrationCatalogReconciliationFinding> findings)
+        List<MigrationCatalogReconciliationFinding> findings,
+        int? plannedTargetSrid,
+        ExtentBox? observedTargetExtent)
     {
         var hasInventoryGeometry = !string.IsNullOrWhiteSpace(resource.GeometryType);
         if (hasInventoryGeometry)
@@ -321,9 +327,10 @@ public static class MigrationCatalogReconciler
             }
         }
 
-        var expectedSrid = ResolveInventorySrid(resource.SpatialReferences);
+        var sourceSrid = ResolveInventorySrid(resource.SpatialReferences);
+        var expectedSrid = hasInventoryGeometry ? plannedTargetSrid ?? sourceSrid : sourceSrid;
         var publishedSrid = published.Spatial?.SpatialReference?.ResolveSrid();
-        if (expectedSrid.HasValue && publishedSrid.HasValue && expectedSrid.Value != publishedSrid.Value)
+        if (expectedSrid.HasValue && expectedSrid != publishedSrid)
         {
             findings.Add(new MigrationCatalogReconciliationFinding
             {
@@ -331,12 +338,34 @@ public static class MigrationCatalogReconciler
                 Severity = MigrationCatalogReconciliationSeverities.Fail,
                 Subject = "spatial",
                 Expected = expectedSrid.Value.ToString(CultureInfo.InvariantCulture),
-                Actual = publishedSrid.Value.ToString(CultureInfo.InvariantCulture),
-                Summary = "Published SRID does not match the inventory-declared SRID."
+                Actual = publishedSrid?.ToString(CultureInfo.InvariantCulture) ?? "missing",
+                Summary = "Published SRID does not match the reviewed target or inventory-declared SRID."
             });
+            // Bounds in different coordinate systems are not numerically comparable.
+            return;
         }
 
         var normalizedSourceBbox = NormalizeBbox(sourceBbox);
+        if (normalizedSourceBbox is not null && plannedTargetSrid is not null && sourceSrid != plannedTargetSrid)
+        {
+            // Do not compare meter-valued inventory bounds with degree-valued catalog bounds.
+            // The data gate separately proves source-to-target parity in the source CRS.
+            if (observedTargetExtent is not { } observed || observed.Srid != plannedTargetSrid ||
+                !double.IsFinite(observed.MinX) || !double.IsFinite(observed.MinY) ||
+                !double.IsFinite(observed.MaxX) || !double.IsFinite(observed.MaxY))
+            {
+                findings.Add(new MigrationCatalogReconciliationFinding
+                {
+                    Code = MigrationCatalogReconciliationCodes.ExtentMissing,
+                    Severity = MigrationCatalogReconciliationSeverities.Fail,
+                    Subject = "spatial",
+                    Summary = "Planned reprojection requires an independently observed target extent in the planned CRS."
+                });
+                return;
+            }
+
+            normalizedSourceBbox = NormalizeBbox([observed.MinX, observed.MinY, observed.MaxX, observed.MaxY]);
+        }
         if (normalizedSourceBbox is not null)
         {
             var publishedBbox = published.Spatial?.Bbox;
@@ -363,7 +392,7 @@ public static class MigrationCatalogReconciler
                         Subject = "spatial",
                         Expected = FormatBbox(normalizedSourceBbox),
                         Actual = FormatBbox(publishedAsArray),
-                        Summary = "Published extent is disjoint from the source-declared extent."
+                        Summary = "Published extent is disjoint from the comparison extent in the same CRS."
                     });
                 }
             }
