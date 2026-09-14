@@ -18,7 +18,7 @@ Subscribe to WebSocket and SSE feature-change streams with filters and replay cu
 | Edition | Pro |
 | Surface maturity | 3 implemented, 2 preview |
 | Registry entries | 5 |
-| Proving tests | 112 |
+| Proving tests | 113 |
 
 The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, both generated from the server's own registry and test evidence. This page is a pure function of those two files — nothing in it depends on what the prose happens to say, so an unrelated documentation edit cannot stale it.
 

@@ -9,8 +9,10 @@ using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Validation;
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Primitives;
 using System.Security.Claims;
 using AccessDecision = Honua.Core.Features.Security.Domain.AccessDecision;
 
@@ -61,13 +63,25 @@ internal static class AccessPolicyHelpers
     /// </summary>
     internal static void AppendAuthenticationChallenge(HttpContext context)
     {
-        var authorization = context.Request.Headers.Authorization.FirstOrDefault();
         context.Response.Headers.Append(
             "WWW-Authenticate",
-            !string.IsNullOrWhiteSpace(authorization) &&
-            authorization.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+            AttemptedBearerCredential(context.Request)
                 ? "Bearer"
                 : "ApiKey realm=\"Honua Admin\", header=\"X-API-Key\"");
+    }
+
+    // Portal tokens travel as an Authorization or X-Esri-Authorization bearer, the `token` query
+    // parameter, or a form field the portal-token handler has already parsed. A caller that tried
+    // any of them is told to present a bearer again, not an admin API key (honua-server#4778).
+    private static bool AttemptedBearerCredential(HttpRequest request)
+    {
+        static bool IsBearer(StringValues values) => values.Any(value => value is not null
+            && value.StartsWith(PortalTokenAuthenticationHandler.BearerPrefix, StringComparison.OrdinalIgnoreCase));
+
+        return IsBearer(request.Headers.Authorization)
+            || IsBearer(request.Headers[PortalTokenAuthenticationHandler.EsriAuthorizationHeader])
+            || request.Query.ContainsKey(PortalTokenAuthenticationHandler.TokenQueryParameter)
+            || request.HttpContext.Features.Get<IFormFeature>()?.Form?.ContainsKey(PortalTokenAuthenticationHandler.TokenQueryParameter) == true;
     }
 
     public static AccessDecision EvaluateAccess(
@@ -645,11 +659,111 @@ internal static class AccessPolicyHelpers
             : null);
     }
 
+    /// <summary>
+    /// Resolves the canonical per-operation decision (#1376) once for each supplied resource so
+    /// synchronous layer selection shares it with the async handlers (#4783).
+    /// </summary>
+    /// <param name="context">The request context.</param>
+    /// <param name="resources">The resources the request may touch.</param>
+    /// <param name="service">The owning service, when known.</param>
+    /// <param name="operation">The canonical operation being authorized.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The per-resource decisions.</returns>
+    public static Task<ResourceAccessSet> EvaluateResourceAccessSetAsync(
+        HttpContext context,
+        IEnumerable<MetadataV2Resource> resources,
+        MetadataV2Service? service,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken = default)
+        => EvaluateResourceAccessSetAsync(context, resources, service, [operation], cancellationToken);
+
+    /// <summary>
+    /// Resolves one decision per resource that allows the resource when the canonical resolver or
+    /// the coarse policy admits ANY of <paramref name="operations"/> (for example, a replica write
+    /// admitted by an update, insert or delete grant). A denied resource keeps the decision for the
+    /// first operation, which also selects the coarse fallback scope.
+    /// </summary>
+    /// <param name="context">The request context.</param>
+    /// <param name="resources">The resources the request may touch.</param>
+    /// <param name="service">The owning service, when known.</param>
+    /// <param name="operations">The canonical operations, any of which authorizes a resource.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The per-resource decisions.</returns>
+    public static async Task<ResourceAccessSet> EvaluateResourceAccessSetAsync(
+        HttpContext context,
+        IEnumerable<MetadataV2Resource> resources,
+        MetadataV2Service? service,
+        IReadOnlyList<AuthorizationOperation> operations,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(resources);
+        ArgumentNullException.ThrowIfNull(operations);
+        if (operations.Count == 0)
+        {
+            throw new ArgumentException("At least one operation is required.", nameof(operations));
+        }
+
+        var decisions = new Dictionary<MetadataV2Resource, AccessDecision>(ReferenceEqualityComparer.Instance);
+        foreach (var resource in resources.Distinct<MetadataV2Resource>(ReferenceEqualityComparer.Instance))
+        {
+            AccessDecision? decision = null;
+            foreach (var operation in operations)
+            {
+                var candidate = await EvaluateResourceAccessAsync(
+                    context, resource, service, operation, cancellationToken).ConfigureAwait(false);
+                if (candidate.IsAllowed)
+                {
+                    decision = candidate;
+                    break;
+                }
+
+                decision ??= candidate;
+            }
+
+            decisions[resource] = decision!.Value;
+        }
+
+        return new ResourceAccessSet(context, service, ScopeForOperation(operations[0]), decisions);
+    }
+
+    /// <summary>
+    /// Operation-aware counterpart of <see cref="RequireAnyResourceAccess"/>: allows the request
+    /// when the canonical resolver or the coarse policy admits any of the resources (#4783).
+    /// </summary>
+    /// <param name="context">The request context.</param>
+    /// <param name="resources">The candidate resources.</param>
+    /// <param name="service">The owning service, when known.</param>
+    /// <param name="operation">The canonical operation being authorized.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>An error result when every resource is denied, otherwise <see langword="null"/>.</returns>
+    public static async Task<IResult?> RequireAnyResourceAccessAsync(
+        HttpContext context,
+        IEnumerable<MetadataV2Resource> resources,
+        MetadataV2Service? service,
+        AuthorizationOperation operation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(resources);
+        IReadOnlyCollection<MetadataV2Resource> candidates = resources as IReadOnlyCollection<MetadataV2Resource> ?? [.. resources];
+        var access = await EvaluateResourceAccessSetAsync(
+            context, candidates, service, operation, cancellationToken).ConfigureAwait(false);
+        return access.RequireAny(candidates);
+    }
+
     public static IResult? RequireAnyResourceAccess(
         HttpContext context,
         IEnumerable<MetadataV2Resource> resources,
         MetadataV2Service? service = null,
         AccessScope scope = AccessScope.Read)
+        => RequireAnyDecision(
+            context,
+            resources,
+            resource => EvaluateResourceAccess(context, resource, service, scope));
+
+    internal static IResult? RequireAnyDecision(
+        HttpContext context,
+        IEnumerable<MetadataV2Resource> resources,
+        Func<MetadataV2Resource, AccessDecision> evaluate)
     {
         ArgumentNullException.ThrowIfNull(resources);
         var requiresAuth = false;
@@ -657,7 +771,7 @@ internal static class AccessPolicyHelpers
 
         foreach (var resource in resources)
         {
-            var decision = EvaluateResourceAccess(context, resource, service, scope);
+            var decision = evaluate(resource);
             if (decision.IsAllowed)
             {
                 return null;

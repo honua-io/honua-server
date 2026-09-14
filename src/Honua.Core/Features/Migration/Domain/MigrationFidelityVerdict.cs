@@ -99,6 +99,18 @@ public static class MigrationFidelityDifferenceCodes
     /// relationship in the manifest is missing from the target.
     /// </summary>
     public const string RelationshipApplyNotExecuted = "fidelity.relationship-apply.not-executed";
+
+    /// <summary>
+    /// The source record population (count, or object-ID set) matching the import filter differed
+    /// between the start and the end of the transfer, so the target is not a consistent snapshot.
+    /// </summary>
+    public const string SourceChangedDuringTransfer = "fidelity.source.changed-during-transfer";
+
+    /// <summary>
+    /// The source record count could not be read at the start or the end of the transfer, so source
+    /// changes during the copy were never ruled out.
+    /// </summary>
+    public const string SourceSnapshotUnverified = "fidelity.source.snapshot-unverified";
 }
 
 /// <summary>

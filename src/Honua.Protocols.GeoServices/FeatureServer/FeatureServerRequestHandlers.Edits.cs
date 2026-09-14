@@ -486,17 +486,10 @@ internal static partial class FeatureServerEndpoints
 
         request.F = normalizedFormat;
 
-        if (request.UseGlobalIds)
+        var unsupportedControlError = CreateUnsupportedEditControlError(context, request);
+        if (unsupportedControlError is not null)
         {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "useGlobalIds is not supported",
-                ["Set useGlobalIds to false and supply objectIds in attributes."]);
-        }
-
-        if (request.ReturnEditMoment)
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "returnEditMoment is not supported");
+            return unsupportedControlError;
         }
 
         // gdbVersion is resolved to a branch VersionContext inside the edits handler (#1272,
@@ -505,12 +498,13 @@ internal static partial class FeatureServerEndpoints
 
         var editsHandler = ResolveEditsHandler(context);
         var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        return await editsHandler.HandleApplyEditsAsync(
+        var result = await editsHandler.HandleApplyEditsAsync(
             serviceId,
             layerId,
             request,
             editLimits,
             cancellationToken);
+        return StampEditMoment(context, request, result);
     }
 
     /// <summary>
@@ -672,17 +666,10 @@ internal static partial class FeatureServerEndpoints
                 ["Service-level applyEdits does not accept attachment or assetMaps edits; submit them through the layer attachment endpoints."]);
         }
 
-        if (sharedOptions.UseGlobalIds)
+        var unsupportedControlError = CreateUnsupportedEditControlError(context, sharedOptions);
+        if (unsupportedControlError is not null)
         {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "useGlobalIds is not supported",
-                ["Set useGlobalIds to false and supply objectIds in attributes."]);
-        }
-
-        if (sharedOptions.ReturnEditMoment)
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "returnEditMoment is not supported");
+            return unsupportedControlError;
         }
 
         // gdbVersion (when present) flows to each per-layer ApplyEditsRequest below and is resolved
@@ -778,7 +765,10 @@ internal static partial class FeatureServerEndpoints
                     Id = entry.Id,
                     AddResults = response?.AddResults ?? [],
                     UpdateResults = response?.UpdateResults ?? [],
-                    DeleteResults = response?.DeleteResults ?? []
+                    DeleteResults = response?.DeleteResults ?? [],
+                    // Each layer commits in its own transaction; report the moment the edits handler
+                    // recorded for this layer's edits (#4105).
+                    EditMoment = sharedOptions.ReturnEditMoment ? response?.EditMoment ?? ResolveEditMoment(context) : null
                 };
             }
             else if (i == 0)
@@ -1117,6 +1107,32 @@ internal static partial class FeatureServerEndpoints
 
         request.F = normalizedFormat;
 
+        var unsupportedControlError = CreateUnsupportedEditControlError(context, request);
+        if (unsupportedControlError is not null)
+        {
+            return unsupportedControlError;
+        }
+
+        // gdbVersion is resolved to a branch VersionContext inside the edits handler (#1272,
+        // ADR-0051): absent/DEFAULT keeps the byte-identical non-versioned path.
+
+        var editsHandler = ResolveEditsHandler(context);
+        var cancellationToken = GetTimeoutAwareCancellationToken(context);
+        var result = await editsHandler.HandleApplyEditsAsync(
+            serviceId,
+            layerId,
+            request,
+            editLimits,
+            cancellationToken);
+        return StampEditMoment(context, request, result);
+    }
+
+    /// <summary>
+    /// Rejects applyEdits controls the server cannot honor. Each is a 400 rather than an accepted
+    /// no-op because ignoring it would drop edits or change what the client was promised (#4105).
+    /// </summary>
+    private static IResult? CreateUnsupportedEditControlError(HttpContext context, ApplyEditsRequest request)
+    {
         if (request.UseGlobalIds)
         {
             return StandardErrorHelpers.CreateBadRequest(context,
@@ -1124,30 +1140,86 @@ internal static partial class FeatureServerEndpoints
                 ["Set useGlobalIds to false and supply objectIds in attributes."]);
         }
 
-        if (request.ReturnEditMoment)
-        {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "returnEditMoment is not supported");
-        }
-
-        // gdbVersion is resolved to a branch VersionContext inside the edits handler (#1272,
-        // ADR-0051): absent/DEFAULT keeps the byte-identical non-versioned path.
-
         if (request.Attachments is { Length: > 0 })
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "attachments edits are not supported");
         }
 
-        var editsHandler = ResolveEditsHandler(context);
-        var cancellationToken = GetTimeoutAwareCancellationToken(context);
-        return await editsHandler.HandleApplyEditsAsync(
-            serviceId,
-            layerId,
-            request,
-            editLimits,
-            cancellationToken);
+        if (request.AssetMaps is { Length: > 0 })
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "assetMaps edits are not supported");
+        }
+
+        if (request.Async)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "async applyEdits is not supported",
+                ["Omit async or set it to false; edits are applied synchronously."]);
+        }
+
+        if (request.UseUniqueIds)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "useUniqueIds is not supported",
+                ["Set useUniqueIds to false and supply objectIds in attributes."]);
+        }
+
+        if (!string.IsNullOrEmpty(request.EditsUploadId) || !string.IsNullOrEmpty(request.EditsUploadFormat))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "editsUploadId and editsUploadFormat are not supported",
+                ["Send the edits inline in adds, updates and deletes."]);
+        }
+
+        if (request.DatumTransformation is not null)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context,
+                "datumTransformation is not supported",
+                ["Edit geometries must already be in the layer spatial reference."]);
+        }
+
+        return null;
     }
+
+    /// <summary>
+    /// Emits <c>editMoment</c> (server clock, epoch milliseconds) on a JSON applyEdits response only when
+    /// the client asked for it with returnEditMoment=true (#4105). A committed edit carries the moment the
+    /// edits handler recorded with the response, so an Idempotency-Key replay (#2250) reports the original
+    /// moment; a response the handler did not stamp (no committed write) gets the current server time. The
+    /// handler's object may be the replay record, so any change goes on a copy, never on that object.
+    /// </summary>
+    private static IResult StampEditMoment(HttpContext context, ApplyEditsRequest request, IResult result)
+    {
+        if (result is not Microsoft.AspNetCore.Http.HttpResults.JsonHttpResult<ApplyEditsResponse> { Value: { } response } json)
+        {
+            return result;
+        }
+
+        long? editMoment = request.ReturnEditMoment ? response.EditMoment ?? ResolveEditMoment(context) : null;
+        if (response.EditMoment == editMoment)
+        {
+            return result;
+        }
+
+        var stamped = new ApplyEditsResponse
+        {
+            AddResults = response.AddResults,
+            UpdateResults = response.UpdateResults,
+            DeleteResults = response.DeleteResults,
+            Success = response.Success,
+            EditMoment = editMoment,
+        };
+        return Results.Json(
+            stamped,
+            FeatureServerJsonContext.Default.ApplyEditsResponse,
+            contentType: json.ContentType,
+            statusCode: json.StatusCode);
+    }
+
+    private static long ResolveEditMoment(HttpContext context)
+        => (context.RequestServices.GetService<TimeProvider>() ?? TimeProvider.System).GetUtcNow().ToUnixTimeMilliseconds();
 
     private static bool TryApplyEditOptionsFromQuery(
         ApplyEditsRequest request,
@@ -1201,12 +1273,73 @@ internal static partial class FeatureServerEndpoints
             request.GdbVersion = gdbVersion;
         }
 
-        if (TryGetValue(values, "attachments", out var attachmentsRaw) && !StringValues.IsNullOrEmpty(attachmentsRaw))
+        if (TryGetValue(values, "attachments", out var attachmentsRaw) && !IsEmptyEditPayload(attachmentsRaw.ToString()))
         {
             request.Attachments = [attachmentsRaw.ToString()];
         }
 
+        return TryParseUnsupportedEditControls(values, request, out error);
+    }
+
+    /// <summary>
+    /// Reads the Esri applyEdits controls this server cannot honor (#4105) so that a non-default
+    /// value is rejected by <see cref="CreateUnsupportedEditControlError"/> instead of being
+    /// dropped. Empty strings, empty JSON arrays and <c>false</c> are the defaults and stay accepted.
+    /// </summary>
+    private static bool TryParseUnsupportedEditControls(
+        IReadOnlyDictionary<string, StringValues> values,
+        ApplyEditsRequest request,
+        out string? error)
+    {
+        if (!TryParseBoolValue(values, "async", request.Async, out var isAsync, out error) ||
+            !TryParseBoolValue(values, "useUniqueIds", request.UseUniqueIds, out var useUniqueIds, out error))
+        {
+            return false;
+        }
+
+        request.Async = isAsync;
+        request.UseUniqueIds = useUniqueIds;
+        request.EditsUploadId = GetValueString(values, "editsUploadId") is { Length: > 0 } uploadId ? uploadId : request.EditsUploadId;
+        request.EditsUploadFormat = GetValueString(values, "editsUploadFormat") is { Length: > 0 } uploadFormat ? uploadFormat : request.EditsUploadFormat;
+        if (GetValueString(values, "assetMaps") is { } assetMaps && !IsEmptyEditPayload(assetMaps))
+        {
+            request.AssetMaps = [assetMaps];
+        }
+
+        if (GetValueString(values, "datumTransformation") is { } datumTransformation && !string.IsNullOrWhiteSpace(datumTransformation))
+        {
+            request.DatumTransformation = datumTransformation;
+        }
+
         return true;
+    }
+
+    /// <summary>
+    /// True when an attachments/assetMaps payload carries no edits: blank, JSON <c>null</c>, or a JSON
+    /// array with no elements however it is formatted (<c>[ ]</c>, a multi-line empty array). Anything
+    /// else, including text that is not JSON, counts as edits and is rejected rather than dropped.
+    /// </summary>
+    private static bool IsEmptyEditPayload(string payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return true;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(payload);
+            return document.RootElement.ValueKind switch
+            {
+                JsonValueKind.Null => true,
+                JsonValueKind.Array => document.RootElement.GetArrayLength() == 0,
+                _ => false,
+            };
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     private static bool HasServiceAttachmentPayload(JsonElement? payload)
@@ -1648,12 +1781,12 @@ internal static partial class FeatureServerEndpoints
         request.F = GetValueString(values, "f");
         request.GdbVersion = GetValueString(values, "gdbVersion");
 
-        if (TryGetValue(values, "attachments", out var attachmentsRaw) && !StringValues.IsNullOrEmpty(attachmentsRaw))
+        if (TryGetValue(values, "attachments", out var attachmentsRaw) && !IsEmptyEditPayload(attachmentsRaw.ToString()))
         {
             request.Attachments = [attachmentsRaw.ToString()];
         }
 
-        return true;
+        return TryParseUnsupportedEditControls(values, request, out error);
     }
 
     private static bool TryParseRequestOptions(
@@ -1707,9 +1840,52 @@ internal static partial class FeatureServerEndpoints
             request.GdbVersion = gdbVersionElement.GetString();
         }
 
-        if (root.TryGetProperty("attachments", out var attachmentsElement))
+        if (root.TryGetProperty("attachments", out var attachmentsElement) && !IsEmptyEditPayload(attachmentsElement.GetRawText()))
         {
             request.Attachments = [attachmentsElement.GetRawText()];
+        }
+
+        // Unsupported Esri controls (#4105): read them so a non-default value is rejected, not dropped.
+        if (root.TryGetProperty("async", out var asyncElement))
+        {
+            if (!TryParseBooleanElement(asyncElement, out var isAsync))
+            {
+                error = "async must be a boolean value";
+                return false;
+            }
+
+            request.Async = isAsync;
+        }
+
+        if (root.TryGetProperty("useUniqueIds", out var uniqueIdsElement))
+        {
+            if (!TryParseBooleanElement(uniqueIdsElement, out var useUniqueIds))
+            {
+                error = "useUniqueIds must be a boolean value";
+                return false;
+            }
+
+            request.UseUniqueIds = useUniqueIds;
+        }
+
+        if (root.TryGetProperty("editsUploadId", out var uploadIdElement) && uploadIdElement.ValueKind != JsonValueKind.Null)
+        {
+            request.EditsUploadId = uploadIdElement.ToString();
+        }
+
+        if (root.TryGetProperty("editsUploadFormat", out var uploadFormatElement) && uploadFormatElement.ValueKind != JsonValueKind.Null)
+        {
+            request.EditsUploadFormat = uploadFormatElement.ToString();
+        }
+
+        if (root.TryGetProperty("assetMaps", out var assetMapsElement) && !IsEmptyEditPayload(assetMapsElement.GetRawText()))
+        {
+            request.AssetMaps = [assetMapsElement.GetRawText()];
+        }
+
+        if (root.TryGetProperty("datumTransformation", out var datumElement) && datumElement.ValueKind != JsonValueKind.Null)
+        {
+            request.DatumTransformation = datumElement.GetRawText();
         }
 
         return true;

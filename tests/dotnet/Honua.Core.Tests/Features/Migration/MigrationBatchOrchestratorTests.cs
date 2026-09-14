@@ -295,6 +295,62 @@ public sealed class MigrationBatchOrchestratorTests
             (MigrationFidelityDifferenceCodes.ServiceLayerIncomplete, "resource:x:layer:1", "pending"));
     }
 
+    [Fact]
+    public async Task AdvanceAsync_WhenTheQueuedJobIdNeverReachedTheChildRow_DoesNotQueueASecondImportOfTheLayer()
+    {
+        // #4600 AC5 (idempotent job identity): a crash can land after the child's import job is queued
+        // but before its id is written to the child row, so the child still reads Pending. The worker
+        // has meanwhile picked the job up. Advancing again must recognise that job, not queue a second
+        // import of the same layer into the same table under a new id.
+        var (orchestrator, catalog, jobManager, _) = Build();
+        var batch = await orchestrator.StartAsync(NewRequest());
+        var queuedJobId = (await catalog.GetChildrenAsync(batch.BatchId))[0].JobId!;
+
+        ((InMemoryBatchCatalog)catalog).ResetChildToPending(batch.BatchId, ordinal: 0);
+        var picked = await jobManager.ProgressStore.GetProgressAsync(queuedJobId);
+        await jobManager.ProgressStore.SetProgressAsync(
+            queuedJobId,
+            picked! with { Status = GeoservicesImportStatus.InsertingFeatures });
+
+        await orchestrator.AdvanceAsync(batch.BatchId);
+
+        jobManager.Queue.Should().Equal([queuedJobId], "the running job must not be queued a second time");
+        var child = (await catalog.GetChildrenAsync(batch.BatchId))[0];
+        child.Status.Should().Be(MigrationBatchChildStatus.Running);
+        child.JobId.Should().Be(queuedJobId);
+        (await jobManager.ProgressStore.GetProgressAsync(queuedJobId))!.Status
+            .Should().Be(GeoservicesImportStatus.InsertingFeatures, "the in-flight job's progress must not be reset");
+    }
+
+    [Fact]
+    public async Task AdvanceAsync_WhenTheQueuedJobWasNeverPickedUp_QueuesTheSameJobIdentityAgain()
+    {
+        // Same crash window, but no worker has picked the job up, so the enqueue itself may have been
+        // lost. The job is queued again under the SAME id: a lost enqueue cannot strand the child, and
+        // a duplicate queue entry is a no-op once the job is terminal.
+        var (orchestrator, catalog, jobManager, _) = Build();
+        var batch = await orchestrator.StartAsync(NewRequest());
+        var queuedJobId = (await catalog.GetChildrenAsync(batch.BatchId))[0].JobId!;
+
+        ((InMemoryBatchCatalog)catalog).ResetChildToPending(batch.BatchId, ordinal: 0);
+        await orchestrator.AdvanceAsync(batch.BatchId);
+
+        jobManager.Queue.Should().Equal(queuedJobId, queuedJobId);
+        (await catalog.GetChildrenAsync(batch.BatchId))[0].JobId.Should().Be(queuedJobId);
+    }
+
+    [Fact]
+    public async Task StartAsync_GivesEveryChildOfEveryBatchItsOwnJobIdentity()
+    {
+        var (orchestrator, catalog, jobManager, _) = Build();
+        var first = await orchestrator.StartAsync(NewRequest());
+        await CompleteAllChildrenAsync(orchestrator, catalog, jobManager, first.BatchId);
+        var second = await orchestrator.StartAsync(NewRequest());
+
+        jobManager.Queue.Should().HaveCount(3).And.OnlyHaveUniqueItems();
+        (await catalog.GetChildrenAsync(second.BatchId))[0].JobId.Should().Be(jobManager.Queue[2]);
+    }
+
     private static string EmptyManifestBody() => System.Text.Json.JsonSerializer.Serialize(
         new MigrationManifestArtifact
         {
@@ -581,6 +637,16 @@ public sealed class MigrationBatchOrchestratorTests
             };
             _batches[batchId] = updated;
             return Task.FromResult<MigrationBatchRunRecord?>(updated);
+        }
+
+        /// <summary>
+        /// Simulates the child-row write that a crash lost after the child's import job was queued.
+        /// </summary>
+        public void ResetChildToPending(string batchId, int ordinal)
+        {
+            var children = _children[batchId];
+            var index = children.FindIndex(c => c.Ordinal == ordinal);
+            children[index] = children[index] with { Status = MigrationBatchChildStatus.Pending, JobId = null };
         }
 
         public Task<IReadOnlyList<string>> GetActiveBatchIdsAsync(CancellationToken cancellationToken = default)

@@ -46,7 +46,7 @@ internal sealed class ImageServerTileExportProducer(IServiceScopeFactory scopeFa
         var snapshot = await graphProvider.GetByRevisionAsync(descriptor.MetadataRevision, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException(
                 $"Pinned metadata revision {descriptor.MetadataRevision} is no longer available for the tile export.");
-        var resolved = ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId)
+        var resolved = ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId)
             ?? throw new InvalidOperationException(
                 $"ImageServer layer {layerId} is not present in the pinned metadata revision.");
 
@@ -157,6 +157,6 @@ internal sealed class ImageServerTileExportSourceFence(IServiceScopeFactory scop
         await using var scope = scopeFactory.CreateAsyncScope();
         var graphProvider = scope.ServiceProvider.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await graphProvider.GetByRevisionAsync(descriptor.MetadataRevision, cancellationToken).ConfigureAwait(false);
-        return snapshot is not null && ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not null;
+        return snapshot is not null && ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId) is not null;
     }
 }

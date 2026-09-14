@@ -122,6 +122,28 @@ counts can match while the schema is wrong.
 A job routed to review keeps its `needs-review` status, `fidelityVerdict` and `fidelityDifferences`
 when it finishes, so the evidence is still there when you come back to it.
 
+#### Replacements, retries and live sources
+
+- **Replacing a table keeps the old one until the end.** A job with `overwriteExisting` loads into a
+  staging table and swaps it in only after the last page, so the existing table stays readable
+  during the transfer. If records fail to load, or the job is cancelled or its worker stops, the
+  existing table is left unchanged and the staging table is discarded.
+- **One writer per table.** A second job aimed at a table that another import is writing fails
+  immediately and changes nothing. Retry it after the first job finishes.
+- **No silent overwrite.** A job without `overwriteExisting` fails when the table already exists.
+  That includes a job restarted after its data was committed; the existing table holds the result of
+  that earlier run.
+- **Source reads are not a snapshot.** The import counts the source, with its `whereClause`
+  applied, before the first page and after the last one (object-ID window imports compare the
+  object-ID sets). A difference is the blocking `fidelity.source.changed-during-transfer`; a count
+  that could not be read is `fidelity.source.snapshot-unverified`. Edits that change attribute
+  values without adding or removing records are not detected, so import from a quiescent source
+  when you need a point-in-time copy.
+- **Filtered imports are reconciled against the filtered source**, not the layer's total count.
+- **Batch layers keep one job identity.** Each layer of a batch run gets a job ID derived from the
+  run and its position, so advancing a batch again never queues a second import of a layer that is
+  already queued or running.
+
 #### Service imports
 
 A batch migration run imports a whole footprint of layers and applies the manifest relationships

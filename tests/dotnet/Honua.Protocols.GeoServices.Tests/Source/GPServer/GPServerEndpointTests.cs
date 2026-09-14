@@ -6,6 +6,7 @@ using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.ControlPlane;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
@@ -909,6 +910,57 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         doc.RootElement.TryGetProperty("error", out _).Should().BeFalse(
             "a choice value the adapter accepted must stay executable through canonical plan validation");
         doc.RootElement.GetProperty("jobId").GetString().Should().NotBeNullOrEmpty();
+    }
+
+    [IntegrationTheory]
+    [InlineData("geometry.project", "wkb", """{"x":-118.15,"y":33.8,"spatialReference":{"wkid":4326}}""", "fromSrid", "4326", "toSrid", "3857")]
+    [InlineData("conversion.geometry-format", "geometry", """{"x":-118.15,"y":33.8,"spatialReference":{"wkid":4326}}""", "target", "wkt", null, null)]
+    [InlineData("raster.clip", "boundary", """{"rings":[[[0,0],[0,10],[10,10],[10,0],[0,0]]],"spatialReference":{"wkid":4326}}""", "source", InlineRasterSourceBase64, null, null)]
+    [InlineData("raster.clip", "boundary", """{"geometryType":"esriGeometryPolygon","spatialReference":{"wkid":4326},"features":[{"attributes":{},"geometry":{"rings":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}}]}""", "source", InlineRasterSourceBase64, null, null)]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_EsriGeometryInputForTaskWithoutSridParameter_IsAdmittedWithoutAnInjectedSrid(
+        string taskName,
+        string geometryParameter,
+        string esriGeometryJson,
+        string otherName,
+        string otherValue,
+        string? extraName,
+        string? extraValue)
+    {
+        // #4033: the Esri input translator used to add a derived 'srid' input whenever an esriGeometry or
+        // FeatureSet was translated. These three tasks declare no 'srid' parameter, so canonical plan
+        // validation rejected every such submission as UNKNOWN_PARAMETER. The spatial reference travels
+        // inside the translated EWKB instead, where each executor reads it.
+        var inputs = new Dictionary<string, string>
+        {
+            ["f"] = "json",
+            [geometryParameter] = esriGeometryJson,
+            [otherName] = otherValue
+        };
+        if (extraName is not null)
+        {
+            inputs[extraName] = extraValue!;
+        }
+
+        using var content = new FormUrlEncodedContent(inputs);
+        var response = await _client.PostAsync($"/rest/services/{ServiceId}/GPServer/{taskName}/submitJob", content);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+            "an esriGeometry input to a task without a 'srid' parameter must pass canonical plan validation: {0}", body);
+        var jobId = doc.RootElement.GetProperty("jobId").GetString();
+        jobId.Should().NotBeNullOrEmpty();
+
+        var job = await _jobStore.GetAsync(jobId!);
+        job.Should().NotBeNull("the admitted job must be persisted under its jobId");
+        var prefix = $"{ExecutionJobParameterKeys.GeoprocessingStepInputPrefix}0.";
+        job!.Spec.Parameters.Keys.Should().NotContain(prefix + "srid");
+        var geometry = new NetTopologySuite.IO.WKBReader { HandleSRID = true }
+            .Read(Convert.FromBase64String(job.Spec.Parameters[prefix + geometryParameter]));
+        geometry.SRID.Should().Be(4326, "the esriGeometry spatial reference must survive translation inside the EWKB");
     }
 
     [IntegrationTest]

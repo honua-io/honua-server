@@ -109,10 +109,15 @@ Esri spec: [Feature Service](https://developers.arcgis.com/rest/services-referen
 ### applyEdits parameters
 
 `adds`/`updates`/`deletes` and `rollbackOnFailure` are implemented (object-ID-keyed).
-`useGlobalIds`, `gdbVersion`, `returnEditMoment`, and `attachments` are rejected with
-400; session/async/upload-style parameters (`assetMaps`, `sessionID`, `async`,
-`editsUploadId`, ...) are silently ignored. queryRelatedRecords rejects
-`gdbVersion` and `historicMoment` with 400 and accepts/ignores `returnTrueCurves`.
+`returnEditMoment=true` adds `editMoment` (server clock, epoch milliseconds, taken when the
+edits were applied; an `Idempotency-Key` replay returns the original moment) to the layer
+response and to each layer of a service-level response. `sessionID`, `trueCurveClient`,
+`usePreviousEditMoment`, `timeReferenceUnknownClient`, and `returnEditResults` are accepted on
+the query string or in the body and have no effect. `useGlobalIds`, `gdbVersion`, and
+`datumTransformation` are rejected with 400, as are a non-empty `attachments` or `assetMaps`
+payload, `async=true`, `useUniqueIds=true`, and any `editsUploadId` or `editsUploadFormat`, so
+an edit is never silently dropped; empty arrays and `false` are accepted. queryRelatedRecords
+rejects `gdbVersion` and `historicMoment` with 400 and accepts/ignores `returnTrueCurves`.
 
 #### Idempotency (at-most-once edits)
 

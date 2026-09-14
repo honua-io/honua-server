@@ -188,6 +188,11 @@ internal static class LayerValidationHelpers
 
         if (publication is null || !snapshot.IsRoutable(publication))
         {
+            if (ChallengeTenantHiddenLayer(context, snapshot, layerId, requiredProtocol, protocol) is { } challenge)
+            {
+                return new MetadataV2ValidationResult(false, null, null, null, challenge);
+            }
+
             var msg = $"Layer {layerId} not found";
             var error = protocol switch
             {
@@ -236,6 +241,48 @@ internal static class LayerValidationHelpers
     }
 
     /// <summary>
+    /// Challenges an unauthenticated request for a routable layer that tenant scoping hid.
+    /// </summary>
+    /// <remarks>
+    /// Without a valid credential a request resolves the default tenant, which cannot see a
+    /// layer scoped to another tenant. Answering 404 there made a missing, invalid, expired or
+    /// revoked credential indistinguishable from a deleted layer, so the client could not tell
+    /// that authenticating would help (honua-server#4778). An authenticated principal of
+    /// another tenant has already presented its credential and keeps tenant concealment.
+    /// </remarks>
+    private static IResult? ChallengeTenantHiddenLayer(
+        HttpContext context,
+        MetadataV2GraphSnapshot snapshot,
+        int layerId,
+        string? requiredProtocol,
+        ValidationProtocol? protocol)
+    {
+        if (context.User?.Identity?.IsAuthenticated == true)
+        {
+            return null;
+        }
+
+        // Challenge only what authenticating could open. Resolution falls back to a publication
+        // whose service does not serve the requested protocol, and its own tenant would still
+        // get 404 there, so that layer stays 404 and its existence is not disclosed.
+        var (hidden, _, hiddenService) = ResolveV2TripleForTenant(snapshot, layerId, requiredProtocol, tenantId: null, applyTenantScope: false);
+        if (hidden is null
+            || (!string.IsNullOrWhiteSpace(requiredProtocol) && hiddenService is not null
+                && !MetadataV2ServiceProtocols.IsProtocolEnabled(hiddenService, requiredProtocol)))
+        {
+            return null;
+        }
+
+        if (protocol == ValidationProtocol.ProblemJson)
+        {
+            AccessPolicyHelpers.AppendAuthenticationChallenge(context);
+            return CreateProblemJsonError(context, AccessPolicyHelpers.AuthRequiredMessage, StatusCodes.Status401Unauthorized);
+        }
+
+        return AccessPolicyHelpers.CreateAccessDeniedResult(context, AccessDecision.RequiresAuth());
+    }
+
+    /// <summary>
     /// Validates a layer index against the V2 graph snapshot using standard error
     /// responses (no protocol-specific formatting).
     /// </summary>
@@ -251,7 +298,8 @@ internal static class LayerValidationHelpers
 
         if (publication is null || !snapshot.IsRoutable(publication))
         {
-            var error = StandardErrorHelpers.CreateNotFound(context, $"Layer {layerId} not found");
+            var error = ChallengeTenantHiddenLayer(context, snapshot, layerId, requiredProtocol, protocol: null)
+                ?? StandardErrorHelpers.CreateNotFound(context, $"Layer {layerId} not found");
             return new MetadataV2ValidationResult(false, null, null, null, error);
         }
 

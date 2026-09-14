@@ -28,7 +28,7 @@ internal sealed class PortalTokenAuthenticationHandler(
 {
     internal const string TokenQueryParameter = "token";
     internal const string BearerPrefix = "Bearer ";
-    private const string EsriAuthorizationHeader = "X-Esri-Authorization";
+    internal const string EsriAuthorizationHeader = "X-Esri-Authorization";
 
     private readonly IPortalTokenIssuer _tokenIssuer = tokenIssuer ?? throw new ArgumentNullException(nameof(tokenIssuer));
 
