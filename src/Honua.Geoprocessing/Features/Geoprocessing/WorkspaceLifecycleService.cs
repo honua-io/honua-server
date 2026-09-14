@@ -75,7 +75,9 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
             ExpiresAt = expiration
         };
 
-        var created = await _workspaceStore.CreateAsync(workspace, cancellationToken);
+        var created = _workspaceStore is IAtomicWorkspaceStore atomicStore
+            ? await atomicStore.CreateWithQuotaAsync(workspace, _options.MaxWorkspaceCount, cancellationToken)
+            : await _workspaceStore.CreateAsync(workspace, cancellationToken);
         WorkspaceLifecycleLog.WorkspaceCreated(_logger, created.WorkspaceId, kind, expiration);
         return created;
     }
@@ -230,7 +232,7 @@ internal sealed class WorkspaceLifecycleService : IWorkspaceLifecycleService
                 State = WorkspaceLifecycleState.Active,
                 CreatedAt = now,
                 ExpiresAt = _retentionPolicy.ComputeExpiration(WorkspaceKind.Scratch, now)
-            }, cancellationToken).ConfigureAwait(false);
+            }, _options.MaxWorkspaceCount, cancellationToken).ConfigureAwait(false);
         }
         var owned = await _workspaceStore.ListByOwnerAsync(ownerId, cancellationToken).ConfigureAwait(false);
         var existing = owned

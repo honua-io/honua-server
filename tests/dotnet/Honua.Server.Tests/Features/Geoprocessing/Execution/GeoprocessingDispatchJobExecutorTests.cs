@@ -547,6 +547,22 @@ public sealed class GeoprocessingDispatchJobExecutorTests
     }
 
     [UnitTest]
+    public async Task ExecuteAsync_WorkspaceQuotaReached_FailsPermanentlyBeforePublishing()
+    {
+        var lifecycle = Substitute.For<IWorkspaceLifecycleService>();
+        lifecycle.GetOrCreateNamedWorkspaceAsync("admin", "ws-1", Arg.Any<CancellationToken>())
+            .ThrowsAsync(new WorkspaceQuotaExceededException());
+        var dispatcher = CreateFakeExecutorDispatcher(BuildScopeFactory(lifecycle));
+        var context = Substitute.For<IJobExecutionContext>();
+        var record = CreateFakeExecutorJobRecord(workspaceId: "ws-1", overwriteOutput: null);
+        var result = await dispatcher.ExecuteAsync(record, context, CancellationToken.None);
+        result.Status.Should().Be(ExecutionJobStatus.Failed);
+        result.IsRetryable.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("workspace count limit");
+        await context.DidNotReceiveWithAnyArgs().PublishArtifactAsync(default!, default);
+    }
+
+    [UnitTest]
     public async Task ExecuteAsync_WorkspaceResolutionCancelled_PropagatesCancellation()
     {
         using var cancellation = new CancellationTokenSource();

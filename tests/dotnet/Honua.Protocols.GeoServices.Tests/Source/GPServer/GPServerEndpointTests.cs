@@ -65,6 +65,44 @@ public sealed class GPServerEndpointTests : IAsyncLifetime
         await _fixture.DisposeAsync();
     }
 
+    [IntegrationTheory]
+    [InlineData("env:workspace", "scratch")]
+    [InlineData("env:overwriteOutput", "true")]
+    [InlineData("env:overwriteOutput", "false")]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_NativeWorkspaceControlsAreRejectedBeforeSubmission(string control, string value)
+    {
+        var recordingService = new RecordingGeoprocessingJobService();
+        var submitFixture = new WebAppFixture().ConfigureServices(services =>
+        {
+            services.RemoveAll<IGeoprocessingJobService>();
+            services.AddSingleton<IGeoprocessingJobService>(recordingService);
+        });
+        await submitFixture.InitializeAsync();
+        try
+        {
+            using var client = submitFixture.CreateAdminClient();
+            using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["f"] = "json",
+                ["source"] = InlineRasterSourceBase64,
+                [control] = value
+            });
+            using var response = await client.PostAsync(
+                $"/rest/services/{ServiceId}/GPServer/raster.resample/submitJob", content);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
+            document.RootElement.GetRawText().Should().Contain("not supported by the native GDAL worker");
+            recordingService.LastPlan.Should().BeNull();
+            recordingService.LastProtocolMetadata.Should().BeNull();
+        }
+        finally
+        {
+            await submitFixture.DisposeAsync();
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Service Info
     // -----------------------------------------------------------------------

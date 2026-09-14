@@ -11,10 +11,18 @@ namespace Honua.Core.Features.Geoprocessing.Abstractions;
 public interface IAtomicWorkspaceStore
 {
     /// <summary>
+    /// Creates a workspace while atomically enforcing the owner's active workspace
+    /// count limit. Null uses the built-in limit. Concurrent creation shares the gate.
+    /// </summary>
+    Task<Workspace> CreateWithQuotaAsync(Workspace proposal, int? maxWorkspaceCount = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Returns an unexpired active workspace matching the proposed owner, scope and
     /// label, or atomically creates the proposal. Concurrent callers share one result.
+    /// A new proposal enforces the owner's active workspace count limit; an existing
+    /// match remains usable at the limit. Null uses the built-in limit.
     /// </summary>
-    Task<Workspace> GetOrCreateNamedAsync(Workspace proposal, CancellationToken cancellationToken = default);
+    Task<Workspace> GetOrCreateNamedAsync(Workspace proposal, int? maxWorkspaceCount = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Adds or atomically replaces an available artifact with the same case-insensitive

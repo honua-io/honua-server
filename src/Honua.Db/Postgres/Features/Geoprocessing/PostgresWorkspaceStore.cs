@@ -27,15 +27,22 @@ internal sealed partial class PostgresWorkspaceStore : IWorkspaceStore, IArtifac
         _clock = clock ?? TimeProvider.System;
     }
 
-    public async Task<Workspace> CreateAsync(Workspace workspace, CancellationToken cancellationToken = default)
+    public Task<Workspace> CreateAsync(Workspace workspace, CancellationToken cancellationToken = default)
+        => CreateWithQuotaAsync(workspace, cancellationToken: cancellationToken);
+
+    public async Task<Workspace> CreateWithQuotaAsync(Workspace workspace, int? maxWorkspaceCount = null, CancellationToken cancellationToken = default)
     {
         ValidateWorkspace(workspace);
         await using var connection = await _connections.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await InsertWorkspaceAsync(connection, null, workspace, cancellationToken).ConfigureAwait(false);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        await LockOwnerAsync(connection, transaction, workspace.OwnerId, cancellationToken).ConfigureAwait(false);
+        await CheckWorkspaceQuotaAsync(connection, transaction, workspace, maxWorkspaceCount, cancellationToken).ConfigureAwait(false);
+        await InsertWorkspaceAsync(connection, transaction, workspace, cancellationToken).ConfigureAwait(false);
+        await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return workspace with { Artifacts = [], StorageBytes = 0 };
     }
 
-    public async Task<Workspace> GetOrCreateNamedAsync(Workspace proposal, CancellationToken cancellationToken = default)
+    public async Task<Workspace> GetOrCreateNamedAsync(Workspace proposal, int? maxWorkspaceCount = null, CancellationToken cancellationToken = default)
     {
         ValidateWorkspace(proposal);
         if (proposal.State != WorkspaceLifecycleState.Active || proposal.IsExpired(_clock.GetUtcNow()))
@@ -44,15 +51,7 @@ internal sealed partial class PostgresWorkspaceStore : IWorkspaceStore, IArtifac
         }
         await using var connection = await _connections.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        // Length framing prevents ambiguous owner/scope/label concatenation. Hash collisions
-        // merely serialize unrelated callers; identity equality is checked separately below.
-        var identity = string.Create(CultureInfo.InvariantCulture,
-            $"{proposal.OwnerId.Length}:{proposal.OwnerId}{proposal.ScopeId?.Length ?? -1}:{proposal.ScopeId}{proposal.Label.Length}:{proposal.Label}");
-        await using (var gate = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtextextended(@identity, 0))", connection, transaction))
-        {
-            gate.Parameters.AddWithValue("identity", identity);
-            await gate.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-        }
+        await LockOwnerAsync(connection, transaction, proposal.OwnerId, cancellationToken).ConfigureAwait(false);
 
         Workspace? existing;
         await using (var command = new NpgsqlCommand($"""
@@ -73,10 +72,39 @@ internal sealed partial class PostgresWorkspaceStore : IWorkspaceStore, IArtifac
 
         if (existing is null)
         {
+            await CheckWorkspaceQuotaAsync(connection, transaction, proposal, maxWorkspaceCount, cancellationToken).ConfigureAwait(false);
             await InsertWorkspaceAsync(connection, transaction, proposal, cancellationToken).ConfigureAwait(false);
         }
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         return existing ?? proposal with { Artifacts = [], StorageBytes = 0 };
+    }
+
+    private async Task LockOwnerAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, string ownerId, CancellationToken cancellationToken)
+    {
+        // All labels and optional scopes for an owner share the same count quota.
+        // Hash collisions only serialize unrelated owners; SQL still checks exact identity.
+        var identity = string.Create(CultureInfo.InvariantCulture, $"{_workspaces.Length}:{_workspaces}{ownerId.Length}:{ownerId}");
+        await using var gate = new NpgsqlCommand("SELECT pg_advisory_xact_lock(hashtextextended(@identity, 0))", connection, transaction);
+        gate.Parameters.AddWithValue("identity", identity);
+        await gate.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task CheckWorkspaceQuotaAsync(NpgsqlConnection connection, NpgsqlTransaction transaction, Workspace proposal, int? maxWorkspaceCount, CancellationToken cancellationToken)
+    {
+        var limit = maxWorkspaceCount ?? WorkspaceQuota.Default.MaxWorkspaceCount!.Value;
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(limit);
+        if (proposal.State != WorkspaceLifecycleState.Active)
+        {
+            return;
+        }
+        await using var command = new NpgsqlCommand($"SELECT count(*) FROM {_workspaces} WHERE owner_id = @owner AND state = @active", connection, transaction);
+        command.Parameters.AddWithValue("owner", proposal.OwnerId);
+        command.Parameters.AddWithValue("active", (int)WorkspaceLifecycleState.Active);
+        var count = (long)(await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
+        if (count >= limit)
+        {
+            throw new WorkspaceQuotaExceededException();
+        }
     }
 
     public async Task<Workspace?> GetAsync(string workspaceId, CancellationToken cancellationToken = default)

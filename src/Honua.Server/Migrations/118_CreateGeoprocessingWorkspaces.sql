@@ -3,7 +3,7 @@
 
 -- Durable workspace and artifact references for the existing GP env:workspace contract.
 -- Referenced output objects retain their owning job/provider's storage lifecycle.
-CREATE TABLE IF NOT EXISTS honua.gp_workspaces (
+CREATE TABLE IF NOT EXISTS $HonuaSchema$.gp_workspaces (
     workspace_id text PRIMARY KEY,
     kind integer NOT NULL,
     label text COLLATE "C" NOT NULL,
@@ -15,13 +15,13 @@ CREATE TABLE IF NOT EXISTS honua.gp_workspaces (
     expires_at timestamptz NULL
 );
 CREATE INDEX IF NOT EXISTS ix_gp_workspaces_owner_scope_label
-    ON honua.gp_workspaces(owner_id, scope_id, label);
+    ON $HonuaSchema$.gp_workspaces(owner_id, scope_id, label);
 CREATE INDEX IF NOT EXISTS ix_gp_workspaces_expiry
-    ON honua.gp_workspaces(expires_at) WHERE expires_at IS NOT NULL;
+    ON $HonuaSchema$.gp_workspaces(expires_at) WHERE expires_at IS NOT NULL;
 
-CREATE TABLE IF NOT EXISTS honua.gp_workspace_artifacts (
+CREATE TABLE IF NOT EXISTS $HonuaSchema$.gp_workspace_artifacts (
     artifact_id text PRIMARY KEY,
-    workspace_id text NOT NULL REFERENCES honua.gp_workspaces(workspace_id) ON DELETE RESTRICT,
+    workspace_id text NOT NULL REFERENCES $HonuaSchema$.gp_workspaces(workspace_id) ON DELETE RESTRICT,
     kind integer NOT NULL,
     label text NOT NULL,
     label_key text COLLATE "C" NOT NULL,
@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS honua.gp_workspace_artifacts (
     metadata jsonb NOT NULL
 );
 CREATE INDEX IF NOT EXISTS ix_gp_workspace_artifacts_workspace
-    ON honua.gp_workspace_artifacts(workspace_id);
+    ON $HonuaSchema$.gp_workspace_artifacts(workspace_id);
 -- Available = 1. The invariant also protects writes made outside the lifecycle service.
 CREATE UNIQUE INDEX IF NOT EXISTS ux_gp_workspace_artifacts_available_label
-    ON honua.gp_workspace_artifacts(workspace_id, label_key) WHERE state = 1;
+    ON $HonuaSchema$.gp_workspace_artifacts(workspace_id, label_key) WHERE state = 1;

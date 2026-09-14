@@ -78,14 +78,29 @@ public class WorkspaceLifecycleServiceTests
     {
         var store = Substitute.For<IWorkspaceStore, IArtifactStore, IAtomicWorkspaceStore>();
         var atomic = (IAtomicWorkspaceStore)store;
-        atomic.GetOrCreateNamedAsync(Arg.Any<Workspace>(), Arg.Any<CancellationToken>()).Returns(call => call.Arg<Workspace>());
+        atomic.GetOrCreateNamedAsync(Arg.Any<Workspace>(), Arg.Any<int?>(), Arg.Any<CancellationToken>()).Returns(call => call.Arg<Workspace>());
         _retentionPolicy.ComputeExpiration(WorkspaceKind.Scratch, Now).Returns(Now.AddHours(2));
         var service = new WorkspaceLifecycleService(store, (IArtifactStore)store, _retentionPolicy,
-            Options.Create(new WorkspaceOptions()), _timeProvider, NullLogger<WorkspaceLifecycleService>.Instance);
+            Options.Create(new WorkspaceOptions { MaxWorkspaceCount = 7 }), _timeProvider, NullLogger<WorkspaceLifecycleService>.Instance);
         var workspace = await service.GetOrCreateScopedWorkspaceAsync("owner-1", "analysis", "existing-scope");
         Assert.Equal("existing-scope", workspace.ScopeId);
         Assert.Equal(Now.AddHours(2), workspace.ExpiresAt);
+        await atomic.Received(1).GetOrCreateNamedAsync(Arg.Any<Workspace>(), 7, Arg.Any<CancellationToken>());
         await store.DidNotReceive().ListByOwnerAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await store.DidNotReceive().CreateAsync(Arg.Any<Workspace>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CreateWorkspace_AtomicProviderReceivesConfiguredCountLimit()
+    {
+        var store = Substitute.For<IWorkspaceStore, IAtomicWorkspaceStore>();
+        var atomic = (IAtomicWorkspaceStore)store;
+        atomic.CreateWithQuotaAsync(Arg.Any<Workspace>(), 7, Arg.Any<CancellationToken>()).Returns(call => call.Arg<Workspace>());
+        var service = new WorkspaceLifecycleService(store, _artifactStore, _retentionPolicy,
+            Options.Create(new WorkspaceOptions { MaxWorkspaceCount = 7 }), _timeProvider, NullLogger<WorkspaceLifecycleService>.Instance);
+        var workspace = await service.CreateWorkspaceAsync(WorkspaceKind.Scratch, "bounded", "owner");
+        Assert.Equal("bounded", workspace.Label);
+        await atomic.Received(1).CreateWithQuotaAsync(Arg.Any<Workspace>(), 7, Arg.Any<CancellationToken>());
         await store.DidNotReceive().CreateAsync(Arg.Any<Workspace>(), Arg.Any<CancellationToken>());
     }
 

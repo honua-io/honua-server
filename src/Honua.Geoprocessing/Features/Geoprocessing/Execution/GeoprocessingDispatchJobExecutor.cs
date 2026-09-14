@@ -224,6 +224,11 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
             scope?.Dispose();
             throw;
         }
+        catch (WorkspaceQuotaExceededException ex)
+        {
+            scope?.Dispose();
+            return (null, context, ex.Message, false);
+        }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Intentionally broad: workspace resolution can fail for many storage-provider

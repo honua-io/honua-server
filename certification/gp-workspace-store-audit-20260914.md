@@ -11,7 +11,8 @@ captured optional scope into workspace resolution, and the service registration
 comment describes the now-available provider. Catalog membership, individual
 executors, destructive classification and declared operation entry points are
 unchanged. All 98 operation rows and their semantic evidence remain unchanged;
-the referenced test and fixture files have no content changes.
+the existing semantic evidence method bodies remain subject to the unchanged
+architecture digest checks. Additional tests cover the provider and review fixes.
 
 Job-entry operations with no requested workspace retain their execution path.
 Those requesting a workspace use the same owner, label and retention policy,
@@ -38,3 +39,30 @@ No operation verdict is promoted by this bounded source audit. The existing
 shared runtime gaps and candidate-binding obligations remain. #4780 still needs
 release-artifact inclusion, its migration, positive shipping replay and affected
 desktop revalidation before the certification defect can close.
+
+The review follow-up applies migration 118 through DbUp's actual `HonuaSchema`
+variable and tests that substitution against isolated PostgreSQL schemas. Both
+scheduled ticks and the polling loop honor disabled automatic cleanup. Named and
+explicit workspace creation share an owner-level transaction lock for the active
+workspace-count quota; reuse at the limit stays valid, and quota rejection is
+non-retryable. Native GDAL workers currently have no workspace lifecycle provider.
+GPServer rejects their workspace/overwrite controls before submission, with a
+second fail-closed guard in the worker for old or directly authored jobs. This
+negative control does not establish positive native-worker workspace support.
+
+Earlier source receipts at `cae99b01` precede these four review corrections. The
+full local gate for that revision was interrupted deliberately during formatting
+after its clean build. Revised focused suites pass: PostgreSQL 8, worker dispatcher
+7, lifecycle/cleanup/job execution 129, native-control endpoints 3, and durable GP
+8. The first revised durable suite had a SOAP union submission HTTP 503; unchanged
+source then passed the isolated case and the complete suite. That failure remains
+recorded with no established cause; no test retry or assertion was relaxed.
+
+Review receipts and exact source patches are retained in honua-client-compat at
+`evidence/workspace-store-review-20260914/` (commit `0eb417f`). Relative to
+`cae99b01`, the only changed catalog digest root adds the typed permanent quota
+rejection catch to the shared dispatcher. All 98 operation rows remain unchanged.
+The canonical emitter passes (1 check), and all 12 architecture drift/evidence
+checks pass. The emitted catalog adds one proving-test reference for native-worker
+control rejection; all other fields are unchanged. The full pre-PR gate, including
+final formatting, remains separate and is not claimed passed.

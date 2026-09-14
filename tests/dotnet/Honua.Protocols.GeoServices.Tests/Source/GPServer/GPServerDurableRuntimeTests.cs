@@ -191,7 +191,7 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
             await using var migration = typeof(Program).Assembly.GetManifestResourceStream(
                 "Honua.Server.Migrations.118_CreateGeoprocessingWorkspaces.sql")!;
             using var reader = new StreamReader(migration);
-            await fixture.Postgres.ExecuteDdlUnderLockAsync(await reader.ReadToEndAsync());
+            await fixture.Postgres.ExecuteDdlUnderLockAsync((await reader.ReadToEndAsync()).Replace("$HonuaSchema$", "honua", StringComparison.Ordinal));
             migrationApplied = true;
             fixture.GetService<IWorkspaceLifecycleService>().Should().NotBeNull();
 

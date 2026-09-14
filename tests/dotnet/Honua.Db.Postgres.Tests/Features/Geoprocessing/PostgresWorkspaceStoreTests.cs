@@ -2,6 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Data.Common;
+using DbUp;
+using DbUp.Helpers;
+using Honua.Db.Postgres.Features.Infrastructure;
 using FluentAssertions;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
@@ -17,6 +20,35 @@ namespace Honua.Db.Postgres.Tests.Features.Geoprocessing;
 [Collection("Database")]
 public sealed class PostgresWorkspaceStoreTests(PostgresFixture fixture)
 {
+    [IntegrationTest]
+    public Task Workspace_CountQuotaSerializesDifferentLabelsScopesAndCreationPaths()
+        => WithStoresAsync(async stores =>
+        {
+            var attempts = await Task.WhenAll(Enumerable.Range(0, 16).Select(async i =>
+            {
+                var proposal = Workspace("owner", "quota-" + i) with { ScopeId = i % 2 == 0 ? null : "optional" };
+                try
+                {
+                    return i % 2 == 0
+                        ? await stores[i % stores.Length].GetOrCreateNamedAsync(proposal, 3)
+                        : await stores[i % stores.Length].CreateWithQuotaAsync(proposal, 3);
+                }
+                catch (WorkspaceQuotaExceededException)
+                {
+                    return null;
+                }
+            }));
+            var created = attempts.OfType<Workspace>().ToArray();
+            created.Should().HaveCount(3);
+            (await stores[0].GetUsageSummaryAsync("owner")).ActiveWorkspaceCount.Should().Be(3);
+            (await stores[1].GetOrCreateNamedAsync(created[0] with { WorkspaceId = "unused" }, 3))
+                .WorkspaceId.Should().Be(created[0].WorkspaceId);
+            await stores[2].GetOrCreateNamedAsync(Workspace("another-owner", "quota"), 3);
+            await stores[2].TransitionStateAsync(created[0].WorkspaceId, WorkspaceLifecycleState.Expired);
+            await stores[3].GetOrCreateNamedAsync(Workspace("owner", "replacement"), 3);
+            (await stores[0].GetUsageSummaryAsync("owner")).ActiveWorkspaceCount.Should().Be(3);
+        });
+
     [IntegrationTest]
     public Task NamedWorkspace_ConcurrentProvidersShareOneDurableIdentity()
         => WithStoresAsync(async stores =>
@@ -129,9 +161,13 @@ public sealed class PostgresWorkspaceStoreTests(PostgresFixture fixture)
         try
         {
             var migration = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Migrations", "118_CreateGeoprocessingWorkspaces.sql"));
-            migration = migration.Replace("honua.", $"\"{schema}\".", StringComparison.Ordinal);
-            await fixture.ExecuteAsync(migration);
-            await fixture.ExecuteAsync(migration); // The actual shipping migration is idempotent.
+            var upgrader = DeployChanges.To.PostgresqlDatabase(fixture.ConnectionString)
+                .JournalTo(new NullJournal())
+                .WithScript("118_CreateGeoprocessingWorkspaces.sql", migration)
+                .WithVariable("HonuaSchema", SchemaSearchPath.ValidateAndQuote(schema))
+                .WithTransaction().Build();
+            upgrader.PerformUpgrade().Successful.Should().BeTrue();
+            upgrader.PerformUpgrade().Successful.Should().BeTrue(); // Actual DbUp substitution and idempotence.
             var stores = Enumerable.Range(0, 4).Select(_ =>
             {
                 var provider = Substitute.For<IAdoNetDatabaseConnectionProvider>();
