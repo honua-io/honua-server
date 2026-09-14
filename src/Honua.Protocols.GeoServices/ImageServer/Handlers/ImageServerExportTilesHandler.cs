@@ -421,7 +421,7 @@ internal sealed class ImageServerExportTilesHandler
     {
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var resolved = publicationId is null
-            ? ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId)
+            ? ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context)
             : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
         if (resolved is not { } resolvedLayer || !snapshot.IsRoutable(resolvedLayer.Publication))
         {
@@ -1319,7 +1319,7 @@ internal sealed class ImageServerExportTilesHandler
     {
         var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var resolved = publicationId is null
-            ? ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId)
+            ? ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context)
             : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
         if (resolved is not { } resolvedLayer || !snapshot.IsRoutable(resolvedLayer.Publication))
         {

@@ -79,7 +79,7 @@ public sealed class ImageServerComputeClassStatisticsHandlerTests
         var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
         {
             ["classDescriptions"] = TwoClassDescriptions,
-            ["bandIds"] = "1,2",
+            ["bandIds"] = "0,1",
         };
 
         var result = await _handler.ComputeAsync(CreateImageServerContext(), 1, values, CancellationToken.None);
