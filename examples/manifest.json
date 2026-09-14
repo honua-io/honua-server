@@ -6078,7 +6078,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 71,
+      "line": 78,
       "language": "json"
     },
     {
@@ -6104,7 +6104,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 61,
+      "line": 68,
       "language": "json"
     },
     {
@@ -13358,7 +13358,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 403,
+      "line": 404,
       "language": "sql"
     },
     {
