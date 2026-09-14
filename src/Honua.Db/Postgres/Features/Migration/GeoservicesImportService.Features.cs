@@ -30,6 +30,7 @@ internal sealed partial class GeoservicesImportService
         int targetSrid,
         CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var inserted = 0;
         var failed = 0;
         string? firstError = null;
@@ -82,10 +83,11 @@ internal sealed partial class GeoservicesImportService
 
         foreach (var feature in features)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            // A failed SAVEPOINT has no row scope to roll back to.
+            await transaction.SaveAsync(savepointName, cancellationToken).ConfigureAwait(false);
             try
             {
-                await transaction.SaveAsync(savepointName, cancellationToken).ConfigureAwait(false);
-
                 // Update attribute parameter values
                 for (var i = 0; i < fields.Length; i++)
                 {
@@ -136,13 +138,20 @@ internal sealed partial class GeoservicesImportService
             // outer transaction is not poisoned by the 25P02 aborted-transaction state. Use
             // CancellationToken.None: if the caller's token has been cancelled we still need to
             // clean up the transaction state.
-            catch (Exception ex) when (ex is not OutOfMemoryException)
+            catch (Exception ex) when (ex is not OutOfMemoryException
+                && !(ex is OperationCanceledException && cancellationToken.IsCancellationRequested))
             {
                 await transaction.RollbackAsync(savepointName, CancellationToken.None).ConfigureAwait(false);
                 firstError ??= "Feature import failed.";
                 Log.FeatureInsertFailed(_logger, ex.Message);
                 failed++;
             }
+
+            // Reusing a name only shadows an older savepoint. RELEASE is required
+            // after both success and ROLLBACK TO so subtransaction locks stay bounded.
+            // Finish this cleanup even if cancellation arrived after the row insert;
+            // the caller still owns rollback of the outer import transaction.
+            await transaction.ReleaseAsync(savepointName, CancellationToken.None).ConfigureAwait(false);
         }
 
         if (firstError is not null)
