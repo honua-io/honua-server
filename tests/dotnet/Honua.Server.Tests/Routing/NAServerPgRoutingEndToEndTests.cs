@@ -231,6 +231,59 @@ public sealed class NAServerPgRoutingEndToEndTests : IClassFixture<PgRoutingFixt
     }
 
     [RoutingTest(RoutingTestEnv)]
+    public async Task RouteSolve_WebMercatorStopsFeatureSet_OverRealPgRouting_SolvesDeclaredLocations()
+    {
+        // #4025: stops declared in EPSG:3857 on the FeatureSet (no inSR) are vertex 1 (0,0) and
+        // vertex 5 (.01,.01), projected with x = R*lon, y = R*ln(tan(pi/4 + lat/2)), R = 6378137.
+        // Read as WGS84 degrees, (1113.19, 1113.19) snaps to the far corner, vertex 9, instead.
+        const string webMercatorStops = """
+            {
+              "spatialReference": { "wkid": 102100, "latestWkid": 3857 },
+              "features": [
+                { "geometry": { "x": 0.0, "y": 0.0 } },
+                { "geometry": { "x": 1113.1949079327358, "y": 1113.1949135842704 } }
+              ]
+            }
+            """;
+
+        var declared = await SolveRouteAsync(webMercatorStops);
+        var toVertex5 = await SolveRouteAsync("0.0,0.0;0.01,0.01");
+        var toVertex9 = await SolveRouteAsync("0.0,0.0;0.02,0.02");
+
+        toVertex5.Length.Should().BeLessThan(toVertex9.Length, "the oracle routes must be distinguishable");
+        declared.Length.Should().BeApproximately(toVertex5.Length, 1e-6);
+        declared.End.X.Should().BeApproximately(0.01, 1e-9);
+        declared.End.Y.Should().BeApproximately(0.01, 1e-9);
+    }
+
+    private async Task<(double Length, (double X, double Y) End)> SolveRouteAsync(string stops)
+    {
+        using var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("stops", stops),
+            new KeyValuePair<string, string>("returnRoutes", "true"),
+        ]);
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{ServiceId}/NAServer/Route/solve",
+            payload,
+            CancellationToken.None);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync(CancellationToken.None);
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse(body);
+        var feature = document.RootElement.GetProperty("routes").GetProperty("features")[0];
+        var paths = feature.GetProperty("geometry").GetProperty("paths");
+        var lastPath = paths[paths.GetArrayLength() - 1];
+        var end = lastPath[lastPath.GetArrayLength() - 1];
+        return (
+            feature.GetProperty("attributes").GetProperty("Total_Length").GetDouble(),
+            (end[0].GetDouble(), end[1].GetDouble()));
+    }
+
+    [RoutingTest(RoutingTestEnv)]
     public async Task ClosestFacility_OverRealPgRouting_RanksNearestFacility()
     {
         // Incident at vertex 1 (SW corner). Two facilities: vertex 2 (1 hop) and
