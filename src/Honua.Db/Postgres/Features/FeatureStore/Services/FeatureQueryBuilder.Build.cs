@@ -395,9 +395,10 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         var effectiveQuery = query ?? new FeatureQuery();
         var extentExpression = _geometryProcessor.GetGeometryOperand(geometryStorageType, null, effectiveQuery.SpatialReferenceSrid);
 
+        // PostGIS can resolve the source CRS from each stored geometry. An output CRS
+        // must still transform coordinates when the caller has no source-CRS hint.
         if (effectiveQuery.OutputSrid.HasValue &&
-            effectiveQuery.SpatialReferenceSrid.HasValue &&
-            effectiveQuery.OutputSrid.Value != effectiveQuery.SpatialReferenceSrid.Value)
+            effectiveQuery.OutputSrid != effectiveQuery.SpatialReferenceSrid)
         {
             extentExpression = DatumTransformSql.BuildTransformExpression(extentExpression, effectiveQuery.OutputSrid.Value, effectiveQuery.OutputDatumTransformation);
         }
