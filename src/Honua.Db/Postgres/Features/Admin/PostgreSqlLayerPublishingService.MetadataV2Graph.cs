@@ -3163,7 +3163,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
                         !string.Equals(field.Name, primaryKeyColumn, StringComparison.OrdinalIgnoreCase))
                     ?.Name,
                 Queryable = true,
-                DefaultVisibility = request.Enabled
+                DefaultVisibility = request.Enabled,
+                HasZ = request.HasZ,
+                HasM = request.HasM
             },
             // Carry the captured Esri subtypes into the canonical graph so they survive
             // the compat-compile snapshot and are served on the FeatureServer layer
@@ -3226,8 +3228,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         // Drop per-subtype overrides that reference columns the layer did not publish so
         // graph validation (which requires every override field be declared) passes.
-        var publishedNames = new HashSet<string>(
-            fields.Select(field => field.Name),
+        var publishedNames = fields.ToDictionary(field => field.Name, field => field.Name,
             StringComparer.OrdinalIgnoreCase);
 
         var prunedSubtypes = subtypes.Subtypes
@@ -3239,16 +3240,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 }
 
                 var keptOverrides = subtype.FieldOverrides
-                    .Where(pair => publishedNames.Contains(pair.Key))
-                    .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.OrdinalIgnoreCase);
+                    .Where(pair => publishedNames.ContainsKey(pair.Key))
+                    .ToDictionary(pair => publishedNames[pair.Key], pair => pair.Value, StringComparer.OrdinalIgnoreCase);
 
-                return keptOverrides.Count == subtype.FieldOverrides.Count
-                    ? subtype
-                    : subtype with { FieldOverrides = keptOverrides };
+                return subtype with { FieldOverrides = keptOverrides };
             })
             .ToArray();
 
-        return subtypes with { Subtypes = prunedSubtypes };
+        return subtypes with { SubtypeField = publishedField.Name, Subtypes = prunedSubtypes };
     }
 
     private MetadataV2StorageBinding BuildPublishedStorageBinding(

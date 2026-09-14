@@ -5,6 +5,7 @@ using System.Data;
 using System.Data.Common;
 using System.Net;
 using System.Text;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -32,8 +33,10 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 [Collection("Database")]
 public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fixture)
 {
-    [Fact]
-    public async Task ImportLayerAsync_WithSubtypeFieldAndSubtypes_PersistsThemOntoPublishedMetadataV2Resource()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ImportLayerAsync_WithSubtypeMetadata_PersistsThemOntoPublishedMetadataV2Resource(bool featureTypes)
     {
         const string tableName = "geoservices_import_subtypes";
         var serviceName = $"subtypes_{Guid.NewGuid():N}";
@@ -50,7 +53,7 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
 
         try
         {
-            var service = CreateService(graphStore, schemaName);
+            var service = CreateService(graphStore, schemaName, featureTypes);
 
             var result = await service.ImportLayerAsync(new GeoservicesImportRequest
             {
@@ -81,8 +84,15 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
             resource!.Subtypes.Should().NotBeNull("the subtype set must survive import → publish → compat-compile");
             var subtypes = resource.Subtypes!;
             subtypes.SubtypeField.Should().Be("buildingtype");
-            subtypes.DefaultSubtypeCode.Should().NotBeNull();
-            subtypes.DefaultSubtypeCode!.Value.GetInt32().Should().Be(1);
+            if (featureTypes)
+            {
+                subtypes.DefaultSubtypeCode.Should().BeNull();
+            }
+            else
+            {
+                subtypes.DefaultSubtypeCode.Should().NotBeNull();
+                subtypes.DefaultSubtypeCode!.Value.GetInt32().Should().Be(1);
+            }
 
             subtypes.Subtypes.Select(s => s.Name)
                 .Should().BeEquivalentTo(["Commercial", "Residential"]);
@@ -114,10 +124,77 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
         }
     }
 
-    private GeoservicesImportService CreateService(PostgresMetadataV2GraphStore graphStore, string dataSchema)
+    [Theory]
+    [InlineData(false, false, 0)]
+    [InlineData(false, true, 1)]
+    [InlineData(true, false, 2)]
+    [InlineData(true, true, 3)]
+    public async Task ImportLayerAsync_WithDimensionalGeometry_PublishesStoredDimensions(bool hasZ, bool hasM, int zmFlag)
+    {
+        const string tableName = "geoservices_import_dimensions";
+        var serviceName = $"dimensions_{Guid.NewGuid():N}";
+        var schemaName = await fixture.CreateIsolatedSchemaAsync("ImportDimensions");
+        await EnsureCatalogSchemaAsync();
+        await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, "honua");
+        var graphStore = new PostgresMetadataV2GraphStore(
+            new FixtureConnectionProvider(fixture), $"Dimensions-{Guid.NewGuid():N}",
+            FixtureBypassDatabaseSchemaGuard.Instance);
+
+        try
+        {
+            var service = CreateService(graphStore, schemaName, false, hasZ, hasM);
+            var result = await service.ImportLayerAsync(new GeoservicesImportRequest
+            {
+                ServiceUrl = "https://example.com/arcgis/rest/services/Subtypes/FeatureServer",
+                LayerId = 0,
+                TableName = tableName,
+                TargetSchema = schemaName,
+                TargetSrid = 4326,
+                BatchSize = 10,
+                RequestTimeoutSeconds = 5,
+                MaxRetries = 0,
+                AutoPublish = true,
+                ServiceName = serviceName
+            });
+
+            result.Success.Should().BeTrue();
+            result.Warnings.Should().NotContain(warning =>
+                warning.Contains("publishing did not complete", StringComparison.OrdinalIgnoreCase));
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT ST_Zmflag(geom), ST_X(geom), ST_Y(geom), ST_Z(geom), ST_M(geom) FROM \"{schemaName}\".\"{tableName}\"";
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetInt16(0).Should().Be((short)zmFlag);
+            reader.GetDouble(1).Should().Be(-157.1);
+            reader.GetDouble(2).Should().Be(21.3);
+            if (hasZ)
+                reader.GetDouble(3).Should().Be(125.5);
+            else
+                reader.IsDBNull(3).Should().BeTrue();
+            if (hasM)
+                reader.GetDouble(4).Should().Be(42.25);
+            else
+                reader.IsDBNull(4).Should().BeTrue();
+
+            var snapshot = await graphStore.GetCurrentAsync();
+            var resource = snapshot.Graph.Resources.Single(r => r.Metadata.Name == "Subtype Layer");
+            resource.Display.Should().NotBeNull();
+            resource.Display!.HasZ.Should().Be(hasZ);
+            resource.Display.HasM.Should().Be(hasM);
+        }
+        finally
+        {
+            await CleanupCatalogAsync(serviceName);
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    private GeoservicesImportService CreateService(PostgresMetadataV2GraphStore graphStore, string dataSchema, bool featureTypes,
+        bool hasZ = false, bool hasM = false)
     {
         var restClient = new ArcGisRestClient(
-            new HttpClient(new SubtypeFeatureServerHandler()),
+            new HttpClient(new SubtypeFeatureServerHandler(featureTypes, hasZ, hasM)),
             NullLogger<ArcGisRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
 
@@ -184,7 +261,7 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
     // Minimal ArcGIS FeatureServer mock that advertises an integer subtype field
     // 'buildingtype' with two subtypes; the 'Residential' subtype carries a per-subtype
     // default value and a coded-value domain on 'status'.
-    private sealed class SubtypeFeatureServerHandler : HttpMessageHandler
+    private sealed class SubtypeFeatureServerHandler(bool featureTypes, bool hasZ, bool hasM) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -251,6 +328,52 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
                     """,
                 _ => throw new InvalidOperationException($"Unexpected ArcGIS request path: {pathAndQuery}")
             };
+
+            if (featureTypes && pathAndQuery == "/arcgis/rest/services/Subtypes/FeatureServer/0?f=json")
+            {
+                var layer = JsonNode.Parse(payload)!.AsObject();
+                var types = new JsonArray();
+                foreach (var subtype in layer["subtypes"]!.AsArray())
+                {
+                    var attributes = new JsonObject { ["STATUS"] = subtype!["defaultValues"]!["status"]!.DeepClone() };
+                    var domains = subtype["domains"]?.DeepClone();
+                    types.Add(new JsonObject
+                    {
+                        ["id"] = subtype["code"]!.DeepClone(),
+                        ["name"] = subtype["name"]!.DeepClone(),
+                        ["domains"] = domains,
+                        ["templates"] = new JsonArray(new JsonObject
+                        {
+                            ["prototype"] = new JsonObject { ["attributes"] = attributes }
+                        })
+                    });
+                }
+                layer.Remove("subtypeField");
+                layer.Remove("subtypes");
+                layer.Remove("defaultSubtypeCode");
+                layer["typeIdField"] = "BUILDINGTYPE";
+                layer["types"] = types;
+                payload = layer.ToJsonString();
+            }
+
+            var response = JsonNode.Parse(payload)!.AsObject();
+            if (pathAndQuery == "/arcgis/rest/services/Subtypes/FeatureServer/0?f=json")
+            {
+                response["hasZ"] = hasZ;
+                response["hasM"] = hasM;
+            }
+            else if (response["features"] is JsonArray features)
+            {
+                foreach (var feature in features)
+                {
+                    var geometry = feature!["geometry"]!.AsObject();
+                    if (hasZ && pathAndQuery.Contains("returnZ=true", StringComparison.Ordinal))
+                        geometry["z"] = 125.5;
+                    if (hasM && pathAndQuery.Contains("returnM=true", StringComparison.Ordinal))
+                        geometry["m"] = 42.25;
+                }
+            }
+            payload = response.ToJsonString();
 
             // Ownership of the HttpResponseMessage transfers to the HttpClient pipeline that invokes
             // this handler; it is disposed by the caller, not here (cs/local-not-disposed false positive).

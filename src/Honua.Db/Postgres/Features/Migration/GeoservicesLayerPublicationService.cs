@@ -121,6 +121,8 @@ internal sealed partial class GeoservicesLayerPublicationService
                         layerInfo.GeometryType,
                         hasZ: false,
                         hasM: false),
+                HasZ = layerInfo.HasZ,
+                HasM = layerInfo.HasM,
                 Srid = request.TargetSrid,
                 PrimaryKey = FieldNames.ObjectId,
                 Fields = [],

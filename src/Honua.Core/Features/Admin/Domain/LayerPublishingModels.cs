@@ -42,6 +42,16 @@ public sealed class LayerPublishRequest
     public string? GeometryType { get; init; }
 
     /// <summary>
+    /// Whether the published geometries contain elevation ordinates. Defaults to false.
+    /// </summary>
+    public bool HasZ { get; init; }
+
+    /// <summary>
+    /// Whether the published geometries contain measure ordinates. Defaults to false.
+    /// </summary>
+    public bool HasM { get; init; }
+
+    /// <summary>
     /// Spatial reference identifier (SRID).
     /// </summary>
     public int? Srid { get; init; }

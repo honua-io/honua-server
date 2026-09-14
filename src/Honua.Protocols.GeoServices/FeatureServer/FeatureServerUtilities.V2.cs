@@ -237,6 +237,7 @@ internal static partial class FeatureServerEndpoints
             // has typed/subtyped templates they live inside each `types[]` entry; it is populated
             // only by layers without subtypes (none authored on the canonical graph today).
             Templates = [],
+            TypeIdField = resource.Subtypes?.SubtypeField,
             Types = GeoServicesTemplateMapper.MapTypes(
                 resource.Subtypes,
                 MapGeometryTypeV2(resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None)),

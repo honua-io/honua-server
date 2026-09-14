@@ -4,6 +4,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Migration.Services;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Honua.TestKit.Attributes;
@@ -19,6 +20,27 @@ public sealed class GeoServicesTemplateMapperTests
 {
     private static JsonElement Number(int value)
         => JsonSerializer.SerializeToElement(value);
+
+    [UnitTest]
+    public void MapTypes_ImportedFeatureTemplate_PreservesStringIdentityAndExplicitNullAfterPersistence()
+    {
+        using var document = JsonDocument.Parse("""
+            { "typeIdField": "hazardtype", "types": [{ "id": "Flood", "name": "Flood warning",
+              "templates": [{ "prototype": { "attributes": { "priority": null, "status": "Active" } } }]
+            }] }
+            """);
+        var imported = EsriSubtypeParser.Parse(document.RootElement).Subtypes!;
+        var json = JsonSerializer.Serialize(imported, MetadataV2JsonContext.Default.MetadataV2Subtypes);
+        var restored = JsonSerializer.Deserialize(json, MetadataV2JsonContext.Default.MetadataV2Subtypes)!;
+        var type = GeoServicesTemplateMapper.MapTypes(restored, "esriGeometryPoint")!.Single();
+        type.Id.GetString().Should().Be("Flood");
+        type.Name.Should().Be("Flood warning");
+        var attributes = type.Templates.Single().Prototype.Should()
+            .BeOfType<FeatureTemplatePrototype>().Subject.Attributes;
+        attributes["hazardtype"].GetString().Should().Be("Flood");
+        attributes["priority"].ValueKind.Should().Be(JsonValueKind.Null);
+        attributes["status"].GetString().Should().Be("Active");
+    }
 
     [UnitTest]
     public void MapTypes_NullSubtypes_ReturnsNull()

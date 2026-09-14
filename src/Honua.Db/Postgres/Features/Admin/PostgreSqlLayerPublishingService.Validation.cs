@@ -540,6 +540,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
             .Replace(" ", string.Empty, StringComparison.OrdinalIgnoreCase)
             .ToUpperInvariant();
 
+        // PostGIS discovery may include an ordinate suffix (notably POINTM).
+        // The canonical geometry type describes topology; HasZ/HasM are carried
+        // separately in the publication metadata.
+        if (normalized.EndsWith("ZM", StringComparison.Ordinal))
+            normalized = normalized[..^2];
+        else if (normalized.EndsWith('Z') || normalized.EndsWith('M'))
+            normalized = normalized[..^1];
+
         var mapped = normalized switch
         {
             "POINT" => GeometryType.Point,
