@@ -71,6 +71,18 @@ internal static class ImportBackgroundServiceCoordinator
         {
             try
             {
+                if (!jobManager.CanAcceptNewJobs)
+                {
+                    // Admission is based on cached per-component durability flags.
+                    // These read paths run each component's throttled recovery probe;
+                    // waiting on the flags first would prevent their recovery forever.
+                    // Probe before leader election so non-leader HTTP nodes recover
+                    // admission too. No job is dequeued and no local work is accepted.
+                    _ = await jobManager.JobQueue.GetQueueLengthAsync(stoppingToken).ConfigureAwait(false);
+                    _ = await jobManager.RequestStore.GetActiveJobIdsAsync(stoppingToken).ConfigureAwait(false);
+                    _ = await jobManager.ProgressStore.GetActiveJobIdsAsync(stoppingToken).ConfigureAwait(false);
+                }
+
                 var isLeader = await jobManager.LeaderElection.TryAcquireLeadershipAsync(stoppingToken).ConfigureAwait(false);
                 if (!isLeader)
                 {
