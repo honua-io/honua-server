@@ -226,6 +226,11 @@ internal static class DeployControlEndpoints
         [FromServices] DeployWorkflowService deployWorkflowService,
         HttpContext context)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         if (string.IsNullOrWhiteSpace(request.TargetId) || string.IsNullOrWhiteSpace(request.DesiredRevision))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -259,6 +264,11 @@ internal static class DeployControlEndpoints
         [FromServices] DeployWorkflowService deployWorkflowService,
         HttpContext context)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         // Approval gating is handled by DeployWorkflowService.CreateAsync which bridges
         // the canonical evaluator and persists AwaitingApproval status when required.
         // Do not gate creation here — the workflow must be allowed to persist the operation.
@@ -466,6 +476,11 @@ internal static class DeployControlEndpoints
         [FromServices] DeployWorkflowService deployWorkflowService,
         HttpContext context)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         // Submit is the manual approval action — an operator explicitly advancing an
         // AwaitingApproval operation. Re-gating here would make approval-gated deploys
         // permanently unsubmittable. Rollback retains its own destructive-action gate.
@@ -511,6 +526,11 @@ internal static class DeployControlEndpoints
         [FromServices] DeployWorkflowService deployWorkflowService,
         HttpContext context)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         // Manual promotion is the operator escape hatch for a deploy parked awaiting promotion (for
         // example an on-prem rolling deploy with no telemetry gate to auto-clear). It is a forward,
         // non-destructive cutover, so it rides the group-level admin authorization plus audit logging
@@ -565,6 +585,11 @@ internal static class DeployControlEndpoints
         [FromServices] IOperationInvoker operationInvoker,
         HttpContext context)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         try
         {
             var existing = await deployWorkflowService.GetAsync(operationId, context.RequestAborted).ConfigureAwait(false);
@@ -683,6 +708,11 @@ internal static class DeployControlEndpoints
         HttpContext context,
         [FromServices] IOperationGateway? gateway = null)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         var options = controlPlaneOptions.CurrentValue;
         var release = options.PlatformRelease.ToDefinition();
 

@@ -119,14 +119,22 @@ Two remainders were re-examined against trunk:
   envelope calls from `ProposeAsync` and from the MCP finding proposal. The same
   finding id reaches the gateway before and after. The fix postdates `548b7a5`, so
   it counts as accepted-pin evidence only after a re-pin.
-- **Deployment resource ownership** remains **unmet**. `DeployTargetDefinition`
-  has no owner or tenant attribute. `ProposeFindingAsync` checks only admin
-  policy, operator scope and binding to the finding's target. With
-  `MultiTenancy:Enabled=true` (Preview), a tenant-scoped admin can therefore
-  seal a Deploy proposal for a platform target. The proposal-resource ownership
-  fixture governs access to an existing proposal, not authority to create one.
-  The missing enforcement and its negatives are owned by
-  [#4842](https://github.com/honua-io/honua-server/issues/4842).
+- **Deployment resource ownership** is enforced by rule, not by target owner.
+  `DeployTargetDefinition` has no owner or tenant attribute, so the
+  [#4842](https://github.com/honua-io/honua-server/issues/4842) fix treats
+  deployment targets as platform resources. With `MultiTenancy:Enabled=true`,
+  a tenant-bound principal needs a configured `MultiTenancy:MultiTenantAdminRoles`
+  role (default `multi_tenant_admin`, `platform_admin`) to propose or advance
+  Deploy and platform-release operations. A principal is tenant-bound when it has a
+  `MultiTenancy:TenantClaimTypes` claim or an approved-operation tenant binding.
+  `PlatformDeployAuthority` applies this in the MCP finding, deploy-plan,
+  deploy-operation, rollback and convergence proposals, and in the REST deploy
+  plan/create/submit/promote/rollback and platform-release converge handlers.
+  Denials are MCP `permission_denied` with `studioAuthorizationCode`
+  `platform_admin_required`, or REST 403 with `code` `platform_admin_required`.
+  Single-tenant installations and admins without a tenant binding are unchanged.
+  The fix postdates `548b7a5`, so it counts as accepted-pin evidence only after a
+  re-pin.
 
 ## September 15 accepted-pin replay
 
@@ -202,7 +210,8 @@ Paths are relative to the repository root.
 | No opaque executable model payload | `tests/dotnet/Honua.Ai.Tests/Source/McpTaxonomyAlignmentTests.cs`: `McpComposition_DoesNotExposeOpaqueOperationProposalPath`; schema-closed tools in `src/Honua.Ai/Features/Protocols/Mcp/Mcp/Tools/PlatformOpsTools.cs`. |
 | Self-approval denied; narrow approval grant | `tests/dotnet/Honua.Server.Tests/Features/Admin/ProposalEndpointsTests.cs`: `ApproveProposal_BySameRequester_IsForbiddenForSeparationOfDuties`, `ApproveScopedKey_CanReadAndApproveButCannotMutateOtherAdminSurfaces`, `ReadOnlyScopedKey_ApproveNamesMissingGrant`. |
 | Same actor cannot bypass tenant ownership | `tests/dotnet/Honua.Server.Tests/Features/Admin/ProposalTenantOwnershipTests.cs`: `ProposalResource_ProposerIdentityDoesNotBypassTenantOwnership`. |
-| Finding-proposal actor, scope and target binding | `McpPlatformOpsReaderTests.ProposeFinding_UnauthorizedDeploymentRequest_CreatesNoProposal` calls the finding proposal itself for denied admin policy, a read-only OAuth scope under the real scope authorizer, and a mismatched deployment target. Every case asserts denial, zero proposal/direct-route calls and zero canonical acceptance. Target equality is not tenant/resource ownership: deployment targets carry no owner/tenant attribute, and a tenant-scoped admin is not denied under multi-tenancy ([#4842](https://github.com/honua-io/honua-server/issues/4842)). That enforcement, its negatives and installed-client replay must also pass. |
+| Finding-proposal actor, scope and target binding | `McpPlatformOpsReaderTests.ProposeFinding_UnauthorizedDeploymentRequest_CreatesNoProposal` calls the finding proposal itself for denied admin policy, a read-only OAuth scope under the real scope authorizer, and a mismatched deployment target. Every case asserts denial, zero proposal/direct-route calls and zero canonical acceptance. Target equality is not tenant/resource ownership; that is the next row. |
+| Deploy proposal creation bound to platform authority ([#4842](https://github.com/honua-io/honua-server/issues/4842)) | `tests/dotnet/Honua.Server.Tests/Features/Admin/DeployControlPlatformAuthorityTests.cs`. `McpProposal_TenantBoundAdminWithMultiTenancy_IsDeniedWithoutProposalRouteOrAcceptance` invokes the real finding, deploy-operation, deploy-plan, rollback and convergence MCP tools. It uses a tenant-claim admin and an approved-operation tenant credential with multi-tenancy enabled. It asserts the `permission_denied`/`platform_admin_required` error and zero proposal, direct-route, canonical acceptance and findings-evaluation calls. `McpProposal_PlatformAdminUnboundAdminOrSingleTenant_SealsApprovalProposal` and `McpDeployPlan_PlatformAdminUnboundAdminOrSingleTenant_ReachesTargetLookup` cover the allowed platform admin, unbound admin and `MultiTenancy:Enabled=false` cases. `RestDeployMutation_TenantBoundAdminWithMultiTenancy_Returns403BeforeAnyDeployCall` and `RestDeployMutation_PlatformAdminUnboundAdminOrSingleTenant_ReachesDeployWorkflow` cover the six REST deploy/platform-release mutation handlers. The admin policy result and the downstream store/gateway are test seams; the authority rule is not. |
 
 Route and operation IDs were checked against
 `docs/developer/api-specs/admin-api.json`; MCP names against
@@ -271,8 +280,9 @@ On `548b7a5` the deployment finding producer still builds store completeness fro
 registration through `OpsFindingsService.BuildStoreSource`. The
 [#4840](https://github.com/honua-io/honua-server/issues/4840) fix derives it from
 real store reads and proves backend loss and partial reads against Redis; it
-counts on the manifest only after a re-pin. Deploy proposal creation
-is not bound to tenant or platform-admin authority ([#4842](https://github.com/honua-io/honua-server/issues/4842)).
+counts on the manifest only after a re-pin. The
+[#4842](https://github.com/honua-io/honua-server/issues/4842) platform-authority
+binding for deploy proposal creation also counts only after a re-pin.
 Those, accepted-pin replay of the authorization negatives and the joined
 deployment/placement transcript remain unmet, not waived.
 
