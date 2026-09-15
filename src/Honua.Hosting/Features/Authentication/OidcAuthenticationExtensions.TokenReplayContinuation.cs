@@ -124,16 +124,10 @@ public static partial class OidcAuthenticationExtensions
 
     private static string? ResolveTokenReplayContinuationMarker(HttpContext context)
     {
-        foreach (var resolver in context.RequestServices.GetServices<ITokenReplayContinuationResolver>())
-        {
-            var continuationId = resolver.ResolveContinuationId(context);
-            if (!string.IsNullOrWhiteSpace(continuationId))
-            {
-                return BuildTokenReplayContinuationMarker(continuationId);
-            }
-        }
-
-        return null;
+        var continuationId = context.RequestServices.GetServices<ITokenReplayContinuationResolver>()
+            .Select(resolver => resolver.ResolveContinuationId(context))
+            .FirstOrDefault(static id => !string.IsNullOrWhiteSpace(id));
+        return continuationId is null ? null : BuildTokenReplayContinuationMarker(continuationId);
     }
 
     private static TokenReplayRegistrationResult ClassifyReusedToken(object? current, string? continuationMarker) =>
