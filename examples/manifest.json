@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1141,
+    "total": 1142,
     "byStatus": {
-      "not-executable": 1128,
+      "not-executable": 1129,
       "unvalidated": 10,
       "passed": 3
     }
@@ -12918,6 +12918,19 @@
       "fence": 4,
       "line": 99,
       "language": "text"
+    },
+    {
+      "id": "c60edbb1710783b7",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/capacity-soak-tiles-4918/README.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 35,
+      "language": "plain"
     },
     {
       "id": "9dcacdc486811ea6",
