@@ -75,16 +75,14 @@ platform SLI. Until a distributed, all-request, in-band-aware source exists,
 availability target is configured. No platform burn rate or error budget is
 derived from the tail.
 
-The accepted `7ba4226` image still returns schema `1.0`, as the
-[installed read observation](evidence/3302-candidate-read-observation.json)
-records. A missing `nodeLocalRetainedTail` block on that image is a contract
-version mismatch, not evidence of zero traffic. Its legacy advice to derive an
+The accepted `548b7a5` image returns `1.1` with `slo.configured=false`,
+`slo.availability=null` and a `replica-local`, `isPlatformSli=false` tail
+([read observation](evidence/3302-accepted-548b7a5-read-observation.json)).
+Images before `2f0ae88` (#4726), including the earlier `7ba4226` pin, return
+schema `1.0`. A missing `nodeLocalRetainedTail` block there is a contract
+version mismatch, not evidence of zero traffic. Their legacy advice to derive an
 error budget from the in-process window must not be used for a platform SLO.
-Nightly `ff1a463`, a proposed replacement the manifest does not yet pin, returns
-`1.1` with `slo.configured=false`, `slo.availability=null` and a
-`replica-local`, `isPlatformSli=false` tail
-([read replay](evidence/3302-repin-ff1a463-read-observation.json)).
-Recheck the contract on whichever image the manifest accepts.
+Recheck the contract whenever the manifest accepts a different image.
 
 The diagnostic reports `scope=replica-local`, `isPlatformSli=false`, retained
 population/capacity, overwritten samples and oldest/newest retained ages. Its

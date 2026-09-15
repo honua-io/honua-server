@@ -21,53 +21,34 @@ sections below provide the advanced API/MCP procedure for operators and replay.
 
 > **Qualification is still incomplete.** Replay uses the image digest pinned in
 > the accepted platform manifest, even before the final signed release lock is
-> cut. Source tests, an available rollback method and a proposed newer image
-> are not passing qualification for that pin. The [evidence
+> cut. The observation, service-staging and approval checks below pass on that
+> pin. A deployment actuator, placement recovery and the installed clients are
+> not yet qualified on it. The [evidence
 > disposition](../../internal/contributor/operate-docs-precut-evidence.md)
-> records the accepted pin's known failure and remaining receipt requirements.
+> records the remaining receipt requirements.
 
 ## Check the installed contract
 
-The September 13 replay of the accepted `7ba4226` image passes the four
-observation calls in step 2, but the protected-update journey remains blocked.
-Its [read observation](evidence/3302-candidate-read-observation.json) and
-[installed staging recheck](evidence/3302-candidate-staging-recheck.json)
-establish these limits. A separate [catalog replay](evidence/3302-candidate-catalog.json)
-discovers all five named scenario tools across five pages and verifies the
-finding-proposal input schema; discovery does not execute a proposal:
+The accepted manifest pins server `548b7a5` (image `sha256:29974ee7…`). On
+September 15 three unchanged harnesses passed on that digest. Each checked the
+image's registry digest and OCI source revision before boot, and each ran
+against isolated PostGIS and Redis containers:
 
 | Check | Observed result and operator decision |
 |---|---|
-| Read health/findings through REST and MCP | The isolated fixture returns structured evidence. Disabled alerting remains `notConfigured`, without observation/success clocks, on both surfaces. Read success does not establish deployment-source outage handling or permission to change a target. |
-| Read Operate status | The image returns `schemaVersion=1.0`, before the corrected `1.1` local-diagnostic contract. Its suggestion to configure a platform error budget from the in-process window is obsolete. Follow the [metric semantics](metrics.md#platform-slo-and-local-diagnostics); do not turn that diagnostic into protection evidence. |
-| Discover operation kinds | `Deploy` is registered, but that says nothing about the selected backend's rollback support, prior revision or verification policy. Complete the target-specific checks before approval. |
-| Stage a protected service revision | The fixture changes live revision 3 → 4 and exposes `owner_email` during preparation; the prior revision is missing from the operation. The expected unchanged service and captured recovery identity are not established. Stop qualification at this failed check. |
+| Read health/findings through REST and MCP | The [read observation](evidence/3302-accepted-548b7a5-read-observation.json) passes five REST reads and four MCP calls. On both surfaces, independently expected fixture values hold: no findings or events, and disabled alerting stays `notConfigured` without observation/success clocks. Read success does not establish deployment-source outage handling or permission to change a target. |
+| Read Operate status | The image returns `schemaVersion=1.1` with `slo.configured=false`, `slo.availability=null` and a `replica-local` diagnostic tail. Follow the [metric semantics](metrics.md#platform-slo-and-local-diagnostics); do not turn that diagnostic into protection evidence. |
+| Discover scenario tools | The authenticated `full` view pages through 124 descriptors. All five scenario tools are present, `honua_propose_operation` is absent, and `honua_propose_finding` requires `findingId` and `candidateId`. Discovery executes nothing. |
+| Discover operation kinds | `AdminConfigChange`, `Deploy`, `Geoprocess` and `MetadataRelease` are registered. Registration says nothing about the selected backend's rollback support, prior revision or verification policy. Complete the target-specific checks before approval. |
+| Stage a protected service revision | The [staging replay](evidence/3302-accepted-548b7a5-staging.json) passes all five installed scenarios. During staging the live revision stays at 3 with its ETag, and the operation binds that prior identity. A killed and restarted server keeps the durable operation without activating it. Recovery restores the prior graph and verifies six rows and their coordinates, while keeping an independently seeded committed edit. Owned-only recovery after a concurrent edit keeps another service's access policy. Preparations naming a missing resource, an unproven ETL compensation or a cancelled ETL fail with those blockers. |
+| Approve separately | The [approval replay](evidence/3302-accepted-548b7a5-approval.json) passes five server API checks with separately minted approve and read-only keys. Denied decisions change neither proposal nor draft. Approval deletes only the approved draft, and rejection preserves the other. An expired approval key cannot rotate or authenticate. |
 
-The staging failure breaks the promise that preparation preserves the live
-service and binds a known prior revision for recovery. Accepting a replacement
-image and replaying these checks is still required; updating the documentation
-does not qualify the current pin. This observation uses isolated Docker fixtures
-and does not certify ECS-small, the installed DevOps client, or Console.
-
-### Proposed replacement image
-
-Nightly `ff1a463` (`sha256:75ac7813…`) contains the staging and status fixes,
-but the accepted manifest does not pin it yet. On September 14 the unchanged
-harness passed all five installed scenarios on that image
-([staging replay](evidence/3302-repin-ff1a463-staging.json)). During staging the
-live revision stayed at 3 with its ETag, and the operation bound that prior
-identity. A forced restart activated nothing. Recovery restored the prior graph
-while keeping an independently seeded committed edit and an unrelated service's
-access policy. Rejected preparations left the live graph unchanged. The
-[read replay](evidence/3302-repin-ff1a463-read-observation.json) passed the same
-REST/MCP fixture checks and returned status `schemaVersion=1.1` with
-`slo.configured=false` and a `replica-local` tail. It also found all five
-scenario tools among 58 full-view descriptors.
-
-These receipts show what a re-pin must reproduce; they are not qualification.
-Once the manifest accepts an image, replay both against that exact digest. They
-cover metadata service staging only, not a deployment actuator, ECS-small, the
-DevOps client or Console.
+These receipts cover metadata service staging and server API approval only.
+They do not exercise a deployment actuator, a deployment-source outage,
+ECS-small, the installed DevOps client or Console. The earlier `7ba4226` pin
+failed staging and returned status schema `1.0`; the [evidence
+disposition](../../internal/contributor/operate-docs-precut-evidence.md) keeps
+those receipts.
 
 ## Progress and protection
 
