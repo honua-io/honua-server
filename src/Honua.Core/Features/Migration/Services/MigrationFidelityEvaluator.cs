@@ -44,6 +44,12 @@ public sealed record MigrationFidelityEvaluationInput
     /// </summary>
     public bool PublishedTarget { get; init; }
 
+    /// <summary>
+    /// True when the run was asked to publish its target layer. A requested publish that did not produce
+    /// <see cref="PublishedTarget"/> is a blocking omission, not an import that simply chose not to publish.
+    /// </summary>
+    public bool PublishRequested { get; init; }
+
     /// <summary>Number of source records read that failed to land in the target table.</summary>
     public int FailedFeatures { get; init; }
 
@@ -169,6 +175,7 @@ public static class MigrationFidelityEvaluator
         var differences = new List<MigrationFidelityDifference>();
         var subject = string.IsNullOrWhiteSpace(input.LayerName) ? "layer" : input.LayerName!;
 
+        CollectPublish(input, subject, differences);
         CollectRecordLoss(input, subject, differences);
         CollectSourceSnapshot(input, subject, differences);
         CollectAttachmentDifferences(input, differences);
@@ -221,6 +228,31 @@ public static class MigrationFidelityEvaluator
             Verdict = verdict,
             Differences = ordered
         };
+    }
+
+    private static void CollectPublish(
+        MigrationFidelityEvaluationInput input,
+        string subject,
+        List<MigrationFidelityDifference> differences)
+    {
+        // Without a published target the post-publish probes are not applicable, so nothing else reports
+        // them. When the publish was requested, that absence is itself the omission.
+        if (!input.PublishRequested || input.PublishedTarget)
+        {
+            return;
+        }
+
+        differences.Add(new MigrationFidelityDifference
+        {
+            Code = MigrationFidelityDifferenceCodes.PublishNotCompleted,
+            Severity = MigrationFidelityDifferenceSeverities.Blocking,
+            Subject = subject,
+            Expected = "target layer published",
+            Actual = "not published",
+            Summary =
+                "The import was asked to publish its target layer, but no layer was published; the migrated data is "
+                + "not served, and record counts, geometry, extent and catalog parity were never checked against a target."
+        });
     }
 
     private static void CollectRecordLoss(

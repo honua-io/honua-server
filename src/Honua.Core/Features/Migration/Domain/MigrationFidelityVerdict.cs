@@ -83,6 +83,12 @@ public static class MigrationFidelityDifferenceCodes
     public const string CatalogReconciliationNotExecuted = "fidelity.catalog-reconciliation.not-executed";
 
     /// <summary>
+    /// The import was asked to publish its target layer, but no layer was published, so the migrated data
+    /// is not served and none of the post-publish checks had a target to run against.
+    /// </summary>
+    public const string PublishNotCompleted = "fidelity.publish.not-completed";
+
+    /// <summary>
     /// A layer in a service (batch) import did not complete at full fidelity: it failed, was
     /// cancelled, never ran, or was routed to review with a blocking difference.
     /// </summary>
