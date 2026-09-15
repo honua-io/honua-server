@@ -1,12 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Guardrails.Domain;
+using Honua.Core.Features.Studio.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Console;
 using Honua.Server.Features.Operations;
@@ -14,6 +16,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.MultiTenancy;
 using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.Security;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Honua.Core.Features.MultiTenancy.Abstractions;
@@ -199,7 +202,9 @@ internal static class ProposalEndpoints
         }
 
         var actor = ConsolePrincipal.ResolveActorId(context.User);
-        var denied = await EnsureApproverAsync(permissionResolver, proposalStore, id, actor, context).ConfigureAwait(false);
+        var approverIdentities = ResolveApproverIdentities(context, actor);
+        var denied = await EnsureApproverAsync(permissionResolver, proposalStore, id, actor, approverIdentities, context)
+            .ConfigureAwait(false);
         if (denied != null)
         {
             return denied;
@@ -246,6 +251,7 @@ internal static class ProposalEndpoints
                 {
                     ApprovedBy = approvalActor,
                     TenantId = tenantContext?.TenantId ?? string.Empty,
+                    ApproverIdentities = approverIdentities,
                 },
                 context.RequestAborted)
                 .ConfigureAwait(false);
@@ -312,6 +318,7 @@ internal static class ProposalEndpoints
         IOperationProposalStore proposalStore,
         string proposalId,
         string? actor,
+        IReadOnlyCollection<string> approverIdentities,
         HttpContext context)
     {
         var denied = await EnsureApprovePermissionAsync(permissionResolver, actor, context).ConfigureAwait(false);
@@ -326,10 +333,10 @@ internal static class ProposalEndpoints
             return Results.NotFound();
         }
 
-        // Separation of duties: the proposer cannot approve their own proposal.
-        if (proposal != null &&
-            !string.IsNullOrWhiteSpace(actor) &&
-            string.Equals(proposal.RequestedBy, actor, StringComparison.OrdinalIgnoreCase))
+        // Separation of duties: the proposer cannot approve their own proposal, whichever
+        // identity encoding the proposal's writer recorded (#4901).
+        if (!string.IsNullOrWhiteSpace(proposal.RequestedBy) &&
+            approverIdentities.Contains(proposal.RequestedBy, StringComparer.OrdinalIgnoreCase))
         {
             return Results.Problem(
                 detail: "Separation of duties: the requester of a proposal cannot approve it.",
@@ -337,6 +344,37 @@ internal static class ProposalEndpoints
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Every framework-derived identifier that names the approving principal. Proposal writers
+    /// record the requester in different encodings: the raw subject or API-key id (admin
+    /// surfaces), the scheme-qualified canonical actor (MCP evidence-bound proposals), and the
+    /// Studio owner key <c>subject:{iss}:{sub}@tenant:{tenant}</c> (Studio publication and
+    /// rollback requests). Comparing only the raw subject let a Studio proposer approve their
+    /// own publication, so the separation-of-duties check refuses a match against any of them.
+    /// </summary>
+    private static HashSet<string> ResolveApproverIdentities(HttpContext context, string? actor)
+    {
+        var identities = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Add(actor);
+        Add(CanonicalSecurityActor.Resolve(context.User)?.ActorId);
+        var auditActor = AuditContextResolver.ResolveActor(context, out var actorType);
+        if (actorType != AuditActorType.Anonymous)
+        {
+            Add(auditActor);
+        }
+
+        Add(context.RequestServices.GetService<IStudioAuthorizationService>()?.ResolveCallerId(context.User));
+        return identities;
+
+        void Add(string? identity)
+        {
+            if (!string.IsNullOrWhiteSpace(identity))
+            {
+                identities.Add(identity);
+            }
+        }
     }
 
     private static async Task<IResult?> EnsureApprovePermissionAsync(

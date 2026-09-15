@@ -33,7 +33,7 @@
     <None Include="..\..\seed\demo-stac-imagery-v1.sql" Link="Seed\demo-stac-imagery-v1.sql">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="..\..\..\src\Honua.Server\Migrations\118_CreateGeoprocessingWorkspaces.sql" Link="Migrations\118_CreateGeoprocessingWorkspaces.sql">
+    <None Include="..\..\..\src\Honua.Server\Migrations\119_CreateGeoprocessingWorkspaces.sql" Link="Migrations\119_CreateGeoprocessingWorkspaces.sql">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
     <None Include="..\..\..\src\Honua.Server\Migrations\105_AddChangeLogPublicObjectId.sql" Link="Migrations\105_AddChangeLogPublicObjectId.sql">

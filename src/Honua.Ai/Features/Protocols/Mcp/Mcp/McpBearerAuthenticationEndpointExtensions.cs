@@ -233,7 +233,7 @@ internal static class McpBearerAuthenticationEndpointExtensions
             : null;
     }
 
-    private static bool IsMcpTransportPath(PathString path) =>
+    internal static bool IsMcpTransportPath(PathString path) =>
         path.Equals(McpEndpointExtensions.RoutePath, StringComparison.OrdinalIgnoreCase)
         || path.Equals($"{McpEndpointExtensions.RoutePath}/", StringComparison.OrdinalIgnoreCase);
 

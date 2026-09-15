@@ -54,6 +54,12 @@ opt-in limiter is enabled with `RateLimiting__Enabled=true`; rate limiting is
 off by default. If you leave it disabled, enforce an equivalent limit at your
 WAF, API gateway, ingress, or load balancer.
 
+Each chat request is also capped at `StudioAiProxy:MaxPromptCharacters`
+(default `128000`). Tool definitions are counted again on every round. The
+default admits the setup-view map lifecycle through propose. See
+[Studio AI proxy request budget](../reference/configuration/environment-variables.md#studio-ai-proxy-request-budget)
+before lowering it.
+
 The configuration was checked against candidate source, but no live Ollama
 daemon/model was available in the candidate environment. This page therefore
 does not claim a successful real-model turn. That receipt remains part of

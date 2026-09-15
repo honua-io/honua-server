@@ -130,6 +130,7 @@ After a successful upload, `<LicensePath>.uploaded` takes precedence at startup.
 | `Limits__Query__MaxOffset` | `1000000` | Max pagination offset. |
 | `Limits__Query__QueryTimeout` | `00:00:30` | Per-query timeout. |
 | `Limits__Query__MaxBboxAreaSqKm` | `100000` | Max bounding-box query area. |
+| `Limits__Replica__MaxChangesPerLayer` | `50000` | Max adds, updates, or deletes per layer in one offline replica response. Larger backlogs are delivered in consecutive generation windows (`exceededTransferLimit: true`), never rejected. |
 | `Limits__Geometry__MaxVerticesPerGeometry` | `50000` | Max vertices accepted per geometry. |
 | `Limits__Geometry__MaxGeometrySize` | `5242880` (5 MiB) | Max geometry payload size. |
 | `Limits__Geometry__MaxCoordinatePrecision` | `8` | Max coordinate decimal precision. |
@@ -245,6 +246,34 @@ Previously this option had no effect and its model default was 512 with pixel
 units. Explicitly configured values now mean bytes; review any existing value
 that was chosen as a pixel dimension. The database still encodes the tile under
 its existing feature and statement limits before the output length is known.
+
+## Studio AI proxy request budget
+
+`StudioAiProxy__MaxPromptCharacters` defaults to `128000` and accepts values
+from `1` to `500000`. It caps the UTF-16 characters in one
+`POST /api/v1/studio/ai/chat` request before any provider is called. The count
+includes message content, the system prompt, and assistant tool-call IDs, names
+and arguments. It also includes every tool definition's name, description,
+input schema, annotations and output schema. A model-driven session re-sends
+its tool definitions on every round, so they count against the limit each time.
+An oversized request gets HTTP 400 with an `application/problem+json` body
+whose `detail` names the limit: `Request content exceeds the configured limit
+of 128000 characters.`
+
+The default is sized for the shipped setup-view Studio map lifecycle: create,
+update, validate, get, save, reopen, then propose. The eight Studio tool
+definitions add about 16,300 characters to every round, and the transcript
+grows with each tool result. The propose round counts about 32,600 characters
+(about 37,000 request bytes on the 2026.1 candidate), so the previous default of
+`32000` refused it (honua-server#4919). `128000` leaves more than three times
+that for longer sessions and repair rounds. At roughly four characters per token it is about
+32,000 input tokens, within the context window of the supported adapter kinds'
+tool-capable models. Lower it to bound provider cost. A model-driven lifecycle
+then stops at the first round over the limit, so replay your longest session
+first.
+
+`StudioAiProxy__MaxRequestBytes` (`1048576`) separately caps the HTTP body
+size, and oversized bodies get HTTP 413.
 
 ## Related pages
 

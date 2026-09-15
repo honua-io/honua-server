@@ -18,8 +18,8 @@ This guide describes the bounded protected-update contract; the
 [qualification record](../../internal/contributor/operate-docs-precut-evidence.md)
 separately identifies implementation evidence and unmet candidate checks.
 Before replaying, check the [installed-contract results](scenario.md#check-the-installed-contract):
-the accepted image can serve the observation calls while still failing
-protected staging and predating the corrected status contract.
+the accepted image passes observation, service staging and approval, but no
+deployment actuator or placement recovery has been qualified on it.
 The infrastructure control plane provisions the placement;
 the server control plane configures resources and owns governed operations.
 The terminal client is the model seat, with a separate human approval principal.

@@ -34,6 +34,25 @@ cover authorization, route binding, owner denial, status/messages/results,
 truthful cancellation and synchronous failure faults; REST regression coverage
 remains in the existing GPServer suites.
 
+The adapter owner-denial test substitutes the job service. It therefore cannot show
+what the canonical runtime does when another caller names a job.
+`GPServerDurableRuntimeTests.SoapJobOperation_OtherCaller_IsDeniedByCanonicalJobOwnership`
+closes that gap. It runs the real job service over the Redis job store with the
+production executor, and substitutes only the operator grant so that two distinct
+callers may both execute GP work.
+
+- The owner submits the literal 3 by 4 area job through SOAP and waits for success.
+- The second caller then sends `GetJobStatus`, `GetJobMessages`, `GetJobToolName`,
+  `GetJobResult` and `CancelJob` for that job.
+- Each call returns a 404 SOAP fault that leaks no status, task name or result.
+  Without the ownership check a read would return 200, and a cancel of the
+  already-terminal job would return 412.
+- The owner still reads `esriJobSucceeded` and area 12 afterwards.
+
+Job ownership, the SOAP job adapter and the operator evaluator are unchanged
+between the pinned candidate `548b7a5` and the trunk that added this test; the
+only GPServer source difference is the task-alias table.
+
 `GPServerDurableRuntimeTests.SoapBuffer_WithProductionExecutor` and
 `SoapUnion_WithMultiValueInput` prove SOAP RecordSet outputs and GPMultiValue inputs
 against the same runtime, sending ArcPy's captured default controls. Their expected
@@ -46,6 +65,35 @@ The Python replay that produced the complex-value receipts is
 `scripts/probe-gp-soap-complex.py` on honua-esri-compat branch
 `probe/gp-soap-complex-4614`.
 
-The release's candidate-specific replay and fresh native Pro desktop UI receipts
-remain pending a candidate containing these SOAP changes. No desktop UI pass is
-claimed by these observations.
+## Replay on the pinned 2026.1 candidate (548b7a5)
+
+honua-release trunk `52cc3f2c` (#349) pins the candidate to source
+`548b7a5263da5a3f2381eb43f232687cdf92b0bf`, NativeAOT index
+`sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1`.
+That source contains #4760 and #4812. The owned `gpserver-4614-4616-server`
+fixture was recreated on that exact image (Production,
+`Licensing__Mode=Disabled`). Since #4722 the image needs a key-ring
+certificate, so the fixture now gets a throwaway PKCS#12 and a private Redis. It
+also uses a copy of the fixture catalog database. Through the fixture's HTTPS
+proxy the image advertises all 119 GPServer tasks and answers the SOAP catalog.
+The replay workflow verifies that the running container image is this digest
+before it starts the client.
+
+| Receipt | What it establishes |
+| --- | --- |
+| `candidate-548b7a5-arcpy-and-sdk-scalar-verified.json` | On the pinned candidate over verified TLS, installed SDK 2.4.3 imports all 119 advertised tasks. SDK and ArcPy 3.7.1 (documented SOAP `ImportToolbox` syntax, async job status 4 `Completed`) both remotely compute `geometry.area` = 12 for the literal 3 by 4 rectangle, with MeasureResult type, area measure, squared input-CRS units, SRID 3857 and Polygon input. Run [34915379462](https://github.com/honua-io/honua-esri-compat/actions/runs/34915379462). |
+| `candidate-548b7a5-arcpy-complex-values-verified.json` | On the pinned candidate, installed ArcPy 3.7.1 passes the same literal-derived oracles as `managed-complex-values-arcpy-verified.json`: Buffer bbox (-1,-1,4,5) with area 29.12 inside the octagon/circle bounds; multivalue Union area 20; Clip of two FeatureSet inputs with area 4 and attributes kept; attribute filter area 12 with `label=keep`; GenerateNearTable RecordSet row with distance 0; and cancel reaching Cancelled (status 8). Run [34913953581](https://github.com/honua-io/honua-esri-compat/actions/runs/34913953581). |
+
+| `candidate-548b7a5-soap-auth-controls-verified.json` | On the pinned candidate over verified TLS, SOAP `SubmitJob`, `Execute`, `GetJobStatus`, `GetJobMessages`, `GetJobToolName`, `GetJobResult` and `CancelJob` each return a 401 SOAP fault to an anonymous caller, an unknown `X-API-Key` and an unknown bearer token (21 denials). No denial leaks job status, task name, job id or result. As controls, the authorized caller's literal 3 by 4 area job still succeeds with area 12 and MeasureResult metadata, is still `esriJobSucceeded` after the refused cancels, and an authorized malformed submission returns 400. Produced by `probe-soap-auth-controls.py`. |
+
+`soap-auth-controls.json` recorded the first three of these controls on the managed
+diagnostic image only. The probe declares every expected status and value before
+sending a request. It reads the authorized credential from the fixture container's
+environment and refuses to write a receipt that contains it.
+`GPServerDurableRuntimeTests.SoapJobOperation_UnauthenticatedCaller_IsChallengedWithoutJobState`
+keeps the same controls as a regression. It runs the real API-key handler (the dev
+bypass is off), the real job service, the Redis job store and the production
+executor. It also asserts that no challenged submission creates a job.
+
+Native Pro desktop UI receipts are still separate. Each receipt above records
+`desktop_ui_exercised: false`, and no desktop UI pass is claimed.

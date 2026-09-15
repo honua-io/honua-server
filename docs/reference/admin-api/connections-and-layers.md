@@ -74,6 +74,17 @@ The publish request accepts these optional source-governance fields:
 
 All fields are optional and absent by default. Honua does not infer license rights, attribution, or publisher identity. When `license` is one standalone SPDX identifier and `licenseUrl` is omitted, Honua derives its canonical `https://spdx.org/licenses/{identifier}.html` documentation link. Explicit `licenseUrl` values override the derived URL; compound SPDX expressions and `proprietary` do not produce a derived link.
 
+### Editable layers
+
+A published layer reads its source table by default, and the server cannot write through a source table. To publish a layer that accepts OGC API Features and FeatureServer edits, publish it into the managed feature store and declare the edit capabilities:
+
+| Field | Values | Effect |
+|---|---|---|
+| `storageMode` | `source` (default), `managed` | `managed` copies the source rows into the managed feature store at publish time. The managed store is then authoritative for the layer: reads and edits both use it, object ids are assigned by the managed store (the source key is kept as an ordinary attribute), and the layer no longer tracks the source table. Refreshing its features from the source is refused. |
+| `capabilities` | `Query`, `Extract`, `Create`, `Update`, `Delete`, `Editing` | Tokens declared on the feature publication. Omitted means `["Query","Extract"]`. The set must include `Query`. Edit tokens require `storageMode` `managed`; a source-backed request that declares them is rejected with 400. |
+
+For example, publish `{"schema":"public","table":"parcels","layerName":"parcels-edit","serviceName":"parcels-edit","srid":4326,"storageMode":"managed","capabilities":["Query","Create","Update","Delete"]}` to the same route. The response echoes `storageMode` and `capabilities`, and reports the managed `features` table as the layer's storage. Create, update and delete requests to `/ogc/features/collections/{layerId}/items` and FeatureServer `applyEdits` then read back through every serving protocol.
+
 ## Service and layer settings
 
 | Method | Path | Purpose |

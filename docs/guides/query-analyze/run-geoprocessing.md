@@ -203,6 +203,12 @@ constraints before raising them. A failed resource budget returns its setting
 name and guidance to narrow the selection or simplify the input before resubmission.
 The job is failed, never silently truncated or reported as a partial success.
 
+Input, resource-limit and `MaxLayerExecutionSeconds` failures are terminal on the
+first attempt. The job's retry policy does not re-run them, because a retry repeats
+the same admission or spends another full deadline on the same input. Transient
+source-read failures keep the normal retry policy. Dismissing a running layer job
+cancels it at the next check between managed calls.
+
 The [layer resource qualification fixture](../../../tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerResourceQualification.md)
-documents the constrained deployment, independent geometry oracle, serving probes,
-and the currently failing manifest-pinned candidate receipt.
+documents the constrained deployment, independent geometry oracle, elapsed-time and
+dismissal scenarios, serving probes, and the recorded candidate receipts.

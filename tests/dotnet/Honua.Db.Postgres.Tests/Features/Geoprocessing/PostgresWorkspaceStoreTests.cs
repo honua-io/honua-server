@@ -272,10 +272,10 @@ public sealed class PostgresWorkspaceStoreTests(PostgresFixture fixture)
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresWorkspaceStoreTests));
         try
         {
-            var migration = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Migrations", "118_CreateGeoprocessingWorkspaces.sql"));
+            var migration = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Migrations", "119_CreateGeoprocessingWorkspaces.sql"));
             var upgrader = DeployChanges.To.PostgresqlDatabase(fixture.ConnectionString)
                 .JournalTo(new NullJournal())
-                .WithScript("118_CreateGeoprocessingWorkspaces.sql", migration)
+                .WithScript("119_CreateGeoprocessingWorkspaces.sql", migration)
                 .WithVariable("HonuaSchema", SchemaSearchPath.ValidateAndQuote(schema))
                 .WithTransaction().Build();
             upgrader.PerformUpgrade().Successful.Should().BeTrue();

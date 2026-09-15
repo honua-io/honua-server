@@ -82,9 +82,7 @@ internal sealed class ProposalStatusResource : IMcpResource
             throw new KeyNotFoundException($"Proposal '{proposalId}' was not found.");
         }
 
-        var actor = McpAuthorizationHelper.ResolveActorId(principal);
-        var isProposer = !string.IsNullOrWhiteSpace(proposal.RequestedBy)
-            && string.Equals(proposal.RequestedBy, actor, StringComparison.Ordinal);
+        var isProposer = McpProposalOwnership.IsProposer(httpContext, principal, proposal);
         if (proposal.OperationId == "studio.content.create-publication-request" && !isProposer)
         {
             throw new GeoprocessingAuthorizationException(

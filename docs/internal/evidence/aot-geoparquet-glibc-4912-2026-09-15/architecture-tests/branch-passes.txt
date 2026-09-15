@@ -1,0 +1,2 @@
+A total of 1 test files matched the specified pattern.
+Passed!  - Failed:     0, Passed:    20, Skipped:     0, Total:    20, Duration: 23 s - Honua.Architecture.Tests.dll (net10.0)

@@ -2,7 +2,7 @@
 
 The PostgreSQL repair for #4780 implements the existing `env:workspace` and
 `env:overwriteOutput` contract. It adds durable workspace and artifact references
-through migration 118 and the shared lifecycle service. It does not add a process,
+through migration 119 and the shared lifecycle service. It does not add a process,
 protocol, SaaS tenancy system or desktop adapter.
 
 Relative to retry repair commit `84a15fde2bc644708243423b4668f6dde104aa44`, the
@@ -40,7 +40,7 @@ shared runtime gaps and candidate-binding obligations remain. #4780 still needs
 release-artifact inclusion, its migration, positive shipping replay and affected
 desktop revalidation before the certification defect can close.
 
-The review follow-up applies migration 118 through DbUp's actual `HonuaSchema`
+The review follow-up applies migration 119 through DbUp's actual `HonuaSchema`
 variable and tests that substitution against isolated PostgreSQL schemas. Both
 scheduled ticks and the polling loop honor disabled automatic cleanup. Named and
 explicit workspace creation share an owner-level transaction lock for the active

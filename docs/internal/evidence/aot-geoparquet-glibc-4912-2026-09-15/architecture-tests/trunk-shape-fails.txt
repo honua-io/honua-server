@@ -1,0 +1,9 @@
+[xUnit.net 00:00:01.69]     PublishedServerAotDockerfiles ShouldTargetGlibcAndInstallParquetNativeDependencies [FAIL]
+[xUnit.net 00:00:01.76]     NightlyAotBuild ShouldSmokeGeoParquetOnTheCandidateDigestBeforePublishingTags [FAIL]
+[xUnit.net 00:00:01.77]     PublishedServerAotDockerfiles ShouldFailTheBuildWhenNativeLibrariesCannotLink [FAIL]
+[xUnit.net 00:00:01.78]     BaseImageMirrors ShouldNotMirrorAlpineBasesForTheCanonicalAotImage [FAIL]
+   Did not expect contents "# syntax=docker/dockerfile:1.7
+   Expected smokeIndex to be greater than 9603, but found -1 (difference of -9604).
+   Expected runtimeStage to match regex "for native in [^;]*\bParquetSharpNative\.so\b[^;]*\blibduckdb\.so\b|for native in [^;]*\blibduckdb\.so\b[^;]*\bParquetSharpNative\.so\b" because docker/Dockerfile.aot must link-check both glibc-only native libraries in the runtime stage, but "AS runtime
+   Expected mirrors "#!/usr/bin/env bash
+Failed!  - Failed:     4, Passed:     0, Skipped:     0, Total:     4, Duration: 351 ms - Honua.Architecture.Tests.dll (net10.0)

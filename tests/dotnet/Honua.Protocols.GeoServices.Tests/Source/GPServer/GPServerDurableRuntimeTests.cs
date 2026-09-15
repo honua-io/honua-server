@@ -2,10 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Security.Claims;
 using System.Text.Json;
 using System.Text;
 using System.Xml.Linq;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -13,12 +16,16 @@ using Honua.Geoprocessing;
 using Honua.ControlPlane;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
@@ -189,7 +196,7 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
             // Test hosts skip production DbUp. Apply the actual embedded migration,
             // not a hand-written schema, before using the normally registered provider.
             await using var migration = typeof(Program).Assembly.GetManifestResourceStream(
-                "Honua.Server.Migrations.118_CreateGeoprocessingWorkspaces.sql")!;
+                "Honua.Server.Migrations.119_CreateGeoprocessingWorkspaces.sql")!;
             using var reader = new StreamReader(migration);
             await fixture.Postgres.ExecuteDdlUnderLockAsync((await reader.ReadToEndAsync()).Replace("$HonuaSchema$", "honua", StringComparison.Ordinal));
             migrationApplied = true;
@@ -542,25 +549,198 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
         }
     }
 
+    [IntegrationTheory]
+    [InlineData("GetJobStatus")]
+    [InlineData("GetJobMessages")]
+    [InlineData("GetJobToolName")]
+    [InlineData("GetJobResult")]
+    [InlineData("CancelJob")]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /services/{serviceId}/GPServer")]
+    public async Task SoapJobOperation_OtherCaller_IsDeniedByCanonicalJobOwnership(string operation)
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        // Only the operator grant is substituted, so both callers may execute and read
+        // jobs. Per-job ownership stays with the real job service and Redis job store.
+        var authorizer = Substitute.For<IOperatorAuthorizationEvaluator>();
+        authorizer.EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(AccessDecision.Allowed());
+        var approval = Substitute.For<IOperatorApprovalEvaluator>();
+        approval.Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
+            .Returns(ApprovalRequirement.NotRequired());
+        var fixture = CreateDurableFixture(productionExecutor: true)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.ConfigureTestServices(services =>
+                {
+                    services.RemoveAll<IOperatorAuthorizationEvaluator>();
+                    services.AddSingleton(authorizer);
+                    services.RemoveAll<IOperatorApprovalEvaluator>();
+                    services.AddSingleton(approval);
+                    services.AddAuthentication()
+                        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });
+                    services.PostConfigureAll<AuthenticationOptions>(options =>
+                    {
+                        options.DefaultAuthenticateScheme = TestAuthHandler.SchemeName;
+                        options.DefaultChallengeScheme = TestAuthHandler.SchemeName;
+                        options.DefaultScheme = TestAuthHandler.SchemeName;
+                    });
+                });
+            });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var owner = fixture.CreateClient(client => client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, "alice"));
+            using var other = fixture.CreateClient(client => client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, "bob"));
+            owner.Timeout = TimeSpan.FromSeconds(45);
+            other.Timeout = TimeSpan.FromSeconds(45);
+            var submitted = await SendSoapAsync(owner, "SubmitJob",
+                "<ToolName>Honua_67656F6D657472792E61726561</ToolName><Values xsi:type=\"tns:GPValues\">" +
+                $"<GPValue xsi:type=\"tns:GPString\"><Value>{PolygonWkb((0, 0), (3, 0), (3, 4), (0, 4), (0, 0))}</Value></GPValue>" +
+                "<GPValue xsi:type=\"tns:GPLong\"><Value>3857</Value></GPValue></Values>" +
+                GPServerSoapRequestFixtures.ArcPyDefaultControls);
+            var jobId = submitted.Value;
+            await WaitForSoapJobSucceededAsync(owner, jobId);
+            var jobStore = fixture.GetService<IExecutionJobStore>();
+            (await jobStore.GetAsync(jobId))!.Audit.RequestedBy.Should().Be("alice");
+
+            var outputNames = "<ParameterNames><String>outputScalar</String></ParameterNames>";
+            using var denied = await PostSoapAsync(other, operation,
+                $"<JobID>{jobId}</JobID>" + (operation == "GetJobResult" ? outputNames : string.Empty));
+            var body = await denied.Content.ReadAsStringAsync();
+            // The canonical denial is not-found, so another caller cannot confirm that
+            // the job exists. A job read without the ownership check would return 200,
+            // and a cancel of this already-terminal job would return 412.
+            denied.StatusCode.Should().Be(HttpStatusCode.NotFound, body);
+            XDocument.Parse(body).Descendants(XName.Get("Fault", "http://schemas.xmlsoap.org/soap/envelope/"))
+                .Should().ContainSingle();
+            body.Should().NotContain("esriJob").And.NotContain("geometry.area")
+                .And.NotContain("Honua_67656F6D657472792E61726561").And.NotContain("data:application/json");
+
+            // The owner still reads the unchanged job and its independently computed 3 by 4 area.
+            (await SendSoapAsync(owner, "GetJobStatus", $"<JobID>{jobId}</JobID>")).Value.Should().Be("esriJobSucceeded");
+            (await jobStore.GetAsync(jobId))!.Status.Should().Be(ExecutionJobStatus.Succeeded);
+            var result = await SendSoapAsync(owner, "GetJobResult", $"<JobID>{jobId}</JobID>{outputNames}");
+            var dataUri = result.Element("Values")!.Elements("GPValue").Should().ContainSingle().Subject.Element("Value")!.Value;
+            const string prefix = "data:application/json;base64,";
+            dataUri.Should().StartWith(prefix);
+            using var measure = JsonDocument.Parse(Convert.FromBase64String(dataUri[prefix.Length..]));
+            measure.RootElement.GetProperty("value").GetDouble().Should().Be(3 * 4);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData("anonymous")]
+    [InlineData("invalid-api-key")]
+    [InlineData("invalid-bearer")]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /services/{serviceId}/GPServer")]
+    public async Task SoapJobOperation_UnauthenticatedCaller_IsChallengedWithoutJobState(string caller)
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        // The real API-key handler decides; the dev bypass would accept any key. Only the
+        // shared factory configures the admin password, so this host needs it explicitly.
+        var fixture = CreateDurableFixture(productionExecutor: true)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var owner = fixture.CreateAdminClient();
+            using var denied = fixture.CreateClient(client =>
+            {
+                if (caller == "invalid-api-key")
+                {
+                    client.DefaultRequestHeaders.Add("X-API-Key", "honua-test-" + Guid.NewGuid().ToString("N"));
+                }
+                else if (caller == "invalid-bearer")
+                {
+                    client.DefaultRequestHeaders.Add("Authorization", "Bearer honua-test-" + Guid.NewGuid().ToString("N"));
+                }
+            });
+            owner.Timeout = TimeSpan.FromSeconds(45);
+            denied.Timeout = TimeSpan.FromSeconds(45);
+            var area = "<ToolName>Honua_67656F6D657472792E61726561</ToolName><Values xsi:type=\"tns:GPValues\">" +
+                $"<GPValue xsi:type=\"tns:GPString\"><Value>{PolygonWkb((0, 0), (3, 0), (3, 4), (0, 4), (0, 0))}</Value></GPValue>" +
+                "<GPValue xsi:type=\"tns:GPLong\"><Value>3857</Value></GPValue></Values>" +
+                GPServerSoapRequestFixtures.ArcPyDefaultControls;
+            var jobId = (await SendSoapAsync(owner, "SubmitJob", area)).Value;
+            await WaitForSoapJobSucceededAsync(owner, jobId);
+            var jobStore = fixture.GetService<IExecutionJobStore>();
+            var jobsBefore = (await jobStore.QueryAsync(new ExecutionJobQuery())).Items.Count;
+
+            var outputNames = "<ParameterNames><String>outputScalar</String></ParameterNames>";
+            foreach (var (operation, arguments) in new[]
+            {
+                ("SubmitJob", area),
+                ("Execute", area),
+                ("GetJobStatus", $"<JobID>{jobId}</JobID>"),
+                ("GetJobMessages", $"<JobID>{jobId}</JobID>"),
+                ("GetJobToolName", $"<JobID>{jobId}</JobID>"),
+                ("GetJobResult", $"<JobID>{jobId}</JobID>{outputNames}"),
+                ("CancelJob", $"<JobID>{jobId}</JobID>"),
+            })
+            {
+                using var response = await PostSoapAsync(denied, operation, arguments);
+                var body = await response.Content.ReadAsStringAsync();
+                // Authentication is decided before submission parsing or any job lookup,
+                // so the challenge cannot confirm the job, its task or its result.
+                response.StatusCode.Should().Be(HttpStatusCode.Unauthorized, $"{operation}: {body}");
+                XDocument.Parse(body).Descendants(XName.Get("Fault", "http://schemas.xmlsoap.org/soap/envelope/"))
+                    .Should().ContainSingle(operation);
+                body.Should().NotContain("esriJob").And.NotContain("geometry.area").And.NotContain(jobId)
+                    .And.NotContain("Honua_67656F6D657472792E61726561").And.NotContain("data:application/json");
+            }
+
+            // No challenged submission created a job, and the refused cancel left the
+            // owner's job and its independently computed 3 by 4 area unchanged.
+            (await jobStore.QueryAsync(new ExecutionJobQuery())).Items.Count.Should().Be(jobsBefore);
+            (await jobStore.GetAsync(jobId))!.Status.Should().Be(ExecutionJobStatus.Succeeded);
+            var result = await SendSoapAsync(owner, "GetJobResult", $"<JobID>{jobId}</JobID>{outputNames}");
+            var dataUri = result.Element("Values")!.Elements("GPValue").Should().ContainSingle().Subject.Element("Value")!.Value;
+            const string prefix = "data:application/json;base64,";
+            dataUri.Should().StartWith(prefix);
+            using var measure = JsonDocument.Parse(Convert.FromBase64String(dataUri[prefix.Length..]));
+            measure.RootElement.GetProperty("value").GetDouble().Should().Be(3 * 4);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     private static async Task<XElement> SubmitSoapAndReadResultAsync(HttpClient client, string toolName, string values, string outputName)
     {
         var submitted = await SendSoapAsync(client, "SubmitJob",
             $"<ToolName>{toolName}</ToolName><Values xsi:type=\"tns:GPValues\">{values}</Values>" +
             GPServerSoapRequestFixtures.ArcPyDefaultControls);
         var jobId = submitted.Value;
+        await WaitForSoapJobSucceededAsync(client, jobId);
+        return await SendSoapAsync(client, "GetJobResult",
+            $"<JobID>{jobId}</JobID><ParameterNames><String>{outputName}</String></ParameterNames>");
+    }
+
+    private static async Task WaitForSoapJobSucceededAsync(HttpClient client, string jobId)
+    {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         while (true)
         {
             var status = await SendSoapAsync(client, "GetJobStatus", $"<JobID>{jobId}</JobID>");
             if (status.Value == "esriJobSucceeded")
             {
-                break;
+                return;
             }
             status.Value.Should().NotBe("esriJobFailed").And.NotBe("esriJobCancelled");
             await Task.Delay(100, timeout.Token);
         }
-        return await SendSoapAsync(client, "GetJobResult",
-            $"<JobID>{jobId}</JobID><ParameterNames><String>{outputName}</String></ParameterNames>");
     }
 
     private static (double X, double Y)[] ReadSingleRing(XElement result, out string wkid)
@@ -603,15 +783,20 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
 
     private static async Task<XElement> SendSoapAsync(HttpClient client, string operation, string arguments)
     {
+        using var response = await PostSoapAsync(client, operation, arguments);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        return XDocument.Parse(body).Descendants("Result").Single();
+    }
+
+    private static async Task<HttpResponseMessage> PostSoapAsync(HttpClient client, string operation, string arguments)
+    {
         var xml = $"""
             <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="http://www.esri.com/schemas/ArcGIS/10.8" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
             <soap:Body><tns:{operation}>{arguments}</tns:{operation}></soap:Body></soap:Envelope>
             """;
         using var content = new StringContent(xml, Encoding.UTF8, "text/xml");
-        using var response = await client.PostAsync($"/services/{ServiceId}/GPServer", content);
-        var body = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
-        return XDocument.Parse(body).Descendants("Result").Single();
+        return await client.PostAsync($"/services/{ServiceId}/GPServer", content);
     }
 
     private WebAppFixture CreateDurableFixture(bool productionExecutor)

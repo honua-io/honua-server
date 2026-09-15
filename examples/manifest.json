@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1138,
+    "total": 1142,
     "byStatus": {
-      "not-executable": 1125,
+      "not-executable": 1129,
       "unvalidated": 10,
       "passed": 3
     }
@@ -5415,7 +5415,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 208,
+      "line": 221,
       "language": "bash"
     },
     {
@@ -5922,7 +5922,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 143,
+      "line": 124,
       "language": "json"
     },
     {
@@ -5935,7 +5935,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 139,
+      "line": 120,
       "language": "json"
     },
     {
@@ -5948,7 +5948,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 216,
+      "line": 197,
       "language": "json"
     },
     {
@@ -5961,7 +5961,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 147,
+      "line": 128,
       "language": "json"
     },
     {
@@ -5974,7 +5974,7 @@
         "check": "inventory-classification"
       },
       "fence": 9,
-      "line": 276,
+      "line": 257,
       "language": "powershell"
     },
     {
@@ -5987,7 +5987,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 228,
+      "line": 209,
       "language": "powershell"
     },
     {
@@ -6000,7 +6000,7 @@
         "check": "inventory-classification"
       },
       "fence": 8,
-      "line": 245,
+      "line": 226,
       "language": "powershell"
     },
     {
@@ -6013,7 +6013,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 151,
+      "line": 132,
       "language": "json"
     },
     {
@@ -6026,7 +6026,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 133,
+      "line": 114,
       "language": "json"
     },
     {
@@ -7807,7 +7807,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 804,
+      "line": 824,
       "language": "text"
     },
     {
@@ -7820,7 +7820,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 241,
+      "line": 261,
       "language": "bash"
     },
     {
@@ -7833,7 +7833,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 731,
+      "line": 751,
       "language": "text"
     },
     {
@@ -7846,7 +7846,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 228,
+      "line": 248,
       "language": "bash"
     },
     {
@@ -7859,7 +7859,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 752,
+      "line": 772,
       "language": "json"
     },
     {
@@ -7872,7 +7872,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 402,
+      "line": 422,
       "language": "bash"
     },
     {
@@ -7885,7 +7885,7 @@
         "check": "inventory-classification"
       },
       "fence": 7,
-      "line": 855,
+      "line": 875,
       "language": "text"
     },
     {
@@ -12920,6 +12920,32 @@
       "language": "text"
     },
     {
+      "id": "c60edbb1710783b7",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/capacity-soak-tiles-4918/README.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 35,
+      "language": "plain"
+    },
+    {
+      "id": "9dcacdc486811ea6",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/cng-geoparquet-candidate-548b7a5-2026-09-15/README.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 51,
+      "language": "bash"
+    },
+    {
       "id": "211bbf3a8a96b80c",
       "kind": "docs-fence",
       "path": "docs/internal/evidence/deploy-gate-candidate-3c52a4b.md",
@@ -12931,6 +12957,32 @@
       "fence": 1,
       "line": 20,
       "language": "bash"
+    },
+    {
+      "id": "8d4b055723b86db9",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/deploy-gate-candidate-548b7a5.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 20,
+      "language": "bash"
+    },
+    {
+      "id": "a1075690a60be7e9",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/deploy-gate-candidate-548b7a5.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 2,
+      "line": 44,
+      "language": "plain"
     },
     {
       "id": "086d687ee40614ae",
@@ -13280,7 +13332,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 173,
+      "line": 181,
       "language": "bash"
     },
     {
@@ -14437,7 +14489,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 74,
+      "line": 80,
       "language": "json"
     },
     {

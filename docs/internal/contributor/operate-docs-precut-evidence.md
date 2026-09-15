@@ -98,7 +98,8 @@ manifest carrying only that server entry.
 Both runs removed their containers and network. They are **not accepted-pin
 evidence**: they show what a re-pin must reproduce, and must be replayed once
 the manifest accepts an image. Neither exercises a deployment actuator,
-deployment-source outage, installed CLI/DevOps client or placement.
+deployment-source outage, installed CLI/DevOps client or placement. The
+September 15 replay below reproduces them on the accepted pin.
 
 Two remainders were re-examined against trunk:
 
@@ -117,6 +118,45 @@ Two remainders were re-examined against trunk:
   The missing enforcement and its negatives are owned by
   [#4842](https://github.com/honua-io/honua-server/issues/4842).
 
+## September 15 accepted-pin replay
+
+Release PR [#349](https://github.com/honua-io/honua-release/pull/349) merged as
+`52cc3f2c60ff357bcec03ce1fa3ccd2ff2b81ef1`. Its `platform-manifest.yaml`
+(SHA-256 `02c076be536514622c32a411e492f18413f257e9d4ff3d04c353dea591b89709`)
+pins honua-server `548b7a5263da5a3f2381eb43f232687cdf92b0bf`, image
+`ghcr.io/honua-io/honua-server@sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1`.
+That commit contains #4663, #4726 and every earlier Operate documentation change.
+The unchanged manifest file was passed to each harness, with no temporary
+server-only manifest. Each harness checked the RepoDigest and OCI revision label
+before boot and removed its containers and network afterwards.
+
+- [Staging](../../guides/operate/evidence/3302-accepted-548b7a5-staging.json):
+  `metadata-release-installed.py`, unchanged (SHA-256 `64825397…`), passes all
+  five scenarios. The fixture SHA-256 `83eb29ac…` is the one recorded for
+  `7ba4226` and `ff1a463`. The two recovery scenarios end `RolledBack` with the
+  prior graph and the seeded population edit of 1000007. The three rejected
+  preparations fail with `metadata-release-resource-missing`,
+  `metadata-release-etl-unproven-compensation` and `metadata-release-etl-failed`.
+- [Read observation](../../guides/operate/evidence/3302-accepted-548b7a5-read-observation.json):
+  `operate-read-observation.py --accepted-manifest` records
+  `qualificationStatus=accepted-pin-observation`. Five REST reads, four MCP
+  calls, the fixture assertions and the status `1.1` contract pass. The full
+  view now holds 124 descriptors in 11 pages; the ff1a463 run found 58 in 5.
+  Admin MCP publication ([#4876](https://github.com/honua-io/honua-server/pull/4876))
+  is in `548b7a5` but not `ff1a463`. All five scenario
+  tools are still present, `honua_propose_operation` is absent, and
+  `findingId`/`candidateId` are still required. The harness's boot-only
+  `receipt.json` lists no scenarios; `observation.json` is the receipt.
+- [Approval](../../guides/operate/evidence/3302-accepted-548b7a5-approval.json):
+  `scripts/certification/prove-admin-approve-candidate.py` passes the same five
+  checks as the September 12 `7ba4226` receipt. This is server API approval in
+  Development with a Pro dev grant, joining proposal, operation-instance and
+  draft IDs.
+
+This is accepted-pin evidence for observation, metadata service staging and
+server API approval. It does not exercise a deployment actuator, a deployment
+source outage, the installed CLI/DevOps client, Console or a placement.
+
 ## Acceptance disposition
 
 | Acceptance / verification | Disposition |
@@ -125,9 +165,9 @@ Two remainders were re-examined against trunk:
 | Freshness, completeness, backend identity and coverage | Documented source envelopes and failure behavior. #3475's executed Windows outage receipt is linked below. The deployment adapter fixtures cover stale, partial, unavailable, unverified and not-configured envelopes; live deployment-source collection remains a distinct evidence obligation. |
 | Generic model proposal-only boundary and negative authorization | Source references below; #3411, #3430, #3431 and #3474 are closed as checked September 5. Their old open-blocker claims were removed. |
 | One joined deployment actuator receipt and convergence window | **Unmet.** The approval receipt below exercises a real Studio draft operation; it does not prove deployment convergence or recovery. |
-| Exact Local Docker and ECS-small route/tool/CLI/rollback replay | **Unmet.** The accepted manifest pin exists and must be tested. The installed service-staging receipt below fails on that pin; missing final release-lock manufacture does not release this criterion. |
+| Exact Local Docker and ECS-small route/tool/CLI/rollback replay | **Partly met.** On the accepted `548b7a5` pin, the REST routes, MCP tools, status contract, installed service staging/recovery and server API approval pass in isolated Docker. The installed CLI/DevOps client, the ECS-small placement and deployment rollback have not been replayed on it. Missing final release-lock manufacture does not release this criterion. |
 | GitBook/docs validation | Local link/anchor, example-surface, OKF bundle, generated capability concepts and `llms.txt` checks pass. Checker regressions (24 links, example surfaces, 17 OKF, 2 Windows package verification) and `scripts/ci/pre-pr-check.sh` pass. The pre-PR selector uses the documentation-only shell/governance path; no managed build is required. Hosted GitBook preview is separately reported by the PR checks. |
-| honua-site #185 links without broadening claims | [Site PR #275](https://github.com/honua-io/honua-site/pull/275) contains both `guides/operate/scenario` and `guides/operate/metrics` links in `operations.html`, verified at `012f8acbbc8aeb427d7326e5f9cc0f6204d5dbcc`. It remains open on September 12; publication is not claimed. |
+| honua-site #185 links without broadening claims | [Site PR #275](https://github.com/honua-io/honua-site/pull/275) contains both `guides/operate/scenario` and `guides/operate/metrics` links in `operations.html`, verified at `012f8acbbc8aeb427d7326e5f9cc0f6204d5dbcc`. It remains open at that head on September 15; publication is not claimed. |
 
 The release promise is the bounded terminal Operate journey in the 2026.1
 quality contract, extended by [protected rollout #319](https://github.com/honua-io/honua-release/issues/319):
@@ -175,11 +215,12 @@ observed prior revision and protection policy.
 
 ## Candidate receipt requirements
 
-The accepted manifest read on September 12 pins server revision
-`7ba422672e0c751843b17beb36e954a019cc19fb` and image
-`ghcr.io/honua-io/honua-server@sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd`.
-These bytes are available locally and were used for the approval replay below.
-Do not replace this identity with a source build or a proposed repin.
+Since September 15 the accepted manifest pins server revision
+`548b7a5263da5a3f2381eb43f232687cdf92b0bf` and image
+`ghcr.io/honua-io/honua-server@sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1`.
+Remaining receipts must use this identity, not a source build or a proposed
+re-pin. The September 12 receipts below used the previous pin, `7ba4226`
+(`sha256:dd50cd81…`).
 
 ### Executed approval slice
 
@@ -197,7 +238,7 @@ This is server-API approval evidence in Development with a Pro dev grant. It is 
 MCP/CLI, Console, a deployment actuator, production licensing or placement recovery
 qualification. The existing source fixtures still carry their narrower meanings.
 
-### Accepted-pin failure and unresolved dependencies
+### Previous-pin failure and unresolved dependencies
 
 The [installed service-recovery receipt](https://github.com/honua-io/honua-server/blob/68d8d61561f3043abb328280c4f02d7166c46a7d/tests/baselines/metadata-release-installed/2026-09-12/7ba4226.receipt.json)
 retained by [#4737](https://github.com/honua-io/honua-server/pull/4737) is **failed**
@@ -209,10 +250,9 @@ reported failure is `prior identity missing or captured after mutation`.
 That breaks the protected-service promise that preparation leaves the live revision
 intact and recovery binds a known prior revision. No successful recovery is inferred.
 
-The lane's proposed `9f2f16a` receipt passes five installed scenarios, but
-[release #342](https://github.com/honua-io/honua-release/pull/342) must first establish
-an accepted pin containing the fixes; then the required scenario must be replayed
-against that accepted manifest. [Telemetry qualification #4617](https://github.com/honua-io/honua-server/issues/4617)
+Release #349 superseded [release #342](https://github.com/honua-io/honua-release/pull/342)
+and accepted `548b7a5`, which contains the fixes. The required scenarios passed there
+([September 15 accepted-pin replay](#september-15-accepted-pin-replay)). [Telemetry qualification #4617](https://github.com/honua-io/honua-server/issues/4617)
 and [the joined recovery certificate](https://github.com/honua-io/honua-release/issues/321)
 remain distinct obligations. Neither an issue's closed state nor synthetic provider
 coverage substitutes for installed verification.
