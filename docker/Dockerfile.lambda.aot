@@ -187,18 +187,24 @@ COPY --from=build /app /var/task
 # directory font manager still needs real fonts for labels and legends, so ship a
 # deterministic DejaVu baseline. `ldd -r` forces every lazy native relocation now;
 # this catches missing libraries and symbols while the image is built, rather than
-# after a customer requests the first map.
+# after a customer requests the first map. libatomic1 is required by ParquetSharpNative,
+# the GeoParquet f=parquet encoder: without it every export answered 501 (honua-server#4912).
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends libgssapi-krb5-2 fonts-dejavu-core && \
+    apt-get install -y --no-install-recommends libatomic1 libgssapi-krb5-2 fonts-dejavu-core && \
     rm -rf /var/lib/apt/lists/* && \
     test -r /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf && \
     chmod +x /var/task/Honua.Server && \
-    skia_linkage="$(ldd -r /var/task/libSkiaSharp.so 2>&1)" && \
-    printf '%s\n' "$skia_linkage" && \
-    if printf '%s\n' "$skia_linkage" | grep -Eq 'not found|undefined symbol'; then \
-      echo "SkiaSharp native dependency validation failed" >&2; \
-      exit 1; \
-    fi
+    for native in libSkiaSharp.so ParquetSharpNative.so libduckdb.so; do \
+      test -f "/var/task/${native}" || { echo "missing native library /var/task/${native}" >&2; exit 1; }; \
+      echo "== ${native}"; \
+      ldd -r "/var/task/${native}" > /tmp/native-linkage.txt 2>&1; \
+      cat /tmp/native-linkage.txt; \
+      if grep -Eq 'not found|undefined symbol|not a dynamic executable' /tmp/native-linkage.txt; then \
+        echo "native dependency validation failed for /var/task/${native}" >&2; \
+        exit 1; \
+      fi; \
+    done && \
+    rm -f /tmp/native-linkage.txt
 
 ENV PORT=8080 \
     AWS_LWA_PORT=8080 \
