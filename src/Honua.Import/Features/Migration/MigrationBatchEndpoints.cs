@@ -6,6 +6,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
+using Honua.Core.Features.Migration.Services;
 using Honua.Import.FileImport;
 
 namespace Honua.Migration;
@@ -156,6 +157,7 @@ internal static partial class MigrationBatchEndpoints
             SourceDisplayName = request.SourceDisplayName,
             ManifestBody = request.ManifestBody,
             ApplyRelationships = request.ApplyRelationships ?? false,
+            RequireFullFidelity = request.RequireFullFidelity ?? false,
             Layers = request.Layers.Select(static l => new MigrationBatchLayerSpec
             {
                 SourceResourceId = l.SourceResourceId!,
@@ -181,8 +183,22 @@ internal static partial class MigrationBatchEndpoints
                 StatusCodes.Status400BadRequest);
             return;
         }
+        catch (MigrationConstructAccountingRefusedException ex)
+        {
+            await Results.Json(
+                    new MigrationBatchRefusedResponse { Error = ex.Message, ConstructAccounting = ex.Report },
+                    MigrationBatchJsonContext.Default.MigrationBatchRefusedResponse,
+                    statusCode: StatusCodes.Status422UnprocessableEntity)
+                .ExecuteAsync(context).ConfigureAwait(false);
+            return;
+        }
 
-        var response = ToResponse(batch, []);
+        var catalog = context.RequestServices.GetRequiredService<IMigrationBatchRunCatalog>();
+        var startedChildren = await catalog.GetChildrenAsync(batch.BatchId, cancellationToken).ConfigureAwait(false);
+        var response = ToResponse(
+            batch,
+            [],
+            await AccountAsync(catalog, batch, startedChildren, cancellationToken).ConfigureAwait(false));
         await Results.Json(response, MigrationBatchJsonContext.Default.MigrationBatchResponse, statusCode: StatusCodes.Status202Accepted)
             .ExecuteAsync(context).ConfigureAwait(false);
     }
@@ -206,15 +222,36 @@ internal static partial class MigrationBatchEndpoints
         }
 
         var children = await catalog.GetChildrenAsync(batchId, cancellationToken).ConfigureAwait(false);
-        var response = ToResponse(batch, children);
+        var response = ToResponse(
+            batch,
+            children,
+            await AccountAsync(catalog, batch, children, cancellationToken).ConfigureAwait(false));
         await Results.Json(response, MigrationBatchJsonContext.Default.MigrationBatchResponse)
             .ExecuteAsync(context).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// #4600 (AC1): the pre-apply construct accounting, replayed from the persisted manifest and child rows.
+    /// </summary>
+    private static async Task<MigrationConstructAccountingReport> AccountAsync(
+        IMigrationBatchRunCatalog catalog,
+        MigrationBatchRunRecord batch,
+        IReadOnlyList<MigrationBatchChildRecord> children,
+        CancellationToken cancellationToken)
+    {
+        var manifestBody = await catalog.GetManifestBodyAsync(batch.BatchId, cancellationToken).ConfigureAwait(false);
+        return MigrationServiceConstructAccountant.Account(
+            batch.SourceKind,
+            manifestBody,
+            MigrationBatchOrchestrator.ToConstructSelection(children));
+    }
+
     private static MigrationBatchResponse ToResponse(
         MigrationBatchRunRecord batch,
-        IReadOnlyList<MigrationBatchChildRecord> children) => new()
+        IReadOnlyList<MigrationBatchChildRecord> children,
+        MigrationConstructAccountingReport constructAccounting) => new()
         {
+            ConstructAccounting = constructAccounting,
             BatchId = batch.BatchId,
             SourceKind = batch.SourceKind,
             SourceUrl = batch.SourceUrl,
@@ -304,6 +341,24 @@ public sealed record MigrationBatchStartApiRequest
 
     /// <summary>Whether to apply manifest relationship classes after all layers publish.</summary>
     public bool? ApplyRelationships { get; init; }
+
+    /// <summary>
+    /// When true, the batch is refused with 422 if pre-apply construct accounting finds a blocking construct
+    /// or cannot run for lack of a readable manifest (issue #4600).
+    /// </summary>
+    public bool? RequireFullFidelity { get; init; }
+}
+
+/// <summary>
+/// 422 body for a batch refused by pre-apply construct accounting.
+/// </summary>
+public sealed record MigrationBatchRefusedResponse
+{
+    /// <summary>Operator-visible refusal reason.</summary>
+    public required string Error { get; init; }
+
+    /// <summary>The accounting that refused the selection.</summary>
+    public required MigrationConstructAccountingReport ConstructAccounting { get; init; }
 }
 
 /// <summary>
@@ -393,6 +448,13 @@ public sealed record MigrationBatchResponse
 
     /// <summary>Per-resource differences that produced <see cref="FidelityVerdict"/>, ordered by code then subject.</summary>
     public MigrationFidelityDifference[] FidelityDifferences { get; init; } = [];
+
+    /// <summary>
+    /// Pre-apply accounting of every construct discovered on the source against this batch's selection
+    /// (issue #4600). Available from the moment the batch starts; its differences fold into
+    /// <see cref="FidelityVerdict"/> when the batch finishes.
+    /// </summary>
+    public MigrationConstructAccountingReport? ConstructAccounting { get; init; }
 }
 
 /// <summary>
@@ -449,4 +511,5 @@ public sealed record MigrationBatchChildResponse
 [JsonSerializable(typeof(MigrationBatchResponse))]
 [JsonSerializable(typeof(MigrationBatchChildResponse))]
 [JsonSerializable(typeof(MigrationBatchChildResponse[]))]
+[JsonSerializable(typeof(MigrationBatchRefusedResponse))]
 public sealed partial class MigrationBatchJsonContext : System.Text.Json.Serialization.JsonSerializerContext;
