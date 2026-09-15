@@ -176,8 +176,10 @@ COPY --from=build --chown=1001:1001 /app .
 # native libraries the server P/Invokes, so a missing shared library or an incompatible
 # libc fails the image build instead of the first customer request. The librdkafka
 # variants are excluded: Confluent.Kafka probes them in order and loads the one that
-# matches the running distribution.
-RUN for native in ParquetSharpNative.so libduckdb.so libSkiaSharp.so libe_sqlite3.so; do \
+# matches the running distribution. libe_sqlite3.so is excluded because it takes its
+# libm symbols from the host executable instead of declaring libm as NEEDED, so a
+# standalone `ldd -r` reports false undefined symbols for it.
+RUN for native in ParquetSharpNative.so libduckdb.so libSkiaSharp.so; do \
       test -f "/app/${native}" || { echo "missing native library /app/${native}" >&2; exit 1; }; \
       echo "== ${native}"; \
       ldd -r "/app/${native}" > /tmp/native-linkage.txt 2>&1; \
