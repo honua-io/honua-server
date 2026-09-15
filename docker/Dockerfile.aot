@@ -49,6 +49,14 @@ ARG HONUA_INCLUDE_AZURE=
 ARG HONUA_INCLUDE_ORACLE=false
 ARG HONUA_INCLUDE_SNOWFLAKE=false
 
+# SkiaSharp native asset (honua-server#4949): both RIDs publish
+# SkiaSharp.NativeAssets.Linux.NoDependencies, like docker/Dockerfile.lambda.aot. The
+# distro-linked linux-arm64 libSkiaSharp.so references uuid_* and FT_Get_BDF_Property but
+# declares no NEEDED entry for libuuid, libfreetype or libfontconfig, so no installed package
+# can satisfy it: the `ldd -r` gate below rejected every arm64 build. The NoDependencies asset
+# links only libc/libm/libdl/libpthread on both arches and reads fonts from files, which the
+# runtime stage ships and pins through HONUA_DEFAULT_FONT_PATH.
+
 # Restore dependencies for the target runtime so the AOT self-contained publish
 # (which runs --no-restore) finds obj/project.assets.json for every project in
 # the Honua.Server graph at the RID it builds.
@@ -60,7 +68,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         arm64) RUNTIME_ID="linux-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    set -- "-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" && \
+    set -- "-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" "-p:HonuaUseSkiaNoDependencies=true" && \
     if [ -n "${HONUA_INCLUDE_AWS:-}" ]; then set -- "$@" "-p:HonuaIncludeAws=$HONUA_INCLUDE_AWS"; fi && \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then set -- "$@" "-p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then set -- "$@" "-p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
@@ -99,7 +107,7 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
         arm64) RUNTIME_ID="linux-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    set -- "-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" && \
+    set -- "-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" "-p:HonuaUseSkiaNoDependencies=true" && \
     if [ -n "${HONUA_INCLUDE_AWS:-}" ]; then set -- "$@" "-p:HonuaIncludeAws=$HONUA_INCLUDE_AWS"; fi && \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then set -- "$@" "-p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then set -- "$@" "-p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
@@ -149,7 +157,9 @@ ARG RUNTIME_PACKAGE_REVISION=20260905
 # Security: Install runtime dependencies. The Ubuntu runtime-deps base already ships
 # ICU (InvariantGlobalization=false, honua-server#1369). libatomic1 is required by
 # ParquetSharpNative, which backs the GeoParquet writer (honua-server#4912); wget backs
-# the HEALTHCHECK below.
+# the HEALTHCHECK below. fonts-dejavu-core is the rendering font: the NoDependencies Skia
+# asset has no Fontconfig lookup, and without a font file every label, legend and Studio
+# deliverable renders blank (honua-server#4908, #4949).
 # The base is digest-pinned; compatible security updates and dependency versions
 # intentionally follow that Ubuntu snapshot's configured repositories.
 # hadolint ignore=DL3005,DL3008
@@ -157,12 +167,13 @@ RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
     ca-certificates \
-    fontconfig \
+    fonts-dejavu-core \
     libatomic1 \
     libgssapi-krb5-2 \
     tzdata \
     wget && \
-    rm -rf /var/lib/apt/lists/* /tmp/*
+    rm -rf /var/lib/apt/lists/* /tmp/* && \
+    test -r /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
 
 # Security: Create non-root user with minimal privileges
 RUN groupadd --gid 1001 --system honua && \
@@ -249,7 +260,8 @@ ENV ASPNETCORE_ENVIRONMENT=Production \
     Kestrel__Endpoints__Grpc__Protocols=Http2 \
     DOTNET_RUNNING_IN_CONTAINER=true \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
-    DOTNET_EnableDiagnostics=0
+    DOTNET_EnableDiagnostics=0 \
+    HONUA_DEFAULT_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
 
 # Security: Enhanced health check with timeout and authentication bypass
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
