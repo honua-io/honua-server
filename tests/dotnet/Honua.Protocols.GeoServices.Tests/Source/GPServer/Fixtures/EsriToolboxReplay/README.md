@@ -46,6 +46,23 @@ The Python replay that produced the complex-value receipts is
 `scripts/probe-gp-soap-complex.py` on honua-esri-compat branch
 `probe/gp-soap-complex-4614`.
 
-The release's candidate-specific replay and fresh native Pro desktop UI receipts
-remain pending a candidate containing these SOAP changes. No desktop UI pass is
-claimed by these observations.
+## Replay on the pinned 2026.1 candidate (548b7a5)
+
+honua-release trunk `52cc3f2c` (#349) pins the candidate to source
+`548b7a5263da5a3f2381eb43f232687cdf92b0bf`, NativeAOT index
+`sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1`.
+That source contains #4760 and #4812. The owned `gpserver-4614-4616-server`
+fixture was recreated on that exact image (Production,
+`Licensing__Mode=Disabled`). Since #4722 the image needs a key-ring
+certificate, so the fixture now gets a throwaway PKCS#12 and a private Redis. It
+also uses a copy of the fixture catalog database. Through the fixture's HTTPS
+proxy the image advertises all 119 GPServer tasks and answers the SOAP catalog.
+The replay workflow verifies that the running container image is this digest
+before it starts the client.
+
+| Receipt | What it establishes |
+| --- | --- |
+| `candidate-548b7a5-arcpy-complex-values-verified.json` | On the pinned candidate, installed ArcPy 3.7.1 passes the same literal-derived oracles as `managed-complex-values-arcpy-verified.json`: Buffer bbox (-1,-1,4,5) with area 29.12 inside the octagon/circle bounds; multivalue Union area 20; Clip of two FeatureSet inputs with area 4 and attributes kept; attribute filter area 12 with `label=keep`; GenerateNearTable RecordSet row with distance 0; and cancel reaching Cancelled (status 8). Run [34913953581](https://github.com/honua-io/honua-esri-compat/actions/runs/34913953581). |
+
+Native Pro desktop UI receipts are still separate. Each receipt above records
+`desktop_ui_exercised: false`, and no desktop UI pass is claimed.
