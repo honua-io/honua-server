@@ -14489,7 +14489,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 74,
+      "line": 80,
       "language": "json"
     },
     {
