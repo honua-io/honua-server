@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1139,
+    "total": 1141,
     "byStatus": {
-      "not-executable": 1126,
+      "not-executable": 1128,
       "unvalidated": 10,
       "passed": 3
     }
@@ -5415,7 +5415,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 208,
+      "line": 221,
       "language": "bash"
     },
     {
@@ -12944,6 +12944,32 @@
       "fence": 1,
       "line": 20,
       "language": "bash"
+    },
+    {
+      "id": "8d4b055723b86db9",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/deploy-gate-candidate-548b7a5.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 20,
+      "language": "bash"
+    },
+    {
+      "id": "a1075690a60be7e9",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/deploy-gate-candidate-548b7a5.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 2,
+      "line": 44,
+      "language": "plain"
     },
     {
       "id": "086d687ee40614ae",
