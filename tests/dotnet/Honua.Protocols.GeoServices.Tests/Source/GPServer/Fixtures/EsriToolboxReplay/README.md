@@ -62,6 +62,7 @@ before it starts the client.
 
 | Receipt | What it establishes |
 | --- | --- |
+| `candidate-548b7a5-arcpy-and-sdk-scalar-verified.json` | On the pinned candidate over verified TLS, installed SDK 2.4.3 imports all 119 advertised tasks. SDK and ArcPy 3.7.1 (documented SOAP `ImportToolbox` syntax, async job status 4 `Completed`) both remotely compute `geometry.area` = 12 for the literal 3 by 4 rectangle, with MeasureResult type, area measure, squared input-CRS units, SRID 3857 and Polygon input. Run [34915379462](https://github.com/honua-io/honua-esri-compat/actions/runs/34915379462). |
 | `candidate-548b7a5-arcpy-complex-values-verified.json` | On the pinned candidate, installed ArcPy 3.7.1 passes the same literal-derived oracles as `managed-complex-values-arcpy-verified.json`: Buffer bbox (-1,-1,4,5) with area 29.12 inside the octagon/circle bounds; multivalue Union area 20; Clip of two FeatureSet inputs with area 4 and attributes kept; attribute filter area 12 with `label=keep`; GenerateNearTable RecordSet row with distance 0; and cancel reaching Cancelled (status 8). Run [34913953581](https://github.com/honua-io/honua-esri-compat/actions/runs/34913953581). |
 
 Native Pro desktop UI receipts are still separate. Each receipt above records
