@@ -7638,7 +7638,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 225,
+      "line": 226,
       "language": "json"
     },
     {
@@ -7651,7 +7651,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 459,
+      "line": 483,
       "language": "json"
     },
     {
@@ -11044,7 +11044,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 131,
+      "line": 124,
       "language": "bash"
     },
     {
@@ -11057,7 +11057,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 111,
+      "line": 104,
       "language": "bash"
     },
     {
