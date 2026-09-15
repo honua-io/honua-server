@@ -484,6 +484,7 @@ internal static class ObservabilityServiceCollectionExtensions
             options.AddPolicy("OgcTilesDatasetTile", policy =>
             {
                 policy.VaryByValue(ResolveTileSizeOutputCacheKey);
+                policy.AddPolicy<TileOutcomeOutputCachePolicy>();
                 policy.Expire(ttl.OgcTilesDatasetTile);
                 policy.SetVaryByRouteValue("tileMatrixSetId", "tileMatrix", "tileRow", "tileCol");
                 policy.SetVaryByQuery("f", "datetime", "subset", "crs", "subset-crs", "collections");
@@ -495,6 +496,7 @@ internal static class ObservabilityServiceCollectionExtensions
             options.AddPolicy("OgcTilesTile", policy =>
             {
                 policy.VaryByValue(ResolveTileSizeOutputCacheKey);
+                policy.AddPolicy<TileOutcomeOutputCachePolicy>();
                 policy.Expire(ttl.OgcTilesTile);
                 policy.SetVaryByRouteValue("collectionId", "tileMatrixSetId", "tileMatrix", "tileRow", "tileCol");
                 policy.SetVaryByQuery("f", "datetime", "subset", "crs", "subset-crs");
@@ -506,6 +508,7 @@ internal static class ObservabilityServiceCollectionExtensions
             options.AddPolicy("MvtTile", policy =>
             {
                 policy.VaryByValue(ResolveTileSizeOutputCacheKey);
+                policy.AddPolicy<TileOutcomeOutputCachePolicy>();
                 policy.Expire(ttl.MvtTile);
                 policy.SetVaryByRouteValue("layerId", "z", "x", "y");
                 // `where` for attribute filtering; `time` for the temporal-animation
@@ -520,6 +523,7 @@ internal static class ObservabilityServiceCollectionExtensions
             options.AddPolicy("H3MvtTile", policy =>
             {
                 policy.VaryByValue(ResolveTileSizeOutputCacheKey);
+                policy.AddPolicy<TileOutcomeOutputCachePolicy>();
                 policy.Expire(ttl.MvtTile);
                 policy.SetVaryByRouteValue("layerId", "z", "x", "y");
                 policy.SetVaryByQuery("where", "resolution");
