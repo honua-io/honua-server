@@ -58,3 +58,32 @@ stopped at the DR sentinel's OGC create (HTTP 405, honua-release#343), so the
 signed and published DR envelope has not been minted for this pin. That leg is
 the release repository's full-platform drill, not the GP store proof: its GP
 cells above ran to completion on the pinned digest.
+
+## Readiness reproduction replay (#4805): 0 unexpected ready answers
+
+The crash receipt keeps only post-recovery evidence. A `pass` for the store-loss
+cell still means readiness answered 503 during the outage, because the harness
+fails the cell on any other code. To check readiness directly, the 2026-09-13
+marker-only reproduction (`gp-store-candidate-2026-09-13-readiness-probe.log`:
+6 of 6 unexpected 200s on `7ba4226`) was replayed locally on the same pinned
+digest, `sha256:29974ee7…c675c1` (revision `548b7a5`), on 2026-09-15.
+
+It used an unmodified `docker/gp-reliability/compose.yml` topology (server, peer,
+PostgreSQL, Redis) and a marker provisioned by
+`scripts/operations/initialize-gp-output-store.sh`. The script is
+`gp-store-candidate-548b7a5-2026-09-15-readiness-replay.sh` and the log is
+`gp-store-candidate-548b7a5-2026-09-15-readiness-probe.log` (SHA-256
+`36d200c153379e77e1a868d9132aff376ec48dca2040b52d1e38e14f1fac3fb5`).
+
+Before each disruption, anonymous probes answered ready on both hosts. That
+caching precondition is what #4805 depends on. Each disruption then had six
+anonymous probes one second apart on each host:
+
+| Marker state | Unexpected ready answers | Readiness | `X-Honua-Readiness-Reason` | Liveness | Restored |
+|---|---|---|---|---|---|
+| Removed (the #4770 reproduction) | 0 of 12 | 503 | `gp-output-store-attestation-unavailable` | 200 | ready within 1 s |
+| Corrupted: truncated JSON | 0 of 12 | 503 | `gp-output-store-attestation-unavailable` | 200 | ready within 1 s |
+| Corrupted: well-formed, wrong configuration digest | 0 of 12 | 503 | `gp-output-store-attestation-unavailable` | 200 | ready within 1 s |
+
+Every probe answered `Cache-Control: no-store` with no `Age` header, so no probe
+answer was replayed from the output cache.
