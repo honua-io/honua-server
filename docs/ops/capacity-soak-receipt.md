@@ -53,6 +53,14 @@ because `Licensing:DevGrantEdition` is refused under the Production startup poli
 the declared envelope covers Pro surfaces. The key pair is generated on the runner, used once,
 and never leaves it.
 
+The Production startup policy also composes the Redis-backed durable operation secret channel,
+and since honua-server#4722 it refuses to start unless an operator certificate encrypts that
+channel's data-protection key ring (`Operations:SecretChannel:KeyRingCertificatePath`). The run
+mints a throwaway PKCS#12 certificate with a random password for this purpose. It mounts the
+certificate read-only into the server container and deletes the loose PEM private key once the
+certificate is exported. The requirement is not relaxed for the soak (#4885): the run meets it
+the way an operator would, and no key material is committed.
+
 ## What the run does
 
 1. Builds (or pulls) the candidate image and boots the substrate.
