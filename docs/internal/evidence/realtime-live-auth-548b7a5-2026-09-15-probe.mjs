@@ -22,7 +22,6 @@ const issuer = {
 };
 const output = process.argv[2];
 const cells = [];
-const layers = { "tenant-a": 10, "tenant-b": 11 };
 
 function relayJwt(subject, tenant, roles) {
   const now = Math.floor(Date.now() / 1000);
