@@ -86,7 +86,12 @@ internal static partial class AttachmentHandler
             var response = new AttachmentQueryResponse
             {
                 AttachmentGroups = groups.ToArray(),
-                AttachmentInfos = groups.Count == 1 ? groups[0].AttachmentInfos : null
+                AttachmentInfos = groups.Count switch
+                {
+                    0 => [],
+                    1 => groups[0].AttachmentInfos,
+                    _ => null
+                }
             };
 
             return Results.Ok(response);

@@ -35,7 +35,7 @@ namespace Honua.Server.Tests.Admin;
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
-public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
+public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
 {
     private static readonly string[] _idNameFields = ["id", "name"];
     private static readonly string[] _idNamePopulationFields = ["id", "name", "population"];
