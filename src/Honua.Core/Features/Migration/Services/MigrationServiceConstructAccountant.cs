@@ -171,29 +171,23 @@ public static class MigrationServiceConstructAccountant
     private static Dictionary<string, DiscoveredResource> DiscoverResources(MigrationManifestArtifact manifest)
     {
         var resources = new Dictionary<string, DiscoveredResource>(StringComparer.Ordinal);
-        foreach (var target in manifest.TargetResources)
+        foreach (var target in manifest.TargetResources.Where(static target => IsLayerOrTable(target.SourceKind)))
         {
-            if (IsLayerOrTable(target.SourceKind))
-            {
-                resources.TryAdd(
+            resources.TryAdd(
+                target.SourceResourceId,
+                new DiscoveredResource(
                     target.SourceResourceId,
-                    new DiscoveredResource(
-                        target.SourceResourceId,
-                        target.SourceKind,
-                        target,
-                        target.Compatibility.Level,
-                        target.Compatibility.Code));
-            }
+                    target.SourceKind,
+                    target,
+                    target.Compatibility.Level,
+                    target.Compatibility.Code));
         }
 
         // The translator emits no target resource for an incompatible layer or table: it survives only as
         // an unsupported item, and must still be accounted rather than disappear from the denominator.
-        foreach (var item in manifest.UnsupportedItems)
+        foreach (var item in manifest.UnsupportedItems.Where(static item => IsLayerOrTable(item.Kind)))
         {
-            if (IsLayerOrTable(item.Kind))
-            {
-                resources.TryAdd(item.SourceId, new DiscoveredResource(item.SourceId, item.Kind, null, "incompatible", item.Code));
-            }
+            resources.TryAdd(item.SourceId, new DiscoveredResource(item.SourceId, item.Kind, null, "incompatible", item.Code));
         }
 
         return resources;
