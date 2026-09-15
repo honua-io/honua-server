@@ -84,5 +84,16 @@ before it starts the client.
 | `candidate-548b7a5-arcpy-and-sdk-scalar-verified.json` | On the pinned candidate over verified TLS, installed SDK 2.4.3 imports all 119 advertised tasks. SDK and ArcPy 3.7.1 (documented SOAP `ImportToolbox` syntax, async job status 4 `Completed`) both remotely compute `geometry.area` = 12 for the literal 3 by 4 rectangle, with MeasureResult type, area measure, squared input-CRS units, SRID 3857 and Polygon input. Run [34915379462](https://github.com/honua-io/honua-esri-compat/actions/runs/34915379462). |
 | `candidate-548b7a5-arcpy-complex-values-verified.json` | On the pinned candidate, installed ArcPy 3.7.1 passes the same literal-derived oracles as `managed-complex-values-arcpy-verified.json`: Buffer bbox (-1,-1,4,5) with area 29.12 inside the octagon/circle bounds; multivalue Union area 20; Clip of two FeatureSet inputs with area 4 and attributes kept; attribute filter area 12 with `label=keep`; GenerateNearTable RecordSet row with distance 0; and cancel reaching Cancelled (status 8). Run [34913953581](https://github.com/honua-io/honua-esri-compat/actions/runs/34913953581). |
 
+| `candidate-548b7a5-soap-auth-controls-verified.json` | On the pinned candidate over verified TLS, SOAP `SubmitJob`, `Execute`, `GetJobStatus`, `GetJobMessages`, `GetJobToolName`, `GetJobResult` and `CancelJob` each return a 401 SOAP fault to an anonymous caller, an unknown `X-API-Key` and an unknown bearer token (21 denials). No denial leaks job status, task name, job id or result. As controls, the authorized caller's literal 3 by 4 area job still succeeds with area 12 and MeasureResult metadata, is still `esriJobSucceeded` after the refused cancels, and an authorized malformed submission returns 400. Produced by `probe-soap-auth-controls.py`. |
+
+`soap-auth-controls.json` recorded the first three of these controls on the managed
+diagnostic image only. The probe declares every expected status and value before
+sending a request. It reads the authorized credential from the fixture container's
+environment and refuses to write a receipt that contains it.
+`GPServerDurableRuntimeTests.SoapJobOperation_UnauthenticatedCaller_IsChallengedWithoutJobState`
+keeps the same controls as a regression. It runs the real API-key handler (the dev
+bypass is off), the real job service, the Redis job store and the production
+executor. It also asserts that no challenged submission creates a job.
+
 Native Pro desktop UI receipts are still separate. Each receipt above records
 `desktop_ui_exercised: false`, and no desktop UI pass is claimed.
