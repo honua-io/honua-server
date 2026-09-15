@@ -14,6 +14,24 @@
 # See ./README.md for the full driver invocation.
 
 services:
+  # Production composes the durable operation secret channel, which refuses to start unless
+  # an operator-supplied certificate encrypts the data-protection key ring at rest. Minting
+  # it here keeps the harness self-contained and the key material out of the repository.
+  keyring:
+    image: alpine/openssl:latest
+    container_name: studio-receipt-keyring
+    entrypoint: ["/bin/sh", "-c"]
+    # The server runs as a non-root uid, so the PFX must be world-readable.
+    command:
+      - |
+        set -e
+        if [ -f /keyring/operation-keyring.pfx ]; then exit 0; fi
+        openssl req -x509 -newkey rsa:2048 -nodes -days 30 -keyout /tmp/k.key -out /tmp/k.crt -subj "/CN=studio-receipt-keyring"
+        openssl pkcs12 -export -out /keyring/operation-keyring.pfx -inkey /tmp/k.key -in /tmp/k.crt -passout pass:StudioReceiptKeyRing
+        chmod 444 /keyring/operation-keyring.pfx
+    volumes:
+      - keyring:/keyring
+
   postgres:
     image: postgis/postgis:16-3.4
     container_name: studio-receipt-postgres
@@ -23,7 +41,10 @@ services:
       POSTGRES_PASSWORD: studio_receipt_password
       POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U honua -d honua"]
+      # Probe over TCP, not the local socket: during first-boot initialisation the entrypoint
+      # runs a temporary server on the unix socket only, so a socket probe reports ready while
+      # the port the server connects to still refuses connections.
+      test: ["CMD-SHELL", "pg_isready -U honua -d honua -h 127.0.0.1 -p 5432"]
       interval: 5s
       timeout: 5s
       retries: 30
@@ -49,7 +70,11 @@ services:
       # The image already sets ASPNETCORE_ENVIRONMENT=Production; naming it here keeps the
       # startup policy under test explicit rather than inherited.
       ASPNETCORE_ENVIRONMENT: Production
+      Kestrel__Endpoints__Http__Url: http://+:8080
+      Kestrel__Endpoints__Http__Protocols: Http1
       AllowedHosts: "localhost;127.0.0.1;honua"
+      HostValidation__AllowedHosts__0: localhost
+      HostValidation__AllowedHosts__1: 127.0.0.1
       PUBLIC_BASE_URL: http://localhost:18080
       HONUA_ADMIN_PASSWORD: StudioReceiptAdmin123!
       # 2026.1 ships unlicensed. Disabled mode grants every entitlement, which is what
@@ -58,6 +83,10 @@ services:
       # needs no Guardrails__Overrides__StudioDraftMutation escape hatch: the built-in
       # studio.publication_proposal floor still routes agent proposals to approval.
       Licensing__Mode: Disabled
+      # Studio package lifecycle is admin-only until end-user authoring is switched on.
+      # Without this the driver's first call, create_draft, is denied with
+      # studio_authorization/end_user_mode_disabled and no journey runs at all.
+      Studio__EndUserAuthorization__Enabled: "true"
       # Deterministic local resource server. No external IdP is contacted: the driver mints
       # short-lived HS256 tokens against this issuer/audience/signing-key tuple, one per
       # request, so the production token-replay default stays on.
@@ -66,31 +95,11 @@ services:
       Oidc__Generic__Authority: https://studio-receipt.honua.test
       Oidc__Generic__ClientId: honua-studio-receipt
       Oidc__AdminRoles__0: admin
+      Oidc__TokenValidation__ValidIssuers__0: https://studio-receipt.honua.test
+      Oidc__TokenValidation__ValidAudiences__0: honua-studio-receipt
       Oidc__TokenValidation__SymmetricSigningKey: studio-dashboard-receipt-signing-key-2026-1
-      # appsettings.Production.json denies every operation that has no explicit rule
-      # ("Operations require an explicit production policy rule"). These are that rule for
-      # the nine Studio runtime operations the dashboard journey submits; everything else
-      # keeps the production Deny default, so the receipt runs against a fail-closed runtime.
-      Operations__Policy__Enabled: "true"
-      Operations__Policy__DefaultDecision: Deny
-      Operations__Policy__Rules__0__OperationId: studio.draft.create
-      Operations__Policy__Rules__0__Decision: Allow
-      Operations__Policy__Rules__1__OperationId: studio.draft.update
-      Operations__Policy__Rules__1__Decision: Allow
-      Operations__Policy__Rules__2__OperationId: studio.draft.delete
-      Operations__Policy__Rules__2__Decision: Allow
-      Operations__Policy__Rules__3__OperationId: studio.draft.validate
-      Operations__Policy__Rules__3__Decision: Allow
-      Operations__Policy__Rules__4__OperationId: studio.draft.preview-plan
-      Operations__Policy__Rules__4__Decision: Allow
-      Operations__Policy__Rules__5__OperationId: studio.draft.save-version
-      Operations__Policy__Rules__5__Decision: Allow
-      Operations__Policy__Rules__6__OperationId: studio.content.create-publication-request
-      Operations__Policy__Rules__6__Decision: Allow
-      Operations__Policy__Rules__7__OperationId: studio.content.reopen-version
-      Operations__Policy__Rules__7__Decision: Allow
-      Operations__Policy__Rules__8__OperationId: studio.content.rollback
-      Operations__Policy__Rules__8__Decision: Allow
+      Operations__SecretChannel__KeyRingCertificatePath: /keyring/operation-keyring.pfx
+      Operations__SecretChannel__KeyRingCertificatePassword: StudioReceiptKeyRing
       ConnectionStrings__DefaultConnection: Server=postgres;Port=5432;Database=honua;User Id=honua;Password=studio_receipt_password;
       ConnectionStrings__honua: Server=postgres;Port=5432;Database=honua;User Id=honua;Password=studio_receipt_password;
       ConnectionStrings__Redis: redis:6379
@@ -98,7 +107,11 @@ services:
       FileStorage__LocalStorage__BasePath: /tmp/honua-storage
       Security__ConnectionEncryption__MasterKey: studio-receipt-master-key-at-least-32-characters-long
       Security__ConnectionEncryption__Salt: c3R1ZGlvLXJlY2VpcHQtc2FsdC1mb3ItdGhlLTM0MjktcmVjZWlwdA==
+    volumes:
+      - keyring:/keyring:ro
     depends_on:
+      keyring:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
@@ -109,3 +122,6 @@ services:
       timeout: 5s
       retries: 60
       start_period: 30s
+
+volumes:
+  keyring:
