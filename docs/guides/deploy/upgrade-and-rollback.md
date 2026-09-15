@@ -155,6 +155,19 @@ Warmup and bake windows start when the backend first reports the candidate servi
 
 The self-hosted rolling backend (`honua-yarp-rolling`) stages the candidate as a standby replica that serves no traffic until the proxy swaps to it, so its exposure starts at the cutover. Before the cutover, only the checks that need no candidate traffic run: the backend's standby health gate, plus `telemetry.healthz.url` and the golden query when you set them (point them at the standby replica). Those checks are bounded by `telemetry.exposure_deadline_seconds`: a standby that has not passed them by the deadline is rolled back without being activated, even if it becomes ready later. Error-rate, latency, and sample-floor metrics are evaluated from the cutover, inside the post-activation observation window below.
 
+### Replica environment and files (self-hosted rolling)
+
+The self-hosted rolling backend launches each replica itself, so anything the image needs at startup has to travel on the deploy operation's parameters:
+
+| Parameter | Effect |
+|---|---|
+| `env.<NAME>` | Sets environment variable `<NAME>` in the replica container to the parameter's value. |
+| `mount.<container-path>` | Mounts the host file or directory named by the parameter's value at `<container-path>` in the replica container, read-only. |
+
+A mount whose host path is missing or empty blocks the plan, so you read the reason instead of watching the standby exit at startup and the rollout fail at the exposure deadline as a health failure.
+
+Reach for `mount.` when the image needs a *file*. A server that connects to Redis outside Development and Test composes the durable operation secret channel and refuses to start until `Operations:SecretChannel:KeyRingCertificatePath` names a PKCS#12 certificate with a private key, which is exactly such a file. Mount the directory holding it, then point the setting at the in-container path: `mount./etc/honua/keyring` = `/srv/honua/keyring` on the host, with `env.Operations__SecretChannel__KeyRingCertificatePath` = `/etc/honua/keyring/operation-keyring.pfx` and `env.Operations__SecretChannel__KeyRingCertificatePassword` set alongside it.
+
 ## Promotion requirements
 
 A rollout does not auto-promote (cut over to the new revision) until its **promotion gate** is satisfied. The gate is chosen with the `deployment.promotion_gate` parameter and defaults by target kind. This is independent of the automatic-rollback signals above — rollback still fires on a telemetry breach or an unhealthy probe regardless of the promotion gate.

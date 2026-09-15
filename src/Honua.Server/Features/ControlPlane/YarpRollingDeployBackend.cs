@@ -28,7 +28,29 @@ internal static class SelfHostedDeployParameterKeys
 
     /// <summary>Prefix for <c>env.&lt;NAME&gt;</c> environment variables passed into the replica container.</summary>
     public const string EnvironmentPrefix = "env.";
+
+    /// <summary>
+    /// Prefix for <c>mount.&lt;CONTAINER_PATH&gt;</c> read-only host mounts placed into the replica
+    /// container, where the parameter value is the host path (honua-server#4617).
+    /// </summary>
+    /// <remarks>
+    /// Environment variables alone cannot carry a file, and a 2026.1 server image that connects to
+    /// Redis outside Development/Test refuses to start until
+    /// <c>Operations:SecretChannel:KeyRingCertificatePath</c> names a real PKCS#12 key-ring
+    /// certificate (honua-server#4722, #4885). Without a file seam the self-hosted rolling backend
+    /// could not roll out such an image at all: every standby would exit at startup and the rollout
+    /// would fail at the exposure deadline without activating. Mounts are always read-only, so a
+    /// replica can never write back to operator-supplied material. The container path is the key
+    /// because it is absolute and POSIX, which keeps a Windows host path (<c>C:\…</c>) out of the
+    /// part that would otherwise have to be split on a separator.
+    /// </remarks>
+    public const string MountPrefix = "mount.";
 }
+
+/// <summary>A read-only host path made visible inside a replica container.</summary>
+/// <param name="HostPath">Absolute path on the container host.</param>
+/// <param name="ContainerPath">Absolute path inside the container.</param>
+internal sealed record ContainerMount(string HostPath, string ContainerPath);
 
 /// <summary>
 /// Container-runtime seam so the backend can drive <c>docker</c>/<c>podman</c> without taking a hard
@@ -75,6 +97,9 @@ internal sealed record ContainerRunRequest
 
     /// <summary>Environment variables passed into the container.</summary>
     public IReadOnlyDictionary<string, string> Environment { get; init; } = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>Read-only host paths mounted into the container.</summary>
+    public IReadOnlyList<ContainerMount> Mounts { get; init; } = [];
 }
 
 /// <summary>Read-only snapshot of a container discovered through the runtime.</summary>
@@ -236,6 +261,18 @@ internal sealed partial class YarpRollingDeployBackend(
             blockingReasons.Add($"The container runtime '{target.ContainerRuntime}' is not available on this host.");
         }
 
+        // An unsatisfiable mount blocks here rather than at submit, so the operator reads the reason
+        // instead of watching the standby exit at startup and the rollout fail at the exposure
+        // deadline as "never passed the backend health gate" (#4617).
+        try
+        {
+            BuildMounts(spec);
+        }
+        catch (InvalidOperationException ex)
+        {
+            blockingReasons.Add(ex.Message);
+        }
+
         return new DeployPlan
         {
             IsReadyToSubmit = blockingReasons.Count == 0 && !spec.RequiresApproval,
@@ -273,7 +310,8 @@ internal sealed partial class YarpRollingDeployBackend(
                     [LabelRevision] = spec.DesiredRevision,
                     [LabelRole] = RoleStandby
                 },
-                Environment = BuildEnvironment(spec)
+                Environment = BuildEnvironment(spec),
+                Mounts = BuildMounts(spec)
             };
 
             var containerId = await containerRuntime.RunAsync(request, cancellationToken).ConfigureAwait(false);
@@ -568,7 +606,8 @@ internal sealed partial class YarpRollingDeployBackend(
                         [LabelRevision] = spec.CurrentRevision!,
                         [LabelRole] = RoleActive
                     },
-                    Environment = BuildEnvironment(spec)
+                    Environment = BuildEnvironment(spec),
+                    Mounts = BuildMounts(spec)
                 };
 
                 await containerRuntime.RunAsync(request, cancellationToken).ConfigureAwait(false);
@@ -740,6 +779,54 @@ internal sealed partial class YarpRollingDeployBackend(
         }
 
         return environment;
+    }
+
+    /// <summary>
+    /// Reads the <c>mount.&lt;CONTAINER_PATH&gt;=&lt;HOST_PATH&gt;</c> parameters (honua-server#4617).
+    /// </summary>
+    /// <remarks>
+    /// A mount that cannot be satisfied is rejected here, before a container exists. The alternative
+    /// is a standby that starts, exits on the missing file, and only surfaces at the exposure
+    /// deadline as "never passed the backend health gate" — a configuration error reported as a
+    /// candidate health failure.
+    /// </remarks>
+    private static List<ContainerMount> BuildMounts(DeployOperationSpec spec)
+    {
+        var mounts = new List<ContainerMount>();
+        foreach (var entry in spec.Parameters)
+        {
+            if (!entry.Key.StartsWith(SelfHostedDeployParameterKeys.MountPrefix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var containerPath = entry.Key[SelfHostedDeployParameterKeys.MountPrefix.Length..];
+            if (string.IsNullOrWhiteSpace(containerPath))
+            {
+                throw new InvalidOperationException(
+                    $"Self-hosted rolling deploy parameter '{entry.Key}' names no container path; " +
+                    $"use '{SelfHostedDeployParameterKeys.MountPrefix}<container-path>=<host-path>'.");
+            }
+
+            var hostPath = entry.Value;
+            if (string.IsNullOrWhiteSpace(hostPath))
+            {
+                throw new InvalidOperationException(
+                    $"Self-hosted rolling deploy parameter '{entry.Key}' has no host path, so '{containerPath}' " +
+                    "would be empty inside the replica.");
+            }
+
+            if (!File.Exists(hostPath) && !Directory.Exists(hostPath))
+            {
+                throw new InvalidOperationException(
+                    $"Self-hosted rolling deploy parameter '{entry.Key}' points at '{hostPath}', which does not exist " +
+                    "on the container host, so the replica would start without it.");
+            }
+
+            mounts.Add(new ContainerMount(hostPath, containerPath));
+        }
+
+        return mounts;
     }
 
     private SelfHostedDeployTarget ResolveTarget(DeployOperationSpec spec)
