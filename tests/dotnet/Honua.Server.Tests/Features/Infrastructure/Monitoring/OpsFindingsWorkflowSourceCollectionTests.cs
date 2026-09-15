@@ -253,7 +253,7 @@ public sealed class OpsFindingsWorkflowSourceRedisTests
         return configuration;
     }
 
-    private static async Task WaitForRedisAsync(IConnectionMultiplexer multiplexer)
+    private static async Task WaitForRedisAsync(ConnectionMultiplexer multiplexer)
     {
         using var recoveryTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         while (true)
