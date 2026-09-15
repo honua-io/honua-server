@@ -6,17 +6,23 @@ using Honua.Infrastructure.Authentication;
 namespace Honua.Ai.Protocols.Mcp;
 
 /// <summary>
-/// Names the MCP session a request on the <c>/mcp</c> transport continues, so token
-/// replay protection admits reuse of a bearer token bound to that session and nowhere
-/// else (honua-server#4909). Only the MCP transport routes answer; the same token and
-/// session header presented to any other route remain a replay.
+/// Claims the <c>/mcp</c> transport as a token-replay continuation surface and names the MCP
+/// session a request continues, so token replay protection admits reuse of a bearer token
+/// bound to that session and nowhere else (honua-server#4909). Only the MCP transport routes
+/// are claimed: a token bound to a session is a replay on any other route, and a token
+/// admitted on the ordinary HTTP API is a replay here (honua-server#4899).
 /// </summary>
 internal sealed class McpTokenReplayContinuationResolver : ITokenReplayContinuationResolver
 {
-    public string? ResolveContinuationId(HttpContext context)
+    public bool OwnsRequest(HttpContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
-        if (!McpBearerAuthenticationEndpointExtensions.IsMcpTransportPath(context.Request.Path))
+        return McpBearerAuthenticationEndpointExtensions.IsMcpTransportPath(context.Request.Path);
+    }
+
+    public string? ResolveContinuationId(HttpContext context)
+    {
+        if (!OwnsRequest(context))
         {
             return null;
         }

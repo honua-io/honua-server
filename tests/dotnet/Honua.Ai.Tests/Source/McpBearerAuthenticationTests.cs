@@ -679,6 +679,69 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/studio/package-families")]
+    [Endpoint("POST /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/list")]
+    public async Task ReplayProtectionEnabled_BearerReusedOnHttpApi_IsAdmittedWithinLifetimeAndReplaysAcrossSurfaces()
+    {
+        // honua-server#4899: under the default token replay protection an ordinary REST
+        // client reuses its access token for the token's lifetime, while a token admitted
+        // on one surface is still a replay on the other: an HTTP API token cannot open an
+        // MCP session and an MCP session's token cannot be replayed against the HTTP API.
+        var fixture = CreateReplayProtectedFixture();
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateClient();
+            Claim[] authority =
+            [
+                new Claim("tid", "tenant-a"),
+                new Claim("roles", "admin"),
+                new Claim("scope", "honua.mcp.full"),
+            ];
+
+            var restToken = CreateToken("reuse-owner", additionalClaims: authority);
+            for (var attempt = 1; attempt <= 3; attempt++)
+            {
+                using var request = BuildPackageFamiliesRequest(restToken);
+                using var response = await client.SendAsync(request);
+                response.StatusCode.Should().Be(HttpStatusCode.OK,
+                    $"request {attempt} reuses a still-valid access token on the HTTP API: {await response.Content.ReadAsStringAsync()}");
+            }
+
+            using (var crossSurface = BuildInitialize(restToken))
+            using (var crossSurfaceResponse = await client.SendAsync(crossSurface))
+            {
+                crossSurfaceResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+                    "a token admitted on the HTTP API is a replay when presented to open an MCP session");
+            }
+
+            var mcpToken = CreateToken("reuse-owner", additionalClaims: authority);
+            var sessionId = await OpenSessionAsync(client, mcpToken);
+            await AssertSessionRequestSucceedsAsync(client, """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""",
+                sessionId, mcpToken, "the MCP token continues its own session");
+
+            using (var replayed = BuildPackageFamiliesRequest(mcpToken))
+            using (var replayedResponse = await client.SendAsync(replayed))
+            {
+                replayedResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+                    "a token bound to an MCP session is a replay on the HTTP API");
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private static HttpRequestMessage BuildPackageFamiliesRequest(string bearer)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, "/api/v1/studio/package-families");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", bearer);
+        return request;
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /mcp")]
     public async Task Post_WithInvalidSignatureBearer_Returns401WithChallengeAndStructuredError()
     {
