@@ -11,11 +11,13 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
 using Honua.Core.Queries.Filters;
 using Honua.ServiceDefaults;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
 
 namespace Honua.Infrastructure.Rendering;
 
-internal static class VectorTileExecution
+internal static partial class VectorTileExecution
 {
     private const string MvtContentType = "application/vnd.mapbox-vector-tile";
 
@@ -72,17 +74,17 @@ internal static class VectorTileExecution
                 gridGeometry,
                 cancellationToken);
         }
-        catch (TileSizeLimitExceededException)
+        catch (TileSizeLimitExceededException ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error);
-            return StandardErrorHelpers.CreatePayloadTooLarge(context, new TileSizeLimitExceededException().Message);
+            return RefuseOversizedTile(
+                context, activity, storageLayerId, tileCol, tileRow, zoomLevel, ex.EncodedBytes, tileLimits.MaxTileSize);
         }
 
         cancellationToken.ThrowIfCancellationRequested();
         if (tileData?.LongLength > tileLimits.MaxTileSize)
         {
-            activity?.SetStatus(ActivityStatusCode.Error);
-            return StandardErrorHelpers.CreatePayloadTooLarge(context, new TileSizeLimitExceededException().Message);
+            return RefuseOversizedTile(
+                context, activity, storageLayerId, tileCol, tileRow, zoomLevel, tileData.LongLength, tileLimits.MaxTileSize);
         }
 
         if (tileData == null || tileData.Length == 0)
@@ -98,6 +100,55 @@ internal static class VectorTileExecution
         ApplyCacheHeaders(context, tileOptions, serviceId, layerId, storageLayerId, tileMatrixSetId);
         return Results.Bytes(tileData, MvtContentType);
     }
+
+    /// <summary>
+    /// Refuses a tile whose encoded MVT exceeds <c>Limits:Tiles:MaxTileSize</c>, recording the
+    /// measurement an operator needs to size the budget.
+    /// </summary>
+    /// <remarks>
+    /// The refusal costs a full <c>ST_AsMVT</c> encode, so it is logged: a layer that is dense at
+    /// low zoom answers 413 for every request to the handful of tiles that carry its features,
+    /// and before honua-server#4918 nothing in the server said so — the capacity soak spent 44%
+    /// of its tile budget encoding a 1.4 MB tile it then discarded, with no log line naming the
+    /// limit. Cached refusals (see <c>TileOutcomeOutputCachePolicy</c>) bypass this path, so the
+    /// line is emitted once per tile per TTL rather than once per request.
+    /// </remarks>
+    private static IResult RefuseOversizedTile(
+        HttpContext context,
+        Activity? activity,
+        int storageLayerId,
+        int tileCol,
+        int tileRow,
+        int zoomLevel,
+        long encodedBytes,
+        long maxTileSize)
+    {
+        activity?.SetStatus(ActivityStatusCode.Error);
+        activity?.SetTag("honua.tile.bytes", encodedBytes);
+
+        var logger = context.RequestServices
+            .GetService<ILoggerFactory>()?
+            .CreateLogger(typeof(VectorTileExecution));
+        if (logger is not null)
+        {
+            LogTileRefusedOverBudget(logger, storageLayerId, zoomLevel, tileCol, tileRow, encodedBytes, maxTileSize);
+        }
+
+        return StandardErrorHelpers.CreatePayloadTooLarge(context, new TileSizeLimitExceededException().Message);
+    }
+
+    [LoggerMessage(
+        EventId = 3473,
+        Level = LogLevel.Warning,
+        Message = "Refused vector tile {LayerId}/{Zoom}/{TileCol}/{TileRow}: encoded {EncodedBytes} bytes exceeds Limits:Tiles:MaxTileSize ({MaxTileSize} bytes). Raise the budget or reduce the features/attributes served at this zoom.")]
+    private static partial void LogTileRefusedOverBudget(
+        ILogger logger,
+        int layerId,
+        int zoom,
+        int tileCol,
+        int tileRow,
+        long encodedBytes,
+        long maxTileSize);
 
     internal static void ApplyCacheHeaders(
         HttpContext context,
