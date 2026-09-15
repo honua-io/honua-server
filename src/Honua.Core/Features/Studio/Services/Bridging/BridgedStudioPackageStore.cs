@@ -250,6 +250,17 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
         => _inner.GetPublicationRequestAsync(itemId, versionId, requestId, cancellationToken);
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Bridged families publish into their native stores (a form publishes through the form
+    /// registry; analysis has no publish-request concept), so only natively persisted
+    /// publication requests govern a Studio route.
+    /// </remarks>
+    public Task<StudioPublicationRequest?> GetActivePublicationRequestByRouteAsync(
+        string route,
+        CancellationToken cancellationToken = default)
+        => _inner.GetActivePublicationRequestByRouteAsync(route, cancellationToken);
+
+    /// <inheritdoc />
     public async Task<StudioRollbackRequest> RollbackAsync(
         Guid itemId,
         Guid targetVersionId,

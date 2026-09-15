@@ -53,6 +53,7 @@ payload.
 | `GET` | `/content-items/{itemId}/versions/{versionId}/publish-requests/{requestId}` | `200 ApiResponse<StudioPublicationRequest>` | Read one owner-scoped publication request for status polling. |
 | `POST` | `/content-items/{itemId}/versions/{versionId}/reopen` | `201 ApiResponse<StudioPackageDraft>` | Copy an immutable version into a new mutable draft with `baseVersionId`. |
 | `POST` | `/content-items/{itemId}/rollback-requests` | `201 ApiResponse<StudioRollbackRequest>` | Persist a rollback request and move the current, published, or both pointers to an earlier immutable version. |
+| `GET` | `/published/{*route}` | `200 ApiResponse<StudioPublishedArtifact>` | Serve an accepted publication's `activeUrl`: resolve the governed route to the item's Active (published-pointer) version, honouring visibility. Anonymous-capable for `public` routes; not behind the lifecycle admin gate. |
 
 ## Authorization
 
@@ -381,13 +382,36 @@ warning acknowledgement is optional audit text in the MVP. The `pending`
 publication status is reserved for later asynchronous publication execution and
 is not emitted by the API service today.
 
-Route-resolvable publication for Studio-generated `map`, `dashboard`, `report`,
-and `app` artifacts is handled by the sibling
+An accepted publication's operation handle (`GET /api/v1/operations/handles/{id}`,
+and the MCP proposal resource once approved) reports `resourceIds.route` (the
+governed intent route, for example `/maps/parcels`) and `resourceIds.activeUrl`
+(honua-server#4907). `activeUrl` is the root-relative URL the server actually
+serves: `/api/v1/studio/published` followed by the percent-encoded route, for
+example `/api/v1/studio/published/maps/parcels`. Resolve it against the server
+base URL. `GET /api/v1/studio/published/{*route}` finds the accepted publication
+request that governs the route and returns `200 ApiResponse<StudioPublishedArtifact>`
+carrying the content item's Active version: the version its published pointer
+names, with the sealed envelope and content hash.
+
+- Each item is governed by its newest accepted publication request. Republishing
+  an item at a different route retires the old route (`404`). When two items
+  claim one route, the newer governing request owns it.
+- The published pointer, not the request's version, is served, so a republish or
+  a `published`/`both` rollback changes the response on the next read and a
+  superseded version is never served. Responses are `Cache-Control: no-store`.
+- `public` visibility is readable anonymously. `organization` and `team`
+  visibility require an authenticated caller who passes the Studio published-read
+  check (`ReadContentItem`). `personal` or unset visibility is owner or admin only.
+  Unauthenticated reads of non-public routes return `401`; denied reads return `403`.
+- Bridged families publish into their native stores and are not served here.
+
+The Studio published route above serves the governed Active version of a
+lifecycle publication. Richer runtime publication for Studio-generated `map`,
+`dashboard`, `report`, and `app` artifacts is handled by the sibling
 [Content Publication Registry API](content-publication-registry.md). That API
-owns the public route slug, active route pointer, share/embed/public-link policy,
-generated-app reopen-by-revision reads, and rollback pointer. Studio clients
-should use the package lifecycle API for draft/version governance, then use the
-publication registry when a version must become a runtime route.
+owns registry route slugs, share/embed/public-link policy, generated-app
+reopen-by-revision reads, and its own rollback pointer. Use it when a version
+needs those runtime policies.
 
 `POST /content-items/{itemId}/rollback-requests` accepts `pointer` values
 `current`, `published`, and `both` and returns the resulting

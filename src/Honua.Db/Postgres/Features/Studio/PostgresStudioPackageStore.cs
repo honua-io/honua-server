@@ -934,12 +934,53 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         command.Parameters.AddWithValue("@item_id", itemId);
         command.Parameters.AddWithValue("@version_id", versionId);
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            return null;
-        }
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            ? ReadPublicationRequest(reader)
+            : null;
+    }
 
-        return new StudioPublicationRequest
+    public async Task<StudioPublicationRequest?> GetActivePublicationRequestByRouteAsync(
+        string route,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(route);
+
+        // honua-server#4907: DISTINCT ON picks each candidate item's newest accepted request (the
+        // one governing the item); the outer filter keeps those still bound to this route, so an
+        // item republished elsewhere no longer answers here, and the newest of them owns the
+        // route when two items have claimed it.
+        var sql = $"""
+            SELECT request_id, item_id, version_id, intent, status, validation,
+                   warning_acknowledgement, requested_by, created_at
+            FROM (
+                SELECT DISTINCT ON (item_id)
+                       request_id, item_id, version_id, intent, status, validation,
+                       warning_acknowledgement, requested_by, created_at
+                FROM {_publicationRequestsTable}
+                WHERE status = @status
+                  AND item_id IN (
+                      SELECT item_id
+                      FROM {_publicationRequestsTable}
+                      WHERE status = @status
+                        AND intent ->> 'route' = @route)
+                ORDER BY item_id, created_at DESC, request_id DESC
+            ) AS governing
+            WHERE governing.intent ->> 'route' = @route
+            ORDER BY governing.created_at DESC, governing.request_id DESC
+            LIMIT 1
+            """;
+        await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = new NpgsqlCommand(sql, lease.Connection);
+        command.Parameters.AddWithValue("@status", ToDbPublicationStatus(StudioPublicationRequestStatus.Accepted));
+        command.Parameters.AddWithValue("@route", route);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false)
+            ? ReadPublicationRequest(reader)
+            : null;
+    }
+
+    private static StudioPublicationRequest ReadPublicationRequest(NpgsqlDataReader reader)
+        => new()
         {
             RequestId = reader.GetGuid(0),
             ItemId = reader.GetGuid(1),
@@ -954,7 +995,6 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             RequestedBy = reader.IsDBNull(7) ? null : reader.GetString(7),
             CreatedAt = reader.GetFieldValue<DateTimeOffset>(8),
         };
-    }
 
     public async Task<StudioRollbackRequest> RollbackAsync(
         Guid itemId,
