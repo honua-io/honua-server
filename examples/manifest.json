@@ -13280,7 +13280,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 173,
+      "line": 181,
       "language": "bash"
     },
     {
