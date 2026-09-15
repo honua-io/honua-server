@@ -278,6 +278,7 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
         var key = InMemoryAdminApiKeyStore.GenerateForDurableStore();
         var record = new AdminApiKeyRecord(Guid.NewGuid(), name, key[..Math.Min(12, key.Length)], SHA256.HashData(Encoding.UTF8.GetBytes(key)), permissions.Select(p => p.Trim()).Where(p => p.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).DefaultIfEmpty("admin:*").ToArray(), now, now, expiresAt, null, null, null, createdBy);
         await _database.StringSetAsync(BuildKey(record.Id), JsonSerializer.Serialize(record, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord), ResolveTtl(record), When.NotExists).ConfigureAwait(false);
+        await PinApprovedExpiryAsync(_database, BuildKey(record.Id), record).ConfigureAwait(false);
         await _database.SetAddAsync(IdsKey, record.Id.ToString("D")).ConfigureAwait(false);
         await MarkActiveAndSeenAsync(record.Id).ConfigureAwait(false);
         return new(record, key);
@@ -340,6 +341,7 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
         var transaction = _database.CreateTransaction();
         transaction.AddCondition(Condition.StringEqual(key, snapshot));
         _ = transaction.StringSetAsync(key, JsonSerializer.Serialize(updated, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord), ResolveTtl(updated));
+        _ = PinApprovedExpiryAsync(transaction, key, updated);
         return await transaction.ExecuteAsync().ConfigureAwait(false);
     }
 
@@ -368,6 +370,7 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
                 // revoke or rotate must win, rather than being resurrected by validation.
                 transaction.AddCondition(Condition.StringEqual(key, JsonSerializer.Serialize(current, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord)));
                 _ = transaction.StringSetAsync(key, JsonSerializer.Serialize(updated, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord), ResolveTtl(updated));
+                _ = PinApprovedExpiryAsync(transaction, key, updated);
                 if (await transaction.ExecuteAsync().ConfigureAwait(false))
                 {
                     return new(updated);
@@ -499,6 +502,20 @@ internal sealed class RedisAdminApiKeyStore(IConnectionMultiplexer redis, TimePr
 
     private static AdminApiKeyRecord? Read(RedisValue value) => value.HasValue ? JsonSerializer.Deserialize((string)value!, AdminApiKeyStoreJsonContext.Default.AdminApiKeyRecord) : null;
     private static string BuildKey(Guid id) => $"{Prefix}{id:D}";
+
+    // ResolveTtl's relative TTL is measured before the write reaches Redis, so a write delayed by
+    // load or contention would keep a replay credential past ExpiresAt by that delay. PEXPIREAT
+    // anchors its eviction to ExpiresAt itself (and evicts at once when the write lands late).
+    private static Task PinApprovedExpiryAsync(IDatabaseAsync database, RedisKey key, AdminApiKeyRecord record)
+    {
+        if (record.ExpiresAt is not { } expiresAt || !record.Permissions.Any(AdminApiKeyPermission.IsApprovedOperationGrant))
+        {
+            return Task.CompletedTask;
+        }
+
+        return database.KeyExpireAsync(key, expiresAt.UtcDateTime);
+    }
+
     private TimeSpan ResolveTtl(AdminApiKeyRecord record)
     {
         var remaining = record.ExpiresAt - _timeProvider.GetUtcNow();
