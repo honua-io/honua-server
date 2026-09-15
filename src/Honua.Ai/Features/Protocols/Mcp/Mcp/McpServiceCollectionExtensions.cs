@@ -375,6 +375,13 @@ internal static class McpServiceCollectionExtensions
                 timeProvider);
         });
 
+        // honua-server#4909: a bearer token admitted on a session's initialize (or on a
+        // refreshed-token request that session accepted) may be reused on that session
+        // under token replay protection; reuse anywhere else stays a replay.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<
+            Honua.Infrastructure.Authentication.ITokenReplayContinuationResolver,
+            McpTokenReplayContinuationResolver>());
+
         // Server-push notifications over the session SSE stream (honua-server#1954):
         // the publisher builds notifications/progress + */list_changed frames and
         // enqueues them onto the owning session; the progress bridge polls the
