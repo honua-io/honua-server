@@ -1844,11 +1844,12 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     [Endpoint("POST /api/v1/studio/content-items/{itemId}/rollback-requests")]
     public async Task PublishedRoute_FollowActiveUrlAfterPublication_ServesActiveVersionThroughRepublishAndRollback()
     {
-        var route = $"/maps/parcels-{Guid.NewGuid():N}";
+        var routeKey = $"maps/parcels-{Guid.NewGuid():N}";
+        var route = "/" + routeKey;
         var first = await SaveNewItemVersionAsync($"published-route-{Guid.NewGuid():N}", "1=1");
 
         var activeUrl = await PublishAndReadActiveUrlAsync(first, route, "public");
-        activeUrl.Should().Be($"/api/v1/studio/published{route}");
+        activeUrl.Should().Be($"/api/v1/studio/published/{routeKey}");
 
         using var anonymous = _fixture.CreateClient();
         var published = await ReadPublishedAsync(anonymous, activeUrl);
@@ -1891,7 +1892,9 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     public async Task PublishedRoute_PersonalVisibility_RequiresAuthorizedReader_AndRepublishedRouteRetiresOldUrl()
     {
         var version = await SaveNewItemVersionAsync($"personal-route-{Guid.NewGuid():N}", "1=1");
-        var originalUrl = await PublishAndReadActiveUrlAsync(version, $"/maps/personal-{Guid.NewGuid():N}", "personal");
+        var personalRouteKey = $"maps/personal-{Guid.NewGuid():N}";
+        var originalUrl = await PublishAndReadActiveUrlAsync(version, "/" + personalRouteKey, "personal");
+        originalUrl.Should().Be($"/api/v1/studio/published/{personalRouteKey}");
 
         using var anonymous = _fixture.CreateClient();
         var anonymousRead = await anonymous.GetAsync(originalUrl);
