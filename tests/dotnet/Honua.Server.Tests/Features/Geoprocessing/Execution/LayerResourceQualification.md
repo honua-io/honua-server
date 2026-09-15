@@ -102,6 +102,24 @@ Serving availability and cleanup therefore already hold on the pinned candidate;
 the retry multiplication is the only gap, and the next re-pin must include
 `927af8fbc` for this harness to pass.
 
+`layer-resource-nightly-4f2cb3f9-receipt.json` runs the same harness on the first
+published Native AOT image that contains #4881,
+`ghcr.io/honua-io/honua-server@sha256:bffb4fa8df43c480187aa16567a59f55187d50818e90f92d680b21ef05dee260`
+(amd64 AOT image of nightly run 34923885668, `org.opencontainers.image.revision` =
+`4f2cb3f97e92d558d8793c454139267b5c484dd2`). It **passes** every scenario:
+
+- Each deterministic refusal is terminal after exactly one attempt: dissolve 0.33 s,
+  join 0.44 s, buffer 0.23 s, oversized single geometry 0.16 s.
+- The elapsed-time failure runs once and lasts 8.47 s against the 8 s deadline, inside
+  the one-attempt bound.
+- Dismissal stops the running join in 2.03 s, container CPU 97.4% to 6.4%, and the job
+  is still `dismissed` with one attempt after the 45 s observation window.
+- All 340 serving probes pass (maximum 3.25 s), there is no OOM kill, and cleanup passes.
+
+This is the manifest-pinned published image the acceptance asks for. What remains is a
+release re-pin whose source includes `927af8fbc`; the candidate pinned on 2026-09-15
+(`548b7a526`) predates it.
+
 The runtime correction makes input, resource-limit and deadline refusals terminal
 (`IsRetryable = false`) in the layer and enrichment executors; transient source-read
 failures keep their retry budget. #4629 closes only once a manifest-pinned image
