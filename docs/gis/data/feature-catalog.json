@@ -2103,7 +2103,10 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.GetJobStatus_AfterStartingJob_ReturnsProgress",
-        "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.GetJobStatus_WithNonExistentJob_ReturnsNotFound"
+        "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.GetJobStatus_WithNonExistentJob_ReturnsNotFound",
+        "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.LayerImport_DrivenThroughThePublishedAdminSdk_PreservesRecordsOrdinatesAndNulls",
+        "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.ServiceMigration_DrivenThroughThePublishedAdminSdkWithATableLeftOut_RoutesToReviewAsIncomplete",
+        "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.ServiceMigration_DrivenThroughThePublishedAdminSdk_LandsEveryRecordAndReportsWhatItCouldNotPublishOrVerify"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -2176,6 +2179,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.ServiceMigration_DrivenThroughThePublishedAdminSdkWithATableLeftOut_RoutesToReviewAsIncomplete",
+        "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.ServiceMigration_DrivenThroughThePublishedAdminSdk_LandsEveryRecordAndReportsWhatItCouldNotPublishOrVerify",
         "Honua.Server.Tests.Import.MigrationBatchEndpointTests.GetBatch_WhenUnknown_ReturnsNotFound",
         "Honua.Server.Tests.Import.MigrationBatchEndpointTests.GetBatch_WithChildren_ReturnsRolledUpStatus"
       ],
@@ -15145,7 +15150,8 @@
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WithPrivateNetworkUrl_ReturnsBadRequest",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WithSecretReferenceToken_DoesNotPersistPlaintextSecrets_AndWorkerReceivesResolvedValue",
         "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WithUnresolvableHost_ReturnsBadRequest",
-        "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WithValidRequest_ReturnsAccepted"
+        "Honua.Server.Tests.Import.GeoservicesImportEndpointTests.Start_WithValidRequest_ReturnsAccepted",
+        "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.LayerImport_DrivenThroughThePublishedAdminSdk_PreservesRecordsOrdinatesAndNulls"
       ],
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
@@ -15215,6 +15221,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.ServiceMigration_DrivenThroughThePublishedAdminSdkWithATableLeftOut_RoutesToReviewAsIncomplete",
+        "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.ServiceMigration_DrivenThroughThePublishedAdminSdk_LandsEveryRecordAndReportsWhatItCouldNotPublishOrVerify",
         "Honua.Server.Tests.Import.MigrationBatchEndpointTests.StartBatch_WhenFullFidelityIsRequiredAndADiscoveredLayerIsUnselected_ReturnsUnprocessableEntity",
         "Honua.Server.Tests.Import.MigrationBatchEndpointTests.StartBatch_WithEmptyFootprint_ReturnsBadRequest",
         "Honua.Server.Tests.Import.MigrationBatchEndpointTests.StartBatch_WithFootprint_ReturnsAcceptedWithBatchId",
@@ -15385,6 +15393,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.ServiceMigration_DrivenThroughThePublishedAdminSdkWithATableLeftOut_RoutesToReviewAsIncomplete",
+        "Honua.Server.Tests.Import.MigrationAdminSdkLifecycleTests.ServiceMigration_DrivenThroughThePublishedAdminSdk_LandsEveryRecordAndReportsWhatItCouldNotPublishOrVerify",
         "Honua.Server.Tests.Import.MigrationScannerEndpointTests.Scan_GeoServerSource_ReturnsNormalizedInventoryArtifact",
         "Honua.Server.Tests.Import.MigrationScannerEndpointTests.Scan_GeoservicesSourceWithJsonExport_ProducesStableInventoryBaseline",
         "Honua.Server.Tests.Import.MigrationScannerEndpointTests.Scan_GeoservicesSourceWithJsonExport_ReturnsIndentedAttachment",

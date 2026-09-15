@@ -161,6 +161,12 @@ every layer is `full-fidelity` and every requested relationship reached the targ
 A run with a blocking difference and no failed or cancelled layer reports `needs-review` rather than
 `succeeded`, even when every layer imported cleanly.
 
+Every layer in a batch run is published into its target service. When a layer's records import but its
+publish does not complete, that layer's job carries the blocking `fidelity.publish.not-completed` and is
+routed to review, so the service reports `fidelity.service.layer-incomplete` for it. A nonspatial table
+is the common case today: its rows import, but a table without a geometry column cannot yet be
+published.
+
 #### Account for every construct before apply
 
 Pass the service's scan manifest as `manifestBody` when you start a batch run. Before any layer is
