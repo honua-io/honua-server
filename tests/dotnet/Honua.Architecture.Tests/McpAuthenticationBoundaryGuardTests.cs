@@ -123,26 +123,36 @@ public sealed class McpAuthenticationBoundaryGuardTests
     }
 
     [ArchitectureTest]
-    public void SessionBindingKey_RetainsActorTenantScopeAndCredentialComponents()
+    public void SessionBindingKey_RetainsActorTenantScopeAndAuthorityComponents()
     {
         var source = ReadRepositoryFile(CanonicalActorRelativePath);
 
         source.Should().Contain(
             "$\"{actor.ActorId}:tenant:{Encode(tenant)}:scope:{Encode(scopeCeiling)}"
-            + ":credential:{Encode(credential)}\"",
+            + ":authority:{Encode(authority)}\"",
             "the session binding key must retain the canonical actor, effective tenant, scope ceiling, "
-            + "and validated-credential fingerprint; dropping any component lets cross-issuer or "
-            + "cross-tenant callers share a session (#3430)");
+            + "and validated-authority fingerprint; dropping any component lets cross-issuer, "
+            + "cross-tenant, or lower-authority callers share a session (#3430, #4909)");
 
         var buildBindingKey = ExtractRegion(
             source,
             "internal static string BuildBindingKey(",
-            "internal static string ResolveScopeCeiling(");
+            "internal static string ResolveAuthorityFingerprint(");
         buildBindingKey.Should().Contain("Encode(tenant)")
             .And.Contain("Encode(scopeCeiling)")
-            .And.Contain("Encode(credential)");
+            .And.Contain("Encode(authority)");
         buildBindingKey.Should().NotContain("identity.Name",
             "mutable display names are never session identifiers");
+
+        var authorityFingerprint = ExtractRegion(
+            source,
+            "internal static string ResolveAuthorityFingerprint(",
+            "internal static bool IsRequestBindingProjection(");
+        authorityFingerprint.Should().Contain("principal.Claims")
+            .And.Contain("!IssuanceClaimTypes.Contains(claim.Type)")
+            .And.Contain("SHA256.HashData",
+                "the authority fingerprint must cover every validated claim except per-issuance token "
+                + "metadata, so any change of grants splits the session while a refresh keeps it (#4909)");
     }
 
     [ArchitectureTest]
@@ -153,7 +163,7 @@ public sealed class McpAuthenticationBoundaryGuardTests
         var resolve = ExtractRegion(
             source,
             "public static string? ResolveSessionBindingKey(HttpContext context)",
-            "private static string? ResolveBearerCredentialFingerprint(HttpContext context)");
+            "private static string? ResolveBearerAuthorityFingerprint(HttpContext context)");
 
         resolve.Should().Contain("CanonicalSecurityActor.Resolve(context.User)");
         resolve.Should().Contain("CanonicalSecurityActor.BuildBindingKey(",

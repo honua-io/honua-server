@@ -577,6 +577,109 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /mcp")]
+    [Endpoint("DELETE /mcp")]
+    [InterfaceOperation(TestProtocols.Mcp, "tools/call")]
+    public async Task Session_ReplayProtectionEnabled_BearerContinuesItsSessionAcrossRequestsAndRefresh()
+    {
+        // honua-server#4909: under the default token replay protection a stateful bearer
+        // client must run initialize -> tools/list -> tools/call on one session and keep
+        // that session when it refreshes its access token, while a reused token stays a
+        // replay everywhere else and other principals, tenants and scopes stay refused.
+        var fixture = CreateReplayProtectedFixture();
+        await fixture.InitializeAsync();
+        try
+        {
+            using var client = fixture.CreateClient();
+            Claim[] authority =
+            [
+                new Claim("tid", "tenant-a"),
+                new Claim("roles", "admin"),
+                new Claim("scope", "honua.mcp.full"),
+            ];
+            var token = CreateToken("replay-owner", additionalClaims: authority);
+            var sessionId = await OpenSessionAsync(client, token);
+
+            const string toolsList = """{"jsonrpc":"2.0","id":2,"method":"tools/list"}""";
+            const string toolsCall =
+                """{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"honua_list_capabilities","arguments":{}}}""";
+            await AssertSessionRequestSucceedsAsync(client, toolsList, sessionId, token,
+                "the initialize token must continue its own session");
+            var callResult = await AssertSessionRequestSucceedsAsync(client, toolsCall, sessionId, token,
+                "a tool call on the session reuses the same token");
+            callResult.GetProperty("isError").GetBoolean().Should().BeFalse();
+            await AssertSessionRequestSucceedsAsync(client, toolsList, sessionId, token,
+                "the bound token keeps continuing the session");
+
+            // Reuse outside the session the token is bound to is still a replay.
+            using (var sessionless = BuildRpc(toolsList, sessionId: null, bearer: token))
+            using (var sessionlessResponse = await client.SendAsync(sessionless))
+            {
+                sessionlessResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+                    "a reused token without its session is a replay");
+            }
+
+            using (var reinitialize = BuildInitialize(token))
+            using (var reinitializeResponse = await client.SendAsync(reinitialize))
+            {
+                reinitializeResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+                    "a reused token cannot mint a new session");
+            }
+
+            using (var foreignSession = BuildRpc(toolsList, sessionId: "not-the-bound-session", bearer: token))
+            using (var foreignSessionResponse = await client.SendAsync(foreignSession))
+            {
+                foreignSessionResponse.StatusCode.Should().Be(HttpStatusCode.Unauthorized,
+                    "a reused token presented with another session id is a replay");
+            }
+
+            // A refreshed access token (new jti, identical authority) continues the session
+            // and is itself reusable on it.
+            var refreshed = CreateToken("replay-owner", additionalClaims: authority);
+            await AssertSessionRequestSucceedsAsync(client, toolsList, sessionId, refreshed,
+                "a refreshed token with the same authority keeps the session");
+            await AssertSessionRequestSucceedsAsync(client, toolsCall, sessionId, refreshed,
+                "the refreshed token is bound to the session it continued");
+
+            // A different principal, tenant, or narrower scope still cannot use the session.
+            var intruders = new (string Token, string Because)[]
+            {
+                (CreateToken("replay-intruder", additionalClaims: authority), "a different principal"),
+                (CreateToken("replay-owner", additionalClaims:
+                [
+                    new Claim("tid", "tenant-b"),
+                    new Claim("roles", "admin"),
+                    new Claim("scope", "honua.mcp.full"),
+                ]), "a different tenant"),
+                (CreateToken("replay-owner", additionalClaims:
+                [
+                    new Claim("tid", "tenant-a"),
+                    new Claim("roles", "admin"),
+                    new Claim("scope", "honua.mcp.read"),
+                ]), "a narrower scope"),
+            };
+            foreach (var (intruder, because) in intruders)
+            {
+                using var request = BuildRpc(toolsList, sessionId, intruder);
+                using var response = await client.SendAsync(request);
+                response.StatusCode.Should().Be(HttpStatusCode.OK, because);
+                using var document = await ReadJsonAsync(response);
+                document.RootElement.GetProperty("error").GetProperty("data").GetProperty("code").GetString()
+                    .Should().Be("permission_denied", $"{because} must not use the owner's session");
+            }
+
+            using var delete = BuildDelete(sessionId, token);
+            using var deleteResponse = await client.SendAsync(delete);
+            deleteResponse.StatusCode.Should().Be(HttpStatusCode.NoContent,
+                "the owner's bound token terminates its own session");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /mcp")]
     public async Task Post_WithInvalidSignatureBearer_Returns401WithChallengeAndStructuredError()
     {
         // A token signed with the wrong key fails signature validation. A presented
@@ -918,6 +1021,26 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
         return response.Headers.GetValues("Mcp-Session-Id").Single();
     }
 
+    /// <summary>
+    /// Sends a JSON-RPC request on a session and returns its <c>result</c>, failing with the
+    /// response body when the transport or the session refused it.
+    /// </summary>
+    private static async Task<JsonElement> AssertSessionRequestSucceedsAsync(
+        HttpClient client,
+        string body,
+        string sessionId,
+        string bearer,
+        string because)
+    {
+        using var request = BuildRpc(body, sessionId, bearer);
+        using var response = await client.SendAsync(request);
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"{because}; body: {payload}");
+        using var document = JsonDocument.Parse(payload);
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse($"{because}; body: {payload}");
+        return document.RootElement.GetProperty("result").Clone();
+    }
+
     private static HttpRequestMessage BuildStream(string sessionId, string? bearer, string? apiKey = null)
     {
         var request = new HttpRequestMessage(HttpMethod.Get, "/mcp");
@@ -976,6 +1099,29 @@ public sealed class McpBearerAuthenticationTests : IAsyncLifetime
                 builder.UseSetting("Oidc:Generic:DisplayName", "Test IdP");
                 builder.UseSetting("Mcp:ServerInitiatedStreamEnabled", "true");
                 builder.UseSetting("Mcp:SessionIdleTimeout", "00:00:01");
+            });
+
+    /// <summary>
+    /// Fixture that keeps the production default token replay protection on, so every
+    /// validated bearer is single-use outside the MCP session it is bound to (#4909).
+    /// </summary>
+    private static WebAppFixture CreateReplayProtectedFixture()
+        => new WebAppFixture()
+            .UseSeed("tests/seed/server.yaml")
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", "test-admin-key");
+                builder.UseSetting("Public:BaseUrl", PublicBaseUrl);
+                builder.UseSetting("Oidc:Enabled", "true");
+                builder.UseSetting("Oidc:RequireHttps", "true");
+                builder.UseSetting("Oidc:TokenValidation:SymmetricSigningKey", SigningKey);
+                builder.UseSetting("Oidc:TokenValidation:EnableTokenReplayProtection", "true");
+                builder.UseSetting("Oidc:Generic:Enabled", "true");
+                builder.UseSetting("Oidc:Generic:Authority", Issuer);
+                builder.UseSetting("Oidc:Generic:ClientId", Audience);
+                builder.UseSetting("Oidc:Generic:DisplayName", "Test IdP");
             });
 
     private static string CreateToken(

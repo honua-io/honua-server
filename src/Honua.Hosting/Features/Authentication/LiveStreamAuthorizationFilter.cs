@@ -210,10 +210,7 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
         principal.Claims
             // These are request binding projections added after authentication, not
             // issuer claims. The original request's resolved scope stays immutable.
-            .Where(claim => !CanonicalSecurityActor.IsFrameworkOwnedClaim(claim)
-                || claim.Type is not (CanonicalSecurityActor.CanonicalActorClaim
-                    or CanonicalSecurityActor.EffectiveTenantClaim or CanonicalSecurityActor.ScopeCeilingClaim
-                    or CanonicalSecurityActor.AuthenticationSchemeClaim or "honua:issuer"))
+            .Where(claim => !CanonicalSecurityActor.IsRequestBindingProjection(claim))
             .Select(claim => (claim.Type, claim.Value, claim.Issuer)).Order();
 
     private sealed class RetainedWebSocketFeature(IHttpWebSocketFeature inner) : IHttpWebSocketFeature
