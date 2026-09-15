@@ -1,0 +1,476 @@
+{
+  "format": "honua.studio.dashboard-lifecycle-receipt.v1",
+  "issue": "https://github.com/honua-io/honua-server/issues/3429",
+  "candidate": {
+    "image": "ghcr.io/honua-io/honua-server@sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1",
+    "sha": "548b7a5263da5a3f2381eb43f232687cdf92b0bf",
+    "runningImageId": "sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1",
+    "runningReference": "ghcr.io/honua-io/honua-server@sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1"
+  },
+  "startedAt": "2026-09-15T00:35:37.213651+00:00",
+  "completedAt": "2026-09-15T00:50:31.265181+00:00",
+  "verdict": "pass",
+  "rows": [
+    {
+      "id": "dashboard.compose.eleven-verbs",
+      "criterion": "A terminal MCP client creates a dashboard and all eleven composition verbs succeed with the map/app contract.",
+      "status": "pass",
+      "failures": [],
+      "evidence": {
+        "draftId": "4de37acf-704c-47d4-adf6-cf3938f2108c",
+        "ownerId": "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public",
+        "family": "dashboard",
+        "verbsApplied": [
+          "add_layer",
+          "set_layer_style",
+          "set_layer_visibility",
+          "set_view",
+          "add_widget",
+          "bind_interaction",
+          "add_control",
+          "remove_control",
+          "remove_interaction",
+          "remove_widget",
+          "remove_layer"
+        ]
+      }
+    },
+    {
+      "id": "dashboard.cas.stale-retry",
+      "criterion": "Stale generation returns the canonical conflict and current generation; a re-read non-conflicting retry succeeds exactly once; a conflicting retry stays failed.",
+      "status": "pass",
+      "failures": [],
+      "evidence": {}
+    },
+    {
+      "id": "dashboard.update-draft.shared-validator",
+      "criterion": "update_draft accepts a valid dashboard document and rejects malformed or unsupported content without mutation.",
+      "status": "pass",
+      "failures": [],
+      "evidence": {
+        "rejectedBodies": [
+          {
+            "layers": "bad"
+          },
+          {
+            "layers": [
+              {
+                "id": "same"
+              },
+              {
+                "id": "same"
+              }
+            ]
+          },
+          {
+            "widgets": [
+              {
+                "id": "missing-kind"
+              }
+            ]
+          },
+          {
+            "view": {
+              "center": [
+                1
+              ]
+            }
+          },
+          {
+            "view": {
+              "zoom": 25
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "dashboard.authorization.nondisclosure",
+      "criterion": "A different owner, a different tenant, or insufficient OAuth scope receives the canonical denial without leaking draft existence or content.",
+      "status": "pass",
+      "failures": [],
+      "evidence": {
+        "observed": {
+          "other-owner-read": {
+            "isError": true,
+            "code": "permission_denied",
+            "studioAuthorizationCode": "studio_authorization/cross_user_denied",
+            "disclosedFields": []
+          },
+          "other-owner-compose": {
+            "isError": true,
+            "code": "permission_denied",
+            "studioAuthorizationCode": "studio_authorization/cross_user_denied",
+            "disclosedFields": []
+          },
+          "other-owner-missing-id": {
+            "isError": true,
+            "code": "permission_denied",
+            "studioAuthorizationCode": "studio_authorization/cross_user_denied",
+            "disclosedFields": []
+          },
+          "same-subject-other-tenant-read": {
+            "isError": true,
+            "code": "permission_denied",
+            "studioAuthorizationCode": "studio_authorization/cross_user_denied",
+            "disclosedFields": []
+          },
+          "same-subject-other-tenant-compose": {
+            "isError": true,
+            "code": "permission_denied",
+            "studioAuthorizationCode": "studio_authorization/cross_user_denied",
+            "disclosedFields": []
+          },
+          "read-only-scope-compose": {
+            "isError": true,
+            "code": "insufficient_scope",
+            "studioAuthorizationCode": "studio_authorization/oauth_scope_required",
+            "disclosedFields": []
+          }
+        }
+      }
+    },
+    {
+      "id": "dashboard.version.restart-identity",
+      "criterion": "Validate, save, get and reopen preserve the exact content hash and immutable version identity across a server restart.",
+      "status": "pass",
+      "failures": [],
+      "evidence": {
+        "itemId": "481dd359-9fe8-4617-8682-edb41df8ff23",
+        "versionId": "c8bbdaee-9eca-4fbd-8be4-e552efd8f306",
+        "contentHash": "7271dc07dfa9e78def48658a11578bf5ff289e8d732c1a2acbc4a68a7a2721db",
+        "reopenedDraftId": "e2b7831a-35a8-4b12-9403-477d54a53dd1"
+      }
+    },
+    {
+      "id": "dashboard.publication.governed-proposal",
+      "criterion": "The saved dashboard enters the governed proposal lifecycle without changing a publication pointer.",
+      "status": "pass",
+      "failures": [],
+      "evidence": {
+        "response": {
+          "status": "AwaitingApproval",
+          "proposalId": "proposal-03fd0baee9094da1aa9b7867ccf4d95c",
+          "proposalUri": "honua://proposals/proposal-03fd0baee9094da1aa9b7867ccf4d95c",
+          "code": null,
+          "humanConfirmationRequired": true
+        }
+      }
+    },
+    {
+      "id": "dashboard.audit.joined-evidence",
+      "criterion": "Every mutation joins owner, tenant, actor, durable audit and correlation evidence through the shared seam.",
+      "status": "pass",
+      "failures": [],
+      "evidence": {
+        "ownerId": "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public",
+        "joins": [
+          {
+            "verb": "create_draft",
+            "traceId": "63417ae2f8fc4e55b0e870ce8cd15d09",
+            "operationInstanceId": "opinst-1dd5af3e37a14c6889bf35d0508a7dd0",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+            ],
+            "auditIds": [
+              6,
+              7
+            ]
+          },
+          {
+            "verb": "add_layer",
+            "traceId": "172144857dd0453d8d7b45935e3895b5",
+            "operationInstanceId": "opinst-523f5ae0b60d42e9ba2bf2ee59c75ca4",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+            ],
+            "auditIds": [
+              8,
+              9
+            ]
+          },
+          {
+            "verb": "set_layer_style",
+            "traceId": "83a76f80dc6d4eb9878760753eb9d90f",
+            "operationInstanceId": "opinst-060a8252d6474c9da726de6446522307",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+            ],
+            "auditIds": [
+              10,
+              11
+            ]
+          },
+          {
+            "verb": "set_layer_visibility",
+            "traceId": "60a139c81db44bf4ab62cbc9caf11c29",
+            "operationInstanceId": "opinst-35b35a46b82b440db0e7e51257aefe83",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+            ],
+            "auditIds": [
+              12,
+              13
+            ]
+          },
+          {
+            "verb": "set_view",
+            "traceId": "fe679406ff6f485f9e700d575746b628",
+            "operationInstanceId": "opinst-f6df0a950b854620b0eb6b328193253b",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+            ],
+            "auditIds": [
+              14,
+              15
+            ]
+          },
+          {
+            "verb": "add_widget",
+            "traceId": "7a6dd07200ea4461af96e84a3ae5309f",
+            "operationInstanceId": "opinst-07ad77a367ec432ba2a9747e011c7ccd",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+            ],
+            "auditIds": [
+              16,
+              17
+            ]
+          },
+          {
+            "verb": "bind_interaction",
+            "traceId": "9ee61d72916f419e8d1865ecaf23b9b6",
+            "operationInstanceId": "opinst-5b325106ced24c3cb4075e488605aa7f",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+            ],
+            "auditIds": [
+              18,
+              19
+            ]
+          },
+          {
+            "verb": "add_control",
+            "traceId": "7f12b6a9435b43128b45eb150437b89b",
+            "operationInstanceId": "opinst-95be01bce51f4499b8769cb849e5829c",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+            ],
+            "auditIds": [
+              20,
+              21
+            ]
+          },
+          {
+            "verb": "remove_control",
+            "traceId": "a79ae5d84f1c4387aa069e7f2ebefe36",
+            "operationInstanceId": "opinst-3aed6429a3814fadb840ba4f8f22d8d1",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+            ],
+            "auditIds": [
+              22,
+              23
+            ]
+          },
+          {
+            "verb": "remove_interaction",
+            "traceId": "f2286f3e3f0f4ac29301109cc05aa2ee",
+            "operationInstanceId": "opinst-5a8d271e4a2347178c16874be4e28a81",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+            ],
+            "auditIds": [
+              24,
+              25
+            ]
+          },
+          {
+            "verb": "remove_widget",
+            "traceId": "dcc8be9e15584c7b90e116385e87d342",
+            "operationInstanceId": "opinst-4609799dfd124ae9b093896c3cd4ba0b",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+            ],
+            "auditIds": [
+              26,
+              27
+            ]
+          },
+          {
+            "verb": "remove_layer",
+            "traceId": "19e6f1d1b7a64903a6ae6e881a32acea",
+            "operationInstanceId": "opinst-429502538a0c4b26bba54f2c6747716e",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+            ],
+            "auditIds": [
+              28,
+              29
+            ]
+          },
+          {
+            "verb": "update_draft",
+            "traceId": "eaf35da71337411bb35e45d1fede56c1",
+            "operationInstanceId": "opinst-2610b753183643dbb9cdabb92180e5a9",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+            ],
+            "auditIds": [
+              30,
+              31
+            ]
+          },
+          {
+            "verb": "save_version",
+            "traceId": "714f30e3769d4a47bd187967bacdc039",
+            "operationInstanceId": "opinst-24616a0d5cbd4c3d953b3e42c796a03b",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+            ],
+            "auditIds": [
+              38,
+              39
+            ]
+          },
+          {
+            "verb": "reopen_version",
+            "traceId": "854d7df0c9d148be8b73bdc827993573",
+            "operationInstanceId": "opinst-c52ee592395247989c9fa2990d1f5446",
+            "status": "Completed",
+            "proposalId": null,
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.completed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+            ],
+            "auditIds": [
+              40,
+              41
+            ]
+          },
+          {
+            "verb": "propose_publication",
+            "traceId": "3a89c45b42394d6c8b65d9af22d10035",
+            "operationInstanceId": "opinst-fefb2766166e472eadf57379274c482f",
+            "status": "RequiresApproval",
+            "proposalId": "proposal-03fd0baee9094da1aa9b7867ccf4d95c",
+            "tenantId": "public",
+            "auditActions": [
+              "operation.accepted",
+              "operation.proposed"
+            ],
+            "actors": [
+              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+            ],
+            "auditIds": [
+              43,
+              44
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}
