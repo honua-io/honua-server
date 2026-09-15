@@ -6897,7 +6897,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 130,
+      "line": 158,
       "language": "json"
     },
     {
