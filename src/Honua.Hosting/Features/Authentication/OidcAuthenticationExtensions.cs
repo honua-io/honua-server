@@ -719,7 +719,7 @@ public static partial class OidcAuthenticationExtensions
                                 redis,
                                 memoryCache,
                                 oidcOptions.TokenValidation.ReplayProtectionFailClosed,
-                                ResolveTokenReplayContinuationMarker(context.HttpContext),
+                                ResolveTokenReplayScope(context.HttpContext),
                                 logger,
                                 context.HttpContext.RequestAborted).ConfigureAwait(false);
 
@@ -763,7 +763,7 @@ public static partial class OidcAuthenticationExtensions
         IConnectionMultiplexer? redis,
         IMemoryCache? memoryCache,
         bool failClosed,
-        string? continuationMarker,
+        TokenReplayScope scope,
         ILogger logger,
         CancellationToken cancellationToken)
     {
@@ -782,7 +782,7 @@ public static partial class OidcAuthenticationExtensions
                     var database = redis.GetDatabase();
                     var registered = await database.StringSetAsync(
                         tokenKey,
-                        RegisteredTokenReplayValue,
+                        scope.RegistrationValue,
                         expiresIn,
                         when: When.NotExists).ConfigureAwait(false);
                     if (registered)
@@ -790,12 +790,11 @@ public static partial class OidcAuthenticationExtensions
                         return new(TokenReplayRegistrationResult.Registered, TokenReplayStore.Redis);
                     }
 
-                    // A reused token is a replay unless it is bound to the server-issued
-                    // continuation this request presents (honua-server#4909).
-                    var current = continuationMarker is null
-                        ? RedisValue.Null
-                        : await database.StringGetAsync(tokenKey).ConfigureAwait(false);
-                    return new(ClassifyReusedToken((string?)current, continuationMarker), TokenReplayStore.Redis);
+                    // A reused token is admitted on the HTTP API it was admitted on
+                    // (honua-server#4899) or on the server-issued continuation it is bound
+                    // to (honua-server#4909); anywhere else it is a replay.
+                    var current = await database.StringGetAsync(tokenKey).ConfigureAwait(false);
+                    return new(ClassifyReusedToken((string?)current, scope), TokenReplayStore.Redis);
                 }
 
                 OidcAuthenticationLog.TokenReplayRedisDisconnected(logger);
@@ -820,7 +819,7 @@ public static partial class OidcAuthenticationExtensions
                 tokenKey,
                 expiresOn,
                 memoryCache,
-                continuationMarker,
+                scope,
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -834,22 +833,22 @@ public static partial class OidcAuthenticationExtensions
         string tokenKey,
         DateTime expiresOn,
         IMemoryCache memoryCache,
-        string? continuationMarker,
+        TokenReplayScope scope,
         CancellationToken cancellationToken)
     {
         if (memoryCache.TryGetValue(tokenKey, out var existing))
         {
-            return new(ClassifyReusedToken(existing, continuationMarker), TokenReplayStore.Memory);
+            return new(ClassifyReusedToken(existing, scope), TokenReplayStore.Memory);
         }
 
         var result = await WithReplayLockAsync(tokenKey, () =>
         {
             if (memoryCache.TryGetValue(tokenKey, out var raced))
             {
-                return ClassifyReusedToken(raced, continuationMarker);
+                return ClassifyReusedToken(raced, scope);
             }
 
-            memoryCache.Set(tokenKey, RegisteredTokenReplayValue, new MemoryCacheEntryOptions
+            memoryCache.Set(tokenKey, scope.RegistrationValue, new MemoryCacheEntryOptions
             {
                 AbsoluteExpiration = new DateTimeOffset(expiresOn)
             });
@@ -1041,6 +1040,12 @@ public static partial class OidcAuthenticationExtensions
         /// (honua-server#4909).
         /// </summary>
         Continued,
+
+        /// <summary>
+        /// The token was reused within its lifetime on the HTTP API it was first admitted on
+        /// (honua-server#4899).
+        /// </summary>
+        Reused,
 
         /// <summary>
         /// Replay protection could not be enforced and
