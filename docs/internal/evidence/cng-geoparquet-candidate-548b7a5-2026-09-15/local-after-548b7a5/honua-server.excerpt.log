@@ -1,0 +1,11 @@
+honua-server-1  |       Request starting "HTTP/1.1" "GET" "http"://"localhost:18747""""/rest/services/cng/FeatureServer/1000/query""[REDACTED]" - null null
+honua-server-1  |       Query "query_parquet" executed: "cng"/FeatureServer/1000 in 24.4815 ms
+honua-server-1  |       Query failed for "cng"/FeatureServer/1000: "GeoParquet (f=parquet) output is unavailable on this runtime image: the native ParquetSharp Arrow encoder (ParquetSharpNative) could not be loaded. The ParquetSharp native library requires glibc and its native dependencies, including libatomic.so.1. Deploy a compatible runtime image to enable GeoParquet output."
+honua-server-1  |       Honua.Infrastructure.Services.ParquetRuntimeUnavailableException: GeoParquet (f=parquet) output is unavailable on this runtime image: the native ParquetSharp Arrow encoder (ParquetSharpNative) could not be loaded. The ParquetSharp native library requires glibc and its native dependencies, including libatomic.so.1. Deploy a compatible runtime image to enable GeoParquet output.
+honua-server-1  |        ---> System.DllNotFoundException: Unable to load shared library 'ParquetSharpNative' or one of its dependencies. In order to help diagnose loading problems, consider using a tool like strace. If you're using glibc, consider setting the LD_DEBUG environment variable: 
+honua-server-1  |       Error loading shared library libatomic.so.1: No such file or directory (needed by /app/ParquetSharpNative.so)
+honua-server-1  |          at Honua.Infrastructure.Services.GeoParquetFeatureWriter.WriteArrowParquet(Schema, RecordBatch) + 0x72
+honua-server-1  |          at Honua.Infrastructure.Services.GeoParquetFeatureWriter.WriteArrowParquet(Schema, RecordBatch) + 0x2f4
+honua-server-1  |          at Honua.Infrastructure.Services.GeoParquetFeatureWriter.FormatAsGeoParquet(QueryResult`1, MetadataV2Resource, String, Boolean, Nullable`1, Boolean, Boolean, GeometryLimits, String[], ILogger) + 0x236
+honua-server-1  |       HTTP "GET" "/rest/services/cng/FeatureServer/1000/query" responded 200 in 114.0630 ms
+honua-server-1  |       Request finished "HTTP/1.1" "GET" "http"://"localhost:18747""""/rest/services/cng/FeatureServer/1000/query""[REDACTED]" - 200 null "application/json; charset=utf-8" 115.4474ms
