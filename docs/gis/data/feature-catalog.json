@@ -21445,6 +21445,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SoapArea_WithProductionExecutor_ReturnsIndependentRectangleAreaAndMetadata",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SoapBuffer_WithProductionExecutor_ReturnsRecordSetBoundedByTheIndependentBufferGeometry",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SoapJobOperation_OtherCaller_IsDeniedByCanonicalJobOwnership",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SoapJobOperation_UnauthenticatedCaller_IsChallengedWithoutJobState",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerDurableRuntimeTests.SoapUnion_WithMultiValueInput_ReturnsTheIndependentlyComputedRectangle",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.DiscoveryOperation_ValidRequest_ReturnsTypedResult",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests.GetToolInfos_ArcPyEnvelope_ReturnsCanonicalTaskAndParameterMetadata",

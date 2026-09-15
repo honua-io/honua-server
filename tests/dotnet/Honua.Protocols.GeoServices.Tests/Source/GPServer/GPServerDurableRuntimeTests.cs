@@ -475,6 +475,89 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
         }
     }
 
+    [IntegrationTheory]
+    [InlineData("anonymous")]
+    [InlineData("invalid-api-key")]
+    [InlineData("invalid-bearer")]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /services/{serviceId}/GPServer")]
+    public async Task SoapJobOperation_UnauthenticatedCaller_IsChallengedWithoutJobState(string caller)
+    {
+        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        // The real API-key handler decides; the dev bypass would accept any key. Only the
+        // shared factory configures the admin password, so this host needs it explicitly.
+        var fixture = CreateDurableFixture(productionExecutor: true)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var owner = fixture.CreateAdminClient();
+            using var denied = fixture.CreateClient(client =>
+            {
+                if (caller == "invalid-api-key")
+                {
+                    client.DefaultRequestHeaders.Add("X-API-Key", "honua-test-" + Guid.NewGuid().ToString("N"));
+                }
+                else if (caller == "invalid-bearer")
+                {
+                    client.DefaultRequestHeaders.Add("Authorization", "Bearer honua-test-" + Guid.NewGuid().ToString("N"));
+                }
+            });
+            owner.Timeout = TimeSpan.FromSeconds(45);
+            denied.Timeout = TimeSpan.FromSeconds(45);
+            var area = "<ToolName>Honua_67656F6D657472792E61726561</ToolName><Values xsi:type=\"tns:GPValues\">" +
+                $"<GPValue xsi:type=\"tns:GPString\"><Value>{PolygonWkb((0, 0), (3, 0), (3, 4), (0, 4), (0, 0))}</Value></GPValue>" +
+                "<GPValue xsi:type=\"tns:GPLong\"><Value>3857</Value></GPValue></Values>" +
+                GPServerSoapRequestFixtures.ArcPyDefaultControls;
+            var jobId = (await SendSoapAsync(owner, "SubmitJob", area)).Value;
+            await WaitForSoapJobSucceededAsync(owner, jobId);
+            var jobStore = fixture.GetService<IExecutionJobStore>();
+            var jobsBefore = (await jobStore.QueryAsync(new ExecutionJobQuery())).Items.Count;
+
+            var outputNames = "<ParameterNames><String>outputScalar</String></ParameterNames>";
+            foreach (var (operation, arguments) in new[]
+            {
+                ("SubmitJob", area),
+                ("Execute", area),
+                ("GetJobStatus", $"<JobID>{jobId}</JobID>"),
+                ("GetJobMessages", $"<JobID>{jobId}</JobID>"),
+                ("GetJobToolName", $"<JobID>{jobId}</JobID>"),
+                ("GetJobResult", $"<JobID>{jobId}</JobID>{outputNames}"),
+                ("CancelJob", $"<JobID>{jobId}</JobID>"),
+            })
+            {
+                using var response = await PostSoapAsync(denied, operation, arguments);
+                var body = await response.Content.ReadAsStringAsync();
+                // Authentication is decided before submission parsing or any job lookup,
+                // so the challenge cannot confirm the job, its task or its result.
+                response.StatusCode.Should().Be(HttpStatusCode.Unauthorized, $"{operation}: {body}");
+                XDocument.Parse(body).Descendants(XName.Get("Fault", "http://schemas.xmlsoap.org/soap/envelope/"))
+                    .Should().ContainSingle(operation);
+                body.Should().NotContain("esriJob").And.NotContain("geometry.area").And.NotContain(jobId)
+                    .And.NotContain("Honua_67656F6D657472792E61726561").And.NotContain("data:application/json");
+            }
+
+            // No challenged submission created a job, and the refused cancel left the
+            // owner's job and its independently computed 3 by 4 area unchanged.
+            (await jobStore.QueryAsync(new ExecutionJobQuery())).Items.Count.Should().Be(jobsBefore);
+            (await jobStore.GetAsync(jobId))!.Status.Should().Be(ExecutionJobStatus.Succeeded);
+            var result = await SendSoapAsync(owner, "GetJobResult", $"<JobID>{jobId}</JobID>{outputNames}");
+            var dataUri = result.Element("Values")!.Elements("GPValue").Should().ContainSingle().Subject.Element("Value")!.Value;
+            const string prefix = "data:application/json;base64,";
+            dataUri.Should().StartWith(prefix);
+            using var measure = JsonDocument.Parse(Convert.FromBase64String(dataUri[prefix.Length..]));
+            measure.RootElement.GetProperty("value").GetDouble().Should().Be(3 * 4);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     private static async Task<XElement> SubmitSoapAndReadResultAsync(HttpClient client, string toolName, string values, string outputName)
     {
         var submitted = await SendSoapAsync(client, "SubmitJob",
