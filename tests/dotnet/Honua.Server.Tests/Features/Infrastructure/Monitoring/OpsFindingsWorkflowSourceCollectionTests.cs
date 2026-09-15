@@ -28,7 +28,7 @@ namespace Honua.Server.Tests.Features.Infrastructure.Monitoring;
 /// <summary>
 /// Producer-side coverage for #4840: the findings <c>workflow_operations</c> source derives its
 /// completeness and clocks from the store reads the deployment rules perform, not from the store
-/// being registered. Each test builds a fresh engine per step (the engine is scoped) over one shared
+/// being registered. Each step builds a fresh engine (the engine is scoped) over one shared
 /// collection ledger (a singleton), exactly as the host composes them.
 /// </summary>
 [Protocol(TestProtocols.TestQuality)]
@@ -45,12 +45,11 @@ public sealed class OpsFindingsWorkflowSourceCollectionTests
         store.ListActiveAsync(Arg.Any<WorkflowOperationKind?>(), Arg.Any<CancellationToken>())
             .Returns(_ => storeDown
                 ? Task.FromException<IReadOnlyList<WorkflowOperationRecord>>(new InvalidOperationException("store down"))
-                : Task.FromResult<IReadOnlyList<WorkflowOperationRecord>>([WorkflowSourceFixture.ManualInterventionOperation()]));
+                : Task.FromResult<IReadOnlyList<WorkflowOperationRecord>>([]));
 
         // Never succeeded: no clocks at all, and the failed read does not fail the evaluation.
-        var neverSucceeded = await WorkflowSourceFixture.CreateService(store, new ControlPlaneOptions(), ledger, clock)
-            .EvaluateWithEvidenceAsync();
-        var initial = WorkflowSourceFixture.WorkflowSource(neverSucceeded);
+        var initial = WorkflowSourceFixture.WorkflowSource(
+            await WorkflowSourceFixture.CreateService(store, new ControlPlaneOptions(), ledger, clock).EvaluateWithEvidenceAsync());
         Assert.Equal(EvidencePostureVocabulary.Completeness.Unavailable, initial.Completeness);
         Assert.Null(initial.ObservedAt);
         Assert.Null(initial.LastSuccessfulAt);
@@ -61,7 +60,6 @@ public sealed class OpsFindingsWorkflowSourceCollectionTests
                 EvidencePostureVocabulary.ReasonCodes.SourceUnavailable,
             ],
             initial.ReasonCodes);
-        Assert.DoesNotContain(neverSucceeded.Findings, f => f.Rule == OpsFindingsService.RuleDeployManualIntervention);
 
         storeDown = false;
         var collectedAt = WorkflowSourceFixture.T0.AddMinutes(1);
@@ -91,8 +89,11 @@ public sealed class OpsFindingsWorkflowSourceCollectionTests
         var clock = new SettableClock(WorkflowSourceFixture.T0);
         var store = Substitute.For<IWorkflowOperationStore>();
         store.ListActiveAsync(Arg.Any<WorkflowOperationKind?>(), Arg.Any<CancellationToken>())
-            .Returns([WorkflowSourceFixture.ManualInterventionOperation()]);
-        store.GetMostRecentSucceededDeployByTargetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<IReadOnlyList<WorkflowOperationRecord>>([]));
+        store.GetMostRecentSucceededDeployByTargetAsync(WorkflowSourceFixture.TargetA, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<WorkflowOperationRecord?>(
+                WorkflowSourceFixture.SucceededDeploy(WorkflowSourceFixture.TargetA, WorkflowSourceFixture.PriorArtifact)));
+        store.GetMostRecentSucceededDeployByTargetAsync(WorkflowSourceFixture.TargetB, Arg.Any<CancellationToken>())
             .Returns(Task.FromException<WorkflowOperationRecord?>(new InvalidOperationException("index read denied")));
         var gateway = WorkflowSourceFixture.CreateGateway();
         var service = WorkflowSourceFixture.CreateService(
@@ -101,10 +102,9 @@ public sealed class OpsFindingsWorkflowSourceCollectionTests
         var evaluation = await service.EvaluateWithEvidenceAsync();
 
         WorkflowSourceFixture.AssertPartialTargetCoverage(WorkflowSourceFixture.WorkflowSource(evaluation), WorkflowSourceFixture.T0);
-        // The unread target is unknown, so the "no succeeded deploy = divergent" rule must not fire.
-        Assert.DoesNotContain(evaluation.Findings, f => f.Rule == OpsFindingsService.RulePlatformReleaseRuntimeDivergence);
-        var finding = evaluation.Findings.Single(f => f.Rule == OpsFindingsService.RuleDeployManualIntervention);
-        Assert.NotNull(finding.RecommendedAction);
+        var finding = WorkflowSourceFixture.DivergenceFinding(evaluation, WorkflowSourceFixture.TargetA);
+        // The unread target is unknown, so the "no succeeded deploy = divergent" contract must not fire for it.
+        Assert.DoesNotContain(evaluation.Findings, f => f.Subject.TargetId == WorkflowSourceFixture.TargetB);
 
         var result = await service.ProposeAsync(finding.Id);
 
@@ -118,8 +118,8 @@ public sealed class OpsFindingsWorkflowSourceCollectionTests
 /// Real-Redis coverage for #4840. The workflow store is the production
 /// <see cref="RedisWorkflowOperationStore"/> over a Testcontainers Redis; no evidence envelope is
 /// injected. Proposal attempts go through both <see cref="OpsFindingsService.ProposeAsync"/> and the
-/// MCP <c>honua_propose_finding</c> adapter, and every negative step is bracketed by a positive step
-/// on the same finding id that does reach the gateway.
+/// MCP finding-proposal adapter, and every negative step is bracketed by positive steps on the same
+/// finding id that do reach the gateway.
 /// </summary>
 [Protocol(TestProtocols.TestQuality)]
 public sealed class OpsFindingsWorkflowSourceRedisTests
@@ -129,7 +129,7 @@ public sealed class OpsFindingsWorkflowSourceRedisTests
     public async Task WorkflowOperationsSource_RedisStopsAndRestarts_CompleteThenUnavailableThenComplete()
     {
         // Docker can remap ephemeral host ports on restart; keep the endpoint stable so the same
-        // multiplexer (and the same registered store) recovers.
+        // multiplexer (and the same store instance) recovers.
         using var listener = new TcpListener(IPAddress.Loopback, 0);
         listener.Start();
         var redisPort = ((IPEndPoint)listener.LocalEndpoint).Port;
@@ -141,17 +141,18 @@ public sealed class OpsFindingsWorkflowSourceRedisTests
         await container.StartAsync();
         using var multiplexer = await ConnectionMultiplexer.ConnectAsync(OutageTolerant(container.GetConnectionString()));
         var store = new RedisWorkflowOperationStore(multiplexer, NullLogger<RedisWorkflowOperationStore>.Instance);
-        Assert.True(await store.TryCreateAsync(WorkflowSourceFixture.ManualInterventionOperation()));
+        Assert.True(await store.TryCreateAsync(
+            WorkflowSourceFixture.SucceededDeploy(WorkflowSourceFixture.TargetA, WorkflowSourceFixture.PriorArtifact)));
         var ledger = new OpsFindingsCollectionLedger();
         var clock = new SettableClock(WorkflowSourceFixture.T0);
-        var options = new ControlPlaneOptions();
+        var options = WorkflowSourceFixture.DeclaredReleaseOptions(WorkflowSourceFixture.TargetA);
 
-        // Step 1: complete, clocked at the successful read.
+        // Step 1: complete, clocked at the successful collection.
         var firstCollection = WorkflowSourceFixture.T0;
         var findingId = await WorkflowSourceFixture.AssertCompleteAndProposableAsync(store, options, ledger, clock, firstCollection);
 
-        // Step 2: backend loss. Unavailable, the retained clocks are the step-1 collection, and neither
-        // proposal surface reaches the gateway or the operation envelope.
+        // Step 2: backend loss, evaluated twice. Unavailable, the retained clocks stay at the step-1
+        // collection, and neither proposal surface reaches the gateway or the operation envelope.
         await container.StopAsync();
         foreach (var minutes in new[] { 1, 2 })
         {
@@ -174,14 +175,14 @@ public sealed class OpsFindingsWorkflowSourceRedisTests
             var reader = McpPlatformOpsReaderTests.CreateReader(services: services);
             await Assert.ThrowsAsync<Honua.Geoprocessing.GeoprocessingNotFoundException>(() => reader.ProposeFindingAsync(
                 McpPlatformOpsReaderTests.CreatePrincipal(),
-                new McpProposeFindingArgument { FindingId = findingId, CandidateId = WorkflowSourceFixture.TargetId },
+                new McpProposeFindingArgument { FindingId = findingId, CandidateId = WorkflowSourceFixture.TargetA },
                 CancellationToken.None));
             Assert.Empty(gateway.ReceivedCalls());
             await services.GetRequiredService<IOperationEnvelopeFactory>().DidNotReceive().CreateAcceptedAsync(
                 Arg.Any<string>(), Arg.Any<OperationPolicyContext>(), Arg.Any<CancellationToken>());
         }
 
-        // Step 3: recovery requires a new successful read, which advances both clocks.
+        // Step 3: recovery requires a new successful collection, which advances both clocks.
         await container.StartAsync();
         Assert.Equal(redisPort, container.GetMappedPublicPort(6379));
         await WaitForRedisAsync(multiplexer);
@@ -193,20 +194,27 @@ public sealed class OpsFindingsWorkflowSourceRedisTests
 
     [IntegrationTest]
     [Operation(Operations.TestInfrastructure)]
-    public async Task WorkflowOperationsSource_RedisDeniesSucceededDeployIndex_PublishesPartialAndBlocksBothProposalSurfaces()
+    public async Task WorkflowOperationsSource_RedisDeniesOneTargetIndex_PublishesPartialAndBlocksBothProposalSurfaces()
     {
         await using var container = new RedisBuilder("redis:7.2-alpine").Build();
         await container.StartAsync();
         using var multiplexer = await ConnectionMultiplexer.ConnectAsync(container.GetConnectionString());
         var store = new RedisWorkflowOperationStore(multiplexer, NullLogger<RedisWorkflowOperationStore>.Instance);
-        Assert.True(await store.TryCreateAsync(WorkflowSourceFixture.ManualInterventionOperation()));
+        Assert.True(await store.TryCreateAsync(
+            WorkflowSourceFixture.SucceededDeploy(WorkflowSourceFixture.TargetA, WorkflowSourceFixture.PriorArtifact)));
         var ledger = new OpsFindingsCollectionLedger();
         var clock = new SettableClock(WorkflowSourceFixture.T0);
         var options = WorkflowSourceFixture.DeclaredReleaseOptions();
 
-        // The active-operation read (SMEMBERS/GET) still works; the per-target succeeded-deploy index
-        // read (sorted-set range) is refused by the server.
-        var denied = await container.ExecAsync(["redis-cli", "ACL", "SETUSER", "default", "-zrange", "-zrevrange"]);
+        // Keys stay readable for the active set, the seeded operation and target A's succeeded-deploy
+        // index; the server refuses target B's index, so the pass answers for A and not for B.
+        var denied = await container.ExecAsync(
+        [
+            "redis-cli", "ACL", "SETUSER", "default", "resetkeys",
+            "~controlplane:workflow:active*",
+            "~controlplane:workflow:op-4840-*",
+            $"~controlplane:workflow:deploy-succeeded:{WorkflowSourceFixture.TargetA}",
+        ]);
         Assert.Equal("OK", denied.Stdout.Trim());
         var gateway = WorkflowSourceFixture.CreateGateway();
         var service = WorkflowSourceFixture.CreateService(store, options, ledger, clock, gateway);
@@ -214,8 +222,8 @@ public sealed class OpsFindingsWorkflowSourceRedisTests
         var evaluation = await service.EvaluateWithEvidenceAsync();
 
         WorkflowSourceFixture.AssertPartialTargetCoverage(WorkflowSourceFixture.WorkflowSource(evaluation), WorkflowSourceFixture.T0);
-        Assert.DoesNotContain(evaluation.Findings, f => f.Rule == OpsFindingsService.RulePlatformReleaseRuntimeDivergence);
-        var finding = evaluation.Findings.Single(f => f.Rule == OpsFindingsService.RuleDeployManualIntervention);
+        var finding = WorkflowSourceFixture.DivergenceFinding(evaluation, WorkflowSourceFixture.TargetA);
+        Assert.DoesNotContain(evaluation.Findings, f => f.Subject.TargetId == WorkflowSourceFixture.TargetB);
         var proposed = await service.ProposeAsync(finding.Id);
         Assert.Equal(OpsFindingProposalStatus.Blocked, proposed.Status);
         Assert.Equal("evidencePostureNotActionable", proposed.Message);
@@ -223,7 +231,7 @@ public sealed class OpsFindingsWorkflowSourceRedisTests
         {
             var mcp = await McpPlatformOpsReaderTests.CreateReader(services: services).ProposeFindingAsync(
                 McpPlatformOpsReaderTests.CreatePrincipal(),
-                new McpProposeFindingArgument { FindingId = finding.Id, CandidateId = WorkflowSourceFixture.TargetId },
+                new McpProposeFindingArgument { FindingId = finding.Id, CandidateId = WorkflowSourceFixture.TargetA },
                 CancellationToken.None);
             Assert.Equal("Blocked", mcp.Outcome);
             Assert.Equal("evidencePostureNotActionable", mcp.Message);
@@ -233,8 +241,8 @@ public sealed class OpsFindingsWorkflowSourceRedisTests
 
         Assert.Empty(gateway.ReceivedCalls());
 
-        // Restoring the command is the only change, and the same finding becomes proposable again.
-        var restored = await container.ExecAsync(["redis-cli", "ACL", "SETUSER", "default", "+zrange", "+zrevrange"]);
+        // Restoring key access is the only change, and the same finding becomes proposable again.
+        var restored = await container.ExecAsync(["redis-cli", "ACL", "SETUSER", "default", "resetkeys", "~*"]);
         Assert.Equal("OK", restored.Stdout.Trim());
         var restoredAt = WorkflowSourceFixture.T0.AddMinutes(1);
         clock.Now = restoredAt;
@@ -273,33 +281,40 @@ public sealed class OpsFindingsWorkflowSourceRedisTests
 
 internal static class WorkflowSourceFixture
 {
-    public const string TargetId = "serving-us-west";
+    public const string TargetA = "serving-a";
+
+    public const string TargetB = "serving-b";
+
+    public const string PriorArtifact = "ghcr.io/honua/server:2026.0.9";
 
     public static readonly DateTimeOffset T0 = new(2026, 9, 15, 12, 0, 0, TimeSpan.Zero);
 
     private static readonly TimeSpan SignalValidity = TimeSpan.FromMinutes(5);
 
-    public static WorkflowOperationRecord ManualInterventionOperation()
-        => new()
+    public static WorkflowOperationRecord SucceededDeploy(string targetId, string revision)
+    {
+        var at = DateTimeOffset.UtcNow;
+        return new WorkflowOperationRecord
         {
-            OperationId = "deploy-4840-manual-intervention",
+            OperationId = $"op-4840-{targetId}-succeeded",
             Kind = WorkflowOperationKind.Deploy,
-            Status = WorkflowOperationStatus.ManualInterventionRequired,
-            CreatedAt = DateTimeOffset.UtcNow,
-            UpdatedAt = DateTimeOffset.UtcNow,
+            Status = WorkflowOperationStatus.Succeeded,
+            CreatedAt = at,
+            UpdatedAt = at,
+            CompletedAt = at,
             Deploy = new DeployOperationSpec
             {
-                TargetId = TargetId,
+                TargetId = targetId,
                 TargetKind = DeployTargetKind.SelfHostedRolling,
                 Backend = "self-hosted",
                 Environment = "prod",
-                TargetName = "Serving west",
-                CurrentRevision = "rev-1",
-                DesiredRevision = "rev-2",
+                TargetName = targetId,
+                DesiredRevision = revision,
             },
         };
+    }
 
-    public static ControlPlaneOptions DeclaredReleaseOptions()
+    public static ControlPlaneOptions DeclaredReleaseOptions(params string[] targetIds)
         => new()
         {
             PlatformRelease = new PlatformReleaseOptions
@@ -307,17 +322,16 @@ internal static class WorkflowSourceFixture
                 Version = "2026.1.1",
                 ServingArtifactReference = "ghcr.io/honua/server:2026.1.1",
             },
-            DeployTargets =
-            [
-                new DeployTargetOptions
+            DeployTargets = (targetIds.Length == 0 ? [TargetA, TargetB] : targetIds)
+                .Select(targetId => new DeployTargetOptions
                 {
-                    TargetId = TargetId,
+                    TargetId = targetId,
                     TargetKind = DeployTargetKind.SelfHostedRolling,
                     Backend = "self-hosted",
                     Environment = "prod",
-                    TargetName = "Serving west",
-                },
-            ],
+                    TargetName = targetId,
+                })
+                .ToList(),
         };
 
     public static IOperationGateway CreateGateway()
@@ -365,6 +379,14 @@ internal static class WorkflowSourceFixture
         => evaluation.Posture.Sources.Single(source =>
             source.SourceId == EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations);
 
+    public static OpsFinding DivergenceFinding(OpsFindingsEvaluation evaluation, string targetId)
+    {
+        var finding = evaluation.Findings.Single(f =>
+            f.Rule == OpsFindingsService.RulePlatformReleaseRuntimeDivergence && f.Subject.TargetId == targetId);
+        Assert.Equal(OperationClass.Deploy, finding.RecommendedAction?.Kind);
+        return finding;
+    }
+
     public static void AssertPartialTargetCoverage(EvidenceSourceEnvelope source, DateTimeOffset collectedAt)
     {
         Assert.Equal(EvidencePostureVocabulary.Completeness.Partial, source.Completeness);
@@ -375,13 +397,15 @@ internal static class WorkflowSourceFixture
             [EvidencePostureVocabulary.ReasonCodes.IncompleteCoverage, EvidencePostureVocabulary.ReasonCodes.PartialResult],
             source.ReasonCodes);
         Assert.NotNull(source.Coverage);
-        Assert.Equal(["active-deploy-operations"], source.Coverage!.IncludedComponentIds);
-        Assert.Equal(["active-deploy-operations", $"deploy-target:{TargetId}"], source.Coverage.ExpectedComponentIds);
+        Assert.Equal(["active-deploy-operations", $"deploy-target:{TargetA}"], source.Coverage!.IncludedComponentIds);
+        Assert.Equal(
+            ["active-deploy-operations", $"deploy-target:{TargetA}", $"deploy-target:{TargetB}"],
+            source.Coverage.ExpectedComponentIds);
     }
 
     /// <summary>
-    /// Asserts a complete, correctly clocked source and that the manual-intervention finding reaches
-    /// the gateway through both proposal surfaces; returns that finding's id.
+    /// Asserts a complete, correctly clocked source and that target A's divergence finding reaches the
+    /// gateway exactly once through each proposal surface; returns that finding's id.
     /// </summary>
     public static async Task<string> AssertCompleteAndProposableAsync(
         IWorkflowOperationStore store,
@@ -403,14 +427,14 @@ internal static class WorkflowSourceFixture
         Assert.Equal(collectedAt, source.LastSuccessfulAt);
         Assert.Equal(collectedAt.Add(SignalValidity), source.ValidUntil);
         Assert.Empty(source.ReasonCodes);
-        var finding = evaluation.Findings.Single(f => f.Rule == OpsFindingsService.RuleDeployManualIntervention);
+        var finding = DivergenceFinding(evaluation, TargetA);
 
         Assert.Equal(OpsFindingProposalStatus.ProposalCreated, (await service.ProposeAsync(finding.Id)).Status);
         await gateway.Received(1).RouteAsync(Arg.Any<OperationGatewayRequest>(), Arg.Any<CancellationToken>());
         using var services = McpPlatformOpsReaderTests.CreateServices(gateway, findings: service);
         var mcp = await McpPlatformOpsReaderTests.CreateReader(services: services).ProposeFindingAsync(
             McpPlatformOpsReaderTests.CreatePrincipal(),
-            new McpProposeFindingArgument { FindingId = finding.Id, CandidateId = TargetId },
+            new McpProposeFindingArgument { FindingId = finding.Id, CandidateId = TargetA },
             CancellationToken.None);
         Assert.Equal(nameof(OperationGatewayOutcome.ProposalCreated), mcp.Outcome);
         await gateway.Received(1).CreateApprovalProposalAsync(
