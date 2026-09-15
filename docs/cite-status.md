@@ -5,7 +5,7 @@ description: "The authoritative snapshot of Honua's OGC CITE conformance runs."
 ---
 # CITE Status — Authoritative Snapshot
 
-Last reviewed: 2026-09-02
+Last reviewed: 2026-09-15
 Owner: Honua Server platform
 
 This page is the single fixed-path answer to "what is the current OGC CITE
@@ -35,29 +35,29 @@ directory — check the workflow.
 
 ## Current Per-Protocol Status
 
-The latest WFS 2.0 `basic` receipt is
-[run 33583116921](https://github.com/honua-io/honua-server/actions/runs/33583116921)
-on candidate commit `a59e204c75a1b51a433faf45d7511c10840786d7`, completed
-2026-09-02. It reports 167 passed, 0 failed, and 0 skipped. All other rows remain backed by
-[CITE Evidence Report run 33205558805](https://github.com/honua-io/honua-server/actions/runs/33205558805)
-and its `cite-conformance-evidence-13` bundle from 2026-08-28.
+Every row is backed by
+[CITE Evidence Report run 34994919144](https://github.com/honua-io/honua-server/actions/runs/34994919144)
+and its `cite-conformance-evidence-21` bundle, built from source commit
+`b8ea218d07a52fe025d9382063d11b9b2c17c922` and started 2026-09-15. It reports
+1138 passed, 0 failed, 0 skipped, and 0 CantTell across 14 suites
+(`allPassed=true`). OGC API Features includes the complete Part 2 CRS class.
 
 | Suite | Profile | Passed / Total | Pass Rate | Last Evidence Run |
 |---|---|---:|---:|---|
-| OGC API Features 1.0 | `default` | 137 / 137 | 100% | 2026-08-28 |
-| OGC API Tiles 1.0 | `default` | 16 / 16 | 100% | 2026-08-28 |
-| GeoPackage 1.2 | `applicable` | 31 / 31 | 100% | 2026-08-28 |
-| GML 3.2 | `applicable` | 17 / 17 | 100% | 2026-08-28 |
-| KML 2.2 | `applicable` | 42 / 42 | 100% | 2026-08-28 |
-| WFS 1.0 | `basic` | 162 / 162 | 100% | 2026-08-28 |
-| WFS 1.1 | `basic` | 39 / 39 | 100% | 2026-08-28 |
-| WFS 2.0 | `basic` | 167 / 167 | 100% | [2026-09-02](https://github.com/honua-io/honua-server/actions/runs/33583116921) |
-| WFS 2.0 Transactional | `transactional` | 25 / 25 | 100% | 2026-08-28 |
-| WCS 2.0 | `core` | 82 / 82 | 100% | 2026-08-28 |
-| WPS 2.0 | `basic-async` | 21 / 21 | 100% | 2026-08-28 |
-| WMS 1.1.1 | `default` | 126 / 126 | 100% | 2026-08-28 |
-| WMS 1.3 | `default` | 213 / 213 | 100% | 2026-08-28 |
-| WMTS 1.0 | `default` | 60 / 60 | 100% | 2026-08-28 |
+| OGC API Features 1.0 | `default` | 137 / 137 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| OGC API Tiles 1.0 | `default` | 16 / 16 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| GeoPackage 1.2 | `applicable` | 31 / 31 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| GML 3.2 | `applicable` | 17 / 17 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| KML 2.2 | `applicable` | 42 / 42 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| WFS 1.0 | `basic` | 162 / 162 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| WFS 1.1 | `basic` | 39 / 39 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| WFS 2.0 | `basic` | 167 / 167 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| WFS 2.0 Transactional | `transactional` | 25 / 25 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| WCS 2.0 | `core` | 82 / 82 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| WPS 2.0 | `basic-async` | 21 / 21 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| WMS 1.1.1 | `default` | 126 / 126 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| WMS 1.3 | `default` | 213 / 213 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| WMTS 1.0 | `default` | 60 / 60 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
 
 The WFS 2.0 transactional leg (`cite-wfs20-transactional-results`) measures
 TransactionalWFS independently from the `basic` leg; LockFeature is not

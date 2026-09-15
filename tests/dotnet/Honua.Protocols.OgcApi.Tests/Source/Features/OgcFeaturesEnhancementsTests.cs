@@ -982,6 +982,7 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
 
         advertisedPart2Part3Part4AndCql2Classes.Should().BeEquivalentTo(
         [
+            "http://www.opengis.net/spec/ogcapi-features-2/1.0/conf/crs",
             "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables",
         ]);
     }

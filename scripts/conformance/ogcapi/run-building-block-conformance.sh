@@ -166,14 +166,17 @@ EOF
 
 # Keep the declaration boundary executable. The building-block validators
 # validate live queryables and exercise CQL2/filter behavior, but they are not a
-# complete ETS-equivalent class suite. Only queryables is therefore advertised;
-# this check prevents a future endpoint edit from silently widening the public
-# claim without widening the evidence lane.
+# complete ETS-equivalent class suite. Only queryables is advertised from this
+# lane; Part 2 CRS is advertised because the complete ETS class runs in
+# cite-evidence-report.yml, whose bundle fails on any skipped test. This check
+# prevents a future endpoint edit from silently widening the public claim
+# without widening an evidence lane.
 python3 - "$RESULTS_DIR/conformance.json" <<'PY'
 import json
 import sys
 
 expected = {
+    "http://www.opengis.net/spec/ogcapi-features-2/1.0/conf/crs",
     "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables",
 }
 target_prefixes = (
@@ -195,7 +198,7 @@ if actual != expected:
     print(f"  missing: {sorted(expected - actual)}", file=sys.stderr)
     print(f"  extra:   {sorted(actual - expected)}", file=sys.stderr)
     raise SystemExit(1)
-print(f"declaration boundary valid ({len(actual)} evidenced Part 3/CQL2 classes)")
+print(f"declaration boundary valid ({len(actual)} evidenced Part 2/3/4/CQL2 classes)")
 PY
 
 run_validator() {

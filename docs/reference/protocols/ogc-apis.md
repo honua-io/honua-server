@@ -55,7 +55,7 @@ On managed PostgreSQL layers, concurrent PATCH requests may return `409 Conflict
 | `limit`, `offset` | Paging, normalized by server limits. |
 | `ids`, `properties`, `sortby` | ID filter, property projection, `+`/`-`/`asc`/`desc` sorting. |
 | `bbox`, `bbox-crs` | 4 or 6 values; anti-meridian supported; any registry-resolvable EPSG CRS. |
-| `crs` | Output CRS; response includes `Content-Crs`. Part 2 conformance is not currently advertised. |
+| `crs` | Output CRS; response includes `Content-Crs`. Part 2 CRS conformance is advertised and exercised by the CITE evidence bundle. |
 | `datetime` | RFC 3339 instant or interval; requires temporal fields. |
 | `filter`, `filter-lang`, `filter-crs` | CQL2 filtering: `cql2-text` (default) and `cql2-json`. Filtering is implemented and blocking-tested, but its complete CQL2/Features Part 3 classes are not currently advertised. |
 | Queryable properties | Simple-valued queryables accepted directly as query parameters (combined with AND). |
