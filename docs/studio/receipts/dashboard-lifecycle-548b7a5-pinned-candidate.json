@@ -7,8 +7,8 @@
     "runningImageId": "sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1",
     "runningReference": "ghcr.io/honua-io/honua-server@sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1"
   },
-  "startedAt": "2026-09-15T00:35:37.213651+00:00",
-  "completedAt": "2026-09-15T00:50:31.265181+00:00",
+  "startedAt": "2026-09-15T01:24:52.703460+00:00",
+  "completedAt": "2026-09-15T01:38:50.984594+00:00",
   "verdict": "pass",
   "rows": [
     {
@@ -17,8 +17,8 @@
       "status": "pass",
       "failures": [],
       "evidence": {
-        "draftId": "4de37acf-704c-47d4-adf6-cf3938f2108c",
-        "ownerId": "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public",
+        "draftId": "8fb1b49b-d880-4f77-a84e-4f9058462db6",
+        "ownerId": "subject:https%3A%2F%2Fstudio-receipt.honua.test:dashboard-owner-1e245376@tenant:public",
         "family": "dashboard",
         "verbsApplied": [
           "add_layer",
@@ -136,10 +136,10 @@
       "status": "pass",
       "failures": [],
       "evidence": {
-        "itemId": "481dd359-9fe8-4617-8682-edb41df8ff23",
-        "versionId": "c8bbdaee-9eca-4fbd-8be4-e552efd8f306",
+        "itemId": "d3b23a32-64f6-4ae1-98ee-edfcfa6240fc",
+        "versionId": "35dea008-5cd1-4324-9a3e-404837844709",
         "contentHash": "7271dc07dfa9e78def48658a11578bf5ff289e8d732c1a2acbc4a68a7a2721db",
-        "reopenedDraftId": "e2b7831a-35a8-4b12-9403-477d54a53dd1"
+        "reopenedDraftId": "131f6bf9-449b-4f35-a263-52dd200f3a8c"
       }
     },
     {
@@ -150,8 +150,8 @@
       "evidence": {
         "response": {
           "status": "AwaitingApproval",
-          "proposalId": "proposal-03fd0baee9094da1aa9b7867ccf4d95c",
-          "proposalUri": "honua://proposals/proposal-03fd0baee9094da1aa9b7867ccf4d95c",
+          "proposalId": "proposal-162dcef9d84a4e428e9689e6127b24de",
+          "proposalUri": "honua://proposals/proposal-162dcef9d84a4e428e9689e6127b24de",
           "code": null,
           "humanConfirmationRequired": true
         }
@@ -163,12 +163,12 @@
       "status": "pass",
       "failures": [],
       "evidence": {
-        "ownerId": "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public",
+        "ownerId": "subject:https%3A%2F%2Fstudio-receipt.honua.test:dashboard-owner-1e245376@tenant:public",
         "joins": [
           {
             "verb": "create_draft",
-            "traceId": "63417ae2f8fc4e55b0e870ce8cd15d09",
-            "operationInstanceId": "opinst-1dd5af3e37a14c6889bf35d0508a7dd0",
+            "traceId": "3f6dc7d2e0874a80a50dc0d9e36f3431",
+            "operationInstanceId": "opinst-3fe231456ceb469c879244fc28a66e2d",
             "status": "Completed",
             "proposalId": null,
             "tenantId": "public",
@@ -177,17 +177,17 @@
               "operation.completed"
             ],
             "actors": [
-              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+              "subject:https%3A%2F%2Fstudio-receipt.honua.test:dashboard-owner-1e245376@tenant:public"
             ],
             "auditIds": [
-              6,
-              7
+              3,
+              4
             ]
           },
           {
             "verb": "add_layer",
-            "traceId": "172144857dd0453d8d7b45935e3895b5",
-            "operationInstanceId": "opinst-523f5ae0b60d42e9ba2bf2ee59c75ca4",
+            "traceId": "e8e6efa358734be7abf6f79b88f60b09",
+            "operationInstanceId": "opinst-e0c8b6cafccb4e30ac42b20e88cedb7d",
             "status": "Completed",
             "proposalId": null,
             "tenantId": "public",
@@ -196,17 +196,17 @@
               "operation.completed"
             ],
             "actors": [
-              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+              "subject:https%3A%2F%2Fstudio-receipt.honua.test:dashboard-owner-1e245376@tenant:public"
             ],
             "auditIds": [
-              8,
-              9
+              5,
+              6
             ]
           },
           {
             "verb": "set_layer_style",
-            "traceId": "83a76f80dc6d4eb9878760753eb9d90f",
-            "operationInstanceId": "opinst-060a8252d6474c9da726de6446522307",
+            "traceId": "5a9faa0e426c4d398c8611014b593a6e",
+            "operationInstanceId": "opinst-f0b7e0cf9e0f439d81bf6e11b6c32eeb",
             "status": "Completed",
             "proposalId": null,
             "tenantId": "public",
@@ -215,17 +215,17 @@
               "operation.completed"
             ],
             "actors": [
-              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+              "subject:https%3A%2F%2Fstudio-receipt.honua.test:dashboard-owner-1e245376@tenant:public"
             ],
             "auditIds": [
-              10,
-              11
+              7,
+              8
             ]
           },
           {
             "verb": "set_layer_visibility",
-            "traceId": "60a139c81db44bf4ab62cbc9caf11c29",
-            "operationInstanceId": "opinst-35b35a46b82b440db0e7e51257aefe83",
+            "traceId": "6b85392375c84fc6837edd3676a153c1",
+            "operationInstanceId": "opinst-d8028a095e874afc85ce103b64fabc54",
             "status": "Completed",
             "proposalId": null,
             "tenantId": "public",
@@ -234,17 +234,17 @@
               "operation.completed"
             ],
             "actors": [
-              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+              "subject:https%3A%2F%2Fstudio-receipt.honua.test:dashboard-owner-1e245376@tenant:public"
             ],
             "auditIds": [
-              12,
-              13
+              9,
+              10
             ]
           },
           {
             "verb": "set_view",
-            "traceId": "fe679406ff6f485f9e700d575746b628",
-            "operationInstanceId": "opinst-f6df0a950b854620b0eb6b328193253b",
+            "traceId": "906b33f3a05a49e58e0aa2c8b734d4d2",
+            "operationInstanceId": "opinst-ac37a811eafa4c61b63fe13c21e772ed",
             "status": "Completed",
             "proposalId": null,
             "tenantId": "public",
@@ -253,17 +253,17 @@
               "operation.completed"
             ],
             "actors": [
-              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+              "subject:https%3A%2F%2Fstudio-receipt.honua.test:dashboard-owner-1e245376@tenant:public"
             ],
             "auditIds": [
-              14,
-              15
+              11,
+              12
             ]
           },
           {
             "verb": "add_widget",
-            "traceId": "7a6dd07200ea4461af96e84a3ae5309f",
-            "operationInstanceId": "opinst-07ad77a367ec432ba2a9747e011c7ccd",
+            "traceId": "7a50e3a4526a4ba3b1a579c627f67fe3",
+            "operationInstanceId": "opinst-4ab0004689674b7a8bb365ceb0cb00dc",
             "status": "Completed",
             "proposalId": null,
             "tenantId": "public",
@@ -272,17 +272,17 @@
               "operation.completed"
             ],
             "actors": [
-              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+              "subject:https%3A%2F%2Fstudio-receipt.honua.test:dashboard-owner-1e245376@tenant:public"
             ],
             "auditIds": [
-              16,
-              17
+              13,
+              14
             ]
           },
           {
             "verb": "bind_interaction",
-            "traceId": "9ee61d72916f419e8d1865ecaf23b9b6",
-            "operationInstanceId": "opinst-5b325106ced24c3cb4075e488605aa7f",
+            "traceId": "3ded11bc713448b093bb26dc03114362",
+            "operationInstanceId": "opinst-4f73969af67b4d5fb6fc0a9c797f1605",
             "status": "Completed",
             "proposalId": null,
             "tenantId": "public",
@@ -291,17 +291,17 @@
               "operation.completed"
             ],
             "actors": [
-              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+              "subject:https%3A%2F%2Fstudio-receipt.honua.test:dashboard-owner-1e245376@tenant:public"
             ],
             "auditIds": [
-              18,
-              19
+              15,
+              16
             ]
           },
           {
             "verb": "add_control",
-            "traceId": "7f12b6a9435b43128b45eb150437b89b",
-            "operationInstanceId": "opinst-95be01bce51f4499b8769cb849e5829c",
+            "traceId": "c474143a80234a339652d6e8e7e3262f",
+            "operationInstanceId": "opinst-d6b6179e1f944bd0a85fe5d36b8a2b8a",
             "status": "Completed",
             "proposalId": null,
             "tenantId": "public",
@@ -310,17 +310,17 @@
               "operation.completed"
             ],
             "actors": [
-              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+              "subject:https%3A%2F%2Fstudio-receipt.honua.test:dashboard-owner-1e245376@tenant:public"
             ],
             "auditIds": [
-              20,
-              21
+              17,
+              18
             ]
           },
           {
             "verb": "remove_control",
-            "traceId": "a79ae5d84f1c4387aa069e7f2ebefe36",
-            "operationInstanceId": "opinst-3aed6429a3814fadb840ba4f8f22d8d1",
+            "traceId": "4c890754001441909e53eb453864f51d",
+            "operationInstanceId": "opinst-01dcf8db581848acb5b577b092fd4b49",
             "status": "Completed",
             "proposalId": null,
             "tenantId": "public",
@@ -329,17 +329,17 @@
               "operation.completed"
             ],
             "actors": [
-              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+              "subject:https%3A%2F%2Fstudio-receipt.honua.test:dashboard-owner-1e245376@tenant:public"
             ],
             "auditIds": [
-              22,
-              23
+              19,
+              20
             ]
           },
           {
             "verb": "remove_interaction",
-            "traceId": "f2286f3e3f0f4ac29301109cc05aa2ee",
-            "operationInstanceId": "opinst-5a8d271e4a2347178c16874be4e28a81",
+            "traceId": "ec14ce0c6d044062b4e5de0a36b72aec",
+            "operationInstanceId": "opinst-e6927d2dc3ff498db97f0b1583b1f44a",
             "status": "Completed",
             "proposalId": null,
             "tenantId": "public",
@@ -348,17 +348,17 @@
               "operation.completed"
             ],
             "actors": [
-              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+              "subject:https%3A%2F%2Fstudio-receipt.honua.test:dashboard-owner-1e245376@tenant:public"
             ],
             "auditIds": [
-              24,
-              25
+              21,
+              22
             ]
           },
           {
             "verb": "remove_widget",
-            "traceId": "dcc8be9e15584c7b90e116385e87d342",
-            "operationInstanceId": "opinst-4609799dfd124ae9b093896c3cd4ba0b",
+            "traceId": "ab2ee86f4ced463f8a04b83cf70efd65",
+            "operationInstanceId": "opinst-009058f10c0e4ff48597e69712cc2dbd",
             "status": "Completed",
             "proposalId": null,
             "tenantId": "public",
@@ -367,17 +367,17 @@
               "operation.completed"
             ],
             "actors": [
-              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+              "subject:https%3A%2F%2Fstudio-receipt.honua.test:dashboard-owner-1e245376@tenant:public"
             ],
             "auditIds": [
-              26,
-              27
+              23,
+              24
             ]
           },
           {
             "verb": "remove_layer",
-            "traceId": "19e6f1d1b7a64903a6ae6e881a32acea",
-            "operationInstanceId": "opinst-429502538a0c4b26bba54f2c6747716e",
+            "traceId": "5abe52cda5a943aa9043c99e6603a3ab",
+            "operationInstanceId": "opinst-85cfab7bf852492f9c6550147e38ca5d",
             "status": "Completed",
             "proposalId": null,
             "tenantId": "public",
@@ -386,17 +386,17 @@
               "operation.completed"
             ],
             "actors": [
-              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+              "subject:https%3A%2F%2Fstudio-receipt.honua.test:dashboard-owner-1e245376@tenant:public"
             ],
             "auditIds": [
-              28,
-              29
+              25,
+              26
             ]
           },
           {
             "verb": "update_draft",
-            "traceId": "eaf35da71337411bb35e45d1fede56c1",
-            "operationInstanceId": "opinst-2610b753183643dbb9cdabb92180e5a9",
+            "traceId": "3ccdf9e6570e4814ad925edb1bdf9d04",
+            "operationInstanceId": "opinst-9fa1872753a6413a82cb2d676851dd78",
             "status": "Completed",
             "proposalId": null,
             "tenantId": "public",
@@ -405,17 +405,17 @@
               "operation.completed"
             ],
             "actors": [
-              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+              "subject:https%3A%2F%2Fstudio-receipt.honua.test:dashboard-owner-1e245376@tenant:public"
             ],
             "auditIds": [
-              30,
-              31
+              27,
+              28
             ]
           },
           {
             "verb": "save_version",
-            "traceId": "714f30e3769d4a47bd187967bacdc039",
-            "operationInstanceId": "opinst-24616a0d5cbd4c3d953b3e42c796a03b",
+            "traceId": "57d47c97c9094070b75620f47ee3cbc9",
+            "operationInstanceId": "opinst-6face3c228164d5690197c3d4928924b",
             "status": "Completed",
             "proposalId": null,
             "tenantId": "public",
@@ -424,17 +424,17 @@
               "operation.completed"
             ],
             "actors": [
-              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+              "subject:https%3A%2F%2Fstudio-receipt.honua.test:dashboard-owner-1e245376@tenant:public"
             ],
             "auditIds": [
-              38,
-              39
+              35,
+              36
             ]
           },
           {
             "verb": "reopen_version",
-            "traceId": "854d7df0c9d148be8b73bdc827993573",
-            "operationInstanceId": "opinst-c52ee592395247989c9fa2990d1f5446",
+            "traceId": "6f0f75f089c94e2ba2c61e69a395792d",
+            "operationInstanceId": "opinst-01fe67377f0d49a29b653c2de1440f04",
             "status": "Completed",
             "proposalId": null,
             "tenantId": "public",
@@ -443,30 +443,30 @@
               "operation.completed"
             ],
             "actors": [
-              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+              "subject:https%3A%2F%2Fstudio-receipt.honua.test:dashboard-owner-1e245376@tenant:public"
             ],
             "auditIds": [
-              40,
-              41
+              37,
+              38
             ]
           },
           {
             "verb": "propose_publication",
-            "traceId": "3a89c45b42394d6c8b65d9af22d10035",
-            "operationInstanceId": "opinst-fefb2766166e472eadf57379274c482f",
+            "traceId": "86966bbb82a8411b9ecddd3bb609a171",
+            "operationInstanceId": "opinst-42194da368ec48b09037d94d0eb6bb8c",
             "status": "RequiresApproval",
-            "proposalId": "proposal-03fd0baee9094da1aa9b7867ccf4d95c",
+            "proposalId": "proposal-162dcef9d84a4e428e9689e6127b24de",
             "tenantId": "public",
             "auditActions": [
               "operation.accepted",
               "operation.proposed"
             ],
             "actors": [
-              "subject:https%3A%2F%2Freceipt-auth.honua.test:dashboard-owner-6bab673d@tenant:public"
+              "subject:https%3A%2F%2Fstudio-receipt.honua.test:dashboard-owner-1e245376@tenant:public"
             ],
             "auditIds": [
-              43,
-              44
+              40,
+              41
             ]
           }
         ]

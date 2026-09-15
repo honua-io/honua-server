@@ -154,18 +154,19 @@ candidate image.
 
 ### Reproducing the pinned-candidate run
 
-The driver needs no build. Against the manifest-pinned digest, on a private Docker network
-with PostGIS 16-3.4 and append-only Redis 7.4, the server ran with
-`ASPNETCORE_ENVIRONMENT=Production` and:
-
-| Setting | Value | Why |
-|---|---|---|
-| `Licensing__Mode` | `Disabled` | the 2026.1 release deployment setting |
-| `Studio__EndUserAuthorization__Enabled` | `true` | otherwise Studio package lifecycle is admin-only and a terminal author cannot create a draft |
-| `Oidc__Enabled`, `Oidc__Generic__*`, `Oidc__TokenValidation__SymmetricSigningKey` | local issuer/audience/key | the driver mints one HS256 bearer per request; token replay protection stays at its default |
-| `Operations__SecretChannel__KeyRingCertificatePath` | operator-supplied PKCS#12 | Production composes the durable operation secret channel, which requires an encrypted key ring |
-| `Security__ConnectionEncryption__MasterKey`, `__Salt` | deployment secrets | required by Production startup |
+The first three runs reconstructed the deployment by hand. That stack is now committed as
+[`docker/studio-dashboard-receipt/compose.yml`](../../docker/studio-dashboard-receipt/compose.yml),
+parameterised by `HONUA_IMAGE`, so the release program can replay the receipt against a
+re-pinned digest without rebuilding anything. Its
+[README](../../docker/studio-dashboard-receipt/README.md) carries the full driver
+invocation and explains the four load-bearing settings — in particular
+`Studio__EndUserAuthorization__Enabled`, without which Studio package lifecycle is
+admin-only and `create_draft` is denied before the journey starts, and the
+Production-mandatory operation secret-channel key ring, which the harness mints itself.
 
 `Guardrails__Overrides__StudioDraftMutation` is deliberately **not** set: the earlier runs
 needed it, and `c8b1e2166` removed that need. The restart between save and reopen was a
 container restart of the same image, and the driver's SQL and Redis reads are read-only.
+
+The receipt recorded here was produced by that committed harness from a clean volume, so
+the file is the artifact that generated the evidence rather than a description of it.
