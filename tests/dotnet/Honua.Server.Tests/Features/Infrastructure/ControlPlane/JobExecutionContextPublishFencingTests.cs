@@ -35,7 +35,7 @@ public sealed class JobExecutionContextPublishFencingTests
 
         using var context = CreateContext(reclaimed.OperationId, jobStore, claimedAttempt: 1);
 
-        await context.PublishArtifactAsync("data:image/tiff;base64,AAAA", CancellationToken.None);
+        (await context.TryPublishArtifactAsync("data:image/tiff;base64,AAAA", CancellationToken.None)).Should().Be(false);
 
         await jobStore.DidNotReceive().TrySetAsync(
             Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
@@ -53,7 +53,7 @@ public sealed class JobExecutionContextPublishFencingTests
 
         using var context = CreateContext(cancelling.OperationId, jobStore, claimedAttempt: 1);
 
-        await context.PublishArtifactAsync("data:image/tiff;base64,AAAA", CancellationToken.None);
+        (await context.TryPublishArtifactAsync("data:image/tiff;base64,AAAA", CancellationToken.None)).Should().Be(false);
 
         await jobStore.DidNotReceive().TrySetAsync(
             Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
@@ -79,7 +79,7 @@ public sealed class JobExecutionContextPublishFencingTests
 
         using var context = CreateContext(published.OperationId, jobStore, claimedAttempt: 1);
 
-        await context.PublishArtifactAsync(reference, CancellationToken.None);
+        (await context.TryPublishArtifactAsync(reference, CancellationToken.None)).Should().Be(true);
 
         await jobStore.Received(1).TrySetAsync(
             Arg.Is<ExecutionJobRecord>(record =>
@@ -112,7 +112,7 @@ public sealed class JobExecutionContextPublishFencingTests
 
         using var context = CreateContext(job.OperationId, jobStore, claimedAttempt: 1);
 
-        await context.PublishArtifactAsync(republished, CancellationToken.None);
+        (await context.TryPublishArtifactAsync(republished, CancellationToken.None)).Should().Be(true);
 
         written.Should().NotBeNull();
         written!.ArtifactReferences.Should().ContainSingle()
@@ -133,7 +133,7 @@ public sealed class JobExecutionContextPublishFencingTests
 
         using var context = CreateContext(job.OperationId, jobStore, claimedAttempt: 1);
 
-        await context.PublishArtifactAsync(reference, CancellationToken.None);
+        (await context.TryPublishArtifactAsync(reference, CancellationToken.None)).Should().Be(true);
 
         await jobStore.DidNotReceive().TrySetAsync(
             Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
@@ -148,7 +148,7 @@ public sealed class JobExecutionContextPublishFencingTests
 
         using var context = CreateContext(job.OperationId, jobStore, claimedAttempt: 3);
 
-        await context.PublishArtifactAsync("data:image/tiff;base64,AAAA", CancellationToken.None);
+        (await context.TryPublishArtifactAsync("data:image/tiff;base64,AAAA", CancellationToken.None)).Should().Be(true);
 
         await jobStore.Received(1).TrySetAsync(
             Arg.Is<ExecutionJobRecord>(record =>

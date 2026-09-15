@@ -171,6 +171,12 @@ internal static class ServiceCollectionExtensions
             serviceProvider => new Features.Geoprocessing.PostgresHonuaLayerSink(
                 serviceProvider.GetRequiredService<NpgsqlDataSource>()));
 
+        services.TryAddScoped(serviceProvider => new PostgresWorkspaceStore(
+            serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(), defaultSchema,
+            serviceProvider.GetService<TimeProvider>()));
+        services.TryAddScoped<IWorkspaceStore>(serviceProvider => serviceProvider.GetRequiredService<PostgresWorkspaceStore>());
+        services.TryAddScoped<IArtifactStore>(serviceProvider => serviceProvider.GetRequiredService<PostgresWorkspaceStore>());
+
         // Register refactored feature store implementation
         services.AddRefactoredFeatureStore(configuration["Database:Schema"]);
         services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>

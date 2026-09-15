@@ -348,6 +348,57 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/artifacts")]
+    public async Task GetArtifacts_DirectReferencesRemainUsableWithMetadataProvider()
+    {
+        var job = (await _jobStore.GetAsync("job-artifacts"))!;
+        var references = new[]
+        {
+            "https://example.test/results/output.json", "staging/job/a1/result/output.tif",
+            "data:text/plain,private-inline", "https://example.test/output?token=private-value",
+            "{\"outputType\":\"future\",\"storeReference\":\"private-store\"}",
+            "https://fixture-user:749@example.test/output", "https://example.test/out\tput"
+        };
+        await _jobStore.SetAsync(job with { ArtifactReferences = references });
+        var response = await _client.GetAsync("/api/v1/admin/jobs/job-artifacts/artifacts?limit=10");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        var items = doc.RootElement.GetProperty("items").EnumerateArray().ToArray();
+        items.Should().HaveCount(7);
+        for (var i = 0; i < 2; i++)
+        {
+            items[i].GetProperty("availability").GetString().Should().Be("Available");
+            items[i].GetProperty("providerLink").GetString().Should().Be(references[i]);
+        }
+        foreach (var item in items.Skip(2))
+        {
+            item.GetProperty("availability").GetString().Should().Be("Redacted");
+        }
+        body.Should().NotContain("private-inline").And.NotContain("private-value").And.NotContain("private-store")
+            .And.NotContain("fixture-user");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/artifacts")]
+    public async Task GetArtifacts_ProviderFailureDoesNotEchoUnsafeReference()
+    {
+        var job = (await _jobStore.GetAsync("job-artifacts"))!;
+        await _jobStore.SetAsync(job with
+        {
+            ArtifactReferences = ["https://provider-error.test/output?token=private-error-value"]
+        });
+        var response = await _client.GetAsync("/api/v1/admin/jobs/job-artifacts/artifacts");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        var item = doc.RootElement.GetProperty("items")[0];
+        item.GetProperty("availability").GetString().Should().Be("ProviderError");
+        item.GetProperty("artifactId").GetString().Should().StartWith("redacted-");
+        body.Should().NotContain("private-error-value");
+    }
+
+    [IntegrationTest]
     [Endpoint("POST /api/v1/admin/jobs/{jobId}/cancel")]
     [Endpoint("POST /api/v1/admin/jobs/{jobId}/retry")]
     public async Task ControlActions_CancelAndRetry_UpdateDurableJob()
@@ -841,12 +892,12 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
 
         public Task<Artifact?> GetAsync(string artifactId, CancellationToken cancellationToken = default)
         {
-            if (artifactId == "provider-error")
+            if (artifactId == "provider-error" || artifactId.StartsWith("https://provider-error.test/", StringComparison.Ordinal))
             {
                 throw new InvalidOperationException("provider failed");
             }
 
-            if (artifactId == "missing")
+            if (artifactId == "missing" || artifactId.Contains('/') || artifactId.StartsWith("data:", StringComparison.Ordinal) || artifactId.StartsWith('{'))
             {
                 return Task.FromResult<Artifact?>(null);
             }
