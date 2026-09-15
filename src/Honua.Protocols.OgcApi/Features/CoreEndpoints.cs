@@ -228,13 +228,19 @@ internal static class CoreEndpoints
                 "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/html",
                 "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson",
 
+                // OGC API Features Part 2 - CRS by Reference. The ETS
+                // ogcapi-features-1.0 run by cite-evidence-report.yml executes
+                // the complete Part 2 class against the candidate image once it
+                // is declared, and the evidence bundle fails on any skipped test.
+                "http://www.opengis.net/spec/ogcapi-features-2/1.0/conf/crs",
+
                 // OGC API Features Part 3 - Queryables. This is the only Part 3
                 // class promoted here because the exact-candidate lane validates
                 // the queryables schema, while its CQL2/filter probes are not a
                 // complete class suite.
                 "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables"
 
-            // CRS, filtering, CQL2, and Part 4 remain implemented or
+            // Filtering, CQL2, and Part 4 remain implemented or
             // test-covered in places, but are not advertised until an exact
             // candidate conformance lane proves their complete classes.
             ).AddRange(OgcConformanceUris.Common)
