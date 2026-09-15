@@ -34,6 +34,25 @@ cover authorization, route binding, owner denial, status/messages/results,
 truthful cancellation and synchronous failure faults; REST regression coverage
 remains in the existing GPServer suites.
 
+The adapter owner-denial test substitutes the job service. It therefore cannot show
+what the canonical runtime does when another caller names a job.
+`GPServerDurableRuntimeTests.SoapJobOperation_OtherCaller_IsDeniedByCanonicalJobOwnership`
+closes that gap. It runs the real job service over the Redis job store with the
+production executor, and substitutes only the operator grant so that two distinct
+callers may both execute GP work.
+
+- The owner submits the literal 3 by 4 area job through SOAP and waits for success.
+- The second caller then sends `GetJobStatus`, `GetJobMessages`, `GetJobToolName`,
+  `GetJobResult` and `CancelJob` for that job.
+- Each call returns a 404 SOAP fault that leaks no status, task name or result.
+  Without the ownership check a read would return 200, and a cancel of the
+  already-terminal job would return 412.
+- The owner still reads `esriJobSucceeded` and area 12 afterwards.
+
+Job ownership, the SOAP job adapter and the operator evaluator are unchanged
+between the pinned candidate `548b7a5` and the trunk that added this test; the
+only GPServer source difference is the task-alias table.
+
 `GPServerDurableRuntimeTests.SoapBuffer_WithProductionExecutor` and
 `SoapUnion_WithMultiValueInput` prove SOAP RecordSet outputs and GPMultiValue inputs
 against the same runtime, sending ArcPy's captured default controls. Their expected
