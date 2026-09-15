@@ -88,16 +88,27 @@ symmetric-key OIDC resource server on a local Docker network:
   [#4752](https://github.com/honua-io/honua-server/pull/4752) (squash `a8c43a25f`). It ran
   with the same release settings as the source run, and the server was not rebuilt locally.
   See its [receipt](receipts/dashboard-lifecycle-3c52a4b-release-config.json).
+- The pinned-candidate run (2026-09-15) used the 2026.1 candidate itself, after
+  honua-release#349 re-pinned it to imaged trunk
+  `548b7a5263da5a3f2381eb43f232687cdf92b0bf`
+  (`ghcr.io/honua-io/honua-server@sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1`).
+  The digest is `components.honua-server.digest` in `platform-manifest.yaml`, the running
+  container's image id is that digest, and the image's OCI revision label is that commit.
+  Nothing was built locally. This revision contains both the [#4752](https://github.com/honua-io/honua-server/pull/4752)
+  repair (squash `a8c43a25f`) and the [#4758](https://github.com/honua-io/honua-server/issues/4758)
+  guardrail fix (squash `c8b1e2166`), so it ran **without**
+  `Guardrails__Overrides__StudioDraftMutation`. See its
+  [receipt](receipts/dashboard-lifecycle-548b7a5-pinned-candidate.json).
 
-| Row | Candidate `7ba4226` | Source `3b8a650` | Nightly `3c52a4b` |
-|---|---|---|---|
-| All eleven composition verbs through MCP with literal values | pass | pass | pass |
-| Stale generation, re-read retry exactly once, conflicting retry stays failed | pass | pass | pass |
-| `update_draft` shared validator accepts valid and rejects malformed documents | pass | pass | pass |
-| Other owner, other tenant or narrowed scope receives a non-disclosing denial | **fail** | pass | pass |
-| Save, restart, get and reopen preserve version identity and content hash | pass | pass | pass |
-| The saved dashboard enters governed approval without moving a pointer | **fail** | pass | pass |
-| Every mutation joins owner, tenant, actor, durable audit and correlation | pass | pass | pass |
+| Row | Candidate `7ba4226` | Source `3b8a650` | Nightly `3c52a4b` | Pinned candidate `548b7a5` |
+|---|---|---|---|---|
+| All eleven composition verbs through MCP with literal values | pass | pass | pass | pass |
+| Stale generation, re-read retry exactly once, conflicting retry stays failed | pass | pass | pass | pass |
+| `update_draft` shared validator accepts valid and rejects malformed documents | pass | pass | pass | pass |
+| Other owner, other tenant or narrowed scope receives a non-disclosing denial | **fail** | pass | pass | pass |
+| Save, restart, get and reopen preserve version identity and content hash | pass | pass | pass | pass |
+| The saved dashboard enters governed approval without moving a pointer | **fail** | pass | pass | pass |
+| Every mutation joins owner, tenant, actor, durable audit and correlation | pass | pass | pass | pass |
 
 The candidate failures are product defects that this change repairs:
 
@@ -131,14 +142,30 @@ also repairs:
 Owner keys for issuer-bearing principals change format with this repair. Drafts created
 earlier by OIDC principals fail closed to their owners until an admin reassigns them.
 API-key owners are unchanged. The guardrail posture of `Licensing__Mode=Disabled` for
-Studio composition is tracked separately in
-[#4758](https://github.com/honua-io/honua-server/issues/4758).
+Studio composition was tracked separately in
+[#4758](https://github.com/honua-io/honua-server/issues/4758) and is fixed on the pinned
+candidate: `create_draft` and every composition verb record a `Completed` operation
+instance there, with no `StudioDraftMutation` override present.
 
-The source-built run and the published nightly image of trunk both pass every row. Both reopen
-the saved dashboard with the same content hash
-`7271dc07dfa9e78def48658a11578bf5ff289e8d732c1a2acbc4a68a7a2721db`. The manifest-pinned
-candidate `7ba4226` predates the repair. The remaining step for #3429 is therefore a candidate
-re-pin to an imaged trunk revision that contains `a8c43a25f`, such as `3c52a4b`, then a rerun
-of the same driver against that digest with the release deployment settings above. Composing
-under `Licensing__Mode=Disabled` without the StudioDraftMutation override depends on
-[#4758](https://github.com/honua-io/honua-server/issues/4758).
+All four runs reopen the saved dashboard with the same content hash
+`7271dc07dfa9e78def48658a11578bf5ff289e8d732c1a2acbc4a68a7a2721db`, so the normalized
+content identity is stable across a source build, a nightly image and the certified
+candidate image.
+
+### Reproducing the pinned-candidate run
+
+The driver needs no build. Against the manifest-pinned digest, on a private Docker network
+with PostGIS 16-3.4 and append-only Redis 7.4, the server ran with
+`ASPNETCORE_ENVIRONMENT=Production` and:
+
+| Setting | Value | Why |
+|---|---|---|
+| `Licensing__Mode` | `Disabled` | the 2026.1 release deployment setting |
+| `Studio__EndUserAuthorization__Enabled` | `true` | otherwise Studio package lifecycle is admin-only and a terminal author cannot create a draft |
+| `Oidc__Enabled`, `Oidc__Generic__*`, `Oidc__TokenValidation__SymmetricSigningKey` | local issuer/audience/key | the driver mints one HS256 bearer per request; token replay protection stays at its default |
+| `Operations__SecretChannel__KeyRingCertificatePath` | operator-supplied PKCS#12 | Production composes the durable operation secret channel, which requires an encrypted key ring |
+| `Security__ConnectionEncryption__MasterKey`, `__Salt` | deployment secrets | required by Production startup |
+
+`Guardrails__Overrides__StudioDraftMutation` is deliberately **not** set: the earlier runs
+needed it, and `c8b1e2166` removed that need. The restart between save and reopen was a
+container restart of the same image, and the driver's SQL and Redis reads are read-only.
