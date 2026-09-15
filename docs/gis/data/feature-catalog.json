@@ -15215,6 +15215,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Import.MigrationBatchEndpointTests.StartBatch_WhenFullFidelityIsRequiredAndADiscoveredLayerIsUnselected_ReturnsUnprocessableEntity",
         "Honua.Server.Tests.Import.MigrationBatchEndpointTests.StartBatch_WithEmptyFootprint_ReturnsBadRequest",
         "Honua.Server.Tests.Import.MigrationBatchEndpointTests.StartBatch_WithFootprint_ReturnsAcceptedWithBatchId",
         "Honua.Server.Tests.Import.MigrationBatchEndpointTests.StartBatch_WithInvalidTableName_ReturnsBadRequest"
