@@ -1,0 +1,1453 @@
+{
+ "requests": [
+  {
+   "label": "discover-fs-protected",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_protected/FeatureServer?f=json",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "f66786f4cb86b1016ef3d5813b56b850ea496fe974148d9c0aceca59d0d519c7"
+  },
+  {
+   "label": "anonymous-fs-arcgis_compat_protected",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_protected/FeatureServer/2010/query?where=1=1&outFields=*&f=json",
+   "status": 200,
+   "esriError": 499,
+   "tokenIssued": false,
+   "bodySha256": "e896d59fc8bff4aaa93250f1e6a5eb46a20a8372e5f838dcca0c4ab3f6f2bc69"
+  },
+  {
+   "label": "anonymous-fs-arcgis_compat_scoped",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_scoped/FeatureServer/2020/query?where=1=1&outFields=*&f=json",
+   "status": 200,
+   "esriError": 499,
+   "tokenIssued": false,
+   "bodySha256": "f759b861cce635f28fde432d1e2ae1549fe860f09d815f62449379ff94f945bf"
+  },
+  {
+   "label": "anonymous-ogc-arcgis_compat_protected",
+   "method": "GET",
+   "path": "/ogc/features/collections/2010/items?f=json",
+   "status": 401,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "4883defe8d920ccfcc55b6eeb634ee65ef1a84696521e309a7d2f097e972e367"
+  },
+  {
+   "label": "anonymous-ogc-arcgis_compat_scoped",
+   "method": "GET",
+   "path": "/ogc/features/collections/2020/items?f=json",
+   "status": 401,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "248e55cacb5a791949323e07e16a16e4e79aa841d6be678e56c3cb53527e8940"
+  },
+  {
+   "label": "create-key-scoped-read",
+   "method": "POST",
+   "path": "/api/v1/admin/api-keys",
+   "status": 201,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "9d33e0e951b28533e0d5353157892717447676e1fd6a72106ee88370fcc06faf"
+  },
+  {
+   "label": "create-key-scoped-write",
+   "method": "POST",
+   "path": "/api/v1/admin/api-keys",
+   "status": 201,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "e5203cebf1d090c7e178c93d1a2427d1afb754d49da37c7528bb63f377f7c22b"
+  },
+  {
+   "label": "create-key-admin-read",
+   "method": "POST",
+   "path": "/api/v1/admin/api-keys",
+   "status": 201,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "a47342cfa2df12bafd8d2617c62f35fdad973cfb04a4d0e35d08bf8d06878126"
+  },
+  {
+   "label": "create-key-admin-read-approve",
+   "method": "POST",
+   "path": "/api/v1/admin/api-keys",
+   "status": 201,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "dd1f35a5fc0123b1277578b8326ba60d8ad2ef884f8505346ce3ee095e1eda88"
+  },
+  {
+   "label": "create-key-ops-read",
+   "method": "POST",
+   "path": "/api/v1/admin/api-keys",
+   "status": 201,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "bd97dce2cbc554d5244f2b443a461a2bc7f555025aa9d62ff1255f55616c0640"
+  },
+  {
+   "label": "create-key-unknown",
+   "method": "POST",
+   "path": "/api/v1/admin/api-keys",
+   "status": 201,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "9d26222cd21b11831372bf75d65ca01aef01b8729613992e95073a74137e7f91"
+  },
+  {
+   "label": "create-key-full-admin",
+   "method": "POST",
+   "path": "/api/v1/admin/api-keys",
+   "status": 201,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "bdbed1d999b8e6262886d7e6186cf7566270b76b161afa9503183d4bab07f4d0"
+  },
+  {
+   "label": "create-key-revoked-admin",
+   "method": "POST",
+   "path": "/api/v1/admin/api-keys",
+   "status": 201,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "800a7355b6b73ff35ce916ac403c071622e16529b93da0711283426ad0a6d0be"
+  },
+  {
+   "label": "revoke-key",
+   "method": "POST",
+   "path": "/api/v1/admin/api-keys/9362fa00-2746-4f53-a45e-ea88cdd23f43/revoke",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "878e954c8c79ab11e0b57815d1cc911fe054e8c2c3afac2edf0eb9148c1a91db"
+  },
+  {
+   "label": "create-key-expiring-admin",
+   "method": "POST",
+   "path": "/api/v1/admin/api-keys",
+   "status": 201,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "0aea133bcb527ab239508ad88dc77e398a285bb8dff6d1093efe64529c9bf79e"
+  },
+  {
+   "label": "scoped-key-direct-fs-arcgis_compat_protected",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_protected/FeatureServer/2010/query?where=1=1&outFields=*&f=json",
+   "status": 200,
+   "esriError": 403,
+   "tokenIssued": false,
+   "bodySha256": "668280196569827e0c1d546dd13587ea97a1f407560c4b90e76e5fad1f5c348a"
+  },
+  {
+   "label": "scoped-key-direct-fs-arcgis_compat_scoped",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_scoped/FeatureServer/2020/query?where=1=1&outFields=*&f=json",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "7aedd5c0cbd7575f3f95709c26a45b9e1e5fa45f6c39f832a4cea24b960b6cbc"
+  },
+  {
+   "label": "scoped-key-direct-ogc-arcgis_compat_protected",
+   "method": "GET",
+   "path": "/ogc/features/collections/2010/items?f=json",
+   "status": 403,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "7e64cbd638aa8a2e88c5a0596f50e9e9d7fe458f4075185ba51951cfff63675b"
+  },
+  {
+   "label": "scoped-key-direct-ogc-arcgis_compat_scoped",
+   "method": "GET",
+   "path": "/ogc/features/collections/2020/items?f=json",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "ced9abc8d1a3c1bd9a520f00c23bc6ee9f9689fc98cf28b92caa007fe078dde9"
+  },
+  {
+   "label": "exchange-scoped-read-admin-requestip",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "d73c6fa6982f94939dd892df4ab400fdb4a8c731d6d420bf897a51eb33c77b76"
+  },
+  {
+   "label": "exchange-scoped-read-admin-referer",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "d0f749ffb7b7d67d87c2b6be5c4fc2e611ecfd40fefcc994d95e9dc094c2140d"
+  },
+  {
+   "label": "exchange-scoped-read-desktop-user-requestip",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "eec29c1df5eed5857227ccb3de2cad6ff9b6a16825f9b4f166192c9d092452de"
+  },
+  {
+   "label": "exchange-scoped-read-desktop-user-referer",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "0456bc0d023d7632988e6ae5679c1a797571b701c57d3fad864e0084866a2a5f"
+  },
+  {
+   "label": "exchange-scoped-write-admin-requestip",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "2140a01780021bcd3b00943bdbd9ee44e2f747e7e6d6696886574b072cc47b67"
+  },
+  {
+   "label": "exchange-scoped-write-admin-referer",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "b7f98d69e395ea423729e7a65ba73d472e20aaa1b56d1e472b61924db19c98e0"
+  },
+  {
+   "label": "exchange-scoped-write-desktop-user-requestip",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "79a5819514befbf2e4a6607280f9c16ea4c32466e2dcfa57d90419bb263b9851"
+  },
+  {
+   "label": "exchange-scoped-write-desktop-user-referer",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "9e2695d980ef5608ea79ff6c0962498a9152b7f6a496f7ffbf157296974fd602"
+  },
+  {
+   "label": "exchange-admin-read-admin-requestip",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "b1cc3e8439a09d794d8895f98a9f9968ca417995735a288427a4329483223b83"
+  },
+  {
+   "label": "exchange-admin-read-admin-referer",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "04bf1de6e5cce20299bc90bcc18987bedf9eba2e5c3b4257b05adae637e99060"
+  },
+  {
+   "label": "exchange-admin-read-desktop-user-requestip",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "60f01f6f8115d12cf14afcf9807477d890f799a30dc587afffdd7d13f1ea8e8c"
+  },
+  {
+   "label": "exchange-admin-read-desktop-user-referer",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "daad3dd479653fff8b85830c29067811a7fb37f7de1e376e65f927ed6856c6b2"
+  },
+  {
+   "label": "exchange-admin-read-approve-admin-requestip",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "5e7e7bcfcb75314cadf208c4e0a1266c093aa656c2af36fff14c9b8cfc4bbfdd"
+  },
+  {
+   "label": "exchange-admin-read-approve-admin-referer",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "c28b985440bd173dd32b95c41a44e8629314eababc674de0cca66cc5c17f6316"
+  },
+  {
+   "label": "exchange-admin-read-approve-desktop-user-requestip",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "4c295a4daea6fa3a759a868694e02cfb1ec32fc5d40dba2b88602247101c6d9b"
+  },
+  {
+   "label": "exchange-admin-read-approve-desktop-user-referer",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "972b5e41687b97959b197595749be7c83ee2d328524e7f834f24deed0e93f370"
+  },
+  {
+   "label": "exchange-ops-read-admin-requestip",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "8208e4f36bee99e9e33e92e6b7b4e09e570f10eade64087f1b238e92b5d2d887"
+  },
+  {
+   "label": "exchange-ops-read-admin-referer",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "2f5572cf852bc3a55c8c362971b111866a38572fc470c5af7f11efacae86be63"
+  },
+  {
+   "label": "exchange-ops-read-desktop-user-requestip",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "70e1579a22eb0f83dc5334c37bb3e1304e7d83124c1522a612755900b1917128"
+  },
+  {
+   "label": "exchange-ops-read-desktop-user-referer",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "dcef2a0b717b8c0d8d933e0584c3d397f8d99d6ac2c93ea20a880aaf33666dd6"
+  },
+  {
+   "label": "exchange-unknown-admin-requestip",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "80ba05df1dbc4cbe745d7256c14e145cb42f3e37783b8be431efcf6264d38219"
+  },
+  {
+   "label": "exchange-unknown-admin-referer",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "f28bc59ff1325121bb97a16514a159df83d64ad54eefd6fdabdbcb34380e36f3"
+  },
+  {
+   "label": "exchange-unknown-desktop-user-requestip",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "906642b945c6785f3b8b3217d3ac6ed44ef0c0a21f92d65f8002a8a31bf58439"
+  },
+  {
+   "label": "exchange-unknown-desktop-user-referer",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "96da6de1e8c73e57e99e3a099e2c40f6e09b03b2a4a70932fcea825ed0b0c993"
+  },
+  {
+   "label": "exchange-bootstrap-password-admin-requestip",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": true,
+   "bodySha256": "d034e45532eab1fc5ed5ec77f3d2b98345ffa9c5c436f8c54c02a76af6245547"
+  },
+  {
+   "label": "token-bootstrap-password-admin-requestip-fs-arcgis_compat_protected",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_protected/FeatureServer/2010/query?where=1=1&outFields=*&f=json&token=<redacted>",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "dd6074caad1ea8bee6fbb7ab61e3059abff99571673ca4f7e49f20ebebae585d"
+  },
+  {
+   "label": "token-bootstrap-password-admin-requestip-fs-arcgis_compat_scoped",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_scoped/FeatureServer/2020/query?where=1=1&outFields=*&f=json&token=<redacted>",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "7aedd5c0cbd7575f3f95709c26a45b9e1e5fa45f6c39f832a4cea24b960b6cbc"
+  },
+  {
+   "label": "token-bootstrap-password-admin-requestip-ogc-arcgis_compat_protected",
+   "method": "GET",
+   "path": "/ogc/features/collections/2010/items?f=json",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "81f3533a79c6cba77928a91ffa73377162a40537dc0beff8fef88ca8ed116b1a"
+  },
+  {
+   "label": "token-bootstrap-password-admin-requestip-ogc-arcgis_compat_scoped",
+   "method": "GET",
+   "path": "/ogc/features/collections/2020/items?f=json",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "41b43c947cb2a59ea1dc74fb380d81d71fd1c36530cad1ed04a7b166a2637ed4"
+  },
+  {
+   "label": "exchange-bootstrap-password-admin-referer",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": true,
+   "bodySha256": "d95ef4861300ed300ac5a8d3b232952d06e3ebc135e2dd9a0beda8d390b45d4f"
+  },
+  {
+   "label": "token-bootstrap-password-admin-referer-fs-arcgis_compat_protected",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_protected/FeatureServer/2010/query?where=1=1&outFields=*&f=json&token=<redacted>",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "dd6074caad1ea8bee6fbb7ab61e3059abff99571673ca4f7e49f20ebebae585d"
+  },
+  {
+   "label": "token-bootstrap-password-admin-referer-fs-arcgis_compat_scoped",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_scoped/FeatureServer/2020/query?where=1=1&outFields=*&f=json&token=<redacted>",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "7aedd5c0cbd7575f3f95709c26a45b9e1e5fa45f6c39f832a4cea24b960b6cbc"
+  },
+  {
+   "label": "token-bootstrap-password-admin-referer-ogc-arcgis_compat_protected",
+   "method": "GET",
+   "path": "/ogc/features/collections/2010/items?f=json",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "96a0b71dc1c53199a9b3104786f6cea597c1e1421027eea230a9bcd6973891c0"
+  },
+  {
+   "label": "token-bootstrap-password-admin-referer-ogc-arcgis_compat_scoped",
+   "method": "GET",
+   "path": "/ogc/features/collections/2020/items?f=json",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "cc319c1d8b2a38d483e45ebd0894c9fbaed2380322eafc67d6bc8c6fdd390b74"
+  },
+  {
+   "label": "exchange-full-admin-key-admin-requestip",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": true,
+   "bodySha256": "0160735397c5f245e2adfe0e4069d341dfa9d3fac7527a364aec4c0019ee3528"
+  },
+  {
+   "label": "token-full-admin-key-admin-requestip-fs-arcgis_compat_protected",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_protected/FeatureServer/2010/query?where=1=1&outFields=*&f=json&token=<redacted>",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "dd6074caad1ea8bee6fbb7ab61e3059abff99571673ca4f7e49f20ebebae585d"
+  },
+  {
+   "label": "token-full-admin-key-admin-requestip-fs-arcgis_compat_scoped",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_scoped/FeatureServer/2020/query?where=1=1&outFields=*&f=json&token=<redacted>",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "7aedd5c0cbd7575f3f95709c26a45b9e1e5fa45f6c39f832a4cea24b960b6cbc"
+  },
+  {
+   "label": "token-full-admin-key-admin-requestip-ogc-arcgis_compat_protected",
+   "method": "GET",
+   "path": "/ogc/features/collections/2010/items?f=json",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "d705e3bd63fe632b326ef2e59c995efa4b8d5f23bbe9b60bb38bb2e03232f1bc"
+  },
+  {
+   "label": "token-full-admin-key-admin-requestip-ogc-arcgis_compat_scoped",
+   "method": "GET",
+   "path": "/ogc/features/collections/2020/items?f=json",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "10a4c4ee31a040adc600b7c7e461e4234970dd2671aaf56e0fd4b2d815e07eae"
+  },
+  {
+   "label": "exchange-full-admin-key-admin-referer",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": true,
+   "bodySha256": "d9e4e46c41fbfb09ebcd1a8bb57f2983e34279fad7d71accf044008a3e731e4a"
+  },
+  {
+   "label": "token-full-admin-key-admin-referer-fs-arcgis_compat_protected",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_protected/FeatureServer/2010/query?where=1=1&outFields=*&f=json&token=<redacted>",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "dd6074caad1ea8bee6fbb7ab61e3059abff99571673ca4f7e49f20ebebae585d"
+  },
+  {
+   "label": "token-full-admin-key-admin-referer-fs-arcgis_compat_scoped",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_scoped/FeatureServer/2020/query?where=1=1&outFields=*&f=json&token=<redacted>",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "7aedd5c0cbd7575f3f95709c26a45b9e1e5fa45f6c39f832a4cea24b960b6cbc"
+  },
+  {
+   "label": "token-full-admin-key-admin-referer-ogc-arcgis_compat_protected",
+   "method": "GET",
+   "path": "/ogc/features/collections/2010/items?f=json",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "d2c7d98249056758d4f7a6ba0a108771cf3e2f895046e5c3cbf13489368a642c"
+  },
+  {
+   "label": "token-full-admin-key-admin-referer-ogc-arcgis_compat_scoped",
+   "method": "GET",
+   "path": "/ogc/features/collections/2020/items?f=json",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "56cafbccb9addd874028734883854a05bde1120d6c8d12c57261df0897fd620c"
+  },
+  {
+   "label": "exchange-full-admin-key-desktop-user-requestip",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": true,
+   "bodySha256": "db7e4f4a508869296d4916e4c68ec05aa1b3e01c24f29ce5aa396a1f6fcc2500"
+  },
+  {
+   "label": "token-full-admin-key-desktop-user-requestip-fs-arcgis_compat_protected",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_protected/FeatureServer/2010/query?where=1=1&outFields=*&f=json&token=<redacted>",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "dd6074caad1ea8bee6fbb7ab61e3059abff99571673ca4f7e49f20ebebae585d"
+  },
+  {
+   "label": "token-full-admin-key-desktop-user-requestip-fs-arcgis_compat_scoped",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_scoped/FeatureServer/2020/query?where=1=1&outFields=*&f=json&token=<redacted>",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "7aedd5c0cbd7575f3f95709c26a45b9e1e5fa45f6c39f832a4cea24b960b6cbc"
+  },
+  {
+   "label": "token-full-admin-key-desktop-user-requestip-ogc-arcgis_compat_protected",
+   "method": "GET",
+   "path": "/ogc/features/collections/2010/items?f=json",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "925bd868665a2d6d965edbe0e04f95c9e3de67f0943ce6cb8528a19daecb0d4a"
+  },
+  {
+   "label": "token-full-admin-key-desktop-user-requestip-ogc-arcgis_compat_scoped",
+   "method": "GET",
+   "path": "/ogc/features/collections/2020/items?f=json",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "e66731ee9ab63b05ec19505fc76ee05cb5f37770bf2f65f97844ee2aea23aa67"
+  },
+  {
+   "label": "exchange-full-admin-key-desktop-user-referer",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": true,
+   "bodySha256": "24add1dc01b9e0350e3894cfec6539350ddf89f4bc2c07efb84e187c170e4b3d"
+  },
+  {
+   "label": "token-full-admin-key-desktop-user-referer-fs-arcgis_compat_protected",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_protected/FeatureServer/2010/query?where=1=1&outFields=*&f=json&token=<redacted>",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "dd6074caad1ea8bee6fbb7ab61e3059abff99571673ca4f7e49f20ebebae585d"
+  },
+  {
+   "label": "token-full-admin-key-desktop-user-referer-fs-arcgis_compat_scoped",
+   "method": "GET",
+   "path": "/rest/services/arcgis_compat_scoped/FeatureServer/2020/query?where=1=1&outFields=*&f=json&token=<redacted>",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "7aedd5c0cbd7575f3f95709c26a45b9e1e5fa45f6c39f832a4cea24b960b6cbc"
+  },
+  {
+   "label": "token-full-admin-key-desktop-user-referer-ogc-arcgis_compat_protected",
+   "method": "GET",
+   "path": "/ogc/features/collections/2010/items?f=json",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "f72f8cb47bbdace996674f398d3b4f4d1b0e76db0cec774e8a41abd065c5e48f"
+  },
+  {
+   "label": "token-full-admin-key-desktop-user-referer-ogc-arcgis_compat_scoped",
+   "method": "GET",
+   "path": "/ogc/features/collections/2020/items?f=json",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "abbd909f8e11b572e6106c4da37f3cb0bf655efe8493715d0e6d4d1297c1c7d3"
+  },
+  {
+   "label": "exchange-revoked-key-admin",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "e7ffb43ff4ee82a9fa896c9cd43d7f73aabeb7e0cca7c47c1c21e38fe537e07c"
+  },
+  {
+   "label": "exchange-revoked-key-desktop-user",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "efd3a952bb2363a6d5397b77c3e23e604066309f1e214e03375598664039afb3"
+  },
+  {
+   "label": "exchange-expired-key-admin",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "e1b7edaacff4671a60cacccba24d309bd35e6dd5ff73e507aa72f1bb88af5806"
+  },
+  {
+   "label": "exchange-expired-key-desktop-user",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "11dc6a404049ca68b8230d75f14d65a93fba6de57eb442d6aff0ec6fa543b543"
+  },
+  {
+   "label": "exchange-invalid-credential-admin",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "abcef02b10375b800daff22d7f49c92fc2a7e8edc2539f28c6c3f14eda81312d"
+  },
+  {
+   "label": "exchange-invalid-credential-desktop-user",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "595dd8974ea885344f16241218a1c035db056c7b958e986581ada39328b83ab0"
+  },
+  {
+   "label": "exchange-wrong-password-admin",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "c7b04df9a926d7ff31db5e685b2e6f4c661b690cae03a2b459dbd05d4b9799a4"
+  },
+  {
+   "label": "exchange-wrong-password-desktop-user",
+   "method": "POST",
+   "path": "/sharing/rest/generateToken",
+   "status": 200,
+   "esriError": 400,
+   "tokenIssued": false,
+   "bodySha256": "d5d256c4da699e55f5a428bc521f05910699f2f0130bdb657317267c402067ce"
+  },
+  {
+   "label": "cleanup-revoke",
+   "method": "POST",
+   "path": "/api/v1/admin/api-keys/dee4b53a-6526-493d-a008-47d04ddb6e29/revoke",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "5999c3b10e21932fce34e4bbe523acc2634ef1b29fd30a557a55403a9841d085"
+  },
+  {
+   "label": "cleanup-revoke",
+   "method": "POST",
+   "path": "/api/v1/admin/api-keys/ab7e12d0-43b6-485d-a75b-dda76251f977/revoke",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "3b6d5147db12c0073c0824f076d6db2d390c72ce51539a9710a2da910385b308"
+  },
+  {
+   "label": "cleanup-revoke",
+   "method": "POST",
+   "path": "/api/v1/admin/api-keys/d23973bb-1bf8-48c5-89f2-93e22f03623c/revoke",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "2fb13aa6f4ff97dd448bbf6005e2121ac2c1e8e64a727221b65cdeb5ec993f9b"
+  },
+  {
+   "label": "cleanup-revoke",
+   "method": "POST",
+   "path": "/api/v1/admin/api-keys/f4b1c17c-6c73-46d8-8dfc-064c4c988eef/revoke",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "f8bfc68e65e7d5826f77344e62cf9dce193e5ac0c8b347cdbf00dcbf1766e90d"
+  },
+  {
+   "label": "cleanup-revoke",
+   "method": "POST",
+   "path": "/api/v1/admin/api-keys/d4777249-939f-4752-9b90-96059b11cad3/revoke",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "9d226462ca8aaa104d883be80ee191e268a781b11a52b1f306649895a3ad9393"
+  },
+  {
+   "label": "cleanup-revoke",
+   "method": "POST",
+   "path": "/api/v1/admin/api-keys/a2f6d5c9-0ab8-41d8-8336-5c10c453b3bc/revoke",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "5bf0448efae7bcfe1516ca6a70bc26894dae8b57b16ac36ed7ba26797ae3d25e"
+  },
+  {
+   "label": "cleanup-revoke",
+   "method": "POST",
+   "path": "/api/v1/admin/api-keys/e4ddddf6-c90d-41af-9fab-39850053ae8e/revoke",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "6dcdea02d2bf50ed6c47f803476d5b80f3b8d924992549d7aba90bb3cc206518"
+  },
+  {
+   "label": "cleanup-revoke",
+   "method": "POST",
+   "path": "/api/v1/admin/api-keys/c88d075e-d84c-43bc-81e2-0565091ecf67/revoke",
+   "status": 200,
+   "esriError": null,
+   "tokenIssued": false,
+   "bodySha256": "a94af93b7c58b564571e09e9bdf6fe5d0dc34bec61d670395d1ef4d17909de50"
+  }
+ ],
+ "checks": [
+  {
+   "check": "admin discovers protected layer 2010",
+   "pass": true,
+   "detail": {
+    "status": 200
+   }
+  },
+  {
+   "check": "anonymous fs arcgis_compat_protected denied",
+   "pass": true,
+   "detail": {
+    "status": 200
+   }
+  },
+  {
+   "check": "anonymous fs arcgis_compat_scoped denied",
+   "pass": true,
+   "detail": {
+    "status": 200
+   }
+  },
+  {
+   "check": "anonymous ogc arcgis_compat_protected denied",
+   "pass": true,
+   "detail": {
+    "status": 401
+   }
+  },
+  {
+   "check": "anonymous ogc arcgis_compat_scoped denied",
+   "pass": true,
+   "detail": {
+    "status": 401
+   }
+  },
+  {
+   "check": "scoped key direct fs reads allowed service",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "scoped-alpha"
+    ]
+   }
+  },
+  {
+   "check": "scoped key direct fs denied protected service",
+   "pass": true,
+   "detail": {
+    "status": 200
+   }
+  },
+  {
+   "check": "scoped key direct ogc reads allowed service",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "scoped-alpha"
+    ]
+   }
+  },
+  {
+   "check": "scoped key direct ogc denied protected service",
+   "pass": true,
+   "detail": {
+    "status": 403
+   }
+  },
+  {
+   "check": "exchange refused: scoped-read as admin (requestip)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: scoped-read as admin (referer)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: scoped-read as desktop-user (requestip)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: scoped-read as desktop-user (referer)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: scoped-write as admin (requestip)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: scoped-write as admin (referer)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: scoped-write as desktop-user (requestip)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: scoped-write as desktop-user (referer)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: admin-read as admin (requestip)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: admin-read as admin (referer)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: admin-read as desktop-user (requestip)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: admin-read as desktop-user (referer)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: admin-read-approve as admin (requestip)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: admin-read-approve as admin (referer)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: admin-read-approve as desktop-user (requestip)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: admin-read-approve as desktop-user (referer)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: ops-read as admin (requestip)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: ops-read as admin (referer)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: ops-read as desktop-user (requestip)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: ops-read as desktop-user (referer)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: unknown as admin (requestip)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: unknown as admin (referer)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: unknown as desktop-user (requestip)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange refused: unknown as desktop-user (referer)",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400,
+    "tokenIssued": false
+   }
+  },
+  {
+   "check": "exchange issued: bootstrap-password as admin (requestip)",
+   "pass": true,
+   "detail": {
+    "status": 200
+   }
+  },
+  {
+   "check": "bootstrap-password token (admin, requestip) fs reads arcgis_compat_protected",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "protected-alpha"
+    ]
+   }
+  },
+  {
+   "check": "bootstrap-password token (admin, requestip) fs reads arcgis_compat_scoped",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "scoped-alpha"
+    ]
+   }
+  },
+  {
+   "check": "bootstrap-password token (admin, requestip) ogc reads arcgis_compat_protected",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "protected-alpha"
+    ]
+   }
+  },
+  {
+   "check": "bootstrap-password token (admin, requestip) ogc reads arcgis_compat_scoped",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "scoped-alpha"
+    ]
+   }
+  },
+  {
+   "check": "exchange issued: bootstrap-password as admin (referer)",
+   "pass": true,
+   "detail": {
+    "status": 200
+   }
+  },
+  {
+   "check": "bootstrap-password token (admin, referer) fs reads arcgis_compat_protected",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "protected-alpha"
+    ]
+   }
+  },
+  {
+   "check": "bootstrap-password token (admin, referer) fs reads arcgis_compat_scoped",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "scoped-alpha"
+    ]
+   }
+  },
+  {
+   "check": "bootstrap-password token (admin, referer) ogc reads arcgis_compat_protected",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "protected-alpha"
+    ]
+   }
+  },
+  {
+   "check": "bootstrap-password token (admin, referer) ogc reads arcgis_compat_scoped",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "scoped-alpha"
+    ]
+   }
+  },
+  {
+   "check": "exchange issued: full-admin-key as admin (requestip)",
+   "pass": true,
+   "detail": {
+    "status": 200
+   }
+  },
+  {
+   "check": "full-admin-key token (admin, requestip) fs reads arcgis_compat_protected",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "protected-alpha"
+    ]
+   }
+  },
+  {
+   "check": "full-admin-key token (admin, requestip) fs reads arcgis_compat_scoped",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "scoped-alpha"
+    ]
+   }
+  },
+  {
+   "check": "full-admin-key token (admin, requestip) ogc reads arcgis_compat_protected",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "protected-alpha"
+    ]
+   }
+  },
+  {
+   "check": "full-admin-key token (admin, requestip) ogc reads arcgis_compat_scoped",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "scoped-alpha"
+    ]
+   }
+  },
+  {
+   "check": "exchange issued: full-admin-key as admin (referer)",
+   "pass": true,
+   "detail": {
+    "status": 200
+   }
+  },
+  {
+   "check": "full-admin-key token (admin, referer) fs reads arcgis_compat_protected",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "protected-alpha"
+    ]
+   }
+  },
+  {
+   "check": "full-admin-key token (admin, referer) fs reads arcgis_compat_scoped",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "scoped-alpha"
+    ]
+   }
+  },
+  {
+   "check": "full-admin-key token (admin, referer) ogc reads arcgis_compat_protected",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "protected-alpha"
+    ]
+   }
+  },
+  {
+   "check": "full-admin-key token (admin, referer) ogc reads arcgis_compat_scoped",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "scoped-alpha"
+    ]
+   }
+  },
+  {
+   "check": "exchange issued: full-admin-key as desktop-user (requestip)",
+   "pass": true,
+   "detail": {
+    "status": 200
+   }
+  },
+  {
+   "check": "full-admin-key token (desktop-user, requestip) fs reads arcgis_compat_protected",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "protected-alpha"
+    ]
+   }
+  },
+  {
+   "check": "full-admin-key token (desktop-user, requestip) fs reads arcgis_compat_scoped",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "scoped-alpha"
+    ]
+   }
+  },
+  {
+   "check": "full-admin-key token (desktop-user, requestip) ogc reads arcgis_compat_protected",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "protected-alpha"
+    ]
+   }
+  },
+  {
+   "check": "full-admin-key token (desktop-user, requestip) ogc reads arcgis_compat_scoped",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "scoped-alpha"
+    ]
+   }
+  },
+  {
+   "check": "exchange issued: full-admin-key as desktop-user (referer)",
+   "pass": true,
+   "detail": {
+    "status": 200
+   }
+  },
+  {
+   "check": "full-admin-key token (desktop-user, referer) fs reads arcgis_compat_protected",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "protected-alpha"
+    ]
+   }
+  },
+  {
+   "check": "full-admin-key token (desktop-user, referer) fs reads arcgis_compat_scoped",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "scoped-alpha"
+    ]
+   }
+  },
+  {
+   "check": "full-admin-key token (desktop-user, referer) ogc reads arcgis_compat_protected",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "protected-alpha"
+    ]
+   }
+  },
+  {
+   "check": "full-admin-key token (desktop-user, referer) ogc reads arcgis_compat_scoped",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "features": [
+     "scoped-alpha"
+    ]
+   }
+  },
+  {
+   "check": "exchange rejected: revoked-key as admin",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400
+   }
+  },
+  {
+   "check": "exchange rejected: revoked-key as desktop-user",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400
+   }
+  },
+  {
+   "check": "exchange rejected: expired-key as admin",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400
+   }
+  },
+  {
+   "check": "exchange rejected: expired-key as desktop-user",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400
+   }
+  },
+  {
+   "check": "exchange rejected: invalid-credential as admin",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400
+   }
+  },
+  {
+   "check": "exchange rejected: invalid-credential as desktop-user",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400
+   }
+  },
+  {
+   "check": "exchange rejected: wrong-password as admin",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400
+   }
+  },
+  {
+   "check": "exchange rejected: wrong-password as desktop-user",
+   "pass": true,
+   "detail": {
+    "status": 200,
+    "esriError": 400
+   }
+  }
+ ],
+ "discovered": {
+  "featureServerLayer": {
+   "arcgis_compat_protected": 2010,
+   "arcgis_compat_scoped": 2020
+  },
+  "ogcCollection": {
+   "arcgis_compat_protected": "2010",
+   "arcgis_compat_scoped": "2020"
+  }
+ },
+ "summary": {
+  "checks": 71,
+  "failed": [],
+  "requests": 89
+ }
+}
