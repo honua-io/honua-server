@@ -37,15 +37,15 @@ producer has these distinct sources:
 |---|---|
 | `control_plane` | `configProjection`, `control-plane-options`: describes configuration evaluated now; it does not observe the serving revision at a provider. |
 | `deploy_preflight` | `inProcess`, `deploy-preflight-probe`: describes the in-process preflight; it is not a provider rollback receipt. |
-| `workflow_operations` | `durableStore`, `workflow-operation-store`: the producer currently stamps completeness and clocks from store registration and evaluation time. A `complete` envelope alone does not prove successful collection, backend-loss handling or full target coverage. |
+| `workflow_operations` | `durableStore`, `workflow-operation-store`: derived from the store reads the deployment rules make in that evaluation, not from store registration. Those reads are the active deploy operations and, when a platform release is declared, the last succeeded deploy of each unpinned target. `complete` means every read returned, and `observedAt`/`lastSuccessfulAt` are when the store first answered. If a read fails after an earlier one returned, the source is `partial`: `coverage.expectedComponentIds` lists every intended read and `coverage.includedComponentIds` the ones that returned. If no read returns, the source is `unavailable`, and both clocks keep the last successful collection on that replica (absent if there was none). A later failed evaluation never refreshes them. |
 
 For the deployment source, require the independently observed provider revision
 and collection/coverage evidence described in the [scenario](scenario.md).
-Do not reinterpret evaluation-time clocks as successful provider observations.
-Live partial, unverified and backend-loss producer checks remain unmet in the
+A `complete` store source proves the workflow store answered. It does not observe
+the serving revision at the provider. Injected-envelope adapter tests prove
+suppression at that adapter boundary only; the producer's collection behavior is
+recorded in the
 [qualification record](../../internal/contributor/operate-docs-precut-evidence.md).
-Injected-envelope adapter tests prove suppression at that adapter boundary;
-they cannot establish the producer's collection behavior.
 
 For alert backlog evidence, `backlogObservedAt` is the successful collection
 time used by the source envelope. Legacy `lastPollAt` is only a dispatcher
