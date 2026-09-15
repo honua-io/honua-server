@@ -554,6 +554,32 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
     }
 
     /// <inheritdoc />
+    public Task<StudioPublicationRequest?> GetActivePublicationRequestByRouteAsync(
+        string route,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(route);
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_gate)
+        {
+            // Mirrors PostgresStudioPackageStore: each item is governed by its newest accepted
+            // request, and the newest governing request bound to the route owns it.
+            var active = _publicationRequests.Values
+                .Where(static request => request.Status == StudioPublicationRequestStatus.Accepted)
+                .GroupBy(static request => request.ItemId)
+                .Select(static requests => requests
+                    .OrderByDescending(static request => request.CreatedAt)
+                    .ThenByDescending(static request => request.RequestId)
+                    .First())
+                .Where(request => string.Equals(request.Intent?.Route, route, StringComparison.Ordinal))
+                .OrderByDescending(static request => request.CreatedAt)
+                .ThenByDescending(static request => request.RequestId)
+                .FirstOrDefault();
+            return Task.FromResult(active);
+        }
+    }
+
+    /// <inheritdoc />
     public Task<StudioRollbackRequest> RollbackAsync(
         Guid itemId,
         Guid targetVersionId,

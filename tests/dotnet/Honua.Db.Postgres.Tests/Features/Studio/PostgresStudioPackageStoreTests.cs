@@ -248,6 +248,63 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
         }
     }
 
+    // honua-server#4907: the published-route resolver reads this lookup, so the SQL must follow
+    // each item's governing (newest accepted) request -- pending requests never govern, a route
+    // the item republished away from retires, and the newest governing claimant owns a route.
+    [IntegrationTest]
+    public async Task PackageStore_ActivePublicationByRoute_FollowsGoverningAcceptedRequest()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var provider = new TestConnectionProvider(fixture.DataSource, schema);
+            var store = new PostgresStudioPackageStore(provider, schema);
+            var version = await store.CreateVersionAsync(await store.CreateDraftAsync(BuildDraft("1=1")), "first save", "tester");
+            var other = await store.CreateVersionAsync(
+                await store.CreateDraftAsync(BuildDraft("1=1", packageKey: "other-query")), "first save", "tester");
+            var at = DateTimeOffset.UtcNow;
+
+            StudioPublicationRequest Request(StudioContentVersion target, string route, StudioPublicationRequestStatus status, int seconds) => new()
+            {
+                RequestId = Guid.NewGuid(),
+                ItemId = target.ItemId,
+                VersionId = target.VersionId,
+                Intent = new StudioPublicationIntent { Route = route, Visibility = "public" },
+                Status = status,
+                Validation = target.Validation,
+                RequestedBy = "tester",
+                CreatedAt = at.AddSeconds(seconds),
+            };
+
+            (await store.GetActivePublicationRequestByRouteAsync("/maps/parcels")).Should().BeNull();
+            await store.CreatePublicationRequestAsync(
+                Request(version, "/maps/parcels", StudioPublicationRequestStatus.Pending, 0), expectedCurrentVersionId: null);
+            (await store.GetActivePublicationRequestByRouteAsync("/maps/parcels")).Should().BeNull("a pending request never governs a route");
+
+            var accepted = await store.CreatePublicationRequestAsync(
+                Request(version, "/maps/parcels", StudioPublicationRequestStatus.Accepted, 1), version.VersionId);
+            var resolved = await store.GetActivePublicationRequestByRouteAsync("/maps/parcels");
+            resolved!.RequestId.Should().Be(accepted.RequestId);
+            resolved.Intent!.Route.Should().Be("/maps/parcels");
+
+            var moved = await store.CreatePublicationRequestAsync(
+                Request(version, "/maps/moved", StudioPublicationRequestStatus.Accepted, 2), version.VersionId);
+            (await store.GetActivePublicationRequestByRouteAsync("/maps/parcels")).Should().BeNull("the item was republished at another route");
+            (await store.GetActivePublicationRequestByRouteAsync("/maps/moved"))!.RequestId.Should().Be(moved.RequestId);
+
+            var claimed = await store.CreatePublicationRequestAsync(
+                Request(other, "/maps/moved", StudioPublicationRequestStatus.Accepted, 3), other.VersionId);
+            var owner = await store.GetActivePublicationRequestByRouteAsync("/maps/moved");
+            owner!.RequestId.Should().Be(claimed.RequestId);
+            owner.ItemId.Should().Be(other.ItemId);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     [IntegrationTest]
     public async Task PackageStore_UpdateDraftWithDuplicatePackageKey_RejectsConflict()
     {
