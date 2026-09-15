@@ -16290,6 +16290,9 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.PackageReview.PackageReviewEndpointTests.PublishMapPackage_WithCliBuiltPackage_ProposesPublicationWithoutMovingPublishedPointer",
+        "Honua.Server.Tests.Features.PackageReview.PackageReviewEndpointTests.PublishMapPackage_WithInvalidMember_ReturnsProblemNamingTheMember",
+        "Honua.Server.Tests.Features.PackageReview.PackageReviewEndpointTests.PublishMapPackage_WithoutLifecycleMembers_DefaultsThemAndProposesPublication",
         "Honua.Server.Tests.Features.PackageReview.PackageReviewEndpointTests.PublishMapPackage_WithoutPackage_ReturnsBadRequest"
       ],
       "proof_ledger_surface": "control-plane-admin",
