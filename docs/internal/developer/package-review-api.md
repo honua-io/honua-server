@@ -15,6 +15,24 @@ as `ApiResponse<PackageReviewResponse>` with the review payload in `data`.
 | `POST /api/v1/admin/packages/validate` | Validates the package and returns findings, status, action gates, estimate, links, and resource references. |
 | `POST /api/v1/admin/packages/preview` | Runs the same validation with `includePreviewPlan` forced to `true` and returns a read-only preview plan when the package can be planned. |
 
+### Map package publication
+
+`POST /api/v1/admin/packages` is the route behind `honua map publish` (the
+`map-package.publish` control-plane command). It accepts
+`{ "package": <honua_map_package.v1>, "mapId"?, "workspaceId"?, "message"?, "intent"?, "warningAcknowledgement"? }`.
+`package.status` and `package.createdAt` are optional and default to `Draft` and
+the request time; members the server does not model are ignored.
+
+- A missing `package` or `package.mapPackageId` returns `400` "Map package is required".
+- Any other refusal returns `400 application/problem+json` with an `errors[]` entry
+  whose `path` names the offending member (for example `$.package.status`).
+- The package is saved as a Studio draft and immutable version through the
+  canonical Studio mutation runtime, and its publication is **proposed**, never
+  executed: the response is `202 Accepted` with `publicationStatus: "AwaitingApproval"`,
+  `proposalId`, `operationInstanceId`, `itemId`, `versionId`, and `contentHash`. As
+  with `honua_studio_propose_publication`, the published pointer moves only after a
+  separate authorized principal approves the proposal.
+
 The MCP operator surface exposes the same response contract through:
 
 | Tool | Behavior |
