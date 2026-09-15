@@ -103,12 +103,22 @@ September 15 replay below reproduces them on the accepted pin.
 
 Two remainders were re-examined against trunk:
 
-- **Producer failure cases** are a code defect, not a documentation gap.
-  `BuildStoreSource` still returns `complete` for `workflow_operations` whenever
-  the store is registered. It is now owned by
-  [#4840](https://github.com/honua-io/honua-server/issues/4840), which requires a
-  real-store complete → unavailable → complete test with zero proposal and
-  actuator calls.
+- **Producer failure cases** were a code defect, not a documentation gap:
+  `BuildStoreSource` returned `complete` for `workflow_operations` whenever the
+  store was registered. The
+  [#4840](https://github.com/honua-io/honua-server/issues/4840) fix derives the
+  source from the reads the deployment rules make. A singleton ledger keeps the
+  last successful collection across scoped evaluations. The real-Redis tests are
+  `OpsFindingsWorkflowSourceRedisTests`:
+  - A stop/restart takes the source complete → unavailable (both clocks held at
+    the first collection over two evaluations) → complete.
+  - An ACL-denied per-target index read publishes `partial` with the missing
+    target in coverage.
+
+  While the evidence is not actionable, both tests assert zero gateway and
+  envelope calls from `ProposeAsync` and from the MCP finding proposal. The same
+  finding id reaches the gateway before and after. The fix postdates `548b7a5`, so
+  it counts as accepted-pin evidence only after a re-pin.
 - **Deployment resource ownership** remains **unmet**. `DeployTargetDefinition`
   has no owner or tenant attribute. `ProposeFindingAsync` checks only admin
   policy, operator scope and binding to the finding's target. With
@@ -257,10 +267,11 @@ and [the joined recovery certificate](https://github.com/honua-io/honua-release/
 remain distinct obligations. Neither an issue's closed state nor synthetic provider
 coverage substitutes for installed verification.
 
-The deployment finding producer also still builds store completeness from registration
-through `OpsFindingsService.BuildStoreSource`; the adapter's injected-envelope tests
-do not prove actual partial/unverified/backend-loss collection
-([#4840](https://github.com/honua-io/honua-server/issues/4840)). Deploy proposal creation
+On `548b7a5` the deployment finding producer still builds store completeness from
+registration through `OpsFindingsService.BuildStoreSource`. The
+[#4840](https://github.com/honua-io/honua-server/issues/4840) fix derives it from
+real store reads and proves backend loss and partial reads against Redis; it
+counts on the manifest only after a re-pin. Deploy proposal creation
 is not bound to tenant or platform-admin authority ([#4842](https://github.com/honua-io/honua-server/issues/4842)).
 Those, accepted-pin replay of the authorization negatives and the joined
 deployment/placement transcript remain unmet, not waived.

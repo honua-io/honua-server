@@ -83,11 +83,16 @@ internal static class ObservabilityServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
         services.AddScoped<IOpsHealthSnapshotService, OpsHealthSnapshotService>();
+        // Singleton: the scoped engine must still report a store source's last successful collection
+        // after a failed read in a later scope (#4840).
+        services.AddSingleton<OpsFindingsCollectionLedger>();
         services.AddScoped(sp => new OpsFindingsExtendedSignals
         {
             DatabasePressureSignal = sp.GetService<IOpsDatabasePressureSignal>(),
             AdmissionGate = sp.GetService<Honua.Core.Features.Infrastructure.Abstractions.IRuntimeTunableAdmissionGate>(),
             RollupStore = sp.GetService<IOpsHealthRollupStore>(),
+            CollectionLedger = sp.GetRequiredService<OpsFindingsCollectionLedger>(),
+            TimeProvider = sp.GetService<TimeProvider>(),
         });
         // One scoped instance behind both seams: callers that only need findings keep the domain
         // abstraction, while the read/proposal surfaces resolve the evidence-carrying view.
