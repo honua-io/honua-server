@@ -22,6 +22,7 @@ using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Geoprocessing;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Server.Features.Admin;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Operations;
@@ -149,6 +150,7 @@ internal sealed class McpPlatformOpsReader(
         ArgumentNullException.ThrowIfNull(argument);
 
         await EnsureMutationAuthorizedAsync(principal, OperatorResourceType.Deployment, OperatorOperation.Rollback, cancellationToken).ConfigureAwait(false);
+        EnsurePlatformDeployAuthority(principal, OperatorOperation.Rollback);
 
         var targetId = Clean(argument.TargetId);
         if (targetId is null)
@@ -179,6 +181,7 @@ internal sealed class McpPlatformOpsReader(
     public async Task<McpProposeOperationOutput> ProposeFindingAsync(ClaimsPrincipal principal, McpProposeFindingArgument argument, CancellationToken cancellationToken)
     {
         await EnsureMutationAuthorizedAsync(principal, OperatorResourceType.Deployment, OperatorOperation.Publish, cancellationToken).ConfigureAwait(false);
+        EnsurePlatformDeployAuthority(principal, OperatorOperation.Publish);
         var findingId = Clean(argument.FindingId) ?? throw new GeoprocessingValidationException("'findingId' is required.");
         var evaluation = await _services.GetRequiredService<IOpsFindingsEvidenceSource>()
             .EvaluateWithEvidenceAsync(cancellationToken).ConfigureAwait(false);
@@ -212,6 +215,7 @@ internal sealed class McpPlatformOpsReader(
     public async Task<McpProposeOperationOutput> ProposeDeployPlanAsync(ClaimsPrincipal principal, McpDeployMutationArgument argument, CancellationToken cancellationToken)
     {
         await EnsureMutationAuthorizedAsync(principal, OperatorResourceType.Deployment, OperatorOperation.Publish, cancellationToken).ConfigureAwait(false);
+        EnsurePlatformDeployAuthority(principal, OperatorOperation.Publish);
         var targetId = Clean(argument.TargetId) ?? throw new GeoprocessingValidationException("'targetId' is required.");
         var desiredRevision = Clean(argument.DesiredRevision) ?? throw new GeoprocessingValidationException("'desiredRevision' is required.");
         var plan = await _deployWorkflowService.PlanAsync(targetId, desiredRevision, Clean(argument.CurrentRevision), null, principal, cancellationToken).ConfigureAwait(false)
@@ -249,6 +253,7 @@ internal sealed class McpPlatformOpsReader(
     public async Task<McpProposeOperationOutput> ProposePlatformReleaseConvergenceAsync(ClaimsPrincipal principal, McpPlatformReleaseConvergenceArgument argument, CancellationToken cancellationToken)
     {
         await EnsureMutationAuthorizedAsync(principal, OperatorResourceType.Deployment, OperatorOperation.Publish, cancellationToken).ConfigureAwait(false);
+        EnsurePlatformDeployAuthority(principal, OperatorOperation.Publish);
         var options = _controlPlaneOptions.CurrentValue;
         var release = options.PlatformRelease.ToDefinition() ?? throw new GeoprocessingPreconditionFailedException("A platform release is not declared.");
         var desiredRevision = Clean(release.ServingArtifactReference) ?? throw new GeoprocessingPreconditionFailedException("The platform release has no serving artifact.");
@@ -281,6 +286,7 @@ internal sealed class McpPlatformOpsReader(
     private async Task<McpProposeOperationOutput> ProposeDeployAsync(ClaimsPrincipal principal, McpDeployMutationArgument argument, string idempotencyPrefix, CancellationToken cancellationToken)
     {
         await EnsureMutationAuthorizedAsync(principal, OperatorResourceType.Deployment, OperatorOperation.Publish, cancellationToken).ConfigureAwait(false);
+        EnsurePlatformDeployAuthority(principal, OperatorOperation.Publish);
         var targetId = Clean(argument.TargetId) ?? throw new GeoprocessingValidationException("'targetId' is required.");
         var desiredRevision = Clean(argument.DesiredRevision) ?? throw new GeoprocessingValidationException("'desiredRevision' is required.");
         var payload = new DeployExecutionPayload { TargetId = targetId, DesiredRevision = desiredRevision, CurrentRevision = Clean(argument.CurrentRevision) }.Serialize();
@@ -494,6 +500,14 @@ internal sealed class McpPlatformOpsReader(
         var scope = _scopeAuthorizer.Evaluate(principal, resourceType, operation);
         if (!scope.IsAllowed)
             throw new GeoprocessingAuthorizationException(false, scope.Reason ?? "The access token scope does not authorize this mutation.");
+    }
+
+    // Deployment targets are platform resources with no owning tenant (#4842).
+    private void EnsurePlatformDeployAuthority(ClaimsPrincipal principal, OperatorOperation operation)
+    {
+        if (!PlatformDeployAuthority.IsAuthorized(principal, _services.GetService<IOptions<TenantContextOptions>>()?.Value))
+            throw new GeoprocessingAuthorizationException(false, PlatformDeployAuthority.DenialMessage,
+                OperatorResourceType.Deployment, operation, policyCode: PlatformDeployAuthority.DenialCode);
     }
 
     private string[]? ResolveSupportedKinds()
