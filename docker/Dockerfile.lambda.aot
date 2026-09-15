@@ -194,7 +194,13 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/* && \
     test -r /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf && \
     chmod +x /var/task/Honua.Server && \
-    for native in libSkiaSharp.so ParquetSharpNative.so libduckdb.so; do \
+    skia_linkage="$(ldd -r /var/task/libSkiaSharp.so 2>&1)" && \
+    printf '%s\n' "$skia_linkage" && \
+    if printf '%s\n' "$skia_linkage" | grep -Eq 'not found|undefined symbol'; then \
+      echo "SkiaSharp native dependency validation failed" >&2; \
+      exit 1; \
+    fi && \
+    for native in ParquetSharpNative.so libduckdb.so; do \
       test -f "/var/task/${native}" || { echo "missing native library /var/task/${native}" >&2; exit 1; }; \
       echo "== ${native}"; \
       ldd -r "/var/task/${native}" > /tmp/native-linkage.txt 2>&1; \
