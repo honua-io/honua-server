@@ -247,6 +247,11 @@ internal sealed partial class OperationGateway : IOperationGateway
             hasApprovalContext: true,
             cancellationToken).ConfigureAwait(false);
 
+    private static bool IsRequester(string? requestedBy, OperationProposalApprovalContext approval) =>
+        !string.IsNullOrWhiteSpace(requestedBy)
+        && (string.Equals(requestedBy, approval.ApprovedBy, StringComparison.OrdinalIgnoreCase)
+            || approval.ApproverIdentities.Contains(requestedBy, StringComparer.OrdinalIgnoreCase));
+
     private async Task<OperationProposal?> ApplyApprovedProposalCoreAsync(
         string proposalId,
         OperationProposalApprovalContext approval,
@@ -265,6 +270,14 @@ internal sealed partial class OperationGateway : IOperationGateway
             await ReconcileAutonomyProposalResolutionAsync(proposal, cancellationToken).ConfigureAwait(false);
             throw new InvalidOperationException(
                 $"Proposal '{proposalId}' is '{proposal.Status}' and cannot be approved.");
+        }
+
+        // Separation of duties is enforced here as well as at the approval endpoint, so no
+        // approval entry point can execute a proposal on its own requester's say-so (#4901).
+        if (IsRequester(proposal.RequestedBy, approval))
+        {
+            throw new InvalidOperationException(
+                "Separation of duties: the requester of a proposal cannot approve it.");
         }
 
         if (proposal.Evidence is not null)
