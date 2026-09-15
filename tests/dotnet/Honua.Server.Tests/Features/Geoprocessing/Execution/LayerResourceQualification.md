@@ -79,6 +79,29 @@ It passes every scenario:
   102% to 10%.
 - All 357 serving probes pass (maximum 2.93 seconds).
 
+`layer-resource-candidate-548b7a5-receipt.json` runs the current harness on the
+2026.1 candidate pinned on 2026-09-15,
+`ghcr.io/honua-io/honua-server@sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1`
+(`org.opencontainers.image.revision` = `548b7a5263da5a3f2381eb43f232687cdf92b0bf`).
+It fails, and it fails for exactly one reason: that commit is an ancestor of
+#4881's merge (`927af8fbc`), so the pinned candidate does not contain the terminal-refusal
+correction. Bounded passthrough and dismissal pass; every deterministic refusal is
+enforced with the expected message but still runs three attempts:
+
+| scenario | attempts | first attempt to terminal |
+|---|---|---|
+| `dissolve-work-limit` | 3 | 95.7 s |
+| `join-both-sides` | 3 | 91.4 s |
+| `buffer-work-limit` | 3 | 95.2 s |
+| `single-geometry` | 3 | 91.3 s |
+| `elapsed-time-limit` | 3 | 120.8 s (three 8 s deadlines) |
+
+Dismissal stops the running join in 2.28 seconds (CPU 98.2% to 5.9%), all 2,130
+serving probes pass (maximum 8.23 s), there is no OOM kill and cleanup completes.
+Serving availability and cleanup therefore already hold on the pinned candidate;
+the retry multiplication is the only gap, and the next re-pin must include
+`927af8fbc` for this harness to pass.
+
 The runtime correction makes input, resource-limit and deadline refusals terminal
 (`IsRetryable = false`) in the layer and enrichment executors; transient source-read
 failures keep their retry budget. #4629 closes only once a manifest-pinned image
