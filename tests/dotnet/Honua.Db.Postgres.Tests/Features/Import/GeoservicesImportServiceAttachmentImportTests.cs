@@ -440,9 +440,9 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
                       ]
                     }
                     """)),
-                "/arcgis/rest/services/Inspections/FeatureServer/0/query?where=1=1&returnCountOnly=true&f=json" =>
+                "/arcgis/rest/services/Inspections/FeatureServer/0/query?where=1%3D1&f=json&returnCountOnly=true" =>
                     Task.FromResult(JsonResponse("""{"count":2}""")),
-                "/arcgis/rest/services/Inspections/FeatureServer/0/query?f=json&where=1%3D1&outFields=%2A&returnGeometry=true&returnZ=true&returnM=true&resultOffset=0&resultRecordCount=10&outSR=4326" =>
+                "/arcgis/rest/services/Inspections/FeatureServer/0/query?where=1%3D1&f=json&outFields=%2A&returnGeometry=true&returnZ=true&returnM=true&resultOffset=0&resultRecordCount=10&outSR=4326" =>
                     Task.FromResult(JsonResponse("""
                         {
                           "features": [
@@ -453,7 +453,7 @@ public sealed class GeoservicesImportServiceAttachmentImportTests(PostgresFixtur
                           "spatialReference": { "wkid": 4326 }
                         }
                         """)),
-                "/arcgis/rest/services/Inspections/FeatureServer/0/query?f=json&where=1%3D1&outFields=%2A&returnGeometry=true&returnZ=true&returnM=true&resultOffset=2&resultRecordCount=10&outSR=4326" =>
+                "/arcgis/rest/services/Inspections/FeatureServer/0/query?where=1%3D1&f=json&outFields=%2A&returnGeometry=true&returnZ=true&returnM=true&resultOffset=2&resultRecordCount=10&outSR=4326" =>
                     Task.FromResult(JsonResponse("""
                         {
                           "features": [],
