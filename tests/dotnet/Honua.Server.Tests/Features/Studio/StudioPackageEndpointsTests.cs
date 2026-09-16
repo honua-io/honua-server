@@ -1749,7 +1749,7 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         problem.GetProperty("code").GetString().Should().Be(RenderUnavailableStudioDeliverableExporter.ReasonCode);
 
         // The failure must not affect the rest of the server (liveness/readiness unaffected).
-        var healthResponse = await unavailableClient.GetAsync("/healthz");
+        var healthResponse = await unavailableClient.GetAsync("/healthz/live");
         healthResponse.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
