@@ -18,6 +18,12 @@ public enum StudioDeliverableExportStatus
 
     /// <summary>The requested kind did not match the resolved package family.</summary>
     KindMismatch,
+
+    /// <summary>
+    /// The deliverable could not be rendered because no usable rendering typeface was available
+    /// (honua-server#4908) — refused loudly rather than shipping a blank artifact.
+    /// </summary>
+    RenderUnavailable,
 }
 
 /// <summary>
@@ -37,6 +43,9 @@ public sealed record StudioDeliverableExportResult
     /// <summary>Human-readable detail for non-success outcomes.</summary>
     public string? Detail { get; init; }
 
+    /// <summary>Machine-readable reason code for non-success outcomes that need one (e.g. <see cref="StudioDeliverableExportStatus.RenderUnavailable"/>).</summary>
+    public string? Code { get; init; }
+
     /// <summary>Creates a success result.</summary>
     public static StudioDeliverableExportResult CreateSuccess(StudioDeliverableArtifact artifact, string? artifactUrl = null)
         => new() { Status = StudioDeliverableExportStatus.Succeeded, Artifact = artifact, ArtifactUrl = artifactUrl };
@@ -48,6 +57,10 @@ public sealed record StudioDeliverableExportResult
     /// <summary>Creates a kind-mismatch result.</summary>
     public static StudioDeliverableExportResult CreateKindMismatch(string detail)
         => new() { Status = StudioDeliverableExportStatus.KindMismatch, Detail = detail };
+
+    /// <summary>Creates a render-unavailable result carrying the machine-readable reason code.</summary>
+    public static StudioDeliverableExportResult CreateRenderUnavailable(string detail, string code)
+        => new() { Status = StudioDeliverableExportStatus.RenderUnavailable, Detail = detail, Code = code };
 }
 
 /// <summary>

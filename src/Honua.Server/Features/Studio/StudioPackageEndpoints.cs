@@ -268,6 +268,11 @@ internal static class StudioPackageEndpoints
                     return NotFound(context, result.Detail ?? "Studio content item was not found.");
                 case StudioDeliverableExportStatus.KindMismatch:
                     return BadRequest(context, result.Detail ?? "Requested kind does not match the package family.");
+                case StudioDeliverableExportStatus.RenderUnavailable:
+                    return ServiceUnavailable(
+                        context,
+                        result.Detail ?? "The deliverable could not be rendered on this host.",
+                        result.Code ?? "studio_deliverable/no_renderable_typeface");
             }
 
             var artifact = result.Artifact!;
@@ -2074,6 +2079,14 @@ internal static class StudioPackageEndpoints
 
     private static IResult ServerError(HttpContext context, string detail)
         => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status500InternalServerError, "Internal Server Error", detail);
+
+    /// <summary>
+    /// Builds the deliverable-render-unavailable RFC 7807 problem (honua-server#4908): a machine-
+    /// readable <c>code</c> member so a caller can distinguish "no renderable typeface on this
+    /// host" from a generic 503, rather than receiving a 200 over a blank artifact.
+    /// </summary>
+    private static IResult ServiceUnavailable(HttpContext context, string detail, string code)
+        => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status503ServiceUnavailable, "Service Unavailable", detail, code);
 
     internal sealed class StudioPackageEndpointsMarker;
 }
