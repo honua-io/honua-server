@@ -138,22 +138,10 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
             var jobId = submitted.RootElement.GetProperty("jobId").GetString();
             jobId.Should().NotBeNullOrWhiteSpace();
 
-            string? terminalStatus = null;
-            var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
-            while (DateTimeOffset.UtcNow < deadline)
-            {
-                using var response = await client.GetAsync(
-                    $"/rest/services/{ServiceId}/GPServer/geometry.buffer/jobs/{jobId}?f=json");
-                response.StatusCode.Should().Be(HttpStatusCode.OK);
-                using var status = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-                terminalStatus = status.RootElement.GetProperty("jobStatus").GetString();
-                if (terminalStatus is "esriJobFailed" or "esriJobSucceeded" or "esriJobCancelled")
-                {
-                    break;
-                }
-
-                await Task.Delay(TimeSpan.FromMilliseconds(100));
-            }
+            var terminalStatus = await GPServerJobPolling.PollUntilTerminalAsync(
+                client,
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/jobs/{jobId}?f=json",
+                jobId!);
 
             terminalStatus.Should().Be("esriJobFailed");
             var durableJob = await fixture.GetService<IExecutionJobStore>().GetAsync(jobId!);
@@ -331,29 +319,12 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
         }
     }
 
-    private static async Task<JsonDocument> PollUntilSucceededAsync(HttpClient client, string jobId)
-    {
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            using var response = await client.GetAsync(
-                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/jobs/{jobId}?f=json");
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-            var body = await response.Content.ReadAsStringAsync();
-            using var doc = JsonDocument.Parse(body);
-            var status = doc.RootElement.GetProperty("jobStatus").GetString();
-            if (status == "esriJobSucceeded")
-            {
-                return JsonDocument.Parse(body);
-            }
-
-            status.Should().NotBe("esriJobFailed", "the configured durable runtime should complete the bounded test job");
-            await Task.Delay(TimeSpan.FromMilliseconds(250));
-        }
-
-        throw new TimeoutException($"Timed out waiting for GPServer job '{jobId}' to succeed.");
-    }
+    private static Task<JsonDocument> PollUntilSucceededAsync(HttpClient client, string jobId)
+        => GPServerJobPolling.PollUntilSucceededAsync(
+            client,
+            $"/rest/services/{ServiceId}/GPServer/geometry.buffer/jobs/{jobId}?f=json",
+            jobId,
+            "the configured durable runtime should complete the bounded test job");
 
     private static async Task DeleteControlPlaneKeysAsync(string redisConnectionString)
     {
@@ -433,17 +404,7 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
             if (operation == "SubmitJob")
             {
                 var jobId = result.Value;
-                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-                while (true)
-                {
-                    var status = await SendSoapAsync(client, "GetJobStatus", $"<JobID>{jobId}</JobID>");
-                    if (status.Value == "esriJobSucceeded")
-                    {
-                        break;
-                    }
-                    status.Value.Should().NotBe("esriJobFailed").And.NotBe("esriJobCancelled");
-                    await Task.Delay(100, timeout.Token);
-                }
+                await WaitForSoapJobSucceededAsync(client, jobId);
                 result = await SendSoapAsync(client, "GetJobResult", $"<JobID>{jobId}</JobID><ParameterNames><String>outputScalar</String></ParameterNames>");
             }
             var scalar = result.Element("Values")!.Elements("GPValue").Should().ContainSingle().Subject;
@@ -730,17 +691,23 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
 
     private static async Task WaitForSoapJobSucceededAsync(HttpClient client, string jobId)
     {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        while (true)
+        var deadline = DateTimeOffset.UtcNow.Add(GPServerJobPolling.DefaultBudget);
+        string? lastStatus = null;
+        while (DateTimeOffset.UtcNow < deadline)
         {
             var status = await SendSoapAsync(client, "GetJobStatus", $"<JobID>{jobId}</JobID>");
-            if (status.Value == "esriJobSucceeded")
+            lastStatus = status.Value;
+            if (lastStatus == "esriJobSucceeded")
             {
                 return;
             }
-            status.Value.Should().NotBe("esriJobFailed").And.NotBe("esriJobCancelled");
-            await Task.Delay(100, timeout.Token);
+            lastStatus.Should().NotBe("esriJobFailed").And.NotBe("esriJobCancelled");
+            await Task.Delay(100);
         }
+
+        throw new TimeoutException(
+            $"Timed out waiting for SOAP GPServer job '{jobId}' to succeed after {GPServerJobPolling.DefaultBudget}. " +
+            $"Last observed jobStatus: '{lastStatus}'.");
     }
 
     private static (double X, double Y)[] ReadSingleRing(XElement result, out string wkid)
