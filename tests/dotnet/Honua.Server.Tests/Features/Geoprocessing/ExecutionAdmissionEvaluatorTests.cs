@@ -304,6 +304,111 @@ public sealed class ExecutionAdmissionEvaluatorTests
     }
 
     // -----------------------------------------------------------------------
+    // Active-job snapshot faults â€” retry once, then fail closed
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task Evaluate_ActiveJobReadTimesOutOnce_RetriesAndAdmits()
+    {
+        // A StackExchange.Redis command timeout is not a connection failure, so the multiplexer's
+        // own reconnect policy never covers it. Before the retry a single timed-out SMEMBERS
+        // escaped the evaluator and failed the submission outright.
+        var calls = 0;
+        _jobStore
+            .ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                if (++calls == 1)
+                {
+                    throw new RedisTimeoutException(
+                        "Timeout awaiting response, command=SMEMBERS", CommandStatus.Sent);
+                }
+
+                return Array.Empty<ExecutionJobRecord>();
+            });
+
+        var sut = CreateSut(DefaultOptions());
+
+        var decision = await sut.EvaluateAsync(CreateRequest());
+
+        decision.Outcome.Should().Be(ExecutionAdmissionOutcome.Admitted);
+        decision.Snapshot.ActiveJobsGlobal.Should().Be(0);
+        calls.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Evaluate_ActiveJobReadKeepsFailing_DeniesBackpressureInsteadOfThrowing()
+    {
+        // Backpressure, concurrency and cost all read this snapshot. With a limit configured and
+        // no snapshot, admitting would step past a gate we cannot evaluate, so the submission is
+        // refused with the retry-after an Esri client can act on.
+        var options = DefaultOptions();
+        options.DefaultRetryAfterSeconds = 7;
+
+        _jobStore
+            .ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new RedisTimeoutException("Timeout awaiting response, command=SMEMBERS", CommandStatus.Sent));
+
+        var sut = CreateSut(options);
+
+        var decision = await sut.EvaluateAsync(CreateRequest());
+
+        decision.Outcome.Should().Be(ExecutionAdmissionOutcome.Denied);
+        decision.DenyingDimension.Should().Be(ExecutionAdmissionDimension.Backpressure);
+        decision.PolicyRef.Should().Be("backpressure:geoprocessing:active-state-unavailable");
+        decision.RetryAfterSeconds.Should().Be(7);
+    }
+
+    [Fact]
+    public async Task Evaluate_ActiveJobReadKeepsFailingWithNoActiveLimits_Admits()
+    {
+        // With no backpressure, concurrency or cost limit configured the snapshot is advisory
+        // only, so an unreadable store must not manufacture a refusal.
+        var options = DefaultOptions();
+        options.MaxConcurrentJobsGlobal = 0;
+        options.MaxConcurrentJobsPerPartition = 0;
+        options.MaxCostWeightPerPartition = 0;
+
+        _jobStore
+            .ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+            .ThrowsAsync(new RedisTimeoutException("Timeout awaiting response, command=SMEMBERS", CommandStatus.Sent));
+
+        var sut = CreateSut(options);
+
+        var decision = await sut.EvaluateAsync(CreateRequest());
+
+        decision.Outcome.Should().Be(ExecutionAdmissionOutcome.Admitted);
+        decision.Snapshot.ActiveJobsGlobal.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Evaluate_ActiveJobReadCancelled_PropagatesCancellation()
+    {
+        // Caller-driven cancellation is not a store fault: it must not be retried or laundered
+        // into a backpressure denial.
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        var calls = 0;
+        _jobStore
+            .ListActiveAsync(Arg.Any<ExecutionJobKind?>(), Arg.Any<int?>(), Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                calls++;
+                throw new OperationCanceledException(cts.Token);
+#pragma warning disable CS0162 // Unreachable: pins the delegate's return type for inference.
+                return Array.Empty<ExecutionJobRecord>();
+#pragma warning restore CS0162
+            });
+
+        var sut = CreateSut(DefaultOptions());
+
+        await FluentActions.Awaiting(() => sut.EvaluateAsync(CreateRequest(), cts.Token))
+            .Should().ThrowAsync<OperationCanceledException>();
+        calls.Should().Be(1);
+    }
+
+    // -----------------------------------------------------------------------
     // Shared rate state unavailable â€” fail closed, never a per-node bucket (#3853)
     // -----------------------------------------------------------------------
 
