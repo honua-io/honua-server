@@ -101,22 +101,18 @@ internal static class GeoservicesCatalogEndpoints
             .WithDisplayName("ArcGIS SOAP Services Catalog WSDL")
             .WithName("ArcGisSoapServicesCatalogWsdl")
             .WithSummary("Get the ArcGIS SOAP services catalog WSDL")
-            .WithDescription("Returns the SOAP 1.1 and SOAP 1.2 service-catalog contract when the wsdl query flag is present.")
+            .WithDescription("Returns the SOAP 1.1 and SOAP 1.2 service-catalog contract for both the bare site-root form and the wsdl query flag.")
             .WithTags("GeoServices Catalog")
             .Produces(StatusCodes.Status200OK, contentType: "text/xml")
-            .Produces(StatusCodes.Status404NotFound, contentType: "text/xml")
             .AllowAnonymous();
 
         return endpoints;
     }
 
+    // ArcGIS Pro's site-root connection form probes GET /services before it posts
+    // catalog operations, so the bare form answers with the same contract as ?wsdl.
     private static IResult HandleGetSoapCatalogWsdl(HttpContext context)
     {
-        if (!context.Request.Query.ContainsKey("wsdl"))
-        {
-            return Results.NotFound();
-        }
-
         XNamespace wsdl = "http://schemas.xmlsoap.org/wsdl/";
         XNamespace xs = "http://www.w3.org/2001/XMLSchema";
         XNamespace soap11 = "http://schemas.xmlsoap.org/wsdl/soap/";
