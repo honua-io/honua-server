@@ -160,7 +160,6 @@ def build(run_dir: Path, requirements: dict, producer_source_sha: str) -> tuple[
         lane, version, surface, target, fixture_revision, contract_revision, auth_revision, client = key
         observations = [observation for observation, _, _ in members]
         results = [result for _, _, result in sorted(members, key=lambda member: member[2]["test_case_id"])]
-        lane_name = observations[0].get("lane") or lanes["by_client_lane"].get(lane, {}).get("lane")
         run_started = min(parse_time(observation["started_at"]) for observation in observations)
         envelope = {
             "schema_version": SCHEMA_VERSION,

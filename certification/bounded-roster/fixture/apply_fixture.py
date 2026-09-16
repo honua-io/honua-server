@@ -91,7 +91,7 @@ def author_cog() -> dict:
     described = {"key": COG_KEY, "size": [dataset.RasterXSize, dataset.RasterYSize],
                  "geotransform": dataset.GetGeoTransform(), "layout": dataset.GetMetadata("IMAGE_STRUCTURE"),
                  "sha256": sha256_of(target)}
-    dataset = None
+    del dataset  # close/flush the GDAL handle before returning
     return described
 
 
@@ -129,7 +129,7 @@ def author_zarr() -> dict:
     reference.ImportFromEPSG(4326)
     sst.SetSpatialRef(reference)
     sst.Write(struct.pack("<32f", *values))
-    dataset = None
+    del dataset  # close/flush the GDAL handle before returning
     listing = sorted(gdal.ReadDirRecursive(root_path) or [])
     return {"root": ZARR_ROOT, "objects": {entry: sha256_of(f"{root_path}/{entry}") for entry in listing
                                            if not entry.endswith("/")}}

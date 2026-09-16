@@ -91,7 +91,7 @@ def flatgeobuf() -> None:
             harbor = harbor_feature.GetGeometryRef()
             harbor_xy = (round(harbor.GetX(), 4), round(harbor.GetY(), 4))
             harbor_wkt = harbor.ExportToWkt()
-            dataset = None
+            del dataset
         expect(code == "4326", code)
         expect(harbor_xy == (-122.4194, 37.7749), harbor_wkt)
         c.detail = f"EPSG:{code}, data axis mapping {mapping}; Harbor City {harbor_wkt}; Dateline Post x=179.5 stays in range"
@@ -217,7 +217,7 @@ def multidim() -> None:
             except RuntimeError as error:
                 expect(False, f"GDAL OGCAPI could not open {target}: {error}; requests {record.fetched}")
             opened["size"] = (dataset.RasterXSize, dataset.RasterYSize)
-            dataset = None
+            del dataset
         c.detail = f"{opened}"
     for facet, name in (("negative", "an unknown datacube collection is a 404"),
                         ("auth", "the protected datacube requires a credential"),

@@ -33,11 +33,13 @@ def _cell(test_id: str, version: str, profile: str, release: str) -> Cell:
 def _release_version(release: str) -> str:
     versions = os.environ.get("ROSTER_MAPLIBRE_VERSIONS_FILE", "/opt/roster-assets/versions.txt")
     try:
-        for line in open(versions, encoding="utf-8"):
-            name, _, version = line.strip().partition(" ")
-            if name == release and re.fullmatch(r"\d+\.\d+\.\d+", version):
-                return version
+        with open(versions, encoding="utf-8") as f:
+            for line in f:
+                name, _, version = line.strip().partition(" ")
+                if name == release and re.fullmatch(r"\d+\.\d+\.\d+", version):
+                    return version
     except OSError:
+        # versions file is optional; fall back to the release label itself.
         pass
     return release
 

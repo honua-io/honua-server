@@ -115,7 +115,7 @@ def _oapif_crs_axis(cell: Cell, connection: str) -> None:
             dataset = _open_vector(connection, ["PREFERRED_CRS=EPSG:3857"])
             layer = dataset.GetLayerByName("0") or dataset.GetLayer(0)
             projected = _features(layer)[1][2]
-            dataset = None
+            del dataset
         transform = osr.CoordinateTransformation(_srs(4326), _srs(3857))
         expected = transform.TransformPoint(-122.49, 37.71)[:2]
         expect(abs(projected[0] - expected[0]) < 1 and abs(projected[1] - expected[1]) < 1,
@@ -155,7 +155,7 @@ def _oapif_media(cell: Cell, connection: str, document: str) -> None:
             layer = dataset.GetLayerByName("0") or dataset.GetLayer(0)
             types = _field_types(layer)
             geometry_type = ogr.GeometryTypeToName(layer.GetGeomType())
-            dataset = None
+            del dataset
         payload, headers = _json_with_headers(document)
         content_type = headers.get("content-type", "")
         expect(types.get("count") == "Integer" and types.get("name") == "String"
@@ -213,7 +213,7 @@ def features_conformance() -> None:
         layer = dataset.GetLayerByName("0")
         layer.GetFeatureCount()
         supported = [srs.GetAuthorityCode(None) for srs in (layer.GetSupportedSRSList() or [])]
-        dataset = None
+        del dataset
         fetched = record.fetched_path("/conformance")
         expect(fetched, f"GDAL did not request the conformance declaration: {sorted(set(record.fetched))}")
         return f"conformance fetched {fetched}; supported SRS {supported}"
