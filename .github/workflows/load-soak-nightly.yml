@@ -161,6 +161,21 @@ jobs:
       - name: Build server
         run: dotnet build src/Honua.Server/Honua.Server.csproj -c Release
 
+      # PROVISION BEFORE THE SERVER STARTS (#4972), mirroring
+      # .github/actions/setup-honua-server's "Provision PostGIS extensions" step. DB_USER is
+      # "honua", and migration 001_CreateHonuaSchema.sql creates a schema also named "honua" —
+      # Postgres's default search_path ("$user", public) then resolves current_schema() to
+      # "honua" for any later connection as that role, once that schema exists. postgis_raster's
+      # own install script requires current_schema() to match the schema postgis is installed in
+      # (public), so creating it after the server has migrated fails with "PostGIS Raster must be
+      # in the same schema as PostGIS (public)". Creating it here, before the schema exists, avoids
+      # the collision entirely; IF NOT EXISTS then makes any later create a no-op regardless of
+      # search_path.
+      - name: Provision PostGIS extensions
+        run: >-
+          PGPASSWORD="$DB_PASSWORD" psql -v ON_ERROR_STOP=1 -h localhost -U "$DB_USER" -d "$DB_NAME"
+          -c "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster; CREATE EXTENSION IF NOT EXISTS unaccent;"
+
       - name: Start server
         run: |
           dotnet run --project src/Honua.Server -c Release --no-build --no-launch-profile > server.log 2>&1 &
@@ -225,13 +240,12 @@ jobs:
           if conn is None:
               raise SystemExit("Postgres did not become ready")
 
-          conn.execute("CREATE EXTENSION IF NOT EXISTS postgis;")
-          conn.execute("CREATE EXTENSION IF NOT EXISTS postgis_raster;")
-          conn.execute("CREATE EXTENSION IF NOT EXISTS unaccent;")
-          conn.commit()
-
+          # Extensions are provisioned by the "Provision PostGIS extensions" step, before the
+          # server (and its schema-named-"honua" migration) exists (#4972). Seed data is written
+          # into that same "honua" schema explicitly, rather than relying on DB_USER happening to
+          # match the schema name via Postgres's default search_path.
           runner = SeedRunner("tests/seed/server.yaml")
-          runner.apply(conn)
+          runner.apply(conn, schema="honua")
           conn.close()
           PY
 
