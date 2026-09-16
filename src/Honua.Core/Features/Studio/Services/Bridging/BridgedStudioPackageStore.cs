@@ -307,6 +307,15 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
             return false;
         }
 
+        // Bridged families persist in their own native stores, which record no Studio tenant.
+        // They are therefore treated exactly as a tenant-unassigned Studio row is
+        // (honua-server#4905): enumerable only by a caller whose scope covers the deployment's
+        // default tenant, never by another tenant.
+        if (query.Tenant is { IncludeUnassigned: false })
+        {
+            return false;
+        }
+
         if (query.States is { Count: > 0 } states && !states.Contains(item.State))
         {
             return false;
