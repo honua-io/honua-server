@@ -387,5 +387,95 @@ def styles_service() -> None:
     cell.write()
 
 
+# ---------------------------------------------------------------------------
+# Terrain-RGB (MapLibre 6.5.0)
+# ---------------------------------------------------------------------------
+
+DEM_ORIGIN = (-122.46, 37.80)
+DEM_CELL = 0.000625
+
+
+def expected_elevation(lng: float, lat: float) -> float:
+    """roster-raster-fixture.sql: elevation(col, row) = 100 + col + 2 * row, row 0 at the north edge."""
+    col = int((lng - DEM_ORIGIN[0]) / DEM_CELL)
+    row = int((DEM_ORIGIN[1] - lat) / DEM_CELL)
+    return 100 + col + 2 * row
+
+
+def _terrain_style(dataset: str = "5100") -> dict:
+    return {"version": 8,
+            "sources": {"dem": {"type": "raster-dem", "url": f"{BASE_URL}/terrain/{dataset}/tile.json",
+                                "encoding": "mapbox", "tileSize": 256}},
+            "layers": [{"id": "hillshade", "type": "hillshade", "source": "dem"}]}
+
+
+def terrain() -> None:
+    cell = _cell("client-cert/maplibre-gl-js/raster-terrain-rgb/raster.terrain-rgb", "TileJSON 3.0 + Terrain-RGB",
+                 "raster-dem mapbox encoding", "maplibre-6.5.0")
+    cell.primary_request_url = BASE_URL + "/terrain/5100/tile.json"
+    inside = {"name": "inside", "lngLat": [-122.42, 37.76], "elevation": True}
+    north = {"name": "north", "lngLat": [-122.42, 37.79], "elevation": True}
+    east = {"name": "east", "lngLat": [-122.39, 37.76], "elevation": True}
+    outside = {"name": "outside", "lngLat": [-122.50, 37.76], "elevation": True}
+    view = dict(center=[-122.42, 37.76], zoom=13)
+    with browserkit.browser("maplibre-6.5.0", BASE_URL) as session:
+        with cell.check("positive", "setTerrain on the raster-dem source and read the DEM back with queryTerrainElevation") as c:
+            outcome = session.render(_terrain_style(), **view, probes=[inside], terrain={"source": "dem", "exaggeration": 1})
+            measured = outcome["probes"]["inside"]["elevation"]
+            expected = expected_elevation(*inside["lngLat"])
+            expect(outcome["version"] == "6.5.0", outcome["version"])
+            expect(measured is not None and abs(measured - expected) <= 4, f"elevation {measured} vs {expected}; {browserkit.summarize(outcome)}")
+            c.detail = f"MapLibre {outcome['version']}: elevation at {inside['lngLat']} = {measured:.1f} m (fixture {expected} m)"
+        with cell.check("negative", "an unknown terrain dataset is refused") as c:
+            outcome = session.render(_terrain_style("999999"), **view, probes=[inside], terrain={"source": "dem", "exaggeration": 1})
+            statuses = _statuses(outcome, "/terrain/999999/")
+            expect(statuses and all(status == 404 for status in statuses) and outcome["errors"], (statuses, outcome["errors"][:2]))
+            c.detail = f"responses {statuses}; MapLibre errors {[error.get('status') for error in outcome['errors']][:3]}"
+        with cell.check("auth", "the protected DEM's TileJSON and tiles require transformRequest credentials") as c:
+            outcomes = {}
+            for label, headers in {**DENIED, **ADMITTED}.items():
+                outcome = session.render(_terrain_style("5101"), **view, headers=headers, probes=[inside],
+                                         terrain={"source": "dem", "exaggeration": 1})
+                outcomes[label] = (outcome["probes"]["inside"]["elevation"], _statuses(outcome, "/terrain/5101/"))
+            expected = expected_elevation(*inside["lngLat"])
+            expect(all(outcomes[label][0] in (None, 0) and outcomes[label][1] and set(outcomes[label][1]) <= {401, 403}
+                       for label in DENIED), outcomes)
+            cache = session.page.evaluate("""async (headers) => {
+                const read = async (h) => (await fetch('/terrain/5101/14/2621/6333.png', {headers: h})).headers.get('cache-control');
+                const anonymous = (await fetch('/terrain/5100/14/2621/6333.png')).headers.get('cache-control');
+                return {authenticated: await read(headers), anonymous_public: anonymous};
+            }""", api_key_headers())
+            expect(all(outcomes[label][0] is not None and abs(outcomes[label][0] - expected) <= 4 for label in ADMITTED),
+                   f"{outcomes}: credentialed tiles are fetched (200) but MapLibre never uses them for terrain; "
+                   f"Cache-Control on those responses {cache}")
+            c.detail = f"(elevation, statuses) {outcomes}"
+        with cell.check("boundary", "tiles beyond the DEM extent are served as the -10000 m no-data sentinel") as c:
+            outcome = session.render(_terrain_style(), center=[-122.46, 37.76], zoom=13, probes=[outside, inside],
+                                     terrain={"source": "dem", "exaggeration": 1})
+            measured = outcome["probes"]["outside"]["elevation"]
+            png = [response for response in outcome["responses"] if "/terrain/5100/" in response["url"] and response["url"].endswith(".png")]
+            expect(measured is not None and measured <= -9990, f"elevation outside the DEM {measured}")
+            expect(png and all(response["status"] == 200 for response in png), [(r["status"], r["url"]) for r in png][:4])
+            c.detail = f"elevation west of the DEM {measured}; {len(png)} tiles all 200"
+        with cell.check("crs-axis", "the gradient runs east (+1 m/cell) and south (+2 m/cell) as the fixture encodes it") as c:
+            outcome = session.render(_terrain_style(), **view, probes=[inside, north, east], terrain={"source": "dem", "exaggeration": 1})
+            values = {name: outcome["probes"][name]["elevation"] for name in ("inside", "north", "east")}
+            expected = {name: expected_elevation(*probe["lngLat"]) for name, probe in (("inside", inside), ("north", north), ("east", east))}
+            expect(all(values[name] is not None and abs(values[name] - expected[name]) <= 4 for name in values), (values, expected))
+            expect(values["north"] < values["inside"] and values["east"] > values["inside"], values)
+            c.detail = f"measured {values}; fixture {expected}"
+        with cell.check("media-schema", "TileJSON declares terrain-rgb/mapbox and tiles are PNG") as c:
+            import json
+            metadata = session.fetch(BASE_URL + "/terrain/5100/tile.json")
+            document = json.loads(metadata["body"])
+            outcome = session.render(_terrain_style(), **view, terrain={"source": "dem", "exaggeration": 1})
+            types = _types(outcome, "/terrain/5100/")
+            expect(metadata["status"] == 200 and (metadata["contentType"] or "").startswith("application/json"), metadata["contentType"])
+            expect(document.get("format") == "terrain-rgb" and document.get("tilejson", "").startswith("3."), {k: document.get(k) for k in ("format", "tilejson", "encoding")})
+            expect("image/png" in types, types)
+            c.detail = f"TileJSON {document.get('tilejson')} format {document.get('format')} encoding {document.get('encoding')}; response types {types}"
+    cell.write()
+
+
 CELLS = (wms_operation, wms_service, wmts_operation, wmts_service, tiles_tile, tiles_landing_tilesets, tiles_service,
-         maps_service, styles_service)
+         maps_service, styles_service, terrain)
