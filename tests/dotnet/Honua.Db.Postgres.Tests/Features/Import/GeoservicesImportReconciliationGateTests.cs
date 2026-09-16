@@ -29,6 +29,41 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 [Collection("Database")]
 public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fixture)
 {
+    [Theory]
+    [InlineData("[{\"id\":0,\"relatedTableId\":1,\"keyField\":\"Name\",\"composite\":false}]", 1)]
+    [InlineData("[{\"id\":0,\"relatedTableId\":1,\"keyField\":\"Name\",\"composite\":true}]", 1)]
+    [InlineData("[null,{}]", 2)]
+    public async Task ImportLayerAsync_WithUnappliedRelationships_PreservesRowsButRequiresReview(
+        string relationshipsJson, int expectedOmissions)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync("UnappliedRelationships");
+        var reconciliation = new StubReconciliationService(MigrationReconciliationClassifications.Pass, failCount: 0);
+        var progress = new RecordingProgress();
+        var service = CreateService(new SimpleFeatureServerHandler(relationshipsJson), publishedLayerId: 103, reconciliation);
+
+        try
+        {
+            var result = await service.ImportLayerAsync(BuildRequest("relationship_rows", schemaName), progress);
+
+            result.NeedsReview.Should().BeTrue();
+            result.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+            result.FidelityDifferences.Where(difference => difference.Code == MigrationFidelityDifferenceCodes.RelationshipOmitted)
+                .Should().HaveCount(expectedOmissions).And.OnlyContain(difference =>
+                    difference.Severity == MigrationFidelityDifferenceSeverities.Blocking
+                    && difference.Summary.Contains("reviewed relationship manifest", StringComparison.Ordinal));
+            progress.Statuses.Should().Contain(GeoservicesImportStatus.NeedsReview);
+            progress.Statuses.Should().NotContain(GeoservicesImportStatus.Completed);
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(*) FROM \"{schemaName}\".relationship_rows";
+            (await command.ExecuteScalarAsync()).Should().Be(2L);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
     [Fact]
     public async Task ImportLayerAsync_WhenReconciliationReportsFail_RoutesToNeedsReviewAndBlocksCompleted()
     {
@@ -330,17 +365,18 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
             => Task.FromResult<IReadOnlyList<MaterializedFeatureRefreshResult>>([]);
     }
 
-    private sealed class SimpleFeatureServerHandler : HttpMessageHandler
+    private sealed class SimpleFeatureServerHandler(string relationshipsJson = "[]") : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var pathAndQuery = request.RequestUri?.PathAndQuery ?? string.Empty;
             return pathAndQuery switch
             {
-                "/arcgis/rest/services/Inspections/FeatureServer/0?f=json" => Task.FromResult(JsonResponse("""
+                "/arcgis/rest/services/Inspections/FeatureServer/0?f=json" => Task.FromResult(JsonResponse($$"""
                     {
                       "id": 0,
                       "name": "Inspections",
+                      "relationships": {{relationshipsJson}},
                       "geometryType": "esriGeometryPoint",
                       "maxRecordCount": 10,
                       "hasAttachments": false,
