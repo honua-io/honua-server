@@ -1,0 +1,425 @@
+{
+  "candidateRevision": "886206527cc97bad1bbaa5fa6358910ebc45e9c0",
+  "completedAt": "2026-09-16T03:45:54Z",
+  "envelope": {
+    "concurrentVirtualUsers": 170,
+    "featuresPerLayer": 10000,
+    "gpQueueDepth": 100,
+    "gpWorkers": 1,
+    "layersPerService": 4,
+    "maximumFeaturePayloadBytes": 1048576,
+    "services": 1,
+    "tenants": 1
+  },
+  "envelopeCoverage": {
+    "declaredNotExercised": [],
+    "informational": [],
+    "notMet": [],
+    "verified": [
+      "concurrentVirtualUsers",
+      "featuresPerLayer",
+      "gpQueueDepth",
+      "gpWorkers",
+      "layersPerService",
+      "maximumFeaturePayloadBytes",
+      "services",
+      "tenants"
+    ]
+  },
+  "envelopeVerification": {
+    "concurrentVirtualUsers": {
+      "coverage": "verified",
+      "declared": 170,
+      "method": "NBomber soak profile total virtual users (LoadTestProfile.Soak.TotalVirtualUsers)",
+      "observed": 170,
+      "observedAt": "2026-09-16T02:35:50Z",
+      "verified": true
+    },
+    "featuresPerLayer": {
+      "coverage": "verified",
+      "declared": 10000,
+      "method": "per-layer returnCountOnly=true query against the serving API",
+      "observed": {
+        "0": 10000,
+        "1": 10000,
+        "2": 10000,
+        "3": 10000
+      },
+      "observedAt": "2026-09-16T02:35:50Z",
+      "verified": true
+    },
+    "gpQueueDepth": {
+      "admissionRejections": 3414,
+      "coverage": "verified",
+      "declared": 100,
+      "method": "geoprocessing queue exercised for the whole steady-state window; the declared depth is an operating bound and the observed maximum stayed within it",
+      "note": "with the declared single worker, execution admission answers 503 'Global active job limit reached (1/1)' to a submission arriving while a job runs, so the queue does not grow towards the declared bound through the GPServer submit path; the bound was respected but not filled",
+      "observed": {
+        "bound": 100,
+        "maxObservedQueueDepth": 1
+      },
+      "observedAt": "2026-09-16T03:40:54Z",
+      "observedJobs": 471,
+      "verified": true
+    },
+    "gpWorkers": {
+      "coverage": "verified",
+      "declared": 1,
+      "method": "ExecutionAdmission:MaxConcurrentJobsGlobal configured on the substrate, confirmed by the maximum number of concurrently executing jobs observed during steady state",
+      "observed": {
+        "configuredConcurrency": 1,
+        "maxObservedExecuting": 1
+      },
+      "observedAt": "2026-09-16T03:40:54Z",
+      "observedJobs": 471,
+      "verified": true
+    },
+    "layersPerService": {
+      "coverage": "verified",
+      "declared": 4,
+      "method": "GET /rest/services/test/FeatureServer?f=json layer count",
+      "observed": 4,
+      "observedAt": "2026-09-16T02:35:50Z",
+      "verified": true
+    },
+    "maximumFeaturePayloadBytes": {
+      "coverage": "verified",
+      "declared": 1048576,
+      "httpStatus": 200,
+      "method": "POST of a declared-maximum-size feature payload was not rejected by a payload-size limit",
+      "observed": 1048249,
+      "observedAt": "2026-09-16T02:35:50Z",
+      "probeBytes": 1048249,
+      "verified": true
+    },
+    "services": {
+      "coverage": "verified",
+      "declared": 1,
+      "method": "GET /rest/services/test/FeatureServer served one service catalog",
+      "observed": 1,
+      "observedAt": "2026-09-16T02:35:50Z",
+      "verified": true
+    },
+    "tenants": {
+      "coverage": "verified",
+      "declared": 1,
+      "method": "capability manifest: scope.tenantSource=Default with admin.multi-tenancy unavailable => a single-tenant deployment",
+      "observed": 1,
+      "observedAt": "2026-09-16T02:35:50Z",
+      "tenantId": "public",
+      "tenantSource": "Default",
+      "verified": true
+    }
+  },
+  "lockFrozenAt": "2026-09-13T12:24:00Z",
+  "lockSha256": "5a19b346cc3ca767be337904c6e788d7b7e026d3746443ce66d31a1e9caebebf",
+  "measurement": {
+    "deployment": {
+      "edition": "Pro",
+      "environment": "Production",
+      "licenseValid": true,
+      "licenseValidationState": "Valid",
+      "observedRevision": "886206527cc97bad1bbaa5fa6358910ebc45e9c0",
+      "observedRevisionSource": "commit-sha",
+      "previewCapabilities": {
+        "alerts.geofence": {
+          "available": false,
+          "lifecycle": "preview"
+        },
+        "realtime.feature-streams": {
+          "available": false,
+          "lifecycle": "preview"
+        }
+      },
+      "serverVersion": "2026.1.1",
+      "tenantId": "public",
+      "tenantSource": "Default"
+    },
+    "driver": "scripts/soak/drive_soak.py",
+    "loadHarness": "tests/dotnet/Honua.LoadTests (NBomber) via scripts/scale/run-load-soak-tests.sh",
+    "loadProfile": "soak",
+    "loadRunSeconds": 4020,
+    "loadScenarios": [
+      {
+        "durationSeconds": 4020,
+        "failCount": 532,
+        "maxMs": 718.21,
+        "meanMs": 69.28,
+        "name": "feature_query_load",
+        "okCount": 1648715,
+        "okRps": 410.13,
+        "p95Ms": 106.18,
+        "p99Ms": 139.52
+      },
+      {
+        "durationSeconds": 4020,
+        "failCount": 264,
+        "maxMs": 1186.94,
+        "meanMs": 174.7,
+        "name": "spatial_query_load",
+        "okCount": 326930,
+        "okRps": 81.33,
+        "p95Ms": 237.57,
+        "p99Ms": 327.42
+      },
+      {
+        "durationSeconds": 4020,
+        "failCount": 332,
+        "maxMs": 617.58,
+        "meanMs": 84.16,
+        "name": "ogc_query_load",
+        "okCount": 904553,
+        "okRps": 225.01,
+        "p95Ms": 122.11,
+        "p99Ms": 162.56
+      },
+      {
+        "durationSeconds": 4020,
+        "failCount": 176,
+        "maxMs": 2195.98,
+        "meanMs": 82,
+        "name": "cql_filter_load",
+        "okCount": 464479,
+        "okRps": 115.54,
+        "p95Ms": 118.4,
+        "p99Ms": 175.74
+      },
+      {
+        "durationSeconds": 4020,
+        "failCount": 242,
+        "maxMs": 619.2,
+        "meanMs": 84.08,
+        "name": "odata_query_load",
+        "okCount": 679294,
+        "okRps": 168.98,
+        "p95Ms": 119.55,
+        "p99Ms": 159.1
+      },
+      {
+        "durationSeconds": 4020,
+        "failCount": 1037,
+        "maxMs": 750.4,
+        "meanMs": 90.19,
+        "name": "connection_pool_stress",
+        "okCount": 2532614,
+        "okRps": 630,
+        "p95Ms": 168.45,
+        "p99Ms": 219.9
+      },
+      {
+        "durationSeconds": 4020,
+        "failCount": 87,
+        "maxMs": 785.49,
+        "meanMs": 73.06,
+        "name": "memory_stress",
+        "okCount": 260671,
+        "okRps": 64.84,
+        "p95Ms": 108.99,
+        "p99Ms": 144.26
+      },
+      {
+        "durationSeconds": 4020,
+        "failCount": 288032,
+        "maxMs": 616.36,
+        "meanMs": 88.89,
+        "name": "tiles_load",
+        "okCount": 369977,
+        "okRps": 92.03,
+        "p95Ms": 123.58,
+        "p99Ms": 160.77
+      }
+    ],
+    "loadStatisticsError": null,
+    "recovery": {
+      "fault": "docker compose restart honua",
+      "injectedAt": "2026-09-16T03:40:51Z",
+      "probeAttempts": 3,
+      "recoveredAt": "2026-09-16T03:40:54Z",
+      "recoveryTimeSeconds": 3.814,
+      "status": "observed"
+    },
+    "steadyStateWindow": {
+      "end": "2026-09-16T03:40:50Z",
+      "start": "2026-09-16T02:40:50Z"
+    }
+  },
+  "observedRevision": "886206527cc97bad1bbaa5fa6358910ebc45e9c0",
+  "observedRevisionSource": "commit-sha",
+  "producer": {
+    "loadHarnessExit": "1",
+    "lockSource": "https://raw.githubusercontent.com/honua-io/honua-release/trunk/certification/capacity-envelope.v1.json",
+    "producerRevision": "886206527cc97bad1bbaa5fa6358910ebc45e9c0",
+    "repository": "honua-io/honua-server",
+    "runAttempt": "1",
+    "runId": "35048169376",
+    "runUrl": "https://github.com/honua-io/honua-server/actions/runs/35048169376",
+    "workflow": "capacity-soak-candidate",
+    "workflowRef": "honua-io/honua-server/.github/workflows/capacity-soak-candidate.yml@refs/heads/trunk"
+  },
+  "profile": "soak",
+  "release": "2026.1.0-rc.1",
+  "schema": "honua-server.capacity-soak-receipt/v1",
+  "signals": {
+    "availability": {
+      "evidence": {
+        "okProbes": 3595,
+        "probes": 3595
+      },
+      "method": "served/attempted ratio of an independent 1 Hz FeatureServer query probe, sampled across the steady-state window (separate from the load harness's own counters)",
+      "revision": "886206527cc97bad1bbaa5fa6358910ebc45e9c0",
+      "sampleCount": 3595,
+      "status": "observed",
+      "unit": "ratio",
+      "value": 1.0,
+      "windowEnd": "2026-09-16T03:40:50Z",
+      "windowStart": "2026-09-16T02:40:50Z"
+    },
+    "errorRate": {
+      "evidence": {
+        "failedRequests": 290702,
+        "totalRequests": 7477935
+      },
+      "method": "failed/total requests reported by the NBomber soak run across every scenario",
+      "revision": "886206527cc97bad1bbaa5fa6358910ebc45e9c0",
+      "sampleCount": 7477935,
+      "status": "observed",
+      "unit": "ratio",
+      "value": 0.03887463584532361,
+      "windowEnd": "2026-09-16T03:45:54Z",
+      "windowStart": "2026-09-16T03:45:54Z"
+    },
+    "p95LatencyMs": {
+      "evidence": {
+        "perScenario": {
+          "connection_pool_stress": 168.45,
+          "cql_filter_load": 118.4,
+          "feature_query_load": 106.18,
+          "memory_stress": 108.99,
+          "odata_query_load": 119.55,
+          "ogc_query_load": 122.11,
+          "spatial_query_load": 237.57,
+          "tiles_load": 123.58
+        },
+        "worstScenario": "spatial_query_load"
+      },
+      "method": "worst-scenario p95 latency across the soak profile's scenarios \u2014 the same worst-scenario reading the frozen limit was taken from",
+      "revision": "886206527cc97bad1bbaa5fa6358910ebc45e9c0",
+      "sampleCount": 8,
+      "status": "observed",
+      "unit": "milliseconds",
+      "value": 237.57,
+      "windowEnd": "2026-09-16T03:45:54Z",
+      "windowStart": "2026-09-16T03:45:54Z"
+    },
+    "p99LatencyMs": {
+      "evidence": {
+        "perScenario": {
+          "connection_pool_stress": 219.9,
+          "cql_filter_load": 175.74,
+          "feature_query_load": 139.52,
+          "memory_stress": 144.26,
+          "odata_query_load": 159.1,
+          "ogc_query_load": 162.56,
+          "spatial_query_load": 327.42,
+          "tiles_load": 160.77
+        },
+        "worstScenario": "spatial_query_load"
+      },
+      "method": "worst-scenario p99 latency across the soak profile's scenarios \u2014 the same worst-scenario reading the frozen limit was taken from",
+      "revision": "886206527cc97bad1bbaa5fa6358910ebc45e9c0",
+      "sampleCount": 8,
+      "status": "observed",
+      "unit": "milliseconds",
+      "value": 327.42,
+      "windowEnd": "2026-09-16T03:45:54Z",
+      "windowStart": "2026-09-16T03:45:54Z"
+    },
+    "queueAgeSeconds": {
+      "evidence": {
+        "admissionRejections": 3414,
+        "maxQueueDepth": 1,
+        "observedJobs": 471
+      },
+      "method": "maximum age reached by a queued geoprocessing job before the declared single worker started it, measured client-side once per second across the steady-state window",
+      "revision": "886206527cc97bad1bbaa5fa6358910ebc45e9c0",
+      "sampleCount": 4007,
+      "status": "observed",
+      "unit": "seconds",
+      "value": 9.692,
+      "windowEnd": "2026-09-16T03:40:50Z",
+      "windowStart": "2026-09-16T02:40:50Z"
+    },
+    "recoveryTimeSeconds": {
+      "evidence": {
+        "fault": "docker compose restart honua"
+      },
+      "method": "seconds from injecting a server-process fault (container restart) until the deployment served a feature query again; run after the steady-state window so the frozen availability budget is not spent on a deliberate outage",
+      "revision": "886206527cc97bad1bbaa5fa6358910ebc45e9c0",
+      "sampleCount": 3,
+      "status": "observed",
+      "unit": "seconds",
+      "value": 3.814,
+      "windowEnd": "2026-09-16T03:40:54Z",
+      "windowStart": "2026-09-16T03:40:51Z"
+    },
+    "saturationRatio": {
+      "evidence": {
+        "meanUtilization": 0.062917,
+        "samplesWithData": 720
+      },
+      "method": "peak connection-pool utilisation reported by the server's own /monitoring/metrics/connection-pool snapshot during the steady-state window; a sample without utilisation data invalidates the signal",
+      "revision": "886206527cc97bad1bbaa5fa6358910ebc45e9c0",
+      "sampleCount": 720,
+      "status": "observed",
+      "unit": "ratio",
+      "value": 0.22,
+      "windowEnd": "2026-09-16T03:40:50Z",
+      "windowStart": "2026-09-16T02:40:50Z"
+    },
+    "throughputRps": {
+      "evidence": {
+        "okRequests": 7187233,
+        "runSeconds": 4020.0
+      },
+      "method": "successful requests divided by the full run duration (ramp-up + steady state + ramp-down), the same aggregate the frozen throughput floor was derived from in docs/CAPACITY-ENVELOPE-2026.1.md",
+      "revision": "886206527cc97bad1bbaa5fa6358910ebc45e9c0",
+      "sampleCount": 7187233,
+      "status": "observed",
+      "unit": "requests/second",
+      "value": 1787.868905472637,
+      "windowEnd": "2026-09-16T03:45:54Z",
+      "windowStart": "2026-09-16T03:45:54Z"
+    }
+  },
+  "signature": "MEQCIBetrpG5PIERrP7yxk44uN2JuxROYF5bQdF8Anz/IPHqAiAbzUExEaSjNqjtCAemJ2EJUflhEAJcSheuZKt20rxFEg==",
+  "signatureFormat": "sigstore DSSE signature over the in-toto provenance statement whose subject is sha256:17883e4edab64ee575e4d502f18b38dd7512993d0bda968330a46f7e6c9175b1 \u2014 the canonical JSON of this receipt without its signature members",
+  "signingIdentity": "https://github.com/honua-io/honua-server/.github/workflows/capacity-soak-candidate.yml@refs/heads/trunk",
+  "signingIdentitySource": "sigstore-certificate-san",
+  "startedAt": "2026-09-16T02:40:50Z",
+  "status": "completed",
+  "steadyStateSeconds": 3600,
+  "substrate": {
+    "compose": "docker-compose.soak.yml",
+    "cpuCount": 4,
+    "image": {
+      "digest": "ghcr.io/honua-io/honua-server@sha256:0b16046533e5330ecdd48255c06b5397e869191299e1e5e8cc7b4b2ded60b388",
+      "reference": "ghcr.io/honua-io/honua-server@sha256:0b16046533e5330ecdd48255c06b5397e869191299e1e5e8cc7b4b2ded60b388",
+      "source": "published-candidate-image"
+    },
+    "kind": "local-docker",
+    "note": "docker compose on a GitHub-hosted runner: PostGIS + Redis + the candidate server image, Production startup policy. No cloud substrate is exercised; the published capacity claim is bounded to this topology.",
+    "runner": "GitHub Actions 1000445656",
+    "runnerOs": "ubuntu24",
+    "services": "",
+    "topology": {
+      "featuresPerLayer": {
+        "0": 10000,
+        "1": 10000,
+        "2": 10000,
+        "3": 10000
+      },
+      "layersPerService": 4,
+      "services": 1
+    }
+  }
+}
