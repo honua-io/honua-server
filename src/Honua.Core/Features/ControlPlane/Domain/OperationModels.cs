@@ -389,6 +389,13 @@ public sealed record OperationAuditInfo
     public string? RequestedBy { get; init; }
 
     /// <summary>
+    /// Tenant binding of <see cref="RequestedBy"/>, taken from the validated identity when the
+    /// operation was accepted (honua-server#4958). Null on a single-tenant installation and for
+    /// principals that carry no tenant claim.
+    /// </summary>
+    public string? TenantId { get; init; }
+
+    /// <summary>
     /// Free-form operator reason or change note.
     /// </summary>
     public string? Reason { get; init; }
@@ -621,6 +628,52 @@ public sealed record DeployProtectionState
 
     /// <summary>Bounded, operator-safe reason code for the current phase (for example a telemetry breach or backend signal), when applicable.</summary>
     public string? ReasonCode { get; init; }
+
+    /// <summary>
+    /// Stable identity of the recovery grant sealed when the candidate was activated (honua-server#4958).
+    /// A fenced rollback must quote this value, so a grant minted for a different activation — or for a
+    /// superseded one — cannot actuate this operation's compensation.
+    /// </summary>
+    public string? GrantId { get; init; }
+
+    /// <summary>
+    /// Operator or service principal that requested the protected activation (honua-server#4958).
+    /// The recovery grant is bound to this identity: a rollback from a different principal is refused
+    /// unless that principal holds an explicitly broader platform role.
+    /// </summary>
+    public string? Actor { get; init; }
+
+    /// <summary>
+    /// Tenant binding of <see cref="Actor"/> at activation time, or null on a single-tenant installation
+    /// and for principals with no tenant binding (honua-server#4958).
+    /// </summary>
+    public string? TenantId { get; init; }
+
+    /// <summary>
+    /// The single compensation this protection window preauthorizes, declared at activation time
+    /// (honua-server#4958). See <see cref="DeployRecoveryCompensations"/>. A rollback that asks for
+    /// anything else is broader than what was approved and is refused fail-closed.
+    /// </summary>
+    public string? PermittedCompensation { get; init; }
+}
+
+/// <summary>
+/// The closed vocabulary of compensations a deploy protection window can preauthorize
+/// (honua-server#4958). The set is deliberately tiny: a protected activation declares exactly one
+/// permitted compensation, and the rollback surface refuses anything that is not that exact value —
+/// an undeclared compensation is by definition broader than the approved one.
+/// </summary>
+public static class DeployRecoveryCompensations
+{
+    /// <summary>
+    /// Restore <see cref="DeployProtectionState.PreviousRevision"/> on the operation's own target,
+    /// which is the only compensation the server itself ever actuates.
+    /// </summary>
+    public const string RestorePreviousRevision = "restore-previous-revision";
+
+    /// <summary>Whether <paramref name="value"/> is a recognised compensation identifier.</summary>
+    public static bool IsKnown(string? value)
+        => string.Equals(value, RestorePreviousRevision, StringComparison.OrdinalIgnoreCase);
 }
 
 /// <summary>
