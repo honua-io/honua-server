@@ -386,14 +386,25 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /services")]
-    public async Task GetSoapCatalog_WithoutWsdlFlag_ReturnsNotFound()
+    public async Task GetSoapCatalog_SiteRootAndWsdlForms_ReturnTheSameCatalogContract()
     {
         using var factory = CreateFactory(new RbacTestLayerCatalog());
         using var client = factory.CreateClient();
 
-        using var response = await client.GetAsync("/services");
+        using var wsdlResponse = await client.GetAsync("/services?wsdl");
+        using var siteRootResponse = await client.GetAsync("/services");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var wsdlBody = await wsdlResponse.Content.ReadAsStringAsync();
+        var siteRootBody = await siteRootResponse.Content.ReadAsStringAsync();
+        wsdlResponse.StatusCode.Should().Be(HttpStatusCode.OK, wsdlBody);
+        siteRootResponse.StatusCode.Should().Be(HttpStatusCode.OK, siteRootBody);
+        siteRootResponse.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+        siteRootBody.Should().Be(wsdlBody);
+        var definitions = XDocument.Parse(siteRootBody).Root!;
+        definitions.Name.Should().Be(XName.Get("definitions", "http://schemas.xmlsoap.org/wsdl/"));
+        definitions.Descendants(XName.Get("operation", "http://schemas.xmlsoap.org/wsdl/"))
+            .Select(operation => operation.Attribute("name")?.Value)
+            .Should().Contain(["GetMessageVersion", "GetFolders", "GetServiceDescriptionsEx"]);
     }
 
     private static async Task AssertCatalogParityAsync(HttpClient client, string[] expectedNames)
