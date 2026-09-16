@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services.Bridging;
@@ -23,6 +24,7 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
     private readonly IStudioPackageFamilyRegistry _registry;
     private readonly IStudioPackageValidator _validator;
     private readonly TimeProvider _timeProvider;
+    private readonly ITenantContext? _tenantContext;
 
     /// <summary>
     /// Initializes a new Studio package lifecycle service.
@@ -36,12 +38,20 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
     /// bridge is available, the store is wrapped with <see cref="BridgedStudioPackageStore"/>
     /// so bridged families (form, analysis) read and write through their native stores.
     /// </param>
+    /// <param name="tenantContext">
+    /// Optional per-request tenant context (honua-server#4905). Every draft this service
+    /// creates records the tenant the request resolved to, and the immutable versions and
+    /// content item minted from that draft inherit it, so a later lifecycle call can be
+    /// refused when it comes from another tenant. Hosts without tenant resolution pass
+    /// <see langword="null"/> and keep recording no tenant at all.
+    /// </param>
     public StudioPackageLifecycleService(
         IStudioPackageStore store,
         IStudioPackageFamilyRegistry registry,
         IStudioPackageValidator validator,
         TimeProvider timeProvider,
-        StudioFamilyPersistenceBridgeCatalog? bridgeCatalog = null)
+        StudioFamilyPersistenceBridgeCatalog? bridgeCatalog = null,
+        ITenantContext? tenantContext = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(registry);
@@ -53,6 +63,7 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
         _registry = registry;
         _validator = validator;
         _timeProvider = timeProvider;
+        _tenantContext = tenantContext;
     }
 
     /// <inheritdoc />
@@ -83,6 +94,9 @@ public sealed class StudioPackageLifecycleService : IStudioPackageLifecycleServi
             PackageKey = command.PackageKey.Trim(),
             WorkspaceId = NormalizeOptional(command.WorkspaceId),
             OwnerId = NormalizeOptional(command.OwnerId ?? command.ActorId),
+            // Tenant ownership is stamped from the request, never from the command, so a
+            // caller cannot claim another tenant's content (honua-server#4905).
+            TenantId = NormalizeOptional(_tenantContext?.TenantId),
             ExpectedExistingItemOwnerId = NormalizeOptional(command.ExpectedExistingItemOwnerId),
             ExpectedExistingItemPresent = command.ExpectedExistingItemPresent,
             Family = envelope.Family,

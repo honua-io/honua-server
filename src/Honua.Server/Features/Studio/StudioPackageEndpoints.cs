@@ -217,7 +217,7 @@ internal static class StudioPackageEndpoints
 
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.ReadContentItem, pointers.OwnerId,
+                StudioAuthorizationOperation.ReadContentItem, pointers.OwnerId, pointers.TenantId,
                 resourceType: "studio-content-item", resourceId: id.ToString("D"),
                 isPubliclyReadable: pointers.PublishedVersionId is not null).ConfigureAwait(false);
             if (authResult is not null)
@@ -500,7 +500,7 @@ internal static class StudioPackageEndpoints
                 {
                     var authResult = await EnsureAuthorizedAsync(
                         authorization, context,
-                        StudioAuthorizationOperation.CreateDraft, existingPointers.OwnerId,
+                        StudioAuthorizationOperation.CreateDraft, existingPointers.OwnerId, existingPointers.TenantId,
                         resourceType: "studio-content-item", resourceId: existingItemId.ToString("D")).ConfigureAwait(false);
                     if (authResult is not null)
                     {
@@ -607,6 +607,9 @@ internal static class StudioPackageEndpoints
                     Families = families,
                     WorkspaceId = NormalizeOptionalQueryValue(workspaceId),
                     OwnerId = NormalizeOptionalQueryValue(effectiveOwner),
+                    // Tenant scoping is forced from the request's resolved tenant, never from a
+                    // client parameter (honua-server#4905).
+                    Tenant = authorization.CreateTenantScopeFilter(context.User),
                     SearchTerm = NormalizeOptionalQueryValue(q),
                     Cursor = cursor,
                     Limit = ClampListLimit(limit),
@@ -651,7 +654,7 @@ internal static class StudioPackageEndpoints
 
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.ReadDraft, draft.OwnerId,
+                StudioAuthorizationOperation.ReadDraft, draft.OwnerId, draft.TenantId,
                 resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
             {
@@ -697,7 +700,7 @@ internal static class StudioPackageEndpoints
 
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.UpdateDraft, existing.OwnerId,
+                StudioAuthorizationOperation.UpdateDraft, existing.OwnerId, existing.TenantId,
                 resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
             {
@@ -787,7 +790,7 @@ internal static class StudioPackageEndpoints
 
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.DeleteDraft, existing.OwnerId,
+                StudioAuthorizationOperation.DeleteDraft, existing.OwnerId, existing.TenantId,
                 resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
             {
@@ -898,7 +901,7 @@ internal static class StudioPackageEndpoints
 
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.ValidateDraft, existing.OwnerId,
+                StudioAuthorizationOperation.ValidateDraft, existing.OwnerId, existing.TenantId,
                 resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
             {
@@ -956,7 +959,7 @@ internal static class StudioPackageEndpoints
 
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.ValidateDraft, existing.OwnerId,
+                StudioAuthorizationOperation.ValidateDraft, existing.OwnerId, existing.TenantId,
                 resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
             {
@@ -1020,7 +1023,7 @@ internal static class StudioPackageEndpoints
 
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.CreateVersion, existing.OwnerId,
+                StudioAuthorizationOperation.CreateVersion, existing.OwnerId, existing.TenantId,
                 resourceType: "studio-package-draft", resourceId: draftId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
             {
@@ -1043,7 +1046,7 @@ internal static class StudioPackageEndpoints
 
             var itemAuthResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.CreateVersion, pointers.OwnerId,
+                StudioAuthorizationOperation.CreateVersion, pointers.OwnerId, pointers.TenantId,
                 resourceType: "studio-content-item", resourceId: existing.ItemId.ToString("D")).ConfigureAwait(false);
             if (itemAuthResult is not null)
             {
@@ -1134,6 +1137,9 @@ internal static class StudioPackageEndpoints
                     Families = families,
                     WorkspaceId = NormalizeOptionalQueryValue(workspaceId),
                     OwnerId = NormalizeOptionalQueryValue(effectiveOwner),
+                    // Tenant scoping is forced from the request's resolved tenant, never from a
+                    // client parameter (honua-server#4905).
+                    Tenant = authorization.CreateTenantScopeFilter(context.User),
                     States = states,
                     SearchTerm = NormalizeOptionalQueryValue(q),
                     Cursor = cursor,
@@ -1434,7 +1440,7 @@ internal static class StudioPackageEndpoints
             {
                 var authResult = await EnsureAuthorizedAsync(
                     authorization, context,
-                    StudioAuthorizationOperation.ReadContentItem, version.OwnerId,
+                    StudioAuthorizationOperation.ReadContentItem, version.OwnerId, version.TenantId,
                     resourceType: "studio-content-version", resourceId: version.VersionId.ToString("D"),
                     isPubliclyReadable: pointers?.PublishedVersionId == version.VersionId).ConfigureAwait(false);
                 if (authResult is null)
@@ -1490,7 +1496,7 @@ internal static class StudioPackageEndpoints
             var pointers = await service.GetPointersAsync(itemId, context.RequestAborted).ConfigureAwait(false);
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.ReadContentItem, version.OwnerId,
+                StudioAuthorizationOperation.ReadContentItem, version.OwnerId, version.TenantId,
                 resourceType: "studio-content-version", resourceId: versionId.ToString("D"),
                 isPubliclyReadable: pointers?.PublishedVersionId == versionId).ConfigureAwait(false);
             if (authResult is not null)
@@ -1553,7 +1559,7 @@ internal static class StudioPackageEndpoints
 
             var leftAuthResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.ReadContentItem, left.OwnerId,
+                StudioAuthorizationOperation.ReadContentItem, left.OwnerId, left.TenantId,
                 resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
             if (leftAuthResult is not null)
             {
@@ -1562,7 +1568,7 @@ internal static class StudioPackageEndpoints
 
             var rightAuthResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.ReadContentItem, right.OwnerId,
+                StudioAuthorizationOperation.ReadContentItem, right.OwnerId, right.TenantId,
                 resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
             if (rightAuthResult is not null)
             {
@@ -1636,7 +1642,7 @@ internal static class StudioPackageEndpoints
 
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.PublishRequest, pointers.OwnerId,
+                StudioAuthorizationOperation.PublishRequest, pointers.OwnerId, pointers.TenantId,
                 resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
             {
@@ -1719,7 +1725,7 @@ internal static class StudioPackageEndpoints
 
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.ReadContentItem, pointers.OwnerId,
+                StudioAuthorizationOperation.ReadContentItem, pointers.OwnerId, pointers.TenantId,
                 resourceType: "studio-content-item", resourceId: itemId.ToString("D"),
                 isPubliclyReadable: false).ConfigureAwait(false);
             if (authResult is not null)
@@ -1765,7 +1771,7 @@ internal static class StudioPackageEndpoints
 
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.ReopenVersion, targetVersion.OwnerId,
+                StudioAuthorizationOperation.ReopenVersion, targetVersion.OwnerId, targetVersion.TenantId,
                 resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
             {
@@ -1857,7 +1863,7 @@ internal static class StudioPackageEndpoints
 
             var authResult = await EnsureAuthorizedAsync(
                 authorization, context,
-                StudioAuthorizationOperation.Rollback, pointers.OwnerId,
+                StudioAuthorizationOperation.Rollback, pointers.OwnerId, pointers.TenantId,
                 resourceType: "studio-content-item", resourceId: itemId.ToString("D")).ConfigureAwait(false);
             if (authResult is not null)
             {
@@ -1928,6 +1934,7 @@ internal static class StudioPackageEndpoints
             authorization, context,
             StudioAuthorizationOperation.Generate,
             resourceOwnerId: authorization.ResolveCallerId(context.User),
+            resourceTenantId: StudioEndpointAuthorization.ResolveRequestTenantId(context),
             resourceType: resourceType,
             resourceId: null);
 
@@ -1953,7 +1960,12 @@ internal static class StudioPackageEndpoints
         string detail)
     {
         var authResult = await EnsureAuthorizedAsync(
-            authorization, context, operation, resourceOwnerId: null, resourceType, resourceId).ConfigureAwait(false);
+            authorization, context, operation,
+            resourceOwnerId: null,
+            // A lookup miss carries the caller's own tenant so the tenant boundary is a no-op
+            // here and the existing ownerless-target denial keeps deciding the response.
+            resourceTenantId: StudioEndpointAuthorization.ResolveRequestTenantId(context),
+            resourceType, resourceId).ConfigureAwait(false);
         return authResult ?? NotFound(context, detail);
     }
 
@@ -1962,6 +1974,7 @@ internal static class StudioPackageEndpoints
         HttpContext context,
         StudioAuthorizationOperation operation,
         string? resourceOwnerId,
+        string? resourceTenantId,
         string resourceType,
         string? resourceId,
         bool isPubliclyReadable = false)
@@ -1970,6 +1983,7 @@ internal static class StudioPackageEndpoints
             context,
             operation,
             resourceOwnerId,
+            resourceTenantId,
             resourceType,
             resourceId,
             isPubliclyReadable).ConfigureAwait(false);
@@ -1977,6 +1991,17 @@ internal static class StudioPackageEndpoints
         if (decision.IsAllowed)
         {
             return null;
+        }
+
+        // A cross-tenant target is answered as a lookup miss (honua-server#4905): a 403 would
+        // confirm that another tenant's item/version/draft id exists. The machine-readable code
+        // is still carried so a client can distinguish it from an ordinary 404.
+        if (string.Equals(decision.Code, StudioAuthorizationService.CrossTenantDeniedCode, StringComparison.Ordinal))
+        {
+            return NotFound(
+                context,
+                decision.Reason ?? "The Studio resource was not found.",
+                StudioAuthorizationService.CrossTenantDeniedCode);
         }
 
         return Forbidden(context, decision.Reason ?? "The caller is not authorized to perform this operation.", decision.Code ?? "studio_authorization/denied");
@@ -2035,6 +2060,14 @@ internal static class StudioPackageEndpoints
 
     private static IResult NotFound(HttpContext context, string detail)
         => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status404NotFound, "Not Found", detail);
+
+    /// <summary>
+    /// Builds a Studio <c>404 Not Found</c> problem carrying a machine-readable <c>code</c>
+    /// member, used by the tenant boundary so a refusal stays diagnosable without disclosing
+    /// that another tenant's resource exists (honua-server#4905).
+    /// </summary>
+    private static IResult NotFound(HttpContext context, string detail, string code)
+        => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status404NotFound, "Not Found", detail, code);
 
     private static IResult Conflict(HttpContext context, string detail)
         => ProblemDetailsHelpers.CreateProblem(context, ProblemType, StatusCodes.Status409Conflict, "Conflict", detail);

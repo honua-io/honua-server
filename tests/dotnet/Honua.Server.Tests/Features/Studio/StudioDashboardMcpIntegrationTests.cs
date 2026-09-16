@@ -59,6 +59,8 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
                  {
                      "035_CreateStudioPackageLifecycle.sql", "036_CreateContentPublications.sql",
                      "089_AddStudioContentEnumerationIndexes.sql", "090_AddStudioContentItemOwner.sql",
+                     // honua-server#4905 adds studio_*.tenant_id, which every lifecycle write reads.
+                     "120_AddStudioTenantOwnership.sql",
                  })
         {
             var sql = await File.ReadAllTextAsync(Path.Join(root!.FullName, "src", "Honua.Server", "Migrations", migration));

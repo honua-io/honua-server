@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
@@ -901,6 +902,149 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task StudioContent_RecordsItsTenant_AndEnumerationStaysInsideIt()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var store = new PostgresStudioPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+
+            var tenantADraft = await store.CreateDraftAsync(
+                BuildDraft("1=1", packageKey: "alpha") with { TenantId = "tenant-a" });
+            var tenantBDraft = await store.CreateDraftAsync(
+                BuildDraft("1=1", packageKey: "beta") with { TenantId = "tenant-b" });
+            var tenantAVersion = await store.CreateVersionAsync(tenantADraft, "seed", "alice");
+
+            (await store.GetDraftAsync(tenantADraft.DraftId))!.TenantId.Should().Be("tenant-a");
+            tenantAVersion.TenantId.Should().Be(
+                "tenant-a",
+                "an immutable version inherits the tenant of the draft it was minted from");
+            (await store.GetVersionAsync(tenantADraft.ItemId, tenantAVersion.VersionId))!.TenantId
+                .Should().Be("tenant-a");
+            (await store.GetPointersAsync(tenantADraft.ItemId))!.TenantId.Should().Be("tenant-a");
+
+            var tenantAItems = await store.ListContentItemsAsync(
+                new StudioContentItemQuery { Tenant = new TenantScopeFilter("tenant-a", false), Limit = 50 });
+            tenantAItems.Items.Select(static item => item.ItemId).Should().BeEquivalentTo([tenantADraft.ItemId]);
+            tenantAItems.Total.Should().Be(1, "the COUNT behind the page uses the same tenant filter");
+
+            var tenantBItems = await store.ListContentItemsAsync(
+                new StudioContentItemQuery { Tenant = new TenantScopeFilter("tenant-b", false), Limit = 50 });
+            tenantBItems.Items.Select(static item => item.ItemId).Should().BeEquivalentTo([tenantBDraft.ItemId]);
+
+            var tenantADrafts = await store.ListDraftsAsync(
+                new StudioPackageDraftQuery { Tenant = new TenantScopeFilter("tenant-a", false), Limit = 50 });
+            tenantADrafts.Items.Select(static draft => draft.DraftId).Should().BeEquivalentTo([tenantADraft.DraftId]);
+            tenantADrafts.Total.Should().Be(1);
+
+            var everyTenant = await store.ListContentItemsAsync(new StudioContentItemQuery { Limit = 50 });
+            everyTenant.Items.Should().HaveCount(
+                2,
+                "an absent scope is the multi-tenant-admin case and is not filtered");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task StudioContent_WithNoRecordedTenant_IsOnlyEnumerableByTheDefaultTenantScope()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            await EnsureStudioTablesAsync(schema);
+            var store = new PostgresStudioPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+
+            // A writer with no resolved request tenant (a background checkpoint, or any write
+            // predating honua-server#4905) records no tenant at all. Such rows belong to the
+            // deployment's default tenant, which the caller's scope reports as IncludeUnassigned.
+            var unassigned = await store.CreateDraftAsync(BuildDraft("1=1", packageKey: "legacy"));
+
+            var defaultScope = await store.ListContentItemsAsync(
+                new StudioContentItemQuery { Tenant = new TenantScopeFilter("public", true), Limit = 50 });
+            defaultScope.Items.Select(static item => item.ItemId).Should().Contain(unassigned.ItemId);
+            defaultScope.Total.Should().Be(1);
+
+            var otherTenant = await store.ListContentItemsAsync(
+                new StudioContentItemQuery { Tenant = new TenantScopeFilter("tenant-b", false), Limit = 50 });
+            otherTenant.Items.Should().BeEmpty("another tenant never inherits tenant-unassigned content");
+            otherTenant.Total.Should().Be(0);
+
+            var unresolvedTenant = await store.ListDraftsAsync(
+                new StudioPackageDraftQuery { Tenant = new TenantScopeFilter(null, true), Limit = 50 });
+            unresolvedTenant.Items.Select(static draft => draft.DraftId).Should().Contain(unassigned.DraftId);
+
+            var unresolvedButNotDefault = await store.ListDraftsAsync(
+                new StudioPackageDraftQuery { Tenant = new TenantScopeFilter(null, false), Limit = 50 });
+            unresolvedButNotDefault.Items.Should().BeEmpty();
+            unresolvedButNotDefault.Total.Should().Be(0);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task Migration120_BackfillsTheTenantAlreadyEncodedInATenantQualifiedOwnerId()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresStudioPackageStoreTests));
+        try
+        {
+            // Pre-upgrade state: the Studio lifecycle tables without the tenant column.
+            var root = FindRepoRoot();
+            foreach (var migrationFile in new[]
+                     {
+                         "035_CreateStudioPackageLifecycle.sql",
+                         "036_CreateContentPublications.sql",
+                         "089_AddStudioContentEnumerationIndexes.sql",
+                         "090_AddStudioContentItemOwner.sql",
+                     })
+            {
+                await ApplyStudioMigrationAsync(schema, migrationFile, root);
+            }
+
+            var qualifiedItemId = Guid.NewGuid();
+            var unqualifiedItemId = Guid.NewGuid();
+            await using (var connection = await fixture.GetConnectionAsync(schema))
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"""
+                    INSERT INTO "{schema}".studio_content_items
+                        (item_id, package_key, family, owner_id, created_by, updated_by)
+                    VALUES
+                        (@qualified_item_id, 'legacy-qualified', 'query', @owner_id, 'alice', 'alice'),
+                        (@unqualified_item_id, 'legacy-unqualified', 'query', 'shared-studio-key', 'key', 'key');
+                    """;
+                command.Parameters.AddWithValue("@qualified_item_id", qualifiedItemId);
+                command.Parameters.AddWithValue("@unqualified_item_id", unqualifiedItemId);
+                command.Parameters.AddWithValue(
+                    "@owner_id",
+                    "subject:https%3A%2F%2Fidp.example.com:alice@tenant:tenant-legacy");
+                await command.ExecuteNonQueryAsync();
+            }
+
+            // Upgrade, applied twice so the migration's idempotence is proven rather than assumed.
+            await ApplyStudioMigrationAsync(schema, "120_AddStudioTenantOwnership.sql", root);
+            await ApplyStudioMigrationAsync(schema, "120_AddStudioTenantOwnership.sql", root);
+
+            var store = new PostgresStudioPackageStore(new TestConnectionProvider(fixture.DataSource, schema), schema);
+            (await store.GetPointersAsync(qualifiedItemId))!.TenantId.Should().Be(
+                "tenant-legacy",
+                "a tenant-qualified owner id already names its tenant, so the upgrade recovers it precisely");
+            (await store.GetPointersAsync(unqualifiedItemId))!.TenantId.Should().BeNull(
+                "an owner id with no tenant segment stays unassigned and is attributed to the default tenant at runtime");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
     private async Task EnsureStudioTablesAsync(string schema)
     {
         var root = FindRepoRoot();
@@ -920,6 +1064,9 @@ public sealed class PostgresStudioPackageStoreTests(PostgresFixture fixture)
                      "093_EnsureConfiguredStudioPackageLifecycle.sql",
                      "094_CreateSavedMapCheckpointVersionRecovery.sql",
                      "095_DeleteSavedMapOperationLogWithStudioDraft.sql",
+                     // Migration 120 adds the tenant_id column every Studio lifecycle write and
+                     // read now carries (honua-server#4905).
+                     "120_AddStudioTenantOwnership.sql",
                  })
         {
             await ApplyStudioMigrationAsync(schema, migrationFile, root);

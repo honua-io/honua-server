@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Linq;
+using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 
@@ -47,7 +48,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 throw new StudioCompositionConflictException("Studio content item is owned by another caller.");
             }
 
-            var item = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.CreatedBy, draft.CreatedAt);
+            var item = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.TenantId, draft.CreatedBy, draft.CreatedAt);
             _items[draft.ItemId] = existingItem is { } existingOwnerItem
                 && !string.Equals(existingOwnerItem.OwnerId, draft.OwnerId, StringComparison.Ordinal)
                 ? item
@@ -96,7 +97,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             EnsurePackageKeyAvailable(draft);
             var updated = draft with { Generation = existing.Generation + 1 };
             _drafts[draft.DraftId] = updated;
-            _items[draft.ItemId] = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.CreatedBy, draft.CreatedAt) with
+            _items[draft.ItemId] = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.TenantId, draft.CreatedBy, draft.CreatedAt) with
             {
                 PackageKey = draft.PackageKey,
                 WorkspaceId = draft.WorkspaceId,
@@ -221,7 +222,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 throw new KeyNotFoundException("Studio package draft was not found.");
             }
 
-            var item = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.CreatedBy, draft.CreatedAt);
+            var item = GetOrCreateItem(draft.ItemId, draft.PackageKey, draft.WorkspaceId, draft.Family, draft.OwnerId, draft.TenantId, draft.CreatedBy, draft.CreatedAt);
             var versions = GetVersions(draft.ItemId);
             var version = new StudioContentVersion
             {
@@ -229,6 +230,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 PackageKey = draft.PackageKey,
                 WorkspaceId = draft.WorkspaceId,
                 OwnerId = draft.OwnerId,
+                TenantId = draft.TenantId,
                 VersionId = Guid.NewGuid(),
                 VersionNumber = versions.Count == 0 ? 1 : versions[^1].VersionNumber + 1,
                 ContentHash = StudioPackageHash.Compute(draft.Envelope),
@@ -293,6 +295,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                     CurrentVersionId = item.CurrentVersionId,
                     PublishedVersionId = item.PublishedVersionId,
                     OwnerId = item.OwnerId,
+                    TenantId = item.TenantId,
                 }
                 : null);
         }
@@ -406,6 +409,11 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             return false;
         }
 
+        if (!MatchesTenant(item.TenantId, query.Tenant))
+        {
+            return false;
+        }
+
         if (query.States is { Count: > 0 } states && !states.Contains(ResolveState(item.CurrentVersionId, item.PublishedVersionId)))
         {
             return false;
@@ -439,6 +447,11 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             return false;
         }
 
+        if (!MatchesTenant(draft.TenantId, query.Tenant))
+        {
+            return false;
+        }
+
         if (!string.IsNullOrWhiteSpace(query.SearchTerm) &&
             !draft.PackageKey.Contains(query.SearchTerm.Trim(), StringComparison.OrdinalIgnoreCase))
         {
@@ -446,6 +459,24 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Applies the honua-server#4905 tenant scope to one row. A row with no recorded tenant
+    /// belongs to the deployment default, so it is only enumerable when the caller's scope says
+    /// the request resolved to that default.
+    /// </summary>
+    private static bool MatchesTenant(string? recordTenantId, TenantScopeFilter? scope)
+    {
+        if (scope is null)
+        {
+            return true;
+        }
+
+        var recorded = TenantOwnership.Normalize(recordTenantId);
+        return recorded is null
+            ? scope.IncludeUnassigned
+            : string.Equals(recorded, scope.TenantId, StringComparison.Ordinal);
     }
 
     private static StudioContentItemSummary ToSummary(StudioContentItemRecord item) => new()
@@ -522,6 +553,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                 version.WorkspaceId,
                 version.Envelope.Family,
                 version.OwnerId,
+                version.TenantId,
                 request.RequestedBy,
                 request.CreatedAt);
             _items[request.ItemId] = item with
@@ -624,6 +656,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
                     CurrentVersionId = updatedItem.CurrentVersionId,
                     PublishedVersionId = updatedItem.PublishedVersionId,
                     OwnerId = updatedItem.OwnerId,
+                    TenantId = updatedItem.TenantId,
                 },
                 RequestedBy = actorId,
                 Reason = reason,
@@ -640,6 +673,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         string? workspaceId,
         StudioPackageFamily family,
         string? ownerId,
+        string? tenantId,
         string? actorId,
         DateTimeOffset timestamp)
     {
@@ -658,6 +692,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
             CurrentVersionId: null,
             PublishedVersionId: null,
             OwnerId: ownerId,
+            TenantId: tenantId,
             CreatedBy: actorId,
             UpdatedBy: actorId,
             CreatedAt: timestamp,
@@ -697,6 +732,7 @@ public sealed class InMemoryStudioPackageStore : IStudioPackageStore
         Guid? CurrentVersionId,
         Guid? PublishedVersionId,
         string? OwnerId,
+        string? TenantId,
         string? CreatedBy,
         string? UpdatedBy,
         DateTimeOffset CreatedAt,

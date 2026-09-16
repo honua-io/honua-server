@@ -10,6 +10,7 @@ using FluentAssertions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.Publishing.Content.Abstractions;
 using Honua.Core.Features.Publishing.Content.Services;
 using Honua.Core.Features.Studio.Abstractions;
@@ -2088,11 +2089,14 @@ file sealed class UnresolvableCallerStudioAuthorizationService : IStudioAuthoriz
 
     public string? ResolveCallerId(ClaimsPrincipal principal) => null;
 
+    public TenantScopeFilter? CreateTenantScopeFilter(ClaimsPrincipal principal) => null;
+
     public Task<StudioAuthorizationDecision> AuthorizeAsync(
         ClaimsPrincipal principal,
         string? callerId,
         StudioAuthorizationOperation operation,
         string? resourceOwnerId,
+        string? resourceTenantId,
         bool isPubliclyReadable = false,
         string? resourceId = null,
         CancellationToken cancellationToken = default)
