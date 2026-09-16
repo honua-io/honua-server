@@ -66,6 +66,49 @@ public sealed class AotNativeLibraryRuntimeTests
         }
     }
 
+    /// <summary>
+    /// honua-server#4949: the distro-linked <c>SkiaSharp.NativeAssets.Linux</c> linux-arm64 binary
+    /// references <c>uuid_*</c> and <c>FT_Get_BDF_Property</c> without declaring the libraries that
+    /// define them, so the canonical AOT image's <c>ldd -r</c> gate failed every arm64 build and no
+    /// multi-arch index was published after 548b7a5. Both published AOT images must restore and
+    /// publish the self-contained asset, keep <c>libSkiaSharp.so</c> under the link gate, and ship
+    /// the font file the asset renders text with (honua-server#4908).
+    /// </summary>
+    [ArchitectureTest]
+    public void PublishedServerAotDockerfiles_ShouldShipSelfContainedSkiaWithAPinnedFont()
+    {
+        var repositoryRoot = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        var project = File.ReadAllText(Path.Join(repositoryRoot, "src/Honua.Server/Honua.Server.csproj"));
+        project.Should().Contain("<PackageReference Include=\"SkiaSharp.NativeAssets.Linux.NoDependencies\"");
+        project.Should().Contain("Condition=\"'$(HonuaUseSkiaNoDependencies)' == 'true'\"");
+
+        var canonical = File.ReadAllText(Path.Join(repositoryRoot, "docker/Dockerfile.aot")).ReplaceLineEndings("\n");
+        var buildStage = canonical[..canonical.IndexOf("AS runtime", StringComparison.Ordinal)];
+        var restoreStepCount = buildStage.Split(
+            "sh scripts/docker/restore-dotnet-with-github-packages.sh src/Honua.Server/Honua.Server.csproj").Length - 1;
+        var argumentListCount = buildStage.Split(
+            "set -- \"-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}\" \"-p:HonuaUseSkiaNoDependencies=true\"").Length - 1;
+        restoreStepCount.Should().Be(2);
+        argumentListCount.Should().Be(restoreStepCount,
+            "the RID restore layer and the restore+publish retry unit must both select the NoDependencies asset; "
+            + "a restore without it leaves project.assets.json pointing at the distro-linked arm64 binary");
+        buildStage.Should().Contain("dotnet publish src/Honua.Server/Honua.Server.csproj");
+
+        foreach (var relativePath in _publishedServerAotDockerfiles)
+        {
+            var contents = File.ReadAllText(Path.Join(repositoryRoot, relativePath)).ReplaceLineEndings("\n");
+            var runtimeStage = contents[contents.IndexOf("AS runtime", StringComparison.Ordinal)..];
+
+            contents.Should().Contain("-p:HonuaUseSkiaNoDependencies=true", relativePath);
+            runtimeStage.Should().Contain("libSkiaSharp.so",
+                $"{relativePath}: the Skia native must stay under the ldd -r gate, not be excluded to go green");
+            runtimeStage.Should().Contain("fonts-dejavu-core", relativePath);
+            runtimeStage.Should().Contain("test -r /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", relativePath);
+            runtimeStage.Should().Contain("HONUA_DEFAULT_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                $"{relativePath}: the NoDependencies asset has no Fontconfig lookup, so text renders blank without a font file");
+        }
+    }
+
     [ArchitectureTest]
     public void NightlyAotBuild_ShouldSmokeGeoParquetOnTheCandidateDigestBeforePublishingTags()
     {
