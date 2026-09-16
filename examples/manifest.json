@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1150,
+    "total": 1152,
     "byStatus": {
-      "not-executable": 1137,
+      "not-executable": 1139,
       "unvalidated": 10,
       "passed": 3
     }
@@ -13178,6 +13178,32 @@
       "fence": 1,
       "line": 44,
       "language": "bash"
+    },
+    {
+      "id": "215c25cc256a8c75",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/soap-argument-binding-4973/README.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 28,
+      "language": "plain"
+    },
+    {
+      "id": "b55fc13ab42e85ae",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/soap-services-site-root-4974/README.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 23,
+      "language": "plain"
     },
     {
       "id": "99d2ab05758f67f3",
