@@ -274,11 +274,17 @@ internal static partial class GPServerSoapExecution
 
     private static void ValidateChildren(XElement parent, params string[] names)
     {
-        if (parent.Nodes().OfType<XText>().Any(text => !string.IsNullOrWhiteSpace(text.Value)) ||
-            parent.Elements().Any(child => child.Name.Namespace != XNamespace.None || !names.Contains(child.Name.LocalName, StringComparer.Ordinal)) ||
-            parent.Elements().GroupBy(child => child.Name).Any(group => group.Count() != 1))
+        if (parent.Nodes().OfType<XText>().Any(text => !string.IsNullOrWhiteSpace(text.Value)))
         {
-            throw Invalid($"{parent.Name.LocalName} contains duplicate or unsupported arguments.");
+            throw Invalid($"{parent.Name.LocalName} must not contain text outside its arguments.");
+        }
+        if (parent.Elements().FirstOrDefault(child => child.Name.Namespace != XNamespace.None || !names.Contains(child.Name.LocalName, StringComparer.Ordinal)) is { } unsupported)
+        {
+            throw Invalid($"{parent.Name.LocalName} does not accept the '{unsupported.Name.LocalName}' argument.");
+        }
+        if (parent.Elements().GroupBy(child => child.Name).FirstOrDefault(group => group.Count() != 1) is { } duplicate)
+        {
+            throw Invalid($"{parent.Name.LocalName} accepts only one '{duplicate.Key.LocalName}' argument.");
         }
     }
 
