@@ -1,0 +1,61 @@
+ Network honua-4912-hardened-68374_cng-network Creating 
+ Network honua-4912-hardened-68374_cng-network Created 
+ Container honua-4912-hardened-68374-redis-1 Creating 
+ Container honua-4912-hardened-68374-postgres-1 Creating 
+ Container honua-4912-hardened-68374-postgres-1 Created 
+ Container honua-4912-hardened-68374-redis-1 Created 
+ Container honua-4912-hardened-68374-redis-1 Starting 
+ Container honua-4912-hardened-68374-postgres-1 Starting 
+ Container honua-4912-hardened-68374-redis-1 Started 
+ Container honua-4912-hardened-68374-postgres-1 Started 
+ Container honua-4912-hardened-68374-postgres-1 Running 
+ Container honua-4912-hardened-68374-redis-1 Running 
+ Container honua-4912-hardened-68374-honua-server-1 Creating 
+ Container honua-4912-hardened-68374-honua-server-1 Created 
+ Container honua-4912-hardened-68374-postgres-1 Waiting 
+ Container honua-4912-hardened-68374-redis-1 Waiting 
+ Container honua-4912-hardened-68374-redis-1 Healthy 
+ Container honua-4912-hardened-68374-postgres-1 Healthy 
+ Container honua-4912-hardened-68374-honua-server-1 Starting 
+ Container honua-4912-hardened-68374-honua-server-1 Started 
+ Container honua-4912-hardened-68374-honua-server-1 Stopping 
+ Container honua-4912-hardened-68374-honua-server-1 Stopped 
+psql:/tmp/cng-seed.sql:20: NOTICE:  extension "postgis" already exists, skipping
+ Container honua-4912-hardened-68374-postgres-1 Running 
+ Container honua-4912-hardened-68374-redis-1 Running 
+ Container honua-4912-hardened-68374-redis-1 Waiting 
+ Container honua-4912-hardened-68374-postgres-1 Waiting 
+ Container honua-4912-hardened-68374-redis-1 Healthy 
+ Container honua-4912-hardened-68374-postgres-1 Healthy 
+ Container honua-4912-hardened-68374-honua-server-1 Starting 
+ Container honua-4912-hardened-68374-honua-server-1 Started 
+image=ghcr.io/honua-io/honua-server@sha256:ec8d7915ca72ef3a8d4ffb4719f7711496f5046f538acf7e4fc2d7e6e2d028aa
+revision=886206527cc97bad1bbaa5fa6358910ebc45e9c0
+architecture=amd64
+image_user=1001:1001
+entrypoint=/app/Honua.Server
+compilation=native-aot
+ReadonlyRootfs=true
+CapDrop=[ALL]
+CapAdd=[]
+SecurityOpt=[no-new-privileges:true]
+Privileged=false
+ConfigUser=1001:1001
+id -u/-g/whoami inside the running container:
+1001
+1001
+uid=1001(honua) gid=1001(honua) groups=1001(honua)
+
+root filesystem write attempt (must be refused):
+touch: cannot touch '/app/write-probe': Read-only file system
+refused: exit 1
+
+GDAL/PROJ/GEOS present in the running container (must be empty):
+Honua.Protocols.GeoServices.xml
+GET /rest/services/cng/FeatureServer/1000/query?where=1=1&outFields=*&f=parquet
+HTTP 200
+bytes 4947
+head PAR1
+tail PAR1
+hardened replay passed: 4947 bytes of GeoParquet from ghcr.io/honua-io/honua-server@sha256:ec8d7915ca72ef3a8d4ffb4719f7711496f5046f538acf7e4fc2d7e6e2d028aa
+exit=0
