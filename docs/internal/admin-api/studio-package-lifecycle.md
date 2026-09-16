@@ -57,6 +57,52 @@ payload.
 
 ## Authorization
 
+### Tenant Ownership (honua-server#4905)
+
+**Tenant ownership is an unconditional boundary over role, grant and ownership
+authority, and it is evaluated before the admin bypass.** Every Studio draft,
+immutable version and content item records the tenant its creating request
+resolved to (`studio_*.tenant_id`, migration
+`120_AddStudioTenantOwnership.sql`), stamped once at create time from
+`ITenantContext` and never rewritten — an item can no more move between tenants
+than it can change owner. Every lifecycle path (list, read, update, delete,
+save-as-version, reopen, compare, publish-request, rollback, export, the
+saved-map collaboration and checkpoint boundaries, and the MCP
+`honua_studio_*` tools) compares the target's recorded tenant against the
+request's resolved tenant.
+
+This matters because the platform `admin` role is **tenant-scoped**: `admin` is
+not one of the default `MultiTenancy:MultiTenantAdminRoles`
+(`multi_tenant_admin`, `platform_admin`), so a tenant-scoped administrator of
+one tenant must never reach another tenant's Studio content. Only a principal
+holding a configured multi-tenant admin role operates across tenants; for that
+principal, and when `MultiTenancy:Enabled` is `false`, behavior is unchanged.
+
+- **A cross-tenant target answers `404 Not Found`**, not `403`, carrying the
+  machine-readable `studio_authorization/cross_tenant_denied` code. A `403`
+  would confirm that another tenant's item, version or draft id exists.
+- **Enumeration is scoped server-side.** `GET /content-items` and
+  `GET /package-drafts` filter on the recorded tenant in the store query (SQL
+  `WHERE` clause for the durable store), derived from the request's resolved
+  tenant — it is never read from a client-supplied parameter.
+- **Records with no recorded tenant belong to the deployment's default tenant**
+  (`MultiTenancy:DefaultTenantId`, default `public`). That covers rows written
+  before this migration and rows written by a background worker with no request
+  tenant. Because every request in a single-tenant deployment resolves to that
+  same default, an upgrade keeps reading its own content, while a tenant-tagged
+  principal never inherits it. Rows whose owner id already carries the
+  issuer-and-tenant-qualified form `subject:<iss>:<sub>@tenant:<tenant>`
+  (honua-server#3429) are backfilled to that tenant precisely.
+- **Bridged families (form, analysis) persist in their own native stores**,
+  which record no Studio tenant, so they are treated exactly as a
+  tenant-unassigned Studio row is: reachable from the default tenant, never from
+  another tenant.
+
+This boundary holds in the default single-schema posture
+(`MultiTenancy:SchemaRouting:Enabled=false`), not only under schema routing.
+
+### Ownership And The End-User Flag
+
 Every endpoint requires the admin role by default. Non-admin, ownership-scoped
 access (honua-server#3001) is available behind the
 `Studio:EndUserAuthorization:Enabled` feature flag (default `false`); with the
@@ -185,14 +231,17 @@ Admin principals retain full, unscoped access in both flag states; nothing above
 changes existing admin client behavior.
 
 Authorization denials return the shared `https://honua.io/problems/studio` RFC
-7807 problem with `status: 403` and a machine-readable `code` extension member
-(REQ-004) the SDK client can branch on:
+7807 problem with `status: 403` — except the tenant boundary, which answers
+`status: 404` (see [Tenant Ownership](#tenant-ownership-honua-server4905)) — and
+a machine-readable `code` extension member (REQ-004) the SDK client can branch
+on:
 
 | `code` | Meaning |
 | --- | --- |
 | `studio_authorization/end_user_mode_disabled` | The flag is off and the caller is not admin. |
 | `studio_authorization/authentication_required` | No authenticated principal. |
 | `studio_authorization/cross_user_denied` | The caller does not own the resource (and, for reads, it is not publicly readable; for the elevated tier, the caller also holds no delegate grant for it). |
+| `studio_authorization/cross_tenant_denied` | The resource belongs to another tenant (honua-server#4905). Returned with `status: 404`, not `403`, so a tenant never learns that another tenant's id exists. |
 | `studio_authorization/elevated_grant_required` | Publish-request or rollback on the caller's own resource without a matching `StudioDraft` operator grant. |
 
 Policy denials happen before any endpoint handler runs, so a dedicated
@@ -462,6 +511,10 @@ With `Studio:EndUserAuthorization:Enabled` on, both endpoints additionally
 force-scope the effective owner filter to the requesting principal for
 non-admin callers — see [Authorization](#authorization). The `owner` query
 parameter is honored as supplied only for admins, or while the flag is off.
+
+Both endpoints are also scoped to the request's resolved tenant, independently
+of the flag and of the admin role — see
+[Tenant Ownership](#tenant-ownership-honua-server4905).
 
 ### Publication-Registry Lifecycle Badge (REQ-004)
 

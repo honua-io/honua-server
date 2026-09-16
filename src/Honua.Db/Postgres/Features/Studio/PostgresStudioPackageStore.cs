@@ -6,6 +6,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
@@ -70,6 +71,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 currentVersionId: null,
                 publishedVersionId: null,
                 draft.OwnerId,
+                draft.TenantId,
                 draft.CreatedBy,
                 draft.UpdatedBy,
                 draft.CreatedAt,
@@ -81,11 +83,11 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
 
             var sql = $"""
                 INSERT INTO {_draftsTable}
-                    (draft_id, item_id, package_key, workspace_id, owner_id, family,
+                    (draft_id, item_id, package_key, workspace_id, owner_id, tenant_id, family,
                      envelope, validation, base_version_id, generation,
                      created_by, updated_by, created_at, updated_at)
                 VALUES
-                    (@draft_id, @item_id, @package_key, @workspace_id, @owner_id, @family,
+                    (@draft_id, @item_id, @package_key, @workspace_id, @owner_id, @tenant_id, @family,
                      @envelope, @validation, @base_version_id, @generation,
                      @created_by, @updated_by, @created_at, @updated_at)
                 """;
@@ -95,6 +97,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             command.Parameters.AddWithValue("@package_key", draft.PackageKey);
             command.Parameters.AddWithValue("@workspace_id", (object?)draft.WorkspaceId ?? DBNull.Value);
             command.Parameters.AddWithValue("@owner_id", (object?)draft.OwnerId ?? DBNull.Value);
+            command.Parameters.AddWithValue("@tenant_id", (object?)draft.TenantId ?? DBNull.Value);
             command.Parameters.AddWithValue("@family", family);
             command.Parameters.Add(new NpgsqlParameter("@envelope", NpgsqlDbType.Jsonb) { Value = envelopeJson });
             command.Parameters.Add(new NpgsqlParameter("@validation", NpgsqlDbType.Jsonb) { Value = validationJson });
@@ -128,7 +131,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         var sql = $"""
             SELECT draft_id, item_id, package_key, workspace_id, owner_id, family,
                    envelope, validation, base_version_id, generation,
-                   created_by, updated_by, created_at, updated_at
+                   created_by, updated_by, created_at, updated_at, tenant_id
             FROM {_draftsTable}
             WHERE draft_id = @draft_id
             """;
@@ -166,7 +169,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
               AND generation = @generation
             RETURNING draft_id, item_id, package_key, workspace_id, owner_id, family,
                       envelope, validation, base_version_id, generation,
-                      created_by, updated_by, created_at, updated_at
+                      created_by, updated_by, created_at, updated_at, tenant_id
             """;
 
         await using var lease = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -227,6 +230,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 currentVersionId: null,
                 publishedVersionId: null,
                 updated.OwnerId,
+                updated.TenantId,
                 updated.CreatedBy,
                 updated.UpdatedBy,
                 updated.CreatedAt,
@@ -384,6 +388,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 currentVersionId: null,
                 publishedVersionId: null,
                 draft.OwnerId,
+                draft.TenantId,
                 draft.CreatedBy,
                 actorId,
                 draft.CreatedAt,
@@ -394,11 +399,11 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             var versionNumber = await NextVersionNumberAsync(connection, transaction, draft.ItemId, cancellationToken).ConfigureAwait(false);
             var insertSql = $"""
                 INSERT INTO {_versionsTable}
-                    (version_id, item_id, package_key, workspace_id, owner_id, version_number, content_hash,
+                    (version_id, item_id, package_key, workspace_id, owner_id, tenant_id, version_number, content_hash,
                      envelope, validation, dependencies, provenance,
                      source_draft_id, base_version_id, change_note, created_by, created_at)
                 VALUES
-                    (@version_id, @item_id, @package_key, @workspace_id, @owner_id, @version_number, @content_hash,
+                    (@version_id, @item_id, @package_key, @workspace_id, @owner_id, @tenant_id, @version_number, @content_hash,
                      @envelope, @validation, @dependencies, @provenance,
                      @source_draft_id, @base_version_id, @change_note, @created_by, @created_at)
                 """;
@@ -409,6 +414,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
                 command.Parameters.AddWithValue("@package_key", draft.PackageKey);
                 command.Parameters.AddWithValue("@workspace_id", (object?)draft.WorkspaceId ?? DBNull.Value);
                 command.Parameters.AddWithValue("@owner_id", (object?)draft.OwnerId ?? DBNull.Value);
+                command.Parameters.AddWithValue("@tenant_id", (object?)draft.TenantId ?? DBNull.Value);
                 command.Parameters.AddWithValue("@version_number", versionNumber);
                 command.Parameters.AddWithValue("@content_hash", contentHash);
                 command.Parameters.Add(new NpgsqlParameter("@envelope", NpgsqlDbType.Jsonb) { Value = envelopeJson });
@@ -514,7 +520,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             SELECT v.version_id, v.item_id, v.package_key, v.workspace_id, v.owner_id,
                    v.version_number, v.content_hash, v.envelope, v.validation, v.dependencies,
                    v.provenance, v.source_draft_id, v.base_version_id, v.change_note,
-                   v.created_by, v.created_at, c.map_id, c.checkpoint_cursor
+                   v.created_by, v.created_at, v.tenant_id, c.map_id, c.checkpoint_cursor
             FROM {_checkpointVersionsTable} AS c
             INNER JOIN {_versionsTable} AS v ON v.version_id = c.version_id
             WHERE c.map_id = @map_id
@@ -541,8 +547,8 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             Version = ReadVersion(reader),
             Checkpoint = new StudioVersionCheckpoint
             {
-                MapId = reader.GetString(16),
-                OperationCursor = reader.GetInt64(17),
+                MapId = reader.GetString(17),
+                OperationCursor = reader.GetInt64(18),
             },
         };
     }
@@ -570,7 +576,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         CancellationToken cancellationToken = default)
     {
         var sql = $"""
-            SELECT item_id, current_version_id, published_version_id, owner_id
+            SELECT item_id, current_version_id, published_version_id, owner_id, tenant_id
             FROM {_itemsTable}
             WHERE item_id = @item_id
             """;
@@ -653,7 +659,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         sql.Append("""
             SELECT draft_id, item_id, package_key, workspace_id, owner_id, family,
                    envelope, validation, base_version_id, generation,
-                   created_by, updated_by, created_at, updated_at
+                   created_by, updated_by, created_at, updated_at, tenant_id
             FROM
             """);
         sql.Append(' ').Append(_draftsTable).Append(' ').Append(filter.Sql);
@@ -761,6 +767,8 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             clauses.Add("(" + string.Join(" OR ", stateClauses) + ")");
         }
 
+        AppendTenantClause(query.Tenant, clauses, parameters);
+
         return new SqlFilter(clauses.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", clauses), parameters);
     }
 
@@ -793,7 +801,38 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             parameters.Add(("@search_term", NpgsqlDbType.Text, $"%{EscapeLike(query.SearchTerm.Trim())}%"));
         }
 
+        AppendTenantClause(query.Tenant, clauses, parameters);
+
         return new SqlFilter(clauses.Count == 0 ? string.Empty : "WHERE " + string.Join(" AND ", clauses), parameters);
+    }
+
+    /// <summary>
+    /// Restricts an enumeration to the caller's tenant (honua-server#4905). Rows written before
+    /// tenant stamping record no tenant and belong to the deployment's default tenant, so they
+    /// are admitted only when the caller's scope says the request resolved to that default.
+    /// </summary>
+    private static void AppendTenantClause(
+        TenantScopeFilter? tenant,
+        List<string> clauses,
+        List<(string, NpgsqlDbType, object)> parameters)
+    {
+        if (tenant is null)
+        {
+            return;
+        }
+
+        if (tenant.TenantId is null)
+        {
+            clauses.Add(tenant.IncludeUnassigned
+                ? "tenant_id IS NULL"
+                : "FALSE");
+            return;
+        }
+
+        clauses.Add(tenant.IncludeUnassigned
+            ? "(tenant_id = @tenant_id OR tenant_id IS NULL)"
+            : "tenant_id = @tenant_id");
+        parameters.Add(("@tenant_id", NpgsqlDbType.Text, tenant.TenantId));
     }
 
     private static string StateSqlPredicate(StudioContentItemState state) => state switch
@@ -1092,6 +1131,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         Guid? currentVersionId,
         Guid? publishedVersionId,
         string? ownerId,
+        string? tenantId,
         string? createdBy,
         string? updatedBy,
         DateTimeOffset createdAt,
@@ -1108,10 +1148,10 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         var sql = $"""
             INSERT INTO {_itemsTable}
                 (item_id, package_key, workspace_id, family, current_version_id, published_version_id,
-                 owner_id, created_by, updated_by, created_at, updated_at)
+                 owner_id, tenant_id, created_by, updated_by, created_at, updated_at)
             VALUES
                 (@item_id, @package_key, @workspace_id, @family, @current_version_id, @published_version_id,
-                 @owner_id, @created_by, @updated_by, @created_at, @updated_at)
+                 @owner_id, @tenant_id, @created_by, @updated_by, @created_at, @updated_at)
             ON CONFLICT (item_id) DO UPDATE
             SET package_key = CASE
                     WHEN NOT @enforce_creation_owner_fence
@@ -1146,6 +1186,9 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         command.Parameters.AddWithValue("@current_version_id", (object?)currentVersionId ?? DBNull.Value);
         command.Parameters.AddWithValue("@published_version_id", (object?)publishedVersionId ?? DBNull.Value);
         command.Parameters.AddWithValue("@owner_id", (object?)ownerId ?? DBNull.Value);
+        // tenant_id follows owner_id: recorded once on INSERT and never rewritten by a later
+        // draft/version upsert, so an item cannot be moved between tenants (honua-server#4905).
+        command.Parameters.AddWithValue("@tenant_id", (object?)tenantId ?? DBNull.Value);
         command.Parameters.AddWithValue("@expected_existing_owner_id", (object?)expectedExistingOwnerId ?? DBNull.Value);
         command.Parameters.AddWithValue("@expected_existing_item_present", expectedExistingItemPresent);
         command.Parameters.AddWithValue("@enforce_creation_owner_fence", enforceCreationOwnerFence);
@@ -1387,7 +1430,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
         CancellationToken cancellationToken)
     {
         var sql = $"""
-            SELECT item_id, current_version_id, published_version_id, owner_id
+            SELECT item_id, current_version_id, published_version_id, owner_id, tenant_id
             FROM {_itemsTable}
             WHERE item_id = @item_id
             """;
@@ -1426,6 +1469,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             UpdatedBy = reader.IsDBNull(11) ? null : reader.GetString(11),
             CreatedAt = reader.GetFieldValue<DateTimeOffset>(12),
             UpdatedAt = reader.GetFieldValue<DateTimeOffset>(13),
+            TenantId = reader.IsDBNull(14) ? null : reader.GetString(14),
         };
     }
 
@@ -1466,6 +1510,7 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             ChangeNote = reader.IsDBNull(13) ? null : reader.GetString(13),
             CreatedBy = reader.IsDBNull(14) ? null : reader.GetString(14),
             CreatedAt = reader.GetFieldValue<DateTimeOffset>(15),
+            TenantId = reader.IsDBNull(16) ? null : reader.GetString(16),
         };
     }
 
@@ -1476,12 +1521,13 @@ internal sealed class PostgresStudioPackageStore : IStudioPackageStore
             CurrentVersionId = reader.IsDBNull(1) ? null : reader.GetGuid(1),
             PublishedVersionId = reader.IsDBNull(2) ? null : reader.GetGuid(2),
             OwnerId = reader.IsDBNull(3) ? null : reader.GetString(3),
+            TenantId = reader.IsDBNull(4) ? null : reader.GetString(4),
         };
 
     private static string VersionSelectSql(string versionsTable) => $"""
         SELECT version_id, item_id, package_key, workspace_id, owner_id, version_number, content_hash,
                envelope, validation, dependencies, provenance,
-               source_draft_id, base_version_id, change_note, created_by, created_at
+               source_draft_id, base_version_id, change_note, created_by, created_at, tenant_id
         FROM {versionsTable}
         """;
 

@@ -9,6 +9,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Studio;
+using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
@@ -913,11 +914,15 @@ public sealed class StudioMcpOwnershipAuthorizationTests
 
         public string? ResolveCallerId(ClaimsPrincipal principal) => inner.ResolveCallerId(principal);
 
+        public TenantScopeFilter? CreateTenantScopeFilter(ClaimsPrincipal principal)
+            => inner.CreateTenantScopeFilter(principal);
+
         public async Task<StudioAuthorizationDecision> AuthorizeAsync(
             ClaimsPrincipal principal,
             string? callerId,
             StudioAuthorizationOperation operation,
             string? resourceOwnerId,
+            string? resourceTenantId,
             bool isPubliclyReadable = false,
             string? resourceId = null,
             CancellationToken cancellationToken = default)
@@ -928,6 +933,7 @@ public sealed class StudioMcpOwnershipAuthorizationTests
                 callerId,
                 operation,
                 resourceOwnerId,
+                resourceTenantId,
                 isPubliclyReadable,
                 resourceId,
                 cancellationToken);

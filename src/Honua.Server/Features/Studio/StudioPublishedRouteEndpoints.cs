@@ -81,6 +81,7 @@ internal static class StudioPublishedRouteEndpoints
                     context,
                     StudioAuthorizationOperation.ReadContentItem,
                     pointers.OwnerId,
+                    pointers.TenantId,
                     ResourceType,
                     publication.ItemId.ToString("D"),
                     isPubliclyReadable: IsVisibility(visibility, "organization") || IsVisibility(visibility, "team"))
