@@ -150,7 +150,7 @@ public sealed class GeoServicesFieldSerializationTests
         var resource = CreateResource(
             new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
             new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime },
-            new MetadataV2Field { Name = "created_date", Type = MetadataV2FieldType.Date });
+            new MetadataV2Field { Name = "created_date", Type = MetadataV2FieldType.DateTime });
 
         var expectedTimestamp = new DateTimeOffset(2023, 1, 2, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
         var expectedCreated = new DateTimeOffset(2024, 6, 15, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
@@ -184,7 +184,7 @@ public sealed class GeoServicesFieldSerializationTests
         var resource = CreateResource(
             new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
             new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime },
-            new MetadataV2Field { Name = "created_date", Type = MetadataV2FieldType.Date });
+            new MetadataV2Field { Name = "created_date", Type = MetadataV2FieldType.DateTime });
 
         var dt = new DateTime(2023, 1, 2, 0, 0, 0, DateTimeKind.Utc);
         var dateOnly = new DateOnly(2024, 6, 15);
@@ -244,7 +244,7 @@ public sealed class GeoServicesFieldSerializationTests
         var resource = CreateResource(
             new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
             new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime },
-            new MetadataV2Field { Name = "created_date", Type = MetadataV2FieldType.Date });
+            new MetadataV2Field { Name = "created_date", Type = MetadataV2FieldType.DateTime });
 
         var expectedTimestamp = new DateTimeOffset(2023, 1, 2, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
         var expectedCreated = new DateTimeOffset(2024, 6, 15, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
@@ -304,6 +304,75 @@ public sealed class GeoServicesFieldSerializationTests
 
         properties.GetProperty("timestamp").ValueKind.Should().Be(JsonValueKind.String);
         properties.GetProperty("timestamp").GetString().Should().Be("2023-01-02T00:00:00Z");
+    }
+
+    [Theory]
+    [InlineData("buffered")]
+    [InlineData("streaming")]
+    [InlineData("top-features")]
+    public async Task Json_CalendarDatesRemainIsoAndTimestampsRemainEpochs(string path)
+    {
+        var fields = new[]
+        {
+            new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger },
+            new MetadataV2Field
+            {
+                Name = "day", Type = MetadataV2FieldType.Date,
+                DefaultValue = JsonSerializer.SerializeToElement(
+                    new DateTimeOffset(2024, 2, 29, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds())
+            },
+            new MetadataV2Field { Name = "nullable_day", Type = MetadataV2FieldType.Date, Nullable = true },
+            new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime }
+        };
+        FeatureServerEndpoints.MapFieldInfoV2(fields[1], "objectid").Type.Should().Be("esriFieldTypeDateOnly");
+        FeatureServerEndpoints.MapFieldInfoV2(fields[1], "objectid").DefaultValue.Should().Be("2024-02-29");
+        var resource = CreateResource(fields);
+        var epoch = new DateTimeOffset(2024, 2, 29, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
+        object[] calendarValues =
+        [
+            "2024-02-29", new DateOnly(2024, 2, 29),
+            new DateTime(2024, 2, 29, 0, 0, 0, DateTimeKind.Unspecified),
+            new DateTimeOffset(2024, 2, 29, 0, 0, 0, TimeSpan.FromHours(14)),
+            JsonSerializer.SerializeToElement("2024-02-29"),
+            "2024-02-29T00:00:00+14:00", epoch
+        ];
+        foreach (var value in calendarValues)
+        {
+            var feature = Feature.Create(1, null, new Dictionary<string, object?>
+            {
+                ["objectid"] = 1L,
+                ["day"] = value,
+                ["nullable_day"] = null,
+                ["timestamp"] = "2024-02-29T00:00:00Z"
+            }.ToImmutableDictionary());
+            string json;
+            if (path == "top-features")
+            {
+                var response = FeatureServerEndpoints.BuildTopFeaturesJsonResponse(
+                    QueryResult<Feature>.Create(1, [feature]), resource, false, null);
+                json = JsonSerializer.Serialize(response, FeatureServerJsonContext.Default.QueryResponse);
+            }
+            else if (path == "streaming")
+                json = await StreamGeoServicesJsonAsync(new StreamingQueryFormatter(Options.Create(new LimitsOptions())), feature, resource);
+            else
+            {
+                var (formatter, _) = CreateFormatter();
+                var (response, _) = await formatter.FormatQueryResultAsync(QueryResult<Feature>.Create(1, [feature]),
+                    resource, "json", false, null, false, false, null, null);
+                json = JsonSerializer.Serialize(response, FeatureServerJsonContext.Default.QueryResponse);
+            }
+            using var document = JsonDocument.Parse(json);
+            var attributes = document.RootElement.GetProperty("features")[0].GetProperty("attributes");
+            attributes.GetProperty("day").GetString().Should().Be("2024-02-29");
+            attributes.GetProperty("nullable_day").ValueKind.Should().Be(JsonValueKind.Null);
+            attributes.GetProperty("timestamp").GetInt64().Should().Be(epoch);
+            document.RootElement.GetProperty("fields").EnumerateArray()
+                .Single(field => field.GetProperty("name").GetString() == "day")
+                .GetProperty("type").GetString().Should().Be("esriFieldTypeDateOnly");
+            document.RootElement.GetProperty("fields").EnumerateArray()
+                .Single(field => field.GetProperty("name").GetString() == "day")
+                .GetProperty("defaultValue").GetString().Should().Be("2024-02-29");
+        }
     }
 
     private static (QueryFormatter Formatter, LimitsOptions Limits) CreateFormatter()
