@@ -1,0 +1,3 @@
+image=ghcr.io/honua-io/honua-server@sha256:ec8d7915ca72ef3a8d4ffb4719f7711496f5046f538acf7e4fc2d7e6e2d028aa
+revision=886206527cc97bad1bbaa5fa6358910ebc45e9c0
+architecture=amd64
