@@ -37,7 +37,7 @@ names the harness commit as `producer_source_sha`.
    was actually applied beside them (`honua_evidence`).
 
 Each cell runs in its own interpreter so no client cache (QGIS capabilities and tiles,
-GDAL curl/WCS caches, OWSLib's process-global headers) can carry evidence between cells.
+GDAL's HTTP and WCS caches, OWSLib's process-global headers) can carry evidence between cells.
 
 ## Fixture
 
