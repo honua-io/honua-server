@@ -11,8 +11,11 @@ fixture traffic is not client evidence). It:
 3. registers them through the candidate's admin API
    (``/api/v1/admin/cloud-rasters`` for layers 5000/5001,
    ``/api/v1/admin/zarr-stores`` for layers 5200/5201);
-4. writes ``fixture-artifacts.json`` with the sha256 of every authored object and
-   the registration responses.
+4. asks the candidate to scan each registration (``/refresh``), bounded to 90 s,
+   and records the outcome -- a scan the candidate cannot finish is evidence for the
+   raster cells, not a reason to abort the run;
+5. writes ``fixture-artifacts.json`` with the sha256 of every authored object, the
+   registration responses and the scan outcomes.
 
 Pixel oracles the cells rely on:
 
@@ -132,6 +135,21 @@ def author_zarr() -> dict:
                                            if not entry.endswith("/")}}
 
 
+def refresh(path: str) -> dict:
+    started = time.monotonic()
+    request = urllib.request.Request(BASE_URL + path, data=b"", headers=ADMIN_HEADERS, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=90) as response:
+            outcome = {"status": response.status, "body": response.read().decode("utf-8", "replace")[:400]}
+    except urllib.error.HTTPError as error:
+        outcome = {"status": error.code, "body": error.read().decode("utf-8", "replace")[:400]}
+    except (TimeoutError, OSError) as error:
+        outcome = {"status": None, "error": f"{type(error).__name__}: {error}"}
+    outcome["path"] = path
+    outcome["elapsed_s"] = round(time.monotonic() - started, 1)
+    return outcome
+
+
 def register(path: str, body: dict) -> dict:
     status, text = http("POST", BASE_URL + path, body, ADMIN_HEADERS)
     if status == 409:
@@ -160,9 +178,17 @@ def main() -> int:
             "layerId": layer, "name": f"roster zarr {layer}", "provider": "AwsS3", "bucket": BUCKET, "rootPath": ZARR_ROOT})
             for layer in (5200, 5201)],
     }
+    artifacts["scans"] = [
+        refresh(f"/api/v1/admin/cloud-rasters/{registration['id']}/refresh")
+        for registration in artifacts["registrations"]["cloud-rasters"] if "id" in registration
+    ] + [
+        refresh(f"/api/v1/admin/zarr-stores/{registration['id']}/refresh")
+        for registration in artifacts["registrations"]["zarr-stores"] if "id" in registration
+    ]
     with open(OUTPUT, "w", encoding="utf-8") as handle:
         json.dump(artifacts, handle, indent=2)
-    print(json.dumps({"cog": artifacts["cog"]["sha256"], "zarr_objects": len(artifacts["zarr"]["objects"])}))
+    print(json.dumps({"cog": artifacts["cog"]["sha256"], "zarr_objects": len(artifacts["zarr"]["objects"]),
+                      "scans": [(scan["path"], scan["status"], scan["elapsed_s"]) for scan in artifacts["scans"]]}))
     return 0
 
 
