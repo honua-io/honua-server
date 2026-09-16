@@ -56,11 +56,46 @@ internal static class PlatformDeployAuthority
                 extensions: new Dictionary<string, object?> { ["code"] = DenialCode });
     }
 
+    /// <summary>
+    /// Whether the principal holds one of the configured platform (multi-tenant) administrator roles
+    /// (honua-server#4958). This is the explicitly broader role that may act outside a recovery grant's
+    /// recorded actor/tenant binding.
+    /// </summary>
+    public static bool IsPlatformAdministrator(ClaimsPrincipal principal, TenantContextOptions? options)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        options ??= new TenantContextOptions();
+        return principal.Identity?.IsAuthenticated == true &&
+            options.MultiTenantAdminRoles.Any(role => !string.IsNullOrWhiteSpace(role) && principal.IsInRole(role));
+    }
+
+    /// <summary>
+    /// The principal's tenant binding, or null when it has none (honua-server#4958). Read from the same
+    /// validated sources as <see cref="IsTenantBound"/> so a recovery grant's tenant can never be
+    /// asserted by a request header. Returns null when tenant resolution is disabled, which keeps a
+    /// single-tenant installation's recovery fence purely actor-bound.
+    /// </summary>
+    public static string? ResolveTenantId(ClaimsPrincipal? principal, TenantContextOptions? options)
+    {
+        options ??= new TenantContextOptions();
+        if (principal == null || !options.Enabled)
+        {
+            return null;
+        }
+
+        return TenantClaimTypes(options)
+            .SelectMany(principal.FindAll)
+            .Select(claim => claim.Value)
+            .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+    }
+
     // A tenant binding comes from the validated identity (the configured tenant claims) or
     // from a server-issued approved-operation credential; never from a request header.
     private static bool IsTenantBound(ClaimsPrincipal principal, TenantContextOptions options) =>
+        TenantClaimTypes(options).Any(claimType => principal.FindAll(claimType).Any(claim => !string.IsNullOrWhiteSpace(claim.Value)));
+
+    private static IEnumerable<string> TenantClaimTypes(TenantContextOptions options) =>
         options.TenantClaimTypes
             .Where(claimType => !string.IsNullOrWhiteSpace(claimType))
-            .Append(AdminApiKeyPermission.ApprovedOperationTenantClaim)
-            .Any(claimType => principal.FindAll(claimType).Any(claim => !string.IsNullOrWhiteSpace(claim.Value)));
+            .Append(AdminApiKeyPermission.ApprovedOperationTenantClaim);
 }
