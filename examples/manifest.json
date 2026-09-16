@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1143,
+    "total": 1148,
     "byStatus": {
-      "not-executable": 1130,
+      "not-executable": 1135,
       "unvalidated": 10,
       "passed": 3
     }
@@ -12918,6 +12918,71 @@
       "fence": 4,
       "line": 99,
       "language": "text"
+    },
+    {
+      "id": "0688522b1c2eac4f",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/aot-geoparquet-candidate-8862065-2026-09-16/README.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 4,
+      "line": 107,
+      "language": "plain"
+    },
+    {
+      "id": "35ece93279e9a07a",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/aot-geoparquet-candidate-8862065-2026-09-16/README.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 2,
+      "line": 55,
+      "language": "plain"
+    },
+    {
+      "id": "3c31245b98613f16",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/aot-geoparquet-candidate-8862065-2026-09-16/README.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 3,
+      "line": 66,
+      "language": "plain"
+    },
+    {
+      "id": "4fb37eab709a5f92",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/aot-geoparquet-candidate-8862065-2026-09-16/README.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 34,
+      "language": "plain"
+    },
+    {
+      "id": "bcbc46c733e46c96",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/aot-geoparquet-candidate-8862065-2026-09-16/README.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 5,
+      "line": 180,
+      "language": "bash"
     },
     {
       "id": "c60edbb1710783b7",
