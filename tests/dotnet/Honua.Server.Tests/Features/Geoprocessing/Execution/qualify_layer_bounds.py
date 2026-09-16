@@ -5,7 +5,6 @@ Docker Compose, --image registry/image@sha256:digest and --receipt /path/receipt
 """
 
 import argparse
-import base64
 import hashlib
 import json
 import re
@@ -256,17 +255,26 @@ UPDATE honua.services SET service_extent=ST_MakeEnvelope(-1,-1,3,3,4326) WHERE s
                     scenario["job"] = job
                     if expected is None:
                         assert job["status"] == "successful", job
-                        artifacts = api(f"/api/v1/admin/jobs/{job_id}/artifacts")
-                        artifacts = artifacts.get("data", artifacts)
-                        refs = [item["artifactId"] for item in artifacts["items"]]
-                        assert len(refs) == 1 and refs[0].startswith("data:application/geo+json;base64,"), artifacts
-                        payload = base64.b64decode(refs[0].split(",", 1)[1], validate=True)
-                        document = json.loads(payload)
-                        assert document["featureCount"] == 2 and document["processId"] == process
+                        # Read the output over the client-facing contract, OGC API Processes
+                        # results. The admin console redacts inline data: references, so it
+                        # attests that the job produced one artifact but never carries the payload.
+                        results = api(f"/ogc/processes/jobs/{job_id}/results")
+                        output = results["outputFeatureLayer"]
+                        assert output["mediaType"] == "application/geo+json", output
+                        document = output["value"]
+                        assert document["type"] == "FeatureCollection", document
+                        assert document["featureCount"] == 2 and document["processId"] == process, document
                         geometries = [feature["geometry"] for feature in document["features"]]
                         assert geometries == [
                             {"type": "Polygon", "coordinates": [[[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]]]},
                             {"type": "Polygon", "coordinates": [[[1, 1], [3, 1], [3, 3], [1, 3], [1, 1]]]}], geometries
+                        properties = [feature["properties"] for feature in document["features"]]
+                        assert properties == [{"objectid": 1}, {"objectid": 2}], properties
+                        artifacts = api(f"/api/v1/admin/jobs/{job_id}/artifacts")
+                        artifacts = artifacts.get("data", artifacts)
+                        assert len(artifacts["items"]) == 1, artifacts
+                        scenario["artifacts"] = artifacts
+                        payload = json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
                         scenario["outputSha256"] = hashlib.sha256(payload).hexdigest()
                         scenario["outcome"] = "pass"
                         scenario["completedAt"] = utc()

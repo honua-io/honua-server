@@ -26,7 +26,12 @@ with the same squares for joining, and one 1,001-vertex ring. The configured
 `MaxTopologyWork=99` is below both the dissolve admission cost `(5+5)^2=100`
 and the join cost `(5+5)*(5+5)=100`. Buffer intermediates also exceed that work
 budget. A passthrough job must return exactly the two original polygon coordinate
-arrays and the expected process/count metadata. The oversized ring and each
+arrays, the original `objectid` attributes and the expected process/count metadata,
+read back over the client-facing contract (`GET /ogc/processes/jobs/{id}/results`).
+The admin console job-artifacts view is asserted to list exactly one artifact for the
+same job, but it is no longer the source of the payload: since #4845 it redacts inline
+`data:` references, so it attests that the artifact exists without carrying its bytes.
+The oversized ring and each
 topology refusal must reach terminal failure with an actionable message after
 exactly one execution attempt, read from the server's job log. Concurrent
 FeatureServer count queries must keep returning exactly 2.
@@ -116,14 +121,57 @@ published Native AOT image that contains #4881,
   is still `dismissed` with one attempt after the 45 s observation window.
 - All 340 serving probes pass (maximum 3.25 s), there is no OOM kill, and cleanup passes.
 
-This is the manifest-pinned published image the acceptance asks for. What remains is a
-release re-pin whose source includes `927af8fbc`; the candidate pinned on 2026-09-15
-(`548b7a526`) predates it.
+This is the manifest-pinned published image the acceptance asks for. What remained at
+the time was a release re-pin whose source includes `927af8fbc`; the candidate pinned on
+2026-09-15 (`548b7a526`) predated it. That re-pin landed on 2026-09-16, and the receipt
+below replays the acceptance on it.
+
+`layer-resource-candidate-8862065-receipt.json` runs this harness on the 2026.1
+candidate pinned on 2026-09-16 (release PR #354),
+`ghcr.io/honua-io/honua-server@sha256:ec8d7915ca72ef3a8d4ffb4719f7711496f5046f538acf7e4fc2d7e6e2d028aa`
+(amd64 Native AOT member of index `sha256:0b16046533e5330ecdd48255c06b5397e869191299e1e5e8cc7b4b2ded60b388`,
+`org.opencontainers.image.revision` = `886206527cc97bad1bbaa5fa6358910ebc45e9c0`, which
+contains `927af8fbc`). One CPU, 1 GiB, production OGC execution with PostGIS reads and
+Redis jobs, server restarted before execution. It **passes** every scenario:
+
+| scenario | attempts | first attempt to terminal | observed outcome |
+|---|---|---|---|
+| `bounded-passthrough` | — | 3.81 s wall | exact original ordinates and `objectid`s, `featureCount=2`, `processId=generalization.dissolve` |
+| `dissolve-work-limit` | **1** | 0.07 s | `managed topology for 10 by 10 vertices exceeds Geoprocessing:Executors:MaxTopologyWork=99; stopped before computation` |
+| `join-both-sides` | **1** | 0.10 s | same ceiling charged across both join sides |
+| `buffer-work-limit` | **1** | 0.10 s | buffer intermediates charged: 74 by 74 vertices |
+| `single-geometry` | **1** | 0.04 s | `layer 946291 contains a geometry with 1001 vertices, exceeding the configured limit of 100` |
+| `elapsed-time-limit` | **1** | 8.11 s against the 8 s deadline | `exceeded Geoprocessing:Executors:MaxLayerExecutionSeconds=8` |
+| `dismiss-running-join` | 1 | dismissed 0.06 s after the `DELETE` (request itself 0.03 s) | CPU 101.4% to 6.2% within 1.99 s; still `dismissed` with one attempt after the 45.0 s observation |
+
+All 357 serving probes passed with no failures (maximum 3.28 s), the container was
+never OOM-killed and ended `running`/`healthy`, and cleanup passed. This is the
+exact-candidate evidence #4629's last acceptance criterion asks for.
+
+The bounded-passthrough scenario reads its output from
+`GET /ogc/processes/jobs/{id}/results` rather than from the admin console's artifact
+identifier. Earlier receipts decoded a `data:application/geo+json;base64,` reference
+that the console returned verbatim in `artifactId`; #4845 replaced that field with a
+salt-free SHA-256 digest for references that are not safe provider links, so the
+console now reports `availability: Redacted` for inline results. The payload itself
+was never lost — the OGC results document carries the full feature collection, which
+is the contract a client and the SDKs actually read. Reading it there is a stricter
+oracle than the console path it replaces: it additionally asserts the output media
+type, the FeatureCollection envelope and the per-feature attributes.
+
+Receipts record the SHA-256 of the harness that produced them. The receipts through
+`layer-resource-nightly-4f2cb3f9-receipt.json` were produced by harness
+`c4a41df326806869033abc2f1b65c70d0dd3b85c821fbfde07de3e28c01a4fca`;
+`layer-resource-candidate-8862065-receipt.json` was produced by
+`8bc3bc322519042af58a33129ca8f9cfee35b8c75f33f37fe9289ab61a01f86f`, which differs only
+in how bounded passthrough reads its output. Every limit, attempt-count, deadline,
+dismissal, serving and cleanup assertion is unchanged.
 
 The runtime correction makes input, resource-limit and deadline refusals terminal
 (`IsRetryable = false`) in the layer and enrichment executors; transient source-read
-failures keep their retry budget. #4629 closes only once a manifest-pinned image
-that contains this correction passes this harness. Managed topology is not
+failures keep their retry budget. #4629 closed on
+`layer-resource-candidate-8862065-receipt.json`, the first manifest-pinned candidate
+that contains this correction and passes this harness. Managed topology is not
 preemptible inside a call: admission limits its input work, and callers observe
 cancellation between calls. These receipts do not claim a measured worst-case
 runtime for every admitted geometry, an isolated worker kill guarantee, or the
