@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1149,
+    "total": 1150,
     "byStatus": {
-      "not-executable": 1136,
+      "not-executable": 1137,
       "unvalidated": 10,
       "passed": 3
     }
@@ -13048,6 +13048,19 @@
       "fence": 2,
       "line": 44,
       "language": "plain"
+    },
+    {
+      "id": "57af3ed018d0c686",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/gp-desktop-fixture-2cc2213/README.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 23,
+      "language": "bash"
     },
     {
       "id": "086d687ee40614ae",
