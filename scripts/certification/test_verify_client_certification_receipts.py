@@ -621,14 +621,20 @@ class RealMirrorContractTierTests(unittest.TestCase):
         stale = [v["cell"] for v in self.verdicts if "mirror-stale" in blocker_codes(v)]
         self.assertEqual([], stale, "re-run build-client-protocol-requirements.py")
 
-    def test_every_governed_row_is_blocked_on_the_missing_denominator_test_ids(self):
-        # Recomputed from the governed rows themselves, not from the stored binding.
-        expected = [
-            module.cell_id(row) for row in MIRROR["requirements"] if not row.get("test_ids")]
+    def test_every_governed_row_declares_exactly_its_own_bounded_test_id(self):
+        # honua-release#347 (denominator 2026-09-13-complete.12) published test_ids on
+        # all 59 rows. Recomputed from the governed rows themselves, not from the
+        # stored binding: each row names one client-cert/<client>/<surface>/<operation>
+        # id and no verdict still reports the denominator as unjoinable.
+        slugs = {"QGIS": "qgis", "GDAL/OGR": "gdal-ogr", "GDAL": "gdal", "MapLibre GL JS": "maplibre-gl-js",
+                 "OWSLib": "owslib", "PySTAC-Client": "pystac-client"}
+        for row in MIRROR["requirements"]:
+            expected = f"client-cert/{slugs[row['canonical_client']]}/{row['surface']}/{row['operation']}"
+            self.assertEqual([expected], row.get("test_ids"), module.cell_id(row))
         blocked = [
-            v["cell"] for v in self.verdicts if "denominator-unjoinable" in blocker_codes(v)]
-        self.assertEqual(59, len(expected))
-        self.assertEqual(sorted(expected), sorted(blocked))
+            v["cell"] for v in self.verdicts
+            if {"denominator-unjoinable", "denominator-ambiguous"} & set(blocker_codes(v))]
+        self.assertEqual([], blocked)
 
     def test_producer_absence_matches_the_lanes_this_repository_contracts_to_emit(self):
         # Independent recomputation straight from expected-pairs.json: a governed
@@ -638,6 +644,11 @@ class RealMirrorContractTierTests(unittest.TestCase):
                    for pair in EXPECTED_PAIRS["expected_pairs"]}
         emitted_lanes = {lane for lane, _ in emitted}
 
+        baseline_versions = {
+            (envelope.get("client_lane"), envelope.get("protocol")): envelope.get("client_version")
+            for path in (ROOT / "tests" / "baselines" / "client-compat").rglob("*.cert.json")
+            for envelope in (json.loads(path.read_text(encoding="utf-8")),)}
+
         expected: dict[str, str] = {}
         for row in MIRROR["requirements"]:
             pair = (row["client_lane"], row["surface"])
@@ -645,7 +656,7 @@ class RealMirrorContractTierTests(unittest.TestCase):
                 expected[module.cell_id(row)] = "producer-lane-not-emitted"
             elif pair not in emitted:
                 expected[module.cell_id(row)] = "producer-surface-not-emitted"
-            else:
+            elif baseline_versions.get(pair) != row["client_version"]:
                 expected[module.cell_id(row)] = "producer-client-version-mismatch"
 
         reported = {
@@ -654,33 +665,37 @@ class RealMirrorContractTierTests(unittest.TestCase):
             if blocker["reason_code"].startswith("producer-")}
         self.assertEqual(expected, reported)
 
-    def test_the_producer_half_is_owned_here_and_the_denominator_half_is_not(self):
+    def test_the_producer_half_is_owned_here_and_only_the_candidate_is_owned_by_release(self):
         owners = {blocker["reason_code"]: blocker["owner"]
                   for verdict in self.verdicts for blocker in verdict["blockers"]}
-        self.assertEqual("honua-io/honua-release", owners["denominator-unjoinable"])
+        self.assertNotIn("denominator-unjoinable", owners)
+        self.assertEqual("honua-io/honua-release", owners["no-candidate"])
         for code, owner in owners.items():
             if code.startswith("producer-"):
                 self.assertEqual("honua-io/honua-server", owner)
 
-    def test_the_only_governed_pairs_this_repository_emits_are_the_two_qgis_vector_lanes(self):
+    def test_the_only_governed_pairs_the_nightly_matrix_emits_are_qgis_vector_and_pystac(self):
         emitted = {(pair["client_lane"], pair["protocol"])
                    for pair in EXPECTED_PAIRS["expected_pairs"]}
         governed_pairs_emitted = sorted(
             (row["client_lane"], row["surface"]) for row in MIRROR["requirements"]
             if (row["client_lane"], row["surface"]) in emitted)
         self.assertEqual(
-            [("desktop-qgis", "ogc-features"), ("desktop-qgis", "wfs")], governed_pairs_emitted)
+            [("desktop-qgis", "ogc-features"), ("desktop-qgis", "wfs"), ("py-pystac", "stac")],
+            governed_pairs_emitted)
 
-    def test_those_two_pairs_are_still_blocked_on_an_exact_client_version(self):
-        # The governed rows pin QGIS 3.40; the lane image reports 3.44.13-Solothurn.
-        # The normalizer matches client_version exactly, so these are not near-misses.
-        for surface in ("ogc-features", "wfs"):
+    def test_those_pairs_now_join_on_the_exact_client_version_and_wait_only_for_a_candidate(self):
+        # honua-release#347 recorded the QGIS ruling (3.44.13-Solothurn, no re-pin to
+        # 3.40) and the py-pystac lane identity. The normalizer matches client_version
+        # exactly, so the emitted and governed versions must be identical strings.
+        for lane, surface, version in (("desktop-qgis", "ogc-features", "3.44.13-Solothurn"),
+                                       ("desktop-qgis", "wfs", "3.44.13-Solothurn"),
+                                       ("py-pystac", "stac", "pystac=1.15.2;pystac-client=0.9.0")):
             row = next(r for r in MIRROR["requirements"]
-                       if r["client_lane"] == "desktop-qgis" and r["surface"] == surface)
-            self.assertEqual("3.40", row["client_version"])
-            binding = row["receiptBinding"]["producerBinding"]
-            self.assertEqual("client-version-mismatch", binding["reasonCode"])
-            self.assertIn("3.44.13-Solothurn", binding["reason"])
+                       if r["client_lane"] == lane and r["surface"] == surface)
+            self.assertEqual(version, row["client_version"])
+            self.assertEqual("present", row["receiptBinding"]["producerBinding"]["status"])
+            self.assertEqual(["no-candidate"], blocker_codes(self.by_cell[module.cell_id(row)]))
 
     def test_the_governed_qgis_raster_surfaces_have_no_lane_at_all(self):
         for surface in ("wms", "wmts"):
@@ -701,16 +716,16 @@ class RealMirrorContractTierTests(unittest.TestCase):
                 (ROOT / "scripts" / "certification"
                  / "build-client-protocol-requirements.py").read_bytes())
             baselines = root / "tests" / "baselines" / "client-compat"
-            (baselines / "pystac").mkdir(parents=True)
+            (baselines / "gdal").mkdir(parents=True)
             (baselines / "expected-pairs.json").write_text(json.dumps({
-                "expected_pairs": [{"client_lane": "pystac-client-stac", "protocol": "stac"}]}),
+                "expected_pairs": [{"client_lane": "gdal-flatgeobuf", "protocol": "flatgeobuf"}]}),
                 encoding="utf-8")
-            (baselines / "pystac" / "py-pystac-stac.cert.json").write_text(json.dumps({
-                "client_lane": "pystac-client-stac", "protocol": "stac",
-                "client_version": "0.9.0"}), encoding="utf-8")
+            (baselines / "gdal" / "gdal-flatgeobuf-flatgeobuf.cert.json").write_text(json.dumps({
+                "client_lane": "gdal-flatgeobuf", "protocol": "flatgeobuf",
+                "client_version": "3.8.4"}), encoding="utf-8")
 
             row = next(r for r in MIRROR["requirements"]
-                       if r["client_lane"] == "pystac-client-stac")
+                       if r["client_lane"] == "gdal-flatgeobuf")
             document = {**MIRROR, "requirements": [copy.deepcopy(row)]}
             verdict = module.verify_contract(document, root)[0]
             self.assertEqual("fail", verdict["result"])
@@ -734,9 +749,12 @@ class RealBaselinesReleaseTierTests(unittest.TestCase):
         self.assertEqual(0, summary["byResult"]["pass"])
         self.assertEqual(59, summary["byResult"]["skip"])
 
-    def test_todays_baselines_are_blocked_on_the_denominator_before_anything_else(self):
+    def test_todays_baselines_carry_no_bounded_receipt_for_any_governed_cell(self):
+        # The denominator now joins, so the nightly matrix baselines are judged on
+        # their own: they carry per-scenario CERT-* ids, never the governed
+        # client-cert/<client>/<surface>/<operation> ids, so no cell has an envelope.
         codes = {code for verdict in self.verdicts for code in blocker_codes(verdict)}
-        self.assertEqual({"denominator-unjoinable"}, codes)
+        self.assertEqual({"missing-envelope"}, codes)
 
 
 class CommandLineTests(unittest.TestCase):

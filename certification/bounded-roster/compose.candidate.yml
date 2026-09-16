@@ -55,10 +55,12 @@ services:
       ROSTER_OBSERVATIONS: /run/observations
       ROSTER_REQUIREMENTS: /roster/requirements.json
       PYTHONPATH: /roster/lib:/roster
-      HONUA_CERT_API_KEY: ClientCompatAdmin123!
-      HONUA_CERT_OIDC_ISSUER: https://cert-auth.honua.test
-      HONUA_CERT_OIDC_AUDIENCE: honua-client-compat
-      HONUA_CERT_OIDC_SIGNING_KEY: client-compat-certification-signing-key-2026-wave-1
+      # The fixture's auth profile, read by run-roster.sh from the client-compat
+      # `honua` service definition so this overlay never restates it.
+      HONUA_CERT_API_KEY: ${ROSTER_FIXTURE_ADMIN_KEY:?run through run-roster.sh}
+      HONUA_CERT_OIDC_ISSUER: ${ROSTER_FIXTURE_OIDC_ISSUER:?run through run-roster.sh}
+      HONUA_CERT_OIDC_AUDIENCE: ${ROSTER_FIXTURE_OIDC_AUDIENCE:?run through run-roster.sh}
+      HONUA_CERT_OIDC_SIGNING_KEY: ${ROSTER_FIXTURE_OIDC_SIGNING_KEY:?run through run-roster.sh}
     volumes: &lane-volumes
       - ${ROSTER_HOME}/lib:/roster/lib:ro
       - ${ROSTER_HOME}/lanes:/roster/lanes:ro
