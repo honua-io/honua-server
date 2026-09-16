@@ -18,6 +18,7 @@ using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Studio.Export;
 using Honua.Server.Features.Studio.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -1713,6 +1714,47 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
+    public async Task ExportDeliverable_NoRenderableTypeface_ReturnsServiceUnavailableWithMachineReadableCode()
+    {
+        // honua-server#4908: when the composer cannot render (no font on the host resolves
+        // glyphs), the export must fail loudly with a non-200 status and a machine-readable
+        // reason -- never a 200 over a blank artifact. Route the whole export surface through a
+        // fake exporter on a dedicated fixture so the assertion does not depend on this test
+        // host's installed fonts.
+        await using var unavailableFixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            })
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IStudioPackageStore>();
+                services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
+                services.RemoveAll<IContentPublicationStore>();
+                services.AddSingleton<IContentPublicationStore, InMemoryContentPublicationStore>();
+                services.RemoveAll<IStudioDeliverableExporter>();
+                services.AddScoped<IStudioDeliverableExporter, RenderUnavailableStudioDeliverableExporter>();
+            });
+        await unavailableFixture.InitializeAsync();
+        var unavailableClient = unavailableFixture.CreateAdminClient();
+
+        var itemId = await CreateContentItemAsync(StudioPackageFamily.Map, "honua_map_package.v1", unavailableClient);
+
+        var response = await unavailableClient.PostAsync($"/api/v1/studio/map/{itemId:D}/export?format=png", EmptyJson());
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        var problem = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
+        problem.GetProperty("code").GetString().Should().Be(RenderUnavailableStudioDeliverableExporter.ReasonCode);
+
+        // The failure must not affect the rest of the server (liveness/readiness unaffected).
+        var healthResponse = await unavailableClient.GetAsync("/healthz");
+        healthResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
     public async Task ExportDeliverable_WithoutAdmin_ReturnsUnauthorized()
     {
         using var unauthenticatedClient = _fixture.CreateClient();
@@ -1745,8 +1787,9 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         bytes.Take(expectedMagic.Length).Should().Equal(expectedMagic);
     }
 
-    private async Task<Guid> CreateContentItemAsync(StudioPackageFamily family, string format)
+    private async Task<Guid> CreateContentItemAsync(StudioPackageFamily family, string format, HttpClient? client = null)
     {
+        client ??= _client;
         var createResponse = await PostAsync(
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
@@ -1755,7 +1798,8 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
                 WorkspaceId = "studio",
                 Envelope = BuildDeliverableEnvelope(family, format),
             },
-            StudioApiJsonContext.Default.CreateStudioPackageDraftRequest);
+            StudioApiJsonContext.Default.CreateStudioPackageDraftRequest,
+            client);
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var draft = await ReadAsync<StudioPackageDraft>(
             createResponse,
@@ -1764,7 +1808,8 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         var saveResponse = await PostAsync(
             $"/api/v1/studio/package-drafts/{draft.DraftId:D}/content-versions",
             new SaveStudioContentVersionRequest { ChangeNote = "export fixture" },
-            StudioApiJsonContext.Default.SaveStudioContentVersionRequest);
+            StudioApiJsonContext.Default.SaveStudioContentVersionRequest,
+            client);
         saveResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var version = await ReadAsync<StudioContentVersion>(
             saveResponse,
@@ -1996,8 +2041,8 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
             StudioApiJsonContext.Default.ApiResponseStudioPublishedArtifact);
     }
 
-    private async Task<HttpResponseMessage> PostAsync<T>(string path, T body, JsonTypeInfo<T> typeInfo)
-        => await _client.PostAsync(path, JsonContent(body, typeInfo));
+    private async Task<HttpResponseMessage> PostAsync<T>(string path, T body, JsonTypeInfo<T> typeInfo, HttpClient? client = null)
+        => await (client ?? _client).PostAsync(path, JsonContent(body, typeInfo));
 
     private async Task<HttpResponseMessage> PutAsync<T>(string path, T body, JsonTypeInfo<T> typeInfo)
         => await _client.PutAsync(path, JsonContent(body, typeInfo));
@@ -2160,4 +2205,25 @@ file sealed class FakeGrantingRoleStore : IRoleStore
     public Task<IReadOnlyList<PermissionGrant>> SetPermissionsAsync(
         Guid roleId, IReadOnlyList<PermissionGrant> permissions, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Not used by the tests exercising this fake.");
+}
+
+/// <summary>
+/// Fake <see cref="IStudioDeliverableExporter"/> that always reports the render-unavailable
+/// outcome (honua-server#4908), so the endpoint's HTTP mapping can be proven without depending
+/// on whether this test host happens to have a font that resolves glyphs.
+/// </summary>
+file sealed class RenderUnavailableStudioDeliverableExporter : IStudioDeliverableExporter
+{
+    public const string ReasonCode = "studio_deliverable/no_renderable_typeface";
+
+    public Task<StudioDeliverableExportResult> ExportAsync(
+        StudioPackageFamily kind,
+        Guid itemId,
+        StudioDeliverableFormat format,
+        Guid? versionId = null,
+        bool store = false,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(StudioDeliverableExportResult.CreateRenderUnavailable(
+            "No rendering typeface with glyphs is available on this host.",
+            ReasonCode));
 }
