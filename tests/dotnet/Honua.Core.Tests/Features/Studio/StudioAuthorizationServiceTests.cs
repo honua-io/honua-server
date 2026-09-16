@@ -485,7 +485,12 @@ public sealed class StudioAuthorizationServiceTests
             principal,
             otherTenant.ResolveCallerId(principal),
             StudioAuthorizationOperation.ReadDraft,
-            resourceOwnerId: ownerId, resourceTenantId: null);
+            resourceOwnerId: ownerId,
+            // Deliberately the caller's OWN tenant: honua-server#4905's tenant boundary would
+            // otherwise answer first, and this case is about the owner key alone (#3429) --
+            // an equal subject minted into another tenant must never own the same draft, even
+            // when the record itself sits in the caller's tenant.
+            resourceTenantId: "tenant-b");
 
         Assert.False(decision.IsAllowed);
         Assert.Equal(StudioAuthorizationService.CrossUserDeniedCode, decision.Code);

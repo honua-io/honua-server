@@ -36,6 +36,15 @@
     <None Include="..\..\..\src\Honua.Server\Migrations\119_CreateGeoprocessingWorkspaces.sql" Link="Migrations\119_CreateGeoprocessingWorkspaces.sql">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <None Include="..\..\..\src\Honua.Server\Migrations\035_CreateStudioPackageLifecycle.sql" Link="Migrations\035_CreateStudioPackageLifecycle.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\..\..\src\Honua.Server\Migrations\090_AddStudioContentItemOwner.sql" Link="Migrations\090_AddStudioContentItemOwner.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="..\..\..\src\Honua.Server\Migrations\120_AddStudioTenantOwnership.sql" Link="Migrations\120_AddStudioTenantOwnership.sql">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <None Include="..\..\..\src\Honua.Server\Migrations\105_AddChangeLogPublicObjectId.sql" Link="Migrations\105_AddChangeLogPublicObjectId.sql">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
