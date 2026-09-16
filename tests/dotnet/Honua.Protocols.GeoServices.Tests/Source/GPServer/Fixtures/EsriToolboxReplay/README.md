@@ -95,5 +95,31 @@ keeps the same controls as a regression. It runs the real API-key handler (the d
 bypass is off), the real job service, the Redis job store and the production
 executor. It also asserts that no challenged submission creates a job.
 
+## Replay on the re-pinned 2026.1 candidate (8862065)
+
+honua-release trunk `31ed9cc4` (#354) re-pins the candidate to source
+`886206527cc97bad1bbaa5fa6358910ebc45e9c0`, NativeAOT index
+`sha256:0b16046533e5330ecdd48255c06b5397e869191299e1e5e8cc7b4b2ded60b388`.
+The owned `gpserver-4614-4616-server` fixture was recreated on that exact image
+with the same environment, key-ring bind, private Redis, fixture catalog copy and
+HTTPS proxy as the `548b7a5` fixture; the catalog copy took migrations 118 and 119
+on start-up (`dbSchema` 119). Through the fixture's HTTPS proxy the image again
+advertises all 119 GPServer tasks, and `POST /services/desktop_ui_features/GPServer`
+answers 401 to an unauthenticated caller rather than the 404 this issue was filed on.
+The fixture identity, the operator hand-off (origin, service, CA root thumbprint,
+leaf expiry) and the host-side recreation transcript are in
+[`docs/internal/evidence/gp-desktop-fixture-8862065/`](../../../../../../../docs/internal/evidence/gp-desktop-fixture-8862065/README.md).
+
+| Receipt | What it establishes |
+| --- | --- |
+| `candidate-8862065-arcpy-and-sdk-scalar-verified.json` | On the re-pinned candidate over verified TLS, installed SDK 2.4.3 and ArcPy 3.7.1 repeat the `548b7a5` scalar result: all 119 advertised tasks import, and both clients remotely compute `geometry.area` = 12 for the literal 3 by 4 rectangle with MeasureResult type, area measure, squared input-CRS units, SRID 3857 and Polygon input (ArcPy async job status 4 `Completed`). Run [35061750279](https://github.com/honua-io/honua-esri-compat/actions/runs/35061750279). |
+| `candidate-8862065-arcpy-complex-values-verified.json` | On the re-pinned candidate, installed ArcPy 3.7.1 passes the same six literal-derived complex-value oracles as `candidate-548b7a5-arcpy-complex-values-verified.json`: Buffer feature output, multivalue Union, Clip of two FeatureSet inputs, attribute filter, GenerateNearTable RecordSet output, and cancellation reaching `Cancelled`. Run [35061927963](https://github.com/honua-io/honua-esri-compat/actions/runs/35061927963). |
+| `candidate-8862065-soap-auth-controls-verified.json` | On the re-pinned candidate over verified TLS, the same 24 controls as `candidate-548b7a5-soap-auth-controls-verified.json` all hold: 21 denials across three unauthorized callers and seven SOAP operations, each a 401 SOAP fault leaking no job id, status, task name or result; the authorized literal job still succeeds with area 12 and is still `esriJobSucceeded` after the refused cancels; an authorized malformed submission returns 400. Produced by `probe-soap-auth-controls.py`. |
+
+`gp-toolbox-replay.yml` compares its `honua_image` input against `docker inspect`'s
+`.Image`, which is the bare local image id. Dispatch it with `sha256:...` alone;
+the full `ghcr.io/honua-io/honua-server@sha256:...` reference fails the fixture
+identity check even when the fixture is on the right image.
+
 Native Pro desktop UI receipts are still separate. Each receipt above records
 `desktop_ui_exercised: false`, and no desktop UI pass is claimed.
