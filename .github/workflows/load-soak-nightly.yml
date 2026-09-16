@@ -128,6 +128,36 @@ jobs:
           print("Seed dependencies ready.")
           PY
 
+      - name: Mint a throwaway key-ring certificate for this run
+        run: |
+          set -euo pipefail
+          # Since #4722 the Production startup policy composes the Redis-backed durable operation
+          # secret channel and refuses to boot unless an operator certificate encrypts the
+          # data-protection key ring (Operations:SecretChannel:KeyRingCertificatePath); without one
+          # the server exits before readiness (#4968). The requirement stays: the run supplies a
+          # certificate instead. It guards only this runner's disposable Redis, so it is generated
+          # here, used for this run, and never leaves the runner or enters the repo.
+          keyring="$RUNNER_TEMP/keyring"
+          install -d -m 0755 "$keyring"
+          SOAK_KEYRING_PASSWORD="$(openssl rand -hex 24)"
+          export SOAK_KEYRING_PASSWORD
+          echo "::add-mask::$SOAK_KEYRING_PASSWORD"
+          (
+            umask 077
+            openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=honua-load-soak-keyring" \
+              -keyout "$keyring/keyring.key" -out "$keyring/keyring.crt" 2>/dev/null
+            openssl pkcs12 -export -in "$keyring/keyring.crt" -inkey "$keyring/keyring.key" \
+              -out "$keyring/operation-keyring.pfx" -passout env:SOAK_KEYRING_PASSWORD
+          )
+          # The PKCS#12 carries the private key the server needs; the loose PEM copy is not kept.
+          rm -f "$keyring/keyring.key" "$keyring/keyring.crt"
+          chmod 0600 "$keyring/operation-keyring.pfx"
+          # The server runs directly on this runner, not in a container, so later steps (the
+          # initial start and the post-seed restart) read these as ordinary job env rather than
+          # through a bind mount.
+          echo "Operations__SecretChannel__KeyRingCertificatePath=$keyring/operation-keyring.pfx" >> "$GITHUB_ENV"
+          echo "Operations__SecretChannel__KeyRingCertificatePassword=$SOAK_KEYRING_PASSWORD" >> "$GITHUB_ENV"
+
       - name: Build server
         run: dotnet build src/Honua.Server/Honua.Server.csproj -c Release
 
