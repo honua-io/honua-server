@@ -17835,6 +17835,7 @@
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ExportDeliverable_KindMismatch_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ExportDeliverable_MapAsPdf_ReturnsPdfArtifact",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ExportDeliverable_MapAsPng_ReturnsPngArtifact",
+        "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ExportDeliverable_NoRenderableTypeface_ReturnsServiceUnavailableWithMachineReadableCode",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ExportDeliverable_ReportAsPdf_ReturnsPdfArtifact",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ExportDeliverable_ReportAsPng_ReturnsPngArtifact",
         "Honua.Server.Tests.Features.Studio.StudioPackageEndpointsTests.ExportDeliverable_UnknownItem_ReturnsNotFound",
