@@ -13,5 +13,5 @@ root filesystem write attempt (must be refused):
 touch: cannot touch '/app/write-probe': Read-only file system
 refused: exit 1
 
-GDAL/PROJ/GEOS present in the running container (must be empty):
-Honua.Protocols.GeoServices.xml
+GDAL/PROJ/GEOS native libraries in the running container (must be none):
+(end of list)
