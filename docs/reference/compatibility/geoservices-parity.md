@@ -475,6 +475,12 @@ Only `/rest/info` advertises the compatibility value `currentVersion: 10.8`.
 The service catalog and service descriptors omit ArcGIS Server version fields; clients
 that branch on those documents must treat the absence as "unknown", not as a version floor.
 
+SOAP arguments on `POST /services` and the per-service GPServer and ImageServer SOAP
+endpoints bind by local name. The unqualified arguments ArcGIS Pro and ArcPy send
+(`elementFormDefault="unqualified"`), arguments qualified with the operation's
+namespace, and a default-namespace operation whose arguments inherit it are the
+same request. A fault for an unrecognised argument names the element.
+
 ## Portal Sharing
 
 Esri spec: [ArcGIS REST API - Users, groups, and items](https://developers.arcgis.com/rest/users-groups-and-items/).
