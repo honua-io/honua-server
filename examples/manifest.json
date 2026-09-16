@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1142,
+    "total": 1143,
     "byStatus": {
-      "not-executable": 1129,
+      "not-executable": 1130,
       "unvalidated": 10,
       "passed": 3
     }
@@ -7638,7 +7638,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 226,
+      "line": 275,
       "language": "json"
     },
     {
@@ -7651,7 +7651,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 483,
+      "line": 536,
       "language": "json"
     },
     {
@@ -12943,6 +12943,19 @@
       },
       "fence": 1,
       "line": 51,
+      "language": "bash"
+    },
+    {
+      "id": "7de9fe5b8380d335",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/cng-geoparquet-candidate-8862065-2026-09-16/README.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 95,
       "language": "bash"
     },
     {
