@@ -10,7 +10,8 @@ Inputs (all under ``--run-dir``, written by ``run-roster.sh``):
   applied fixture/config/auth digests and the lane image identities.
 
 Output: one ``client-interop-cert-v1`` envelope per governed
-``(client_lane, client_version, surface, revisions)`` group under ``--out``, plus
+``(canonical_client, client_lane, client_version, surface, revisions)`` group under
+``--out`` (``client_id`` is per envelope, and GDAL and GDAL/OGR share lanes), plus
 ``wire-join.json`` recording, per cell, which proxy lines substantiated it.
 
 Fail-closed rules applied here (in addition to the cell's own verdict):
@@ -150,12 +151,13 @@ def build(run_dir: Path, requirements: dict, producer_source_sha: str) -> tuple[
             "wire": joins[observation["test_case_id"]],
         }
         key = (row["client_lane"], row["client_version"], row["surface"], row["deployment_target"],
-               row["fixture_revision"], row["contract_revision"], row["auth_policy_revision"])
+               row["fixture_revision"], row["contract_revision"], row["auth_policy_revision"],
+               row["canonical_client"])
         groups[key].append((observation, row, result))
 
     receipts = {}
     for key, members in sorted(groups.items()):
-        lane, version, surface, target, fixture_revision, contract_revision, auth_revision = key
+        lane, version, surface, target, fixture_revision, contract_revision, auth_revision, client = key
         observations = [observation for observation, _, _ in members]
         results = [result for _, _, result in sorted(members, key=lambda member: member[2]["test_case_id"])]
         lane_name = observations[0].get("lane") or lanes["by_client_lane"].get(lane, {}).get("lane")
@@ -203,9 +205,9 @@ def build(run_dir: Path, requirements: dict, producer_source_sha: str) -> tuple[
 
 
 def receipt_name(lane: str, version: str, surface: str, key: tuple) -> str:
-    safe_version = "".join(ch if ch.isalnum() or ch in ".-" else "_" for ch in version)
+    safe = lambda value: "".join(ch if ch.isalnum() or ch in ".-" else "_" for ch in value)  # noqa: E731
     revision_hash = hashlib.sha256("|".join(key[4:]).encode()).hexdigest()[:8]
-    return f"{lane}--{safe_version}--{surface}--{revision_hash}.cert.json"
+    return f"{lane}--{safe(key[7]).lower()}--{safe(version)}--{surface}--{revision_hash}.cert.json"
 
 
 def main(argv: list[str] | None = None) -> int:

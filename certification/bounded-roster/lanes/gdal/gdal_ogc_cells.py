@@ -27,7 +27,8 @@ FIXTURE = {
     7: ("eta", "active", (-122.40, 37.77)), 8: ("theta", "inactive", (-122.385, 37.78)),
     9: ("iota", "active", (-122.37, 37.79)), 10: ("lambda", "inactive", None),
 }
-PUBLIC_COLLECTIONS = {"0", "10", "11", "12", "2000", "2001", "2002", "3000"}
+# Anonymous collections of the fixture: client-compat layers plus docker/cng/seed.sql's 1000.
+PUBLIC_COLLECTIONS = {"0", "10", "11", "12", "1000", "2000", "2001", "2002", "3000"}
 PROTECTED_COLLECTION = "2011"
 
 

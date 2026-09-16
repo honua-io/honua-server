@@ -34,7 +34,9 @@ from qgis.PyQt.QtNetwork import QNetworkAccessManager, QNetworkRequest
 
 from rosterenv import EXPIRED_BEARER, WRONG_API_KEY, api_key_headers, bearer_headers
 
-os.environ.setdefault("QGIS_AUTH_DB_DIR_PATH", tempfile.mkdtemp(prefix="qgis-auth-"))
+# Every QGIS process gets its own authentication database: a child process that
+# inherited a parent's path would find a database locked by another master password.
+os.environ["QGIS_AUTH_DB_DIR_PATH"] = tempfile.mkdtemp(prefix="qgis-auth-")
 
 APP = QgsApplication([], False)
 APP.initQgis()

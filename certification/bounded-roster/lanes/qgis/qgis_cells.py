@@ -178,7 +178,8 @@ def oapif_collections() -> None:
         layers = sorted(item.name() for item in connection.createChildren())
         listed = [item for item in recorder.matching("/ogc/features/collections") if item.url.rstrip("/").endswith("/collections")]
         expect(listed and listed[0].status == 200, recorder.summary())
-        expect(len(layers) == 8, layers)
+        # client-compat layers 0, 10-12, 2000-2002, 3000 plus docker/cng/seed.sql's CNG Features.
+        expect(len(layers) == 9 and "CNG Features" in layers, layers)
         return f"browser listed {len(layers)} collections {layers}", OAPIF + "/collections"
     _oapif_cell("client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-COLLECTIONS",
                 "the QGIS browser lists the API's collections", body)

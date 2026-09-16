@@ -120,6 +120,19 @@ class EmitterTests(unittest.TestCase):
         _, result = self.only_result(receipts)
         self.assertEqual("fail", result["status"])
 
+    def test_gdal_and_gdal_ogr_cells_on_one_lane_get_separate_envelopes(self):
+        base = dict(client_lane="gdal", client_version="3.8.4", surface="ogc", client_version_detail="GDAL 3.8.4",
+                    protocol_version="1", protocol_profile="p", primary_request_url="http://honua:5000/ogc/features",
+                    exercised_capabilities=["positive"])
+        receipts, _ = self.build([
+            observation(test_case_id="client-cert/gdal-ogr/ogc/OGC-OP-WFS-2-0", canonical_client="GDAL/OGR", **base),
+            observation(test_case_id="client-cert/gdal/ogc/OGC-OP-WCS-2-0-COVERAGE", canonical_client="GDAL", **base),
+        ], [wire_line("2026-09-16T21:00:01+00:00", "http://honua:5000/ogc/features")])
+        clients = sorted(envelope["client_id"] for envelope in receipts.values())
+        self.assertEqual(["GDAL", "GDAL/OGR"], clients)
+        for envelope in receipts.values():
+            self.assertEqual({envelope["client_id"]}, {result["performed_by"] for result in envelope["results"]})
+
     def test_an_ungoverned_test_id_is_refused(self):
         with self.assertRaises(SystemExit):
             self.build([observation(test_case_id="client-cert/pystac-client/stac/not-governed")], [])
