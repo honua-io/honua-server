@@ -131,8 +131,17 @@ this issue.
   `candidate-identity.json` resolves the frozen manifest to `server_image sha256:0b16046…` /
   `source_sha 8862065…`, GeoParquet 1.1.0 is `PASS` on the live `f=parquet` response, and the PyArrow
   25.0.1 geoparquet cell passes all three facets.
-- run **CNG_RERUN_ID** (harness `CNG_RERUN_SHA`) — re-dispatched for this issue against the same
-  frozen manifest; `ci/cng-candidate-run-CNG_RERUN_ID.json`.
+- run **35058225436** (harness `69f8432b`, current trunk) — re-dispatched for this issue against the
+  same frozen manifest, 2026-09-16; conclusion `success`
+  (`ci/cng-candidate-run-35058225436.json`). `ci/candidate-identity-35058225436.json` again resolves
+  the manifest to `server_image sha256:0b16046…` / `source_sha 8862065…`, and every observation in
+  `ci/geoparquet-observations-35058225436.json` carries that same `image_digest`. The lane served
+  `sha256:cfc8b09415c1d972cb4e73e37c4ac522a0fb8e90413f87177d66d7bfda7f01b9` — the same bytes as both
+  local replays in this receipt and as run 35051635419. `ci/cng-summary-35058225436.md` has
+  `GeoParquet 1.1.0 | FeatureServer f=parquet | gpq validate | PASS` alongside FlatGeobuf, PMTiles,
+  3D Tiles and COG/Zarr; `ci/gpq-validate-35058225436.log` is the validator output. The PyArrow
+  25.0.1 geoparquet cell is `pass` with `budget_results.met: true`; `cell_receipt` is `passed: 6`
+  over 24 governed cells with 0 failures.
 
 **Known gap, not a candidate defect.** The GeoPandas and GDAL geoparquet cells report
 `result: "skip"`, `skip_reason: "no metadata was read back from the artifact, so the geoparquet
