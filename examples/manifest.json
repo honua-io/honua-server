@@ -3477,7 +3477,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 23,
+      "line": 25,
       "language": "mermaid"
     },
     {
@@ -3517,32 +3517,6 @@
       },
       "fence": 1,
       "line": 19,
-      "language": "bash"
-    },
-    {
-      "id": "679b88cad05a3584",
-      "kind": "docs-fence",
-      "path": "docs/concepts/editions-and-licensing.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 4,
-      "line": 187,
-      "language": "bash"
-    },
-    {
-      "id": "8e6364dfa074ab56",
-      "kind": "docs-fence",
-      "path": "docs/concepts/editions-and-licensing.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 5,
-      "line": 200,
       "language": "bash"
     },
     {
@@ -13203,6 +13177,32 @@
       },
       "fence": 1,
       "line": 267,
+      "language": "bash"
+    },
+    {
+      "id": "288ea554122297c1",
+      "kind": "docs-fence",
+      "path": "docs/internal/operations/license-minting-runbook.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 21,
+      "language": "bash"
+    },
+    {
+      "id": "a4b238075275a394",
+      "kind": "docs-fence",
+      "path": "docs/internal/operations/license-minting-runbook.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 2,
+      "line": 34,
       "language": "bash"
     },
     {
