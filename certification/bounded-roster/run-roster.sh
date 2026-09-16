@@ -113,7 +113,7 @@ log "building lane images"
 "${COMPOSE[@]}" --profile roster build lane-python lane-gdal-3.8.4 lane-gdal-3.13.3 lane-qgis lane-maplibre >"$ROSTER_RUN_DIR/build.log" 2>&1
 
 log "authoring and registering cloud raster fixtures"
-docker run --rm --network "${PROJECT}_compat" \
+docker run --rm --network "${PROJECT}_compat" --user "$(id -u):$(id -g)" -e HOME=/tmp \
   -e HONUA_CERT_API_KEY="$ROSTER_FIXTURE_ADMIN_KEY" -e ROSTER_FIXTURE_OUTPUT=/run/fixture-artifacts.json \
   -v "$ROSTER_HOME/fixture:/roster/fixture:ro" -v "$ROSTER_RUN_DIR:/run" \
   honua-roster/lane-gdal:3.13.3 python3 /roster/fixture/apply_fixture.py
@@ -122,7 +122,7 @@ cid="$(docker create honua-roster/lane-maplibre:local)"
 docker cp "$cid:/opt/roster-assets/." "$ROSTER_RUN_DIR/assets/" >/dev/null
 docker rm "$cid" >/dev/null
 cp "$ROSTER_HOME/lanes/maplibre/page/index.html" "$ROSTER_RUN_DIR/assets/index.html"
-chmod -R a+rwX "$ROSTER_RUN_DIR"
+chmod -R a+rwX "$ROSTER_RUN_DIR" 2>/dev/null || true
 
 log "starting the recording proxy"
 "${COMPOSE[@]}" --profile roster up -d wire
