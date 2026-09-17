@@ -16,9 +16,9 @@ Render maps through OGC API - Maps.
 | Capability key | `serve.ogc-api-maps` |
 | Category | Serve |
 | Edition | Community |
-| Surface maturity | 10 implemented |
-| Registry entries | 10 |
-| Proving tests | 139 |
+| Surface maturity | 11 implemented |
+| Registry entries | 11 |
+| Proving tests | 142 |
 
 The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, both generated from the server's own registry and test evidence. This page is a pure function of those two files — nothing in it depends on what the prose happens to say, so an unrelated documentation edit cannot stale it.
 
