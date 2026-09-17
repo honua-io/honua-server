@@ -9,6 +9,7 @@ using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.Ogc.Api.Features;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using OgcCommon = Honua.Protocols.Ogc.Common;
 
 namespace Honua.Protocols.Ogc.Api.Maps;
@@ -40,7 +41,7 @@ public static partial class OgcMapsEndpoints
         string collectionId,
         string? f,
         HttpContext context,
-        ICoordinateTransformService coordinateTransformService,
+        [FromServices] ICoordinateTransformService coordinateTransformService,
         CancellationToken cancellationToken = default)
     {
         if (!OgcCommon.OgcCoreMetadataUtilities.TryPrepareMetadataResponse(
