@@ -30,6 +30,13 @@ done
 echo "Applying base seed: tests/seed/client-compat-v1.sql"
 psql -v ON_ERROR_STOP=1 -f tests/seed/client-compat-v1.sql
 
+# Coverage fixture: the base seed declares a service advertising ImageServer,
+# Wcs and OGC-API-Coverages bound to layer 0, but seeds no raster there, so
+# every coverage surface resolved a service and then found nothing. Applied
+# right after the base seed because it references honua.layers(layer_id) = 0.
+echo "Applying raster coverage seed: tests/seed/client-compat-raster-v1.sql"
+psql -v ON_ERROR_STOP=1 -f tests/seed/client-compat-raster-v1.sql
+
 echo "Applying browser-compat YAML seed: tests/seed/browser-compat.yaml"
 bash tests/seed/apply-yaml-seed.sh tests/seed/browser-compat.yaml
 

@@ -16,7 +16,7 @@ Expansion (explicitly out of scope here):
 
 | Revision | Value |
 |---|---|
-| `fixtureRevision` | `sha256:01cb0f301f987bf98d9420a6bd9637de5582e8a7eafb04f56ba86b2888dbeb22` |
+| `fixtureRevision` | `sha256:60c403a00b1a14ef26b5fe2626f79de577f56f9d4fc1fbe206551a2dc3d91161` |
 | `serverConfigRevision` | `sha256:d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a` |
 | `authPolicyRevision` | `sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9` |
 
@@ -37,15 +37,19 @@ lowercase hex characters. Reproduce with `sha256sum <path>`.
    repo-relative POSIX path, one LF. This is byte-identical to GNU `sha256sum` output.
 4. Concatenate the lines as UTF-8 and SHA-256 the result.
 
-Because step 3 reproduces `sha256sum` output exactly, the whole algorithm is reproducible by hand:
+Because step 3 reproduces `sha256sum` output exactly, the whole algorithm is reproducible by
+hand. Pass `-t`: the rendering is `"{hex}  {path}\n"` with two spaces, and a platform
+that defaults to binary mode emits `"{hex} *{path}\n"` instead, which does not
+reproduce.
 
 ```console
-$ LC_ALL=C sha256sum docker/client-compat/seed/run.sh tests/seed/apply-yaml-seed.sh \
+$ LC_ALL=C sha256sum -t docker/client-compat/seed/run.sh tests/seed/apply-yaml-seed.sh \
     tests/seed/browser-compat.yaml tests/seed/client-compat-auth-wave1.yaml \
-    tests/seed/client-compat-v1.sql tests/seed/portal-compat.yaml \
-    | sha256sum
-5d4255077b525fccb4071098241390bda39e35bb3ed3c323819c45fa96a0738e  -
-$ LC_ALL=C sha256sum tests/config/client-compat-server-v1.json | sha256sum
+    tests/seed/client-compat-raster-v1.sql tests/seed/client-compat-v1.sql \
+    tests/seed/portal-compat.yaml \
+    | sha256sum -t
+60c403a00b1a14ef26b5fe2626f79de577f56f9d4fc1fbe206551a2dc3d91161  -
+$ LC_ALL=C sha256sum -t tests/config/client-compat-server-v1.json | sha256sum -t
 d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a  -
 ```
 
@@ -61,6 +65,7 @@ not file-backed, which is why it is digested from its declaration rather than fr
 | Path | Role |
 |---|---|
 | `tests/seed/client-compat-v1.sql` | fixture |
+| `tests/seed/client-compat-raster-v1.sql` | fixture |
 | `tests/seed/browser-compat.yaml` | fixture |
 | `tests/seed/portal-compat.yaml` | fixture |
 | `tests/seed/apply-yaml-seed.sh` | fixture |
@@ -84,7 +89,7 @@ symbol, so a comment edit does not force a manifest revision while a value chang
 
 | Service | Role | Layers | Source |
 |---|---|---|---|
-| `test_service` | canonical vector | `0` (Point, 10 features) | `tests/seed/client-compat-v1.sql` |
+| `test_service` | canonical vector **and coverage** | `0` (Point, 10 features, plus one 64x64 single-band 32BF raster) | `tests/seed/client-compat-v1.sql`, `tests/seed/client-compat-raster-v1.sql` |
 | `browser_compat` | render and raster | `2000` Point + raster, `2001` LineString, `2002` Polygon | `tests/seed/browser-compat.yaml` |
 | `portal_public` / `portal_org` / `portal_private` | authorization ladder | `3000` / `3001` / `3002` | `tests/seed/portal-compat.yaml` |
 
