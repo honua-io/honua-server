@@ -63,7 +63,14 @@ public sealed class WfsAuthorizationProofTests : IAsyncLifetime
     private const string WriteType = "related_test_layer_1";
     private const string TargetFeature = WriteType + ".101";
     private const int WriteLayerId = 1;
-    private const int SeededWriteFeatureCount = 4;
+
+    /// <summary>
+    /// How many features <c>tests/seed/server.yaml</c> puts in layer 1. These tests assert
+    /// invariance relative to the seeded count rather than any particular number, so this
+    /// tracks the seed: 101-104, plus 105 and 106 which the #5014 child-to-parent
+    /// relationship fixture adds.
+    /// </summary>
+    private const int SeededWriteFeatureCount = 6;
     private const string MutatedName = "changed-by-wfs";
 
     private readonly WebAppFixture _fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro)
