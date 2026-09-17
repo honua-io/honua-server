@@ -30,7 +30,7 @@ namespace Honua.Protocols.Ogc.Classic.Wcs20;
 /// CITE conformance: 82/82 (WCS 2.0 `core` profile, 100% pass on trunk).
 /// Authoritative status: <see href="../../../../../../docs/cite-status.md">docs/cite-status.md</see>.
 /// </summary>
-internal sealed class Wcs20Handler
+internal sealed partial class Wcs20Handler
 {
     private static readonly XNamespace Wcs = Wcs20Utilities.WcsNamespace;
     private static readonly XNamespace Ows = Wcs20Utilities.OwsNamespace;
@@ -128,6 +128,21 @@ internal sealed class Wcs20Handler
                 return commonError;
             }
 
+            // Version selection, mirroring how Wfs20DispatcherEndpoint serves WFS 1.0.0
+            // and 1.1.0 beside 2.0.0: the routes, endpoint registry entries and
+            // telemetry classifiers stay as they are, and only the encoding differs
+            // (honua-server#5020). Stock QGIS speaks WCS 1.0/1.1 only, so without this
+            // branch no QGIS client can open a coverage.
+            if (Wcs20Utilities.IsVersion10(
+                    GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.Version),
+                    GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.AcceptVersions)))
+            {
+                var legacyResult = await HandleWcs10Async(context, scope, operation, cancellationToken)
+                    .ConfigureAwait(false);
+                Wcs20Log.RequestCompleted(_logger, operation, scope.DisplayName);
+                return legacyResult;
+            }
+
             IResult result;
             if (string.Equals(operation, Wcs20Utilities.Operations.GetCapabilities, StringComparison.OrdinalIgnoreCase))
             {
@@ -184,7 +199,7 @@ internal sealed class Wcs20Handler
             {
                 return Wcs20ErrorResults.CreateBadRequest(
                     Wcs20Utilities.ExceptionCodes.VersionNegotiationFailed,
-                    $"Unsupported version. This service supports only WCS {Wcs20Utilities.Version}.",
+                    $"Unsupported version. This service supports WCS {Wcs20Utilities.Version} and {Wcs20Utilities.Version10}.",
                     Wcs20Utilities.Parameters.AcceptVersions);
             }
         }
@@ -954,7 +969,7 @@ internal sealed class Wcs20Handler
         {
             return Wcs20ErrorResults.CreateBadRequest(
                 Wcs20Utilities.ExceptionCodes.VersionNegotiationFailed,
-                $"Unsupported version '{version}'. This service supports only WCS {Wcs20Utilities.Version}.",
+                $"Unsupported version '{version}'. This service supports WCS {Wcs20Utilities.Version} and {Wcs20Utilities.Version10}.",
                 Wcs20Utilities.Parameters.Version);
         }
 
