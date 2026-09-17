@@ -295,6 +295,22 @@ internal sealed class ErrorResponseFormatterOptions
     public int? GeoServicesBodyCode { get; init; }
 
     /// <summary>
+    /// Emits the real HTTP status for a GeoServices error instead of the usual HTTP 200.
+    ///
+    /// GeoServices errors are HTTP 200 by default and that is deliberate: Esri clients read the
+    /// body's <c>error.code</c>, and the 498/499 token flows depend on a 200 to drive their
+    /// credential prompts. But the convention only works while the client inspects the body.
+    /// Some clients branch on the transport status alone for request-shaping failures, and for
+    /// those a 200 is indistinguishable from success - honua-server#5013: ArcGIS Pro's
+    /// "Download Map" issued createReplica, received HTTP 200 carrying a 400 that said
+    /// dataFormat=sqlite is not produced, treated the call as having succeeded, and left the
+    /// user with no offline copy and no error at all.
+    ///
+    /// Set this only for rejections a client cannot otherwise detect, never for authentication.
+    /// </summary>
+    public bool GeoServicesUseRealHttpStatus { get; init; }
+
+    /// <summary>
     /// Indicates whether the client may retry after the transient condition clears.
     /// </summary>
     public bool? Retryable { get; init; }

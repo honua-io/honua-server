@@ -69,6 +69,26 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         metadata.MaxLod.Should().Be(metadata.TileInfo.Lods[^1].Level);
         metadata.FullExtent.Should().NotBeNull();
         metadata.InitialExtent.Should().NotBeNull();
+
+        // honua-server#5015: the extents must be expressed in the tiling scheme's spatial
+        // reference, not the service's. Emitting degrees tagged 4326 next to a metre-based
+        // 102100 tileInfo made ArcGIS Pro discard the extent and zoom to the whole world.
+        foreach (var extent in new[] { metadata.FullExtent!, metadata.InitialExtent! })
+        {
+            extent.SpatialReference.Should().NotBeNull();
+            extent.SpatialReference!.Wkid.Should().Be(102100);
+            extent.SpatialReference.LatestWkid.Should().Be(3857);
+
+            // Web Mercator metres, so the bounds must be outside the degree range a 4326
+            // extent would have produced and inside the projection's valid span.
+            const double webMercatorLimit = 20037508.342789244;
+            extent.Xmin.Should().BeGreaterThanOrEqualTo(-webMercatorLimit);
+            extent.Xmax.Should().BeLessThanOrEqualTo(webMercatorLimit);
+            extent.Ymin.Should().BeGreaterThanOrEqualTo(-webMercatorLimit);
+            extent.Ymax.Should().BeLessThanOrEqualTo(webMercatorLimit);
+            extent.Xmax.Should().BeGreaterThan(extent.Xmin);
+            extent.Ymax.Should().BeGreaterThan(extent.Ymin);
+        }
     }
 
     [IntegrationTest]

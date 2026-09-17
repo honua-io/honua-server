@@ -424,4 +424,112 @@ public sealed class Fes20ParserTests
         literal.Value.Should().BeOfType<DateTimeOffset>()
             .Which.Should().Be(new DateTimeOffset(2024, 2, 16, 10, 0, 0, TimeSpan.FromHours(-5)));
     }
+
+    // honua-server#5016: clients that negotiate WFS 2.0.0 still routinely send the WFS 1.1
+    // ogc:Filter encoding. Rejecting it made them fall back to fetching the whole layer and
+    // filtering locally, and the reason was hidden behind "see logs for details".
+
+    [UnitTest]
+    public void ParseFilter_LegacyOgcFilterWithPropertyName_IsAcceptedAsFes20()
+    {
+        const string filterXml = """
+            <Filter xmlns="http://www.opengis.net/ogc">
+              <PropertyIsEqualTo>
+                <PropertyName>category</PropertyName>
+                <Literal>A</Literal>
+              </PropertyIsEqualTo>
+            </Filter>
+            """;
+
+        var result = Fes20Parser.ParseFilter(filterXml);
+
+        var binary = result.Should().BeOfType<BinaryExpression>().Subject;
+        binary.Left.Should().BeOfType<PropertyReference>().Which.PropertyName.Should().Be("category");
+        binary.Right.Should().BeOfType<Literal>().Which.Value.Should().Be("A");
+    }
+
+    [UnitTest]
+    public void ParseFilter_LegacyOgcFilterWithPrefixedElements_IsAcceptedAsFes20()
+    {
+        const string filterXml = """
+            <ogc:Filter xmlns:ogc="http://www.opengis.net/ogc">
+              <ogc:PropertyIsGreaterThanOrEqualTo>
+                <ogc:PropertyName>value</ogc:PropertyName>
+                <ogc:Literal>60</ogc:Literal>
+              </ogc:PropertyIsGreaterThanOrEqualTo>
+            </ogc:Filter>
+            """;
+
+        var result = Fes20Parser.ParseFilter(filterXml);
+
+        var binary = result.Should().BeOfType<BinaryExpression>().Subject;
+        binary.Left.Should().BeOfType<PropertyReference>().Which.PropertyName.Should().Be("value");
+    }
+
+    [UnitTest]
+    public void ParseFilter_LegacyOgcFilterWithNestedLogicalOperators_IsAcceptedAsFes20()
+    {
+        const string filterXml = """
+            <ogc:Filter xmlns:ogc="http://www.opengis.net/ogc">
+              <ogc:And>
+                <ogc:PropertyIsEqualTo>
+                  <ogc:PropertyName>category</ogc:PropertyName>
+                  <ogc:Literal>A</ogc:Literal>
+                </ogc:PropertyIsEqualTo>
+                <ogc:PropertyIsGreaterThanOrEqualTo>
+                  <ogc:PropertyName>value</ogc:PropertyName>
+                  <ogc:Literal>60</ogc:Literal>
+                </ogc:PropertyIsGreaterThanOrEqualTo>
+              </ogc:And>
+            </ogc:Filter>
+            """;
+
+        var result = Fes20Parser.ParseFilter(filterXml);
+
+        var and = result.Should().BeOfType<BinaryExpression>().Subject;
+        and.Operator.Should().Be(BinaryOperator.And);
+    }
+
+    [UnitTest]
+    public void ParseFilter_LegacyOgcFilterWithGml31Geometry_MapsGmlNamespace()
+    {
+        // The WFS 1.1 encoding pairs ogc: filters with GML 3.1, so the geometry namespace has to
+        // be carried across too or spatial predicates would still be refused.
+        const string filterXml = """
+            <ogc:Filter xmlns:ogc="http://www.opengis.net/ogc" xmlns:gml="http://www.opengis.net/gml">
+              <ogc:Intersects>
+                <ogc:PropertyName>geom</ogc:PropertyName>
+                <gml:Envelope srsName="urn:ogc:def:crs:EPSG::4326">
+                  <gml:lowerCorner>37.77 -122.43</gml:lowerCorner>
+                  <gml:upperCorner>37.78 -122.41</gml:upperCorner>
+                </gml:Envelope>
+              </ogc:Intersects>
+            </ogc:Filter>
+            """;
+
+        var result = Fes20Parser.ParseFilter(filterXml);
+
+        result.Should().BeOfType<SpatialPredicate>();
+    }
+
+    [UnitTest]
+    public void ParseFilter_FilterInUnknownNamespace_StillThrowsWithTheExpectedNamespaceNamed()
+    {
+        // The compatibility shim must not turn into "accept anything": an unrelated namespace
+        // still fails, and the message names what was expected and what arrived so the client
+        // can act on it without reading the server's logs.
+        const string filterXml = """
+            <Filter xmlns="http://example.invalid/not-a-filter">
+              <PropertyIsEqualTo>
+                <PropertyName>category</PropertyName>
+                <Literal>A</Literal>
+              </PropertyIsEqualTo>
+            </Filter>
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>()
+            .WithMessage("*http://www.opengis.net/fes/2.0*");
+    }
 }

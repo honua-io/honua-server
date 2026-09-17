@@ -305,8 +305,15 @@ public class AttachmentLimits
 
     /// <summary>
     /// Allowed MIME types for attachments.
+    ///
+    /// honua-server#5017: the default was "image/*,application/pdf", which refused text/plain,
+    /// text/csv and application/json. Esri's own default attachment allow-list includes txt and
+    /// csv, and "attach the field notes as a .txt" or "attach the tally as a .csv" are ordinary
+    /// GIS workflows - refusing them while accepting PDF is also hard to justify on safety
+    /// grounds, PDF being much the more dangerous of the two. Content is still signature-scanned
+    /// downstream (FileUploadSecurity), so widening the list does not remove a security layer.
     /// </summary>
-    public string AllowedMimeTypes { get; set; } = "image/*,application/pdf";
+    public string AllowedMimeTypes { get; set; } = "image/*,application/pdf,text/plain,text/csv,application/json";
 }
 
 

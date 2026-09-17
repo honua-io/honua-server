@@ -316,10 +316,18 @@ internal sealed partial class Wfs20Handler
             var exceptionCode = ex.Message.Contains("boundedBy", StringComparison.OrdinalIgnoreCase)
                 ? "OperationProcessingFailed"
                 : "InvalidParameterValue";
+            // honua-server#5016: Fes20ParseException carries an authored, client-facing
+            // validation message (e.g. which filter namespace was expected and what arrived).
+            // Telling the client to "see logs for details" pointed it at a log it cannot read,
+            // so that detail is surfaced. ArgumentException/NotSupportedException can originate
+            // deeper in the stack and keep the generalized text.
+            var detail = ex is Fes20ParseException
+                ? ex.Message
+                : "Invalid WFS parameter value; see logs for details.";
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
                 exceptionCode,
-                "Invalid WFS parameter value; see logs for details.");
+                detail);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {

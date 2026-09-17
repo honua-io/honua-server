@@ -28,6 +28,21 @@ internal static class StandardErrorHelpers
     }
 
     /// <summary>
+    /// Creates a Bad Request that keeps its real HTTP 400 on GeoServices surfaces instead of the
+    /// usual HTTP 200 envelope. Use this for request-shaping rejections a client cannot detect
+    /// from the body - see <see cref="ErrorResponseFormatterOptions.GeoServicesUseRealHttpStatus"/>.
+    /// Never use it for authentication failures, which rely on the 200/498/499 convention.
+    /// </summary>
+    internal static IResult CreateBadRequestWithRealStatus(HttpContext context, string detail, IReadOnlyList<string>? additionalDetails = null)
+    {
+        var errorResponse = StandardErrorResponse.BadRequest(detail, additionalDetails);
+        return StandardErrorResponseFormatter.FormatError(context, errorResponse, new ErrorResponseFormatterOptions
+        {
+            GeoServicesUseRealHttpStatus = true
+        });
+    }
+
+    /// <summary>
     /// Creates an Unauthorized error response.
     /// </summary>
     /// <param name="context">The HTTP context for protocol detection.</param>

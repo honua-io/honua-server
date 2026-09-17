@@ -89,22 +89,42 @@ internal sealed partial class FeatureDataAccess
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var geometrySelect = _geometryProcessor.GetGeometrySelectExpression(geometryStorageType, new FeatureQuery());
 
+        // When the destination foreign key IS the object-id column, match the objectid column
+        // itself rather than the attributes JSON, exactly as GetOriginForeignKeyValuesAsync does
+        // for the origin side. The objectid is the canonical primary key column and is injected
+        // into a feature's attributes only at read time, so attributes->>'objectid' is NULL for
+        // every stored row and `NULL = ANY(...)` matched nothing. That silently emptied every
+        // relationship whose destination key is the object id - which is the normal shape of a
+        // child-to-parent relate, so walking from a child back to its parent always returned no
+        // records and was indistinguishable from a genuinely childless parent.
+        var destinationKeyIsObjectId =
+            destinationForeignKeyField.Equals(DatabaseSchema.ObjectIdColumn, StringComparison.OrdinalIgnoreCase) ||
+            destinationForeignKeyField.Equals(DatabaseSchema.ObjectIdColumnAlt, StringComparison.OrdinalIgnoreCase);
+
         var sql = new StringBuilder();
         sql.Append("SELECT objectid, ")
             .Append(geometrySelect)
             .Append(", attributes FROM ")
             .Append(_tableName)
             .Append(" WHERE layer_id = $1")
-            .Append($" AND {DatabaseSchema.AttributesColumn}->> $2 = ANY($3)");
+            .Append(destinationKeyIsObjectId
+                ? " AND objectid::text = ANY($2)"
+                : $" AND {DatabaseSchema.AttributesColumn}->> $2 = ANY($3)");
 
-        var parameters = new List<object>
-        {
-            relatedLayerId,
-            destinationForeignKeyField,
-            foreignKeyValues.ToArray()
-        };
+        var parameters = destinationKeyIsObjectId
+            ? new List<object>
+            {
+                relatedLayerId,
+                foreignKeyValues.ToArray()
+            }
+            : new List<object>
+            {
+                relatedLayerId,
+                destinationForeignKeyField,
+                foreignKeyValues.ToArray()
+            };
 
-        var paramIndex = 4;
+        var paramIndex = destinationKeyIsObjectId ? 3 : 4;
 
         // The related layer's permanent filter is enforced first, independently of
         // any caller-supplied filter, mirroring EnforcedSqlFilter in AppendWhereClause.
@@ -167,8 +187,15 @@ internal sealed partial class FeatureDataAccess
             // Resolve the origin object id(s) this related row belongs to BEFORE field
             // filtering so the destination key is still available, then re-stamp the
             // (possibly filtered) feature so grouping can bucket by origin object id.
+            // ReadAttributes injects the object id under the canonical "objectid" key, so an
+            // object-id destination key must be looked up under that name - the alt spelling
+            // ("object_id") is a column name, never an attributes key, and would miss.
+            var destinationKeyLookup = destinationKeyIsObjectId
+                ? DatabaseSchema.ObjectIdColumn
+                : destinationForeignKeyField;
+
             long[]? originObjectIds = null;
-            if (feature.Attributes.TryGetValue(destinationForeignKeyField, out var destinationKeyValue) &&
+            if (feature.Attributes.TryGetValue(destinationKeyLookup, out var destinationKeyValue) &&
                 TryNormalizeForeignKeyValue(destinationKeyValue, out var normalizedKey) &&
                 originObjectIdsByForeignKey.TryGetValue(normalizedKey, out var matchedOriginIds))
             {

@@ -72,12 +72,18 @@ internal static partial class AttachmentEndpoints
             // GET queryAttachments stays consistent with addAttachment.
             .CacheOutput(policy => policy.NoCache());
 
-        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/{featureId:long}/attachments", HandleAttachmentInfos)
+        endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/{featureId:long}/attachments", HandleAttachmentInfos)
             .WithDisplayName("Get Feature Attachment Infos")
             .WithName("AttachmentInfos")
             .WithSummary("Get attachment infos for a specific feature")
             .WithDescription("Returns the canonical attachment infos resource for a feature")
             .WithTags("FeatureServer", "Attachments")
+            // GET and POST both, like queryAttachments above. The Esri REST contract is that a
+            // resource answers either verb, and ArcGIS Pro lists a feature's attachments with
+            // POST: a GET-only mapping answered that POST with a 405 envelope, which Pro read as
+            // a successful response carrying no attachmentInfos and reported "Attachments (0)"
+            // even straight after its own successful addAttachment.
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get, HttpMethods.Post }))
             // Per-feature attachment lists are mutable: an addAttachment/updateAttachment/
             // deleteAttachments must be visible to the very next get_list for the same OID.
             // The anonymous-only output-cache base policy would otherwise cache the empty
@@ -118,7 +124,7 @@ internal static partial class AttachmentEndpoints
             .WithSummary("Download attachment content")
             .WithDescription("Download the binary content of a specific attachment")
             .WithTags("FeatureServer", "Attachments")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get }))
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get, HttpMethods.Post }))
             // Attachment content is mutable (updateAttachment replaces bytes) and addressed by
             // a freshly minted attachmentId; the anonymous-only output-cache base policy would
             // otherwise cache a download (or a 404 produced before the row existed) under the

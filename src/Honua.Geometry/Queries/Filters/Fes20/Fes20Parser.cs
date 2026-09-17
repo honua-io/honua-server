@@ -23,6 +23,18 @@ public static class Fes20Parser
     private const string GmlNamespace = "http://www.opengis.net/gml/3.2";
 
     /// <summary>
+    /// The WFS 1.0/1.1 filter namespace. honua-server#5016: many clients - ArcGIS Pro among
+    /// them - still emit this older encoding even after negotiating WFS 2.0.0, and rejecting it
+    /// made them fall back to fetching the whole layer and filtering client-side. GeoServer and
+    /// MapServer both accept it for the same reason, so it is normalised to FES 2.0 rather than
+    /// refused. See <see cref="NormalizeLegacyFilterElement"/>.
+    /// </summary>
+    private const string Ogc11FilterNamespace = "http://www.opengis.net/ogc";
+
+    /// <summary>GML 3.1 namespace, paired with the WFS 1.0/1.1 filter encoding.</summary>
+    private const string Gml31Namespace = "http://www.opengis.net/gml";
+
+    /// <summary>
     /// Default SRID assumed for geometry literals whose element carries no <c>srsName</c> and
     /// when the caller supplies no feature-type CRS context. WFS callers pass the queried
     /// layer's storage SRID instead so filter geometry defaults to the feature type's CRS.
@@ -42,6 +54,13 @@ public static class Fes20Parser
     /// </summary>
     public static FilterExpression ParseFilter(XElement filterElement, int defaultSrid)
     {
+        // Accept the WFS 1.0/1.1 ogc:Filter encoding by normalising it to FES 2.0 first
+        // (honua-server#5016). Anything else in an unexpected namespace still fails loudly.
+        if (filterElement.Name.NamespaceName == Ogc11FilterNamespace && filterElement.Name.LocalName == "Filter")
+        {
+            filterElement = NormalizeLegacyFilterElement(filterElement);
+        }
+
         if (filterElement.Name.NamespaceName != FesNamespace || filterElement.Name.LocalName != "Filter")
         {
             throw new Fes20ParseException($"Expected Filter element in namespace {FesNamespace}, got {filterElement.Name}");
@@ -55,6 +74,56 @@ public static class Fes20Parser
 
         ValidateExpressionDepth(firstChild, depth: 1);
         return ParseExpression(firstChild, defaultSrid);
+    }
+
+    /// <summary>
+    /// Rewrites a WFS 1.0/1.1 <c>ogc:Filter</c> subtree into the equivalent FES 2.0 shape so the
+    /// rest of this parser can consume it unchanged. Two things differ between the encodings:
+    /// the filter namespace, and the property-reference element, which FES 2.0 renamed from
+    /// <c>PropertyName</c> to <c>ValueReference</c>. Geometry literals are carried in GML 3.1
+    /// rather than GML 3.2, so that namespace is mapped across as well.
+    ///
+    /// Elements in any other namespace are copied untouched, so this cannot silently reinterpret
+    /// something it does not understand - it will still reach the parser and be rejected there.
+    /// </summary>
+    private static XElement NormalizeLegacyFilterElement(XElement element)
+    {
+        var name = element.Name.NamespaceName switch
+        {
+            Ogc11FilterNamespace => XName.Get(
+                element.Name.LocalName == "PropertyName" ? "ValueReference" : element.Name.LocalName,
+                FesNamespace),
+            Gml31Namespace => XName.Get(element.Name.LocalName, GmlNamespace),
+            _ => element.Name,
+        };
+
+        var normalized = new XElement(name);
+
+        foreach (var attribute in element.Attributes())
+        {
+            // Namespace declarations are rebuilt by LINQ-to-XML from the element names above;
+            // copying the originals would re-bind the old prefixes onto the new namespaces.
+            if (attribute.IsNamespaceDeclaration)
+            {
+                continue;
+            }
+
+            normalized.Add(new XAttribute(attribute.Name, attribute.Value));
+        }
+
+        var hasChildElements = false;
+        foreach (var child in element.Elements())
+        {
+            hasChildElements = true;
+            normalized.Add(NormalizeLegacyFilterElement(child));
+        }
+
+        if (!hasChildElements)
+        {
+            normalized.Value = element.Value;
+        }
+
+        return normalized;
     }
 
     /// <summary>

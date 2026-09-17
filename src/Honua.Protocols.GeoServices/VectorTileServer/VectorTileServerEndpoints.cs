@@ -16,6 +16,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
@@ -236,6 +237,48 @@ internal static partial class VectorTileServerEndpoints
             return null;
         }
 
+        // honua-server#5015: the tiling scheme this service publishes is always Web Mercator
+        // (VectorTileServerTileInfoBuilder), so fullExtent/initialExtent must be expressed in
+        // that spatial reference. Emitting them in the service's own SR produced a document
+        // whose extent was degrees tagged wkid 4326 alongside a metre-based 102100 tiling
+        // scheme; ArcGIS Pro discarded the mismatched extent and fell back to the tiling
+        // scheme's world bounds, so Zoom To Layer zoomed to the whole planet. Worse, a client
+        // that trusted the numbers and the scheme's SR would read -122.43 as metres and zoom to
+        // the Gulf of Guinea.
+        var srid = spatialReference.ResolveSrid();
+        var isGeographicWgs84 = srid is 4326 or 4979 || (srid is null && spatialReference.IsGeographic);
+
+        if (isGeographicWgs84)
+        {
+            var (xmin, ymin) = WebMercatorMath.LonLatToWebMercator(west.Value, south.Value);
+            var (xmax, ymax) = WebMercatorMath.LonLatToWebMercator(east.Value, north.Value);
+            return new VectorTileExtent
+            {
+                Xmin = xmin,
+                Ymin = ymin,
+                Xmax = xmax,
+                Ymax = ymax,
+                SpatialReference = WebMercatorTileSpatialReference
+            };
+        }
+
+        if (srid is 3857 or 102100)
+        {
+            // Already in the tiling scheme's SR; only the wkid pair needs to be the canonical
+            // 102100/3857 that tileInfo advertises.
+            return new VectorTileExtent
+            {
+                Xmin = west.Value,
+                Ymin = south.Value,
+                Xmax = east.Value,
+                Ymax = north.Value,
+                SpatialReference = WebMercatorTileSpatialReference
+            };
+        }
+
+        // Any other projected SR cannot be converted here without a transform service. Emitting
+        // it tagged with its own SR at least keeps the numbers and their label consistent, which
+        // a client can reproject itself; it is still reported as-is rather than silently wrong.
         return new VectorTileExtent
         {
             Xmin = west.Value,
@@ -245,6 +288,16 @@ internal static partial class VectorTileServerEndpoints
             SpatialReference = ToVectorTileSpatialReference(spatialReference)
         };
     }
+
+    /// <summary>
+    /// The spatial reference the vector tile tiling scheme is published in, as the wkid pair
+    /// <c>tileInfo</c> advertises (see <see cref="VectorTileServerTileInfoBuilder"/>).
+    /// </summary>
+    private static VectorTileSpatialReference WebMercatorTileSpatialReference => new()
+    {
+        Wkid = 102100,
+        LatestWkid = 3857
+    };
 
     private static VectorTileSpatialReference ToVectorTileSpatialReference(MetadataV2SpatialReference spatialReference)
     {

@@ -73,13 +73,13 @@ internal static partial class FeatureServerEndpoints
     {
         if (!TryParseBoolValue(values, "async", false, out var isAsync, out var asyncError))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, "Invalid async parameter",
+            return StandardErrorHelpers.CreateBadRequestWithRealStatus(context, "Invalid async parameter",
                 [asyncError ?? "async must be a boolean value."]);
         }
 
         if (isAsync)
         {
-            return StandardErrorHelpers.CreateBadRequest(context, "async is not supported",
+            return StandardErrorHelpers.CreateBadRequestWithRealStatus(context, "async is not supported",
                 ["This server produces replica data synchronously (syncCapabilities.supportsAsync is false). Omit async or pass async=false."]);
         }
 
@@ -87,7 +87,7 @@ internal static partial class FeatureServerEndpoints
         if (!string.IsNullOrWhiteSpace(dataFormat) &&
             !dataFormat.Trim().Equals("json", StringComparison.OrdinalIgnoreCase))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, $"dataFormat '{dataFormat.Trim()}' is not supported",
+            return StandardErrorHelpers.CreateBadRequestWithRealStatus(context, $"dataFormat '{dataFormat.Trim()}' is not supported",
                 ["Replica data is delivered as Esri JSON only. Pass dataFormat=json; runtime geodatabase (sqlite), file geodatabase, shapefile and other file formats are not produced."]);
         }
 
@@ -96,7 +96,7 @@ internal static partial class FeatureServerEndpoints
             !transportType.Trim().Equals(ReplicaEmbeddedTransportType, StringComparison.OrdinalIgnoreCase) &&
             !transportType.Trim().Equals(ReplicaUrlTransportType, StringComparison.OrdinalIgnoreCase))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, "Invalid transportType parameter",
+            return StandardErrorHelpers.CreateBadRequestWithRealStatus(context, "Invalid transportType parameter",
                 [$"transportType must be {ReplicaEmbeddedTransportType} or {ReplicaUrlTransportType}."]);
         }
 
@@ -106,13 +106,13 @@ internal static partial class FeatureServerEndpoints
         // quietly downgraded.
         if (!TryParseBoolValue(values, "returnAttachments", false, out var returnAttachments, out var returnAttachmentsError))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, "Invalid returnAttachments parameter",
+            return StandardErrorHelpers.CreateBadRequestWithRealStatus(context, "Invalid returnAttachments parameter",
                 [returnAttachmentsError ?? "returnAttachments must be a boolean value."]);
         }
 
         if (returnAttachments)
         {
-            return StandardErrorHelpers.CreateBadRequest(context, "returnAttachments is not supported",
+            return StandardErrorHelpers.CreateBadRequestWithRealStatus(context, "returnAttachments is not supported",
                 ["This server does not replicate attachments. Omit returnAttachments or pass returnAttachments=false, and synchronize attachments through the FeatureServer attachment endpoints."]);
         }
 

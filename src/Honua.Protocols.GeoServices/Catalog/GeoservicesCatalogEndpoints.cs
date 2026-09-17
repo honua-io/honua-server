@@ -51,22 +51,28 @@ internal static class GeoservicesCatalogEndpoints
     /// </summary>
     public static IEndpointRouteBuilder MapGeoservicesCatalogEndpoints(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/rest/services", HandleGetServicesDirectory)
+        // Both roots answer GET or POST. Esri clients POST to /rest/info and /rest/services
+        // during connection and token negotiation, and the Esri REST contract is that a
+        // resource accepts either verb; a GET-only mapping answered those POSTs with a 404
+        // envelope for a resource that plainly exists.
+        endpoints.Map("/rest/services", HandleGetServicesDirectory)
             .WithDisplayName("GeoServices Services Directory")
             .WithName("GeoServicesServicesDirectory")
             .WithSummary("List available GeoServices endpoints")
             .WithDescription("Returns FeatureServer, MapServer, ImageServer, GPServer, VectorTileServer, and (Enterprise) SceneServer service directory entries.")
             .WithTags("GeoServices Catalog")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get, HttpMethods.Post }))
             .CacheOutput("ServiceDirectory")
             .Produces<ServicesDirectoryResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status400BadRequest);
 
-        endpoints.MapGet("/rest/info", HandleGetRestInfo)
+        endpoints.Map("/rest/info", HandleGetRestInfo)
             .WithDisplayName("GeoServices REST Info")
             .WithName("GeoServicesRestInfo")
             .WithSummary("Get REST root metadata")
             .WithDescription("Returns root-level GeoServices metadata.")
             .WithTags("GeoServices Catalog")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get, HttpMethods.Post }))
             .Produces<RestInfoResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status400BadRequest);
 

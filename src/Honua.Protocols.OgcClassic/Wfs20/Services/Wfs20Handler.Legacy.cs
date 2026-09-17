@@ -168,7 +168,15 @@ internal sealed partial class Wfs20Handler
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or Fes20ParseException)
         {
             Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
-            return CreateLegacyWfsException(version, "InvalidParameterValue", "Invalid WFS parameter value; see logs for details.");
+            // honua-server#5016: Fes20ParseException carries an authored, client-facing
+            // validation message (e.g. which filter namespace was expected and what arrived).
+            // Telling the client to "see logs for details" pointed it at a log it cannot read,
+            // so that detail is surfaced. ArgumentException/NotSupportedException can originate
+            // deeper in the stack and keep the generalized text.
+            var detail = ex is Fes20ParseException
+                ? ex.Message
+                : "Invalid WFS parameter value; see logs for details.";
+            return CreateLegacyWfsException(version, "InvalidParameterValue", detail);
         }
         catch (WfsQueryException ex)
         {

@@ -177,12 +177,14 @@ internal static class CoreEndpoints
             type: "image/png",
             title: "Dataset map"));
 
-        // Vector tilesets list
+        // Dataset tilesets list. honua-server#5018: these are dataType "map" with image/png
+        // items, so the relation is tilesets-map, not tilesets-vector. Vector tilesets are per
+        // collection and are advertised from each collection resource.
         links.Add(Link.Create(
             href: $"{baseUrl}/ogc/tiles/tiles",
-            rel: RelationTypes.TilesetsVector,
+            rel: RelationTypes.TilesetsMap,
             type: MediaTypes.Json,
-            title: "Vector tilesets"));
+            title: "Map tilesets"));
 
         var landingPage = new LandingPage
         {

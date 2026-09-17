@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -209,6 +210,59 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         // Read the bytes back through the public download route.
         var downloaded = await DownloadAttachmentBytesAsync(result.AddAttachmentResult.ObjectId);
         downloaded.Should().Equal(fileContent);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryAttachments)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments")]
+    public async Task GetAttachmentInfos_WithPost_ReturnsAttachments()
+    {
+        // honua-server#5012: ArcGIS Pro lists a feature's attachments with POST on this route.
+        // It was mapped GET-only, so the POST came back as an HTTP 200 carrying a 405 envelope -
+        // which Pro read as a successful response with no attachmentInfos and reported
+        // "Attachments (0)", even immediately after its own successful addAttachment.
+        using var requestContent = new StringContent(string.Empty, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments?f=json",
+            requestContent);
+
+        response.BeSuccessful();
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().NotContain("\"code\":405", "the route must answer POST, not reject the verb");
+
+        var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.AttachmentInfosResponse);
+        result.Should().NotBeNull();
+        result!.AttachmentInfos.Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.QueryAttachments)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments")]
+    public async Task GetAttachmentInfos_GetAndPost_AgreeOnTheSameAttachments()
+    {
+        // honua-server#5012: the Esri REST contract is that a resource answers either verb, so
+        // the two must return the same thing rather than one of them degrading silently.
+        var getResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments?f=json");
+        getResponse.BeSuccessful();
+        var viaGet = JsonSerializer.Deserialize(
+            await getResponse.Content.ReadAsStringAsync(),
+            FeatureServerJsonContext.Default.AttachmentInfosResponse);
+
+        using var requestContent = new StringContent(string.Empty, Encoding.UTF8, "application/json");
+        var postResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments?f=json",
+            requestContent);
+        postResponse.BeSuccessful();
+        var viaPost = JsonSerializer.Deserialize(
+            await postResponse.Content.ReadAsStringAsync(),
+            FeatureServerJsonContext.Default.AttachmentInfosResponse);
+
+        viaPost.Should().NotBeNull();
+        viaGet.Should().NotBeNull();
+        viaPost!.AttachmentInfos.Select(static info => info.Id)
+            .Should().BeEquivalentTo(viaGet!.AttachmentInfos.Select(static info => info.Id));
     }
 
     [IntegrationTest]

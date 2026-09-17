@@ -82,11 +82,16 @@ internal static class CoreEndpoints
             type: MediaTypes.Json,
             title: "Collections"));
 
+        // honua-server#5018: /ogc/tiles/tiles lists the DATASET tilesets, which are dataType "map"
+        // with image/png items, so it is a tilesets-map resource. Advertising it as
+        // tilesets-vector sent vector-tile clients to the raster list - and asking that endpoint
+        // for a vector tile returns 400. The vector tilesets are per collection and are already
+        // advertised correctly from each collection resource, reachable through rel=data below.
         links.Add(Link.Create(
             href: $"{baseUrl}/ogc/tiles/tiles",
-            rel: RelationTypes.TilesetsVector,
+            rel: RelationTypes.TilesetsMap,
             type: MediaTypes.Json,
-            title: "Vector tilesets"));
+            title: "Map tilesets"));
 
         links.Add(Link.Create(
             href: $"{baseUrl}/ogc/tiles/tileMatrixSets",
