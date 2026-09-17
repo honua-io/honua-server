@@ -320,6 +320,10 @@ public sealed class AwsBatchComputeBackendTests
         // win so the client targets the emulator endpoint.
         client.Config.ServiceURL.Should().Be("http://localhost:4566/");
         client.Config.RegionEndpoint.Should().BeNull();
+
+        // Without a pinned signing region the SDK resolves one from the ambient chain, ending in
+        // EC2 instance metadata, which hangs every request inside a container (#4998).
+        client.Config.AuthenticationRegion.Should().Be("us-west-2");
     }
 
     [Fact]
