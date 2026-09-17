@@ -267,7 +267,7 @@ public static class OgcStylesEndpoints
             return accessError;
         }
 
-        var stylesheet = await projection.GetStylesheetAsync(styleId, encoding, cancellationToken).ConfigureAwait(false);
+        var stylesheet = await projection.GetPublishedStylesheetAsync(styleId, encoding, cancellationToken).ConfigureAwait(false);
         if (stylesheet is null)
         {
             var logger = loggerFactory.CreateLogger("Honua.Protocols.Ogc.Api.Styles.OgcStylesEndpoints");
