@@ -621,8 +621,15 @@ internal static class CollectionsEndpoints
                 type: MediaTypes.Json,
                 title: "Style"));
 
-            // OGC API - Styles (ADR-0048): the styleId is the collection's stable
-            // resource name (forward-compatible with the Phase 2 styleId catalog).
+        }
+
+        // OGC API - Styles (ADR-0048): the styleId is the collection's stable resource name
+        // (forward-compatible with the Phase 2 styleId catalog). The Styles API publishes a
+        // stylesheet for every storage-bound feature collection — its stored style or the
+        // layer default — so advertise the link exactly then; a link it would not serve must
+        // not be advertised (#4993).
+        if (storageLayerId.HasValue && resource.Type == MetadataV2ResourceType.FeatureDataset)
+        {
             var styleId = Uri.EscapeDataString(resource.Metadata.Name);
 
             // Styles list scoped to this collection.

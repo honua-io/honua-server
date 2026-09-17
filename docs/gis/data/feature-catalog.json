@@ -7767,6 +7767,8 @@
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.GetStylesheet_AcceptSld10_ReturnsDerivedSld",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.GetStylesheet_AcceptSld11_ReturnsDerivedSld11",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.GetStylesheet_DefaultAccept_ReturnsMapLibreStyle",
+        "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.GetStylesheet_EveryAdvertisedCollectionStylesheet_ResolvesAndIsListed",
+        "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.GetStylesheet_ProtectedCollectionDefaultStyle_RefusesAnonymousAndServesEntitledCaller",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.GetStylesheet_StandaloneStyle_AcceptEsriDrawingInfo_ReturnsDrawingInfo",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.GetStylesheet_StandaloneStyle_MalformedLayerType_SkipsMalformedLayer",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.GetStylesheet_UnknownStyle_Returns404",
