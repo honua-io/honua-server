@@ -7508,7 +7508,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 41,
+      "line": 50,
       "language": "jsonc"
     },
     {
