@@ -85,6 +85,10 @@ internal sealed class McpPlatformOpsReader(
         ArgumentNullException.ThrowIfNull(argument);
         await EnsureOpsReadAsync(principal, cancellationToken).ConfigureAwait(false);
 
+        // honua-server#4987: same redaction as the REST reads.
+        var redactRecoveryGrantIdentity = DeployControlEndpoints.ShouldRedactRecoveryGrantIdentity(
+            principal, _services.GetService<IOptions<TenantContextOptions>>()?.Value);
+
         var operationId = Clean(argument.OperationId);
         if (operationId is not null)
         {
@@ -93,7 +97,7 @@ internal sealed class McpPlatformOpsReader(
 
             var response = new DeployOperationListResponse
             {
-                Items = [DeployControlEndpoints.MapOperationResponse(operation)],
+                Items = [DeployControlEndpoints.MapOperationResponse(operation, redactRecoveryGrantIdentity)],
                 Page = 1,
                 PageSize = 1,
                 TotalCount = 1,
@@ -115,7 +119,7 @@ internal sealed class McpPlatformOpsReader(
 
         var list = new DeployOperationListResponse
         {
-            Items = result.Items.Select(DeployControlEndpoints.MapOperationResponse).ToArray(),
+            Items = result.Items.Select(item => DeployControlEndpoints.MapOperationResponse(item, redactRecoveryGrantIdentity)).ToArray(),
             Page = result.Page,
             PageSize = result.PageSize,
             TotalCount = result.TotalCount,
