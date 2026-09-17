@@ -46,10 +46,22 @@ EXPECTED_YMIN = 37.70
 EXPECTED_XMAX = -122.35
 EXPECTED_YMAX = 37.84
 
+PIXEL_X = 0.00234375
+PIXEL_Y = 0.0021875
+
 BACKGROUND_VALUE = 100.0
 LANDMARK_NW = 10.0
 LANDMARK_SE = 40.0
 VALUE_TOLERANCE = 1e-3
+
+# The provider reconstructs the raster extent from the grid geometry, and the server
+# emits pixel centres rather than corners (the 2.0.1 suite asserts that explicitly), so
+# the reported extent legitimately sits within a pixel of the declared envelope. A
+# tolerance of one pixel still catches what matters - a wrong CRS, a flipped axis or a
+# displaced origin all move the extent by far more than one pixel - while not asserting
+# a corner/centre convention the client is free to choose.
+EXTENT_TOLERANCE_X = PIXEL_X
+EXTENT_TOLERANCE_Y = PIXEL_Y
 
 
 @pytest.mark.integration
@@ -158,10 +170,10 @@ class TestWcsClientCompat:
 
         assert layer.crs().postgisSrid() == EXPECTED_CRS_EPSG
         extent = layer.extent()
-        assert extent.xMinimum() == pytest.approx(EXPECTED_XMIN, abs=GEO_TOLERANCE)
-        assert extent.yMinimum() == pytest.approx(EXPECTED_YMIN, abs=GEO_TOLERANCE)
-        assert extent.xMaximum() == pytest.approx(EXPECTED_XMAX, abs=GEO_TOLERANCE)
-        assert extent.yMaximum() == pytest.approx(EXPECTED_YMAX, abs=GEO_TOLERANCE)
+        assert extent.xMinimum() == pytest.approx(EXPECTED_XMIN, abs=EXTENT_TOLERANCE_X)
+        assert extent.yMinimum() == pytest.approx(EXPECTED_YMIN, abs=EXTENT_TOLERANCE_Y)
+        assert extent.xMaximum() == pytest.approx(EXPECTED_XMAX, abs=EXTENT_TOLERANCE_X)
+        assert extent.yMaximum() == pytest.approx(EXPECTED_YMAX, abs=EXTENT_TOLERANCE_Y)
         wcs_evidence.record(
             "CERT-GEOM-01",
             "pass",
@@ -179,26 +191,33 @@ class TestWcsClientCompat:
         test_service_id: str,
         wcs_evidence: CertificationEvidenceCollector,
     ) -> None:
-        from qgis.core import QgsRectangle
+        from qgis.core import QgsPointXY
 
         layer = self._layer(base_url, test_service_id)
         assert layer.isValid(), layer.error().summary()
         provider = layer.dataProvider()
 
-        # Sample the two opposite corner landmarks. This is the assertion a
-        # constant-valued raster could never support: if GetCoverage ignored
-        # BBOX, or flipped an axis, both samples would read the same.
-        nw = provider.sample(
-            QgsRectangle(EXPECTED_XMIN, EXPECTED_YMAX, EXPECTED_XMIN, EXPECTED_YMAX).center(), 1)
-        se = provider.sample(
-            QgsRectangle(EXPECTED_XMAX, EXPECTED_YMIN, EXPECTED_XMAX, EXPECTED_YMIN).center(), 1)
+        # Sample the centres of the two opposite landmark pixels. The seed puts them at
+        # 1-based column/row 1 and 62, so their centres are half a pixel in from the
+        # respective edges. Sampling the extent corners themselves fails: a raster
+        # covers a half-open interval, so the max corner lies outside it.
+        nw_point = QgsPointXY(
+            EXPECTED_XMIN + 0.5 * PIXEL_X,
+            EXPECTED_YMAX - 0.5 * PIXEL_Y)
+        se_point = QgsPointXY(
+            EXPECTED_XMIN + 61.5 * PIXEL_X,
+            EXPECTED_YMAX - 61.5 * PIXEL_Y)
 
-        nw_value, nw_ok = nw
-        se_value, se_ok = se
-        assert nw_ok and se_ok, "the provider could not sample the coverage corners"
+        # This is the assertion a constant-valued raster could never support: if
+        # GetCoverage ignored BBOX, or flipped an axis, both samples would read alike.
+        nw_value, nw_ok = provider.sample(nw_point, 1)
+        se_value, se_ok = provider.sample(se_point, 1)
+        assert nw_ok and se_ok, (
+            f"the provider could not sample the landmark pixels: NW ok={nw_ok} SE ok={se_ok}")
         assert nw_value != pytest.approx(se_value, abs=VALUE_TOLERANCE), (
-            "opposite corners returned the same value, so the window is not being honoured: "
-            f"NW={nw_value} SE={se_value}"
+            "opposite landmark pixels returned the same value, so position is not being "
+            f"honoured: NW={nw_value} SE={se_value} (seeded {LANDMARK_NW} and {LANDMARK_SE} "
+            f"against a {BACKGROUND_VALUE} background)"
         )
         wcs_evidence.record(
             "CERT-QFLT-01",

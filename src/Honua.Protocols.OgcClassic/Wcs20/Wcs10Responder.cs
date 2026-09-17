@@ -301,7 +301,7 @@ internal sealed partial class Wcs20Handler
         var description = string.IsNullOrWhiteSpace(coverage.Resource.Metadata.Description)
             ? label
             : coverage.Resource.Metadata.Description;
-        var srsName = CreateEpsgUri(srid.Value);
+        var srsName = CreateWcs10CrsName(srid.Value);
 
         var children = new List<object>
         {
@@ -401,6 +401,17 @@ internal sealed partial class Wcs20Handler
         return new XElement(Wcs10 + "rangeSet",
             new XElement(Wcs10 + "RangeSet", rangeSetChildren));
     }
+
+    /// <summary>
+    /// CRS identifier in the short form WCS 1.0.0 uses, e.g. <c>EPSG:4326</c>. The 2.0.1
+    /// path emits an OGC URI (<c>http://www.opengis.net/def/crs/EPSG/0/4326</c>), which a
+    /// 1.0.0 client does not resolve: QGIS runs every advertised value through
+    /// <c>fromOgcWmsCrs()</c> and builds no layer when none survives, so advertising the
+    /// URI form left the coverage unopenable even though the document was otherwise
+    /// complete.
+    /// </summary>
+    private static string CreateWcs10CrsName(int srid)
+        => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"EPSG:{srid}");
 
     private async Task<IResult> HandleWcs10GetCoverageAsync(
         HttpContext context,

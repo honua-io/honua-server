@@ -495,7 +495,7 @@ def wcs_evidence(
         _wcs_evidence = CertificationEvidenceCollector(
             pyqgis_runtime, qgis_version, "wcs"
         )
-    return _wfs_evidence
+    return _wcs_evidence
 
 
 @pytest.fixture(scope="session")
@@ -808,8 +808,14 @@ def _collector_for_item(item: pytest.Item) -> CertificationEvidenceCollector | N
     module = Path(item.fspath).stem
     if "oapif" in module or "render" in module:
         return _oapif_evidence
+    if "wcs" in module:
+        return _wcs_evidence
     if "wfs" in module:
         return _wfs_evidence
+    # A module with no collector records nothing, so a wholly failing protocol lane
+    # writes no envelope at all and reads as success downstream - the lane script ends
+    # its pytest call with `|| true`, so the exit code does not catch it either. Any
+    # new protocol module must be mapped here.
     return None
 
 

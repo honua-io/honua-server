@@ -844,7 +844,20 @@ internal sealed partial class Wcs20Handler
         // ServiceId-as-name routing used by /ogc/services/{serviceId}/...
         if (!snapshot.Index.ServicesById.TryGetValue(serviceId, out var service))
         {
-            service = snapshot.FindService(serviceId);
+            // A display name does not identify one service. The canonical graph
+            // projects a single logical service across several protocol facets that
+            // intentionally share a name while carrying distinct ids - see
+            // 051_RelaxMetadataV2ServiceNameIndex.sql, which dropped the unique name
+            // index for exactly this reason, and the V1 compat snapshot, which emits
+            // those same-named facets. Taking the first name match and then asking
+            // whether it enables WCS rejects the request whenever the match happens to
+            // be the feature or map facet, even though the image facet serves
+            // coverages: every WCS route answered "WCS is not enabled for this
+            // service" while ImageServer on the same name answered 200. So pick the
+            // facet that actually serves this protocol, and only fall back to a bare
+            // name match so a service genuinely without WCS still reports that.
+            service = FindServiceForProtocol(snapshot, serviceId, WcsProtocolName)
+                ?? snapshot.FindService(serviceId);
         }
 
         if (service is null || !service.IsRoutable())
@@ -873,6 +886,21 @@ internal sealed partial class Wcs20Handler
 
         return new ServiceResolutionResult(service, null);
     }
+
+    /// <summary>
+    /// Finds the routable service with this display name that enables
+    /// <paramref name="protocol"/>. Returns <c>null</c> when no same-named facet serves
+    /// it, so the caller can fall back to a plain name match and report the protocol as
+    /// disabled rather than the service as missing.
+    /// </summary>
+    private static MetadataV2Service? FindServiceForProtocol(
+        MetadataV2GraphSnapshot snapshot,
+        string serviceName,
+        string protocol)
+        => snapshot.Graph.Services.FirstOrDefault(candidate =>
+            string.Equals(candidate.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase)
+            && candidate.IsRoutable()
+            && IsProtocolEnabled(candidate, protocol));
 
     private static bool IsProtocolEnabled(MetadataV2Service service, string protocol)
         => service.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase));
