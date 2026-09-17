@@ -140,6 +140,9 @@ public sealed class OpsFindingsWorkflowSourceRedisTests
             .Build();
         await container.StartAsync();
         using var multiplexer = await ConnectionMultiplexer.ConnectAsync(OutageTolerant(container.GetConnectionString()));
+        // With AbortOnConnectFail=false ConnectAsync can return while the connection is still being
+        // established, and the fail-fast backlog would refuse the seed write (#5002).
+        await WaitForRedisAsync(multiplexer);
         var store = new RedisWorkflowOperationStore(multiplexer, NullLogger<RedisWorkflowOperationStore>.Instance);
         Assert.True(await store.TryCreateAsync(
             WorkflowSourceFixture.SucceededDeploy(WorkflowSourceFixture.TargetA, WorkflowSourceFixture.PriorArtifact)));
@@ -153,7 +156,11 @@ public sealed class OpsFindingsWorkflowSourceRedisTests
 
         // Step 2: backend loss, evaluated twice. Unavailable, the retained clocks stay at the step-1
         // collection, and neither proposal surface reaches the gateway or the operation envelope.
+        var disconnected = ObserveInteractiveConnectionFailure(multiplexer);
         await container.StopAsync();
+        // Evaluate only once the multiplexer has seen the loss, so every read fails fast instead of
+        // racing the stop.
+        await disconnected.WaitAsync(TimeSpan.FromSeconds(30));
         foreach (var minutes in new[] { 1, 2 })
         {
             clock.Now = WorkflowSourceFixture.T0.AddMinutes(minutes);
@@ -254,11 +261,26 @@ public sealed class OpsFindingsWorkflowSourceRedisTests
     {
         var configuration = ConfigurationOptions.Parse(connectionString);
         configuration.AbortOnConnectFail = false;
-        configuration.AsyncTimeout = 500;
-        configuration.ConnectTimeout = 500;
+        // The outage phase fails fast through the backlog policy once the loss is observed, so the
+        // timeouts only need to bound the healthy phases, and those run on busy shared runners (#5002).
+        configuration.AsyncTimeout = 10_000;
+        configuration.ConnectTimeout = 10_000;
         configuration.BacklogPolicy = BacklogPolicy.FailFast;
         configuration.ReconnectRetryPolicy = new ExponentialRetry(100);
         return configuration;
+    }
+
+    private static Task ObserveInteractiveConnectionFailure(ConnectionMultiplexer multiplexer)
+    {
+        var failed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        multiplexer.ConnectionFailed += (_, args) =>
+        {
+            if (args.ConnectionType == ConnectionType.Interactive)
+            {
+                failed.TrySetResult();
+            }
+        };
+        return failed.Task;
     }
 
     private static async Task WaitForRedisAsync(ConnectionMultiplexer multiplexer)
