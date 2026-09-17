@@ -7146,6 +7146,22 @@
       "capability": "serve.ogc-api-maps"
     },
     {
+      "id": "get-ogc-maps-collections-collectionid",
+      "route": "/ogc/maps/collections/{collectionId}",
+      "method": "GET",
+      "family": "OGC API Maps",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetCollection_MapServingCollection_ReturnsDescriptionWhoseMapLinksRender",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetCollection_NonExistentCollection_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetCollection_ProtectedCollection_RefusesAnonymousWith401AndAdmitsEntitledCaller"
+      ],
+      "proof_ledger_surface": "ogc-api-maps-and-static-rendering",
+      "maturity": "implemented",
+      "capability": "serve.ogc-api-maps"
+    },
+    {
       "id": "get-ogc-maps-collections-collectionid-map",
       "route": "/ogc/maps/collections/{collectionId}/map",
       "method": "GET",

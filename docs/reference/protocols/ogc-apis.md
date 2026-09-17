@@ -73,6 +73,7 @@ unadvertised until the exact-candidate lane proves them. Full operator tables:
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/ogc/maps`, `/ogc/maps/conformance` | Landing page, conformance. |
+| GET | `/ogc/maps/collections/{collectionId}` | Collection description: extent and map links, for every collection that serves a map. |
 | GET | `/ogc/maps/collections/{collectionId}/map` | Rendered map for one collection. |
 | GET | `/ogc/maps/collections/{collectionId}/styles/{styleId}/map` | Rendered map with a named style. |
 | GET | `/ogc/maps/collections/{collectionId}/map/tiles`, `.../map/tiles/{tileMatrixSetId}` | Map tileset metadata. |

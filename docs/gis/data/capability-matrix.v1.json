@@ -2140,10 +2140,10 @@
       "category": "Serve",
       "edition": "Community",
       "status": null,
-      "entryCount": 10,
-      "provingTestCount": 139,
+      "entryCount": 11,
+      "provingTestCount": 142,
       "maturity": {
-        "implemented": 10
+        "implemented": 11
       },
       "noSurface": null,
       "cite": [],
