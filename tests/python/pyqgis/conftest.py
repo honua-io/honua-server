@@ -100,6 +100,17 @@ class PyQgisCompatibilityRuntime:
 # Certification evidence writer (envelope-based)
 # ---------------------------------------------------------------------------
 
+# The protocol version each lane certifies against. WCS is 1.0.0 rather than the
+# server's newer 2.0.1 because the stock QGIS provider speaks 1.0/1.1 only and
+# rejects 2.0.1 outright (honua-server#5020), so 1.0.0 is the only version this
+# client can be certified on.
+_PROTOCOL_VERSIONS = {
+    "wfs": "2.0.0",
+    "ogc-features": "1.0",
+    "wcs": "1.0.0",
+}
+
+
 @dataclass
 class _CertResult:
     test_case_id: str
@@ -204,7 +215,7 @@ class CertificationEvidenceCollector:
             "client_lane": "desktop-qgis",
             "client_version": self.client_version,
             "protocol": self.protocol,
-            "protocol_version": "2.0.0" if self.protocol == "wfs" else "1.0",
+            "protocol_version": _PROTOCOL_VERSIONS.get(self.protocol, "1.0"),
             "environment": env,
             "results": [
                 {
@@ -329,6 +340,7 @@ def _discover_wfs_typename(base_url: str) -> str | None:
 
 _oapif_evidence: CertificationEvidenceCollector | None = None
 _wfs_evidence: CertificationEvidenceCollector | None = None
+_wcs_evidence: CertificationEvidenceCollector | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -473,6 +485,20 @@ def wfs_evidence(
 
 
 @pytest.fixture(scope="session")
+def wcs_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped WCS certification evidence collector."""
+    global _wcs_evidence
+    if _wcs_evidence is None:
+        _wcs_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "wcs"
+        )
+    return _wfs_evidence
+
+
+@pytest.fixture(scope="session")
 def wfs_typename(base_url: str) -> str:
     """Discover and cache the first WFS type name from GetCapabilities.
 
@@ -545,6 +571,32 @@ def make_wfs_layer(base_url: str, typename: str, *, extra_params: str = ""):
     if extra_params:
         uri = f"{uri} {extra_params}"
     return QgsVectorLayer(uri, "wfs_test", "WFS")
+
+
+def make_wcs_layer(
+    base_url: str,
+    service_id: str,
+    coverage: str,
+    *,
+    crs: str = "EPSG:4326",
+    image_format: str = "GeoTIFF",
+):
+    """Construct a QGIS raster layer via the stock WCS provider.
+
+    The provider negotiates the version itself and speaks 1.0/1.1 only, so no
+    VERSION is passed: it will ask for 1.0.0 and the server must answer in the
+    1.0.0 encoding (honua-server#5020).
+    """
+    from qgis.core import QgsRasterLayer
+
+    uri = (
+        f"url={base_url}/ogc/services/{service_id}/wcs"
+        f"&identifier={coverage}"
+        f"&crs={crs}"
+        f"&format={image_format}"
+        "&cache=AlwaysNetwork"
+    )
+    return QgsRasterLayer(uri, "wcs_test", "wcs")
 
 
 def render_layer_headless(layer, width: int = 256, height: int = 256) -> bytes:
@@ -692,6 +744,7 @@ def render_layer_headless_with_symbol(
 def _write_cert_evidence(
     oapif_evidence: CertificationEvidenceCollector,
     wfs_evidence: CertificationEvidenceCollector,
+    wcs_evidence: CertificationEvidenceCollector,
 ) -> Generator[None, None, None]:
     """Persist .cert.json envelopes at session teardown.
 
@@ -714,6 +767,10 @@ def _write_cert_evidence(
     if wfs_evidence.has_records:
         path = results_dir / f"{run_id}-desktop-qgis-wfs{suffix}.cert.json"
         wfs_evidence.write_envelope(path)
+
+    if wcs_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-wcs{suffix}.cert.json"
+        wcs_evidence.write_envelope(path)
 
 
 # ---------------------------------------------------------------------------
