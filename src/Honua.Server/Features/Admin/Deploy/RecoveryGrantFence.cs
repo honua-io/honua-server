@@ -23,6 +23,11 @@ namespace Honua.Server.Features.Admin.Deploy;
 /// asserting a grant, and every supplied term is enforced: an unsatisfied term is a refusal, never a
 /// no-op, and never a silent drop.
 /// </para>
+/// <para>
+/// Neither a platform role nor silence widens a sealed grant (honua-server#4987). The sealed actor and
+/// tenant bind every caller, and a declared actor or tenant must equal the sealed value as well as the
+/// caller's, so quoting another principal's grant under one's own identity is refused.
+/// </para>
 /// </remarks>
 internal static class RecoveryGrantFence
 {
@@ -77,14 +82,12 @@ internal static class RecoveryGrantFence
     /// <param name="request">The rollback body, possibly absent.</param>
     /// <param name="authenticatedActor">Principal resolved from the validated identity, never from a header.</param>
     /// <param name="callerTenantId">Tenant resolved from the validated identity, or null when unbound.</param>
-    /// <param name="isPlatformAdministrator">Whether the caller holds an explicitly broader platform role.</param>
     /// <param name="now">Server clock used for expiry.</param>
     public static RecoveryFenceRefusal? Evaluate(
         WorkflowOperationRecord operation,
         RollbackDeployOperationRequest? request,
         string? authenticatedActor,
         string? callerTenantId,
-        bool isPlatformAdministrator,
         DateTimeOffset now)
     {
         ArgumentNullException.ThrowIfNull(operation);
@@ -92,9 +95,11 @@ internal static class RecoveryGrantFence
         var protection = operation.Deploy?.Protection;
 
         // Identity binding is enforced whether or not the caller supplied a fence: once an activation
-        // has sealed a grant, only that actor/tenant (or an explicitly broader platform role) may
-        // actuate its compensation. An unfenced caller cannot opt out of the binding by staying silent.
-        if (protection != null && !isPlatformAdministrator)
+        // has sealed a grant, only that actor/tenant may actuate its compensation. An unfenced caller
+        // cannot opt out of the binding by staying silent, and a platform role is no exemption
+        // (honua-server#4987): PlatformDeployAuthority requires that role of every tenant-bound deploy
+        // caller, so exempting it let another tenant's administrator actuate this tenant's grant.
+        if (protection != null)
         {
             if (!string.IsNullOrWhiteSpace(protection.Actor) &&
                 !ValuesMatch(protection.Actor, authenticatedActor))
@@ -106,8 +111,10 @@ internal static class RecoveryGrantFence
                     "protected activation; the authenticated principal is not that actor.");
             }
 
-            if (!string.IsNullOrWhiteSpace(protection.TenantId) &&
-                !ValuesMatch(protection.TenantId, callerTenantId))
+            // The tenant binding is compared in both directions: a grant sealed by a tenantless principal
+            // does not become actuatable by a tenant-bound caller that happens to share its actor name.
+            // With tenant resolution disabled no caller tenant is ever resolved, so this never refuses there.
+            if (!TenantBindingMatches(protection.TenantId, callerTenantId))
             {
                 return new RecoveryFenceRefusal(
                     StatusCodes.Status403Forbidden,
@@ -131,6 +138,9 @@ internal static class RecoveryGrantFence
                 "an expired grant preauthorizes nothing.");
         }
 
+        // A declared actor or tenant is bound to the sealed grant as well as to the caller
+        // (honua-server#4987). Checking only the caller let a body quote another principal's grantId,
+        // revisions and digest under the caller's own identity.
         if (!string.IsNullOrWhiteSpace(request.Actor) && !ValuesMatch(request.Actor, authenticatedActor))
         {
             return new RecoveryFenceRefusal(
@@ -140,6 +150,15 @@ internal static class RecoveryGrantFence
                 "validated identity and cannot be asserted by the request body.");
         }
 
+        if (protection != null && !string.IsNullOrWhiteSpace(request.Actor) && !ValuesMatch(request.Actor, protection.Actor))
+        {
+            return new RecoveryFenceRefusal(
+                StatusCodes.Status403Forbidden,
+                ActorMismatchCode,
+                "The declared recovery actor is not the principal this grant was sealed for; a grant authorizes " +
+                "only the principal that requested the protected activation.");
+        }
+
         if (!string.IsNullOrWhiteSpace(request.TenantId) && !ValuesMatch(request.TenantId, callerTenantId))
         {
             return new RecoveryFenceRefusal(
@@ -147,6 +166,15 @@ internal static class RecoveryGrantFence
                 TenantMismatchCode,
                 "The declared recovery tenant is not the authenticated principal's tenant. The tenant is read " +
                 "from the validated identity and cannot be asserted by the request body.");
+        }
+
+        if (protection != null && !string.IsNullOrWhiteSpace(request.TenantId) && !ValuesMatch(request.TenantId, protection.TenantId))
+        {
+            return new RecoveryFenceRefusal(
+                StatusCodes.Status403Forbidden,
+                TenantMismatchCode,
+                "The declared recovery tenant is not the tenant this grant was sealed for; a grant authorizes " +
+                "only its sealed tenant binding.");
         }
 
         if (!string.IsNullOrWhiteSpace(request.TargetId) &&
@@ -256,6 +284,11 @@ internal static class RecoveryGrantFence
 
         return null;
     }
+
+    private static bool TenantBindingMatches(string? sealedTenantId, string? callerTenantId)
+        => string.IsNullOrWhiteSpace(sealedTenantId)
+            ? string.IsNullOrWhiteSpace(callerTenantId)
+            : ValuesMatch(sealedTenantId, callerTenantId);
 
     private static bool TryParsePhase(string value, out DeployProtectionPhase phase)
         => Enum.TryParse(value.Trim(), ignoreCase: true, out phase) && Enum.IsDefined(phase);
