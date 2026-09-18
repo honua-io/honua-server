@@ -44,17 +44,16 @@
         "blocked": 1
       },
       "pyqgis": {
-        "pass": 49,
+        "pass": 50,
         "n/a-no-client": 40,
         "n/a-superseded": 3,
-        "blocked": 1,
-        "not-started": 1
+        "blocked": 1
       }
     },
     "overall": {
       "cells": 376,
-      "closed": 246,
-      "open": 130
+      "closed": 247,
+      "open": 129
     }
   },
   "rows": [
@@ -2081,7 +2080,8 @@
           "state": "not-started"
         },
         "pyqgis": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-3d-tiles.cert.json - NB-PQG-3DT-01/NB-PQG-3DT-02, protocol 3d-tiles 1.1, client desktop-qgis 3.44.14-Solothurn, 2 passed 0 failed"
         }
       }
     },

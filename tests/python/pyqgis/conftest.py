@@ -121,6 +121,8 @@ _PROTOCOL_VERSIONS = {
     "pmtiles": "3",
     "ogc-api-styles": "1.0",
     "cog": "GeoTIFF",
+    # The generator stamps asset.version 1.1 on every tileset it publishes.
+    "3d-tiles": "1.1",
 }
 
 
@@ -364,6 +366,7 @@ _sensorthings_evidence: CertificationEvidenceCollector | None = None
 _pmtiles_evidence: CertificationEvidenceCollector | None = None
 _ogcstyles_evidence: CertificationEvidenceCollector | None = None
 _cog_evidence: CertificationEvidenceCollector | None = None
+_tiles3d_evidence: CertificationEvidenceCollector | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -689,6 +692,19 @@ def cog_evidence(
         )
     return _cog_evidence
 
+@pytest.fixture(scope="session")
+def tiles3d_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped 3D Tiles certification evidence collector."""
+    global _tiles3d_evidence
+    if _tiles3d_evidence is None:
+        _tiles3d_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "3d-tiles"
+        )
+    return _tiles3d_evidence
+
 
 @pytest.fixture(scope="session")
 def wfs_typename(base_url: str) -> str:
@@ -1010,6 +1026,7 @@ def _write_cert_evidence(
     pmtiles_evidence: CertificationEvidenceCollector,
     ogcstyles_evidence: CertificationEvidenceCollector,
     cog_evidence: CertificationEvidenceCollector,
+    tiles3d_evidence: CertificationEvidenceCollector,
 ) -> Generator[None, None, None]:
     """Persist .cert.json envelopes at session teardown.
 
@@ -1077,6 +1094,10 @@ def _write_cert_evidence(
         path = results_dir / f"{run_id}-desktop-qgis-cog{suffix}.cert.json"
         cog_evidence.write_envelope(path)
 
+    if tiles3d_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-3d-tiles{suffix}.cert.json"
+        tiles3d_evidence.write_envelope(path)
+
 
 # ---------------------------------------------------------------------------
 # Hook: record failures and skips so evidence survives regressions
@@ -1137,6 +1158,8 @@ def _collector_for_item(item: pytest.Item) -> CertificationEvidenceCollector | N
         return _ogcstyles_evidence
     if "cog" in module:
         return _cog_evidence
+    if "3dtiles" in module:
+        return _tiles3d_evidence
     if "stac" in module:
         return _stac_evidence
 

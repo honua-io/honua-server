@@ -391,6 +391,7 @@ EV = {
     "pyqgis-oapif-part4": _pyqgis("ogc-features", "1.0", 21, cert_id="NB-PQG-OAPIFT-01/NB-PQG-OAPIFT-02/NB-PQG-OAPIFT-03", skipped=3),
     "pyqgis-fs-applyedits": _pyqgis("featureserver", "10.8", 6, cert_id="CERT-AUTH-01"),
     "pyqgis-fs-domains": _pyqgis("featureserver", "10.8", 6, cert_id="CERT-SCHM-02"),
+    "pyqgis-3dtiles": _pyqgis("3d-tiles", "1.1", 2, cert_id="NB-PQG-3DT-01/NB-PQG-3DT-02"),
     "pyqgis-fs-info": _pyqgis("featureserver", "10.8", 6, cert_id="CERT-DISC-01"),
     "pyqgis-fs-meta": _pyqgis("featureserver", "10.8", 6, cert_id="CERT-SCHM-01"),
     "pyqgis-fs-query": _pyqgis("featureserver", "10.8", 6, cert_id="CERT-QFLT-01"),
@@ -939,7 +940,7 @@ MATRIX: list[dict] = [
         "protocol": "3d-tiles", "version": "1.0",
         "operations": {
             "tileset": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-mp-web-service-types"),
-                        "qgis-ui": NS, "pyqgis": NS},
+                        "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-3dtiles")},
         },
     },
     {

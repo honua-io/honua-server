@@ -44,6 +44,10 @@
     },
     {
       "client_lane": "desktop-qgis",
+      "protocol": "3d-tiles"
+    },
+    {
+      "client_lane": "desktop-qgis",
       "protocol": "ogc-features"
     },
     {
