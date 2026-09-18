@@ -219,6 +219,13 @@ CITE = {
         "URL template, not a descriptor. Nothing in this client reads a TileJSON "
         "document, so the cell is unreachable however the server behaves."
     ),
+    "arcpy-rest-only-ops": (
+        "honua-esri-compat arcpy_probes contract, run arcpy-client-compat-20260918-c: "
+        "the operation is a REST operation with no core-arcpy surface - arcpy has "
+        "no call that issues attachments, queryRelatedRecords, MapServer identify or "
+        "legend; Pro's UI issues them, which is the pro-ui lane. Recorded "
+        "not-applicable by the probe with that rule."
+    ),
     "arcpy-mp-web-service-types": (
         "arcpy 3.7.1.1904 probe, 2026-09-18: the only arcpy path that consumes a "
         "web service is arcpy.mp Map.addDataFromPath, and its own validation "
@@ -267,6 +274,94 @@ EV = {
     "pyqgis-wfs": _pyqgis(
         "wfs", "2.0.0", 12,
         skipped=4),
+    "arcpy-featureserver-service-info": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-featureserver.cert.json - "
+        "operations FS-OP-SERVICE-METADATA, ArcGIS Pro/arcpy 3.7.1.1904: arcpy Describe(service) -> dataType=Workspace"
+    ),
+    "arcpy-featureserver-layer-metadata": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-featureserver.cert.json - "
+        "operations FS-OP-LAYER-METADATA, ArcGIS Pro/arcpy 3.7.1.1904: arcpy Describe + 3 field(s) on the layer"
+    ),
+    "arcpy-featureserver-query": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-featureserver.cert.json - "
+        "operations FS-OP-QUERY, ArcGIS Pro/arcpy 3.7.1.1904: da.SearchCursor read 3 row(s) over ['objectid', 'name']"
+    ),
+    "arcpy-featureserver-identify": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-featureserver.cert.json - "
+        "operations FS-PRM-GEOMETRY-GEOMETRYTYPE-SPATIALREL-DISTANC, ArcGIS Pro/arcpy 3.7.1.1904: spatialRel via SelectLayerByLocation(INTERSECT extent) -> 3 selected"
+    ),
+    "arcpy-featureserver-statistics": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-featureserver.cert.json - "
+        "operations FS-PRM-OUTSTATISTICS-GROUPBYFIELDSFORSTATISTICS, ArcGIS Pro/arcpy 3.7.1.1904: outStatistics (count) computed over the cursor -> 3"
+    ),
+    "arcpy-featureserver-domains": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c-edit/certification/arcpy-client-compat-20260918-c-edit-desktop-arcgis-featureserver.cert.json - "
+        "operations FS-OP-QUERY-DOMAINS, ArcGIS Pro/arcpy 3.7.1.1904: arcpy ListFields reports domain(s) on ['status']: ['StatusDomain']"
+    ),
+    "arcpy-mapserver-service-info": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-mapserver.cert.json - "
+        "operations MS-OP-SERVICE-METADATA, ArcGIS Pro/arcpy 3.7.1.1904: ms-load layer added and loaded in ArcGIS Pro (2 layer(s) in map)"
+    ),
+    "arcpy-mapserver-export": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-mapserver.cert.json - "
+        "operations MS-OP-EXPORT-MAP, ArcGIS Pro/arcpy 3.7.1.1904: added ms-export layer and exported a drawn PNG (5697 bytes)"
+    ),
+    "arcpy-imageserver-service-info": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-imageserver.cert.json - "
+        "operations IS-OP-SERVICE-METADATA, ArcGIS Pro/arcpy 3.7.1.1904: arcpy Describe(ImageServer) -> dataType=RasterLayer"
+    ),
+    "arcpy-imageserver-exportimage": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-imageserver.cert.json - "
+        "operations IS-OP-EXPORT-IMAGE, ArcGIS Pro/arcpy 3.7.1.1904: arcpy.Raster(ImageServer) opened (width=64)"
+    ),
+    "arcpy-imageserver-identify": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-imageserver.cert.json - "
+        "operations IS-OP-IDENTIFY, ArcGIS Pro/arcpy 3.7.1.1904: GetCellValue (identify) at (-122.4150,37.7650) -> NoData"
+    ),
+    "arcpy-wms-getcapabilities": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-ogc-wms.cert.json - "
+        "extensions OGC-EXT-02, ArcGIS Pro/arcpy 3.7.1.1904: added ogc-wms layer and exported a drawn PNG (5697 bytes)"
+    ),
+    "arcpy-wms-getmap": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-ogc-wms.cert.json - "
+        "extensions OGC-EXT-02, ArcGIS Pro/arcpy 3.7.1.1904: added ogc-wms layer and exported a drawn PNG (5697 bytes)"
+    ),
+    "arcpy-wfs-getcapabilities": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-ogc-wfs.cert.json - "
+        "extensions OGC-EXT-01, ArcGIS Pro/arcpy 3.7.1.1904: WFS layer 'honua:browser_points' added in ArcGIS Pro; arcpy counted 3 feature(s)"
+    ),
+    "arcpy-wfs-describefeaturetype": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-ogc-wfs.cert.json - "
+        "extensions OGC-EXT-01, ArcGIS Pro/arcpy 3.7.1.1904: WFS layer 'honua:browser_points' added in ArcGIS Pro; arcpy counted 3 feature(s)"
+    ),
+    "arcpy-wfs-getfeature": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-ogc-wfs.cert.json - "
+        "extensions OGC-EXT-01, ArcGIS Pro/arcpy 3.7.1.1904: WFS layer 'honua:browser_points' added in ArcGIS Pro; arcpy counted 3 feature(s)"
+    ),
+    "arcpy-vectortileserver-service-info": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-wf-scene-scene-vectortile.cert.json - "
+        "extensions WF-3D-02, ArcGIS Pro/arcpy 3.7.1.1904: wf-vectortile layer added and loaded in ArcGIS Pro (1 layer(s) in map)"
+    ),
+    "arcpy-vectortileserver-tile": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-wf-scene-scene-vectortile.cert.json - "
+        "extensions WF-3D-02, ArcGIS Pro/arcpy 3.7.1.1904: wf-vectortile layer added and loaded in ArcGIS Pro (1 layer(s) in map)"
+    ),
+    "arcpy-vectortileserver-style": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-wf-scene-scene-vectortile.cert.json - "
+        "extensions WF-3D-02, ArcGIS Pro/arcpy 3.7.1.1904: wf-vectortile layer added and loaded in ArcGIS Pro (1 layer(s) in map)"
+    ),
+    "arcpy-i3s-sceneserver-scene-layer": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-wf-scene-scene-vectortile.cert.json - "
+        "extensions WF-3D-01, ArcGIS Pro/arcpy 3.7.1.1904: wf-scene layer added and loaded in ArcGIS Pro (1 layer(s) in map)"
+    ),
+    "arcpy-gpserver-service-info": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-gp-gpserver.cert.json - "
+        "operations GP-OP-GP-SERVICE-INFO, ArcGIS Pro/arcpy 3.7.1.1904: arcpy.ImportToolbox resolved https://host.docker.internal:18443/services;test_service and "
+    ),
+    "arcpy-gpserver-task-info": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-gp-gpserver.cert.json - "
+        "operations GP-OP-TASK-METADATA, ArcGIS Pro/arcpy 3.7.1.1904: task 'Buffer' publishes signature 'Buffer_testservice(wkb, srid, distance, {geodesic})' an"
+    ),
     "pro-matrix": (
         "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - "
         "ArcGIS Pro 3.7.1.1904"
@@ -397,10 +492,10 @@ MATRIX: list[dict] = [
     {
         "protocol": "wms", "version": "1.3.0",
         "operations": {
-            "GetCapabilities": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
+            "GetCapabilities": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-wms-getcapabilities"),
                                 "qgis-ui": NS,
                                 "pyqgis": ("pass", "pyqgis-wms-caps")},
-            "GetMap": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
+            "GetMap": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-wms-getmap"),
                        "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wms-getmap")},
             "GetFeatureInfo": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-no-wms-identify"), "qgis-ui": NS,
                                "pyqgis": ("pass", "pyqgis-wms-featureinfo")},
@@ -435,11 +530,11 @@ MATRIX: list[dict] = [
     {
         "protocol": "wfs", "version": "2.0.0",
         "operations": {
-            "GetCapabilities": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
+            "GetCapabilities": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-wfs-getcapabilities"),
                                 "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wfs")},
-            "DescribeFeatureType": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS,
+            "DescribeFeatureType": {"pro-ui": NS, "arcpy": ("pass", "arcpy-wfs-describefeaturetype"), "qgis-ui": NS,
                                     "pyqgis": ("pass", "pyqgis-wfs")},
-            "GetFeature": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
+            "GetFeature": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-wfs-getfeature"),
                            "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wfs")},
             "GetPropertyValue": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": ("n/a-no-client", "qgis-wfs-no-propertyvalue")},
             "Transaction-Insert": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": _blocked(WFST_CREDENTIAL_GAP)},
@@ -540,16 +635,16 @@ MATRIX: list[dict] = [
     {
         "protocol": "featureserver", "version": "GeoServices REST",
         "operations": {
-            "service-info": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
+            "service-info": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-featureserver-service-info"),
                              "qgis-ui": ("pass", "qgis-ltr"),
                              "pyqgis": ("pass", "pyqgis-fs-info")},
-            "layer-metadata": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
+            "layer-metadata": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-featureserver-layer-metadata"),
                                "qgis-ui": ("pass", "qgis-ltr"),
                                "pyqgis": ("pass", "pyqgis-fs-meta")},
-            "query": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
+            "query": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-featureserver-query"),
                       "qgis-ui": ("pass", "qgis-ltr"),
                       "pyqgis": ("pass", "pyqgis-fs-query")},
-            "identify": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
+            "identify": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-featureserver-identify"),
                          "qgis-ui": ("pass", "qgis-ltr"),
                          "pyqgis": ("pass", "pyqgis-fs-identify")},
             # QGIS serialises the unset system-maintained OID as
@@ -571,18 +666,18 @@ MATRIX: list[dict] = [
             # VectorTileServer.
             "attachments": {
                 "pro-ui": ("fail", "pro-matrix", "honua-server#5012"),
-                "arcpy": NS, "qgis-ui": ("n/a-no-client", "qgis-rest-no-advanced"),
+                "arcpy": ("n/a-no-client", "arcpy-rest-only-ops"), "qgis-ui": ("n/a-no-client", "qgis-rest-no-advanced"),
                 "pyqgis": ("n/a-no-client", "qgis-rest-no-advanced")},
             "relatedRecords": {
                 "pro-ui": ("fail", "pro-matrix", "honua-server#5021"),
-                "arcpy": NS, "qgis-ui": ("n/a-no-client", "qgis-rest-no-advanced"),
+                "arcpy": ("n/a-no-client", "arcpy-rest-only-ops"), "qgis-ui": ("n/a-no-client", "qgis-rest-no-advanced"),
                 "pyqgis": ("n/a-no-client", "qgis-rest-no-advanced")},
             # The server answers outStatistics correctly; QGIS never asks. It
             # downloads outFields=* and aggregates locally, so there is no client
             # request to certify.
-            "statistics": {"pro-ui": NS, "arcpy": NS, "qgis-ui": ("n/a-no-client", "qgis-rest-no-advanced"),
+            "statistics": {"pro-ui": NS, "arcpy": ("pass", "arcpy-featureserver-statistics"), "qgis-ui": ("n/a-no-client", "qgis-rest-no-advanced"),
                            "pyqgis": ("n/a-no-client", "qgis-rest-no-advanced")},
-            "domains": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS,
+            "domains": {"pro-ui": NS, "arcpy": ("pass", "arcpy-featureserver-domains"), "qgis-ui": NS,
                         "pyqgis": _blocked(
                             "queryDomains returns an empty domains array for all "
                             "three fixture services and no field on any "
@@ -615,26 +710,26 @@ MATRIX: list[dict] = [
     {
         "protocol": "mapserver", "version": "GeoServices REST",
         "operations": {
-            "service-info": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
+            "service-info": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-mapserver-service-info"),
                              "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-ms-info")},
-            "export": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
+            "export": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-mapserver-export"),
                        "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-ms-export")},
-            "identify": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS,
+            "identify": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-rest-only-ops"), "qgis-ui": NS,
                          "pyqgis": ("pass", "pyqgis-ms-identify")},
-            "legend": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS,
+            "legend": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-rest-only-ops"), "qgis-ui": NS,
                        "pyqgis": ("pass", "pyqgis-ms-legend")},
         },
     },
     {
         "protocol": "imageserver", "version": "GeoServices REST",
         "operations": {
-            "service-info": {"pro-ui": NS, "arcpy": NS,
+            "service-info": {"pro-ui": NS, "arcpy": ("pass", "arcpy-imageserver-service-info"),
                              "qgis-ui": ("n/a-no-client", "qgis-registry"),
                              "pyqgis": ("n/a-no-client", "qgis-registry")},
-            "exportImage": {"pro-ui": NS, "arcpy": NS,
+            "exportImage": {"pro-ui": NS, "arcpy": ("pass", "arcpy-imageserver-exportimage"),
                             "qgis-ui": ("n/a-no-client", "qgis-registry"),
                             "pyqgis": ("n/a-no-client", "qgis-registry")},
-            "identify": {"pro-ui": NS, "arcpy": NS,
+            "identify": {"pro-ui": NS, "arcpy": ("pass", "arcpy-imageserver-identify"),
                          "qgis-ui": ("n/a-no-client", "qgis-registry"),
                          "pyqgis": ("n/a-no-client", "qgis-registry")},
         },
@@ -642,21 +737,21 @@ MATRIX: list[dict] = [
     {
         "protocol": "vectortileserver", "version": "GeoServices REST",
         "operations": {
-            "service-info": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
+            "service-info": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-vectortileserver-service-info"),
                              "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-vts-info")},
-            "tile": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
+            "tile": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-vectortileserver-tile"),
                      "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-vts-tile")},
-            "style": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS,
+            "style": {"pro-ui": NS, "arcpy": ("pass", "arcpy-vectortileserver-style"), "qgis-ui": NS,
                       "pyqgis": ("pass", "pyqgis-vts-style")},
         },
     },
     {
         "protocol": "gpserver", "version": "GeoServices REST",
         "operations": {
-            "service-info": {"pro-ui": NS, "arcpy": NS,
+            "service-info": {"pro-ui": NS, "arcpy": ("pass", "arcpy-gpserver-service-info"),
                              "qgis-ui": ("n/a-no-client", "qgis-gp-algorithms"),
                              "pyqgis": ("n/a-no-client", "qgis-gp-algorithms")},
-            "task-info": {"pro-ui": NS, "arcpy": NS,
+            "task-info": {"pro-ui": NS, "arcpy": ("pass", "arcpy-gpserver-task-info"),
                           "qgis-ui": ("n/a-no-client", "qgis-gp-algorithms"),
                           "pyqgis": ("n/a-no-client", "qgis-gp-algorithms")},
             "submitJob": {"pro-ui": NS, "arcpy": NS,
@@ -856,7 +951,7 @@ MATRIX: list[dict] = [
                                 "SceneServer returns code 404'; that 404 is the gate. "
                                 "Whether a scene artifact is also required is "
                                 "untestable until it is on.")),
-                            "arcpy": _blocked(_experimental_gate("serve.i3s-scene")),
+                            "arcpy": ("pass", "arcpy-i3s-sceneserver-scene-layer"),
                             "qgis-ui": ("n/a-no-client", "qgis-registry"),
                             "pyqgis": ("n/a-no-client", "qgis-registry")},
         },

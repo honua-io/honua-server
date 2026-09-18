@@ -31,9 +31,10 @@
         "blocked": 7
       },
       "arcpy": {
-        "not-started": 33,
-        "n/a-no-client": 55,
-        "blocked": 6
+        "pass": 22,
+        "n/a-no-client": 59,
+        "not-started": 8,
+        "blocked": 5
       },
       "qgis-ui": {
         "not-started": 48,
@@ -52,8 +53,8 @@
     },
     "overall": {
       "cells": 376,
-      "closed": 214,
-      "open": 162
+      "closed": 240,
+      "open": 136
     }
   },
   "rows": [
@@ -67,7 +68,8 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-ogc-wms.cert.json - extensions OGC-EXT-02, ArcGIS Pro/arcpy 3.7.1.1904: added ogc-wms layer and exported a drawn PNG (5697 bytes)"
         },
         "qgis-ui": {
           "state": "not-started"
@@ -88,7 +90,8 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-ogc-wms.cert.json - extensions OGC-EXT-02, ArcGIS Pro/arcpy 3.7.1.1904: added ogc-wms layer and exported a drawn PNG (5697 bytes)"
         },
         "qgis-ui": {
           "state": "not-started"
@@ -279,7 +282,8 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-ogc-wfs.cert.json - extensions OGC-EXT-01, ArcGIS Pro/arcpy 3.7.1.1904: WFS layer 'honua:browser_points' added in ArcGIS Pro; arcpy counted 3 feature(s)"
         },
         "qgis-ui": {
           "state": "not-started"
@@ -299,7 +303,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-ogc-wfs.cert.json - extensions OGC-EXT-01, ArcGIS Pro/arcpy 3.7.1.1904: WFS layer 'honua:browser_points' added in ArcGIS Pro; arcpy counted 3 feature(s)"
         },
         "qgis-ui": {
           "state": "not-started"
@@ -320,7 +325,8 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-ogc-wfs.cert.json - extensions OGC-EXT-01, ArcGIS Pro/arcpy 3.7.1.1904: WFS layer 'honua:browser_points' added in ArcGIS Pro; arcpy counted 3 feature(s)"
         },
         "qgis-ui": {
           "state": "not-started"
@@ -939,7 +945,8 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-featureserver.cert.json - operations FS-OP-SERVICE-METADATA, ArcGIS Pro/arcpy 3.7.1.1904: arcpy Describe(service) -> dataType=Workspace"
         },
         "qgis-ui": {
           "state": "pass",
@@ -961,7 +968,8 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-featureserver.cert.json - operations FS-OP-LAYER-METADATA, ArcGIS Pro/arcpy 3.7.1.1904: arcpy Describe + 3 field(s) on the layer"
         },
         "qgis-ui": {
           "state": "pass",
@@ -983,7 +991,8 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-featureserver.cert.json - operations FS-OP-QUERY, ArcGIS Pro/arcpy 3.7.1.1904: da.SearchCursor read 3 row(s) over ['objectid', 'name']"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1005,7 +1014,8 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-featureserver.cert.json - operations FS-PRM-GEOMETRY-GEOMETRYTYPE-SPATIALREL-DISTANC, ArcGIS Pro/arcpy 3.7.1.1904: spatialRel via SelectLayerByLocation(INTERSECT extent) -> 3 selected"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1048,7 +1058,8 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "honua-esri-compat arcpy_probes contract, run arcpy-client-compat-20260918-c: the operation is a REST operation with no core-arcpy surface - arcpy has no call that issues attachments, queryRelatedRecords, MapServer identify or legend; Pro's UI issues them, which is the pro-ui lane. Recorded not-applicable by the probe with that rule."
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -1071,7 +1082,8 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "honua-esri-compat arcpy_probes contract, run arcpy-client-compat-20260918-c: the operation is a REST operation with no core-arcpy surface - arcpy has no call that issues attachments, queryRelatedRecords, MapServer identify or legend; Pro's UI issues them, which is the pro-ui lane. Recorded not-applicable by the probe with that rule."
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -1092,7 +1104,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-featureserver.cert.json - operations FS-PRM-OUTSTATISTICS-GROUPBYFIELDSFORSTATISTICS, ArcGIS Pro/arcpy 3.7.1.1904: outStatistics (count) computed over the cursor -> 3"
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -1113,7 +1126,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c-edit/certification/arcpy-client-compat-20260918-c-edit-desktop-arcgis-featureserver.cert.json - operations FS-OP-QUERY-DOMAINS, ArcGIS Pro/arcpy 3.7.1.1904: arcpy ListFields reports domain(s) on ['status']: ['StatusDomain']"
         },
         "qgis-ui": {
           "state": "not-started"
@@ -1157,7 +1171,8 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-mapserver.cert.json - operations MS-OP-SERVICE-METADATA, ArcGIS Pro/arcpy 3.7.1.1904: ms-load layer added and loaded in ArcGIS Pro (2 layer(s) in map)"
         },
         "qgis-ui": {
           "state": "not-started"
@@ -1178,7 +1193,8 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-mapserver.cert.json - operations MS-OP-EXPORT-MAP, ArcGIS Pro/arcpy 3.7.1.1904: added ms-export layer and exported a drawn PNG (5697 bytes)"
         },
         "qgis-ui": {
           "state": "not-started"
@@ -1198,7 +1214,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "honua-esri-compat arcpy_probes contract, run arcpy-client-compat-20260918-c: the operation is a REST operation with no core-arcpy surface - arcpy has no call that issues attachments, queryRelatedRecords, MapServer identify or legend; Pro's UI issues them, which is the pro-ui lane. Recorded not-applicable by the probe with that rule."
         },
         "qgis-ui": {
           "state": "not-started"
@@ -1218,7 +1235,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "honua-esri-compat arcpy_probes contract, run arcpy-client-compat-20260918-c: the operation is a REST operation with no core-arcpy surface - arcpy has no call that issues attachments, queryRelatedRecords, MapServer identify or legend; Pro's UI issues them, which is the pro-ui lane. Recorded not-applicable by the probe with that rule."
         },
         "qgis-ui": {
           "state": "not-started"
@@ -1238,7 +1256,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-imageserver.cert.json - operations IS-OP-SERVICE-METADATA, ArcGIS Pro/arcpy 3.7.1.1904: arcpy Describe(ImageServer) -> dataType=RasterLayer"
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -1259,7 +1278,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-imageserver.cert.json - operations IS-OP-EXPORT-IMAGE, ArcGIS Pro/arcpy 3.7.1.1904: arcpy.Raster(ImageServer) opened (width=64)"
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -1280,7 +1300,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-imageserver.cert.json - operations IS-OP-IDENTIFY, ArcGIS Pro/arcpy 3.7.1.1904: GetCellValue (identify) at (-122.4150,37.7650) -> NoData"
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -1302,7 +1323,8 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-wf-scene-scene-vectortile.cert.json - extensions WF-3D-02, ArcGIS Pro/arcpy 3.7.1.1904: wf-vectortile layer added and loaded in ArcGIS Pro (1 layer(s) in map)"
         },
         "qgis-ui": {
           "state": "not-started"
@@ -1323,7 +1345,8 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-wf-scene-scene-vectortile.cert.json - extensions WF-3D-02, ArcGIS Pro/arcpy 3.7.1.1904: wf-vectortile layer added and loaded in ArcGIS Pro (1 layer(s) in map)"
         },
         "qgis-ui": {
           "state": "not-started"
@@ -1343,7 +1366,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-wf-scene-scene-vectortile.cert.json - extensions WF-3D-02, ArcGIS Pro/arcpy 3.7.1.1904: wf-vectortile layer added and loaded in ArcGIS Pro (1 layer(s) in map)"
         },
         "qgis-ui": {
           "state": "not-started"
@@ -1363,7 +1387,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-gp-gpserver.cert.json - operations GP-OP-GP-SERVICE-INFO, ArcGIS Pro/arcpy 3.7.1.1904: arcpy.ImportToolbox resolved https://host.docker.internal:18443/services;test_service and "
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -1384,7 +1409,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-gp-gpserver.cert.json - operations GP-OP-TASK-METADATA, ArcGIS Pro/arcpy 3.7.1.1904: task 'Buffer' publishes signature 'Buffer_testservice(wkb, srid, distance, {geodesic})' an"
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -2025,8 +2051,8 @@
           "cause": "the serve.i3s-scene capability is switched off in the client-compat fixture (capability manifest reports reasonCode=experimental-disabled). Unblocked by setting Capabilities:Experimental:serve.i3s-scene:Enabled=true. Previously recorded as 'no scene published; SceneServer returns code 404'; that 404 is the gate. Whether a scene artifact is also required is untestable until it is on."
         },
         "arcpy": {
-          "state": "blocked",
-          "cause": "the serve.i3s-scene capability is switched off in the client-compat fixture (capability manifest reports reasonCode=experimental-disabled). Unblocked by setting Capabilities:Experimental:serve.i3s-scene:Enabled=true."
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-wf-scene-scene-vectortile.cert.json - extensions WF-3D-01, ArcGIS Pro/arcpy 3.7.1.1904: wf-scene layer added and loaded in ArcGIS Pro (1 layer(s) in map)"
         },
         "qgis-ui": {
           "state": "n/a-no-client",
