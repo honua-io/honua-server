@@ -1146,6 +1146,13 @@ if (forwardedHeadersEnabled)
 
 app.UseHostValidation();
 
+// /arcgis/rest, /arcgis/services and /arcgis/sharing are served as aliases of the
+// root-mounted Esri surfaces. arcpy.geocoding.Locator keys on the ArcGIS Server
+// instance path and refuses a root-mounted GeocodeServer before sending a request;
+// a redirect is not followed, so the alias is a transparent path rewrite. Before
+// routing, and after host validation, so the rewritten path is what routes see.
+app.UseArcGisInstancePathAlias();
+
 // Add HTTPS redirection middleware to enforce HTTPS for all requests
 // This ensures API keys and sensitive data are never transmitted over HTTP
 // Enable HTTPS redirection in all environments except when explicitly disabled
