@@ -201,6 +201,18 @@
         {
           "id": "esri-integration",
           "reason": "Power BI's packaged ArcGIS visual integration, which is neither raw FeatureServer nor OData."
+        },
+        {
+          "id": "ogc-api-styles",
+          "reason": "OGC API - Styles; QGIS has no styles client, so the pyqgis lane certifies the advertised SLD representation being fetched and applied through QgsVectorLayer.loadSldStyle."
+        },
+        {
+          "id": "pmtiles",
+          "reason": "PMTiles archive read over HTTP range requests; certified on the pyqgis lane against an archive published through the running server at fixture bring-up."
+        },
+        {
+          "id": "vectortileserver",
+          "reason": "Esri VectorTileServer; certified on the pyqgis lane once the protocol was enabled in the client-compat fixture, which had drifted from MetadataV2ServiceProtocols.All."
         }
       ]
     },
@@ -290,10 +302,19 @@
       "activationState": "activated",
       "rosterOrigin": "artifact",
       "sourceStatus": "Live nightly",
-      "clientVersionPolicy": "QGIS LTR pinned by the pyqgis lane container image tag; the runtime version is captured into every envelope (currently 3.44.13-Solothurn).",
+      "clientVersionPolicy": "QGIS LTR pinned by the pyqgis lane container image tag; the runtime version is captured into every envelope (currently 3.44.14-Solothurn).",
       "protocolSurfaces": [
+        "featureserver",
+        "mapserver",
+        "ogc-api-styles",
         "ogc-features",
-        "wfs"
+        "pmtiles",
+        "stac",
+        "vectortileserver",
+        "wcs",
+        "wfs",
+        "wms",
+        "wmts"
       ],
       "operationApplicability": {
         "applicable": [

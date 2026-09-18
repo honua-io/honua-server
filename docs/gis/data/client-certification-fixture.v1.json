@@ -8,7 +8,7 @@
   "matrixSource": "docs/gis/data/client-certification-matrix.v1.json",
   "proseContract": "docs/gis/CLIENT_CERTIFICATION_FIXTURE_CONTRACT.md",
   "evidenceSchema": "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
-  "fixtureRevision": "sha256:60c403a00b1a14ef26b5fe2626f79de577f56f9d4fc1fbe206551a2dc3d91161",
+  "fixtureRevision": "sha256:c12249ee49bfd9f8732fab565733408b649faa78408dc46a14b00b8a90287882",
   "serverConfigRevision": "sha256:d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a",
   "authPolicyRevision": "sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9",
   "digestAlgorithms": {
@@ -41,7 +41,7 @@
     {
       "path": "tests/seed/client-compat-v1.sql",
       "role": "fixture",
-      "sha256": "sha256:538537661f80fc46fb8cdc3f18c29b74cec192be15277d7bed0a046195d85757",
+      "sha256": "sha256:f1029ff590000dff56c9dcf109e510ab13d3456d25a6d9121c10a850d42081e4",
       "purpose": "Canonical vector seed: base schema, honua.seed_metadata_v2_compat_snapshot, service test_service, canonical layer 0, ten read fixtures, and isolated WFS-T mutation layers 10-12."
     },
     {
@@ -77,8 +77,14 @@
     {
       "path": "docker/client-compat/seed/run.sh",
       "role": "fixture",
-      "sha256": "sha256:f0593629b3be2d42148e76058fb3975f7c337e95c0ba3bf9b4737e42ef8a897f",
+      "sha256": "sha256:55cbe53ed16922aa4a5143333aad96e96ecdbd8c0f8810181f1371229fac3049",
       "purpose": "Definition of which seed files are applied, and in which order, for the client-compat matrix. Adding or removing a fixture input changes this file and therefore fixtureRevision."
+    },
+    {
+      "path": "docker/client-compat/seed/publish-pmtiles.py",
+      "role": "fixture",
+      "sha256": "sha256:90301425ffd2e4f86f008fe36d889257255e509ab032b9d87ca1594fd39f9f37",
+      "purpose": "Publishes the PMTiles archive for test_service/0 through the running server at the end of the seed. It cannot be written to disk instead: LocalFileStorage indexes its objects once at construction, so an archive appearing afterwards is invisible to the tile proxy."
     },
     {
       "path": "tests/config/client-compat-server-v1.json",
@@ -1265,7 +1271,7 @@
     {
       "id": "NB-DDB-NULL-01",
       "scenarioFacetId": "SF-GEOM-NULL",
-      "description": "4 NULL and 6 populated description values across 10 rows — the server emits JSON null (not an omitted key or an empty string) and no row was dropped."
+      "description": "4 NULL and 6 populated description values across 10 rows \u2014 the server emits JSON null (not an omitted key or an empty string) and no row was dropped."
     },
     {
       "id": "NB-DDB-NULL-02",
@@ -1275,7 +1281,7 @@
     {
       "id": "NB-DDB-PAGE-03",
       "scenarioFacetId": "SF-PAGE-LIMIT",
-      "description": "5 pages of limit=3 produced [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] — exactly the full set, no duplicates, no gaps, and the walk terminated on an empty page."
+      "description": "5 pages of limit=3 produced [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] \u2014 exactly the full set, no duplicates, no gaps, and the walk terminated on an empty page."
     },
     {
       "id": "NB-DDB-PAGE-04",
@@ -1955,12 +1961,12 @@
     {
       "id": "NB-RSF-FMT-01",
       "scenarioFacetId": "SF-EXT-FORMAT",
-      "description": "End-to-end GeoPackage fidelity: the WFS response was written with sf::st_write() and read back with sf::st_read() — 10/10 rows, names match, empty geometries match, max coordinate...."
+      "description": "End-to-end GeoPackage fidelity: the WFS response was written with sf::st_write() and read back with sf::st_read() \u2014 10/10 rows, names match, empty geometries match, max coordinate...."
     },
     {
       "id": "NB-RSF-FMT-02",
       "scenarioFacetId": "SF-EXT-FORMAT",
-      "description": "End-to-end GeoJSON fidelity: the WFS response was written with sf::st_write() and read back with sf::st_read() — 10/10 rows, names match, empty geometries match, max coordinate deviation...."
+      "description": "End-to-end GeoJSON fidelity: the WFS response was written with sf::st_write() and read back with sf::st_read() \u2014 10/10 rows, names match, empty geometries match, max coordinate deviation...."
     },
     {
       "id": "NB-RSF-FMT-03",
@@ -4031,7 +4037,7 @@
     "producer": "tests/python/shared/cert_envelope.py::build_lane_runtime",
     "currentValues": {
       "fixture_revision": {
-        "value": "sha256:538537661f80fc46fb8cdc3f18c29b74cec192be15277d7bed0a046195d85757",
+        "value": "sha256:f1029ff590000dff56c9dcf109e510ab13d3456d25a6d9121c10a850d42081e4",
         "boundTo": "inputs[tests/seed/client-compat-v1.sql].sha256",
         "convergenceTarget": "fixtureRevision",
         "gapId": "receipt-binding-uses-per-file-digests"

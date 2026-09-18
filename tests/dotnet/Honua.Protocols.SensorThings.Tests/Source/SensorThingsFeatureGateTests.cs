@@ -121,4 +121,22 @@ public sealed class SensorThingsFeatureGateTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.NotFound,
             "SensorThings read routes must not be registered when its Preview capability is disabled");
     }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /sensorthings/v1.1")]
+    [Endpoint("GET /sensorthings/v1.1/{*staPath}")]
+    [Trait("Tier", "Fast")]
+    public async Task SensorThingsAlias_WhenFeatureDisabled_Returns404()
+    {
+        // The /sensorthings/v1.1 alias is registered inside
+        // MapSensorThingsEndpoints, so it shares the Preview gate. A disabled
+        // deployment must not advertise a redirect into a 404.
+        foreach (var path in new[] { "/sensorthings/v1.1", "/sensorthings/v1.1/Things" })
+        {
+            using var response = await _fixture.Client.GetAsync(path);
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound,
+                "the discovery alias must share the SensorThings experimental feature gate");
+        }
+    }
 }

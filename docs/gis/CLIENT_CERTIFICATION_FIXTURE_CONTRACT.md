@@ -16,7 +16,7 @@ Expansion (explicitly out of scope here):
 
 | Revision | Value |
 |---|---|
-| `fixtureRevision` | `sha256:60c403a00b1a14ef26b5fe2626f79de577f56f9d4fc1fbe206551a2dc3d91161` |
+| `fixtureRevision` | `sha256:c12249ee49bfd9f8732fab565733408b649faa78408dc46a14b00b8a90287882` |
 | `serverConfigRevision` | `sha256:d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a` |
 | `authPolicyRevision` | `sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9` |
 
@@ -43,12 +43,12 @@ that defaults to binary mode emits `"{hex} *{path}\n"` instead, which does not
 reproduce.
 
 ```console
-$ LC_ALL=C sha256sum -t docker/client-compat/seed/run.sh tests/seed/apply-yaml-seed.sh \
-    tests/seed/browser-compat.yaml tests/seed/client-compat-auth-wave1.yaml \
-    tests/seed/client-compat-raster-v1.sql tests/seed/client-compat-v1.sql \
-    tests/seed/portal-compat.yaml \
+$ LC_ALL=C sha256sum -t docker/client-compat/seed/publish-pmtiles.py docker/client-compat/seed/run.sh \
+    tests/seed/apply-yaml-seed.sh tests/seed/browser-compat.yaml \
+    tests/seed/client-compat-auth-wave1.yaml tests/seed/client-compat-raster-v1.sql \
+    tests/seed/client-compat-v1.sql tests/seed/portal-compat.yaml \
     | sha256sum -t
-60c403a00b1a14ef26b5fe2626f79de577f56f9d4fc1fbe206551a2dc3d91161  -
+c12249ee49bfd9f8732fab565733408b649faa78408dc46a14b00b8a90287882  -
 $ LC_ALL=C sha256sum -t tests/config/client-compat-server-v1.json | sha256sum -t
 d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a  -
 ```
@@ -70,11 +70,15 @@ not file-backed, which is why it is digested from its declaration rather than fr
 | `tests/seed/portal-compat.yaml` | fixture |
 | `tests/seed/apply-yaml-seed.sh` | fixture |
 | `docker/client-compat/seed/run.sh` | fixture |
+| `docker/client-compat/seed/publish-pmtiles.py` | fixture |
 | `tests/config/client-compat-server-v1.json` | server-config |
 
 `docker/client-compat/seed/run.sh` is a fixture input because it defines *which* seed files are
 applied and in what order; adding a fixture input necessarily edits it and therefore moves
-`fixtureRevision`.
+`fixtureRevision`. `docker/client-compat/seed/publish-pmtiles.py` is one for the same reason:
+it publishes the PMTiles archive the `pmtiles/archive-read` cell certifies, and that archive
+cannot be seeded as a file because `LocalFileStorage` indexes its objects once at
+construction, so it has to go through the running server.
 
 `docker/client-compat/compose.yml` is deliberately **not** digested: it carries the runtime auth
 settings alongside every per-lane service definition, so every new lane would churn
