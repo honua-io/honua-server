@@ -111,6 +111,16 @@ _PROTOCOL_VERSIONS = {
     "wcs": "1.0.0",
     "wms": "1.3.0",
     "wmts": "1.0.0",
+    # The GeoServices REST surfaces report currentVersion 10.8 from /rest/info,
+    # which is what a client negotiates against.
+    "featureserver": "10.8",
+    "mapserver": "10.8",
+    "vectortileserver": "10.8",
+    "stac": "1.0.0",
+    "sensorthings": "1.1",
+    "pmtiles": "3",
+    "ogc-api-styles": "1.0",
+    "cog": "GeoTIFF",
 }
 
 
@@ -346,6 +356,14 @@ _wfs_evidence: CertificationEvidenceCollector | None = None
 _wcs_evidence: CertificationEvidenceCollector | None = None
 _wms_evidence: CertificationEvidenceCollector | None = None
 _wmts_evidence: CertificationEvidenceCollector | None = None
+_featureserver_evidence: CertificationEvidenceCollector | None = None
+_mapserver_evidence: CertificationEvidenceCollector | None = None
+_vectortileserver_evidence: CertificationEvidenceCollector | None = None
+_stac_evidence: CertificationEvidenceCollector | None = None
+_sensorthings_evidence: CertificationEvidenceCollector | None = None
+_pmtiles_evidence: CertificationEvidenceCollector | None = None
+_ogcstyles_evidence: CertificationEvidenceCollector | None = None
+_cog_evidence: CertificationEvidenceCollector | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -529,6 +547,112 @@ def wmts_evidence(
             pyqgis_runtime, qgis_version, "wmts"
         )
     return _wmts_evidence
+
+
+@pytest.fixture(scope="session")
+def featureserver_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped featureserver certification evidence collector."""
+    global _featureserver_evidence
+    if _featureserver_evidence is None:
+        _featureserver_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "featureserver"
+        )
+    return _featureserver_evidence
+
+@pytest.fixture(scope="session")
+def mapserver_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped mapserver certification evidence collector."""
+    global _mapserver_evidence
+    if _mapserver_evidence is None:
+        _mapserver_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "mapserver"
+        )
+    return _mapserver_evidence
+
+@pytest.fixture(scope="session")
+def vectortileserver_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped vectortileserver certification evidence collector."""
+    global _vectortileserver_evidence
+    if _vectortileserver_evidence is None:
+        _vectortileserver_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "vectortileserver"
+        )
+    return _vectortileserver_evidence
+
+@pytest.fixture(scope="session")
+def stac_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped stac certification evidence collector."""
+    global _stac_evidence
+    if _stac_evidence is None:
+        _stac_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "stac"
+        )
+    return _stac_evidence
+
+@pytest.fixture(scope="session")
+def sensorthings_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped sensorthings certification evidence collector."""
+    global _sensorthings_evidence
+    if _sensorthings_evidence is None:
+        _sensorthings_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "sensorthings"
+        )
+    return _sensorthings_evidence
+
+
+@pytest.fixture(scope="session")
+def pmtiles_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped pmtiles certification evidence collector."""
+    global _pmtiles_evidence
+    if _pmtiles_evidence is None:
+        _pmtiles_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "pmtiles"
+        )
+    return _pmtiles_evidence
+
+@pytest.fixture(scope="session")
+def ogcstyles_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped ogc-api-styles certification evidence collector."""
+    global _ogcstyles_evidence
+    if _ogcstyles_evidence is None:
+        _ogcstyles_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "ogc-api-styles"
+        )
+    return _ogcstyles_evidence
+
+@pytest.fixture(scope="session")
+def cog_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped cog certification evidence collector."""
+    global _cog_evidence
+    if _cog_evidence is None:
+        _cog_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "cog"
+        )
+    return _cog_evidence
 
 
 @pytest.fixture(scope="session")
@@ -843,6 +967,14 @@ def _write_cert_evidence(
     wcs_evidence: CertificationEvidenceCollector,
     wms_evidence: CertificationEvidenceCollector,
     wmts_evidence: CertificationEvidenceCollector,
+    featureserver_evidence: CertificationEvidenceCollector,
+    mapserver_evidence: CertificationEvidenceCollector,
+    vectortileserver_evidence: CertificationEvidenceCollector,
+    stac_evidence: CertificationEvidenceCollector,
+    sensorthings_evidence: CertificationEvidenceCollector,
+    pmtiles_evidence: CertificationEvidenceCollector,
+    ogcstyles_evidence: CertificationEvidenceCollector,
+    cog_evidence: CertificationEvidenceCollector,
 ) -> Generator[None, None, None]:
     """Persist .cert.json envelopes at session teardown.
 
@@ -877,6 +1009,38 @@ def _write_cert_evidence(
     if wmts_evidence.has_records:
         path = results_dir / f"{run_id}-desktop-qgis-wmts{suffix}.cert.json"
         wmts_evidence.write_envelope(path)
+
+    if featureserver_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-featureserver{suffix}.cert.json"
+        featureserver_evidence.write_envelope(path)
+
+    if mapserver_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-mapserver{suffix}.cert.json"
+        mapserver_evidence.write_envelope(path)
+
+    if vectortileserver_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-vectortileserver{suffix}.cert.json"
+        vectortileserver_evidence.write_envelope(path)
+
+    if stac_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-stac{suffix}.cert.json"
+        stac_evidence.write_envelope(path)
+
+    if sensorthings_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-sensorthings{suffix}.cert.json"
+        sensorthings_evidence.write_envelope(path)
+
+    if pmtiles_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-pmtiles{suffix}.cert.json"
+        pmtiles_evidence.write_envelope(path)
+
+    if ogcstyles_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-ogc-api-styles{suffix}.cert.json"
+        ogcstyles_evidence.write_envelope(path)
+
+    if cog_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-cog{suffix}.cert.json"
+        cog_evidence.write_envelope(path)
 
 
 # ---------------------------------------------------------------------------
@@ -924,6 +1088,22 @@ def _collector_for_item(item: pytest.Item) -> CertificationEvidenceCollector | N
         return _wms_evidence
     if "wfs" in module:
         return _wfs_evidence
+    if "featureserver" in module:
+        return _featureserver_evidence
+    if "vectortileserver" in module:
+        return _vectortileserver_evidence
+    if "mapserver" in module:
+        return _mapserver_evidence
+    if "sensorthings" in module:
+        return _sensorthings_evidence
+    if "pmtiles" in module:
+        return _pmtiles_evidence
+    if "ogcstyles" in module:
+        return _ogcstyles_evidence
+    if "cog" in module:
+        return _cog_evidence
+    if "stac" in module:
+        return _stac_evidence
 
     # Fail loudly rather than silently recording nothing. An unmapped module's
     # results never reach a collector, so no envelope is written for it, and a

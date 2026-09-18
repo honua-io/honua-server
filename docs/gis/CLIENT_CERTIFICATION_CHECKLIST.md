@@ -78,7 +78,9 @@ five `pyqgis` protocols, FeatureServer core on `qgis-ui`.
 
 **C — Ready but never run.** Highest value per hour, because the fixture and tooling
 already exist:
-- **QGIS STAC (4 cases)** — server live at `/stac` with 9 collections, connection prepared,
+- **QGIS STAC (4 cases)** — server live at `/stac` advertising 8 child collections (5 seeded:
+  `0`, `2000`, `2001`, `2002`, `3000`; plus `10`, `11`, `12`, which are per-test layers the
+  OWSLib lane creates, so no cell may assert a fixed collection count), connection prepared,
   fixture captured, and **no blocking cause ever recorded**
 - **QGIS SensorThings (5 of 6)** — fixture plus nine scripts complete, provider present;
   gated only by the server root 404 (#4202)
@@ -179,11 +181,11 @@ lane × protocol pair appears with no checklist row.
 | Lane | Client build | Closed | Open | Breakdown |
 |---|---|---|---|---|
 | `pro-ui` | ArcGIS Pro 3.7.1.1904 | 28/94 | 66 | blocked 7, fail 2, n/a-no-client 11, n/a-superseded 3, not-started 57, pass 14 |
-| `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 34/94 | 60 | blocked 7, n/a-no-client 34, not-started 53 |
-| `qgis-ui` | QGIS 3.44.14 LTR | 39/94 | 55 | blocked 7, n/a-no-client 32, n/a-superseded 3, not-started 48, pass 4 |
-| `pyqgis` | QGIS 3.44.14 LTR | 58/94 | 36 | blocked 4, n/a-no-client 32, n/a-superseded 3, not-started 32, pass 23 |
+| `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 35/94 | 59 | blocked 6, n/a-no-client 35, not-started 53 |
+| `qgis-ui` | QGIS 3.44.14 LTR | 39/94 | 55 | blocked 4, n/a-no-client 32, n/a-superseded 3, not-started 51, pass 4 |
+| `pyqgis` | QGIS 3.44.14 LTR | 79/94 | 15 | blocked 3, n/a-no-client 36, n/a-superseded 3, not-started 12, pass 40 |
 
-**159 of 376 cells closed; 217 open.**
+**181 of 376 cells closed; 195 open.**
 
 ### Cells
 
@@ -264,10 +266,10 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| catalog-landing | not-started | not-started | not-started | not-started |
-| collections | not-started | not-started | not-started | not-started |
-| item-search | not-started | not-started | not-started | not-started |
-| asset-download | not-started | not-started | not-started | not-started |
+| catalog-landing | not-started | not-started | not-started | pass |
+| collections | not-started | not-started | not-started | pass |
+| item-search | not-started | not-started | not-started | pass |
+| asset-download | not-started | not-started | not-started | pass |
 
 #### sensorthings 1.1
 
@@ -281,25 +283,25 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| service-info | pass | not-started | pass | not-started |
-| layer-metadata | pass | not-started | pass | not-started |
-| query | pass | not-started | pass | not-started |
-| identify | pass | not-started | pass | not-started |
-| applyEdits | not-started | not-started | not-started | not-started |
-| attachments | fail | not-started | not-started | not-started |
-| relatedRecords | fail | not-started | not-started | not-started |
-| statistics | not-started | not-started | not-started | not-started |
-| domains | not-started | not-started | not-started | not-started |
-| replica-sync | blocked | blocked | not-started | not-started |
+| service-info | pass | not-started | pass | pass |
+| layer-metadata | pass | not-started | pass | pass |
+| query | pass | not-started | pass | pass |
+| identify | pass | not-started | pass | pass |
+| applyEdits | not-started | not-started | not-started | blocked |
+| attachments | fail | not-started | not-started | n/a-no-client |
+| relatedRecords | fail | not-started | not-started | n/a-no-client |
+| statistics | not-started | not-started | not-started | n/a-no-client |
+| domains | not-started | not-started | not-started | blocked |
+| replica-sync | blocked | n/a-no-client | not-started | n/a-no-client |
 
 #### mapserver GeoServices REST
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| service-info | pass | not-started | not-started | not-started |
-| export | pass | not-started | not-started | not-started |
-| identify | not-started | not-started | not-started | not-started |
-| legend | not-started | not-started | not-started | not-started |
+| service-info | pass | not-started | not-started | pass |
+| export | pass | not-started | not-started | pass |
+| identify | not-started | not-started | not-started | pass |
+| legend | not-started | not-started | not-started | pass |
 
 #### imageserver GeoServices REST
 
@@ -313,9 +315,9 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| service-info | pass | not-started | not-started | not-started |
-| tile | pass | not-started | not-started | not-started |
-| style | not-started | not-started | not-started | not-started |
+| service-info | pass | not-started | not-started | pass |
+| tile | pass | not-started | not-started | pass |
+| style | not-started | not-started | not-started | pass |
 
 #### gpserver GeoServices REST
 
@@ -401,7 +403,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| styles | n/a-no-client | n/a-no-client | blocked | blocked |
+| styles | n/a-no-client | n/a-no-client | not-started | pass |
 
 #### ogc-api-edr 1.0
 
@@ -413,7 +415,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| archive-read | not-started | n/a-no-client | blocked | blocked |
+| archive-read | not-started | n/a-no-client | not-started | pass |
 
 #### tilejson 3.0.0
 
@@ -443,6 +445,6 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| point-query | blocked | blocked | blocked | blocked |
+| point-query | blocked | blocked | not-started | not-started |
 
 <!-- END GENERATED TABLES -->

@@ -122,6 +122,26 @@ CITE = {
         "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS "
         "discovers ArcGIS services over REST only and has no SOAP catalog client."
     ),
+    "qgis-rest-no-advanced": (
+        "docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/"
+        "opening_data.html section 11.1.7.3 'Using ArcGIS REST Servers' documents "
+        "service-tree browsing, layer loading, expression-builder attribute filters "
+        "and a view-extent option. Attachments, related records, replica/sync and "
+        "server-side statistics appear nowhere. Confirmed by wire capture through a "
+        "logging proxy on 2026-09-17: the provider issues no outStatistics request "
+        "and computes min/max/sum locally from an outFields=* download, and exposes "
+        "no attachment, relationship or replica member. A binary string scan was "
+        "not used - it reports no esriSpatialRel in any shipped QGIS library while "
+        "spatial filtering demonstrably works."
+    ),
+    "arcpy-no-replica": (
+        "doc.esri.com/en/arcgis-pro/latest/tool-reference/data-management/"
+        "create-replica.html: arcpy.management.CreateReplica accepts 'Table View; "
+        "Dataset' - layers and tables referencing versioned, editable data from an "
+        "enterprise geodatabase. Feature services and REST FeatureServer URLs are "
+        "not accepted inputs, so no ArcPy call can create a replica against this "
+        "server. Verified 2026-09-17 against the Pro 3.7 reference."
+    ),
     "arcpy-modules": (
         "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: "
         "ArcPy exposes no module for this protocol."
@@ -183,6 +203,25 @@ EV = {
     "pyqgis-wmts-gettile": _pyqgis("wmts", "1.0.0", 7, cert_id="CERT-RNDR-01"),
     "pyqgis-wmts-featureinfo": _pyqgis("wmts", "1.0.0", 7, cert_id="CERT-SCHM-01"),
     "pyqgis-wmts-restful": _pyqgis("wmts", "1.0.0", 7, cert_id="CERT-DISC-02"),
+
+    # GeoServices REST, STAC and the artifact surfaces, certified 2026-09-17.
+    "pyqgis-fs-info": _pyqgis("featureserver", "10.8", 4, cert_id="CERT-DISC-01"),
+    "pyqgis-fs-meta": _pyqgis("featureserver", "10.8", 4, cert_id="CERT-SCHM-01"),
+    "pyqgis-fs-query": _pyqgis("featureserver", "10.8", 4, cert_id="CERT-QFLT-01"),
+    "pyqgis-fs-identify": _pyqgis("featureserver", "10.8", 4, cert_id="CERT-GEOM-01"),
+    "pyqgis-ms-info": _pyqgis("mapserver", "10.8", 4, cert_id="CERT-CONN-01"),
+    "pyqgis-ms-export": _pyqgis("mapserver", "10.8", 4, cert_id="CERT-RNDR-01"),
+    "pyqgis-ms-identify": _pyqgis("mapserver", "10.8", 4, cert_id="CERT-SCHM-01"),
+    "pyqgis-ms-legend": _pyqgis("mapserver", "10.8", 4, cert_id="CERT-RNDR-URL-01"),
+    "pyqgis-vts-info": _pyqgis("vectortileserver", "10.8", 3, cert_id="CERT-CONN-02"),
+    "pyqgis-vts-tile": _pyqgis("vectortileserver", "10.8", 3, cert_id="CERT-RNDR-02"),
+    "pyqgis-vts-style": _pyqgis("vectortileserver", "10.8", 3, cert_id="CERT-RNDR-SYM-01"),
+    "pyqgis-stac-landing": _pyqgis("stac", "1.0.0", 4, cert_id="CERT-CONN-01"),
+    "pyqgis-stac-collections": _pyqgis("stac", "1.0.0", 4, cert_id="CERT-DISC-01"),
+    "pyqgis-stac-search": _pyqgis("stac", "1.0.0", 4, cert_id="CERT-QFLT-01"),
+    "pyqgis-stac-asset": _pyqgis("stac", "1.0.0", 4, cert_id="CERT-RNDR-URL-01"),
+    "pyqgis-pmtiles": _pyqgis("pmtiles", "3", 6, cert_id="CERT-CONN-01"),
+    "pyqgis-styles": _pyqgis("ogc-api-styles", "1.0", 3, cert_id="CERT-RNDR-SYM-01"),
 }
 
 # --------------------------------------------------------------------------
@@ -195,6 +234,65 @@ NS = "not-started"
 
 def _blocked(reason: str) -> tuple[str, str]:
     return ("blocked", reason)
+
+
+# Two causes that were previously written as though they were external walls.
+# Both are switches inside our own fixture, so they are stated as such: a cause
+# that overstates the obstacle is how ready work stays parked.
+STA_GATE = (
+    "the SensorThings surface is not switched on in the client-compat fixture, so "
+    "every path 404s (/sensorthings, /sensorthings/v1.1, .../Things, "
+    ".../Observations). Unblocked by setting "
+    "Capabilities:Experimental:serve.sensorthings:Enabled=true. Previously recorded "
+    "as server bug #4202, which misattributed a configuration gap to a defect."
+)
+
+def _experimental_gate(capability: str, extra: str = "") -> str:
+    """Cause for a capability the fixture has switched off.
+
+    GET /api/v1/capabilities/manifest reports these as
+    reasonCode=experimental-disabled, and the 404 body names the config key
+    itself. Recording them as missing artifacts or server defects - which is what
+    four of these cells did - parks work that is one setting away from running.
+    Fetch that manifest authenticated: anonymously 60 of 77 capabilities read as
+    unavailable purely for lack of a token.
+    """
+    return (
+        f"the {capability} capability is switched off in the client-compat "
+        f"fixture (capability manifest reports "
+        f"reasonCode=experimental-disabled). Unblocked by setting "
+        f"Capabilities:Experimental:{capability}:Enabled=true." + extra
+    )
+
+
+COG_GAP = (
+    "no COG-serving surface in this configuration. The cloud-raster catalog "
+    "refuses the fixture's storage outright (Cog/Models/CogModels.cs: 'Local "
+    "storage is not supported for COG serving', and the container runs "
+    "FileStorage__Provider=Local); ImageServerExportHandler rejects "
+    "RasterFormat.COG; and WCS / OGC-API-Coverages GetCoverage emit plain GTiff "
+    "stamped Accept-Ranges: none. The only range-capable public route is the "
+    "scene asset endpoint, so closing this needs a COG fixture served from there "
+    "- not a client change, since QGIS opens a COG natively over /vsicurl/."
+)
+
+ESRI_ELEVATION_IDENTITY = (
+    "the native /elevation surface answers 200 once the Elevation protocol is "
+    "enabled, but no client treats this as an elevation service: getSamples is "
+    "implemented and returns values, while serviceDataType is the hard-coded "
+    "literal esriImageServiceDataTypeGeneric in ImageServerMetadataHandler and "
+    "ImageServerSoapEndpoints. esriImageServiceDataTypeElevation and "
+    "elevationInfo appear nowhere in src/, so making it data-driven is a server "
+    "change, not a fixture one."
+)
+
+PGROUTING_GATE = (
+    "pgRouting is not installed in the fixture's database image. It is available to "
+    "it: postgis/postgis:16-3.4 is Debian bullseye with the PGDG repo already "
+    "configured, and postgresql-16-pgrouting resolves to 3.8.0-1.pgdg110+1. "
+    "Unblocked by a derived image that installs the package and creates the "
+    "extension, not by waiting on anything upstream."
+)
 
 
 MATRIX: list[dict] = [
@@ -313,10 +411,14 @@ MATRIX: list[dict] = [
     {
         "protocol": "stac", "version": "1.0.0",
         "operations": {
-            "catalog-landing": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS, "pyqgis": NS},
-            "collections": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS, "pyqgis": NS},
-            "item-search": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS, "pyqgis": NS},
-            "asset-download": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS, "pyqgis": NS},
+            "catalog-landing": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS,
+                                "pyqgis": ("pass", "pyqgis-stac-landing")},
+            "collections": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS,
+                            "pyqgis": ("pass", "pyqgis-stac-collections")},
+            "item-search": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS,
+                            "pyqgis": ("pass", "pyqgis-stac-search")},
+            "asset-download": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS,
+                               "pyqgis": ("pass", "pyqgis-stac-asset")},
         },
     },
     {
@@ -324,51 +426,107 @@ MATRIX: list[dict] = [
         "operations": {
             "entity-sets": {"pro-ui": ("n/a-no-client", "pro-no-sta"),
                             "arcpy": ("n/a-no-client", "arcpy-modules"),
-                            "qgis-ui": _blocked("service root returns 404 (#4202)"),
+                            "qgis-ui": _blocked(STA_GATE),
                             "pyqgis": NS},
             "expand": {"pro-ui": ("n/a-no-client", "pro-no-sta"),
                        "arcpy": ("n/a-no-client", "arcpy-modules"),
-                       "qgis-ui": _blocked("service root returns 404 (#4202)"), "pyqgis": NS},
+                       "qgis-ui": _blocked(STA_GATE), "pyqgis": NS},
             "filter-paging": {"pro-ui": ("n/a-no-client", "pro-no-sta"),
                               "arcpy": ("n/a-no-client", "arcpy-modules"),
-                              "qgis-ui": _blocked("paging/count defect (#4200)"), "pyqgis": NS},
+                              "qgis-ui": _blocked(STA_GATE + " A paging/count defect "
+                                                  "(#4200) was recorded against this "
+                                                  "operation, but it cannot be "
+                                                  "confirmed or retired until the "
+                                                  "surface is switched on."),
+                              "pyqgis": NS},
         },
     },
     {
         "protocol": "featureserver", "version": "GeoServices REST",
         "operations": {
             "service-info": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
-                             "qgis-ui": ("pass", "qgis-ltr"), "pyqgis": NS},
+                             "qgis-ui": ("pass", "qgis-ltr"),
+                             "pyqgis": ("pass", "pyqgis-fs-info")},
             "layer-metadata": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
-                               "qgis-ui": ("pass", "qgis-ltr"), "pyqgis": NS},
+                               "qgis-ui": ("pass", "qgis-ltr"),
+                               "pyqgis": ("pass", "pyqgis-fs-meta")},
             "query": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
-                      "qgis-ui": ("pass", "qgis-ltr"), "pyqgis": NS},
+                      "qgis-ui": ("pass", "qgis-ltr"),
+                      "pyqgis": ("pass", "pyqgis-fs-query")},
             "identify": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
-                         "qgis-ui": ("pass", "qgis-ltr"), "pyqgis": NS},
-            "applyEdits": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS, "pyqgis": NS},
-            "attachments": {"pro-ui": ("fail", "pro-matrix"), "arcpy": NS,
-                            "qgis-ui": NS, "pyqgis": NS},
-            "relatedRecords": {"pro-ui": ("fail", "pro-matrix"), "arcpy": NS,
-                               "qgis-ui": NS, "pyqgis": NS},
-            "statistics": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS, "pyqgis": NS},
-            "domains": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS, "pyqgis": NS},
+                         "qgis-ui": ("pass", "qgis-ltr"),
+                         "pyqgis": ("pass", "pyqgis-fs-identify")},
+            # QGIS serialises the unset system-maintained OID as
+            # "objectid": null and the server rejects the whole edit with 1006
+            # "Field 'objectid' cannot be null", while the identical request with
+            # the member omitted succeeds. No stock QGIS digitizing session can
+            # edit this FeatureServer. QGIS uses the per-operation addFeatures /
+            # updateFeatures / deleteFeatures endpoints, never combined applyEdits.
+            "applyEdits": {"pro-ui": NS, "arcpy": NS,
+                           "qgis-ui": NS,
+                           "pyqgis": _blocked(
+                               "addFeatures rejects the null system-maintained "
+                               "objectid QGIS sends on insert (error 1006), so no "
+                               "stock digitizing session can edit; the same request "
+                               "without the member succeeds")},
+            # Both fails are tracked. #5012 is the per-feature attachments POST
+            # rejection that makes Pro report zero attachments; #5021 is the
+            # V1-catalog compat synthesis dropping relationships, attachments and
+            # VectorTileServer.
+            "attachments": {
+                "pro-ui": ("fail", "pro-matrix", "honua-server#5012"),
+                "arcpy": NS, "qgis-ui": NS,
+                "pyqgis": ("n/a-no-client", "qgis-rest-no-advanced")},
+            "relatedRecords": {
+                "pro-ui": ("fail", "pro-matrix", "honua-server#5021"),
+                "arcpy": NS, "qgis-ui": NS,
+                "pyqgis": ("n/a-no-client", "qgis-rest-no-advanced")},
+            # The server answers outStatistics correctly; QGIS never asks. It
+            # downloads outFields=* and aggregates locally, so there is no client
+            # request to certify.
+            "statistics": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS,
+                           "pyqgis": ("n/a-no-client", "qgis-rest-no-advanced")},
+            "domains": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS,
+                        "pyqgis": _blocked(
+                            "queryDomains returns an empty domains array for all "
+                            "three fixture services and no field on any "
+                            "FeatureServer layer carries a domain member. The "
+                            "provider does implement coded-value domains, so "
+                            "seeding one coded-value domain on a string field "
+                            "makes this cell certifiable.")},
             "replica-sync": {
-                "pro-ui": _blocked(
-                    "Pro offline downloads into a mobile geodatabase; createReplica "
-                    "emits Esri JSON only"),
-                "arcpy": _blocked("ArcPy exposes no feature-service replica-creation API"),
-                "qgis-ui": NS, "pyqgis": NS},
+                # The surface IS implemented - createReplica, synchronizeReplica and
+                # unregisterReplica, a distributed replica store and a Postgres
+                # repository - and is merely switched off here. Only once it is on can
+                # the residual format question be tested: Pro's offline download asks
+                # for dataFormat=sqlite (an Esri mobile geodatabase, .geodatabase: a
+                # single-file SQLite database with Esri's own schema and ST_Geometry,
+                # explicitly not OGC GeoPackage), and
+                # FeatureServerRequestHandlers.ReplicaDelivery.cs rejects any
+                # dataFormat but json. GDAL ships no .geodatabase driver - only
+                # OpenFileGDB, for the .gdb directory format - so that format has no
+                # writer in our toolchain.
+                "pro-ui": _blocked(_experimental_gate(
+                    "sync.offline",
+                    " The surface is implemented, not missing. Once enabled, the "
+                    "residual limit to test is that replica delivery is Esri JSON "
+                    "only, while Pro offline requests dataFormat=sqlite.")),
+                "arcpy": ("n/a-no-client", "arcpy-no-replica"),
+                "qgis-ui": NS,
+                "pyqgis": ("n/a-no-client", "qgis-rest-no-advanced")},
         },
     },
     {
         "protocol": "mapserver", "version": "GeoServices REST",
         "operations": {
             "service-info": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
-                             "qgis-ui": NS, "pyqgis": NS},
+                             "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-ms-info")},
             "export": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
-                       "qgis-ui": NS, "pyqgis": NS},
-            "identify": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS, "pyqgis": NS},
-            "legend": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS, "pyqgis": NS},
+                       "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-ms-export")},
+            "identify": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS,
+                         "pyqgis": ("pass", "pyqgis-ms-identify")},
+            "legend": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS,
+                       "pyqgis": ("pass", "pyqgis-ms-legend")},
         },
     },
     {
@@ -389,10 +547,11 @@ MATRIX: list[dict] = [
         "protocol": "vectortileserver", "version": "GeoServices REST",
         "operations": {
             "service-info": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
-                             "qgis-ui": NS, "pyqgis": NS},
+                             "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-vts-info")},
             "tile": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
-                     "qgis-ui": NS, "pyqgis": NS},
-            "style": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS, "pyqgis": NS},
+                     "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-vts-tile")},
+            "style": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS,
+                      "pyqgis": ("pass", "pyqgis-vts-style")},
         },
     },
     {
@@ -455,12 +614,12 @@ MATRIX: list[dict] = [
     {
         "protocol": "naserver", "version": "GeoServices REST",
         "operations": {
-            "route-solve": {"pro-ui": _blocked("no pgRouting extension in postgis/postgis:16-3.4"),
-                            "arcpy": _blocked("no pgRouting extension available"),
+            "route-solve": {"pro-ui": _blocked(PGROUTING_GATE),
+                            "arcpy": _blocked(PGROUTING_GATE),
                             "qgis-ui": ("n/a-no-client", "qgis-registry"),
                             "pyqgis": ("n/a-no-client", "qgis-registry")},
-            "service-area": {"pro-ui": _blocked("no pgRouting extension available"),
-                             "arcpy": _blocked("no pgRouting extension available"),
+            "service-area": {"pro-ui": _blocked(PGROUTING_GATE),
+                             "arcpy": _blocked(PGROUTING_GATE),
                              "qgis-ui": ("n/a-no-client", "qgis-registry"),
                              "pyqgis": ("n/a-no-client", "qgis-registry")},
         },
@@ -540,8 +699,12 @@ MATRIX: list[dict] = [
         "operations": {
             "styles": {"pro-ui": ("n/a-no-client", "pro-ogcapi"),
                        "arcpy": ("n/a-no-client", "arcpy-modules"),
-                       "qgis-ui": _blocked("landing reports an empty styles array; none published"),
-                       "pyqgis": _blocked("landing reports an empty styles array; none published")},
+                       # The previous cause - "landing reports an empty styles
+                       # array" - was simply false: /ogc/styles serves 8 styles with
+                       # negotiable SLD 1.0/1.1 and Mapbox representations, and QGIS
+                       # applies the SLD verbatim.
+                       "qgis-ui": NS,
+                       "pyqgis": ("pass", "pyqgis-styles")},
         },
     },
     {
@@ -556,9 +719,12 @@ MATRIX: list[dict] = [
     {
         "protocol": "pmtiles", "version": "3",
         "operations": {
+            # The archive is now published at fixture bring-up. It cannot be
+            # written to disk: LocalFileStorage indexes its objects once at
+            # construction, so it is published through the running server.
             "archive-read": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
-                             "qgis-ui": _blocked("no archive published; 404 zero-byte body"),
-                             "pyqgis": _blocked("no archive published; 404 zero-byte body")},
+                             "qgis-ui": NS,
+                             "pyqgis": ("pass", "pyqgis-pmtiles")},
         },
     },
     {
@@ -571,16 +737,29 @@ MATRIX: list[dict] = [
     {
         "protocol": "cog", "version": "GeoTIFF",
         "operations": {
+            # QGIS opens a COG natively over HTTP (gdal provider, /vsicurl/), so
+            # this is entirely a server-side gap - and not a 404 from a route that
+            # exists: nothing in honua serves COG bytes with ranges in this
+            # configuration.
             "range-read": {"pro-ui": NS, "arcpy": NS,
-                           "qgis-ui": _blocked("no COG published; 404"),
-                           "pyqgis": _blocked("no COG published; 404")},
+                           "qgis-ui": _blocked(COG_GAP),
+                           "pyqgis": _blocked(COG_GAP)},
         },
     },
     {
         "protocol": "i3s-sceneserver", "version": "1.x",
         "operations": {
-            "scene-layer": {"pro-ui": _blocked("no scene published; SceneServer returns code 404"),
-                            "arcpy": _blocked("no scene published"),
+            # The 404 recorded here as "no scene published" is the capability gate
+            # itself: the manifest reports serve.i3s-scene as
+            # reasonCode=experimental-disabled. Whether a scene also needs
+            # publishing cannot be established until the surface is switched on.
+            "scene-layer": {"pro-ui": _blocked(_experimental_gate(
+                                "serve.i3s-scene",
+                                " Previously recorded as 'no scene published; "
+                                "SceneServer returns code 404'; that 404 is the gate. "
+                                "Whether a scene artifact is also required is "
+                                "untestable until it is on.")),
+                            "arcpy": _blocked(_experimental_gate("serve.i3s-scene")),
                             "qgis-ui": ("n/a-no-client", "qgis-registry"),
                             "pyqgis": ("n/a-no-client", "qgis-registry")},
         },
@@ -594,10 +773,15 @@ MATRIX: list[dict] = [
     {
         "protocol": "elevation", "version": "Esri",
         "operations": {
-            "point-query": {"pro-ui": _blocked("no elevation service published; 404"),
-                            "arcpy": _blocked("no elevation service published; 404"),
-                            "qgis-ui": _blocked("no elevation service published; 404"),
-                            "pyqgis": _blocked("no elevation service published; 404")},
+            # The old cause - "no elevation service published; 404" - was wrong:
+            # the Elevation protocol was simply absent from the fixture's enabled
+            # list. Restored in tests/seed/client-compat-v1.sql, and
+            # /elevation/0/value now answers 200. The native surface is reachable
+            # and merely unexercised; the Esri elevation identity is a real gap.
+            "point-query": {"pro-ui": _blocked(ESRI_ELEVATION_IDENTITY),
+                            "arcpy": _blocked(ESRI_ELEVATION_IDENTITY),
+                            "qgis-ui": NS,
+                            "pyqgis": NS},
         },
     },
 ]
@@ -610,8 +794,16 @@ def build_rows() -> list[dict]:
             cells = {}
             for lane in LANES:
                 raw = lanes[lane]
-                state, ref = (raw, None) if isinstance(raw, str) else raw
+                if isinstance(raw, str):
+                    state, ref, issue = raw, None, None
+                elif len(raw) == 3:
+                    state, ref, issue = raw
+                else:
+                    state, ref = raw
+                    issue = None
                 cell = {"state": state}
+                if issue:
+                    cell["issue"] = issue
                 if ref in CITE:
                     cell["citation"] = CITE[ref]
                 elif ref in EV:
@@ -646,6 +838,14 @@ def validate(rows: list[dict]) -> list[str]:
             ):
                 problems.append(
                     f"{where}/{lane}: state {state} requires a citation or a named cause")
+            if state == "fail" and not cell.get("issue"):
+                problems.append(
+                    f"{where}/{lane}: a fail requires a filed issue reference. A "
+                    "client-visible defect with a receipt and no issue is a bug "
+                    "nobody is tracking.")
+            if state == "fail" and not cell.get("evidence"):
+                problems.append(
+                    f"{where}/{lane}: a fail requires the receipt that observed it")
             if state == "pass":
                 evidence = cell.get("evidence")
                 if not evidence:

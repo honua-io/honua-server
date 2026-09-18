@@ -15,6 +15,10 @@ RUN apt-get update \
 WORKDIR /workspace
 
 COPY docker/client-compat/seed/run.sh /usr/local/bin/run-seed
-RUN chmod +x /usr/local/bin/run-seed
+# Publishes the PMTiles archive through the running server at the end of the
+# seed. Stdlib only - this image has no curl, which is how the first attempt
+# failed with 127.
+COPY docker/client-compat/seed/publish-pmtiles.py /usr/local/bin/publish-pmtiles.py
+RUN chmod +x /usr/local/bin/run-seed /usr/local/bin/publish-pmtiles.py
 
 ENTRYPOINT ["/usr/local/bin/run-seed"]

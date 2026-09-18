@@ -16,7 +16,15 @@
 
 services:
   postgres:
-    image: postgis/postgis:16-3.4
+    # Derived from postgis/postgis:16-3.4 to add pgRouting, which NAServer needs.
+    # The NAServer cells were recorded as blocked on "no pgRouting extension in
+    # postgis/postgis:16-3.4" - true, but that image is Debian bullseye with the
+    # PGDG repo already configured, so the package is one apt-get away rather
+    # than a wall.
+    image: client-compat-postgres:latest
+    build:
+      context: ./postgres
+      dockerfile: Dockerfile
     environment:
       POSTGRES_DB: honua_compat
       POSTGRES_USER: postgres
@@ -24,6 +32,8 @@ services:
       POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
     networks:
       - compat
+    volumes:
+      - ./postgres/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -92,6 +102,10 @@ services:
       PGUSER: postgres
       PGPASSWORD: compat_password
       PGDATABASE: honua_compat
+      # Needed only for the PMTiles publish at the end of run.sh, which must go
+      # through the running server. Read at call time, never echoed.
+      HONUA_BASE_URL: http://honua:5000
+      HONUA_ADMIN_PASSWORD: ClientCompatAdmin123!
     # The real server must own schema creation and its migration journal.
     # Seeding first creates migration-owned tables without journal entries,
     # which correctly makes startup/readiness reject the fixture (#4731/#4735).
@@ -126,6 +140,18 @@ services:
       HostValidation__AllowedHosts__0: honua
       HostValidation__AllowedHosts__1: localhost
       HONUA_ADMIN_PASSWORD: ClientCompatAdmin123!
+      # Capability gates the certification audit found were misrecorded as
+      # server defects or missing artifacts. GET /api/v1/capabilities/manifest
+      # reports each as reasonCode=experimental-disabled, and each endpoint's own
+      # 404 body names the key. Enabled individually: the global
+      # Capabilities:Experimental:Enabled switch would also turn on the
+      # Databricks, Snowflake, Redshift and mTLS surfaces and change this fixture
+      # under every other lane.
+      Capabilities__Experimental__serve.sensorthings__Enabled: "true"
+      Capabilities__Experimental__versioning.branch__Enabled: "true"
+      Capabilities__Experimental__sync.offline__Enabled: "true"
+      Capabilities__Experimental__serve.i3s-scene__Enabled: "true"
+      Capabilities__Experimental__serve.3d-tiles-scene__Enabled: "true"
       # The ArcGIS JS API sends its credential in X-Esri-Authorization; the Esri
       # identity probes assert it survives a CORS preflight, which needs an allowed
       # origin configured or the server correctly emits no CORS headers at all.
@@ -284,6 +310,11 @@ services:
       HONUA_BASE_URL: http://honua:5000
       HONUA_PYQGIS_SERVICE_ID: test_service
       HONUA_PYQGIS_COLLECTION_ID: "0"
+      # The FeatureServer edit endpoints require an Esri token; HTTP Basic is
+      # refused with 499. Without this the applyEdits certification case skips
+      # instead of exercising the edit path. Read from the environment at call
+      # time by the test, never logged or written into an envelope.
+      HONUA_ADMIN_PASSWORD: ClientCompatAdmin123!
     depends_on:
       honua:
         condition: service_healthy

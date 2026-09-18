@@ -63,6 +63,30 @@
       "protocol": "wmts"
     },
     {
+      "client_lane": "desktop-qgis",
+      "protocol": "featureserver"
+    },
+    {
+      "client_lane": "desktop-qgis",
+      "protocol": "mapserver"
+    },
+    {
+      "client_lane": "desktop-qgis",
+      "protocol": "ogc-api-styles"
+    },
+    {
+      "client_lane": "desktop-qgis",
+      "protocol": "pmtiles"
+    },
+    {
+      "client_lane": "desktop-qgis",
+      "protocol": "stac"
+    },
+    {
+      "client_lane": "desktop-qgis",
+      "protocol": "vectortileserver"
+    },
+    {
       "client_lane": "cli",
       "protocol": "ogc-features"
     },

@@ -1473,8 +1473,8 @@ internal static class WmtsRequestHandlers
                 }
 
                 AppendWmtsDimensionElements(sb, dimensions);
-                AppendWmtsTileMatrixSetLink(sb, TileGridKind.WebMercatorQuad, wmtsMaxZoom);
-                AppendWmtsTileMatrixSetLink(sb, TileGridKind.WorldCrs84Quad, wmtsMaxZoom);
+                AppendWmtsTileMatrixSetLink(sb, TileGridKind.WebMercatorQuad);
+                AppendWmtsTileMatrixSetLink(sb, TileGridKind.WorldCrs84Quad);
                 AppendWmtsCustomTileMatrixSetLinks(sb, tileMatrixSetRegistry, wmtsMaxZoom);
                 sb.Append("      <ResourceURL format=\"image/png\" resourceType=\"tile\" template=\"")
                     .Append(EscapeXml(tileTemplate))
@@ -2327,29 +2327,26 @@ internal static class WmtsRequestHandlers
     }
 
     /// <summary>
-    /// Emits a per-layer <c>TileMatrixSetLink</c> (with explicit limits) for the given gridset.
-    /// WorldCRS84Quad has twice as many columns as rows at every level.
+    /// Emits a per-layer <c>TileMatrixSetLink</c> for the given gridset.
     /// </summary>
-    private static void AppendWmtsTileMatrixSetLink(StringBuilder sb, TileGridKind grid, int wmtsMaxZoom)
+    /// <remarks>
+    /// No <c>TileMatrixSetLimits</c> is emitted. The limits these gridsets would carry are
+    /// derived from the gridset alone, never from the layer, so <c>MinTile*</c> is always 0
+    /// and <c>MaxTile*</c> is always the full matrix extent - they constrain nothing, which
+    /// is precisely what omitting the optional element states. Emitting them was also
+    /// invalid: WMTS 1.0.0 types <c>MaxTileRow</c> and <c>MaxTileCol</c> as
+    /// <c>xs:positiveInteger</c>, so tile matrix 0 (a 1x1 matrix, maximum index 0) cannot be
+    /// expressed, and the whole document failed
+    /// <c>schemas.opengis.net/wmts/1.0/wmtsGetCapabilities_response.xsd</c> at every layer.
+    /// The CITE WMTS 1.0 ETS default profile reported 60/60 throughout, so no suite caught
+    /// it. Real per-layer limits would be a genuine improvement, but they still could not
+    /// express tile matrix 0; that needs the schema erratum, not a different value here.
+    /// </remarks>
+    private static void AppendWmtsTileMatrixSetLink(StringBuilder sb, TileGridKind grid)
     {
         var identifier = grid == TileGridKind.WorldCrs84Quad ? "WorldCRS84Quad" : "WebMercatorQuad";
         sb.AppendLine("      <TileMatrixSetLink>");
         sb.Append("        <TileMatrixSet>").Append(identifier).AppendLine("</TileMatrixSet>");
-        sb.AppendLine("        <TileMatrixSetLimits>");
-        for (var z = 0; z <= wmtsMaxZoom; z++)
-        {
-            var maxRow = GetWmtsMaxTileRowIndex(z);
-            var maxCol = GetWmtsMaxTileColIndex(grid, z);
-            sb.AppendLine("          <TileMatrixLimits>");
-            sb.Append("            <TileMatrix>").Append(z.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileMatrix>");
-            sb.AppendLine("            <MinTileRow>0</MinTileRow>");
-            sb.Append("            <MaxTileRow>").Append(maxRow.ToString(CultureInfo.InvariantCulture)).AppendLine("</MaxTileRow>");
-            sb.AppendLine("            <MinTileCol>0</MinTileCol>");
-            sb.Append("            <MaxTileCol>").Append(maxCol.ToString(CultureInfo.InvariantCulture)).AppendLine("</MaxTileCol>");
-            sb.AppendLine("          </TileMatrixLimits>");
-        }
-
-        sb.AppendLine("        </TileMatrixSetLimits>");
         sb.AppendLine("      </TileMatrixSetLink>");
     }
 
@@ -2449,26 +2446,19 @@ internal static class WmtsRequestHandlers
 
         foreach (var entry in registry.All)
         {
-            if (entry.IsBuiltIn || !registry.TryGetGeometry(entry.Id, wmtsMaxZoom, out var geometry))
+            // The geometry is not read any more, but it is still the guard: a gridset whose
+            // geometry cannot be built at this zoom is not advertised.
+            if (entry.IsBuiltIn || !registry.TryGetGeometry(entry.Id, wmtsMaxZoom, out _))
             {
                 continue;
             }
 
+            // No TileMatrixSetLimits, for the reason on AppendWmtsTileMatrixSetLink: these
+            // limits came from the gridset geometry rather than the layer, so they
+            // constrained nothing, and the level-0 entry made the document fail WMTS 1.0.0
+            // schema validation.
             sb.AppendLine("      <TileMatrixSetLink>");
             sb.Append("        <TileMatrixSet>").Append(EscapeXml(entry.Id)).AppendLine("</TileMatrixSet>");
-            sb.AppendLine("        <TileMatrixSetLimits>");
-            foreach (var level in geometry.Levels)
-            {
-                sb.AppendLine("          <TileMatrixLimits>");
-                sb.Append("            <TileMatrix>").Append(level.Level.ToString(CultureInfo.InvariantCulture)).AppendLine("</TileMatrix>");
-                sb.AppendLine("            <MinTileRow>0</MinTileRow>");
-                sb.Append("            <MaxTileRow>").Append((level.MatrixHeight - 1).ToString(CultureInfo.InvariantCulture)).AppendLine("</MaxTileRow>");
-                sb.AppendLine("            <MinTileCol>0</MinTileCol>");
-                sb.Append("            <MaxTileCol>").Append((level.MatrixWidth - 1).ToString(CultureInfo.InvariantCulture)).AppendLine("</MaxTileCol>");
-                sb.AppendLine("          </TileMatrixLimits>");
-            }
-
-            sb.AppendLine("        </TileMatrixSetLimits>");
             sb.AppendLine("      </TileMatrixSetLink>");
         }
     }
