@@ -66,6 +66,7 @@
   - [Excel & Power BI](guides/connect/excel-power-bi.md)
   - [MapLibre web maps](guides/connect/maplibre-web-maps.md)
   - [AI agents (MCP)](guides/connect/ai-agents-mcp.md)
+  - [What an agent can do in each edition](guides/connect/agent-capabilities-and-editions.md)
 - Honua Studio (preview)
   - [Honua Studio](studio/README.md)
   - [Run standalone](studio/run-standalone.md)
