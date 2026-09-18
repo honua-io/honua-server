@@ -43,8 +43,8 @@
         "pass": 4
       },
       "pyqgis": {
-        "not-started": 42,
-        "pass": 13,
+        "pass": 23,
+        "not-started": 32,
         "n/a-superseded": 3,
         "n/a-no-client": 32,
         "blocked": 4
@@ -52,8 +52,8 @@
     },
     "overall": {
       "cells": 376,
-      "closed": 149,
-      "open": 227
+      "closed": 159,
+      "open": 217
     }
   },
   "rows": [
@@ -73,7 +73,8 @@
           "state": "not-started"
         },
         "pyqgis": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wms.cert.json - CERT-CONN-01, protocol wms 1.3.0, client desktop-qgis 3.44.14-Solothurn, 9 passed 0 failed"
         }
       }
     },
@@ -93,7 +94,8 @@
           "state": "not-started"
         },
         "pyqgis": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wms.cert.json - CERT-RNDR-01, protocol wms 1.3.0, client desktop-qgis 3.44.14-Solothurn, 9 passed 0 failed"
         }
       }
     },
@@ -112,7 +114,8 @@
           "state": "not-started"
         },
         "pyqgis": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wms.cert.json - CERT-SCHM-01, protocol wms 1.3.0, client desktop-qgis 3.44.14-Solothurn, 9 passed 0 failed"
         }
       }
     },
@@ -132,7 +135,8 @@
           "state": "not-started"
         },
         "pyqgis": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wms.cert.json - CERT-RNDR-URL-01, protocol wms 1.3.0, client desktop-qgis 3.44.14-Solothurn, 9 passed 0 failed"
         }
       }
     },
@@ -152,7 +156,8 @@
           "state": "not-started"
         },
         "pyqgis": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wms.cert.json - CERT-RNDR-SYM-01, protocol wms 1.3.0, client desktop-qgis 3.44.14-Solothurn, 9 passed 0 failed"
         }
       }
     },
@@ -172,7 +177,8 @@
           "state": "not-started"
         },
         "pyqgis": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wms.cert.json - CERT-QFLT-01, protocol wms 1.3.0, client desktop-qgis 3.44.14-Solothurn, 9 passed 0 failed"
         }
       }
     },
@@ -192,7 +198,8 @@
           "state": "not-started"
         },
         "pyqgis": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wmts.cert.json - CERT-CONN-01, protocol wmts 1.0.0, client desktop-qgis 3.44.14-Solothurn, 7 passed 0 failed"
         }
       }
     },
@@ -212,7 +219,8 @@
           "state": "not-started"
         },
         "pyqgis": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wmts.cert.json - CERT-RNDR-01, protocol wmts 1.0.0, client desktop-qgis 3.44.14-Solothurn, 7 passed 0 failed"
         }
       }
     },
@@ -232,7 +240,8 @@
           "state": "not-started"
         },
         "pyqgis": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wmts.cert.json - CERT-SCHM-01, protocol wmts 1.0.0, client desktop-qgis 3.44.14-Solothurn, 7 passed 0 failed"
         }
       }
     },
@@ -252,7 +261,8 @@
           "state": "not-started"
         },
         "pyqgis": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wmts.cert.json - CERT-DISC-02, protocol wmts 1.0.0, client desktop-qgis 3.44.14-Solothurn, 7 passed 0 failed"
         }
       }
     },
@@ -273,7 +283,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wfs.cert.json"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wfs.cert.json - protocol wfs 2.0.0, client desktop-qgis 3.44.14-Solothurn, 12 passed 0 failed, 4 skipped"
         }
       }
     },
@@ -293,7 +303,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wfs.cert.json"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wfs.cert.json - protocol wfs 2.0.0, client desktop-qgis 3.44.14-Solothurn, 12 passed 0 failed, 4 skipped"
         }
       }
     },
@@ -314,7 +324,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wfs.cert.json"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wfs.cert.json - protocol wfs 2.0.0, client desktop-qgis 3.44.14-Solothurn, 12 passed 0 failed, 4 skipped"
         }
       }
     },
@@ -562,7 +572,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json - protocol ogc-features 1.0, client desktop-qgis 3.44.14-Solothurn, 18 passed 0 failed, 3 skipped"
         }
       }
     },
@@ -583,7 +593,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json - protocol ogc-features 1.0, client desktop-qgis 3.44.14-Solothurn, 18 passed 0 failed, 3 skipped"
         }
       }
     },
@@ -604,7 +614,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json - protocol ogc-features 1.0, client desktop-qgis 3.44.14-Solothurn, 18 passed 0 failed, 3 skipped"
         }
       }
     },
@@ -625,7 +635,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json - protocol ogc-features 1.0, client desktop-qgis 3.44.14-Solothurn, 18 passed 0 failed, 3 skipped"
         }
       }
     },
@@ -646,7 +656,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json - protocol ogc-features 1.0, client desktop-qgis 3.44.14-Solothurn, 18 passed 0 failed, 3 skipped"
         }
       }
     },
@@ -667,7 +677,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json - protocol ogc-features 1.0, client desktop-qgis 3.44.14-Solothurn, 18 passed 0 failed, 3 skipped"
         }
       }
     },
@@ -688,7 +698,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json - protocol ogc-features 1.0, client desktop-qgis 3.44.14-Solothurn, 18 passed 0 failed, 3 skipped"
         }
       }
     },

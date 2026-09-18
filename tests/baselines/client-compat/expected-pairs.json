@@ -55,6 +55,14 @@
       "protocol": "wcs"
     },
     {
+      "client_lane": "desktop-qgis",
+      "protocol": "wms"
+    },
+    {
+      "client_lane": "desktop-qgis",
+      "protocol": "wmts"
+    },
+    {
       "client_lane": "cli",
       "protocol": "ogc-features"
     },

@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 import subprocess
+import urllib.parse
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
@@ -108,6 +109,8 @@ _PROTOCOL_VERSIONS = {
     "wfs": "2.0.0",
     "ogc-features": "1.0",
     "wcs": "1.0.0",
+    "wms": "1.3.0",
+    "wmts": "1.0.0",
 }
 
 
@@ -341,6 +344,8 @@ def _discover_wfs_typename(base_url: str) -> str | None:
 _oapif_evidence: CertificationEvidenceCollector | None = None
 _wfs_evidence: CertificationEvidenceCollector | None = None
 _wcs_evidence: CertificationEvidenceCollector | None = None
+_wms_evidence: CertificationEvidenceCollector | None = None
+_wmts_evidence: CertificationEvidenceCollector | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -499,6 +504,34 @@ def wcs_evidence(
 
 
 @pytest.fixture(scope="session")
+def wms_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped WMS certification evidence collector."""
+    global _wms_evidence
+    if _wms_evidence is None:
+        _wms_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "wms"
+        )
+    return _wms_evidence
+
+
+@pytest.fixture(scope="session")
+def wmts_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped WMTS certification evidence collector."""
+    global _wmts_evidence
+    if _wmts_evidence is None:
+        _wmts_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "wmts"
+        )
+    return _wmts_evidence
+
+
+@pytest.fixture(scope="session")
 def wfs_typename(base_url: str) -> str:
     """Discover and cache the first WFS type name from GetCapabilities.
 
@@ -597,6 +630,69 @@ def make_wcs_layer(
         "&cache=AlwaysNetwork"
     )
     return QgsRasterLayer(uri, "wcs_test", "wcs")
+
+
+def make_wms_layer(
+    base_url: str,
+    service_id: str,
+    layer: str,
+    *,
+    crs: str = "EPSG:4326",
+    image_format: str = "image/png",
+    styles: str = "",
+    extra: str = "",
+):
+    """Construct a QGIS raster layer via the stock WMS provider."""
+    from qgis.core import QgsRasterLayer
+
+    wms_url = f"{base_url}/rest/services/{service_id}/MapServer/WMS"
+    uri = (
+        f"crs={crs}&format={image_format}&layers={layer}&styles={styles}"
+        f"&url={wms_url}"
+    )
+    if extra:
+        uri = f"{uri}&{extra}"
+    return QgsRasterLayer(uri, "wms_test", "wms")
+
+
+def make_wmts_layer(
+    base_url: str,
+    service_id: str,
+    layer: str,
+    *,
+    tile_matrix_set: str = "WebMercatorQuad",
+    crs: str = "EPSG:3857",
+    image_format: str = "image/png",
+    styles: str = "default",
+):
+    """Construct a QGIS raster layer via the WMTS side of the wms provider.
+
+    QGIS serves WMTS through the same `wms` provider; the presence of
+    `tileMatrixSet` is what selects the tiled path.
+    """
+    from qgis.core import QgsRasterLayer
+
+    # `url` must carry the full KVP GetCapabilities request, percent-encoded.
+    # Two things force this. A provider URI is itself an &-delimited key=value
+    # list, so an unencoded query would have REQUEST and VERSION parsed as
+    # sibling URI keys. And a bare endpoint does not work either: given no
+    # query, QGIS's wms provider appends its own WMS-flavoured capabilities
+    # parameters, which this WMTS endpoint rightly rejects with 400, and the
+    # layer then fails with only "Download of capabilities failed". Encoding the
+    # whole capabilities URL is how QGIS itself stores a WMTS connection.
+    #
+    # REQUEST=GetCapabilities is load-bearing; VERSION is not, but is sent
+    # because a real client sends it.
+    endpoint = f"{base_url}/rest/services/{service_id}/MapServer/WMTS"
+    capabilities_url = endpoint + "?" + urllib.parse.urlencode(
+        {"SERVICE": "WMTS", "REQUEST": "GetCapabilities", "VERSION": "1.0.0"}
+    )
+    uri = (
+        f"crs={crs}&format={image_format}&layers={layer}&styles={styles}"
+        f"&tileMatrixSet={tile_matrix_set}"
+        f"&url={urllib.parse.quote(capabilities_url, safe='')}"
+    )
+    return QgsRasterLayer(uri, "wmts_test", "wms")
 
 
 def render_layer_headless(layer, width: int = 256, height: int = 256) -> bytes:
@@ -745,6 +841,8 @@ def _write_cert_evidence(
     oapif_evidence: CertificationEvidenceCollector,
     wfs_evidence: CertificationEvidenceCollector,
     wcs_evidence: CertificationEvidenceCollector,
+    wms_evidence: CertificationEvidenceCollector,
+    wmts_evidence: CertificationEvidenceCollector,
 ) -> Generator[None, None, None]:
     """Persist .cert.json envelopes at session teardown.
 
@@ -771,6 +869,14 @@ def _write_cert_evidence(
     if wcs_evidence.has_records:
         path = results_dir / f"{run_id}-desktop-qgis-wcs{suffix}.cert.json"
         wcs_evidence.write_envelope(path)
+
+    if wms_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-wms{suffix}.cert.json"
+        wms_evidence.write_envelope(path)
+
+    if wmts_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-wmts{suffix}.cert.json"
+        wmts_evidence.write_envelope(path)
 
 
 # ---------------------------------------------------------------------------
@@ -810,15 +916,22 @@ def _collector_for_item(item: pytest.Item) -> CertificationEvidenceCollector | N
         return _oapif_evidence
     if "wcs" in module:
         return _wcs_evidence
+    # wmts first: "wms" is not a substring of "wmts", but ordering the more
+    # specific name first keeps the intent obvious if either is renamed.
+    if "wmts" in module:
+        return _wmts_evidence
+    if "wms" in module:
+        return _wms_evidence
     if "wfs" in module:
         return _wfs_evidence
 
     # Fail loudly rather than silently recording nothing. An unmapped module's
-    # results never reach a collector, so no envelope is written for it, and
-    # because run.sh ends its pytest call with `|| true` the exit code does not
-    # catch that either: a wholly failing protocol lane reads as success
-    # downstream. That is not hypothetical - it is exactly how 6 of 7 failing WCS
-    # cases were reported as exit=0 when this lane was first added.
+    # results never reach a collector, so no envelope is written for it, and a
+    # protocol lane that fails wholesale then reads as success downstream - which
+    # is exactly how 6 of 7 failing WCS cases were reported as exit=0 when this
+    # lane was first added. docker/client-compat/pyqgis/run.sh now decides from
+    # the JUnit report, so a failure is caught there too, but an envelope that is
+    # never written still leaves a protocol silently uncertified.
     raise RuntimeError(
         f"pyqgis test module '{module}' has no evidence collector. Add it to "
         "_collector_for_item and give it a collector in conftest, or its results "

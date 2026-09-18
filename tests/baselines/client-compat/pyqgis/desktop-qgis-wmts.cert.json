@@ -1,0 +1,88 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260918T043918Z",
+  "run_date": "2026-09-18T04:39:18.237837+00:00",
+  "server_version": "unknown",
+  "server_commit": "",
+  "fixture_revision": "sha256:538537661f80fc46fb8cdc3f18c29b74cec192be15277d7bed0a046195d85757",
+  "server_config_revision": "sha256:3eb71252f241546d4fa9fc23799296de3a75592f189449f056dadf103313998f",
+  "client_lane": "desktop-qgis",
+  "client_version": "3.44.14-Solothurn",
+  "protocol": "wmts",
+  "protocol_version": "1.0.0",
+  "environment": "local",
+  "results": [
+    {
+      "test_case_id": "CERT-CONN-01",
+      "status": "pass",
+      "duration_ms": 10,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "WMTS capabilities parsed; tileMatrixSet WebMercatorQuad selected.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 2,
+      "measured_delta": null,
+      "notes": "Both WebMercatorQuad and WorldCRS84Quad resolved.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 65536,
+      "measured_delta": null,
+      "notes": "GetTile returned a 256x256 block through the tiled provider path.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 509,
+      "measured_delta": null,
+      "notes": "RESTful ResourceURL resolved and served 509 bytes.",
+      "evidence_ref": "http://honua:5000/rest/services/browser_compat/MapServer/WMTS/2000/default/WebMercatorQuad/0/0/0.png"
+    },
+    {
+      "test_case_id": "CERT-ERRH-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Unknown tileMatrixSet yielded an invalid layer rather than a blank one.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Unadvertised layer identifier yielded an invalid layer.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "GetFeatureInfo identified 'pt-alpha' through the tiled provider path.",
+      "evidence_ref": ""
+    }
+  ],
+  "summary": {
+    "total": 7,
+    "passed": 7,
+    "failed": 0,
+    "skipped": 0,
+    "not_applicable": 0
+  },
+  "cite_results": null,
+  "extensions": []
+}

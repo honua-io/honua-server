@@ -32,6 +32,13 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_PATH = REPO_ROOT / "docs" / "gis" / "data" / "client-certification-checklist.v1.json"
+DOC_PATH = REPO_ROOT / "docs" / "gis" / "CLIENT_CERTIFICATION_CHECKLIST.md"
+
+# The prose in DOC_PATH is hand-authored; only the region between these markers
+# is generated, so the tables cannot drift from the data while the argument
+# around them stays editable.
+DOC_BEGIN = "<!-- BEGIN GENERATED TABLES -->"
+DOC_END = "<!-- END GENERATED TABLES -->"
 
 LANES = ("pro-ui", "arcpy", "qgis-ui", "pyqgis")
 
@@ -52,6 +59,13 @@ STATES = {
 }
 CLOSED_STATES = {"pass", "n/a-no-client", "n/a-superseded"}
 NEEDS_CITATION = {"n/a-no-client", "n/a-superseded", "blocked"}
+
+# A pass has to be bound to a build under certification. Evidence naming any
+# other build does not count - docs/certification-master-plan.md:18-19, "Version
+# changes create a new target revision" - so these tokens are searched for in the
+# evidence string. Superseded QGIS builds (3.44.3, 3.40.15) and QGIS 4.2.2 fail
+# the check by simply not matching.
+CERTIFIED_BUILD_TOKENS = ("3.7.1.1904", "3.44.14")
 
 # --------------------------------------------------------------------------
 # Citations. Every n/a in the checklist resolves to one of these, so a reader can
@@ -118,15 +132,36 @@ CITE = {
 # Evidence already produced, verified in this repository or the compat repos.
 # --------------------------------------------------------------------------
 
+# The QGIS LTR build under certification, as the envelopes record it.
+QGIS_LTR_BUILD = "3.44.14-Solothurn"
+
+
+def _pyqgis(
+    protocol: str,
+    version: str,
+    passed: int,
+    *,
+    cert_id: str | None = None,
+    skipped: int = 0,
+) -> str:
+    """Cite a committed pyqgis baseline envelope, or one cert id inside it."""
+    scope = f" - {cert_id}," if cert_id else " -"
+    tail = f", {skipped} skipped" if skipped else ""
+    return (
+        f"tests/baselines/client-compat/pyqgis/desktop-qgis-{protocol}.cert.json"
+        f"{scope} protocol {protocol} {version}, client desktop-qgis "
+        f"{QGIS_LTR_BUILD}, {passed} passed 0 failed{tail}"
+    )
+
+
 EV = {
-    "pyqgis-wcs": (
-        "tests/baselines/client-compat/pyqgis/desktop-qgis-wcs.cert.json - protocol "
-        "wcs 1.0.0, client desktop-qgis 3.44.14-Solothurn, 8 passed 0 failed"
-    ),
-    "pyqgis-oapif": (
-        "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json"
-    ),
-    "pyqgis-wfs": "tests/baselines/client-compat/pyqgis/desktop-qgis-wfs.cert.json",
+    "pyqgis-wcs": _pyqgis("wcs", "1.0.0", 8),
+    "pyqgis-oapif": _pyqgis(
+        "ogc-features", "1.0", 18,
+        skipped=3),
+    "pyqgis-wfs": _pyqgis(
+        "wfs", "2.0.0", 12,
+        skipped=4),
     "pro-matrix": (
         "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - "
         "ArcGIS Pro 3.7.1.1904"
@@ -135,6 +170,19 @@ EV = {
         "honua-client-compat/evidence/native-qgis-ltr-20260916-a/results.json - "
         "QGIS 3.44.14-Solothurn"
     ),
+
+    # WMS 1.3.0 and WMTS 1.0.0 through the QGIS wms provider,
+    # tests/python/pyqgis/test_wm{s,ts}_client_compat.py.
+    "pyqgis-wms-caps": _pyqgis("wms", "1.3.0", 9, cert_id="CERT-CONN-01"),
+    "pyqgis-wms-getmap": _pyqgis("wms", "1.3.0", 9, cert_id="CERT-RNDR-01"),
+    "pyqgis-wms-featureinfo": _pyqgis("wms", "1.3.0", 9, cert_id="CERT-SCHM-01"),
+    "pyqgis-wms-legend": _pyqgis("wms", "1.3.0", 9, cert_id="CERT-RNDR-URL-01"),
+    "pyqgis-wms-styles": _pyqgis("wms", "1.3.0", 9, cert_id="CERT-RNDR-SYM-01"),
+    "pyqgis-wms-time": _pyqgis("wms", "1.3.0", 9, cert_id="CERT-QFLT-01"),
+    "pyqgis-wmts-caps": _pyqgis("wmts", "1.0.0", 7, cert_id="CERT-CONN-01"),
+    "pyqgis-wmts-gettile": _pyqgis("wmts", "1.0.0", 7, cert_id="CERT-RNDR-01"),
+    "pyqgis-wmts-featureinfo": _pyqgis("wmts", "1.0.0", 7, cert_id="CERT-SCHM-01"),
+    "pyqgis-wmts-restful": _pyqgis("wmts", "1.0.0", 7, cert_id="CERT-DISC-02"),
 }
 
 # --------------------------------------------------------------------------
@@ -154,29 +202,36 @@ MATRIX: list[dict] = [
         "protocol": "wms", "version": "1.3.0",
         "operations": {
             "GetCapabilities": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
-                                "qgis-ui": NS, "pyqgis": NS},
+                                "qgis-ui": NS,
+                                "pyqgis": ("pass", "pyqgis-wms-caps")},
             "GetMap": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
-                       "qgis-ui": NS, "pyqgis": NS},
-            "GetFeatureInfo": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS, "pyqgis": NS},
+                       "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wms-getmap")},
+            "GetFeatureInfo": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS,
+                               "pyqgis": ("pass", "pyqgis-wms-featureinfo")},
             "GetLegendGraphic": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
-                                 "qgis-ui": NS, "pyqgis": NS},
+                                 "qgis-ui": NS,
+                                 "pyqgis": ("pass", "pyqgis-wms-legend")},
             "styles": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
-                       "qgis-ui": NS, "pyqgis": NS},
+                       "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wms-styles")},
             "time-dimension": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
-                               "qgis-ui": NS, "pyqgis": NS},
+                               "qgis-ui": NS,
+                               "pyqgis": ("pass", "pyqgis-wms-time")},
         },
     },
     {
         "protocol": "wmts", "version": "1.0.0",
         "operations": {
             "GetCapabilities": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
-                                "qgis-ui": NS, "pyqgis": NS},
+                                "qgis-ui": NS,
+                                "pyqgis": ("pass", "pyqgis-wmts-caps")},
             "GetTile": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
-                        "qgis-ui": NS, "pyqgis": NS},
+                        "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wmts-gettile")},
             "GetFeatureInfo": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
-                               "qgis-ui": NS, "pyqgis": NS},
+                               "qgis-ui": NS,
+                               "pyqgis": ("pass", "pyqgis-wmts-featureinfo")},
             "RESTful-tile-path": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
-                                  "qgis-ui": NS, "pyqgis": NS},
+                                  "qgis-ui": NS,
+                                  "pyqgis": ("pass", "pyqgis-wmts-restful")},
         },
     },
     {
@@ -591,9 +646,98 @@ def validate(rows: list[dict]) -> list[str]:
             ):
                 problems.append(
                     f"{where}/{lane}: state {state} requires a citation or a named cause")
-            if state == "pass" and not cell.get("evidence"):
-                problems.append(f"{where}/{lane}: a pass requires an evidence reference")
+            if state == "pass":
+                evidence = cell.get("evidence")
+                if not evidence:
+                    problems.append(
+                        f"{where}/{lane}: a pass requires an evidence reference")
+                elif not any(token in evidence for token in CERTIFIED_BUILD_TOKENS):
+                    problems.append(
+                        f"{where}/{lane}: a pass must name a build under "
+                        f"certification {CERTIFIED_BUILD_TOKENS}, got {evidence!r}")
     return problems
+
+
+def render_markdown(rows: list[dict], summary: dict) -> str:
+    """Render the per-lane totals and the full cell table."""
+    lines: list[str] = [
+        DOC_BEGIN,
+        "",
+        "<!-- Generated by scripts/certification/build-client-checklist.py."
+        " Do not edit by hand. -->",
+        "",
+        "### Totals",
+        "",
+        "| Lane | Client build | Closed | Open | Breakdown |",
+        "|---|---|---|---|---|",
+    ]
+    for lane in LANES:
+        totals = summary["per_lane"][lane]
+        closed = sum(count for state, count in totals.items() if state in CLOSED_STATES)
+        opened = sum(count for state, count in totals.items() if state not in CLOSED_STATES)
+        breakdown = ", ".join(
+            f"{state} {totals[state]}" for state in sorted(totals))
+        lines.append(
+            f"| `{lane}` | {CLIENT_BUILDS[lane]} | {closed}/{closed + opened} | "
+            f"{opened} | {breakdown} |"
+        )
+
+    overall = summary["overall"]
+    lines += [
+        "",
+        f"**{overall['closed']} of {overall['cells']} cells closed; "
+        f"{overall['open']} open.**",
+        "",
+        "### Cells",
+        "",
+        "A cell closes as `pass`, `n/a-no-client` or `n/a-superseded`. Every other",
+        "value is open work. The full evidence reference or citation for each cell is",
+        "in `docs/gis/data/client-certification-checklist.v1.json`.",
+        "",
+    ]
+
+    ordered: list[tuple[str, str]] = []
+    for row in rows:
+        key = (row["protocol"], row["version"])
+        if key not in ordered:
+            ordered.append(key)
+
+    for protocol, version in ordered:
+        lines += [
+            f"#### {protocol} {version}",
+            "",
+            "| Operation | " + " | ".join(f"`{lane}`" for lane in LANES) + " |",
+            "|---" * (len(LANES) + 1) + "|",
+        ]
+        for row in rows:
+            if (row["protocol"], row["version"]) != (protocol, version):
+                continue
+            cells = " | ".join(
+                row["lanes"][lane]["state"] for lane in LANES)
+            lines.append(f"| {row['operation']} | {cells} |")
+        lines.append("")
+
+    lines.append(DOC_END)
+    return "\n".join(lines) + "\n"
+
+
+def write_markdown(rows: list[dict], summary: dict) -> None:
+    """Replace the generated region of DOC_PATH, appending it if absent."""
+    generated = render_markdown(rows, summary)
+    existing = DOC_PATH.read_text(encoding="utf-8")
+    if DOC_BEGIN in existing and DOC_END in existing:
+        head = existing.split(DOC_BEGIN)[0]
+        tail = existing.split(DOC_END, 1)[1]
+        updated = (
+            head.rstrip("\n") + "\n\n" + generated.strip("\n") + "\n" + tail
+        )
+    else:
+        updated = existing.rstrip("\n") + "\n\n" + generated
+    # Normalise the ends, or the generated region's own trailing newline is
+    # re-added on every run and the file is never byte-identical twice - which
+    # would make the CI drift check fire on a no-op regeneration.
+    DOC_PATH.write_text(
+        updated.rstrip("\n") + "\n", encoding="utf-8", newline="\n")
 
 
 def summarise(rows: list[dict]) -> dict:
@@ -648,6 +792,8 @@ def main() -> int:
             json.dumps(document, indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8", newline="\n")
         print(f"wrote {DATA_PATH.relative_to(REPO_ROOT)}")
+        write_markdown(rows, summary)
+        print(f"wrote {DOC_PATH.relative_to(REPO_ROOT)}")
 
     overall = summary["overall"]
     print(f"OK  {len(rows)} operations x {len(LANES)} lanes = {overall['cells']} cells")
