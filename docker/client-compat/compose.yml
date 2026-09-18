@@ -126,6 +126,10 @@ services:
       HostValidation__AllowedHosts__0: honua
       HostValidation__AllowedHosts__1: localhost
       HONUA_ADMIN_PASSWORD: ClientCompatAdmin123!
+      # The ArcGIS JS API sends its credential in X-Esri-Authorization; the Esri
+      # identity probes assert it survives a CORS preflight, which needs an allowed
+      # origin configured or the server correctly emits no CORS headers at all.
+      Cors__AllowedOrigins__0: http://localhost:3000
       # Deterministic local OIDC verifier for certification auth breadth. No
       # external IdP is contacted: client lanes mint short-lived HS256 tokens
       # against this test-only issuer/audience/signing-key tuple.
