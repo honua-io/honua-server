@@ -64,6 +64,7 @@ Each link resolves to the page's source on `trunk`. These pages are also rendere
 - [Connect Excel and Power BI to Honua](https://github.com/honua-io/honua-server/blob/trunk/docs/guides/connect/excel-power-bi.md): Load and refresh a published layer through its OData v4 feed.
 - [Build a web map with MapLibre](https://github.com/honua-io/honua-server/blob/trunk/docs/guides/connect/maplibre-web-maps.md): Render a Honua layer in the browser from vector tiles (MVT) using TileJSON metadata and the server-generated MapLibre style.
 - [Connect AI agents to Honua over MCP](https://github.com/honua-io/honua-server/blob/trunk/docs/guides/connect/ai-agents-mcp.md): Point any MCP-capable agent (Claude Code, Claude Desktop, or your own client) at Honua's built-in MCP endpoint to plan, validate, dry-run, and execute geoprocessing work with the same authorization rules as every other protocol.
+- [What an agent can do in each edition](https://github.com/honua-io/honua-server/blob/trunk/docs/guides/connect/agent-capabilities-and-editions.md): Reading through MCP is Community. Letting an agent change anything is Pro. Organisational approval policy is Enterprise.
 - [Honua Studio](https://github.com/honua-io/honua-server/blob/trunk/docs/studio/README.md)
 - [Run Studio standalone](https://github.com/honua-io/honua-server/blob/trunk/docs/studio/run-standalone.md)
 - [Embed Studio](https://github.com/honua-io/honua-server/blob/trunk/docs/studio/embed.md): Embedding is a preview browser surface in 2026.1.

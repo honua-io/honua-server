@@ -24,4 +24,5 @@ The facts above come from `docs/gis/data/capability-keys.v1.json` and `capabilit
 
 ## Documented in
 
+- [What an agent can do in each edition](../../guides/connect/agent-capabilities-and-editions.md)
 - [Bring your own model](../../studio/byom.md)

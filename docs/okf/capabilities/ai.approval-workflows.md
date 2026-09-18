@@ -21,4 +21,5 @@ The facts above come from `docs/gis/data/capability-keys.v1.json` and `capabilit
 
 ## Documented in
 
+- [What an agent can do in each edition](../../guides/connect/agent-capabilities-and-editions.md)
 - [Connect AI agents to Honua over MCP](../../guides/connect/ai-agents-mcp.md)
