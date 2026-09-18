@@ -65,6 +65,7 @@ import json
 import os
 import tempfile
 import time
+import urllib.parse
 
 import pytest
 
@@ -202,14 +203,33 @@ class TestStacClientCompat:
             "conformsTo array"
         )
 
-        # The catalog must expose its children and resolve its own root.
+        # The catalog must expose its children and resolve its own root. The
+        # children are judged against the origin the landing page advertises for
+        # itself (its "self" link), not against the transport URL this lane dialled:
+        # a fixture may legitimately publish one public identity while being reached
+        # through another, and a STAC client follows advertised links, so what
+        # matters is that they are self-consistent and that they resolve.
+        self_hrefs = [
+            link.href() for link in catalog.links() if link.relation() == "self"
+        ]
+        assert len(self_hrefs) == 1, (
+            f"expected exactly one self link on the landing page, got {self_hrefs}"
+        )
+        advertised_root = self_hrefs[0].rstrip("/")
         child_hrefs = [
             link.href() for link in catalog.links() if link.relation() == "child"
         ]
         assert child_hrefs, "the catalog advertised no child collection links"
-        collections_prefix = f"{landing_url}/collections/"
+        collections_prefix = f"{advertised_root}/collections/"
         assert all(href.startswith(collections_prefix) for href in child_hrefs), (
             f"not every child link sits under {collections_prefix}: {child_hrefs}"
+        )
+        # Self-consistency alone could be satisfied by links that point nowhere, so
+        # the first advertised child must actually answer through QGIS's stack.
+        child_code, child_status, child_body, _ = _http_get(child_hrefs[0])
+        assert int(child_code) == 0 and child_status == 200 and child_body, (
+            f"the advertised child link {child_hrefs[0]} did not resolve: "
+            f"error {int(child_code)}, HTTP {child_status}"
         )
         assert catalog.rootUrl().rstrip("/") == landing_url.rstrip("/"), (
             f"catalog rootUrl was {catalog.rootUrl()!r}, expected {landing_url!r}"
@@ -512,9 +532,12 @@ class TestStacClientCompat:
             f"{[ASSET_KEY]}"
         )
         asset = assets[ASSET_KEY]
-        expected_href = f"{base_url}{ASSET_PATH}"
-        assert asset.href() == expected_href, (
-            f"asset href was {asset.href()!r}, expected {expected_href!r}"
+        # The href's path is pinned; its origin is whatever public identity the
+        # fixture advertises, which need not be the transport URL this lane dialled.
+        # The download below proves the advertised origin actually resolves.
+        asset_path = urllib.parse.urlsplit(asset.href()).path
+        assert asset_path == ASSET_PATH, (
+            f"asset href was {asset.href()!r}, expected its path to be {ASSET_PATH!r}"
         )
         assert asset.mediaType() == ASSET_MEDIA_TYPE, (
             f"asset media type was {asset.mediaType()!r}, expected "
