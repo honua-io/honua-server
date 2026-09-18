@@ -743,75 +743,89 @@ class TestFeatureServerClientCompat:
     # ------------------------------------------------------------------
     # domains / CERT-SCHM-02 -> blocked on the fixture
     # ------------------------------------------------------------------
+    # domains / CERT-SCHM-02
+    # ------------------------------------------------------------------
     #
-    # Unlike the four cells above this one is not a client limitation: the
-    # provider does carry coded-value domain handling. It cannot be certified
-    # because no layer on this server publishes a domain at all, so there is
-    # nothing for a client to consume and neither a pass nor a no-client verdict
-    # is honest. Recorded as skip with the cause.
-    def test_domains_are_not_published_by_the_fixture(
+    # The seed publishes one coded-value domain, StatusDomain on
+    # test_service/0.status. The QGIS arcgisfeatureserver provider turns a
+    # coded-value domain into a ValueMap editor widget on the field, which is
+    # the client-visible form of "the domain reached the client": the layer
+    # document carries it, queryDomains answers it, and QGIS offers exactly the
+    # seeded codes to an editor.
+    def test_domains_reach_the_client_as_a_value_map(
         self, qgis_app, base_url: str,
         featureserver_evidence: CertificationEvidenceCollector,
     ) -> None:
+        document = _layer_document(base_url, SERVICE_ID, LAYER_ID)
+        published = {
+            field["name"]: field["domain"]
+            for field in document["fields"] if field.get("domain")
+        }
+        assert "status" in published, (
+            "the seed's coded-value domain on test_service/0.status is not in "
+            f"the layer document; published domains: {sorted(published)}"
+        )
+        expected_codes = {
+            str(value["code"]): str(value["name"])
+            for value in published["status"]["codedValues"]
+        }
+        assert expected_codes, "the published domain carries no coded values"
+
+        response = httpx.get(
+            f"{base_url}/rest/services/{SERVICE_ID}/FeatureServer/queryDomains",
+            params={"f": "json", "layers": LAYER_ID}, timeout=30)
+        response.raise_for_status()
+        answered = [
+            domain for domain in response.json().get("domains", [])
+            if domain.get("fieldName") == "status"
+        ]
+        assert answered, "queryDomains does not answer the status domain"
+
         layer = self._layer(base_url)
         assert layer.isValid(), (
-            "the known-good layer does not resolve, so this probe proves "
-            f"nothing: {layer.error().summary()}"
+            f"the layer did not load, so no domain can reach a client: "
+            f"{layer.error().summary()}"
         )
-
-        services = ("browser_compat", "portal_public", "test_service")
-        domains: dict[str, object] = {}
-        fields_with_domains: list[str] = []
-        for service_id in services:
-            response = httpx.get(
-                f"{base_url}/rest/services/{service_id}/FeatureServer/queryDomains",
-                params={"f": "json"}, timeout=30)
-            response.raise_for_status()
-            domains[service_id] = response.json().get("domains")
-            for layer_info in _service_document(base_url, service_id)["layers"]:
-                document = _layer_document(
-                    base_url, service_id, str(layer_info["id"]))
-                fields_with_domains += [
-                    f"{service_id}/{layer_info['id']}.{field['name']}"
-                    for field in document["fields"]
-                    if field.get("domain")
-                ]
-
-        reason = (
-            "blocked: no FeatureServer layer on this server publishes a field "
-            f"domain - queryDomains returns {domains} and no field carries a "
-            "'domain' member - so there is nothing for a client to consume. The "
-            "QGIS arcgisfeatureserver provider does ship coded-value domain "
-            "handling, so this is a fixture gap, not a client limitation: seed a "
-            "coded-value domain on a string field to close the cell."
+        index = layer.fields().indexOf("status")
+        assert index >= 0, "the provider exposes no 'status' field"
+        setup = layer.editorWidgetSetup(index)
+        assert setup.type() == "ValueMap", (
+            "the provider did not translate the coded-value domain into a "
+            f"ValueMap widget; it configured {setup.type()!r}"
+        )
+        # QGIS stores the ValueMap as [{name: code}, ...] under "map".
+        offered = {}
+        for entry in setup.config().get("map", []):
+            if isinstance(entry, dict):
+                for name, code in entry.items():
+                    offered[str(code)] = str(name)
+        assert offered == expected_codes, (
+            "the codes QGIS offers differ from the published domain: "
+            f"offered {offered}, published {expected_codes}"
         )
         featureserver_evidence.record(
-            "CERT-SCHM-02", "skip",
-            measured_count=len(fields_with_domains),
-            notes=reason,
+            "CERT-SCHM-02", "pass", measured_count=len(offered),
+            notes=(
+                f"coded-value domain StatusDomain on {SERVICE_ID}/{LAYER_ID}.status "
+                f"reached QGIS as a ValueMap widget offering exactly the "
+                f"{len(offered)} published codes; queryDomains answers the same "
+                "domain."
+            ),
         )
-        assert not fields_with_domains, (
-            "a field domain IS published, so this cell is certifiable and must "
-            f"not be skipped: {fields_with_domains}"
-        )
-        pytest.skip(reason)
 
     # ------------------------------------------------------------------
-    # applyEdits / CERT-AUTH-01 -> blocked by a server defect
+    # applyEdits / CERT-AUTH-01
     # ------------------------------------------------------------------
     #
-    # The provider does implement editing: it advertises AddFeatures and issues
-    # POST .../addFeatures. The cell cannot be closed because this server
-    # rejects the insert QGIS actually sends.
-    #
     # QGIS builds the attribute object from the layer's full field list, so an
-    # unset OID is serialised as "objectid": null. Esri servers ignore a null
-    # value for a system-maintained OID on insert; honua answers
-    # {"code":1006,"description":"Field 'objectid' cannot be null."} and drops
-    # the whole edit. The identical insert with the objectid member omitted
-    # succeeds, which is asserted here as the known-good sibling so the failure
-    # is attributed to the null OID and not to auth, the endpoint or the fixture.
-    def test_applyedits_is_blocked_by_null_objectid_rejection(
+    # unset OID is serialised as "objectid": null and cannot be omitted. The
+    # server used to answer {"code":1006,"description":"Field 'objectid'
+    # cannot be null."} and drop the edit, so no stock QGIS digitizing session
+    # could edit a FeatureServer at all. A null on a server-assigned field on
+    # insert now means "assign one", and this case proves the QGIS insert
+    # lands, with the omitted-objectid form as the known-good sibling so a
+    # failure is attributed to the null OID and not to auth or the endpoint.
+    def test_applyedits_insert_from_qgis_lands_on_the_server(
         self, qgis_app, base_url: str,
         featureserver_evidence: CertificationEvidenceCollector,
     ) -> None:
@@ -826,9 +840,9 @@ class TestFeatureServerClientCompat:
         password = os.environ.get("HONUA_ADMIN_PASSWORD")
         if not password:
             reason = (
-                "blocked: the FeatureServer edit endpoints require an Esri token "
-                "(HTTP Basic is refused with 499), and HONUA_ADMIN_PASSWORD is "
-                "not present in this container's environment, so no edit can be "
+                "the FeatureServer edit endpoints require an Esri token (HTTP "
+                "Basic is refused with 499), and HONUA_ADMIN_PASSWORD is not "
+                "present in this container's environment, so no edit can be "
                 "attempted. The pyqgis lane runner must pass it through."
             )
             featureserver_evidence.record("CERT-AUTH-01", "skip", notes=reason)
@@ -861,7 +875,7 @@ class TestFeatureServerClientCompat:
         # Only this module's own markers are removed. The scratch layer is
         # shared with the WFS-T lane, so purging everything could clobber a
         # concurrently running lane's fixture.
-        markers = {"cert-omitted-oid", "cert-qgis-insert", "cert-null-oid"}
+        markers = {"cert-omitted-oid", "cert-qgis-insert"}
 
         def purge() -> None:
             object_ids = [
@@ -877,7 +891,7 @@ class TestFeatureServerClientCompat:
 
         purge()
         try:
-            # Known-good sibling 1: the edit endpoint, the token and the scratch
+            # Known-good sibling: the edit endpoint, the token and the scratch
             # layer all work when the objectid member is simply omitted.
             omitted = httpx.post(
                 f"{edit_endpoint}/addFeatures", headers=auth_header,
@@ -889,15 +903,15 @@ class TestFeatureServerClientCompat:
             omitted_result = omitted.json()
             assert omitted_result.get("success") is True, (
                 "an insert with the objectid omitted was rejected, so the edit "
-                "endpoint or the token is at fault rather than the null OID: "
+                "endpoint or the token is at fault rather than the QGIS insert: "
                 f"{omitted_result}"
             )
             purge()
 
-            # Known-good sibling 2: the provider builds an authenticated layer
-            # and advertises the edit capability.
+            # The provider builds an authenticated layer and advertises editing.
             manager = QgsApplication.authManager()
-            manager.setMasterPassword("honua-cert", True)
+            if not manager.masterPasswordIsSet():
+                manager.setMasterPassword("honua-cert", True)
             config = QgsAuthMethodConfig()
             config.setMethod("EsriToken")
             config.setName("honua-cert-featureserver")
@@ -915,60 +929,43 @@ class TestFeatureServerClientCompat:
 
             assert int(provider.capabilities()) & int(
                 QgsVectorDataProvider.AddFeatures), (
-                "the provider does not advertise AddFeatures, so this cell is a "
-                "no-client case rather than a server defect: "
+                "the provider does not advertise AddFeatures: "
                 f"{provider.capabilitiesString()}"
             )
 
+            # The insert QGIS actually sends: every field present, objectid null.
             feature = QgsFeature(layer.fields())
             feature.setAttribute("name", "cert-qgis-insert")
             feature.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(-122.42, 37.77)))
-            provider.addFeatures([feature])
+            added, _ = provider.addFeatures([feature])
+            assert added, (
+                "the provider reported the insert failed: "
+                f"{provider.lastError() or provider.errors()}"
+            )
 
             landed = [
                 row for row in rows()
                 if row["attributes"].get("name") == "cert-qgis-insert"
             ]
-
-            # Reproduce the rejection directly so the envelope carries the
-            # server's own error text rather than an inference.
-            replayed = httpx.post(
-                f"{edit_endpoint}/addFeatures", headers=auth_header,
-                data={"f": "json", "features":
-                      '[{"attributes":{"name":"cert-null-oid","objectid":null},'
-                      '"geometry":{"x":-122.42,"y":37.77}}]'},
-                timeout=30)
-            replayed.raise_for_status()
-            replayed_result = replayed.json()
+            assert len(landed) == 1, (
+                "the QGIS insert did not land on the server (independent read "
+                f"found {len(landed)} rows named cert-qgis-insert)"
+            )
+            assigned = landed[0]["attributes"].get("objectid")
+            assert isinstance(assigned, int) and assigned > 0, (
+                f"the server did not assign a real object id: {assigned!r}"
+            )
+            featureserver_evidence.record(
+                "CERT-AUTH-01", "pass", measured_count=1,
+                notes=(
+                    "applyEdits insert from the QGIS arcgisfeatureserver provider "
+                    f"landed and was assigned objectid {assigned}, confirmed by an "
+                    "independent query; the request carried the explicit "
+                    "\"objectid\": null QGIS always sends on insert. Authenticated "
+                    "with an EsriToken authcfg; the omitted-objectid sibling passed "
+                    "as the control."
+                ),
+            )
         finally:
             purge()
 
-        assert not landed, (
-            "the QGIS insert DID land, so applyEdits is certifiable and this "
-            f"case must be rewritten as a pass: {landed}"
-        )
-        add_error = (replayed_result.get("addResults") or [{}])[0].get("error", {})
-        assert add_error.get("code") == 1006, (
-            "the null-objectid insert was not rejected with code 1006, so the "
-            "block has a different cause than the one recorded: "
-            f"{replayed_result}"
-        )
-
-        reason = (
-            "blocked: QGIS serialises the unset system-maintained OID as "
-            '"objectid": null, and this server rejects the whole insert with '
-            f"code {add_error.get('code')} "
-            f"({add_error.get('description')!r}). The identical insert with the "
-            "objectid member omitted succeeds, so the edit endpoint, the Esri "
-            "token and the scratch layer are all sound. The layer document "
-            "itself declares objectid editable=false and "
-            "uniqueIdField.isSystemMaintained=true, so the server should ignore "
-            "a null OID on insert. No stock QGIS digitizing session can edit "
-            "this FeatureServer until it does."
-        )
-        featureserver_evidence.record(
-            "CERT-AUTH-01", "skip",
-            notes=reason,
-            evidence_ref=f"POST {edit_endpoint}/addFeatures",
-        )
-        pytest.skip(reason)

@@ -231,8 +231,9 @@ class TestStacClientCompat:
             f"the advertised child link {child_hrefs[0]} did not resolve: "
             f"error {int(child_code)}, HTTP {child_status}"
         )
-        assert catalog.rootUrl().rstrip("/") == landing_url.rstrip("/"), (
-            f"catalog rootUrl was {catalog.rootUrl()!r}, expected {landing_url!r}"
+        assert catalog.rootUrl().rstrip("/") == advertised_root, (
+            f"catalog rootUrl was {catalog.rootUrl()!r}, expected the advertised "
+            f"self link {advertised_root!r}"
         )
 
         rels = {link.relation() for link in catalog.links()}
