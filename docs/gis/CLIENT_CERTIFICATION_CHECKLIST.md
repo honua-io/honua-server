@@ -119,14 +119,28 @@ repaired:
       `expected-pairs` row, so `diff-baselines.py --strict` never saw 8 passing cases
 - [x] **`esri_client_compat` wired in** — was referenced by no file in the repository and
       never ran. Now in `testpaths`; 5 of 7 probes pass, 2 skip on environment
-- [ ] **`ogc_features` (135 tests) and `feature_server` (163) emit no envelope** — 43% of
-      server-facing tests, covering exactly the protocols with the least certified
-      coverage
+- [x] **`ogc_features` (135) and `feature_server` (163) classified as conformance, not
+      client lanes** — they emit no envelope, and should not. Both are driven by raw
+      `httpx`, so an envelope would assert that our own test code can talk to our own
+      server, which certifies nothing about client compatibility and would inflate the
+      matrix with circular evidence. They are also not invisible: `ci.yml` runs
+      `pytest --tb=short` with no `|| true` and no `continue-on-error`, so a failure fails
+      the PR. The real gap they expose is a different one — see below
 - [ ] **Pro UI receipts carry `cert_ids: []`** — receipts and `.cert.json` cells are not
       cross-linked in either direction; `licensed.py` is also missing the wf-scene pair
 - [ ] **A lane can fail wholesale and report success** — `run.sh` masks the pytest exit
       code and an unmapped collector records nothing. This already hid 6 of 7 failing WCS
       cases behind `exit=0`. Needs a hard error, not a comment
+
+### The gap the conformance suites actually expose
+
+FeatureServer, GeometryServer, ImageServer and GPServer have deep *conformance* coverage
+in `tests/python/feature_server` and none of it is client evidence. Real client coverage
+for those protocols does exist — `arcgis-python` (the license-free `arcgis` PyPI package),
+`esri-dotnet`, and the Pro UI lane — but it lives in `honua-esri-compat`, so this
+repository's matrix cannot see it. The fix is cross-repo evidence federation, not new
+envelopes on httpx suites: the checklist must be able to resolve a cell from an
+`honua-esri-compat` `.cert.json` the same way it resolves one produced here.
 
 ## Measuring it
 

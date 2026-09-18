@@ -812,11 +812,18 @@ def _collector_for_item(item: pytest.Item) -> CertificationEvidenceCollector | N
         return _wcs_evidence
     if "wfs" in module:
         return _wfs_evidence
-    # A module with no collector records nothing, so a wholly failing protocol lane
-    # writes no envelope at all and reads as success downstream - the lane script ends
-    # its pytest call with `|| true`, so the exit code does not catch it either. Any
-    # new protocol module must be mapped here.
-    return None
+
+    # Fail loudly rather than silently recording nothing. An unmapped module's
+    # results never reach a collector, so no envelope is written for it, and
+    # because run.sh ends its pytest call with `|| true` the exit code does not
+    # catch that either: a wholly failing protocol lane reads as success
+    # downstream. That is not hypothetical - it is exactly how 6 of 7 failing WCS
+    # cases were reported as exit=0 when this lane was first added.
+    raise RuntimeError(
+        f"pyqgis test module '{module}' has no evidence collector. Add it to "
+        "_collector_for_item and give it a collector in conftest, or its results "
+        "will be silently discarded and the lane will report success while failing."
+    )
 
 
 def _extract_cert_id(item: pytest.Item) -> str | None:
