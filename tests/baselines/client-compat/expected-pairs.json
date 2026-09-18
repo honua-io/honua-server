@@ -51,6 +51,10 @@
       "protocol": "wfs"
     },
     {
+      "client_lane": "desktop-qgis",
+      "protocol": "wcs"
+    },
+    {
       "client_lane": "cli",
       "protocol": "ogc-features"
     },
