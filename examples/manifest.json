@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1153,
+    "total": 1148,
     "byStatus": {
-      "not-executable": 1140,
+      "not-executable": 1135,
       "unvalidated": 10,
       "passed": 3
     }
@@ -7612,7 +7612,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 196,
+      "line": 195,
       "language": "json"
     },
     {
@@ -11724,71 +11724,6 @@
       "language": "bash"
     },
     {
-      "id": "60d5a52c0339c8eb",
-      "kind": "docs-fence",
-      "path": "docs/internal/demo/nvidia-construction.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 3,
-      "line": 98,
-      "language": "html"
-    },
-    {
-      "id": "66f32be5956ecbed",
-      "kind": "docs-fence",
-      "path": "docs/internal/demo/nvidia-construction.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 4,
-      "line": 169,
-      "language": "jsonc"
-    },
-    {
-      "id": "9ea6868b1a6a3de5",
-      "kind": "docs-fence",
-      "path": "docs/internal/demo/nvidia-construction.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 2,
-      "line": 58,
-      "language": "bash"
-    },
-    {
-      "id": "b574847d5bcaf91f",
-      "kind": "docs-fence",
-      "path": "docs/internal/demo/nvidia-construction.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 5,
-      "line": 259,
-      "language": "bash"
-    },
-    {
-      "id": "cae1f9fe1c2e1027",
-      "kind": "docs-fence",
-      "path": "docs/internal/demo/nvidia-construction.md",
-      "validation": {
-        "status": "not-executable",
-        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
-        "check": "inventory-classification"
-      },
-      "fence": 1,
-      "line": 29,
-      "language": "plain"
-    },
-    {
       "id": "b28339b89f66c4ae",
       "kind": "docs-fence",
       "path": "docs/internal/design/catalog-discovery-endpoints.md",
@@ -14658,8 +14593,8 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 15,
-      "language": "text"
+      "line": 22,
+      "language": "json"
     },
     {
       "id": "93ffc7ff55320188",
