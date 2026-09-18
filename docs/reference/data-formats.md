@@ -25,6 +25,8 @@ Uploaded via `POST /api/v1/admin/import/upload` (or `upload-url`, with `preview`
 | File Geodatabase | `.gdb.zip` | Zipped Esri `.gdb` directory. |
 | GeoParquet | `.parquet`, `.geoparquet` | Apache Parquet with WKB geometry encoding. |
 
+New import tables retain the source geometry's ordinate dimensions (for example GPX elevations) while enforcing the requested SRID; existing append/upsert tables keep their declared geometry constraints.
+
 Format detection uses the extension plus content magic numbers (ZIP, SQLite, FlatGeobuf, Parquet signatures), so mislabeled files are caught early.
 
 CSV preserves quoted empty strings (`""`) and whitespace-only attribute values. Unquoted empty and missing fields represent null. Leading blank padding before a header is ignored; whitespace-only data rows after it remain present.
@@ -143,5 +145,3 @@ See the protocol pages for parameters: [vector tiles](protocols/vector-tiles.md)
 - [Import files guide](../guides/publish/import-files.md)
 - [Export data guide](../guides/query-analyze/export-data.md)
 - [Environment variables — imports and limits](configuration/environment-variables.md#imports-and-limits)
-
-New import tables retain source geometry ordinate dimensions while enforcing the requested SRID. Migration 111 enables this for GPX elevations and other dimensional input. Existing append/upsert tables keep their declared geometry constraints.

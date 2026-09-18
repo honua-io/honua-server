@@ -33,7 +33,6 @@ underlying feature data.
 | Is lease authorization configured out of the box? | **No.** The shipped authorizer denies every claim, so until you supply your own no lease is granted at all (see [Authorization](#authorization)). |
 | Is a lease atomic with the write it guards? | **No.** The check happens immediately before the mutation, not inside the writer transaction. See [What a lease does not promise](#what-a-lease-does-not-promise). |
 
-These are the recorded dispositions for honua-server#4402.
 
 **Three of them are machine-readable.** The rows below are published by
 `GET /api/v1/capabilities/manifest`, so a client can branch on them without reading this

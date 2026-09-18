@@ -181,7 +181,7 @@ The effective import limits are also served at `GET /api/v1/admin/import/limits`
 | `FeatureChangeEvents__Webhook__Url` / `FeatureChangeEvents__Webhook__Secret` | — | Webhook target URL and HMAC signing secret. |
 | `FeatureChangeEvents__Webhook__MaxAttempts` | `5` | Delivery attempts per event (exponential backoff). |
 
-Application-level rate limiting is deferred; enforce rate limits at your edge proxy, load balancer, or WAF.
+Application-level rate limiting is opt-in (`RateLimiting__Enabled=true`, off by default) and supplements edge enforcement; enforce rate limits at your edge proxy, load balancer, or WAF.
 
 ## Admission and pooling
 
@@ -265,7 +265,7 @@ update, validate, get, save, reopen, then propose. The eight Studio tool
 definitions add about 16,300 characters to every round, and the transcript
 grows with each tool result. The propose round counts about 32,600 characters
 (about 37,000 request bytes on the 2026.1 candidate), so the previous default of
-`32000` refused it (honua-server#4919). `128000` leaves more than three times
+`32000` refused it. `128000` leaves more than three times
 that for longer sessions and repair rounds. At roughly four characters per token it is about
 32,000 input tokens, within the context window of the supported adapter kinds'
 tool-capable models. Lower it to bound provider cost. A model-driven lifecycle

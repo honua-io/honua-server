@@ -1,47 +1,20 @@
 ---
 type: reference
 title: "SCIM / SAML IdP Conformance Matrix"
-description: "Status receipt for the enterprise-identity conformance work (#2154), built on the SCIM 2.0 + SAML 2.0 foundation delivered in #2110."
+description: "Which SAML 2.0 and SCIM 2.0 capabilities are supported, partial or unsupported against Okta, Entra ID, Auth0 and PingFederate, with the per-provider attribute settings and quirks."
 resource: "honua://capability/identity.scim"
 resources:
   - "honua://capability/identity.saml"
 ---
 # SCIM / SAML IdP Conformance Matrix
 
-Status receipt for the enterprise-identity conformance work (#2154), built on the SCIM
-2.0 + SAML 2.0 foundation delivered in #2110. It records the supported / partial /
-unsupported status of Honua's identity surfaces against the four major identity
+This matrix records the supported / partial / unsupported status of Honua's identity surfaces against the four major identity
 providers, plus the known per-provider quirks operators should account for.
 
-Honua provisions and authenticates into a **single durable role store** (ADR-0049): SCIM,
+Honua provisions and authenticates into a **single durable role store**: SCIM,
 SAML, and OIDC all land in the same identity/role model rather than parallel stores. SCIM
 provisioning is RFC 7643/7644-conformant and provider-agnostic; SAML attribute mapping is
 the main per-provider variable and is exercised by the conformance matrix tests.
-
-## How the matrix runs in CI
-
-- **SAML attribute mapping** — `IdpConformanceMatrixTests`
-  (`tests/dotnet/Honua.Server.Tests/Features/Identity/IdpConformanceMatrixTests.cs`) drives
-  the real `SamlAssertionValidator` against assertions shaped like each provider emits
-  (provider-specific attribute `Name` URIs), signed locally by the in-box `SignedXml`
-  oracle. These are **mocked exchanges** with no network dependency, so a regression in the
-  signature or attribute-mapping path fails the build.
-- **SCIM provisioning** — `ScimProvisioningEndpointsTests` exercises the RFC 7643/7644
-  user/group lifecycle (create / replace / patch-active / patch-membership / deprovision)
-  that every listed IdP's SCIM client drives, plus the RFC 7643 §5-7 discovery documents
-  (`/ServiceProviderConfig`, `/ResourceTypes`, `/Schemas`).
-  `Scim:OidcIssuer` is required whenever `Scim:BearerToken` enables provisioning and must
-  match the exact OIDC `iss` value for the IdP connected to this SCIM endpoint. Honua
-  persists that trusted configuration with each SCIM `externalId`, forming
-  an issuer-plus-subject key; this prevents identical, case-sensitive `sub` values from
-  different configured issuers from sharing role membership. User creation therefore
-  requires the IdP to send its OIDC subject in the SCIM `externalId` field.
-- **SAML Single Logout** — `SamlBridgeEndpointsTests` drives the `/saml/slo` endpoint with a
-  signed, IdP-initiated `LogoutRequest`, asserting the local session is terminated and a
-  `LogoutResponse` relayed; `IdpConformanceMatrixTests` proves the SLO signature path verifies
-  each provider's signed logout and rejects an unsigned one.
-- **Live-IdP runs** are out of scope for CI (they require tenant credentials) and are tracked
-  as a follow-up; see _Deferred_ below.
 
 ## SAML 2.0 SSO
 
@@ -104,6 +77,13 @@ shared record before clearing the cookie, including for other replicas.
 
 ## SCIM 2.0 provisioning
 
+`Scim:OidcIssuer` is required whenever `Scim:BearerToken` enables provisioning and must
+match the exact OIDC `iss` value for the IdP connected to this SCIM endpoint. Honua
+persists that trusted configuration with each SCIM `externalId`, forming an
+issuer-plus-subject key, so identical `sub` values from different configured issuers
+never share role membership. User creation therefore requires the IdP to send its OIDC
+subject in the SCIM `externalId` field.
+
 | Capability | Okta | Entra ID | Auth0 | PingFederate |
 |---|---|---|---|---|
 | User create / replace (PUT) | Supported | Supported | Supported | Supported |
@@ -125,10 +105,8 @@ shared record before clearing the cookie, including for other replicas.
   group display name (each SCIM group maps to a Honua role).
 - **PingFederate** — uses standard RFC 7644 PUT/PATCH; no Honua-specific deviation observed.
 
-## Deferred
+## Not yet supported
 
 - SP-initiated SAML logout (Honua generating and signing its own `LogoutRequest`) and the
   HTTP-Redirect SLO binding (with its query-string signature scheme). IdP-initiated,
   HTTP-POST, signed Single Logout is supported today.
-- Live-IdP conformance runs gated behind tenant credentials (skippable in CI), with recorded
-  real-world assertion/metadata fixtures captured per provider.

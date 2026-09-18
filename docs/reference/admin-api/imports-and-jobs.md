@@ -98,7 +98,7 @@ Run `POST /api/v1/admin/import/geoservices/discover` with `{"serviceUrl":"https:
 
 Raster import is multipart form-data with optional sidecars (`.pgw`/`.jgw`/`.tfw`/`.wld`, `.prj`). Subsequent uploads to a layer must match the layer's SRID and band count; mismatches return `400`.
 
-Run `POST /api/v1/admin/import/raster` with form values `file=ortho.tif` and `layerName=ortho-2026`.
+Run `POST /api/v1/admin/import/raster` with form values `file=ortho.tif`, `layerId=1`, and `name=ortho-2026`.
 
 ## Tile operation jobs
 
@@ -141,4 +141,4 @@ Run `GET /api/v1/admin/operations/{operationId}` with the operation id returned 
 - [Migrate from GeoServer](../../guides/migrate/from-geoserver.md) and [from ArcGIS Server](../../guides/migrate/from-arcgis-server.md)
 - [Publish rasters](../../guides/publish/publish-rasters.md)
 - [Publish tiles](../../guides/publish/publish-tiles.md)
-- [Operations](../../guides/deploy/backup-and-restore.md)
+- [Monitor Honua Server](../../guides/deploy/monitoring.md)

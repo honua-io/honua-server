@@ -1,16 +1,14 @@
 ---
 type: reference
 title: "Control Plane API Migration Guide"
-description: "This guide covers migration for the Honua control-plane/admin API only."
+description: "How to generate a client from the checked-in admin OpenAPI contract, which paths have been removed and what replaced them, and how breaking changes reach you."
 ---
 # Control Plane API Migration Guide
 
 This guide covers migration for the Honua control-plane/admin API only.
 
-For SDK-specific support windows and release-channel expectations, see
-[Server + SDK Compatibility Matrix](../concepts/ecosystem.md). For the
-per-repository release-note and migration-guide template, see
-[SDK Migration Guide Template](../internal/developer/sdk-migration-template.md).
+This guide covers the Honua control-plane (admin) API only. For SDK support windows and
+release-channel expectations, see [Server + SDK compatibility](../concepts/ecosystem.md).
 
 ## Migration Baseline
 
@@ -22,22 +20,18 @@ Before regenerating or upgrading SDK artifacts:
    and SDK regeneration requirements.
 4. Continue with the generation and validation steps below.
 
-## Quickstart: Generate SDKs
+## Generate a client
 
-Validate contract and generate SDK artifacts from the curated admin OpenAPI spec:
+The first-party SDKs (`honua-admin` on PyPI, `@honua/sdk-js` on npm, `Honua.Sdk.Admin` on
+NuGet) already wrap this API. To generate your own client, use the checked-in admin
+OpenAPI contract with [OpenAPI Generator](https://openapi-generator.tech/):
 
 ```bash
-./scripts/ci/validate-openapi-contracts.sh
-./scripts/sdk/generate-control-plane-sdks.sh
+openapi-generator generate -i docs/developer/api-specs/admin-api.json -g typescript-fetch -o ./honua-admin-client
 ```
 
-Artifacts are written to `artifacts/control-plane-sdks/`:
-- TypeScript (`typescript-fetch`) tarball
-- Python tarball
-- .NET C# tarball
-- `manifest.json` and `SHA256SUMS.txt`
-
-CI also generates these artifacts in `control-plane-sdk-governance.yml`, and release builds attach them to release assets.
+The same file is served by a running deployment at `GET /api/v1/admin/openapi.json`. The
+examples below show generated clients of that shape.
 
 ## SDK Usage Examples
 
@@ -89,60 +83,33 @@ var connections = api.GetConnections();
 Console.WriteLine(connections);
 ```
 
-## Breaking Change Upgrade Flow
+## When a breaking change ships
 
-1. Detect breakage early:
+Breaking changes to the admin API arrive only in a new major path (`/api/v2/admin/*`),
+except for emergency security fixes, and are announced in release notes with their
+replacements ([versioning and support](versioning-and-support.md)). After upgrading:
 
-```bash
-OPENAPI_BASE_REF=origin/trunk ./scripts/ci/validate-openapi-contracts.sh
-```
-
-2. If breakage is intentional, explain it in the PR's **Breaking Changes** section,
-check the exact `OPENAPI_BREAKING_CHANGE_APPROVED` marker, and update:
-- `docs/developer/SDK_COMPATIBILITY_MATRIX.md`
-- `docs/developer/CONTROL_PLANE_VERSIONING_POLICY.md`
-- `docs/operator/CONTROL_PLANE_API.md`
-- release checklist compatibility notes
-
-The marker scopes the acknowledgement to that PR. The governance job still emits a
-warning annotation and lists every suppressed finding in its job summary; a green job
-therefore does not hide the breaking diff from reviewers.
-
-3. Regenerate SDK artifacts and update client integrations.
-
-4. Verify write-path behavior against your automation workflows (publish/update/import operations).
+1. Read the release notes for admin contract changes, deprecations and authentication changes.
+2. Regenerate your client from the new contract and update your integrations.
+3. Verify write-path behaviour against your automation (publish, update and import operations).
 
 ## Removed Contract Paths
 
 Endpoints removed from the published admin OpenAPI spec because they were already
-removed at runtime (spec-vs-route honesty corrections, not live-surface removals).
-`validate-openapi-contracts.sh` reports these as breaking by design — they are
-acknowledged intentional removals. The correcting PR records the removal below,
-checks `OPENAPI_BREAKING_CHANGE_APPROVED`, and retains the validator's warning
-annotation and job-summary evidence even though the governance job stays green.
+removed at runtime. Clients calling these paths already receive `404`; removing them from
+the spec prevents generated clients from emitting calls that cannot succeed.
 
-| Removed path/schema | Removed at runtime in | Correction | Replacement |
-|---|---|---|---|
-| `POST /api/v1/admin/manifest/apply` (`ManifestApplyRequest`, `ApiResponseManifestApplyResult`, `ManifestApplyResult`, `ManifestApplySummary`, `ManifestApplyEntry`) | #1035 metadata cutover | #2822 | GitOps release manifests; no mutating manifest-apply route remains |
-| `GET /api/v1/admin/manifest` (`ApiResponseMetadataManifest`, `MetadataManifest`) | #1035 metadata cutover | #2822 | Read-only `GET /api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest` and `GET /api/v1/capabilities/manifest` |
-| `GET`/`POST`/`PUT`/`DELETE` `/api/v1/admin/gitops/watch`, `GET /api/v1/admin/gitops/changes`, `GET /api/v1/admin/gitops/changes/{id}`, `GET /api/v1/admin/gitops/changes/{id}/diff` (`ApiResponseGitOpsWatchConfigResponse`, `GitOpsWatchConfigRequest`, `GitOpsWatchConfigResponse`, `ApiResponseGitOpsChangeRecordResponse`, `ApiResponseGitOpsChangeRecordResponseArray`, `GitOpsChangeRecordResponse`, `ApiResponseGitOpsChangeDiffResponse`, `GitOpsChangeDiffResponse`) | #1035 cutover (see the `EndpointRegistry.AdminAlerts` removal comment) | #3051 | GitOps release packages under `/api/v1/admin/metadata/release-packages/**` |
-| `GET`/`POST` `/api/v1/admin/metadata/resources`, `GET`/`PUT`/`DELETE` `/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}` (`ApiResponseMetadataResource`, `ApiResponseMetadataResourceArray`, `MetadataResource`, `MetadataResourceIdentifier`, `ResourceMetadata`) | #1035 cutover (see the `EndpointRegistry.AdminMetadata` removal comment) | #3051 | Metadata v2 release packages and the layer authoring routes under `/api/v1/admin/metadata/layers/**` |
+| Removed path/schema | Replacement |
+|---|---|
+| `POST /api/v1/admin/manifest/apply` (`ManifestApplyRequest`, `ApiResponseManifestApplyResult`, `ManifestApplyResult`, `ManifestApplySummary`, `ManifestApplyEntry`) | GitOps release manifests; no mutating manifest-apply route remains |
+| `GET /api/v1/admin/manifest` (`ApiResponseMetadataManifest`, `MetadataManifest`) | Read-only `GET /api/v1/admin/metadata/release-packages/{packageId}/gitops-manifest` and `GET /api/v1/capabilities/manifest` |
+| `GET`/`POST`/`PUT`/`DELETE` `/api/v1/admin/gitops/watch`, `GET /api/v1/admin/gitops/changes`, `GET /api/v1/admin/gitops/changes/{id}`, `GET /api/v1/admin/gitops/changes/{id}/diff` (`ApiResponseGitOpsWatchConfigResponse`, `GitOpsWatchConfigRequest`, `GitOpsWatchConfigResponse`, `ApiResponseGitOpsChangeRecordResponse`, `ApiResponseGitOpsChangeRecordResponseArray`, `GitOpsChangeRecordResponse`, `ApiResponseGitOpsChangeDiffResponse`, `GitOpsChangeDiffResponse`) | GitOps release packages under `/api/v1/admin/metadata/release-packages/**` |
+| `GET`/`POST` `/api/v1/admin/metadata/resources`, `GET`/`PUT`/`DELETE` `/api/v1/admin/metadata/resources/{kind}/{namespace}/{name}` (`ApiResponseMetadataResource`, `ApiResponseMetadataResourceArray`, `MetadataResource`, `MetadataResourceIdentifier`, `ResourceMetadata`) | Metadata v2 release packages and the layer authoring routes under `/api/v1/admin/metadata/layers/**` |
 
-Clients calling these paths already receive `404`; removing them from the spec
-prevents generated SDKs from emitting calls that cannot succeed.
 
-## Deprecation Rules
+## Deprecation rules
 
-Deprecations must follow `docs/developer/CONTROL_PLANE_VERSIONING_POLICY.md`:
-- announce and document replacements
-- preserve deprecated operations during grace period
-- remove only in next major path (except emergency security cases)
-
-## SDK Handoff Baseline
-
-When a server change affects generated control-plane clients or SDK runtime
-checks, update all three places in the same rollout window:
-- this migration guide
-- [Server + SDK Compatibility Matrix](../concepts/ecosystem.md)
-- [SDK Migration Guide Template](../internal/developer/sdk-migration-template.md)
-- the affected SDK changelog and migration notes
+Deprecations follow the [versioning and support policy](versioning-and-support.md):
+replacements are announced and documented, deprecated operations are preserved through the
+grace period and answer with `Deprecation` and `Sunset` headers, and removal happens only in
+the next major path.
