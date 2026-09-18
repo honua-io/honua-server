@@ -1,0 +1,2023 @@
+{
+  "schema_version": "1.0",
+  "description": "Four-lane client certification checklist. A cell closes as pass (with an evidence reference naming the client build) or n/a-* (with a vendor-documentation or provider-registry citation). blocked and not-started are open.",
+  "lanes": {
+    "pro-ui": "ArcGIS Pro 3.7.1.1904",
+    "arcpy": "ArcPy (ships with ArcGIS Pro 3.7.1.1904)",
+    "qgis-ui": "QGIS 3.44.14 LTR",
+    "pyqgis": "QGIS 3.44.14 LTR"
+  },
+  "states": [
+    "blocked",
+    "fail",
+    "n/a-no-client",
+    "n/a-superseded",
+    "not-started",
+    "pass"
+  ],
+  "closed_states": [
+    "n/a-no-client",
+    "n/a-superseded",
+    "pass"
+  ],
+  "summary": {
+    "per_lane": {
+      "pro-ui": {
+        "pass": 14,
+        "not-started": 57,
+        "n/a-superseded": 3,
+        "n/a-no-client": 11,
+        "fail": 2,
+        "blocked": 7
+      },
+      "arcpy": {
+        "not-started": 53,
+        "n/a-no-client": 34,
+        "blocked": 7
+      },
+      "qgis-ui": {
+        "not-started": 48,
+        "n/a-superseded": 3,
+        "n/a-no-client": 32,
+        "blocked": 7,
+        "pass": 4
+      },
+      "pyqgis": {
+        "not-started": 42,
+        "pass": 13,
+        "n/a-superseded": 3,
+        "n/a-no-client": 32,
+        "blocked": 4
+      }
+    },
+    "overall": {
+      "cells": 376,
+      "closed": 149,
+      "open": 227
+    }
+  },
+  "rows": [
+    {
+      "protocol": "wms",
+      "version": "1.3.0",
+      "operation": "GetCapabilities",
+      "lanes": {
+        "pro-ui": {
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "wms",
+      "version": "1.3.0",
+      "operation": "GetMap",
+      "lanes": {
+        "pro-ui": {
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "wms",
+      "version": "1.3.0",
+      "operation": "GetFeatureInfo",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "wms",
+      "version": "1.3.0",
+      "operation": "GetLegendGraphic",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "wms",
+      "version": "1.3.0",
+      "operation": "styles",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "wms",
+      "version": "1.3.0",
+      "operation": "time-dimension",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "wmts",
+      "version": "1.0.0",
+      "operation": "GetCapabilities",
+      "lanes": {
+        "pro-ui": {
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "wmts",
+      "version": "1.0.0",
+      "operation": "GetTile",
+      "lanes": {
+        "pro-ui": {
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "wmts",
+      "version": "1.0.0",
+      "operation": "GetFeatureInfo",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "wmts",
+      "version": "1.0.0",
+      "operation": "RESTful-tile-path",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "wfs",
+      "version": "2.0.0",
+      "operation": "GetCapabilities",
+      "lanes": {
+        "pro-ui": {
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wfs.cert.json"
+        }
+      }
+    },
+    {
+      "protocol": "wfs",
+      "version": "2.0.0",
+      "operation": "DescribeFeatureType",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wfs.cert.json"
+        }
+      }
+    },
+    {
+      "protocol": "wfs",
+      "version": "2.0.0",
+      "operation": "GetFeature",
+      "lanes": {
+        "pro-ui": {
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wfs.cert.json"
+        }
+      }
+    },
+    {
+      "protocol": "wfs",
+      "version": "2.0.0",
+      "operation": "GetPropertyValue",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "wfs",
+      "version": "2.0.0",
+      "operation": "Transaction-Insert",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "wfs",
+      "version": "2.0.0",
+      "operation": "Transaction-Update",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "wfs",
+      "version": "2.0.0",
+      "operation": "Transaction-Delete",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "wfs",
+      "version": "2.0.0",
+      "operation": "ListStoredQueries",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "wcs",
+      "version": "1.0.0",
+      "operation": "GetCapabilities",
+      "lanes": {
+        "pro-ui": {
+          "state": "n/a-superseded",
+          "citation": "enterprise.arcgis.com WCS services: a client built for WCS 1.0.0, 1.1.0, 1.1.1, 1.1.2 or 2.0.1 can consume the service; Pro exposes a Version selector and negotiates the highest, so it uses 2.0.1 here."
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wcs.cert.json - protocol wcs 1.0.0, client desktop-qgis 3.44.14-Solothurn, 8 passed 0 failed"
+        }
+      }
+    },
+    {
+      "protocol": "wcs",
+      "version": "1.0.0",
+      "operation": "DescribeCoverage",
+      "lanes": {
+        "pro-ui": {
+          "state": "n/a-superseded",
+          "citation": "enterprise.arcgis.com WCS services: a client built for WCS 1.0.0, 1.1.0, 1.1.1, 1.1.2 or 2.0.1 can consume the service; Pro exposes a Version selector and negotiates the highest, so it uses 2.0.1 here."
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wcs.cert.json - protocol wcs 1.0.0, client desktop-qgis 3.44.14-Solothurn, 8 passed 0 failed"
+        }
+      }
+    },
+    {
+      "protocol": "wcs",
+      "version": "1.0.0",
+      "operation": "GetCoverage",
+      "lanes": {
+        "pro-ui": {
+          "state": "n/a-superseded",
+          "citation": "enterprise.arcgis.com WCS services: a client built for WCS 1.0.0, 1.1.0, 1.1.1, 1.1.2 or 2.0.1 can consume the service; Pro exposes a Version selector and negotiates the highest, so it uses 2.0.1 here."
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wcs.cert.json - protocol wcs 1.0.0, client desktop-qgis 3.44.14-Solothurn, 8 passed 0 failed"
+        }
+      }
+    },
+    {
+      "protocol": "wcs",
+      "version": "2.0.1",
+      "operation": "GetCapabilities",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "n/a-superseded",
+          "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
+        },
+        "pyqgis": {
+          "state": "n/a-superseded",
+          "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
+        }
+      }
+    },
+    {
+      "protocol": "wcs",
+      "version": "2.0.1",
+      "operation": "DescribeCoverage",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "n/a-superseded",
+          "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
+        },
+        "pyqgis": {
+          "state": "n/a-superseded",
+          "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
+        }
+      }
+    },
+    {
+      "protocol": "wcs",
+      "version": "2.0.1",
+      "operation": "GetCoverage",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "n/a-superseded",
+          "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
+        },
+        "pyqgis": {
+          "state": "n/a-superseded",
+          "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
+        }
+      }
+    },
+    {
+      "protocol": "ogc-api-features",
+      "version": "1.0",
+      "operation": "landing-page",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json"
+        }
+      }
+    },
+    {
+      "protocol": "ogc-api-features",
+      "version": "1.0",
+      "operation": "conformance",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json"
+        }
+      }
+    },
+    {
+      "protocol": "ogc-api-features",
+      "version": "1.0",
+      "operation": "collections",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json"
+        }
+      }
+    },
+    {
+      "protocol": "ogc-api-features",
+      "version": "1.0",
+      "operation": "items",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json"
+        }
+      }
+    },
+    {
+      "protocol": "ogc-api-features",
+      "version": "1.0",
+      "operation": "item",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json"
+        }
+      }
+    },
+    {
+      "protocol": "ogc-api-features",
+      "version": "1.0",
+      "operation": "bbox-datetime-filter",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json"
+        }
+      }
+    },
+    {
+      "protocol": "ogc-api-features",
+      "version": "1.0",
+      "operation": "crs-negotiation",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json"
+        }
+      }
+    },
+    {
+      "protocol": "ogc-api-features",
+      "version": "1.0",
+      "operation": "transactions-part4",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "ogc-api-tiles",
+      "version": "1.0",
+      "operation": "landing-tilesets",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        }
+      }
+    },
+    {
+      "protocol": "ogc-api-tiles",
+      "version": "1.0",
+      "operation": "tile",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        }
+      }
+    },
+    {
+      "protocol": "stac",
+      "version": "1.0.0",
+      "operation": "catalog-landing",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "stac",
+      "version": "1.0.0",
+      "operation": "collections",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "stac",
+      "version": "1.0.0",
+      "operation": "item-search",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "stac",
+      "version": "1.0.0",
+      "operation": "asset-download",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "sensorthings",
+      "version": "1.1",
+      "operation": "entity-sets",
+      "lanes": {
+        "pro-ui": {
+          "state": "n/a-no-client",
+          "citation": "No SensorThings client ships in ArcGIS Pro; its OGC API support is limited to Features and Tiles per the Add OGC API services page."
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "blocked",
+          "cause": "service root returns 404 (#4202)"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "sensorthings",
+      "version": "1.1",
+      "operation": "expand",
+      "lanes": {
+        "pro-ui": {
+          "state": "n/a-no-client",
+          "citation": "No SensorThings client ships in ArcGIS Pro; its OGC API support is limited to Features and Tiles per the Add OGC API services page."
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "blocked",
+          "cause": "service root returns 404 (#4202)"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "sensorthings",
+      "version": "1.1",
+      "operation": "filter-paging",
+      "lanes": {
+        "pro-ui": {
+          "state": "n/a-no-client",
+          "citation": "No SensorThings client ships in ArcGIS Pro; its OGC API support is limited to Features and Tiles per the Add OGC API services page."
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "blocked",
+          "cause": "paging/count defect (#4200)"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "featureserver",
+      "version": "GeoServices REST",
+      "operation": "service-info",
+      "lanes": {
+        "pro-ui": {
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "pass",
+          "evidence": "honua-client-compat/evidence/native-qgis-ltr-20260916-a/results.json - QGIS 3.44.14-Solothurn"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "featureserver",
+      "version": "GeoServices REST",
+      "operation": "layer-metadata",
+      "lanes": {
+        "pro-ui": {
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "pass",
+          "evidence": "honua-client-compat/evidence/native-qgis-ltr-20260916-a/results.json - QGIS 3.44.14-Solothurn"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "featureserver",
+      "version": "GeoServices REST",
+      "operation": "query",
+      "lanes": {
+        "pro-ui": {
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "pass",
+          "evidence": "honua-client-compat/evidence/native-qgis-ltr-20260916-a/results.json - QGIS 3.44.14-Solothurn"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "featureserver",
+      "version": "GeoServices REST",
+      "operation": "identify",
+      "lanes": {
+        "pro-ui": {
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "pass",
+          "evidence": "honua-client-compat/evidence/native-qgis-ltr-20260916-a/results.json - QGIS 3.44.14-Solothurn"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "featureserver",
+      "version": "GeoServices REST",
+      "operation": "applyEdits",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "featureserver",
+      "version": "GeoServices REST",
+      "operation": "attachments",
+      "lanes": {
+        "pro-ui": {
+          "state": "fail",
+          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "featureserver",
+      "version": "GeoServices REST",
+      "operation": "relatedRecords",
+      "lanes": {
+        "pro-ui": {
+          "state": "fail",
+          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "featureserver",
+      "version": "GeoServices REST",
+      "operation": "statistics",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "featureserver",
+      "version": "GeoServices REST",
+      "operation": "domains",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "featureserver",
+      "version": "GeoServices REST",
+      "operation": "replica-sync",
+      "lanes": {
+        "pro-ui": {
+          "state": "blocked",
+          "cause": "Pro offline downloads into a mobile geodatabase; createReplica emits Esri JSON only"
+        },
+        "arcpy": {
+          "state": "blocked",
+          "cause": "ArcPy exposes no feature-service replica-creation API"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "mapserver",
+      "version": "GeoServices REST",
+      "operation": "service-info",
+      "lanes": {
+        "pro-ui": {
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "mapserver",
+      "version": "GeoServices REST",
+      "operation": "export",
+      "lanes": {
+        "pro-ui": {
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "mapserver",
+      "version": "GeoServices REST",
+      "operation": "identify",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "mapserver",
+      "version": "GeoServices REST",
+      "operation": "legend",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "imageserver",
+      "version": "GeoServices REST",
+      "operation": "service-info",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        }
+      }
+    },
+    {
+      "protocol": "imageserver",
+      "version": "GeoServices REST",
+      "operation": "exportImage",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        }
+      }
+    },
+    {
+      "protocol": "imageserver",
+      "version": "GeoServices REST",
+      "operation": "identify",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        }
+      }
+    },
+    {
+      "protocol": "vectortileserver",
+      "version": "GeoServices REST",
+      "operation": "service-info",
+      "lanes": {
+        "pro-ui": {
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "vectortileserver",
+      "version": "GeoServices REST",
+      "operation": "tile",
+      "lanes": {
+        "pro-ui": {
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "vectortileserver",
+      "version": "GeoServices REST",
+      "operation": "style",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "gpserver",
+      "version": "GeoServices REST",
+      "operation": "service-info",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
+        }
+      }
+    },
+    {
+      "protocol": "gpserver",
+      "version": "GeoServices REST",
+      "operation": "task-info",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
+        }
+      }
+    },
+    {
+      "protocol": "gpserver",
+      "version": "GeoServices REST",
+      "operation": "submitJob",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
+        }
+      }
+    },
+    {
+      "protocol": "gpserver",
+      "version": "GeoServices REST",
+      "operation": "job-status",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
+        }
+      }
+    },
+    {
+      "protocol": "gpserver",
+      "version": "GeoServices REST",
+      "operation": "results",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
+        }
+      }
+    },
+    {
+      "protocol": "gpserver",
+      "version": "GeoServices REST",
+      "operation": "cancel",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
+        }
+      }
+    },
+    {
+      "protocol": "geocodeserver",
+      "version": "GeoServices REST",
+      "operation": "findAddressCandidates",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: stock QGIS has no Esri locator client."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: stock QGIS has no Esri locator client."
+        }
+      }
+    },
+    {
+      "protocol": "geocodeserver",
+      "version": "GeoServices REST",
+      "operation": "suggest",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: stock QGIS has no Esri locator client."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: stock QGIS has no Esri locator client."
+        }
+      }
+    },
+    {
+      "protocol": "geocodeserver",
+      "version": "GeoServices REST",
+      "operation": "reverseGeocode",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: stock QGIS has no Esri locator client."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: stock QGIS has no Esri locator client."
+        }
+      }
+    },
+    {
+      "protocol": "geocodeserver",
+      "version": "GeoServices REST",
+      "operation": "geocodeAddresses",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: stock QGIS has no Esri locator client."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: stock QGIS has no Esri locator client."
+        }
+      }
+    },
+    {
+      "protocol": "geometryserver",
+      "version": "GeoServices REST",
+      "operation": "project",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS performs geometry operations locally through GEOS and GDAL and has no client for a remote Esri geometry service."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS performs geometry operations locally through GEOS and GDAL and has no client for a remote Esri geometry service."
+        }
+      }
+    },
+    {
+      "protocol": "geometryserver",
+      "version": "GeoServices REST",
+      "operation": "buffer",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS performs geometry operations locally through GEOS and GDAL and has no client for a remote Esri geometry service."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS performs geometry operations locally through GEOS and GDAL and has no client for a remote Esri geometry service."
+        }
+      }
+    },
+    {
+      "protocol": "geometryserver",
+      "version": "GeoServices REST",
+      "operation": "areasAndLengths",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS performs geometry operations locally through GEOS and GDAL and has no client for a remote Esri geometry service."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS performs geometry operations locally through GEOS and GDAL and has no client for a remote Esri geometry service."
+        }
+      }
+    },
+    {
+      "protocol": "geometryserver",
+      "version": "GeoServices REST",
+      "operation": "relation",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS performs geometry operations locally through GEOS and GDAL and has no client for a remote Esri geometry service."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS performs geometry operations locally through GEOS and GDAL and has no client for a remote Esri geometry service."
+        }
+      }
+    },
+    {
+      "protocol": "naserver",
+      "version": "GeoServices REST",
+      "operation": "route-solve",
+      "lanes": {
+        "pro-ui": {
+          "state": "blocked",
+          "cause": "no pgRouting extension in postgis/postgis:16-3.4"
+        },
+        "arcpy": {
+          "state": "blocked",
+          "cause": "no pgRouting extension available"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        }
+      }
+    },
+    {
+      "protocol": "naserver",
+      "version": "GeoServices REST",
+      "operation": "service-area",
+      "lanes": {
+        "pro-ui": {
+          "state": "blocked",
+          "cause": "no pgRouting extension available"
+        },
+        "arcpy": {
+          "state": "blocked",
+          "cause": "no pgRouting extension available"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        }
+      }
+    },
+    {
+      "protocol": "versionmanagementserver",
+      "version": "GeoServices REST",
+      "operation": "create-version",
+      "lanes": {
+        "pro-ui": {
+          "state": "blocked",
+          "cause": "versioning.branch capability is experimental"
+        },
+        "arcpy": {
+          "state": "blocked",
+          "cause": "versioning.branch capability is experimental"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS ships no provider or UI for Esri branch versioning."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS ships no provider or UI for Esri branch versioning."
+        }
+      }
+    },
+    {
+      "protocol": "versionmanagementserver",
+      "version": "GeoServices REST",
+      "operation": "reconcile-post",
+      "lanes": {
+        "pro-ui": {
+          "state": "blocked",
+          "cause": "versioning.branch capability is experimental"
+        },
+        "arcpy": {
+          "state": "blocked",
+          "cause": "versioning.branch capability is experimental"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS ships no provider or UI for Esri branch versioning."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS ships no provider or UI for Esri branch versioning."
+        }
+      }
+    },
+    {
+      "protocol": "geoservices-soap",
+      "version": "GeoServices SOAP",
+      "operation": "catalog-discovery",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS discovers ArcGIS services over REST only and has no SOAP catalog client."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS discovers ArcGIS services over REST only and has no SOAP catalog client."
+        }
+      }
+    },
+    {
+      "protocol": "odata",
+      "version": "v4",
+      "operation": "metadata",
+      "lanes": {
+        "pro-ui": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/ogc-services.html: Pro consumes WMS, WMTS, WCS and WFS only among OGC classic services."
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        }
+      }
+    },
+    {
+      "protocol": "odata",
+      "version": "v4",
+      "operation": "entity-query",
+      "lanes": {
+        "pro-ui": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/ogc-services.html: Pro consumes WMS, WMTS, WCS and WFS only among OGC classic services."
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        }
+      }
+    },
+    {
+      "protocol": "ogc-api-maps",
+      "version": "1.0",
+      "operation": "map",
+      "lanes": {
+        "pro-ui": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        }
+      }
+    },
+    {
+      "protocol": "ogc-api-coverages",
+      "version": "1.0",
+      "operation": "coverage",
+      "lanes": {
+        "pro-ui": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        }
+      }
+    },
+    {
+      "protocol": "ogc-api-records",
+      "version": "1.0",
+      "operation": "records",
+      "lanes": {
+        "pro-ui": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        }
+      }
+    },
+    {
+      "protocol": "ogc-api-processes",
+      "version": "1.0",
+      "operation": "processes-execute",
+      "lanes": {
+        "pro-ui": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        }
+      }
+    },
+    {
+      "protocol": "ogc-api-styles",
+      "version": "1.0",
+      "operation": "styles",
+      "lanes": {
+        "pro-ui": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "blocked",
+          "cause": "landing reports an empty styles array; none published"
+        },
+        "pyqgis": {
+          "state": "blocked",
+          "cause": "landing reports an empty styles array; none published"
+        }
+      }
+    },
+    {
+      "protocol": "ogc-api-edr",
+      "version": "1.0",
+      "operation": "edr-query",
+      "lanes": {
+        "pro-ui": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        }
+      }
+    },
+    {
+      "protocol": "pmtiles",
+      "version": "3",
+      "operation": "archive-read",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "blocked",
+          "cause": "no archive published; 404 zero-byte body"
+        },
+        "pyqgis": {
+          "state": "blocked",
+          "cause": "no archive published; 404 zero-byte body"
+        }
+      }
+    },
+    {
+      "protocol": "tilejson",
+      "version": "3.0.0",
+      "operation": "descriptor",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "cog",
+      "version": "GeoTIFF",
+      "operation": "range-read",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "blocked",
+          "cause": "no COG published; 404"
+        },
+        "pyqgis": {
+          "state": "blocked",
+          "cause": "no COG published; 404"
+        }
+      }
+    },
+    {
+      "protocol": "i3s-sceneserver",
+      "version": "1.x",
+      "operation": "scene-layer",
+      "lanes": {
+        "pro-ui": {
+          "state": "blocked",
+          "cause": "no scene published; SceneServer returns code 404"
+        },
+        "arcpy": {
+          "state": "blocked",
+          "cause": "no scene published"
+        },
+        "qgis-ui": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        },
+        "pyqgis": {
+          "state": "n/a-no-client",
+          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+        }
+      }
+    },
+    {
+      "protocol": "3d-tiles",
+      "version": "1.0",
+      "operation": "tileset",
+      "lanes": {
+        "pro-ui": {
+          "state": "not-started"
+        },
+        "arcpy": {
+          "state": "not-started"
+        },
+        "qgis-ui": {
+          "state": "not-started"
+        },
+        "pyqgis": {
+          "state": "not-started"
+        }
+      }
+    },
+    {
+      "protocol": "elevation",
+      "version": "Esri",
+      "operation": "point-query",
+      "lanes": {
+        "pro-ui": {
+          "state": "blocked",
+          "cause": "no elevation service published; 404"
+        },
+        "arcpy": {
+          "state": "blocked",
+          "cause": "no elevation service published; 404"
+        },
+        "qgis-ui": {
+          "state": "blocked",
+          "cause": "no elevation service published; 404"
+        },
+        "pyqgis": {
+          "state": "blocked",
+          "cause": "no elevation service published; 404"
+        }
+      }
+    }
+  ]
+}
