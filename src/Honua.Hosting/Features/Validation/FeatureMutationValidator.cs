@@ -123,6 +123,21 @@ internal static class MetadataV2AttributeValidation
             }
 
             var normalizedValue = NormalizeAttributeValue(rawValue);
+
+            // An explicit null on a non-editable field means "not supplied", not
+            // "set to null". These fields are server-assigned, so a client cannot
+            // set them and a supplied null cannot mean anything else. Rejecting it
+            // broke every stock desktop digitizing session: QGIS serialises the
+            // unset system-maintained object id as "objectid": null on insert, and
+            // the non-nullable check failed the whole edit with error 1006, while
+            // the identical request with the member omitted succeeded and returned
+            // an assigned objectId. Dropping it here lets the store assign the
+            // value exactly as it does when the member is absent.
+            if (!isUpdate && !field.Editable && normalizedValue is null)
+            {
+                continue;
+            }
+
             var error = ValidateAttributeValue(field, normalizedValue, mode);
             if (error != null)
             {

@@ -382,4 +382,63 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         return document.RootElement.GetProperty("count").GetInt32();
     }
+
+    [IntegrationTest]
+    [Operation(Operations.BulkCreate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/addFeatures")]
+    public async Task AddFeatures_WithNullSystemMaintainedObjectId_AssignsOneInstead()
+    {
+        // QGIS serialises the unset object id as an explicit null when it
+        // digitises a new feature, and there is no way for the client to omit it.
+        // The non-nullable check used to fail the whole edit with error 1006,
+        // "Field 'objectid' cannot be null", so no stock desktop digitizing
+        // session could edit a FeatureServer at all. objectid is declared
+        // editable:false with uniqueIdField.isSystemMaintained:true, so a
+        // supplied null can only mean "not supplied".
+        const string nullOidPayload = """
+            {"features":[{"attributes":{"name":"null-oid-insert","objectid":null},"geometry":{"x":-122.44,"y":37.80}}]}
+            """;
+
+        var response = await PostJsonAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addFeatures",
+            nullOidPayload);
+
+        var result = await DeserializeEditsAsync(response);
+        result.AddResults.Should().ContainSingle(edit => edit.Success,
+            "a null system-maintained object id means 'assign one', not 'set null'");
+        var assigned = result.AddResults![0].ObjectId!.Value;
+        assigned.Should().BeGreaterThan(0,
+            "the store must assign a real object id rather than persisting the null");
+        await AssertFeatureNameAsync(assigned, "null-oid-insert");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.BulkUpdate)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/updateFeatures")]
+    public async Task UpdateFeatures_WithNullSystemMaintainedObjectId_IsStillRejected()
+    {
+        // The insert relaxation must not leak into update: there a
+        // non-editable field is a genuine error, because the caller is
+        // addressing an existing row rather than asking for an assignment.
+        const string seedPayload = """
+            {"features":[{"attributes":{"name":"null-oid-update-seed"},"geometry":{"x":-122.45,"y":37.81}}]}
+            """;
+        var seed = await PostJsonAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/addFeatures",
+            seedPayload);
+        var seeded = await DeserializeEditsAsync(seed);
+        seeded.AddResults.Should().ContainSingle(edit => edit.Success);
+
+        var updatePayload = $$$"""
+            {"features":[{"attributes":{"objectid":null,"name":"null-oid-update"}}]}
+            """;
+        var response = await PostJsonAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/updateFeatures",
+            updatePayload);
+
+        var result = await DeserializeEditsAsync(response);
+        result.UpdateResults.Should().NotBeNullOrEmpty();
+        result.UpdateResults!.Should().OnlyContain(edit => !edit.Success,
+            "an update carrying a null object id addresses no row and must not succeed");
+    }
 }
