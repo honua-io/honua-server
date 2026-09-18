@@ -500,7 +500,14 @@ BEGIN
                                 'semanticRoles', to_jsonb(array_remove(ARRAY[
                                     CASE WHEN lf.field_name = 'objectid' THEN 'id.primary' END,
                                     CASE WHEN lf.field_name IN ('shape', 'geometry') THEN 'geometry.primary' END
-                                ], NULL))
+                                ], NULL)),
+                                -- honua.layer_fields.domain is the canonical
+                                -- MetadataV2FieldDomain document ({type, name,
+                                -- codedValues[{code,name}] | range}). It was never
+                                -- carried into the snapshot, so no seeded field
+                                -- could publish a domain and every client's
+                                -- domains cell was unreachable by construction.
+                                'domain', lf.domain
                             )
                             ORDER BY lf.field_order
                         )
@@ -1035,6 +1042,22 @@ VALUES
     -- Item Search Filter Ext class to pass.
     (0, 'eo:cloud_cover', 'Double', 14, NULL, true, NULL, 'Cloud cover percentage')
 ON CONFLICT (layer_id, field_name) DO NOTHING;
+
+-- One coded-value domain, so the FeatureServer queryDomains operation and the
+-- per-field domain member have something to publish. Every client lane's
+-- "domains" cell was unreachable before this: queryDomains answered an empty
+-- array for all three fixture services and no field carried a domain, which
+-- is a fixture gap and not a client or server finding. The values are the
+-- ones the seeded status column actually holds.
+UPDATE honua.layer_fields
+SET domain = jsonb_build_object(
+    'type', 'codedValue',
+    'name', 'StatusDomain',
+    'codedValues', jsonb_build_array(
+        jsonb_build_object('code', 'active', 'name', 'Active'),
+        jsonb_build_object('code', 'inactive', 'name', 'Inactive'),
+        jsonb_build_object('code', 'pending', 'name', 'Pending')))
+WHERE layer_id = 0 AND field_name = 'status';
 
 INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
 VALUES
