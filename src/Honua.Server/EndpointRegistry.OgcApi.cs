@@ -15,6 +15,7 @@ public static partial class EndpointRegistry
         new("GET", "/ogc/features/collections"),
         new("GET", "/ogc/features/collections/{collectionId}"),
         new("GET", "/ogc/features/collections/{collectionId}/queryables"),
+        new("GET", "/ogc/features/collections/{collectionId}/schema"),
         new("GET", "/ogc/features/collections/{collectionId}/items"),
         new("GET", "/ogc/features/api"),
         new("GET", "/ogc/features/schemas/honua-ogcapi-features.xsd"),

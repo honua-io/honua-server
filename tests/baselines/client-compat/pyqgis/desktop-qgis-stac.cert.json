@@ -1,10 +1,10 @@
 {
   "schema_version": "1.0",
-  "run_id": "20260918T164735Z",
-  "run_date": "2026-09-18T16:47:35.820270+00:00",
+  "run_id": "20260918T225800Z",
+  "run_date": "2026-09-18T22:58:00.760132+00:00",
   "server_version": "unknown",
   "server_commit": "",
-  "fixture_revision": "sha256:f1029ff590000dff56c9dcf109e510ab13d3456d25a6d9121c10a850d42081e4",
+  "fixture_revision": "sha256:7cf9f0e0c2ba2de6aadef788b86e0371762627dfdb4fe5f1e4088cc993ba62d4",
   "server_config_revision": "sha256:3eb71252f241546d4fa9fc23799296de3a75592f189449f056dadf103313998f",
   "client_lane": "desktop-qgis",
   "client_version": "3.44.14-Solothurn",
@@ -15,7 +15,7 @@
     {
       "test_case_id": "CERT-CONN-01",
       "status": "pass",
-      "duration_ms": 30,
+      "duration_ms": 101,
       "measured_count": 8,
       "measured_delta": null,
       "notes": "QgsBlockingNetworkRequest + QgsStacParser parsed http://honua:5000/stac as a QgsStacCatalog id='honua-stac-catalog' stac_version=1.0.0, advertising 8 child collections and honouring 4 conformance classes while rejecting an unadvertised one. The controller's own object path is unusable from Python: fetchStacObjectAsync has no bound takeStacObject in 3.44.14.",
@@ -24,7 +24,7 @@
     {
       "test_case_id": "CERT-DISC-01",
       "status": "pass",
-      "duration_ms": 80,
+      "duration_ms": 55,
       "measured_count": 8,
       "measured_delta": null,
       "notes": "QgsStacController.fetchCollections(http://honua:5000/stac/collections) returned 8 collections (numberReturned=8), covering all seeded ids ['0', '2000', '2001', '2002', '3000']; each carries a license, a 1.0.0 stac_version, a non-empty spatial extent and self/items links, collection '0' re-resolved standalone as a Collection, and an unserved collections URL returned None. The live list is a superset of the seeded ids because the OWSLib lane adds transient per-test collections.",
@@ -33,7 +33,7 @@
     {
       "test_case_id": "CERT-QFLT-01",
       "status": "pass",
-      "duration_ms": 235,
+      "duration_ms": 264,
       "measured_count": 3,
       "measured_delta": null,
       "notes": "QgsStacController.fetchItemCollection issued GET item-search against http://honua:5000/stac/search scoped to collection '0': limit=3 returned 3 of numberMatched=10 with a next link, bbox=(-122.495, 37.705, -122.455, 37.735) narrowed to ['1', '2', '3'] with every QGIS-parsed geometry inside the envelope, ids=['2', '4'] selected exactly those, and a closed RFC 3339 interval selected ['1', '2', '3']. An empty region returned no items and a 3-value bbox returned None. fetchItemCollection is blocking, so no Qt event loop is involved.",
@@ -42,11 +42,11 @@
     {
       "test_case_id": "CERT-RNDR-URL-01",
       "status": "pass",
-      "duration_ms": 123,
+      "duration_ms": 104,
       "measured_count": 1,
       "measured_delta": null,
-      "notes": "Item 1 exposed asset 'geojson' (media=application/geo+json, roles=['data']) through QgsStacItem.assets(); QGIS downloaded http://honua:5000/ogc/features/collections/0/items/1 with QgsBlockingNetworkRequest (HTTP 200, 1171 bytes, Content-Type application/geo+json), the payload was the advertised feature id 1, and QgsVectorLayer opened it with 1 feature. An unserved href answered 404 and QGIS surfaced the error. QGIS core has no STAC-native download API: QgsStacAsset.uri() is populated only for cloud-optimized assets, and this asset is application/geo+json, so uri()/uris() are empty and the parsed href drives the transfer.",
-      "evidence_ref": "http://honua:5000/ogc/features/collections/0/items/1"
+      "notes": "Item 1 exposed asset 'geojson' (media=application/geo+json, roles=['data']) through QgsStacItem.assets(); QGIS downloaded http://host.docker.internal:18080/ogc/features/collections/0/items/1 with QgsBlockingNetworkRequest (HTTP 200, 1267 bytes, Content-Type application/geo+json), the payload was the advertised feature id 1, and QgsVectorLayer opened it with 1 feature. An unserved href answered 404 and QGIS surfaced the error. QGIS core has no STAC-native download API: QgsStacAsset.uri() is populated only for cloud-optimized assets, and this asset is application/geo+json, so uri()/uris() are empty and the parsed href drives the transfer.",
+      "evidence_ref": "http://host.docker.internal:18080/ogc/features/collections/0/items/1"
     }
   ],
   "summary": {

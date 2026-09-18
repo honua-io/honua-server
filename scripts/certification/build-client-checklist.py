@@ -269,10 +269,10 @@ def _pyqgis(
 EV = {
     "pyqgis-wcs": _pyqgis("wcs", "1.0.0", 8),
     "pyqgis-oapif": _pyqgis(
-        "ogc-features", "1.0", 18,
+        "ogc-features", "1.0", 21,
         skipped=3),
     "pyqgis-wfs": _pyqgis(
-        "wfs", "2.0.0", 12,
+        "wfs", "2.0.0", 15,
         skipped=4),
     "arcpy-featureserver-service-info": (
         "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-featureserver.cert.json - "
@@ -385,10 +385,16 @@ EV = {
     "pyqgis-wmts-restful": _pyqgis("wmts", "1.0.0", 7, cert_id="CERT-DISC-02"),
 
     # GeoServices REST, STAC and the artifact surfaces, certified 2026-09-17.
-    "pyqgis-fs-info": _pyqgis("featureserver", "10.8", 4, cert_id="CERT-DISC-01"),
-    "pyqgis-fs-meta": _pyqgis("featureserver", "10.8", 4, cert_id="CERT-SCHM-01"),
-    "pyqgis-fs-query": _pyqgis("featureserver", "10.8", 4, cert_id="CERT-QFLT-01"),
-    "pyqgis-fs-identify": _pyqgis("featureserver", "10.8", 4, cert_id="CERT-GEOM-01"),
+    "pyqgis-wfst-insert": _pyqgis("wfs", "2.0.0", 15, cert_id="NB-PQG-WFST-01", skipped=4),
+    "pyqgis-wfst-update": _pyqgis("wfs", "2.0.0", 15, cert_id="NB-PQG-WFST-02", skipped=4),
+    "pyqgis-wfst-delete": _pyqgis("wfs", "2.0.0", 15, cert_id="NB-PQG-WFST-03", skipped=4),
+    "pyqgis-oapif-part4": _pyqgis("ogc-features", "1.0", 21, cert_id="NB-PQG-OAPIFT-01/NB-PQG-OAPIFT-02/NB-PQG-OAPIFT-03", skipped=3),
+    "pyqgis-fs-applyedits": _pyqgis("featureserver", "10.8", 6, cert_id="CERT-AUTH-01"),
+    "pyqgis-fs-domains": _pyqgis("featureserver", "10.8", 6, cert_id="CERT-SCHM-02"),
+    "pyqgis-fs-info": _pyqgis("featureserver", "10.8", 6, cert_id="CERT-DISC-01"),
+    "pyqgis-fs-meta": _pyqgis("featureserver", "10.8", 6, cert_id="CERT-SCHM-01"),
+    "pyqgis-fs-query": _pyqgis("featureserver", "10.8", 6, cert_id="CERT-QFLT-01"),
+    "pyqgis-fs-identify": _pyqgis("featureserver", "10.8", 6, cert_id="CERT-GEOM-01"),
     "pyqgis-ms-info": _pyqgis("mapserver", "10.8", 4, cert_id="CERT-CONN-01"),
     "pyqgis-ms-export": _pyqgis("mapserver", "10.8", 4, cert_id="CERT-RNDR-01"),
     "pyqgis-ms-identify": _pyqgis("mapserver", "10.8", 4, cert_id="CERT-SCHM-01"),
@@ -462,23 +468,6 @@ ESRI_ELEVATION_IDENTITY = (
     "change, not a fixture one."
 )
 
-WFST_CREDENTIAL_GAP = (
-    "the QGIS WFS provider has no authenticated write path against this fixture. "
-    "A Transaction is refused anonymously with NoApplicableCode / "
-    "'Authentication is required to access this resource', and inline URI "
-    "credentials do not reach the write path: http-header:X-API-Key, "
-    "username/password and a no-auth control all fail identically with 'ERROR: 1 "
-    "feature(s) not added.', and the provider's decodeUri parses none of them. "
-    "The same Transaction succeeds outside QGIS with an X-API-Key header "
-    "(totalInserted 1), so the server surface works and the gap is client-side "
-    "credential delivery. QGIS sends a header on the write path only from an "
-    "authentication-database entry referenced as authcfg=<id>; provisioning one "
-    "is what honua-client-compat's bind-qgis-auth-targets and fixture_keyring "
-    "scripts exist for. tests/python/pyqgis/test_wfst_client_compat.py is written "
-    "and skips on exactly this, so the cells close the moment an API-header "
-    "authcfg is provisioned."
-)
-
 PGROUTING_GATE = (
     "pgRouting is not installed in the fixture's database image. It is available to "
     "it: postgis/postgis:16-3.4 is Debian bullseye with the PGDG repo already "
@@ -537,9 +526,9 @@ MATRIX: list[dict] = [
             "GetFeature": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-wfs-getfeature"),
                            "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wfs")},
             "GetPropertyValue": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": ("n/a-no-client", "qgis-wfs-no-propertyvalue")},
-            "Transaction-Insert": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": _blocked(WFST_CREDENTIAL_GAP)},
-            "Transaction-Update": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": _blocked(WFST_CREDENTIAL_GAP)},
-            "Transaction-Delete": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": _blocked(WFST_CREDENTIAL_GAP)},
+            "Transaction-Insert": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wfst-insert")},
+            "Transaction-Update": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wfst-update")},
+            "Transaction-Delete": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wfst-delete")},
             "ListStoredQueries": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": ("n/a-no-client", "qgis-wfs-no-propertyvalue")},
         },
     },
@@ -589,7 +578,7 @@ MATRIX: list[dict] = [
             "crs-negotiation": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
                                 "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-oapif")},
             "transactions-part4": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
-                                   "qgis-ui": NS, "pyqgis": NS},
+                                   "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-oapif-part4")},
         },
     },
     {
@@ -655,11 +644,7 @@ MATRIX: list[dict] = [
             # updateFeatures / deleteFeatures endpoints, never combined applyEdits.
             "applyEdits": {"pro-ui": NS, "arcpy": NS,
                            "qgis-ui": NS,
-                           "pyqgis": _blocked(
-                               "addFeatures rejects the null system-maintained "
-                               "objectid QGIS sends on insert (error 1006), so no "
-                               "stock digitizing session can edit; the same request "
-                               "without the member succeeds")},
+                           "pyqgis": ("pass", "pyqgis-fs-applyedits")},
             # Both fails are tracked. #5012 is the per-feature attachments POST
             # rejection that makes Pro report zero attachments; #5021 is the
             # V1-catalog compat synthesis dropping relationships, attachments and
@@ -678,13 +663,7 @@ MATRIX: list[dict] = [
             "statistics": {"pro-ui": NS, "arcpy": ("pass", "arcpy-featureserver-statistics"), "qgis-ui": ("n/a-no-client", "qgis-rest-no-advanced"),
                            "pyqgis": ("n/a-no-client", "qgis-rest-no-advanced")},
             "domains": {"pro-ui": NS, "arcpy": ("pass", "arcpy-featureserver-domains"), "qgis-ui": NS,
-                        "pyqgis": _blocked(
-                            "queryDomains returns an empty domains array for all "
-                            "three fixture services and no field on any "
-                            "FeatureServer layer carries a domain member. The "
-                            "provider does implement coded-value domains, so "
-                            "seeding one coded-value domain on a string field "
-                            "makes this cell certifiable.")},
+                        "pyqgis": ("pass", "pyqgis-fs-domains")},
             "replica-sync": {
                 # The surface IS implemented - createReplica, synchronizeReplica and
                 # unregisterReplica, a distributed replica store and a Postgres

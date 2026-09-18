@@ -46,12 +46,12 @@ public sealed class Wfs20LegacyTransactionTests
         var point = feature.Descendants().Single(element => element.Name.LocalName == "Point");
         point.Name.NamespaceName.Should().Be(Wfs20Utilities.GmlNamespace);
         point.Attribute("srsName")!.Value.Should().Be("urn:ogc:def:crs:EPSG::4326", "the client's CRS is kept, only the encoding changes");
-        var posList = point.Elements().Single();
-        posList.Name.Should().Be(XName.Get("posList", Wfs20Utilities.GmlNamespace));
-        posList.Attributes().Should().BeEmpty("GML 2 cs/ts separators have no GML 3.2 meaning");
+        var pos = point.Elements().Single();
+        pos.Name.Should().Be(XName.Get("pos", Wfs20Utilities.GmlNamespace), "a GML 3.2 Point carries gml:pos, and the 2.0 parser accepts nothing else for a Point");
+        pos.Attributes().Should().BeEmpty("GML 2 cs/ts separators have no GML 3.2 meaning");
         // GML 2 wrote x,y (longitude, latitude); under the URN the 3.2 parser reads latitude
         // first, so the tuple is swapped here for the parser to swap back.
-        posList.Value.Should().Be("37.7742 -122.4188");
+        pos.Value.Should().Be("37.7742 -122.4188");
     }
 
     [Fact]
@@ -93,6 +93,6 @@ public sealed class Wfs20LegacyTransactionTests
 
         Wfs20Handler.TryNormaliseLegacyTransaction(document);
 
-        document.Root!.Descendants().Single(element => element.Name.LocalName == "posList").Value.Should().Be(expected);
+        document.Root!.Descendants().Single(element => element.Name.LocalName == "pos").Value.Should().Be(expected);
     }
 }

@@ -44,17 +44,17 @@
         "blocked": 1
       },
       "pyqgis": {
-        "pass": 43,
+        "pass": 49,
         "n/a-no-client": 40,
-        "blocked": 6,
         "n/a-superseded": 3,
-        "not-started": 2
+        "blocked": 1,
+        "not-started": 1
       }
     },
     "overall": {
       "cells": 376,
-      "closed": 240,
-      "open": 136
+      "closed": 246,
+      "open": 130
     }
   },
   "rows": [
@@ -290,7 +290,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wfs.cert.json - protocol wfs 2.0.0, client desktop-qgis 3.44.14-Solothurn, 12 passed 0 failed, 4 skipped"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wfs.cert.json - protocol wfs 2.0.0, client desktop-qgis 3.44.14-Solothurn, 15 passed 0 failed, 4 skipped"
         }
       }
     },
@@ -311,7 +311,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wfs.cert.json - protocol wfs 2.0.0, client desktop-qgis 3.44.14-Solothurn, 12 passed 0 failed, 4 skipped"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wfs.cert.json - protocol wfs 2.0.0, client desktop-qgis 3.44.14-Solothurn, 15 passed 0 failed, 4 skipped"
         }
       }
     },
@@ -333,7 +333,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wfs.cert.json - protocol wfs 2.0.0, client desktop-qgis 3.44.14-Solothurn, 12 passed 0 failed, 4 skipped"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wfs.cert.json - protocol wfs 2.0.0, client desktop-qgis 3.44.14-Solothurn, 15 passed 0 failed, 4 skipped"
         }
       }
     },
@@ -374,8 +374,8 @@
           "state": "not-started"
         },
         "pyqgis": {
-          "state": "blocked",
-          "cause": "the QGIS WFS provider has no authenticated write path against this fixture. A Transaction is refused anonymously with NoApplicableCode / 'Authentication is required to access this resource', and inline URI credentials do not reach the write path: http-header:X-API-Key, username/password and a no-auth control all fail identically with 'ERROR: 1 feature(s) not added.', and the provider's decodeUri parses none of them. The same Transaction succeeds outside QGIS with an X-API-Key header (totalInserted 1), so the server surface works and the gap is client-side credential delivery. QGIS sends a header on the write path only from an authentication-database entry referenced as authcfg=<id>; provisioning one is what honua-client-compat's bind-qgis-auth-targets and fixture_keyring scripts exist for. tests/python/pyqgis/test_wfst_client_compat.py is written and skips on exactly this, so the cells close the moment an API-header authcfg is provisioned."
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wfs.cert.json - NB-PQG-WFST-01, protocol wfs 2.0.0, client desktop-qgis 3.44.14-Solothurn, 15 passed 0 failed, 4 skipped"
         }
       }
     },
@@ -395,8 +395,8 @@
           "state": "not-started"
         },
         "pyqgis": {
-          "state": "blocked",
-          "cause": "the QGIS WFS provider has no authenticated write path against this fixture. A Transaction is refused anonymously with NoApplicableCode / 'Authentication is required to access this resource', and inline URI credentials do not reach the write path: http-header:X-API-Key, username/password and a no-auth control all fail identically with 'ERROR: 1 feature(s) not added.', and the provider's decodeUri parses none of them. The same Transaction succeeds outside QGIS with an X-API-Key header (totalInserted 1), so the server surface works and the gap is client-side credential delivery. QGIS sends a header on the write path only from an authentication-database entry referenced as authcfg=<id>; provisioning one is what honua-client-compat's bind-qgis-auth-targets and fixture_keyring scripts exist for. tests/python/pyqgis/test_wfst_client_compat.py is written and skips on exactly this, so the cells close the moment an API-header authcfg is provisioned."
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wfs.cert.json - NB-PQG-WFST-02, protocol wfs 2.0.0, client desktop-qgis 3.44.14-Solothurn, 15 passed 0 failed, 4 skipped"
         }
       }
     },
@@ -416,8 +416,8 @@
           "state": "not-started"
         },
         "pyqgis": {
-          "state": "blocked",
-          "cause": "the QGIS WFS provider has no authenticated write path against this fixture. A Transaction is refused anonymously with NoApplicableCode / 'Authentication is required to access this resource', and inline URI credentials do not reach the write path: http-header:X-API-Key, username/password and a no-auth control all fail identically with 'ERROR: 1 feature(s) not added.', and the provider's decodeUri parses none of them. The same Transaction succeeds outside QGIS with an X-API-Key header (totalInserted 1), so the server surface works and the gap is client-side credential delivery. QGIS sends a header on the write path only from an authentication-database entry referenced as authcfg=<id>; provisioning one is what honua-client-compat's bind-qgis-auth-targets and fixture_keyring scripts exist for. tests/python/pyqgis/test_wfst_client_compat.py is written and skips on exactly this, so the cells close the moment an API-header authcfg is provisioned."
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wfs.cert.json - NB-PQG-WFST-03, protocol wfs 2.0.0, client desktop-qgis 3.44.14-Solothurn, 15 passed 0 failed, 4 skipped"
         }
       }
     },
@@ -591,7 +591,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json - protocol ogc-features 1.0, client desktop-qgis 3.44.14-Solothurn, 18 passed 0 failed, 3 skipped"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json - protocol ogc-features 1.0, client desktop-qgis 3.44.14-Solothurn, 21 passed 0 failed, 3 skipped"
         }
       }
     },
@@ -612,7 +612,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json - protocol ogc-features 1.0, client desktop-qgis 3.44.14-Solothurn, 18 passed 0 failed, 3 skipped"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json - protocol ogc-features 1.0, client desktop-qgis 3.44.14-Solothurn, 21 passed 0 failed, 3 skipped"
         }
       }
     },
@@ -633,7 +633,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json - protocol ogc-features 1.0, client desktop-qgis 3.44.14-Solothurn, 18 passed 0 failed, 3 skipped"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json - protocol ogc-features 1.0, client desktop-qgis 3.44.14-Solothurn, 21 passed 0 failed, 3 skipped"
         }
       }
     },
@@ -654,7 +654,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json - protocol ogc-features 1.0, client desktop-qgis 3.44.14-Solothurn, 18 passed 0 failed, 3 skipped"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json - protocol ogc-features 1.0, client desktop-qgis 3.44.14-Solothurn, 21 passed 0 failed, 3 skipped"
         }
       }
     },
@@ -675,7 +675,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json - protocol ogc-features 1.0, client desktop-qgis 3.44.14-Solothurn, 18 passed 0 failed, 3 skipped"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json - protocol ogc-features 1.0, client desktop-qgis 3.44.14-Solothurn, 21 passed 0 failed, 3 skipped"
         }
       }
     },
@@ -696,7 +696,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json - protocol ogc-features 1.0, client desktop-qgis 3.44.14-Solothurn, 18 passed 0 failed, 3 skipped"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json - protocol ogc-features 1.0, client desktop-qgis 3.44.14-Solothurn, 21 passed 0 failed, 3 skipped"
         }
       }
     },
@@ -717,7 +717,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json - protocol ogc-features 1.0, client desktop-qgis 3.44.14-Solothurn, 18 passed 0 failed, 3 skipped"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json - protocol ogc-features 1.0, client desktop-qgis 3.44.14-Solothurn, 21 passed 0 failed, 3 skipped"
         }
       }
     },
@@ -737,7 +737,8 @@
           "state": "not-started"
         },
         "pyqgis": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json - NB-PQG-OAPIFT-01/NB-PQG-OAPIFT-02/NB-PQG-OAPIFT-03, protocol ogc-features 1.0, client desktop-qgis 3.44.14-Solothurn, 21 passed 0 failed, 3 skipped"
         }
       }
     },
@@ -954,7 +955,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-featureserver.cert.json - CERT-DISC-01, protocol featureserver 10.8, client desktop-qgis 3.44.14-Solothurn, 4 passed 0 failed"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-featureserver.cert.json - CERT-DISC-01, protocol featureserver 10.8, client desktop-qgis 3.44.14-Solothurn, 6 passed 0 failed"
         }
       }
     },
@@ -977,7 +978,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-featureserver.cert.json - CERT-SCHM-01, protocol featureserver 10.8, client desktop-qgis 3.44.14-Solothurn, 4 passed 0 failed"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-featureserver.cert.json - CERT-SCHM-01, protocol featureserver 10.8, client desktop-qgis 3.44.14-Solothurn, 6 passed 0 failed"
         }
       }
     },
@@ -1000,7 +1001,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-featureserver.cert.json - CERT-QFLT-01, protocol featureserver 10.8, client desktop-qgis 3.44.14-Solothurn, 4 passed 0 failed"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-featureserver.cert.json - CERT-QFLT-01, protocol featureserver 10.8, client desktop-qgis 3.44.14-Solothurn, 6 passed 0 failed"
         }
       }
     },
@@ -1023,7 +1024,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-featureserver.cert.json - CERT-GEOM-01, protocol featureserver 10.8, client desktop-qgis 3.44.14-Solothurn, 4 passed 0 failed"
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-featureserver.cert.json - CERT-GEOM-01, protocol featureserver 10.8, client desktop-qgis 3.44.14-Solothurn, 6 passed 0 failed"
         }
       }
     },
@@ -1042,8 +1043,8 @@
           "state": "not-started"
         },
         "pyqgis": {
-          "state": "blocked",
-          "cause": "addFeatures rejects the null system-maintained objectid QGIS sends on insert (error 1006), so no stock digitizing session can edit; the same request without the member succeeds"
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-featureserver.cert.json - CERT-AUTH-01, protocol featureserver 10.8, client desktop-qgis 3.44.14-Solothurn, 6 passed 0 failed"
         }
       }
     },
@@ -1133,8 +1134,8 @@
           "state": "not-started"
         },
         "pyqgis": {
-          "state": "blocked",
-          "cause": "queryDomains returns an empty domains array for all three fixture services and no field on any FeatureServer layer carries a domain member. The provider does implement coded-value domains, so seeding one coded-value domain on a string field makes this cell certifiable."
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-featureserver.cert.json - CERT-SCHM-02, protocol featureserver 10.8, client desktop-qgis 3.44.14-Solothurn, 6 passed 0 failed"
         }
       }
     },

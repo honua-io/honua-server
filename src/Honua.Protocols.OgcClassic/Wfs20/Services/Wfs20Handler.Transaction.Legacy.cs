@@ -126,9 +126,15 @@ internal sealed partial class Wfs20Handler
                 return;
             case "coordinates":
                 {
+                    // A GML 3.2 Point carries a single gml:pos; every other geometry carries a
+                    // gml:posList. The 2.0 parser reads exactly that and rejects a Point whose
+                    // coordinates arrive as a posList ("Point geometry must contain a gml:pos
+                    // element"), which is what QGIS 3.44.14's point inserts hit before this
+                    // distinction was made.
                     var swap = LegacyGeometryNeedsAxisSwap(element);
                     var tuples = ParseLegacyCoordinates(element, swap);
-                    element.Name = Gml32 + "posList";
+                    var isPoint = string.Equals(element.Parent?.Name.LocalName, "Point", StringComparison.Ordinal);
+                    element.Name = Gml32 + (isPoint ? "pos" : "posList");
                     element.RemoveAttributes();
                     element.Value = string.Join(" ", tuples);
                     return;
