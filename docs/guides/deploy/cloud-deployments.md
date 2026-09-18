@@ -56,12 +56,13 @@ On the generic web image (Docker Hub + GHCR), tags have distinct contracts. Pick
 | `latest` / `latest-aot` | Latest stable native-AOT **release** (`-aot` is an alias) | A `v*` release tag is cut | `deploy.yml` |
 | `vX.Y.Z` / `vX.Y.Z-aot` | A specific native-AOT release (`-aot` is an alias) | Never (immutable) | `deploy.yml` |
 
-> **No `v*` release tag has been cut yet**, so no `vX.Y.Z` image exists and `latest` has
-> never moved. Until the first release, pin a digest or a dated `nightly-YYYYMMDD`
-> tag — both are immutable, and the quickstart pins a digest for this reason.
 | `trunk` / `trunk-aot` | Latest native-AOT **trunk** build (`-aot` is an alias) | Every nightly build | `nightly-container-build.yml` |
 | `nightly`, `nightly-YYYYMMDD`, `nightly-<sha>` | Native-AOT trunk build with moving, dated, and SHA-pinned variants | Every nightly build | `nightly-container-build.yml` |
 | `latest-jit`, `vX.Y.Z-jit`, `trunk-jit`, `nightly-jit*` | Non-production JIT compatibility/debug image | Corresponding release or nightly build | `deploy.yml` / `nightly-container-build.yml` |
+
+> **No `v*` release tag has been cut yet**, so no `vX.Y.Z` image exists and `latest` has
+> never moved. Until the first release, pin a digest or a dated `nightly-YYYYMMDD`
+> tag — both are immutable, and the quickstart pins a digest for this reason.
 
 - **Production / demos**: pull `latest` (or a pinned `vX.Y.Z`). Both are native AOT. `latest` deliberately tracks the latest *release*, not trunk, so it never silently advances to an unreleased build.
 - **Trunk-following consumers** (certification harnesses, "test against current trunk" CI, bleeding-edge previews): pull `trunk`. It is the documented native-AOT moving tag for the head of the default branch. Do **not** reach for `latest` expecting trunk — it can lag a release cycle behind.
@@ -103,13 +104,13 @@ aws lambda publish-version --function-name honua-prod
 
 ## Azure Container Apps
 
-- Use the generic web image (`ghcr.io/honua-io/honua-server:latest` or a pinned version); it is native AOT. The `latest-aot` alias is retained for compatibility.
+- Use the generic web image (`ghcr.io/honua-io/honua-server` at a pinned digest or dated `nightly-YYYYMMDD` tag until the first release; `latest` afterwards); it is native AOT. The `latest-aot` alias is retained for compatibility.
 - Configure secrets as Container Apps secrets referenced from env vars; ingress handles TLS.
 - Rollouts use revision traffic splitting: immediate cutover or canary percentage, driven by the deploy backend `honua-azure-container-apps-revision` with a telemetry gate.
 
 ```bash
 az containerapp update --name honua-prod --resource-group honua \
-  --image ghcr.io/honua-io/honua-server:nightly-aot
+  --image ghcr.io/honua-io/honua-server:nightly-YYYYMMDD
 ```
 
 ## Azure Functions
@@ -142,22 +143,17 @@ On those substrates, route geoprocessing/import workloads to a remote batch back
 
 ## Verify
 
-After `terraform apply`, run the post-apply validation suite from this repository against the deployed environment:
-
-```bash
-HONUA_CLOUD_TEST_BASE_URL=https://honua.example.com \
-HONUA_CLOUD_TEST_ADMIN_API_KEY=replace-with-admin-password \
-./scripts/cloud/run-cloud-post-apply-validation.sh
-```
-
-Expected: the script runs `scripts/cloud/post-deployment-verification.sh` plus the `Category=Cloud` integration tests and exits 0. For a plain readiness check, open `https://honua.example.com/healthz/ready` in a browser and expect `Ready`.
+After `terraform apply`, open `https://honua.example.com/healthz/ready` and expect `Ready`, then
+publish and query a layer through the public hostname as in the
+[quickstart](../../get-started/quickstart.md#4-publish-a-table-and-query-it-back). The honua-iac
+repository's [validation lanes](https://github.com/honua-io/honua-iac/blob/trunk/docs/devops/terraform-validation.md) run the same checks
+against a deployed environment.
 
 ## Troubleshoot
 
 - **Serverless cold starts time out** — use the `-aot` image variants and confirm `HONUA_SKIP_MIGRATIONS=true`; migrations during cold start are the usual culprit.
 - **Job/import endpoints return `503`** — durable jobs, queued imports, and workflows require Redis (ElastiCache / Azure Cache for Redis); serverless patterns without Redis don't host them.
 - **Logs warn "Redis durability attestation was REJECTED"** — Redis is reachable but its persistence policy does not protect acknowledged writes. Jobs still run, non-durably; fix the policy per the remediation in the warning (see the durability paragraph above).
-- **Deploy-plan validation fails on Lambda/Functions/Container Apps** — full deploy-plan support is ECS-first; set `HONUA_CLOUD_TEST_EXPECT_DEPLOY_PLAN_SUPPORT=false` (the script auto-defaults this per platform).
 - **Admin calls return 401** — confirm the secret store value actually reaches the container env as `HONUA_ADMIN_PASSWORD` and requests send it in the `X-API-Key` header.
 
 ## Next steps

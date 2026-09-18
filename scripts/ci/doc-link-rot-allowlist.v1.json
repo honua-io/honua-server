@@ -1,18 +1,18 @@
 {
   "version": 1,
-  "description": "Pre-existing broken heading anchors inside docs/**/*.md, recorded so the link/anchor gate can be strict about everything else. scripts/ci/check-doc-links.py reports each of these as a warning instead of an error. The list is a ratchet, not a parking lot: an entry that no longer matches a real break is an ERROR, so it can only shrink. Do not add to it — fix the link instead.",
+  "description": "Pre-existing broken heading anchors inside docs/**/*.md, recorded so the link/anchor gate can be strict about everything else. scripts/ci/check-doc-links.py reports each of these as a warning instead of an error. The list is a ratchet, not a parking lot: an entry that no longer matches a real break is an ERROR, so it can only shrink. Do not add to it \u2014 fix the link instead.",
   "issue": "https://github.com/honua-io/honua-server/issues/3592",
   "inventoriedOn": "2026-08-28",
   "totals": {
-    "entries": 13,
+    "entries": 12,
     "missingFiles": 0,
-    "brokenAnchors": 13,
+    "brokenAnchors": 12,
     "byArea": {
       "docs/archive": 3,
       "docs/internal": 7,
       "docs/developer": 1,
       "docs/gis": 1,
-      "docs/guides": 1
+      "docs/guides": 0
     }
   },
   "entries": [
@@ -40,11 +40,6 @@
       "source": "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
       "target": "#evidence-envelope-schema",
       "reason": "Same-file anchor pointing at a section that was never written."
-    },
-    {
-      "source": "docs/guides/query-analyze/automate-workflows.md",
-      "target": "../deploy/backup-and-restore.md#workflow-orchestration",
-      "reason": "Only customer-facing entry in this inventory. backup-and-restore.md has no workflow-orchestration section; the nearest live content is its Redis durable-job loss contract."
     },
     {
       "source": "docs/internal/admin-api/analysis-content.md",

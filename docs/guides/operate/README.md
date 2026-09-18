@@ -14,12 +14,6 @@ scenario](scenario.md), then use the [metric inventory](metrics.md) and [evidenc
 posture contract](evidence-posture.md) to decide whether a successful read is
 actually actionable.
 
-This guide describes the bounded protected-update contract; the
-[qualification record](../../internal/contributor/operate-docs-precut-evidence.md)
-separately identifies implementation evidence and unmet candidate checks.
-Before replaying, check the [installed-contract results](scenario.md#check-the-installed-contract):
-the accepted image passes observation, service staging and approval, but no
-deployment actuator or placement recovery has been qualified on it.
 The infrastructure control plane provisions the placement;
 the server control plane configures resources and owns governed operations.
 The terminal client is the model seat, with a separate human approval principal.
@@ -112,13 +106,11 @@ The useful split is:
 | Discover routable fixes | Operator action catalogs | `honua_supported_operation_kinds` (read-only, live executor catalog) |
 | Propose a fix | `findings/{id}/propose` and approval inbox actions | `honua_propose_finding` plus the typed deploy/release proposal tools |
 | Approve or reject | Human approval inbox | Not allowed |
-| Mutate source GIS data | Human protocol/API workflows only | Not exposed; ADR-0028 forbids AI-driven source-data editing |
+| Mutate source GIS data | Human protocol/API workflows only | Not exposed; agents never edit source data |
 
 Current MCP status: observability read tools and schema-closed proposal tools are
 present. `honua_supported_operation_kinds` reports the actually routable operation
 classes without requiring write authority; do not assume unsupported kinds.
-Architecture tests enforce the REST/MCP seat-parity map and reject a finding
-action that has no real executor.
 
 ## The autonomy ladder
 
@@ -198,9 +190,7 @@ their eligibility after the incident review.
 Run `PUT /api/v1/admin/observability/autonomy/settings` with `{"killSwitchEnabled":true,"reason":"incident freeze"}`.
 
 Hosts without the durable control plane fail closed: autonomy is inert and
-policy changes are read-only even if configuration asks for AutoApply. See
-[ADR-0062](../../internal/contributor/adr/0062-graduated-ops-autonomy-policy.md)
-for the route-time guardrail contract.
+policy changes are read-only even if configuration asks for AutoApply.
 
 ## Rollback taxonomy
 
@@ -216,7 +206,7 @@ The documentation registry groups these runtime capabilities under
 [Admin Control Plane](../../okf/capabilities/admin.control-plane.md) and
 [observability](../../okf/capabilities/ops.observability.md). An aggregate capability
 does not prove rollback for the selected target; inspect that target's backend,
-prior revision, protection policy and qualification receipt.
+prior revision and protection policy.
 
 | Backend family | `rollbackSupported` | What a rollback request means |
 |---|---:|---|
@@ -253,9 +243,8 @@ fields, are refused before anything changes.
 Telemetry-gated deploy backends can trigger rollback during a configured rollout
 when their error-rate, latency, or synthetic health-probe gates breach. That is
 deploy-safety behavior for a specific operation. It is not a blanket unattended
-operate floor, and ADR-0059 keeps the default product story honest: fix forward
-through health-gated proposals unless a rollback path is explicitly approved and
-available.
+operate floor. The default story is fix forward through health-gated proposals
+unless a rollback path is explicitly approved and available.
 
 ## Upgrade safety
 
@@ -321,12 +310,9 @@ OTLP, and the one-command monitoring bundle.
 
 ## Honest limits
 
-The #2552 implementation workstream is complete: persisted cluster health,
-realtime fan-out, the Console quickstart/dashboard/cockpit, MCP observability and
-platform tools, real operation executors, graduated autonomy, seat-parity tests,
-dead-letter self-heal proof, and the platform rollback cell are on trunk.
-
-That does not make every operational concern autonomous:
+The operating model ships: persisted cluster health, realtime fan-out, the Console
+Operate views, MCP observability and platform tools, real operation executors and
+graduated autonomy. That does not make every operational concern autonomous:
 
 - The proven L3 path is bounded alert dead-letter redrive. Other rules stay
   ProposeOnly until their deterministic signal, real auto-safe actuator,
@@ -346,6 +332,3 @@ That does not make every operational concern autonomous:
 - [Monitor Honua Server](../deploy/monitoring.md)
 - [Upgrade and rollback](../deploy/upgrade-and-rollback.md)
 - [Connect AI agents to Honua over MCP](../connect/ai-agents-mcp.md)
-- [ADR-0060: Two-plane operability architecture](../../internal/contributor/adr/0060-two-plane-operability-architecture.md)
-- [ADR-0028: AI-driven data editing is not allowed](../../internal/contributor/adr/0028-ai-data-editing-not-allowed.md)
-- [ADR-0059: First-release scope and fix-forward operate model](../../internal/contributor/adr/0059-first-release-scope-and-fix-forward-operate-model.md)

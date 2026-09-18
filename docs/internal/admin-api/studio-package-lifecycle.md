@@ -213,7 +213,7 @@ With the flag on:
   `own` sentinel layer authorizes every resource the principal owns; a grant
   scoped to a concrete draft/item id instead authorizes an operator-provisioned
   delegate on that one resource, independent of ownership. See
-  [Connect AI agents to Honua over MCP](../../guides/connect/ai-agents-mcp.md#studio-package-lifecycle-grants-honua-server3001)
+  [Connect AI agents to Honua over MCP](../../guides/connect/ai-agents-mcp.md#studio-draft-grants)
   for the equivalent `/mcp` grant story.
 - **Enumeration** (`GET /content-items`, `GET /package-drafts`) — with the flag
   on, a non-admin caller's effective `owner` filter is always forced server-side

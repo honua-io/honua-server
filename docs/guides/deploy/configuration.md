@@ -11,7 +11,7 @@ You'll understand how Honua's configuration model works so you can set any optio
 
 ## Environment variables are the configuration surface
 
-Honua is configured entirely through environment variables ([ADR-0008](../../internal/contributor/adr/0008-env-var-configuration.md)). `appsettings.json` is for local development only; containers, Kubernetes, and serverless all receive the same flat env-var contract. There is no config file to mount and no config service to run.
+Honua is configured entirely through environment variables. `appsettings.json` is for local development only; containers, Kubernetes, and serverless all receive the same flat env-var contract. There is no config file to mount and no config service to run.
 
 ## The `Section__Key` convention
 

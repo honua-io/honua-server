@@ -116,11 +116,6 @@ projection, and NONE nodata). These are Esri's documented defaults and select th
 same behaviour as a REST request without `env:` parameters, so they are accepted
 for every task. Changed controls remain subject to canonical validation.
 
-Installed-client execution observations are retained with the GPServer tests in
-`Fixtures/EsriToolboxReplay`. These establish remote scalar execution, including
-an independently verified rectangle area; a native Pro desktop compatibility
-claim additionally requires fresh candidate and desktop UI receipts.
-
 ### Workspace output retention and limits
 
 For managed jobs using `env:workspace`, PostgreSQL retains workspace output
@@ -148,34 +143,6 @@ files, layers, or cloud objects by following a reference, so recorded bytes are
 not a physical storage quota for those assets. Durable job acceptance and the
 PostgreSQL write use separate stores; a failed database commit requires retry
 recovery and is not a distributed transaction.
-
-## Verify
-
-Run `GET /ogc/processes/jobs/{jobId}` again in the explorer.
-
-Expected (trimmed):
-
-```json
-{ "processID": "geometry.buffer", "jobID": "0123456789abcdef",
-  "status": "successful", "progress": 100 }
-```
-
-## Troubleshoot
-
-- **401 on execution** — discovery is anonymous but `POST .../execution` is not; send your `X-API-Key` (or bearer token).
-- **403** — the identity authenticates but lacks `Process.Execute` or the additional `Process.ExecuteMutatingProcess` / `Process.ExecuteCustomCode` grant required by the selected execution tier.
-- **404 for a process id you saw in the full catalog** — the OGC route projects catalog processes classified as executable jobs. Protocol-only, workflow-only, and unavailable entries are described in the [reference](../../reference/geoprocessing-operations.md).
-- **400 `Invalid response mode`**: the canonical `honua-geoprocessing` plan process requires document mode because it has no declared value outputs. Catalog processes support raw results with synchronous or asynchronous execution.
-- **413 when fetching results**: the selected results exceed the configured `Geoprocessing:Executors:MaxArtifactBytes` response limit.
-- **Job stuck in `accepted`** — the job queue needs the durable job substrate (Redis) to be healthy; see [troubleshooting](../deploy/troubleshooting.md).
-
-## Next steps
-
-- [Run geoprocessing locally and prototype your own GP process](gp-local-dev-quickstart.md)
-- [Author a geoprocessing process](gp-devkit-authoring.md) — write your own process with the GP Devkit
-- [Automate workflows](automate-workflows.md)
-- [Geoprocessing operations reference](../../reference/geoprocessing-operations.md)
-- [Connect AI agents over MCP](../connect/ai-agents-mcp.md)
 
 ### Bounded layer execution
 
@@ -209,6 +176,30 @@ the same admission or spends another full deadline on the same input. Transient
 source-read failures keep the normal retry policy. Dismissing a running layer job
 cancels it at the next check between managed calls.
 
-The [layer resource qualification fixture](../../../tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerResourceQualification.md)
-documents the constrained deployment, independent geometry oracle, elapsed-time and
-dismissal scenarios, serving probes, and the recorded candidate receipts.
+## Verify
+
+Run `GET /ogc/processes/jobs/{jobId}` again in the explorer.
+
+Expected (trimmed):
+
+```json
+{ "processID": "geometry.buffer", "jobID": "0123456789abcdef",
+  "status": "successful", "progress": 100 }
+```
+
+## Troubleshoot
+
+- **401 on execution** — discovery is anonymous but `POST .../execution` is not; send your `X-API-Key` (or bearer token).
+- **403** — the identity authenticates but lacks `Process.Execute` or the additional `Process.ExecuteMutatingProcess` / `Process.ExecuteCustomCode` grant required by the selected execution tier.
+- **404 for a process id you saw in the full catalog** — the OGC route projects catalog processes classified as executable jobs. Protocol-only, workflow-only, and unavailable entries are described in the [reference](../../reference/geoprocessing-operations.md).
+- **400 `Invalid response mode`**: the canonical `honua-geoprocessing` plan process requires document mode because it has no declared value outputs. Catalog processes support raw results with synchronous or asynchronous execution.
+- **413 when fetching results**: the selected results exceed the configured `Geoprocessing:Executors:MaxArtifactBytes` response limit.
+- **Job stuck in `accepted`** — the job queue needs the durable job substrate (Redis) to be healthy; see [troubleshooting](../deploy/troubleshooting.md).
+
+## Next steps
+
+- [Run geoprocessing locally and prototype your own GP process](gp-local-dev-quickstart.md)
+- [Author a geoprocessing process](gp-devkit-authoring.md) — write your own process with the GP Devkit
+- [Automate workflows](automate-workflows.md)
+- [Geoprocessing operations reference](../../reference/geoprocessing-operations.md)
+- [Connect AI agents over MCP](../connect/ai-agents-mcp.md)
