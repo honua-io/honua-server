@@ -2,7 +2,9 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Middleware;
 
@@ -30,9 +32,21 @@ namespace Honua.Infrastructure.Middleware;
 /// too. The whole <c>/arcgis</c> prefix is stripped, not just the three Esri roots:
 /// ArcGIS clients also probe instance-relative paths beside the documented ones
 /// (<c>/arcgis/</c>, <c>/arcgis/rest/static/...</c>), and the transparent proxy rewrite
-/// that proved the Locator loads stripped the prefix unconditionally; an alias that
-/// answered 404 for those probes did not load it. What is not served at the root is
-/// still a 404, so nothing new becomes reachable.
+/// that proved the Locator loads stripped the prefix unconditionally. What is not
+/// served at the root is still a 404, so nothing new becomes reachable.
+/// </para>
+/// <para>
+/// Placement is the whole point. <see cref="WebApplication"/> inserts its implicit
+/// <c>UseRouting</c> ahead of every middleware registered in <c>Program.cs</c>, so a
+/// rewrite registered there runs after endpoint matching has already failed on the
+/// aliased path: the request then walks the rest of the pipeline with no endpoint,
+/// the request logger records the status it saw, and the client receives the
+/// not-found body. That is exactly how the first version of this alias behaved -
+/// curl reported 200 and the body said 404, and the Locator did not load. Like
+/// <see cref="HeadRequestStartupFilter"/>, the rewrite is therefore installed by an
+/// <see cref="IStartupFilter"/>, the one seam that precedes the implicit routing
+/// middleware. ArcGisInstancePathAliasTests pins this by reading the response body,
+/// not the status.
 /// </para>
 /// </remarks>
 internal sealed class ArcGisInstancePathAliasMiddleware
@@ -57,14 +71,38 @@ internal sealed class ArcGisInstancePathAliasMiddleware
     }
 }
 
+/// <summary>
+/// Installs <see cref="ArcGisInstancePathAliasMiddleware"/> ahead of the implicit
+/// <c>UseRouting</c> that <see cref="WebApplication"/> adds before any middleware
+/// registered in <c>Program.cs</c>, so the rewritten path is what endpoint matching sees.
+/// </summary>
+internal sealed class ArcGisInstancePathAliasStartupFilter : IStartupFilter
+{
+    public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next)
+    {
+        ArgumentNullException.ThrowIfNull(next);
+
+        return app =>
+        {
+            app.UseMiddleware<ArcGisInstancePathAliasMiddleware>();
+            next(app);
+        };
+    }
+}
+
 internal static class ArcGisInstancePathAliasExtensions
 {
     /// <summary>
-    /// Registers <see cref="ArcGisInstancePathAliasMiddleware"/>. Must run before routing.
+    /// Registers the pre-routing <c>/arcgis</c> alias. Must be called on the builder's
+    /// services so the startup filter is in place before <see cref="WebApplication"/>
+    /// builds its implicit routing middleware; registering the middleware on the built
+    /// app would run it after matching and serve the not-found body under a 200.
     /// </summary>
-    public static IApplicationBuilder UseArcGisInstancePathAlias(this IApplicationBuilder app)
+    public static IServiceCollection AddHonuaArcGisInstancePathAlias(this IServiceCollection services)
     {
-        ArgumentNullException.ThrowIfNull(app);
-        return app.UseMiddleware<ArcGisInstancePathAliasMiddleware>();
+        ArgumentNullException.ThrowIfNull(services);
+
+        services.AddSingleton<IStartupFilter, ArcGisInstancePathAliasStartupFilter>();
+        return services;
     }
 }

@@ -373,6 +373,10 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
                path.Equals("/stac", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/stac/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/sta/", StringComparison.OrdinalIgnoreCase) ||
+               // /sensorthings/v1.1 is the discoverability alias of /sta/v1.1 (#4202); it is
+               // deployed with the STA surface and tracked in the registry, so it has to be
+               // in the comparison or its registry rows read as stale.
+               path.StartsWith("/sensorthings/", StringComparison.OrdinalIgnoreCase) ||
                // Enterprise identity provisioning + SSO surfaces (#510 SCIM 2.0, #508 SAML 2.0).
                // These routes are mapped unconditionally in Program.cs and tracked in
                // EndpointRegistry.All, so the drift comparison must include them.

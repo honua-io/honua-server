@@ -362,6 +362,14 @@ EV = {
         "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-gp-gpserver.cert.json - "
         "operations GP-OP-TASK-METADATA, ArcGIS Pro/arcpy 3.7.1.1904: task 'Buffer' publishes signature 'Buffer_testservice(wkb, srid, distance, {geodesic})' an"
     ),
+    "arcpy-geocodeserver-geocodeaddresses": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-gp-geocodeserver.cert.json - "
+        "extensions GC-EXT-01, ArcGIS Pro/arcpy 3.7.1.1904: arcpy Locator geocoded a single-line address through arcgis/rest/services/GeocodeServer ->"
+    ),
+    "arcpy-geocodeserver-reversegeocode": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-gp-geocodeserver.cert.json - "
+        "extensions GC-EXT-02, ArcGIS Pro/arcpy 3.7.1.1904: arcpy Locator reverse-geocoded (-122.42, 37.77) through arcgis/rest/services/GeocodeServer"
+    ),
     "pro-matrix": (
         "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - "
         "ArcGIS Pro 3.7.1.1904"
@@ -757,10 +765,10 @@ MATRIX: list[dict] = [
             "suggest": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-no-candidates"),
                         "qgis-ui": ("n/a-no-client", "qgis-no-esri-locator"),
                         "pyqgis": ("n/a-no-client", "qgis-no-esri-locator")},
-            "reverseGeocode": {"pro-ui": NS, "arcpy": NS,
+            "reverseGeocode": {"pro-ui": NS, "arcpy": ("pass", "arcpy-geocodeserver-reversegeocode"),
                                "qgis-ui": ("n/a-no-client", "qgis-no-esri-locator"),
                                "pyqgis": ("n/a-no-client", "qgis-no-esri-locator")},
-            "geocodeAddresses": {"pro-ui": NS, "arcpy": NS,
+            "geocodeAddresses": {"pro-ui": NS, "arcpy": ("pass", "arcpy-geocodeserver-geocodeaddresses"),
                                  "qgis-ui": ("n/a-no-client", "qgis-no-esri-locator"),
                                  "pyqgis": ("n/a-no-client", "qgis-no-esri-locator")},
         },

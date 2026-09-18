@@ -31,9 +31,9 @@
         "blocked": 7
       },
       "arcpy": {
-        "pass": 22,
+        "pass": 24,
         "n/a-no-client": 59,
-        "not-started": 8,
+        "not-started": 6,
         "blocked": 5
       },
       "qgis-ui": {
@@ -52,8 +52,8 @@
     },
     "overall": {
       "cells": 376,
-      "closed": 247,
-      "open": 129
+      "closed": 249,
+      "open": 127
     }
   },
   "rows": [
@@ -1559,7 +1559,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-gp-geocodeserver.cert.json - extensions GC-EXT-02, ArcGIS Pro/arcpy 3.7.1.1904: arcpy Locator reverse-geocoded (-122.42, 37.77) through arcgis/rest/services/GeocodeServer"
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -1580,7 +1581,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-gp-geocodeserver.cert.json - extensions GC-EXT-01, ArcGIS Pro/arcpy 3.7.1.1904: arcpy Locator geocoded a single-line address through arcgis/rest/services/GeocodeServer ->"
         },
         "qgis-ui": {
           "state": "n/a-no-client",
