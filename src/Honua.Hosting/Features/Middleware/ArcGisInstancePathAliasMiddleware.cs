@@ -7,9 +7,8 @@ using Microsoft.AspNetCore.Http;
 namespace Honua.Infrastructure.Middleware;
 
 /// <summary>
-/// Serves the Esri surfaces under the <c>/arcgis</c> instance prefix that ArcGIS
-/// clients assume, by rewriting <c>/arcgis/rest/...</c>, <c>/arcgis/services...</c>
-/// and <c>/arcgis/sharing/...</c> to the canonical root-mounted paths before routing.
+/// Serves the root-mounted surfaces under the <c>/arcgis</c> instance prefix that
+/// ArcGIS clients assume, by stripping the prefix from the request path before routing.
 /// </summary>
 /// <remarks>
 /// An ArcGIS Server is always reached as <c>https://host/&lt;instance&gt;/rest/services</c>,
@@ -28,20 +27,17 @@ namespace Honua.Infrastructure.Middleware;
 /// every route, policy and registry entry stays single and every advertised URL
 /// keeps its canonical root-mounted form; a client that arrived through the alias
 /// and follows an advertised link simply lands on the root path, which serves it
-/// too. Only the three Esri roots are aliased: anything else under <c>/arcgis</c>
-/// falls through to the normal 404.
+/// too. The whole <c>/arcgis</c> prefix is stripped, not just the three Esri roots:
+/// ArcGIS clients also probe instance-relative paths beside the documented ones
+/// (<c>/arcgis/</c>, <c>/arcgis/rest/static/...</c>), and the transparent proxy rewrite
+/// that proved the Locator loads stripped the prefix unconditionally; an alias that
+/// answered 404 for those probes did not load it. What is not served at the root is
+/// still a 404, so nothing new becomes reachable.
 /// </para>
 /// </remarks>
 internal sealed class ArcGisInstancePathAliasMiddleware
 {
     private const string InstancePrefix = "/arcgis";
-
-    private static readonly PathString[] AliasedRoots =
-    [
-        new("/rest"),
-        new("/services"),
-        new("/sharing"),
-    ];
 
     private readonly RequestDelegate _next;
 
@@ -52,26 +48,12 @@ internal sealed class ArcGisInstancePathAliasMiddleware
 
     public Task InvokeAsync(HttpContext context)
     {
-        if (context.Request.Path.StartsWithSegments(InstancePrefix, StringComparison.OrdinalIgnoreCase, out var remaining)
-            && IsAliasedRoot(remaining))
+        if (context.Request.Path.StartsWithSegments(InstancePrefix, StringComparison.OrdinalIgnoreCase, out var remaining))
         {
-            context.Request.Path = remaining;
+            context.Request.Path = remaining.HasValue ? remaining : new PathString("/");
         }
 
         return _next(context);
-    }
-
-    private static bool IsAliasedRoot(PathString remaining)
-    {
-        foreach (var root in AliasedRoots)
-        {
-            if (remaining.StartsWithSegments(root, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
     }
 }
 

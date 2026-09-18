@@ -658,11 +658,18 @@ internal sealed class QueryFormatter : IQueryFormatter
         // The layer's object-id field must be typed esriFieldTypeOID regardless of its
         // SQL type so Esri clients can locate the OID field by type (see issue #1299).
         var isObjectId = field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase);
-        var isString = !isObjectId && field.Type == MetadataV2FieldType.String;
+        var geoServicesType = isObjectId ? "esriFieldTypeOID" : MapFieldTypeToGeoServices(field.Type);
+        // Keyed on the *advertised* type, not the canonical one: Json and Time fields
+        // are advertised as esriFieldTypeString too, and the layer document already
+        // gave them the conventional length. The query response left theirs null,
+        // and an Esri client that maps a null string length to 0 then discarded
+        // every row projecting such a field - arcpy's SearchCursor over the seeded
+        // Json fields returned 0 of 10 rows while every other field returned all 10.
+        var isString = string.Equals(geoServicesType, "esriFieldTypeString", StringComparison.Ordinal);
         return new GeoServicesFieldInfo
         {
             Name = field.Name,
-            Type = isObjectId ? "esriFieldTypeOID" : MapFieldTypeToGeoServices(field.Type),
+            Type = geoServicesType,
             SqlType = field.SqlType ?? MapFieldTypeToSql(field.Type),
             Alias = field.Alias ?? field.Title ?? field.Name,
             // Esri clients (arcpy/.NET SDK) require a positive length on string fields;

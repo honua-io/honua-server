@@ -710,7 +710,10 @@ public sealed class QueryFormatterTests
             geometryPrecision: null, maxAllowableOffset: null);
 
         var result = response.Should().BeOfType<QueryResponse>().Subject;
-        result.Fields.Should().Contain(field => field.Name == "tags" && field.Type == "esriFieldTypeString");
+        var tags = result.Fields.Should().Contain(field => field.Name == "tags").Subject;
+        tags.Type.Should().Be("esriFieldTypeString");
+        tags.Length.Should().BeGreaterThan(0,
+            "an Esri client maps a null string length to 0 and then discards every row that projects the field");
         var value = result.Features.Should().ContainSingle().Subject.Attributes["tags"];
         value.Should().BeOfType<string>("the advertised field type is string, so the value must be one");
         JsonDocument.Parse((string)value!).RootElement.ValueKind.Should().Be(document.RootElement.ValueKind,
