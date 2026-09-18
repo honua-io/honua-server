@@ -31,8 +31,8 @@
         "blocked": 7
       },
       "arcpy": {
-        "not-started": 53,
-        "n/a-no-client": 35,
+        "not-started": 40,
+        "n/a-no-client": 48,
         "blocked": 6
       },
       "qgis-ui": {
@@ -52,8 +52,8 @@
     },
     "overall": {
       "cells": 376,
-      "closed": 181,
-      "open": 195
+      "closed": 194,
+      "open": 182
     }
   },
   "rows": [
@@ -108,7 +108,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "arcpy 3.7.1 module probe, 2026-09-18: arcpy exposes no MakeWMSLayer or MakeWMTSLayer and no identify call against a WMS layer. A WMS is consumed by adding it to a map, which draws it; GetFeatureInfo is issued by Pro's Identify tool in the UI, not by arcpy."
         },
         "qgis-ui": {
           "state": "not-started"
@@ -337,7 +338,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "arcpy 3.7.1 module probe, 2026-09-18: the only WFS entry point is arcpy.conversion.WFSToFeatureClass, and GetParameterInfo lists exactly input_WFS_server, WFS_feature_type, out_path, out_name, out_feature_class, is_complex, out_gdb, max_features, expose_metadata, swap_xy and page_size. It reads a feature type into a feature class: no transaction, no property-value projection, no stored-query parameter, so WFS-T, GetPropertyValue and ListStoredQueries have no arcpy caller."
         },
         "qgis-ui": {
           "state": "not-started"
@@ -356,7 +358,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "arcpy 3.7.1 module probe, 2026-09-18: the only WFS entry point is arcpy.conversion.WFSToFeatureClass, and GetParameterInfo lists exactly input_WFS_server, WFS_feature_type, out_path, out_name, out_feature_class, is_complex, out_gdb, max_features, expose_metadata, swap_xy and page_size. It reads a feature type into a feature class: no transaction, no property-value projection, no stored-query parameter, so WFS-T, GetPropertyValue and ListStoredQueries have no arcpy caller."
         },
         "qgis-ui": {
           "state": "not-started"
@@ -375,7 +378,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "arcpy 3.7.1 module probe, 2026-09-18: the only WFS entry point is arcpy.conversion.WFSToFeatureClass, and GetParameterInfo lists exactly input_WFS_server, WFS_feature_type, out_path, out_name, out_feature_class, is_complex, out_gdb, max_features, expose_metadata, swap_xy and page_size. It reads a feature type into a feature class: no transaction, no property-value projection, no stored-query parameter, so WFS-T, GetPropertyValue and ListStoredQueries have no arcpy caller."
         },
         "qgis-ui": {
           "state": "not-started"
@@ -394,7 +398,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "arcpy 3.7.1 module probe, 2026-09-18: the only WFS entry point is arcpy.conversion.WFSToFeatureClass, and GetParameterInfo lists exactly input_WFS_server, WFS_feature_type, out_path, out_name, out_feature_class, is_complex, out_gdb, max_features, expose_metadata, swap_xy and page_size. It reads a feature type into a feature class: no transaction, no property-value projection, no stored-query parameter, so WFS-T, GetPropertyValue and ListStoredQueries have no arcpy caller."
         },
         "qgis-ui": {
           "state": "not-started"
@@ -413,7 +418,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "arcpy 3.7.1 module probe, 2026-09-18: the only WFS entry point is arcpy.conversion.WFSToFeatureClass, and GetParameterInfo lists exactly input_WFS_server, WFS_feature_type, out_path, out_name, out_feature_class, is_complex, out_gdb, max_features, expose_metadata, swap_xy and page_size. It reads a feature type into a feature class: no transaction, no property-value projection, no stored-query parameter, so WFS-T, GetPropertyValue and ListStoredQueries have no arcpy caller."
         },
         "qgis-ui": {
           "state": "not-started"
@@ -1468,7 +1474,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "arcpy 3.7.1 module probe, 2026-09-18: arcpy.geocoding exposes GeocodeAddresses, BatchGeocodeServer, ReverseGeocode, RematchAddresses and locator authoring, but nothing issuing findAddressCandidates or suggest. Those are interactive REST endpoints Pro's search box calls; arcpy geocodes tables against a locator. reverseGeocode is deliberately NOT closed here: arcpy.geocoding.ReverseGeocode exists, so it is reachable."
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -1489,7 +1496,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "arcpy 3.7.1 module probe, 2026-09-18: arcpy.geocoding exposes GeocodeAddresses, BatchGeocodeServer, ReverseGeocode, RematchAddresses and locator authoring, but nothing issuing findAddressCandidates or suggest. Those are interactive REST endpoints Pro's search box calls; arcpy geocodes tables against a locator. reverseGeocode is deliberately NOT closed here: arcpy.geocoding.ReverseGeocode exists, so it is reachable."
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -1552,7 +1560,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "arcpy 3.7.1 module probe, 2026-09-18: no attribute in arcpy or any server-facing submodule matches 'geometryserver' or 'geometryservice'. Every geometry entry point is local computation - Buffer_analysis, Project_management, arcpy.Geometry.projectAs - so a GeometryServer request is never issued. ArcPy cannot certify this protocol however the server behaves; Pro's own UI is the client that would."
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -1573,7 +1582,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "arcpy 3.7.1 module probe, 2026-09-18: no attribute in arcpy or any server-facing submodule matches 'geometryserver' or 'geometryservice'. Every geometry entry point is local computation - Buffer_analysis, Project_management, arcpy.Geometry.projectAs - so a GeometryServer request is never issued. ArcPy cannot certify this protocol however the server behaves; Pro's own UI is the client that would."
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -1594,7 +1604,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "arcpy 3.7.1 module probe, 2026-09-18: no attribute in arcpy or any server-facing submodule matches 'geometryserver' or 'geometryservice'. Every geometry entry point is local computation - Buffer_analysis, Project_management, arcpy.Geometry.projectAs - so a GeometryServer request is never issued. ArcPy cannot certify this protocol however the server behaves; Pro's own UI is the client that would."
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -1615,7 +1626,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "arcpy 3.7.1 module probe, 2026-09-18: no attribute in arcpy or any server-facing submodule matches 'geometryserver' or 'geometryservice'. Every geometry entry point is local computation - Buffer_analysis, Project_management, arcpy.Geometry.projectAs - so a GeometryServer request is never issued. ArcPy cannot certify this protocol however the server behaves; Pro's own UI is the client that would."
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -1728,7 +1740,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "arcpy 3.7.1 module probe, 2026-09-18: no attribute matches 'soap' or 'wsdl'. arcpy speaks the REST surface only, so the GeoServices SOAP catalog has no arcpy caller."
         },
         "qgis-ui": {
           "state": "n/a-no-client",

@@ -134,6 +134,43 @@ CITE = {
         "not used - it reports no esriSpatialRel in any shipped QGIS library while "
         "spatial filtering demonstrably works."
     ),
+    "arcpy-no-geometryserver": (
+        "arcpy 3.7.1 module probe, 2026-09-18: no attribute in arcpy or any "
+        "server-facing submodule matches 'geometryserver' or 'geometryservice'. "
+        "Every geometry entry point is local computation - Buffer_analysis, "
+        "Project_management, arcpy.Geometry.projectAs - so a GeometryServer "
+        "request is never issued. ArcPy cannot certify this protocol however the "
+        "server behaves; Pro's own UI is the client that would."
+    ),
+    "arcpy-no-soap": (
+        "arcpy 3.7.1 module probe, 2026-09-18: no attribute matches 'soap' or "
+        "'wsdl'. arcpy speaks the REST surface only, so the GeoServices SOAP "
+        "catalog has no arcpy caller."
+    ),
+    "arcpy-wfs-read-only": (
+        "arcpy 3.7.1 module probe, 2026-09-18: the only WFS entry point is "
+        "arcpy.conversion.WFSToFeatureClass, and GetParameterInfo lists exactly "
+        "input_WFS_server, WFS_feature_type, out_path, out_name, "
+        "out_feature_class, is_complex, out_gdb, max_features, expose_metadata, "
+        "swap_xy and page_size. It reads a feature type into a feature class: no "
+        "transaction, no property-value projection, no stored-query parameter, so "
+        "WFS-T, GetPropertyValue and ListStoredQueries have no arcpy caller."
+    ),
+    "arcpy-no-wms-identify": (
+        "arcpy 3.7.1 module probe, 2026-09-18: arcpy exposes no MakeWMSLayer or "
+        "MakeWMTSLayer and no identify call against a WMS layer. A WMS is "
+        "consumed by adding it to a map, which draws it; GetFeatureInfo is issued "
+        "by Pro's Identify tool in the UI, not by arcpy."
+    ),
+    "arcpy-no-candidates": (
+        "arcpy 3.7.1 module probe, 2026-09-18: arcpy.geocoding exposes "
+        "GeocodeAddresses, BatchGeocodeServer, ReverseGeocode, RematchAddresses "
+        "and locator authoring, but nothing issuing findAddressCandidates or "
+        "suggest. Those are interactive REST endpoints Pro's search box calls; "
+        "arcpy geocodes tables against a locator. reverseGeocode is deliberately "
+        "NOT closed here: arcpy.geocoding.ReverseGeocode exists, so it is "
+        "reachable."
+    ),
     "arcpy-no-replica": (
         "doc.esri.com/en/arcgis-pro/latest/tool-reference/data-management/"
         "create-replica.html: arcpy.management.CreateReplica accepts 'Table View; "
@@ -304,7 +341,7 @@ MATRIX: list[dict] = [
                                 "pyqgis": ("pass", "pyqgis-wms-caps")},
             "GetMap": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
                        "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wms-getmap")},
-            "GetFeatureInfo": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS,
+            "GetFeatureInfo": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-no-wms-identify"), "qgis-ui": NS,
                                "pyqgis": ("pass", "pyqgis-wms-featureinfo")},
             "GetLegendGraphic": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
                                  "qgis-ui": NS,
@@ -341,11 +378,11 @@ MATRIX: list[dict] = [
                                     "pyqgis": ("pass", "pyqgis-wfs")},
             "GetFeature": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
                            "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wfs")},
-            "GetPropertyValue": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS, "pyqgis": NS},
-            "Transaction-Insert": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS, "pyqgis": NS},
-            "Transaction-Update": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS, "pyqgis": NS},
-            "Transaction-Delete": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS, "pyqgis": NS},
-            "ListStoredQueries": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS, "pyqgis": NS},
+            "GetPropertyValue": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": NS},
+            "Transaction-Insert": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": NS},
+            "Transaction-Update": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": NS},
+            "Transaction-Delete": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": NS},
+            "ListStoredQueries": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": NS},
         },
     },
     {
@@ -580,10 +617,10 @@ MATRIX: list[dict] = [
     {
         "protocol": "geocodeserver", "version": "GeoServices REST",
         "operations": {
-            "findAddressCandidates": {"pro-ui": NS, "arcpy": NS,
+            "findAddressCandidates": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-no-candidates"),
                                       "qgis-ui": ("n/a-no-client", "qgis-no-esri-locator"),
                                       "pyqgis": ("n/a-no-client", "qgis-no-esri-locator")},
-            "suggest": {"pro-ui": NS, "arcpy": NS,
+            "suggest": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-no-candidates"),
                         "qgis-ui": ("n/a-no-client", "qgis-no-esri-locator"),
                         "pyqgis": ("n/a-no-client", "qgis-no-esri-locator")},
             "reverseGeocode": {"pro-ui": NS, "arcpy": NS,
@@ -597,16 +634,16 @@ MATRIX: list[dict] = [
     {
         "protocol": "geometryserver", "version": "GeoServices REST",
         "operations": {
-            "project": {"pro-ui": NS, "arcpy": NS,
+            "project": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-no-geometryserver"),
                         "qgis-ui": ("n/a-no-client", "qgis-local-geometry"),
                         "pyqgis": ("n/a-no-client", "qgis-local-geometry")},
-            "buffer": {"pro-ui": NS, "arcpy": NS,
+            "buffer": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-no-geometryserver"),
                        "qgis-ui": ("n/a-no-client", "qgis-local-geometry"),
                        "pyqgis": ("n/a-no-client", "qgis-local-geometry")},
-            "areasAndLengths": {"pro-ui": NS, "arcpy": NS,
+            "areasAndLengths": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-no-geometryserver"),
                                 "qgis-ui": ("n/a-no-client", "qgis-local-geometry"),
                                 "pyqgis": ("n/a-no-client", "qgis-local-geometry")},
-            "relation": {"pro-ui": NS, "arcpy": NS,
+            "relation": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-no-geometryserver"),
                          "qgis-ui": ("n/a-no-client", "qgis-local-geometry"),
                          "pyqgis": ("n/a-no-client", "qgis-local-geometry")},
         },
@@ -640,7 +677,7 @@ MATRIX: list[dict] = [
     {
         "protocol": "geoservices-soap", "version": "GeoServices SOAP",
         "operations": {
-            "catalog-discovery": {"pro-ui": NS, "arcpy": NS,
+            "catalog-discovery": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-no-soap"),
                                   "qgis-ui": ("n/a-no-client", "qgis-rest-only"),
                                   "pyqgis": ("n/a-no-client", "qgis-rest-only")},
         },

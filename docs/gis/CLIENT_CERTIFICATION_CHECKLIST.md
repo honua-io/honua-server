@@ -181,11 +181,11 @@ lane × protocol pair appears with no checklist row.
 | Lane | Client build | Closed | Open | Breakdown |
 |---|---|---|---|---|
 | `pro-ui` | ArcGIS Pro 3.7.1.1904 | 28/94 | 66 | blocked 7, fail 2, n/a-no-client 11, n/a-superseded 3, not-started 57, pass 14 |
-| `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 35/94 | 59 | blocked 6, n/a-no-client 35, not-started 53 |
+| `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 48/94 | 46 | blocked 6, n/a-no-client 48, not-started 40 |
 | `qgis-ui` | QGIS 3.44.14 LTR | 39/94 | 55 | blocked 4, n/a-no-client 32, n/a-superseded 3, not-started 51, pass 4 |
 | `pyqgis` | QGIS 3.44.14 LTR | 79/94 | 15 | blocked 3, n/a-no-client 36, n/a-superseded 3, not-started 12, pass 40 |
 
-**181 of 376 cells closed; 195 open.**
+**194 of 376 cells closed; 182 open.**
 
 ### Cells
 
@@ -199,7 +199,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 |---|---|---|---|---|
 | GetCapabilities | pass | not-started | not-started | pass |
 | GetMap | pass | not-started | not-started | pass |
-| GetFeatureInfo | not-started | not-started | not-started | pass |
+| GetFeatureInfo | not-started | n/a-no-client | not-started | pass |
 | GetLegendGraphic | not-started | n/a-no-client | not-started | pass |
 | styles | not-started | n/a-no-client | not-started | pass |
 | time-dimension | not-started | n/a-no-client | not-started | pass |
@@ -220,11 +220,11 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 | GetCapabilities | pass | not-started | not-started | pass |
 | DescribeFeatureType | not-started | not-started | not-started | pass |
 | GetFeature | pass | not-started | not-started | pass |
-| GetPropertyValue | not-started | not-started | not-started | not-started |
-| Transaction-Insert | not-started | not-started | not-started | not-started |
-| Transaction-Update | not-started | not-started | not-started | not-started |
-| Transaction-Delete | not-started | not-started | not-started | not-started |
-| ListStoredQueries | not-started | not-started | not-started | not-started |
+| GetPropertyValue | not-started | n/a-no-client | not-started | not-started |
+| Transaction-Insert | not-started | n/a-no-client | not-started | not-started |
+| Transaction-Update | not-started | n/a-no-client | not-started | not-started |
+| Transaction-Delete | not-started | n/a-no-client | not-started | not-started |
+| ListStoredQueries | not-started | n/a-no-client | not-started | not-started |
 
 #### wcs 1.0.0
 
@@ -334,8 +334,8 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| findAddressCandidates | not-started | not-started | n/a-no-client | n/a-no-client |
-| suggest | not-started | not-started | n/a-no-client | n/a-no-client |
+| findAddressCandidates | not-started | n/a-no-client | n/a-no-client | n/a-no-client |
+| suggest | not-started | n/a-no-client | n/a-no-client | n/a-no-client |
 | reverseGeocode | not-started | not-started | n/a-no-client | n/a-no-client |
 | geocodeAddresses | not-started | not-started | n/a-no-client | n/a-no-client |
 
@@ -343,10 +343,10 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| project | not-started | not-started | n/a-no-client | n/a-no-client |
-| buffer | not-started | not-started | n/a-no-client | n/a-no-client |
-| areasAndLengths | not-started | not-started | n/a-no-client | n/a-no-client |
-| relation | not-started | not-started | n/a-no-client | n/a-no-client |
+| project | not-started | n/a-no-client | n/a-no-client | n/a-no-client |
+| buffer | not-started | n/a-no-client | n/a-no-client | n/a-no-client |
+| areasAndLengths | not-started | n/a-no-client | n/a-no-client | n/a-no-client |
+| relation | not-started | n/a-no-client | n/a-no-client | n/a-no-client |
 
 #### naserver GeoServices REST
 
@@ -366,7 +366,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| catalog-discovery | not-started | not-started | n/a-no-client | n/a-no-client |
+| catalog-discovery | not-started | n/a-no-client | n/a-no-client | n/a-no-client |
 
 #### odata v4
 
