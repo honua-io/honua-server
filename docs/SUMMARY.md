@@ -169,8 +169,6 @@
   - [GeoServices REST parity](reference/compatibility/geoservices-parity.md)
   - [SCIM / SAML IdP conformance](reference/compatibility/idp-conformance-matrix.md)
   - [ImageServer admin mapping](reference/compatibility/imageserver-admin-mapping.md)
-  - [Client template runbook](gis/CLIENT_TEMPLATE_RUNBOOK.md)
-  - [Client template version matrix](gis/CLIENT_TEMPLATE_VERSION_MATRIX.md)
 
 ## Security
 

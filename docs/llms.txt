@@ -65,8 +65,8 @@ Each link resolves to the page's source on `trunk`. These pages are also rendere
 - [Build a web map with MapLibre](https://github.com/honua-io/honua-server/blob/trunk/docs/guides/connect/maplibre-web-maps.md): Render a Honua layer in the browser from vector tiles (MVT) using TileJSON metadata and the server-generated MapLibre style.
 - [Connect AI agents to Honua over MCP](https://github.com/honua-io/honua-server/blob/trunk/docs/guides/connect/ai-agents-mcp.md): Point any MCP-capable agent (Claude Code, Claude Desktop, or your own client) at Honua's built-in MCP endpoint to plan, validate, dry-run, and execute geoprocessing work with the same authorization rules as every other protocol.
 - [What an agent can do in each edition](https://github.com/honua-io/honua-server/blob/trunk/docs/guides/connect/agent-capabilities-and-editions.md): Reading through MCP is Community. Letting an agent change anything is Pro. Organisational approval policy is Enterprise.
-- [Honua Studio](https://github.com/honua-io/honua-server/blob/trunk/docs/studio/README.md)
-- [Run Studio standalone](https://github.com/honua-io/honua-server/blob/trunk/docs/studio/run-standalone.md)
+- [Honua Studio](https://github.com/honua-io/honua-server/blob/trunk/docs/studio/README.md): One typed map, app, and dashboard composition that a person or an agent edits through the same tools, in browser preview for 2026.1.
+- [Run Studio standalone](https://github.com/honua-io/honua-server/blob/trunk/docs/studio/run-standalone.md): There is no released standalone Studio bundle or container yet; embed from source or drive the server through MCP or an SDK instead.
 - [Embed Studio](https://github.com/honua-io/honua-server/blob/trunk/docs/studio/embed.md): Embedding is a preview browser surface in 2026.1.
 - [Bring your own model](https://github.com/honua-io/honua-server/blob/trunk/docs/studio/byom.md): The 2026.1 preview path keeps provider credentials in honua-server.
 - [Studio MCP tools](https://github.com/honua-io/honua-server/blob/trunk/docs/studio/mcp-tools.md): The server publishes 19 typed Studio tools through /mcp.
@@ -157,8 +157,6 @@ Each link resolves to the page's source on `trunk`. These pages are also rendere
 - [GeoServices REST parity](https://github.com/honua-io/honua-server/blob/trunk/docs/reference/compatibility/geoservices-parity.md): Honua provides protocol-level compatibility at Esri GeoServices REST paths for selected, operation-scoped workflows.
 - [SCIM / SAML IdP Conformance Matrix](https://github.com/honua-io/honua-server/blob/trunk/docs/reference/compatibility/idp-conformance-matrix.md): Status receipt for the enterprise-identity conformance work (#2154), built on the SCIM 2.0 + SAML 2.0 foundation delivered in #2110.
 - [ImageServer admin operations → Honua admin API](https://github.com/honua-io/honua-server/blob/trunk/docs/reference/compatibility/imageserver-admin-mapping.md): ArcGIS ImageServer exposes a set of admin/mutation operations (addRasters, deleteRasters, updateRaster, uploads, downloadRasters, validate, calculateVolume, computeMultidimensionalInfo, computeTiePoints).
-- [Client template runbook](https://github.com/honua-io/honua-server/blob/trunk/docs/gis/CLIENT_TEMPLATE_RUNBOOK.md): How to produce and refresh the desktop and BI client templates used for cross-client certification.
-- [Client template version matrix](https://github.com/honua-io/honua-server/blob/trunk/docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md): Which client and template versions each certification template is built and verified against.
 
 ## Internal
 
