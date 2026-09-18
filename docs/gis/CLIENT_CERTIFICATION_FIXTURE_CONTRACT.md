@@ -16,7 +16,7 @@ Expansion (explicitly out of scope here):
 
 | Revision | Value |
 |---|---|
-| `fixtureRevision` | `sha256:c12249ee49bfd9f8732fab565733408b649faa78408dc46a14b00b8a90287882` |
+| `fixtureRevision` | `sha256:7d89989fc290785fcc627d867efd3e0228d58ea0af534daa3ea44c7c48bda80d` |
 | `serverConfigRevision` | `sha256:d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a` |
 | `authPolicyRevision` | `sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9` |
 
@@ -48,7 +48,7 @@ $ LC_ALL=C sha256sum -t docker/client-compat/seed/publish-pmtiles.py docker/clie
     tests/seed/client-compat-auth-wave1.yaml tests/seed/client-compat-raster-v1.sql \
     tests/seed/client-compat-v1.sql tests/seed/portal-compat.yaml \
     | sha256sum -t
-c12249ee49bfd9f8732fab565733408b649faa78408dc46a14b00b8a90287882  -
+7d89989fc290785fcc627d867efd3e0228d58ea0af534daa3ea44c7c48bda80d  -
 $ LC_ALL=C sha256sum -t tests/config/client-compat-server-v1.json | sha256sum -t
 d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a  -
 ```
