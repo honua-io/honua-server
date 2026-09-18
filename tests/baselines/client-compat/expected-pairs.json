@@ -87,6 +87,10 @@
       "protocol": "vectortileserver"
     },
     {
+      "client_lane": "desktop-qgis",
+      "protocol": "sensorthings"
+    },
+    {
       "client_lane": "cli",
       "protocol": "ogc-features"
     },

@@ -36,15 +36,15 @@
         "blocked": 6
       },
       "qgis-ui": {
-        "not-started": 51,
+        "not-started": 50,
         "n/a-superseded": 3,
-        "n/a-no-client": 32,
-        "blocked": 4,
-        "pass": 4
+        "n/a-no-client": 36,
+        "pass": 4,
+        "blocked": 1
       },
       "pyqgis": {
-        "pass": 40,
-        "not-started": 12,
+        "pass": 43,
+        "not-started": 9,
         "n/a-superseded": 3,
         "n/a-no-client": 36,
         "blocked": 3
@@ -52,8 +52,8 @@
     },
     "overall": {
       "cells": 376,
-      "closed": 194,
-      "open": 182
+      "closed": 201,
+      "open": 175
     }
   },
   "rows": [
@@ -866,11 +866,11 @@
           "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
         },
         "qgis-ui": {
-          "state": "blocked",
-          "cause": "the SensorThings surface is not switched on in the client-compat fixture, so every path 404s (/sensorthings, /sensorthings/v1.1, .../Things, .../Observations). Unblocked by setting Capabilities:Experimental:serve.sensorthings:Enabled=true. Previously recorded as server bug #4202, which misattributed a configuration gap to a defect."
+          "state": "not-started"
         },
         "pyqgis": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-sensorthings.cert.json - CERT-DISC-01, protocol sensorthings 1.1, client desktop-qgis 3.44.14-Solothurn, 3 passed 0 failed"
         }
       }
     },
@@ -888,11 +888,11 @@
           "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
         },
         "qgis-ui": {
-          "state": "blocked",
-          "cause": "the SensorThings surface is not switched on in the client-compat fixture, so every path 404s (/sensorthings, /sensorthings/v1.1, .../Things, .../Observations). Unblocked by setting Capabilities:Experimental:serve.sensorthings:Enabled=true. Previously recorded as server bug #4202, which misattributed a configuration gap to a defect."
+          "state": "not-started"
         },
         "pyqgis": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-sensorthings.cert.json - CERT-SCHM-01, protocol sensorthings 1.1, client desktop-qgis 3.44.14-Solothurn, 3 passed 0 failed"
         }
       }
     },
@@ -910,11 +910,11 @@
           "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
         },
         "qgis-ui": {
-          "state": "blocked",
-          "cause": "the SensorThings surface is not switched on in the client-compat fixture, so every path 404s (/sensorthings, /sensorthings/v1.1, .../Things, .../Observations). Unblocked by setting Capabilities:Experimental:serve.sensorthings:Enabled=true. Previously recorded as server bug #4202, which misattributed a configuration gap to a defect. A paging/count defect (#4200) was recorded against this operation, but it cannot be confirmed or retired until the surface is switched on."
+          "state": "not-started"
         },
         "pyqgis": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-sensorthings.cert.json - CERT-PAGE-01, protocol sensorthings 1.1, client desktop-qgis 3.44.14-Solothurn, 3 passed 0 failed"
         }
       }
     },
@@ -1040,11 +1040,12 @@
           "state": "not-started"
         },
         "qgis-ui": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html section 11.1.7.3 'Using ArcGIS REST Servers' documents service-tree browsing, layer loading, expression-builder attribute filters and a view-extent option. Attachments, related records, replica/sync and server-side statistics appear nowhere. Confirmed by wire capture through a logging proxy on 2026-09-17: the provider issues no outStatistics request and computes min/max/sum locally from an outFields=* download, and exposes no attachment, relationship or replica member. A binary string scan was not used - it reports no esriSpatialRel in any shipped QGIS library while spatial filtering demonstrably works. This closes the qgis-ui lane as well as pyqgis: every finding above is at the provider layer - no attachment or replica member on the provider, discoverRelations returning empty, statistics computed locally from an outFields=* download - and the desktop UI is driven by that same arcgisfeatureserver provider. A request the provider never issues cannot be issued by a panel drawn on top of it, and the cited source is the user-manual chapter describing that UI."
         },
         "pyqgis": {
           "state": "n/a-no-client",
-          "citation": "docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html section 11.1.7.3 'Using ArcGIS REST Servers' documents service-tree browsing, layer loading, expression-builder attribute filters and a view-extent option. Attachments, related records, replica/sync and server-side statistics appear nowhere. Confirmed by wire capture through a logging proxy on 2026-09-17: the provider issues no outStatistics request and computes min/max/sum locally from an outFields=* download, and exposes no attachment, relationship or replica member. A binary string scan was not used - it reports no esriSpatialRel in any shipped QGIS library while spatial filtering demonstrably works."
+          "citation": "docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html section 11.1.7.3 'Using ArcGIS REST Servers' documents service-tree browsing, layer loading, expression-builder attribute filters and a view-extent option. Attachments, related records, replica/sync and server-side statistics appear nowhere. Confirmed by wire capture through a logging proxy on 2026-09-17: the provider issues no outStatistics request and computes min/max/sum locally from an outFields=* download, and exposes no attachment, relationship or replica member. A binary string scan was not used - it reports no esriSpatialRel in any shipped QGIS library while spatial filtering demonstrably works. This closes the qgis-ui lane as well as pyqgis: every finding above is at the provider layer - no attachment or replica member on the provider, discoverRelations returning empty, statistics computed locally from an outFields=* download - and the desktop UI is driven by that same arcgisfeatureserver provider. A request the provider never issues cannot be issued by a panel drawn on top of it, and the cited source is the user-manual chapter describing that UI."
         }
       }
     },
@@ -1062,11 +1063,12 @@
           "state": "not-started"
         },
         "qgis-ui": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html section 11.1.7.3 'Using ArcGIS REST Servers' documents service-tree browsing, layer loading, expression-builder attribute filters and a view-extent option. Attachments, related records, replica/sync and server-side statistics appear nowhere. Confirmed by wire capture through a logging proxy on 2026-09-17: the provider issues no outStatistics request and computes min/max/sum locally from an outFields=* download, and exposes no attachment, relationship or replica member. A binary string scan was not used - it reports no esriSpatialRel in any shipped QGIS library while spatial filtering demonstrably works. This closes the qgis-ui lane as well as pyqgis: every finding above is at the provider layer - no attachment or replica member on the provider, discoverRelations returning empty, statistics computed locally from an outFields=* download - and the desktop UI is driven by that same arcgisfeatureserver provider. A request the provider never issues cannot be issued by a panel drawn on top of it, and the cited source is the user-manual chapter describing that UI."
         },
         "pyqgis": {
           "state": "n/a-no-client",
-          "citation": "docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html section 11.1.7.3 'Using ArcGIS REST Servers' documents service-tree browsing, layer loading, expression-builder attribute filters and a view-extent option. Attachments, related records, replica/sync and server-side statistics appear nowhere. Confirmed by wire capture through a logging proxy on 2026-09-17: the provider issues no outStatistics request and computes min/max/sum locally from an outFields=* download, and exposes no attachment, relationship or replica member. A binary string scan was not used - it reports no esriSpatialRel in any shipped QGIS library while spatial filtering demonstrably works."
+          "citation": "docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html section 11.1.7.3 'Using ArcGIS REST Servers' documents service-tree browsing, layer loading, expression-builder attribute filters and a view-extent option. Attachments, related records, replica/sync and server-side statistics appear nowhere. Confirmed by wire capture through a logging proxy on 2026-09-17: the provider issues no outStatistics request and computes min/max/sum locally from an outFields=* download, and exposes no attachment, relationship or replica member. A binary string scan was not used - it reports no esriSpatialRel in any shipped QGIS library while spatial filtering demonstrably works. This closes the qgis-ui lane as well as pyqgis: every finding above is at the provider layer - no attachment or replica member on the provider, discoverRelations returning empty, statistics computed locally from an outFields=* download - and the desktop UI is driven by that same arcgisfeatureserver provider. A request the provider never issues cannot be issued by a panel drawn on top of it, and the cited source is the user-manual chapter describing that UI."
         }
       }
     },
@@ -1082,11 +1084,12 @@
           "state": "not-started"
         },
         "qgis-ui": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html section 11.1.7.3 'Using ArcGIS REST Servers' documents service-tree browsing, layer loading, expression-builder attribute filters and a view-extent option. Attachments, related records, replica/sync and server-side statistics appear nowhere. Confirmed by wire capture through a logging proxy on 2026-09-17: the provider issues no outStatistics request and computes min/max/sum locally from an outFields=* download, and exposes no attachment, relationship or replica member. A binary string scan was not used - it reports no esriSpatialRel in any shipped QGIS library while spatial filtering demonstrably works. This closes the qgis-ui lane as well as pyqgis: every finding above is at the provider layer - no attachment or replica member on the provider, discoverRelations returning empty, statistics computed locally from an outFields=* download - and the desktop UI is driven by that same arcgisfeatureserver provider. A request the provider never issues cannot be issued by a panel drawn on top of it, and the cited source is the user-manual chapter describing that UI."
         },
         "pyqgis": {
           "state": "n/a-no-client",
-          "citation": "docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html section 11.1.7.3 'Using ArcGIS REST Servers' documents service-tree browsing, layer loading, expression-builder attribute filters and a view-extent option. Attachments, related records, replica/sync and server-side statistics appear nowhere. Confirmed by wire capture through a logging proxy on 2026-09-17: the provider issues no outStatistics request and computes min/max/sum locally from an outFields=* download, and exposes no attachment, relationship or replica member. A binary string scan was not used - it reports no esriSpatialRel in any shipped QGIS library while spatial filtering demonstrably works."
+          "citation": "docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html section 11.1.7.3 'Using ArcGIS REST Servers' documents service-tree browsing, layer loading, expression-builder attribute filters and a view-extent option. Attachments, related records, replica/sync and server-side statistics appear nowhere. Confirmed by wire capture through a logging proxy on 2026-09-17: the provider issues no outStatistics request and computes min/max/sum locally from an outFields=* download, and exposes no attachment, relationship or replica member. A binary string scan was not used - it reports no esriSpatialRel in any shipped QGIS library while spatial filtering demonstrably works. This closes the qgis-ui lane as well as pyqgis: every finding above is at the provider layer - no attachment or replica member on the provider, discoverRelations returning empty, statistics computed locally from an outFields=* download - and the desktop UI is driven by that same arcgisfeatureserver provider. A request the provider never issues cannot be issued by a panel drawn on top of it, and the cited source is the user-manual chapter describing that UI."
         }
       }
     },
@@ -1124,11 +1127,12 @@
           "citation": "doc.esri.com/en/arcgis-pro/latest/tool-reference/data-management/create-replica.html: arcpy.management.CreateReplica accepts 'Table View; Dataset' - layers and tables referencing versioned, editable data from an enterprise geodatabase. Feature services and REST FeatureServer URLs are not accepted inputs, so no ArcPy call can create a replica against this server. Verified 2026-09-17 against the Pro 3.7 reference."
         },
         "qgis-ui": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html section 11.1.7.3 'Using ArcGIS REST Servers' documents service-tree browsing, layer loading, expression-builder attribute filters and a view-extent option. Attachments, related records, replica/sync and server-side statistics appear nowhere. Confirmed by wire capture through a logging proxy on 2026-09-17: the provider issues no outStatistics request and computes min/max/sum locally from an outFields=* download, and exposes no attachment, relationship or replica member. A binary string scan was not used - it reports no esriSpatialRel in any shipped QGIS library while spatial filtering demonstrably works. This closes the qgis-ui lane as well as pyqgis: every finding above is at the provider layer - no attachment or replica member on the provider, discoverRelations returning empty, statistics computed locally from an outFields=* download - and the desktop UI is driven by that same arcgisfeatureserver provider. A request the provider never issues cannot be issued by a panel drawn on top of it, and the cited source is the user-manual chapter describing that UI."
         },
         "pyqgis": {
           "state": "n/a-no-client",
-          "citation": "docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html section 11.1.7.3 'Using ArcGIS REST Servers' documents service-tree browsing, layer loading, expression-builder attribute filters and a view-extent option. Attachments, related records, replica/sync and server-side statistics appear nowhere. Confirmed by wire capture through a logging proxy on 2026-09-17: the provider issues no outStatistics request and computes min/max/sum locally from an outFields=* download, and exposes no attachment, relationship or replica member. A binary string scan was not used - it reports no esriSpatialRel in any shipped QGIS library while spatial filtering demonstrably works."
+          "citation": "docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html section 11.1.7.3 'Using ArcGIS REST Servers' documents service-tree browsing, layer loading, expression-builder attribute filters and a view-extent option. Attachments, related records, replica/sync and server-side statistics appear nowhere. Confirmed by wire capture through a logging proxy on 2026-09-17: the provider issues no outStatistics request and computes min/max/sum locally from an outFields=* download, and exposes no attachment, relationship or replica member. A binary string scan was not used - it reports no esriSpatialRel in any shipped QGIS library while spatial filtering demonstrably works. This closes the qgis-ui lane as well as pyqgis: every finding above is at the provider layer - no attachment or replica member on the provider, discoverRelations returning empty, statistics computed locally from an outFields=* download - and the desktop UI is driven by that same arcgisfeatureserver provider. A request the provider never issues cannot be issued by a panel drawn on top of it, and the cited source is the user-manual chapter describing that UI."
         }
       }
     },

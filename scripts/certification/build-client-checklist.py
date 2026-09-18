@@ -132,7 +132,14 @@ CITE = {
         "and computes min/max/sum locally from an outFields=* download, and exposes "
         "no attachment, relationship or replica member. A binary string scan was "
         "not used - it reports no esriSpatialRel in any shipped QGIS library while "
-        "spatial filtering demonstrably works."
+        "spatial filtering demonstrably works. "
+        "This closes the qgis-ui lane as well as pyqgis: every finding above is at "
+        "the provider layer - no attachment or replica member on the provider, "
+        "discoverRelations returning empty, statistics computed locally from an "
+        "outFields=* download - and the desktop UI is driven by that same "
+        "arcgisfeatureserver provider. A request the provider never issues cannot "
+        "be issued by a panel drawn on top of it, and the cited source is the "
+        "user-manual chapter describing that UI."
     ),
     "arcpy-no-geometryserver": (
         "arcpy 3.7.1 module probe, 2026-09-18: no attribute in arcpy or any "
@@ -259,6 +266,9 @@ EV = {
     "pyqgis-stac-asset": _pyqgis("stac", "1.0.0", 4, cert_id="CERT-RNDR-URL-01"),
     "pyqgis-pmtiles": _pyqgis("pmtiles", "3", 6, cert_id="CERT-CONN-01"),
     "pyqgis-styles": _pyqgis("ogc-api-styles", "1.0", 3, cert_id="CERT-RNDR-SYM-01"),
+    "pyqgis-sta-entities": _pyqgis("sensorthings", "1.1", 3, cert_id="CERT-DISC-01"),
+    "pyqgis-sta-expand": _pyqgis("sensorthings", "1.1", 3, cert_id="CERT-SCHM-01"),
+    "pyqgis-sta-paging": _pyqgis("sensorthings", "1.1", 3, cert_id="CERT-PAGE-01"),
 }
 
 # --------------------------------------------------------------------------
@@ -276,13 +286,6 @@ def _blocked(reason: str) -> tuple[str, str]:
 # Two causes that were previously written as though they were external walls.
 # Both are switches inside our own fixture, so they are stated as such: a cause
 # that overstates the obstacle is how ready work stays parked.
-STA_GATE = (
-    "the SensorThings surface is not switched on in the client-compat fixture, so "
-    "every path 404s (/sensorthings, /sensorthings/v1.1, .../Things, "
-    ".../Observations). Unblocked by setting "
-    "Capabilities:Experimental:serve.sensorthings:Enabled=true. Previously recorded "
-    "as server bug #4202, which misattributed a configuration gap to a defect."
-)
 
 def _experimental_gate(capability: str, extra: str = "") -> str:
     """Cause for a capability the fixture has switched off.
@@ -463,19 +466,15 @@ MATRIX: list[dict] = [
         "operations": {
             "entity-sets": {"pro-ui": ("n/a-no-client", "pro-no-sta"),
                             "arcpy": ("n/a-no-client", "arcpy-modules"),
-                            "qgis-ui": _blocked(STA_GATE),
-                            "pyqgis": NS},
+                            "qgis-ui": NS,
+                            "pyqgis": ("pass", "pyqgis-sta-entities")},
             "expand": {"pro-ui": ("n/a-no-client", "pro-no-sta"),
                        "arcpy": ("n/a-no-client", "arcpy-modules"),
-                       "qgis-ui": _blocked(STA_GATE), "pyqgis": NS},
+                       "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-sta-expand")},
             "filter-paging": {"pro-ui": ("n/a-no-client", "pro-no-sta"),
                               "arcpy": ("n/a-no-client", "arcpy-modules"),
-                              "qgis-ui": _blocked(STA_GATE + " A paging/count defect "
-                                                  "(#4200) was recorded against this "
-                                                  "operation, but it cannot be "
-                                                  "confirmed or retired until the "
-                                                  "surface is switched on."),
-                              "pyqgis": NS},
+                              "qgis-ui": NS,
+                              "pyqgis": ("pass", "pyqgis-sta-paging")},
         },
     },
     {
@@ -512,16 +511,16 @@ MATRIX: list[dict] = [
             # VectorTileServer.
             "attachments": {
                 "pro-ui": ("fail", "pro-matrix", "honua-server#5012"),
-                "arcpy": NS, "qgis-ui": NS,
+                "arcpy": NS, "qgis-ui": ("n/a-no-client", "qgis-rest-no-advanced"),
                 "pyqgis": ("n/a-no-client", "qgis-rest-no-advanced")},
             "relatedRecords": {
                 "pro-ui": ("fail", "pro-matrix", "honua-server#5021"),
-                "arcpy": NS, "qgis-ui": NS,
+                "arcpy": NS, "qgis-ui": ("n/a-no-client", "qgis-rest-no-advanced"),
                 "pyqgis": ("n/a-no-client", "qgis-rest-no-advanced")},
             # The server answers outStatistics correctly; QGIS never asks. It
             # downloads outFields=* and aggregates locally, so there is no client
             # request to certify.
-            "statistics": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS,
+            "statistics": {"pro-ui": NS, "arcpy": NS, "qgis-ui": ("n/a-no-client", "qgis-rest-no-advanced"),
                            "pyqgis": ("n/a-no-client", "qgis-rest-no-advanced")},
             "domains": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS,
                         "pyqgis": _blocked(
@@ -549,7 +548,7 @@ MATRIX: list[dict] = [
                     "residual limit to test is that replica delivery is Esri JSON "
                     "only, while Pro offline requests dataFormat=sqlite.")),
                 "arcpy": ("n/a-no-client", "arcpy-no-replica"),
-                "qgis-ui": NS,
+                "qgis-ui": ("n/a-no-client", "qgis-rest-no-advanced"),
                 "pyqgis": ("n/a-no-client", "qgis-rest-no-advanced")},
         },
     },

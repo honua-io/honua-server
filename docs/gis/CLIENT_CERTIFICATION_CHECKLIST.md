@@ -182,10 +182,10 @@ lane × protocol pair appears with no checklist row.
 |---|---|---|---|---|
 | `pro-ui` | ArcGIS Pro 3.7.1.1904 | 28/94 | 66 | blocked 7, fail 2, n/a-no-client 11, n/a-superseded 3, not-started 57, pass 14 |
 | `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 48/94 | 46 | blocked 6, n/a-no-client 48, not-started 40 |
-| `qgis-ui` | QGIS 3.44.14 LTR | 39/94 | 55 | blocked 4, n/a-no-client 32, n/a-superseded 3, not-started 51, pass 4 |
-| `pyqgis` | QGIS 3.44.14 LTR | 79/94 | 15 | blocked 3, n/a-no-client 36, n/a-superseded 3, not-started 12, pass 40 |
+| `qgis-ui` | QGIS 3.44.14 LTR | 43/94 | 51 | blocked 1, n/a-no-client 36, n/a-superseded 3, not-started 50, pass 4 |
+| `pyqgis` | QGIS 3.44.14 LTR | 82/94 | 12 | blocked 3, n/a-no-client 36, n/a-superseded 3, not-started 9, pass 43 |
 
-**194 of 376 cells closed; 182 open.**
+**201 of 376 cells closed; 175 open.**
 
 ### Cells
 
@@ -275,9 +275,9 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| entity-sets | n/a-no-client | n/a-no-client | blocked | not-started |
-| expand | n/a-no-client | n/a-no-client | blocked | not-started |
-| filter-paging | n/a-no-client | n/a-no-client | blocked | not-started |
+| entity-sets | n/a-no-client | n/a-no-client | not-started | pass |
+| expand | n/a-no-client | n/a-no-client | not-started | pass |
+| filter-paging | n/a-no-client | n/a-no-client | not-started | pass |
 
 #### featureserver GeoServices REST
 
@@ -288,11 +288,11 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 | query | pass | not-started | pass | pass |
 | identify | pass | not-started | pass | pass |
 | applyEdits | not-started | not-started | not-started | blocked |
-| attachments | fail | not-started | not-started | n/a-no-client |
-| relatedRecords | fail | not-started | not-started | n/a-no-client |
-| statistics | not-started | not-started | not-started | n/a-no-client |
+| attachments | fail | not-started | n/a-no-client | n/a-no-client |
+| relatedRecords | fail | not-started | n/a-no-client | n/a-no-client |
+| statistics | not-started | not-started | n/a-no-client | n/a-no-client |
 | domains | not-started | not-started | not-started | blocked |
-| replica-sync | blocked | n/a-no-client | not-started | n/a-no-client |
+| replica-sync | blocked | n/a-no-client | n/a-no-client | n/a-no-client |
 
 #### mapserver GeoServices REST
 
