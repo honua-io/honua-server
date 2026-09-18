@@ -1,25 +1,10 @@
 ---
 type: reference
 title: "Databricks provider (read-only, best-effort)"
+description: "Serve tables from a Databricks SQL Warehouse as read-only feature layers over the Statement Execution REST API."
 resource: "honua://capability/provider.databricks"
 ---
 # Databricks provider (read-only, best-effort)
-
-## Protocol routing
-
-OData collection queries, counts, and streaming responses resolve this provider per layer from the
-Metadata v2 storage binding. Providers without native streaming use the same routed reader through
-a bounded, materialized page; Honua never falls back to the primary provider for that layer.
-This provider is read-only, so OData create/update/delete requests (including `$batch` mutations)
-return `501 ProviderWriteNotSupported` instead of dispatching to the primary provider.
-
-OGC API Tiles raster (`f=png`) tile requests resolve this provider per collection the same way,
-through `FeatureProviderQueryRouter`; Honua never falls back to the primary provider for a routed
-collection's raster tiles. Vector (MVT) tile requests instead return a `501 Not Implemented`
-problem response naming the collection and provider: native MVT generation is a per-provider
-capability that only the PostGIS provider implements today, independent of the routing fix
-delivered under [issue #2962](https://github.com/honua-io/honua-server/issues/2962).
-
 
 The Databricks provider serves Honua feature layers from tables/views in a Databricks
 SQL Warehouse. It plugs in alongside the primary backend (PostGIS, DuckDB, or MySQL)
@@ -31,6 +16,20 @@ resolves to the `databricks` provider is read through this implementation.
 > Statement Execution REST API**, closer in shape to the ArcGIS REST provider than to
 > the in-process RDBMS providers. A hardening follow-up is expected. Read the
 > [limitations](#limitations) before relying on it in production.
+
+## Protocol routing
+
+OData collection queries, counts, and streaming responses resolve this provider per layer from the
+Metadata v2 storage binding. Providers without native streaming use the same routed reader through
+a bounded, materialized page; Honua never falls back to the primary provider for that layer.
+This provider is read-only, so OData create/update/delete requests (including `$batch` mutations)
+return `501 ProviderWriteNotSupported` instead of dispatching to the primary provider.
+
+OGC API Tiles raster (`f=png`) tile requests resolve this provider per collection the same way,
+through the provider router; Honua never falls back to the primary provider for a routed
+collection's raster tiles. Vector (MVT) tile requests instead return a `501 Not Implemented`
+problem response naming the collection and provider: native MVT generation is a per-provider
+capability that only the PostGIS provider implements today.
 
 ## How it works
 
@@ -66,7 +65,7 @@ Bound from the `Databricks` configuration section (environment variables shown w
 
 | Key | Required | Description |
 | --- | --- | --- |
-| `Experimental__Features__DatabricksProvider` | yes | **Required opt-in (#2436).** Without it the provider is never registered, and setting `Databricks__Enabled=true` throws at startup. |
+| `Experimental__Features__DatabricksProvider` | yes | **Required opt-in.** Without it the provider is never registered, and setting `Databricks__Enabled=true` throws at startup. |
 | `Databricks__Enabled` | no (default `true`) | Set `false` to compile the provider in but skip its DI registration. |
 | `Databricks__Host` | yes | Absolute HTTPS workspace URL, e.g. `https://dbc-abc123.cloud.databricks.com`. |
 | `Databricks__WarehouseId` | yes | SQL Warehouse id statements execute against. |
@@ -86,7 +85,7 @@ under `Databricks:Layers` maps a Honua layer id to a physical table:
 
 ```jsonc
 {
-  // Required opt-in (#2436). Without it the provider is never registered, and
+  // Required opt-in. Without it the provider is never registered, and
   // "Databricks:Enabled": true throws at startup.
   "Experimental": {
     "Features": {
@@ -163,7 +162,7 @@ attribute identifiers are validated against a simple-identifier allow-list at st
   results. A pre-translated (Postgres-flavored) `SqlFilter` without the canonical `where`
   text is likewise rejected.
 - **No schema introspection.** Attribute columns must be listed explicitly per layer.
-- **Deferred to the hardening follow-up (#1719):** Metadata-v2 binding
+- **Deferred to a hardening follow-up:** Metadata-v2 binding
   (`IBindableFeatureDataProvider`) so layers resolve from secure connections rather than
   static config. Top-features, date/value bins, and H3 aggregation remain unsupported.
 

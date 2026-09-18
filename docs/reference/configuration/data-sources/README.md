@@ -38,19 +38,13 @@ Store credentials in the deployment secret mechanism; do not commit connection
 strings or tokens. The provider-specific pages describe layer bindings,
 predicate limitations, and failure behavior.
 
-### HTTP-Stack GA Proof
+### Nightly HTTP-stack coverage
 
-DuckDB, MySQL/MariaDB, and SQL Server each have real HTTP-stack interface-level test
-coverage (`Honua.ProviderSmoke.Tests`, honua-server#2947): a provider-parameterized
-web-app fixture boots the actual ASP.NET Core host against the provider (DuckDB
-in-process, MySQL and SQL Server via Testcontainers) and asserts real seeded-row
-correctness — not just 200s — through the read/query GA surface each documents support
-for (GeoServices FeatureServer, OGC API Features, OData, and tiles where applicable; see
-each provider's page for exact coverage and known gaps). Runs nightly and on demand via
-[`provider-http-smoke.yml`](../../../../.github/workflows/provider-http-smoke.yml).
-Oracle, Redshift, Snowflake, and Databricks remain experimental and are not part of this
-suite; Oracle additionally gained a real-database provider-layer lane (see the
-[Oracle provider](oracle.md#integration) page) as promotion groundwork.
+DuckDB, MySQL/MariaDB, and SQL Server are exercised nightly through the full HTTP
+stack against real seeded rows — GeoServices FeatureServer, OGC API Features, OData,
+and tiles where applicable; each provider's page lists its exact coverage and gaps.
+Oracle, Redshift, Snowflake, and Databricks remain experimental and are not part of
+that suite.
 
 ## Tested PostgreSQL configurations
 
