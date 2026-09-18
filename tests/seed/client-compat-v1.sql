@@ -655,8 +655,16 @@ BEGIN
                     'metadata', jsonb_build_object('id', 'svc-' || service_part || '-feature', 'name', service_name, 'title', service_name),
                     'serviceType', 'esri-feature-service',
                     'publicationIds', '[]'::jsonb,
-                    'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'VectorTileServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
-                    'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'VectorTileServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
+                    -- GPServer is on the feature service because that is where the
+                    -- production publish path puts it (MetadataV2ServiceProtocols.All)
+                    -- and where ServiceResourceValidationHelpers looks for it: with it
+                    -- absent, /rest/services/<name>/GPServer answered "Service not
+                    -- found" for every seeded service, so no Esri client could reach the
+                    -- built-in process catalog and the GPServer lanes had nothing to
+                    -- certify against. Tasks come from that catalog; the seed publishes
+                    -- none of its own.
+                    'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'VectorTileServer', 'GPServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
+                    'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'VectorTileServer', 'GPServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'OGC-API-Maps', 'OGC-API-Tiles']::text[]),
                     'options', jsonb_build_object('capabilities', to_jsonb(service_capabilities)),
                     'accessPolicy', service_access_policy,
                     'status', (SELECT value FROM status_doc),

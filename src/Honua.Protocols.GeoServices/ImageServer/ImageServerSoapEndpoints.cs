@@ -351,7 +351,11 @@ internal static class ImageServerSoapEndpoints
             new XElement("MinPixelSize", "0"),
             new XElement("MaxPixelSize", "0"),
             new XElement("CopyrightText", string.Empty),
-            new XElement("ServiceDataType", "esriImageServiceDataTypeGeneric"),
+            // Mirrors the REST document: the literal Generic hid every elevation service
+            // from Esri clients, which key elevation behaviour on this one element.
+            new XElement("ServiceDataType", revalidation.Resolution.ElevationEnabled
+                ? "esriImageServiceDataTypeElevation"
+                : "esriImageServiceDataTypeGeneric"),
             BuildDoubleArray("MinValues", statistics.Select(static value => value.MinValue ?? 0)),
             BuildDoubleArray("MaxValues", statistics.Select(static value => value.MaxValue ?? 0)),
             BuildDoubleArray("MeanValues", statistics.Select(static value => value.MeanValue ?? 0)),

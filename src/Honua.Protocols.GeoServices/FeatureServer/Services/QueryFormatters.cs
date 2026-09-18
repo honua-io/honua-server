@@ -348,6 +348,28 @@ internal sealed class QueryFormatter : IQueryFormatter
     /// <summary>
     /// Filters attributes based on outFields parameter
     /// </summary>
+    /// <summary>
+    /// Normalises one attribute value for the Esri JSON feature shape. On top of the
+    /// shared normaliser, a structured JSON value (a jsonb array or object, which the
+    /// store hands over as a <see cref="JsonElement"/>) becomes its JSON text.
+    /// </summary>
+    /// <remarks>
+    /// The layer document advertises a <c>Json</c> field as <c>esriFieldTypeString</c>
+    /// (<see cref="MapFieldTypeToGeoServices"/>), so the value must be a string too. Left
+    /// as a <see cref="JsonElement"/> it serialised as a nested array, and ArcGIS Pro's
+    /// feature-service reader, finding a non-string in a string field, dropped every
+    /// row that projected it: a <c>da.SearchCursor</c> over the seeded <c>tags</c> or
+    /// <c>numbers</c> field returned 0 of 10 rows while every other field returned all
+    /// 10, and the edit round-trip that clones a template row found nothing to clone.
+    /// GeoJSON keeps the nested value, where it is valid; only the Esri shape flattens.
+    /// </remarks>
+    private static object? GeoServicesAttributeValue(object? value)
+        => FeatureAttributeValueNormalizer.Normalize(value) switch
+        {
+            JsonElement { ValueKind: JsonValueKind.Array or JsonValueKind.Object } element => element.GetRawText(),
+            var normalized => normalized
+        };
+
     private static Dictionary<string, object?> FilterAttributes(
         ImmutableDictionary<string, object?> attributes,
         string[]? outFields,
@@ -365,7 +387,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             {
                 if (ShouldIncludeGeoServicesAttribute(name, declaredAttributeFields, runtimeAttributeFields))
                 {
-                    all[name] = FeatureAttributeValueNormalizer.Normalize(value);
+                    all[name] = GeoServicesAttributeValue(value);
                 }
             }
 
@@ -397,7 +419,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             attributes.ContainsKey(field)
             && ShouldIncludeGeoServicesAttribute(field, declaredAttributeFields, runtimeAttributeFields)))
         {
-            filtered[field] = FeatureAttributeValueNormalizer.Normalize(attributes[field]);
+            filtered[field] = GeoServicesAttributeValue(attributes[field]);
         }
 
         return filtered;

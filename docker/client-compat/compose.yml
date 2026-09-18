@@ -173,6 +173,15 @@ services:
       Capabilities__Experimental__sync.offline__Enabled: "true"
       Capabilities__Experimental__serve.i3s-scene__Enabled: "true"
       Capabilities__Experimental__serve.3d-tiles-scene__Enabled: "true"
+      # Scene generation writes tilesets under SceneGeneration:OutputRoot, whose
+      # default is the relative "scenes-generated", i.e. /app/scenes-generated -
+      # owned by root in the image while the process runs as 1001. Every
+      # POST /api/v1/admin/scenes/generate therefore failed with
+      # UnauthorizedAccessException and surfaced as 503 "temporarily
+      # unavailable", so no 3D Tiles or I3S scene could ever be published on this
+      # fixture. /tmp is writable by the runtime user, like the other scratch
+      # roots the image provisions there.
+      SceneGeneration__OutputRoot: /tmp/honua-scenes
       # The ArcGIS JS API sends its credential in X-Esri-Authorization; the Esri
       # identity probes assert it survives a CORS preflight, which needs an allowed
       # origin configured or the server correctly emits no CORS headers at all.

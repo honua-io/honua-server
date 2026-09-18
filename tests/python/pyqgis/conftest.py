@@ -398,6 +398,41 @@ def qgis_app():
     app.exitQgis()
 
 
+@pytest.fixture(scope="session")
+def api_header_authcfg(qgis_app) -> str | None:
+    """An API-header authentication config the providers will use on writes.
+
+    QGIS sends credentials on the WFS-T and OGC API Features Part 4 write paths
+    only from an entry in its authentication database referenced as
+    ``authcfg=<id>``; inline URI credentials never reach a Transaction. The lane
+    therefore provisions the entry itself, in the session's own auth database,
+    from the credential named by the environment at call time. The key is
+    never written anywhere: it lives in the in-process auth manager and dies
+    with the session.
+
+    Returns ``None`` when no credential is configured, so the write-path cases
+    can skip with that exact reason rather than report a server defect.
+    """
+    key = os.environ.get("HONUA_ADMIN_PASSWORD")
+    if not key:
+        return None
+    from qgis.core import QgsApplication, QgsAuthMethodConfig
+
+    manager = QgsApplication.authManager()
+    if not manager.masterPasswordIsSet():
+        # Ephemeral session database; the password protects nothing that
+        # outlives the process and is not itself a fixture credential.
+        assert manager.setMasterPassword("pyqgis-client-compat-session", True), (
+            "QGIS refused to initialise its authentication database, so no "
+            "authcfg can be stored")
+    config = QgsAuthMethodConfig("APIHeader")
+    config.setName("honua-client-compat-api-key")
+    config.setConfig("X-API-Key", key)
+    assert manager.storeAuthenticationConfig(config), (
+        "QGIS refused to store the API-header authentication config")
+    return config.id()
+
+
 @pytest.fixture(autouse=True)
 def reset_worker_state() -> None:
     """Shadow the shared worker reset fixture with a no-op."""

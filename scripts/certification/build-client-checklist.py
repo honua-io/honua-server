@@ -200,6 +200,37 @@ CITE = {
         "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: "
         "ArcPy exposes no module for this protocol."
     ),
+    "qgis-no-imageserver-raster": (
+        "QGIS 3.44.14-Solothurn provider probe, 2026-09-18: the arcgismapserver "
+        "provider accepts the fixture's ImageServer URL and reports the layer valid, "
+        "but the raster it exposes is 0x0, identify at the raster centre returns no "
+        "values, and a block read returns NaN - while the same point answers "
+        "Band_1=100 over REST identify. docs.qgis.org/3.44 'Using ArcGIS REST "
+        "Servers' documents Feature and Map services only. There is no QGIS client "
+        "for an Esri image service, so an Esri elevation point query is unreachable "
+        "from this client however the server behaves."
+    ),
+    "qgis-no-tilejson": (
+        "QGIS 3.44.14-Solothurn provider probe, 2026-09-18: QgsProviderRegistry lists "
+        "no TileJSON provider (the tile providers are xyzvectortiles, "
+        "mbtilesvectortiles, vtpkvectortiles, arcgisvectortileservice and vectortile), "
+        "and QgsVectorTileLayer built on the fixture's TileJSON descriptor URL is "
+        "invalid under both type=xyz and a bare url= - the xyz source takes a tile "
+        "URL template, not a descriptor. Nothing in this client reads a TileJSON "
+        "document, so the cell is unreachable however the server behaves."
+    ),
+    "arcpy-mp-web-service-types": (
+        "arcpy 3.7.1.1904 probe, 2026-09-18: the only arcpy path that consumes a "
+        "web service is arcpy.mp Map.addDataFromPath, and its own validation "
+        "names the complete set of service kinds it accepts - \"Invalid value for "
+        "web_service_type: 'WMTS' (choices are: ['AUTOMATIC', 'ARCGIS_SERVER_WEB', "
+        "'KML', 'VECTOR_TILE', 'WMS'])\". AUTOMATIC against the WMTS endpoint "
+        "fails with \"AUTOMATIC failed, a more specific web_service_type may need "
+        "to be provided\", and the same probe added the WMS endpoint and exported "
+        "a drawn PNG, so the boundary is the client's, not the fixture's. WMTS, "
+        "WCS, 3D Tiles and the OGC APIs have no arcpy entry point; ArcGIS Pro's "
+        "own UI adds them, which is the pro-ui lane."
+    ),
 }
 
 # --------------------------------------------------------------------------
@@ -386,10 +417,12 @@ MATRIX: list[dict] = [
     {
         "protocol": "wmts", "version": "1.0.0",
         "operations": {
-            "GetCapabilities": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
+            "GetCapabilities": {"pro-ui": ("pass", "pro-matrix"),
+                                "arcpy": ("n/a-no-client", "arcpy-mp-web-service-types"),
                                 "qgis-ui": NS,
                                 "pyqgis": ("pass", "pyqgis-wmts-caps")},
-            "GetTile": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
+            "GetTile": {"pro-ui": ("pass", "pro-matrix"),
+                        "arcpy": ("n/a-no-client", "arcpy-mp-web-service-types"),
                         "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wmts-gettile")},
             "GetFeatureInfo": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
                                "qgis-ui": NS,
@@ -478,13 +511,13 @@ MATRIX: list[dict] = [
     {
         "protocol": "stac", "version": "1.0.0",
         "operations": {
-            "catalog-landing": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS,
+            "catalog-landing": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"), "qgis-ui": NS,
                                 "pyqgis": ("pass", "pyqgis-stac-landing")},
-            "collections": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS,
+            "collections": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"), "qgis-ui": NS,
                             "pyqgis": ("pass", "pyqgis-stac-collections")},
-            "item-search": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS,
+            "item-search": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"), "qgis-ui": NS,
                             "pyqgis": ("pass", "pyqgis-stac-search")},
-            "asset-download": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS,
+            "asset-download": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"), "qgis-ui": NS,
                                "pyqgis": ("pass", "pyqgis-stac-asset")},
         },
     },
@@ -794,7 +827,8 @@ MATRIX: list[dict] = [
         "protocol": "tilejson", "version": "3.0.0",
         "operations": {
             "descriptor": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
-                           "qgis-ui": NS, "pyqgis": NS},
+                           "qgis-ui": ("n/a-no-client", "qgis-no-tilejson"),
+                           "pyqgis": ("n/a-no-client", "qgis-no-tilejson")},
         },
     },
     {
@@ -830,7 +864,8 @@ MATRIX: list[dict] = [
     {
         "protocol": "3d-tiles", "version": "1.0",
         "operations": {
-            "tileset": {"pro-ui": NS, "arcpy": NS, "qgis-ui": NS, "pyqgis": NS},
+            "tileset": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-mp-web-service-types"),
+                        "qgis-ui": NS, "pyqgis": NS},
         },
     },
     {
@@ -843,8 +878,8 @@ MATRIX: list[dict] = [
             # and merely unexercised; the Esri elevation identity is a real gap.
             "point-query": {"pro-ui": _blocked(ESRI_ELEVATION_IDENTITY),
                             "arcpy": _blocked(ESRI_ELEVATION_IDENTITY),
-                            "qgis-ui": NS,
-                            "pyqgis": NS},
+                            "qgis-ui": ("n/a-no-client", "qgis-no-imageserver-raster"),
+                            "pyqgis": ("n/a-no-client", "qgis-no-imageserver-raster")},
         },
     },
 ]

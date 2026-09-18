@@ -31,29 +31,29 @@
         "blocked": 7
       },
       "arcpy": {
-        "not-started": 40,
-        "n/a-no-client": 48,
+        "not-started": 33,
+        "n/a-no-client": 55,
         "blocked": 6
       },
       "qgis-ui": {
-        "not-started": 50,
+        "not-started": 48,
         "n/a-superseded": 3,
-        "n/a-no-client": 36,
+        "n/a-no-client": 38,
         "pass": 4,
         "blocked": 1
       },
       "pyqgis": {
         "pass": 43,
-        "n/a-no-client": 38,
+        "n/a-no-client": 40,
         "blocked": 6,
         "n/a-superseded": 3,
-        "not-started": 4
+        "not-started": 2
       }
     },
     "overall": {
       "cells": 376,
-      "closed": 203,
-      "open": 173
+      "closed": 214,
+      "open": 162
     }
   },
   "rows": [
@@ -193,7 +193,8 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "arcpy 3.7.1.1904 probe, 2026-09-18: the only arcpy path that consumes a web service is arcpy.mp Map.addDataFromPath, and its own validation names the complete set of service kinds it accepts - \"Invalid value for web_service_type: 'WMTS' (choices are: ['AUTOMATIC', 'ARCGIS_SERVER_WEB', 'KML', 'VECTOR_TILE', 'WMS'])\". AUTOMATIC against the WMTS endpoint fails with \"AUTOMATIC failed, a more specific web_service_type may need to be provided\", and the same probe added the WMS endpoint and exported a drawn PNG, so the boundary is the client's, not the fixture's. WMTS, WCS, 3D Tiles and the OGC APIs have no arcpy entry point; ArcGIS Pro's own UI adds them, which is the pro-ui lane."
         },
         "qgis-ui": {
           "state": "not-started"
@@ -214,7 +215,8 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "arcpy 3.7.1.1904 probe, 2026-09-18: the only arcpy path that consumes a web service is arcpy.mp Map.addDataFromPath, and its own validation names the complete set of service kinds it accepts - \"Invalid value for web_service_type: 'WMTS' (choices are: ['AUTOMATIC', 'ARCGIS_SERVER_WEB', 'KML', 'VECTOR_TILE', 'WMS'])\". AUTOMATIC against the WMTS endpoint fails with \"AUTOMATIC failed, a more specific web_service_type may need to be provided\", and the same probe added the WMS endpoint and exported a drawn PNG, so the boundary is the client's, not the fixture's. WMTS, WCS, 3D Tiles and the OGC APIs have no arcpy entry point; ArcGIS Pro's own UI adds them, which is the pro-ui lane."
         },
         "qgis-ui": {
           "state": "not-started"
@@ -786,7 +788,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
         },
         "qgis-ui": {
           "state": "not-started"
@@ -806,7 +809,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
         },
         "qgis-ui": {
           "state": "not-started"
@@ -826,7 +830,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
         },
         "qgis-ui": {
           "state": "not-started"
@@ -846,7 +851,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
         },
         "qgis-ui": {
           "state": "not-started"
@@ -1979,10 +1985,12 @@
           "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
         },
         "qgis-ui": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14-Solothurn provider probe, 2026-09-18: QgsProviderRegistry lists no TileJSON provider (the tile providers are xyzvectortiles, mbtilesvectortiles, vtpkvectortiles, arcgisvectortileservice and vectortile), and QgsVectorTileLayer built on the fixture's TileJSON descriptor URL is invalid under both type=xyz and a bare url= - the xyz source takes a tile URL template, not a descriptor. Nothing in this client reads a TileJSON document, so the cell is unreachable however the server behaves."
         },
         "pyqgis": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14-Solothurn provider probe, 2026-09-18: QgsProviderRegistry lists no TileJSON provider (the tile providers are xyzvectortiles, mbtilesvectortiles, vtpkvectortiles, arcgisvectortileservice and vectortile), and QgsVectorTileLayer built on the fixture's TileJSON descriptor URL is invalid under both type=xyz and a bare url= - the xyz source takes a tile URL template, not a descriptor. Nothing in this client reads a TileJSON document, so the cell is unreachable however the server behaves."
         }
       }
     },
@@ -2039,7 +2047,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "arcpy 3.7.1.1904 probe, 2026-09-18: the only arcpy path that consumes a web service is arcpy.mp Map.addDataFromPath, and its own validation names the complete set of service kinds it accepts - \"Invalid value for web_service_type: 'WMTS' (choices are: ['AUTOMATIC', 'ARCGIS_SERVER_WEB', 'KML', 'VECTOR_TILE', 'WMS'])\". AUTOMATIC against the WMTS endpoint fails with \"AUTOMATIC failed, a more specific web_service_type may need to be provided\", and the same probe added the WMS endpoint and exported a drawn PNG, so the boundary is the client's, not the fixture's. WMTS, WCS, 3D Tiles and the OGC APIs have no arcpy entry point; ArcGIS Pro's own UI adds them, which is the pro-ui lane."
         },
         "qgis-ui": {
           "state": "not-started"
@@ -2063,10 +2072,12 @@
           "cause": "the native /elevation surface answers 200 once the Elevation protocol is enabled, but no client treats this as an elevation service: getSamples is implemented and returns values, while serviceDataType is the hard-coded literal esriImageServiceDataTypeGeneric in ImageServerMetadataHandler and ImageServerSoapEndpoints. esriImageServiceDataTypeElevation and elevationInfo appear nowhere in src/, so making it data-driven is a server change, not a fixture one."
         },
         "qgis-ui": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14-Solothurn provider probe, 2026-09-18: the arcgismapserver provider accepts the fixture's ImageServer URL and reports the layer valid, but the raster it exposes is 0x0, identify at the raster centre returns no values, and a block read returns NaN - while the same point answers Band_1=100 over REST identify. docs.qgis.org/3.44 'Using ArcGIS REST Servers' documents Feature and Map services only. There is no QGIS client for an Esri image service, so an Esri elevation point query is unreachable from this client however the server behaves."
         },
         "pyqgis": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14-Solothurn provider probe, 2026-09-18: the arcgismapserver provider accepts the fixture's ImageServer URL and reports the layer valid, but the raster it exposes is 0x0, identify at the raster centre returns no values, and a block read returns NaN - while the same point answers Band_1=100 over REST identify. docs.qgis.org/3.44 'Using ArcGIS REST Servers' documents Feature and Map services only. There is no QGIS client for an Esri image service, so an Esri elevation point query is unreachable from this client however the server behaves."
         }
       }
     }

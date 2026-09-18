@@ -14,9 +14,13 @@ Three facts about this surface are easy to get wrong and cost real time here:
 **Writes require authentication; reads do not.** An anonymous Transaction returns
 ``NoApplicableCode`` / "Authentication is required to access this resource", which
 reaches QGIS only as ``ERROR: 1 feature(s) not added.`` The accepted scheme is the
-``X-API-Key`` header - HTTP Basic is refused with the same message - so the layer
-URI carries ``http-header:X-API-Key``, read from the environment at call time and
-never written into an envelope.
+``X-API-Key`` header - HTTP Basic is refused with the same message. The provider
+sends a header on a Transaction only from an entry in QGIS's authentication
+database referenced as ``authcfg=<id>``; ``http-header:`` and username/password
+in the URI never reach the write path. The lane provisions that entry itself
+(``conftest.api_header_authcfg``) from the credential named by the environment
+at call time, in the session's own in-process auth database, so the key is never
+written into an envelope or onto disk.
 
 **The scratch types are shared with the OWSLib lane.** Collections 10, 11 and 12
 are "Per-test OWSLib Insert/Update/Delete certification layer", and that lane
@@ -36,7 +40,6 @@ the write.
 from __future__ import annotations
 
 import json
-import os
 import urllib.parse
 import urllib.request
 
@@ -64,10 +67,6 @@ TEST_LON = -122.4188
 TEST_LAT = 37.7742
 
 
-def _api_key() -> str | None:
-    return os.environ.get("HONUA_ADMIN_PASSWORD") or None
-
-
 def _read_names(base_url: str, typename: str) -> list[str]:
     """Names currently held by a scratch type, read independently of QGIS."""
     url = (f"{base_url.rstrip('/')}/ogc/features/collections/"
@@ -84,48 +83,36 @@ def _read_names(base_url: str, typename: str) -> list[str]:
 class TestWfsTransactionClientCompat:
     """WFS-T through the QGIS WFS provider, verified server-side."""
 
-    def _editable(self, base_url: str, typename: str):
+    def _editable(self, base_url: str, typename: str, authcfg: str | None):
         from qgis.core import QgsVectorDataProvider
 
-        key = _api_key()
-        if key is None:
+        if authcfg is None:
             pytest.skip(
                 "HONUA_ADMIN_PASSWORD is unset, and a WFS Transaction is refused "
                 "anonymously with 'Authentication is required to access this "
                 "resource'; the write path cannot be exercised without it")
 
+        # The session's own API-header authcfg (conftest.api_header_authcfg):
+        # the one credential transport the WFS provider honours on a
+        # Transaction. Inline URI credentials - http-header:, username/password -
+        # never reached the write path; a no-auth control failed identically and
+        # the provider's decodeUri parsed none of them.
         layer = make_wfs_layer(
             base_url, typename,
-            extra_params=f"http-header:X-API-Key='{key}'")
+            extra_params=f"authcfg='{authcfg}'")
         assert layer.isValid(), (
             f"{typename} did not load, so no transaction can be attempted: "
             f"{layer.error().summary()}"
         )
 
         # The read path is anonymous, so the layer loads either way; the write
-        # path is not. Inline URI credentials do not reach it: http-header:,
-        # username/password and a no-auth control all fail identically with
-        # "ERROR: 1 feature(s) not added.", and the WFS provider's decodeUri
-        # returns no keys for this URI at all, so it is not parsing them. The
-        # same Transaction succeeds outside QGIS with an X-API-Key header
-        # (totalInserted 1), so the surface works and the gap is client-side
-        # credential delivery.
-        #
-        # QGIS sends a header on the write path only from an authentication
-        # database entry referenced as authcfg=<id>. Provisioning one is what
-        # scripts/bind-qgis-auth-targets-*.py and scripts/fixture_keyring.py in
-        # honua-client-compat exist for; until the lane provisions an API-header
-        # authcfg, these cases skip rather than report a server defect they have
-        # not established.
-        if not self._write_path_is_authenticated(layer):
-            pytest.skip(
-                "the QGIS WFS provider has no authenticated write path here: a "
-                "Transaction is refused anonymously ('Authentication is required "
-                "to access this resource'), and inline URI credentials are not "
-                "parsed by the provider. Provision an API-header authcfg and "
-                "pass authcfg=<id> to certify WFS-T. The same Transaction "
-                "succeeds with an X-API-Key header outside QGIS, so this is a "
-                "client credential-delivery gap, not a server defect.")
+        # path is not. Probe it before the case runs so a rejected trial edit
+        # fails here, with the credential transport named, instead of inside a
+        # case that would then misattribute it to the Transaction itself.
+        assert self._write_path_is_authenticated(layer), (
+            "a trial edit did not commit even though the layer carries the "
+            f"session authcfg {authcfg!r}; the WFS provider did not deliver the "
+            "X-API-Key header on the Transaction, or the server refused it")
         capabilities = layer.dataProvider().capabilities()
         for required in ("AddFeatures", "DeleteFeatures", "ChangeAttributeValues"):
             bit = getattr(QgsVectorDataProvider, required)
@@ -189,8 +176,9 @@ class TestWfsTransactionClientCompat:
     def test_insert_creates_a_feature_on_the_server(
         self, qgis_app, base_url: str,
         wfs_evidence: CertificationEvidenceCollector,
+        api_header_authcfg: str | None,
     ) -> None:
-        layer = self._editable(base_url, INSERT_TYPE)
+        layer = self._editable(base_url, INSERT_TYPE, api_header_authcfg)
         before = _read_names(base_url, INSERT_TYPE)
         marker = "pyqgis-wfst-insert"
         assert marker not in before, (
@@ -226,8 +214,9 @@ class TestWfsTransactionClientCompat:
     def test_update_changes_an_attribute_on_the_server(
         self, qgis_app, base_url: str,
         wfs_evidence: CertificationEvidenceCollector,
+        api_header_authcfg: str | None,
     ) -> None:
-        layer = self._editable(base_url, UPDATE_TYPE)
+        layer = self._editable(base_url, UPDATE_TYPE, api_header_authcfg)
         before = _read_names(base_url, UPDATE_TYPE)
         marker = "pyqgis-wfst-update"
         assert marker not in before, (
@@ -279,8 +268,9 @@ class TestWfsTransactionClientCompat:
     def test_delete_removes_a_feature_from_the_server(
         self, qgis_app, base_url: str,
         wfs_evidence: CertificationEvidenceCollector,
+        api_header_authcfg: str | None,
     ) -> None:
-        layer = self._editable(base_url, DELETE_TYPE)
+        layer = self._editable(base_url, DELETE_TYPE, api_header_authcfg)
         before = _read_names(base_url, DELETE_TYPE)
         marker = "pyqgis-wfst-delete"
         assert marker not in before, (

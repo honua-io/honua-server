@@ -67,4 +67,11 @@ else
     echo "WARNING: PMTiles publish did not complete; the pmtiles certification cell will fail on a 404." >&2
 fi
 
+echo "Generating the 3D Tiles / I3S scene from browser_compat/2002"
+if python3 /usr/local/bin/publish-scene.py; then
+    :
+else
+    echo "WARNING: scene generation did not complete; the 3d-tiles and i3s certification cells will fail on a 404." >&2
+fi
+
 echo "Seed complete."

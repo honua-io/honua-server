@@ -19,6 +19,9 @@ COPY docker/client-compat/seed/run.sh /usr/local/bin/run-seed
 # seed. Stdlib only - this image has no curl, which is how the first attempt
 # failed with 127.
 COPY docker/client-compat/seed/publish-pmtiles.py /usr/local/bin/publish-pmtiles.py
-RUN chmod +x /usr/local/bin/run-seed /usr/local/bin/publish-pmtiles.py
+# Generates the 3D Tiles / I3S scene from the polygon fixture the same way: a
+# scene is a derived artifact only the running server can produce.
+COPY docker/client-compat/seed/publish-scene.py /usr/local/bin/publish-scene.py
+RUN chmod +x /usr/local/bin/run-seed /usr/local/bin/publish-pmtiles.py /usr/local/bin/publish-scene.py
 
 ENTRYPOINT ["/usr/local/bin/run-seed"]
