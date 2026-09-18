@@ -136,9 +136,30 @@ services:
       Kestrel__Endpoints__Http__Protocols: Http1
       Kestrel__Endpoints__Grpc__Url: http://+:5001
       Kestrel__Endpoints__Grpc__Protocols: Http2
-      PUBLIC_BASE_URL: http://honua:5000
+      # The fixture's public identity. Every advertised URL is derived from this by
+      # BaseUrlResolver: /rest/info soapUrl and authInfo.tokenServicesUrl, the SOAP
+      # catalog Url elements and the REST handoff URLs. It is overridable because a
+      # client that is not itself on this network cannot reach `honua`, and an
+      # unreachable advertised URL is indistinguishable from a broken server.
+      #
+      # The arcpy lane is the case that forced this: arcpy runs on the Windows host
+      # against a TCP bridge, so it read soapUrl/tokenServicesUrl as http://honua:5000,
+      # could not resolve the name, and reported "SOAP catalog URLs leaked a different
+      # origin", "an advertised REST handoff URL did not resolve" and the
+      # "Parameters are not valid" cascade that is arcpy's answer to an input that
+      # never resolved. Those were three fixture-configuration artifacts being
+      # recorded as server defects.
+      #
+      # Set HONUA_CLIENT_COMPAT_PUBLIC_BASE_URL to http://host.docker.internal:18080
+      # for a run that includes an off-network client. That name resolves on both
+      # sides - to the host gateway from inside the network, to the host address from
+      # Windows - so the in-network and host-side lanes certify against one identity
+      # rather than two, which is what makes their receipts comparable.
+      PUBLIC_BASE_URL: ${HONUA_CLIENT_COMPAT_PUBLIC_BASE_URL:-http://honua:5000}
       HostValidation__AllowedHosts__0: honua
       HostValidation__AllowedHosts__1: localhost
+      HostValidation__AllowedHosts__2: host.docker.internal
+      HostValidation__AllowedHosts__3: 127.0.0.1
       HONUA_ADMIN_PASSWORD: ClientCompatAdmin123!
       # Capability gates the certification audit found were misrecorded as
       # server defects or missing artifacts. GET /api/v1/capabilities/manifest
