@@ -31,10 +31,20 @@ Every SDK authenticates the same way the server does — see [Authenticate clien
 
 Mint a scoped key once and reuse it across SDKs:
 
-```bash
-curl -sS -X POST "$HONUA_BASE_URL/api/v1/admin/api-keys" \
-  -H "X-API-Key: $HONUA_ADMIN_PASSWORD" -H "Content-Type: application/json" \
-  -d '{"name": "sdk-quickstart", "permissions": [], "expiresAt": null}'
+The key-management operation does not yet have a high-level SDK wrapper, so call the endpoint with
+`httpx` (already installed as a `honua-admin` dependency):
+
+```python
+import os
+import httpx
+
+response = httpx.post(
+    f"{os.environ['HONUA_BASE_URL']}/api/v1/admin/api-keys",
+    headers={"X-API-Key": os.environ["HONUA_ADMIN_PASSWORD"]},
+    json={"name": "sdk-quickstart", "permissions": [], "expiresAt": None},
+)
+response.raise_for_status()
+print(response.json()["data"]["key"])
 ```
 
 The response's `data.key` is shown once — store it as the API key your SDK client uses.
