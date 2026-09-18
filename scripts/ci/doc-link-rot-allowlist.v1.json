@@ -4,12 +4,12 @@
   "issue": "https://github.com/honua-io/honua-server/issues/3592",
   "inventoriedOn": "2026-08-28",
   "totals": {
-    "entries": 14,
+    "entries": 13,
     "missingFiles": 0,
-    "brokenAnchors": 14,
+    "brokenAnchors": 13,
     "byArea": {
       "docs/archive": 3,
-      "docs/internal": 8,
+      "docs/internal": 7,
       "docs/developer": 1,
       "docs/gis": 1,
       "docs/guides": 1
@@ -65,11 +65,6 @@
       "source": "docs/internal/contributor/architecture/metadata-v2-extensions.md",
       "target": "../adr/0040-metadata-v2-canonical-graph.md#promote-l2--l1-criteria",
       "reason": "ADR heading renamed; the slug's double hyphen comes from the stripped arrow."
-    },
-    {
-      "source": "docs/internal/demo/nvidia-construction.md",
-      "target": "../../guides/publish/publish-3d-scenes.md#demo-fixture-nvidia-construction-site-899",
-      "reason": "Demo fixture section removed from the public guide."
     },
     {
       "source": "docs/internal/developer/GROUNDING.md",
