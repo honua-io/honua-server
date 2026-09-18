@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
-  "description": "Expected (client_lane, protocol) pairs the docker/client-compat matrix must produce evidence for on every nightly run. scripts/client-compat/diff-baselines.py uses this manifest in --strict mode to fail when any pair is missing from BOTH baseline and current run, so a never-baselined lane cannot silently disappear from the gate. Bump alongside the matrix in docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md when a lane x protocol is added or retired.",
+  "description": "Expected (client_lane, protocol) pairs the docker/client-compat matrix must produce evidence for on every nightly run. scripts/client-compat/diff-baselines.py uses this manifest in --strict mode to fail when any pair is missing from BOTH baseline and current run, so a never-baselined lane cannot silently disappear from the gate. Bump alongside the matrix in docs/gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md when a lane x protocol is added or retired. desktop-qgis wms and wmts are deliberately absent: the governed roster (honua-io/honua-release protocol-certification-requirements.v1.json, mirrored in certification/client-protocol-requirements.v1.json) pins client_version 3.40 for all 23 of its QGIS rows, while this lane certifies on 3.44.14 LTR. Listing them here would assert a governed producer obligation that resolves to a producer-client-version-mismatch. The receipts still exist in tests/baselines/client-compat/pyqgis/ and the four-lane checklist cites them; re-add these two pairs when the upstream roster repins QGIS to 3.44.x.",
   "expected_pairs": [
     {
       "client_lane": "js-cesium",
@@ -53,14 +53,6 @@
     {
       "client_lane": "desktop-qgis",
       "protocol": "wcs"
-    },
-    {
-      "client_lane": "desktop-qgis",
-      "protocol": "wms"
-    },
-    {
-      "client_lane": "desktop-qgis",
-      "protocol": "wmts"
     },
     {
       "client_lane": "desktop-qgis",

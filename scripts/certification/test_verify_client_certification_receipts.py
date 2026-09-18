@@ -672,15 +672,20 @@ class RealMirrorContractTierTests(unittest.TestCase):
             [("desktop-qgis", "ogc-features"), ("desktop-qgis", "wfs")], governed_pairs_emitted)
 
     def test_those_two_pairs_are_still_blocked_on_an_exact_client_version(self):
-        # The governed rows pin QGIS 3.40; the lane image reports 3.44.13-Solothurn.
-        # The normalizer matches client_version exactly, so these are not near-misses.
+        # The governed rows pin QGIS 3.40; the lane image reports
+        # 3.44.14-Solothurn. The normalizer matches client_version exactly, so
+        # these are not near-misses. The lane build moved 3.44.13 -> 3.44.14 when
+        # the four-lane certification target was fixed at 3.44.14 LTR, which is
+        # the version asserted here; the governed pin is upstream in
+        # honua-io/honua-release and still names 3.40, so the mismatch stands
+        # until that roster repins.
         for surface in ("ogc-features", "wfs"):
             row = next(r for r in MIRROR["requirements"]
                        if r["client_lane"] == "desktop-qgis" and r["surface"] == surface)
             self.assertEqual("3.40", row["client_version"])
             binding = row["receiptBinding"]["producerBinding"]
             self.assertEqual("client-version-mismatch", binding["reasonCode"])
-            self.assertIn("3.44.13-Solothurn", binding["reason"])
+            self.assertIn("3.44.14-Solothurn", binding["reason"])
 
     def test_the_governed_qgis_raster_surfaces_have_no_lane_at_all(self):
         for surface in ("wms", "wmts"):
@@ -726,7 +731,13 @@ class RealBaselinesReleaseTierTests(unittest.TestCase):
         cls.verdicts = module.verify_release(MIRROR, cls.receipts, candidate())
 
     def test_the_committed_baselines_are_real_envelopes(self):
-        self.assertEqual(27, len(self.receipts))
+        # Counts the committed envelopes, so it moves whenever a lane starts
+        # emitting a new protocol. 27 -> 37 when the desktop-qgis lane grew from
+        # 3 certified protocols to 12 (FeatureServer, MapServer,
+        # VectorTileServer, STAC, PMTiles, OGC API - Styles, SensorThings, WMS,
+        # WMTS added to OGC API Features, WFS and WCS). The assertion is a
+        # tripwire for envelopes appearing or vanishing unnoticed, not a cap.
+        self.assertEqual(37, len(self.receipts))
 
     def test_no_committed_baseline_certifies_any_governed_cell(self):
         summary = module.summarize(self.verdicts)
