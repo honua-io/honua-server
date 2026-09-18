@@ -107,7 +107,7 @@ Each link resolves to the page's source on `trunk`. These pages are also rendere
 ## Reference
 
 - [Reference](https://github.com/honua-io/honua-server/blob/trunk/docs/reference/README.md): Lookup material for Honua's public surfaces: protocols, the admin API, configuration, compatibility status, and cross-cutting contracts.
-- [Open Knowledge Format in honua-server](https://github.com/honua-io/honua-server/blob/trunk/docs/okf/README.md): How this repository's documentation is shaped as an OKF v0.2 bundle: what the contract is, where it is defined, what is generated, and what CI checks.
+- [Open Knowledge Format in honua-server](https://github.com/honua-io/honua-server/blob/trunk/docs/okf/README.md): How this documentation is shaped for agents: one page per concept, the file path as identity, frontmatter that says what a page is before it is opened, and honua://capability/<key> as the join to the capability registry.
 - [Capability concepts](https://github.com/honua-io/honua-server/blob/trunk/docs/okf/capabilities/README.md): One concept per entry in the server capability registry: what it is, which edition carries it, and how mature its surfaces are.
 - [GeoServices REST (ArcGIS-compatible)](https://github.com/honua-io/honua-server/blob/trunk/docs/reference/protocols/geoservices-rest.md): Honua serves a GeoServices REST surface under /rest/services, plus a Portal Sharing slice under /sharing/rest for token issuance and item discovery.
 - [OGC APIs](https://github.com/honua-io/honua-server/blob/trunk/docs/reference/protocols/ogc-apis.md): Honua implements the modern OGC API family — Features, Maps, Tiles, Coverages, Processes, Records, and Styles — as JSON-first REST surfaces under /ogc/.

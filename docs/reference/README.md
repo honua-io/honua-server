@@ -20,7 +20,7 @@ Lookup material for Honua's public surfaces: protocols, the admin API, configura
 
 | Page | One-liner |
 | --- | --- |
-| [Open Knowledge Format](../okf/README.md) | How this documentation is shaped as an OKF bundle: concept types, what is generated, which gates run. |
+| [Open Knowledge Format](../okf/README.md) | How this documentation is shaped for agents: one page per concept, frontmatter that says what a page is, and capability keys as identity. |
 | [Capability concepts](../okf/capabilities/README.md) | One concept per capability the server declares, keyed by `honua://capability/<key>`. |
 | [Data formats](data-formats.md) | Import and export format matrix per surface, with size limits. |
 | [CQL2 and filtering](cql2-and-filtering.md) | CQL2 text/JSON, GeoServices `where`, and OData `$filter`, side by side. |
