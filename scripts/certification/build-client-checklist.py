@@ -122,6 +122,16 @@ CITE = {
         "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS "
         "discovers ArcGIS services over REST only and has no SOAP catalog client."
     ),
+    "qgis-wfs-no-propertyvalue": (
+        "QGIS 3.44.14 WFS provider probe, 2026-09-18: the provider exposes no "
+        "GetPropertyValue member - it always issues GetFeature - and no stored-query "
+        "member. A storedQueryId passed in the URI is ignored rather than issued: a "
+        "valid GetFeatureById id, a nonsense id and an entirely bogus URI key all "
+        "produced the same valid layer with the same 10 features as no stored query "
+        "at all, and the provider's decodeUri reports no keys for the URI. The "
+        "control is what distinguishes 'ignored' from 'honoured'. Both operations "
+        "are therefore unreachable from this client however the server behaves."
+    ),
     "qgis-rest-no-advanced": (
         "docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/"
         "opening_data.html section 11.1.7.3 'Using ArcGIS REST Servers' documents "
@@ -326,6 +336,23 @@ ESRI_ELEVATION_IDENTITY = (
     "change, not a fixture one."
 )
 
+WFST_CREDENTIAL_GAP = (
+    "the QGIS WFS provider has no authenticated write path against this fixture. "
+    "A Transaction is refused anonymously with NoApplicableCode / "
+    "'Authentication is required to access this resource', and inline URI "
+    "credentials do not reach the write path: http-header:X-API-Key, "
+    "username/password and a no-auth control all fail identically with 'ERROR: 1 "
+    "feature(s) not added.', and the provider's decodeUri parses none of them. "
+    "The same Transaction succeeds outside QGIS with an X-API-Key header "
+    "(totalInserted 1), so the server surface works and the gap is client-side "
+    "credential delivery. QGIS sends a header on the write path only from an "
+    "authentication-database entry referenced as authcfg=<id>; provisioning one "
+    "is what honua-client-compat's bind-qgis-auth-targets and fixture_keyring "
+    "scripts exist for. tests/python/pyqgis/test_wfst_client_compat.py is written "
+    "and skips on exactly this, so the cells close the moment an API-header "
+    "authcfg is provisioned."
+)
+
 PGROUTING_GATE = (
     "pgRouting is not installed in the fixture's database image. It is available to "
     "it: postgis/postgis:16-3.4 is Debian bullseye with the PGDG repo already "
@@ -381,11 +408,11 @@ MATRIX: list[dict] = [
                                     "pyqgis": ("pass", "pyqgis-wfs")},
             "GetFeature": {"pro-ui": ("pass", "pro-matrix"), "arcpy": NS,
                            "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wfs")},
-            "GetPropertyValue": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": NS},
-            "Transaction-Insert": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": NS},
-            "Transaction-Update": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": NS},
-            "Transaction-Delete": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": NS},
-            "ListStoredQueries": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": NS},
+            "GetPropertyValue": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": ("n/a-no-client", "qgis-wfs-no-propertyvalue")},
+            "Transaction-Insert": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": _blocked(WFST_CREDENTIAL_GAP)},
+            "Transaction-Update": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": _blocked(WFST_CREDENTIAL_GAP)},
+            "Transaction-Delete": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": _blocked(WFST_CREDENTIAL_GAP)},
+            "ListStoredQueries": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": ("n/a-no-client", "qgis-wfs-no-propertyvalue")},
         },
     },
     {

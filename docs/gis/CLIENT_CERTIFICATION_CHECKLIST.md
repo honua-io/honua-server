@@ -183,9 +183,9 @@ lane × protocol pair appears with no checklist row.
 | `pro-ui` | ArcGIS Pro 3.7.1.1904 | 28/94 | 66 | blocked 7, fail 2, n/a-no-client 11, n/a-superseded 3, not-started 57, pass 14 |
 | `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 48/94 | 46 | blocked 6, n/a-no-client 48, not-started 40 |
 | `qgis-ui` | QGIS 3.44.14 LTR | 43/94 | 51 | blocked 1, n/a-no-client 36, n/a-superseded 3, not-started 50, pass 4 |
-| `pyqgis` | QGIS 3.44.14 LTR | 82/94 | 12 | blocked 3, n/a-no-client 36, n/a-superseded 3, not-started 9, pass 43 |
+| `pyqgis` | QGIS 3.44.14 LTR | 84/94 | 10 | blocked 6, n/a-no-client 38, n/a-superseded 3, not-started 4, pass 43 |
 
-**201 of 376 cells closed; 175 open.**
+**203 of 376 cells closed; 173 open.**
 
 ### Cells
 
@@ -220,11 +220,11 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 | GetCapabilities | pass | not-started | not-started | pass |
 | DescribeFeatureType | not-started | not-started | not-started | pass |
 | GetFeature | pass | not-started | not-started | pass |
-| GetPropertyValue | not-started | n/a-no-client | not-started | not-started |
-| Transaction-Insert | not-started | n/a-no-client | not-started | not-started |
-| Transaction-Update | not-started | n/a-no-client | not-started | not-started |
-| Transaction-Delete | not-started | n/a-no-client | not-started | not-started |
-| ListStoredQueries | not-started | n/a-no-client | not-started | not-started |
+| GetPropertyValue | not-started | n/a-no-client | not-started | n/a-no-client |
+| Transaction-Insert | not-started | n/a-no-client | not-started | blocked |
+| Transaction-Update | not-started | n/a-no-client | not-started | blocked |
+| Transaction-Delete | not-started | n/a-no-client | not-started | blocked |
+| ListStoredQueries | not-started | n/a-no-client | not-started | n/a-no-client |
 
 #### wcs 1.0.0
 

@@ -44,16 +44,16 @@
       },
       "pyqgis": {
         "pass": 43,
-        "not-started": 9,
+        "n/a-no-client": 38,
+        "blocked": 6,
         "n/a-superseded": 3,
-        "n/a-no-client": 36,
-        "blocked": 3
+        "not-started": 4
       }
     },
     "overall": {
       "cells": 376,
-      "closed": 201,
-      "open": 175
+      "closed": 203,
+      "open": 173
     }
   },
   "rows": [
@@ -345,7 +345,8 @@
           "state": "not-started"
         },
         "pyqgis": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 WFS provider probe, 2026-09-18: the provider exposes no GetPropertyValue member - it always issues GetFeature - and no stored-query member. A storedQueryId passed in the URI is ignored rather than issued: a valid GetFeatureById id, a nonsense id and an entirely bogus URI key all produced the same valid layer with the same 10 features as no stored query at all, and the provider's decodeUri reports no keys for the URI. The control is what distinguishes 'ignored' from 'honoured'. Both operations are therefore unreachable from this client however the server behaves."
         }
       }
     },
@@ -365,7 +366,8 @@
           "state": "not-started"
         },
         "pyqgis": {
-          "state": "not-started"
+          "state": "blocked",
+          "cause": "the QGIS WFS provider has no authenticated write path against this fixture. A Transaction is refused anonymously with NoApplicableCode / 'Authentication is required to access this resource', and inline URI credentials do not reach the write path: http-header:X-API-Key, username/password and a no-auth control all fail identically with 'ERROR: 1 feature(s) not added.', and the provider's decodeUri parses none of them. The same Transaction succeeds outside QGIS with an X-API-Key header (totalInserted 1), so the server surface works and the gap is client-side credential delivery. QGIS sends a header on the write path only from an authentication-database entry referenced as authcfg=<id>; provisioning one is what honua-client-compat's bind-qgis-auth-targets and fixture_keyring scripts exist for. tests/python/pyqgis/test_wfst_client_compat.py is written and skips on exactly this, so the cells close the moment an API-header authcfg is provisioned."
         }
       }
     },
@@ -385,7 +387,8 @@
           "state": "not-started"
         },
         "pyqgis": {
-          "state": "not-started"
+          "state": "blocked",
+          "cause": "the QGIS WFS provider has no authenticated write path against this fixture. A Transaction is refused anonymously with NoApplicableCode / 'Authentication is required to access this resource', and inline URI credentials do not reach the write path: http-header:X-API-Key, username/password and a no-auth control all fail identically with 'ERROR: 1 feature(s) not added.', and the provider's decodeUri parses none of them. The same Transaction succeeds outside QGIS with an X-API-Key header (totalInserted 1), so the server surface works and the gap is client-side credential delivery. QGIS sends a header on the write path only from an authentication-database entry referenced as authcfg=<id>; provisioning one is what honua-client-compat's bind-qgis-auth-targets and fixture_keyring scripts exist for. tests/python/pyqgis/test_wfst_client_compat.py is written and skips on exactly this, so the cells close the moment an API-header authcfg is provisioned."
         }
       }
     },
@@ -405,7 +408,8 @@
           "state": "not-started"
         },
         "pyqgis": {
-          "state": "not-started"
+          "state": "blocked",
+          "cause": "the QGIS WFS provider has no authenticated write path against this fixture. A Transaction is refused anonymously with NoApplicableCode / 'Authentication is required to access this resource', and inline URI credentials do not reach the write path: http-header:X-API-Key, username/password and a no-auth control all fail identically with 'ERROR: 1 feature(s) not added.', and the provider's decodeUri parses none of them. The same Transaction succeeds outside QGIS with an X-API-Key header (totalInserted 1), so the server surface works and the gap is client-side credential delivery. QGIS sends a header on the write path only from an authentication-database entry referenced as authcfg=<id>; provisioning one is what honua-client-compat's bind-qgis-auth-targets and fixture_keyring scripts exist for. tests/python/pyqgis/test_wfst_client_compat.py is written and skips on exactly this, so the cells close the moment an API-header authcfg is provisioned."
         }
       }
     },
@@ -425,7 +429,8 @@
           "state": "not-started"
         },
         "pyqgis": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 WFS provider probe, 2026-09-18: the provider exposes no GetPropertyValue member - it always issues GetFeature - and no stored-query member. A storedQueryId passed in the URI is ignored rather than issued: a valid GetFeatureById id, a nonsense id and an entirely bogus URI key all produced the same valid layer with the same 10 features as no stored query at all, and the provider's decodeUri reports no keys for the URI. The control is what distinguishes 'ignored' from 'honoured'. Both operations are therefore unreachable from this client however the server behaves."
         }
       }
     },
