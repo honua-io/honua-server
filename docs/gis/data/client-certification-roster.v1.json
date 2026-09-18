@@ -213,6 +213,10 @@
         {
           "id": "vectortileserver",
           "reason": "Esri VectorTileServer; certified on the pyqgis lane once the protocol was enabled in the client-compat fixture, which had drifted from MetadataV2ServiceProtocols.All."
+        },
+        {
+          "id": "sensorthings",
+          "reason": "OGC SensorThings API; certified on the pyqgis lane against the QGIS SensorThings provider, which has no client-compat abbreviation row."
         }
       ]
     },
@@ -309,6 +313,7 @@
         "ogc-api-styles",
         "ogc-features",
         "pmtiles",
+        "sensorthings",
         "stac",
         "vectortileserver",
         "wcs",
