@@ -130,7 +130,11 @@ CITE = {
         "produced the same valid layer with the same 10 features as no stored query "
         "at all, and the provider's decodeUri reports no keys for the URI. The "
         "control is what distinguishes 'ignored' from 'honoured'. Both operations "
-        "are therefore unreachable from this client however the server behaves."
+        "are therefore unreachable from this client however the server behaves. "
+        "Source probe 2026-09-19 of https://github.com/qgis/QGIS/tree/release-3_44/"
+        "src/providers/wfs: the provider's request classes are qgswfsgetcapabilities, "
+        "qgswfsdescribefeaturetype, qgswfsgetfeature and qgswfstransactionrequest; "
+        "no file there mentions GetPropertyValue or ListStoredQueries."
     ),
     "qgis-rest-no-advanced": (
         "docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/"
@@ -246,6 +250,15 @@ CITE = {
 
 # The QGIS LTR build under certification, as the envelopes record it.
 QGIS_LTR_BUILD = "3.44.14-Solothurn"
+QGIS_UI_RUN = "native-qgis-ltr-20260919-a"
+
+
+def _qgis_ui(case_id: str) -> str:
+    """Cite one inspected computer-use receipt in the native QGIS LTR operations run."""
+    return (
+        f"honua-client-compat/evidence/{QGIS_UI_RUN}/results.json - {case_id}, "
+        f"QGIS {QGIS_LTR_BUILD} (windows-computer-use receipt, server-log corroborated), pass"
+    )
 
 
 def _pyqgis(
@@ -404,6 +417,52 @@ EV = {
     "pyqgis-fs-applyedits": _pyqgis("featureserver", "10.8", 6, cert_id="CERT-AUTH-01"),
     "pyqgis-fs-domains": _pyqgis("featureserver", "10.8", 6, cert_id="CERT-SCHM-02"),
     "pyqgis-3dtiles": _pyqgis("3d-tiles", "1.1", 2, cert_id="NB-PQG-3DT-01/NB-PQG-3DT-02"),
+    "qgis-ui-ui-op-wms-getcapabilities": _qgis_ui("UI-OP-WMS-GETCAPABILITIES"),
+    "qgis-ui-ui-op-wms-getmap": _qgis_ui("UI-OP-WMS-GETMAP"),
+    "qgis-ui-ui-op-wms-getfeatureinfo": _qgis_ui("UI-OP-WMS-GETFEATUREINFO"),
+    "qgis-ui-ui-op-wms-getlegendgraphic": _qgis_ui("UI-OP-WMS-GETLEGENDGRAPHIC"),
+    "qgis-ui-ui-op-wms-styles": _qgis_ui("UI-OP-WMS-STYLES"),
+    "qgis-ui-ui-op-wms-time-dimension": _qgis_ui("UI-OP-WMS-TIME-DIMENSION"),
+    "qgis-ui-ui-op-wmts-getcapabilities": _qgis_ui("UI-OP-WMTS-GETCAPABILITIES"),
+    "qgis-ui-ui-op-wmts-gettile": _qgis_ui("UI-OP-WMTS-GETTILE"),
+    "qgis-ui-ui-op-wmts-getfeatureinfo": _qgis_ui("UI-OP-WMTS-GETFEATUREINFO"),
+    "qgis-ui-ui-op-wmts-restful-tile-path": _qgis_ui("UI-OP-WMTS-RESTFUL-TILE-PATH"),
+    "qgis-ui-ui-op-wfs-getcapabilities": _qgis_ui("UI-OP-WFS-GETCAPABILITIES"),
+    "qgis-ui-ui-op-wfs-describefeaturetype": _qgis_ui("UI-OP-WFS-DESCRIBEFEATURETYPE"),
+    "qgis-ui-ui-op-wfs-getfeature": _qgis_ui("UI-OP-WFS-GETFEATURE"),
+    "qgis-ui-ui-op-wfs-transaction-insert": _qgis_ui("UI-OP-WFS-TRANSACTION-INSERT"),
+    "qgis-ui-ui-op-wfs-transaction-update": _qgis_ui("UI-OP-WFS-TRANSACTION-UPDATE"),
+    "qgis-ui-ui-op-wfs-transaction-delete": _qgis_ui("UI-OP-WFS-TRANSACTION-DELETE"),
+    "qgis-ui-ui-op-wcs-getcapabilities": _qgis_ui("UI-OP-WCS-GETCAPABILITIES"),
+    "qgis-ui-ui-op-wcs-describecoverage": _qgis_ui("UI-OP-WCS-DESCRIBECOVERAGE"),
+    "qgis-ui-ui-op-wcs-getcoverage": _qgis_ui("UI-OP-WCS-GETCOVERAGE"),
+    "qgis-ui-ui-op-oapif-landing-page": _qgis_ui("UI-OP-OAPIF-LANDING-PAGE"),
+    "qgis-ui-ui-op-oapif-conformance": _qgis_ui("UI-OP-OAPIF-CONFORMANCE"),
+    "qgis-ui-ui-op-oapif-collections": _qgis_ui("UI-OP-OAPIF-COLLECTIONS"),
+    "qgis-ui-ui-op-oapif-items": _qgis_ui("UI-OP-OAPIF-ITEMS"),
+    "qgis-ui-ui-op-oapif-item": _qgis_ui("UI-OP-OAPIF-ITEM"),
+    "qgis-ui-ui-op-oapif-bbox-datetime-filter": _qgis_ui("UI-OP-OAPIF-BBOX-DATETIME-FILTER"),
+    "qgis-ui-ui-op-oapif-crs-negotiation": _qgis_ui("UI-OP-OAPIF-CRS-NEGOTIATION"),
+    "qgis-ui-ui-op-oapif-transactions-part4": _qgis_ui("UI-OP-OAPIF-TRANSACTIONS-PART4"),
+    "qgis-ui-ui-op-stac-catalog-landing": _qgis_ui("UI-OP-STAC-CATALOG-LANDING"),
+    "qgis-ui-ui-op-stac-collections": _qgis_ui("UI-OP-STAC-COLLECTIONS"),
+    "qgis-ui-ui-op-stac-item-search": _qgis_ui("UI-OP-STAC-ITEM-SEARCH"),
+    "qgis-ui-ui-op-stac-asset-download": _qgis_ui("UI-OP-STAC-ASSET-DOWNLOAD"),
+    "qgis-ui-ui-op-sta-entity-sets": _qgis_ui("UI-OP-STA-ENTITY-SETS"),
+    "qgis-ui-ui-op-sta-expand": _qgis_ui("UI-OP-STA-EXPAND"),
+    "qgis-ui-ui-op-sta-filter-paging": _qgis_ui("UI-OP-STA-FILTER-PAGING"),
+    "qgis-ui-ui-op-fs-applyedits": _qgis_ui("UI-OP-FS-APPLYEDITS"),
+    "qgis-ui-ui-op-fs-domains": _qgis_ui("UI-OP-FS-DOMAINS"),
+    "qgis-ui-ui-op-mapserver-service-info": _qgis_ui("UI-OP-MAPSERVER-SERVICE-INFO"),
+    "qgis-ui-ui-op-mapserver-export": _qgis_ui("UI-OP-MAPSERVER-EXPORT"),
+    "qgis-ui-ui-op-mapserver-identify": _qgis_ui("UI-OP-MAPSERVER-IDENTIFY"),
+    "qgis-ui-ui-op-mapserver-legend": _qgis_ui("UI-OP-MAPSERVER-LEGEND"),
+    "qgis-ui-ui-op-vts-service-info": _qgis_ui("UI-OP-VTS-SERVICE-INFO"),
+    "qgis-ui-ui-op-vts-tile": _qgis_ui("UI-OP-VTS-TILE"),
+    "qgis-ui-ui-op-vts-style": _qgis_ui("UI-OP-VTS-STYLE"),
+    "qgis-ui-ui-op-styles": _qgis_ui("UI-OP-STYLES"),
+    "qgis-ui-ui-op-pmtiles-archive-read": _qgis_ui("UI-OP-PMTILES-ARCHIVE-READ"),
+    "qgis-ui-ui-op-3dtiles-tileset": _qgis_ui("UI-OP-3DTILES-TILESET"),
     "pyqgis-fs-info": _pyqgis("featureserver", "10.8", 6, cert_id="CERT-DISC-01"),
     "pyqgis-fs-meta": _pyqgis("featureserver", "10.8", 6, cert_id="CERT-SCHM-01"),
     "pyqgis-fs-query": _pyqgis("featureserver", "10.8", 6, cert_id="CERT-QFLT-01"),
@@ -485,19 +544,19 @@ MATRIX: list[dict] = [
         "protocol": "wms", "version": "1.3.0",
         "operations": {
             "GetCapabilities": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-wms-getcapabilities"),
-                                "qgis-ui": NS,
+                                "qgis-ui": ("pass", "qgis-ui-ui-op-wms-getcapabilities"),
                                 "pyqgis": ("pass", "pyqgis-wms-caps")},
             "GetMap": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-wms-getmap"),
-                       "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wms-getmap")},
-            "GetFeatureInfo": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-no-wms-identify"), "qgis-ui": NS,
+                       "qgis-ui": ("pass", "qgis-ui-ui-op-wms-getmap"), "pyqgis": ("pass", "pyqgis-wms-getmap")},
+            "GetFeatureInfo": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-no-wms-identify"), "qgis-ui": ("pass", "qgis-ui-ui-op-wms-getfeatureinfo"),
                                "pyqgis": ("pass", "pyqgis-wms-featureinfo")},
             "GetLegendGraphic": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
-                                 "qgis-ui": NS,
+                                 "qgis-ui": ("pass", "qgis-ui-ui-op-wms-getlegendgraphic"),
                                  "pyqgis": ("pass", "pyqgis-wms-legend")},
             "styles": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
-                       "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wms-styles")},
+                       "qgis-ui": ("pass", "qgis-ui-ui-op-wms-styles"), "pyqgis": ("pass", "pyqgis-wms-styles")},
             "time-dimension": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
-                               "qgis-ui": NS,
+                               "qgis-ui": ("pass", "qgis-ui-ui-op-wms-time-dimension"),
                                "pyqgis": ("pass", "pyqgis-wms-time")},
         },
     },
@@ -506,16 +565,16 @@ MATRIX: list[dict] = [
         "operations": {
             "GetCapabilities": {"pro-ui": ("pass", "pro-matrix"),
                                 "arcpy": ("n/a-no-client", "arcpy-mp-web-service-types"),
-                                "qgis-ui": NS,
+                                "qgis-ui": ("pass", "qgis-ui-ui-op-wmts-getcapabilities"),
                                 "pyqgis": ("pass", "pyqgis-wmts-caps")},
             "GetTile": {"pro-ui": ("pass", "pro-matrix"),
                         "arcpy": ("n/a-no-client", "arcpy-mp-web-service-types"),
-                        "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wmts-gettile")},
+                        "qgis-ui": ("pass", "qgis-ui-ui-op-wmts-gettile"), "pyqgis": ("pass", "pyqgis-wmts-gettile")},
             "GetFeatureInfo": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
-                               "qgis-ui": NS,
+                               "qgis-ui": ("pass", "qgis-ui-ui-op-wmts-getfeatureinfo"),
                                "pyqgis": ("pass", "pyqgis-wmts-featureinfo")},
             "RESTful-tile-path": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
-                                  "qgis-ui": NS,
+                                  "qgis-ui": ("pass", "qgis-ui-ui-op-wmts-restful-tile-path"),
                                   "pyqgis": ("pass", "pyqgis-wmts-restful")},
         },
     },
@@ -523,16 +582,16 @@ MATRIX: list[dict] = [
         "protocol": "wfs", "version": "2.0.0",
         "operations": {
             "GetCapabilities": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-wfs-getcapabilities"),
-                                "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wfs")},
-            "DescribeFeatureType": {"pro-ui": NS, "arcpy": ("pass", "arcpy-wfs-describefeaturetype"), "qgis-ui": NS,
+                                "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-getcapabilities"), "pyqgis": ("pass", "pyqgis-wfs")},
+            "DescribeFeatureType": {"pro-ui": NS, "arcpy": ("pass", "arcpy-wfs-describefeaturetype"), "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-describefeaturetype"),
                                     "pyqgis": ("pass", "pyqgis-wfs")},
             "GetFeature": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-wfs-getfeature"),
-                           "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wfs")},
-            "GetPropertyValue": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": ("n/a-no-client", "qgis-wfs-no-propertyvalue")},
-            "Transaction-Insert": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wfst-insert")},
-            "Transaction-Update": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wfst-update")},
-            "Transaction-Delete": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wfst-delete")},
-            "ListStoredQueries": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": NS, "pyqgis": ("n/a-no-client", "qgis-wfs-no-propertyvalue")},
+                           "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-getfeature"), "pyqgis": ("pass", "pyqgis-wfs")},
+            "GetPropertyValue": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": ("n/a-no-client", "qgis-wfs-no-propertyvalue"), "pyqgis": ("n/a-no-client", "qgis-wfs-no-propertyvalue")},
+            "Transaction-Insert": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-transaction-insert"), "pyqgis": ("pass", "pyqgis-wfst-insert")},
+            "Transaction-Update": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-transaction-update"), "pyqgis": ("pass", "pyqgis-wfst-update")},
+            "Transaction-Delete": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-transaction-delete"), "pyqgis": ("pass", "pyqgis-wfst-delete")},
+            "ListStoredQueries": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": ("n/a-no-client", "qgis-wfs-no-propertyvalue"), "pyqgis": ("n/a-no-client", "qgis-wfs-no-propertyvalue")},
         },
     },
     {
@@ -540,13 +599,13 @@ MATRIX: list[dict] = [
         "operations": {
             "GetCapabilities": {"pro-ui": ("n/a-superseded", "pro-wcs-versions"),
                                 "arcpy": ("n/a-no-client", "arcpy-modules"),
-                                "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wcs")},
+                                "qgis-ui": ("pass", "qgis-ui-ui-op-wcs-getcapabilities"), "pyqgis": ("pass", "pyqgis-wcs")},
             "DescribeCoverage": {"pro-ui": ("n/a-superseded", "pro-wcs-versions"),
                                  "arcpy": ("n/a-no-client", "arcpy-modules"),
-                                 "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wcs")},
+                                 "qgis-ui": ("pass", "qgis-ui-ui-op-wcs-describecoverage"), "pyqgis": ("pass", "pyqgis-wcs")},
             "GetCoverage": {"pro-ui": ("n/a-superseded", "pro-wcs-versions"),
                             "arcpy": ("n/a-no-client", "arcpy-modules"),
-                            "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-wcs")},
+                            "qgis-ui": ("pass", "qgis-ui-ui-op-wcs-getcoverage"), "pyqgis": ("pass", "pyqgis-wcs")},
         },
     },
     {
@@ -567,21 +626,21 @@ MATRIX: list[dict] = [
         "protocol": "ogc-api-features", "version": "1.0",
         "operations": {
             "landing-page": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
-                             "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-oapif")},
+                             "qgis-ui": ("pass", "qgis-ui-ui-op-oapif-landing-page"), "pyqgis": ("pass", "pyqgis-oapif")},
             "conformance": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
-                            "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-oapif")},
+                            "qgis-ui": ("pass", "qgis-ui-ui-op-oapif-conformance"), "pyqgis": ("pass", "pyqgis-oapif")},
             "collections": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
-                            "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-oapif")},
+                            "qgis-ui": ("pass", "qgis-ui-ui-op-oapif-collections"), "pyqgis": ("pass", "pyqgis-oapif")},
             "items": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
-                      "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-oapif")},
+                      "qgis-ui": ("pass", "qgis-ui-ui-op-oapif-items"), "pyqgis": ("pass", "pyqgis-oapif")},
             "item": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
-                     "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-oapif")},
+                     "qgis-ui": ("pass", "qgis-ui-ui-op-oapif-item"), "pyqgis": ("pass", "pyqgis-oapif")},
             "bbox-datetime-filter": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
-                                     "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-oapif")},
+                                     "qgis-ui": ("pass", "qgis-ui-ui-op-oapif-bbox-datetime-filter"), "pyqgis": ("pass", "pyqgis-oapif")},
             "crs-negotiation": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
-                                "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-oapif")},
+                                "qgis-ui": ("pass", "qgis-ui-ui-op-oapif-crs-negotiation"), "pyqgis": ("pass", "pyqgis-oapif")},
             "transactions-part4": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
-                                   "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-oapif-part4")},
+                                   "qgis-ui": ("pass", "qgis-ui-ui-op-oapif-transactions-part4"), "pyqgis": ("pass", "pyqgis-oapif-part4")},
         },
     },
     {
@@ -598,13 +657,13 @@ MATRIX: list[dict] = [
     {
         "protocol": "stac", "version": "1.0.0",
         "operations": {
-            "catalog-landing": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"), "qgis-ui": NS,
+            "catalog-landing": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"), "qgis-ui": ("pass", "qgis-ui-ui-op-stac-catalog-landing"),
                                 "pyqgis": ("pass", "pyqgis-stac-landing")},
-            "collections": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"), "qgis-ui": NS,
+            "collections": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"), "qgis-ui": ("pass", "qgis-ui-ui-op-stac-collections"),
                             "pyqgis": ("pass", "pyqgis-stac-collections")},
-            "item-search": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"), "qgis-ui": NS,
+            "item-search": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"), "qgis-ui": ("pass", "qgis-ui-ui-op-stac-item-search"),
                             "pyqgis": ("pass", "pyqgis-stac-search")},
-            "asset-download": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"), "qgis-ui": NS,
+            "asset-download": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"), "qgis-ui": ("pass", "qgis-ui-ui-op-stac-asset-download"),
                                "pyqgis": ("pass", "pyqgis-stac-asset")},
         },
     },
@@ -613,14 +672,14 @@ MATRIX: list[dict] = [
         "operations": {
             "entity-sets": {"pro-ui": ("n/a-no-client", "pro-no-sta"),
                             "arcpy": ("n/a-no-client", "arcpy-modules"),
-                            "qgis-ui": NS,
+                            "qgis-ui": ("pass", "qgis-ui-ui-op-sta-entity-sets"),
                             "pyqgis": ("pass", "pyqgis-sta-entities")},
             "expand": {"pro-ui": ("n/a-no-client", "pro-no-sta"),
                        "arcpy": ("n/a-no-client", "arcpy-modules"),
-                       "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-sta-expand")},
+                       "qgis-ui": ("pass", "qgis-ui-ui-op-sta-expand"), "pyqgis": ("pass", "pyqgis-sta-expand")},
             "filter-paging": {"pro-ui": ("n/a-no-client", "pro-no-sta"),
                               "arcpy": ("n/a-no-client", "arcpy-modules"),
-                              "qgis-ui": NS,
+                              "qgis-ui": ("pass", "qgis-ui-ui-op-sta-filter-paging"),
                               "pyqgis": ("pass", "pyqgis-sta-paging")},
         },
     },
@@ -639,14 +698,13 @@ MATRIX: list[dict] = [
             "identify": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-featureserver-identify"),
                          "qgis-ui": ("pass", "qgis-ltr"),
                          "pyqgis": ("pass", "pyqgis-fs-identify")},
-            # QGIS serialises the unset system-maintained OID as
-            # "objectid": null and the server rejects the whole edit with 1006
-            # "Field 'objectid' cannot be null", while the identical request with
-            # the member omitted succeeds. No stock QGIS digitizing session can
-            # edit this FeatureServer. QGIS uses the per-operation addFeatures /
-            # updateFeatures / deleteFeatures endpoints, never combined applyEdits.
+            # QGIS edits through the per-operation addFeatures / updateFeatures /
+            # deleteFeatures endpoints, never combined applyEdits. The earlier
+            # "objectid: null" 1006 rejection did not reproduce on 3.44.14: the
+            # form's Autogenerate OID is omitted from the payload and the insert
+            # and delete commit (UI-OP-FS-APPLYEDITS).
             "applyEdits": {"pro-ui": NS, "arcpy": NS,
-                           "qgis-ui": NS,
+                           "qgis-ui": ("pass", "qgis-ui-ui-op-fs-applyedits"),
                            "pyqgis": ("pass", "pyqgis-fs-applyedits")},
             # Both fails are tracked. #5012 is the per-feature attachments POST
             # rejection that makes Pro report zero attachments; #5021 is the
@@ -665,7 +723,7 @@ MATRIX: list[dict] = [
             # request to certify.
             "statistics": {"pro-ui": NS, "arcpy": ("pass", "arcpy-featureserver-statistics"), "qgis-ui": ("n/a-no-client", "qgis-rest-no-advanced"),
                            "pyqgis": ("n/a-no-client", "qgis-rest-no-advanced")},
-            "domains": {"pro-ui": NS, "arcpy": ("pass", "arcpy-featureserver-domains"), "qgis-ui": NS,
+            "domains": {"pro-ui": NS, "arcpy": ("pass", "arcpy-featureserver-domains"), "qgis-ui": ("pass", "qgis-ui-ui-op-fs-domains"),
                         "pyqgis": ("pass", "pyqgis-fs-domains")},
             "replica-sync": {
                 # The surface IS implemented - createReplica, synchronizeReplica and
@@ -693,12 +751,12 @@ MATRIX: list[dict] = [
         "protocol": "mapserver", "version": "GeoServices REST",
         "operations": {
             "service-info": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-mapserver-service-info"),
-                             "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-ms-info")},
+                             "qgis-ui": ("pass", "qgis-ui-ui-op-mapserver-service-info"), "pyqgis": ("pass", "pyqgis-ms-info")},
             "export": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-mapserver-export"),
-                       "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-ms-export")},
-            "identify": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-rest-only-ops"), "qgis-ui": NS,
+                       "qgis-ui": ("pass", "qgis-ui-ui-op-mapserver-export"), "pyqgis": ("pass", "pyqgis-ms-export")},
+            "identify": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-rest-only-ops"), "qgis-ui": ("pass", "qgis-ui-ui-op-mapserver-identify"),
                          "pyqgis": ("pass", "pyqgis-ms-identify")},
-            "legend": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-rest-only-ops"), "qgis-ui": NS,
+            "legend": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-rest-only-ops"), "qgis-ui": ("pass", "qgis-ui-ui-op-mapserver-legend"),
                        "pyqgis": ("pass", "pyqgis-ms-legend")},
         },
     },
@@ -720,10 +778,10 @@ MATRIX: list[dict] = [
         "protocol": "vectortileserver", "version": "GeoServices REST",
         "operations": {
             "service-info": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-vectortileserver-service-info"),
-                             "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-vts-info")},
+                             "qgis-ui": ("pass", "qgis-ui-ui-op-vts-service-info"), "pyqgis": ("pass", "pyqgis-vts-info")},
             "tile": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-vectortileserver-tile"),
-                     "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-vts-tile")},
-            "style": {"pro-ui": NS, "arcpy": ("pass", "arcpy-vectortileserver-style"), "qgis-ui": NS,
+                     "qgis-ui": ("pass", "qgis-ui-ui-op-vts-tile"), "pyqgis": ("pass", "pyqgis-vts-tile")},
+            "style": {"pro-ui": NS, "arcpy": ("pass", "arcpy-vectortileserver-style"), "qgis-ui": ("pass", "qgis-ui-ui-op-vts-style"),
                       "pyqgis": ("pass", "pyqgis-vts-style")},
         },
     },
@@ -876,7 +934,7 @@ MATRIX: list[dict] = [
                        # array" - was simply false: /ogc/styles serves 8 styles with
                        # negotiable SLD 1.0/1.1 and Mapbox representations, and QGIS
                        # applies the SLD verbatim.
-                       "qgis-ui": NS,
+                       "qgis-ui": ("pass", "qgis-ui-ui-op-styles"),
                        "pyqgis": ("pass", "pyqgis-styles")},
         },
     },
@@ -896,7 +954,7 @@ MATRIX: list[dict] = [
             # written to disk: LocalFileStorage indexes its objects once at
             # construction, so it is published through the running server.
             "archive-read": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
-                             "qgis-ui": NS,
+                             "qgis-ui": ("pass", "qgis-ui-ui-op-pmtiles-archive-read"),
                              "pyqgis": ("pass", "pyqgis-pmtiles")},
         },
     },
@@ -942,7 +1000,7 @@ MATRIX: list[dict] = [
         "protocol": "3d-tiles", "version": "1.0",
         "operations": {
             "tileset": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-mp-web-service-types"),
-                        "qgis-ui": NS, "pyqgis": ("pass", "pyqgis-3dtiles")},
+                        "qgis-ui": ("pass", "qgis-ui-ui-op-3dtiles-tileset"), "pyqgis": ("pass", "pyqgis-3dtiles")},
         },
     },
     {
