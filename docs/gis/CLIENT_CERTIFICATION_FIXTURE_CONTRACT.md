@@ -16,7 +16,7 @@ Expansion (explicitly out of scope here):
 
 | Revision | Value |
 |---|---|
-| `fixtureRevision` | `sha256:7d89989fc290785fcc627d867efd3e0228d58ea0af534daa3ea44c7c48bda80d` |
+| `fixtureRevision` | `sha256:0e2d155a8e922e49ba760ac0149e900e71261b0b4d77c2d550789a3df02e0c0a` |
 | `serverConfigRevision` | `sha256:d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a` |
 | `authPolicyRevision` | `sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9` |
 
@@ -45,7 +45,7 @@ reproduce.
 ```console
 $ LC_ALL=C sha256sum -t docker/client-compat/seed/publish-pmtiles.py docker/client-compat/seed/run.sh \
     tests/seed/apply-yaml-seed.sh tests/seed/browser-compat.yaml \
-    tests/seed/client-compat-auth-wave1.yaml tests/seed/client-compat-raster-v1.sql \
+    tests/seed/client-compat-auth-wave1.yaml tests/seed/client-compat-raster-v1.sql \n    tests/seed/client-compat-routing-v1.sql \
     tests/seed/client-compat-v1.sql tests/seed/portal-compat.yaml \
     | sha256sum -t
 7d89989fc290785fcc627d867efd3e0228d58ea0af534daa3ea44c7c48bda80d  -
@@ -66,6 +66,7 @@ not file-backed, which is why it is digested from its declaration rather than fr
 |---|---|
 | `tests/seed/client-compat-v1.sql` | fixture |
 | `tests/seed/client-compat-raster-v1.sql` | fixture |
+| `tests/seed/client-compat-routing-v1.sql` | fixture |
 | `tests/seed/browser-compat.yaml` | fixture |
 | `tests/seed/portal-compat.yaml` | fixture |
 | `tests/seed/apply-yaml-seed.sh` | fixture |
@@ -215,13 +216,18 @@ Cesium: `JS-CES-IMG-01`, `JS-CES-TILE-01`. Esri Leaflet: `EL-EXT-01`, `EL-EXT-02
 `EL-EXT-04`. Desktop: `DSK-EXT-01`, `DSK-EXT-02`. CLI: `CLI-EXT-01`, `CLI-EXT-02`. BI:
 `BI-EXT-01`, `BI-EXT-02`.
 
+**PyQGIS provider extensions (8).** 3D Tiles through the cesiumtiles provider: `NB-PQG-3DT-01`,
+`NB-PQG-3DT-02`. OGC API Features Part 4 transactions through the OAPIF provider: `NB-PQG-OAPIFT-01`,
+`NB-PQG-OAPIFT-02`, `NB-PQG-OAPIFT-03`. WFS-T through the WFS provider: `NB-PQG-WFST-01`,
+`NB-PQG-WFST-02`, `NB-PQG-WFST-03`.
+
 ### Lane bindings
 
 | Lane | State | Protocol bindings |
 |---|---|---|
 | `js` | active | `ogc-features` on a discovered collection (configured to `browser_compat` 2000); `wfs` on a discovered feature type; `wms`, `wmts`, `ogc-maps`, `mvt` on `browser_compat` |
 | `js-cesium` | active | `wms`, `wmts`, `ogc-tiles`, `ogc-maps` on `browser_compat` |
-| `desktop-qgis` | active | `ogc-features` and `wfs` on the canonical service |
+| `desktop-qgis` | active | `ogc-features` and `wfs` on the canonical service; `3d-tiles` on the scene generated from `browser_compat` 2002 |
 | `cli` | active | `ogc-features` and `wfs` on the canonical service |
 | `arcgis-stub` | active | `featureserver` and `mapserver` on `browser_compat` 2000; `portal` on the tier ladder |
 | `py-geopandas` | landing | `ogc-features` and `wfs` on the canonical service |

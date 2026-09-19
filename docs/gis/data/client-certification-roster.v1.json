@@ -217,6 +217,14 @@
         {
           "id": "sensorthings",
           "reason": "OGC SensorThings API; certified on the pyqgis lane against the QGIS SensorThings provider, which has no client-compat abbreviation row."
+        },
+        {
+          "id": "cog",
+          "reason": "Cloud Optimized GeoTIFF read over HTTP range requests; certified on the pyqgis lane against the artifact the client-compat seed publishes from test_service layer 0."
+        },
+        {
+          "id": "3d-tiles",
+          "reason": "OGC 3D Tiles scene consumed through the QGIS cesiumtiles provider; certified on the pyqgis lane against the scene the client-compat seed generates from browser_compat/2002."
         }
       ]
     },
@@ -308,6 +316,8 @@
       "sourceStatus": "Live nightly",
       "clientVersionPolicy": "QGIS LTR pinned by the pyqgis lane container image tag; the runtime version is captured into every envelope (currently 3.44.14-Solothurn).",
       "protocolSurfaces": [
+        "3d-tiles",
+        "cog",
         "featureserver",
         "mapserver",
         "ogc-api-styles",

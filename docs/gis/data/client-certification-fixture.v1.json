@@ -8,7 +8,7 @@
   "matrixSource": "docs/gis/data/client-certification-matrix.v1.json",
   "proseContract": "docs/gis/CLIENT_CERTIFICATION_FIXTURE_CONTRACT.md",
   "evidenceSchema": "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
-  "fixtureRevision": "sha256:7d89989fc290785fcc627d867efd3e0228d58ea0af534daa3ea44c7c48bda80d",
+  "fixtureRevision": "sha256:0e2d155a8e922e49ba760ac0149e900e71261b0b4d77c2d550789a3df02e0c0a",
   "serverConfigRevision": "sha256:d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a",
   "authPolicyRevision": "sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9",
   "digestAlgorithms": {
@@ -51,6 +51,12 @@
       "purpose": "Coverage seed: one deterministic 64x64 single-band 32BF raster on layer 0, the layer the ImageServer/Wcs/OGC-API-Coverages service binds to. Carries a constant background with four corner landmark pixels so a sub-window request can assert position, which a constant-valued raster cannot."
     },
     {
+      "path": "tests/seed/client-compat-routing-v1.sql",
+      "role": "fixture",
+      "sha256": "sha256:ed059e9d6012d0fc4fd721e48ccfdf07de7e546ea16813fb171000b9dbb1169d",
+      "purpose": "Routing seed: a 5x5 street grid centred on (-122.42, 37.77) in public.ways / public.ways_vertices_pgr with travel-time costs in minutes, so the NAServer Route, ServiceArea and ClosestFacility solves the routing cells certify return results instead of 'No route could be solved'. Applied after the raster seed because run.sh orders it there."
+    },
+    {
       "path": "tests/seed/browser-compat.yaml",
       "role": "fixture",
       "sha256": "sha256:28f3d5a8eb38a459ccc00c1ee1d98e9b0bc35ca20a425fcaeb9775539d5a9777",
@@ -77,7 +83,7 @@
     {
       "path": "docker/client-compat/seed/run.sh",
       "role": "fixture",
-      "sha256": "sha256:d77946f1e7221d028869118e62a69cb37093d401d0a27a2705d28a36502cc777",
+      "sha256": "sha256:c0c78394c2f644c719338c4d44157357d81f403d4cfc4f52466195c8e0934e62",
       "purpose": "Definition of which seed files are applied, and in which order, for the client-compat matrix. Adding or removing a fixture input changes this file and therefore fixtureRevision."
     },
     {
@@ -1271,7 +1277,7 @@
     {
       "id": "NB-DDB-NULL-01",
       "scenarioFacetId": "SF-GEOM-NULL",
-      "description": "4 NULL and 6 populated description values across 10 rows \u2014 the server emits JSON null (not an omitted key or an empty string) and no row was dropped."
+      "description": "4 NULL and 6 populated description values across 10 rows — the server emits JSON null (not an omitted key or an empty string) and no row was dropped."
     },
     {
       "id": "NB-DDB-NULL-02",
@@ -1281,7 +1287,7 @@
     {
       "id": "NB-DDB-PAGE-03",
       "scenarioFacetId": "SF-PAGE-LIMIT",
-      "description": "5 pages of limit=3 produced [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] \u2014 exactly the full set, no duplicates, no gaps, and the walk terminated on an empty page."
+      "description": "5 pages of limit=3 produced [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] — exactly the full set, no duplicates, no gaps, and the walk terminated on an empty page."
     },
     {
       "id": "NB-DDB-PAGE-04",
@@ -1961,12 +1967,12 @@
     {
       "id": "NB-RSF-FMT-01",
       "scenarioFacetId": "SF-EXT-FORMAT",
-      "description": "End-to-end GeoPackage fidelity: the WFS response was written with sf::st_write() and read back with sf::st_read() \u2014 10/10 rows, names match, empty geometries match, max coordinate...."
+      "description": "End-to-end GeoPackage fidelity: the WFS response was written with sf::st_write() and read back with sf::st_read() — 10/10 rows, names match, empty geometries match, max coordinate...."
     },
     {
       "id": "NB-RSF-FMT-02",
       "scenarioFacetId": "SF-EXT-FORMAT",
-      "description": "End-to-end GeoJSON fidelity: the WFS response was written with sf::st_write() and read back with sf::st_read() \u2014 10/10 rows, names match, empty geometries match, max coordinate deviation...."
+      "description": "End-to-end GeoJSON fidelity: the WFS response was written with sf::st_write() and read back with sf::st_read() — 10/10 rows, names match, empty geometries match, max coordinate deviation...."
     },
     {
       "id": "NB-RSF-FMT-03",
@@ -2347,6 +2353,46 @@
       "id": "NB-STAC-VALID-01",
       "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
       "description": "stac-api-validator validated core, collections, features, item-search, filter against http://honua:5000/stac with exit code 0."
+    },
+    {
+      "id": "NB-PQG-3DT-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "QgsTiledSceneLayer loads the published 3D Tiles tileset through the cesiumtiles provider with the scene CRS and a layer extent inside the source polygon layer's extent."
+    },
+    {
+      "id": "NB-PQG-3DT-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "Content tiles enumerated from the cesiumtiles index at geometric error 0 are fetched through retrieveContent as glTF binary addressed under the tileset's own location."
+    },
+    {
+      "id": "NB-PQG-OAPIFT-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "OGC API Features Part 4 create through the OAPIF provider adds a feature, confirmed by an independent items read rather than commitChanges(); authenticated with the session authcfg API key."
+    },
+    {
+      "id": "NB-PQG-OAPIFT-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "OGC API Features Part 4 update rewrites an attribute in place, confirmed server-side, with no extra row created."
+    },
+    {
+      "id": "NB-PQG-OAPIFT-03",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "OGC API Features Part 4 delete removes the feature and leaves every other row in place, confirmed server-side."
+    },
+    {
+      "id": "NB-PQG-WFST-01",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "WFS-T Insert through the QGIS WFS provider creates a feature, confirmed by an independent OGC API Features read; an anonymous Transaction is refused."
+    },
+    {
+      "id": "NB-PQG-WFST-02",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "WFS-T Update rewrites an attribute in place, confirmed server-side, with no extra row created."
+    },
+    {
+      "id": "NB-PQG-WFST-03",
+      "scenarioFacetId": "SF-EXT-CLIENT-IDIOM",
+      "description": "WFS-T Delete removes the feature and leaves every other row intact, confirmed server-side."
     }
   ],
   "notApplicableReasons": [
@@ -2896,7 +2942,10 @@
             "CERT-RNDR-FIL-01"
           ],
           "extensionCases": [
-            "DSK-EXT-01"
+            "DSK-EXT-01",
+            "NB-PQG-OAPIFT-01",
+            "NB-PQG-OAPIFT-02",
+            "NB-PQG-OAPIFT-03"
           ],
           "notApplicableCases": {
             "manual-evidence-lane": [
@@ -2942,7 +2991,10 @@
             "CERT-RNDR-FIL-01"
           ],
           "extensionCases": [
-            "DSK-EXT-02"
+            "DSK-EXT-02",
+            "NB-PQG-WFST-01",
+            "NB-PQG-WFST-02",
+            "NB-PQG-WFST-03"
           ],
           "notApplicableCases": {
             "manual-evidence-lane": [
@@ -2954,6 +3006,55 @@
               "CERT-CONN-02"
             ]
           }
+        },
+        {
+          "protocol": "3d-tiles",
+          "fixtureProjection": {
+            "target": "generated-scene",
+            "sceneId": "cert-browser-polygons",
+            "sourceServiceId": "browser_compat",
+            "sourceLayerId": "2002",
+            "tileset": "/scenes/cert-browser-polygons/tileset.json"
+          },
+          "applicableCases": [
+            "CERT-CONN-01",
+            "CERT-DISC-02"
+          ],
+          "notApplicableCases": {
+            "protocol-lacks-operation": [
+              "CERT-AUTH-01",
+              "CERT-AUTH-02",
+              "CERT-DISC-01",
+              "CERT-SCHM-01",
+              "CERT-SCHM-02",
+              "CERT-QFLT-01",
+              "CERT-QFLT-02",
+              "CERT-PAGE-01",
+              "CERT-PAGE-02",
+              "CERT-GEOM-01",
+              "CERT-GEOM-02",
+              "CERT-ERRH-01",
+              "CERT-ERRH-02"
+            ],
+            "no-vector-feature-surface": [
+              "CERT-RNDR-01",
+              "CERT-RNDR-02",
+              "CERT-RNDR-SYM-01",
+              "CERT-RNDR-LIN-01",
+              "CERT-RNDR-FIL-01",
+              "CERT-RNDR-LBL-01",
+              "CERT-RNDR-SPR-01",
+              "CERT-RNDR-URL-01"
+            ],
+            "transport-not-tls-in-fixture": [
+              "CERT-CONN-02"
+            ]
+          },
+          "extensionCases": [
+            "NB-PQG-3DT-01",
+            "NB-PQG-3DT-02"
+          ],
+          "notes": "The scene is generated at seed time from browser_compat/2002 (docker/client-compat/seed/publish-scene.py). The committed 3d-tiles envelope records the two NB-PQG-3DT extension results; the CERT-CONN-01 and CERT-DISC-02 reachability and tileset-discovery facets are implied by them and are the next results the pyqgis 3d-tiles module should emit explicitly."
         }
       ]
     },
