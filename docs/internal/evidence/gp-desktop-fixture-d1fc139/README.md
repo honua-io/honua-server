@@ -83,16 +83,37 @@ above, both passing on `nightly-d1fc139` ([`recreate-transcript.txt`](recreate-t
 
 A session after 2026-09-22 needs the leaf reissued first; the root stays the same.
 
-## Replay receipts on this nightly
+## Replay evidence on this nightly
 
-Under
-`tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/Fixtures/EsriToolboxReplay/`, apart
-from `at`, `source` and `image`, each `candidate-d1fc139-*` receipt is identical in shape to its
-`candidate-2cc2213-*` counterpart.
+The earlier version of this page listed
+`candidate-d1fc139-arcpy-and-sdk-scalar-verified.json` as passing. That file was never
+committed. The dispatched [licensed replay, attempt 1](https://github.com/honua-io/honua-esri-compat/actions/runs/35151843737/attempts/1)
+failed on 2026-09-17 while importing ArcPy, with Windows fatal exception
+`0xe0000001` in `arcpy.geoprocessing._base`. It produced no uploaded receipt.
+The successful installed-client receipts on `2cc2213` remain historical evidence;
+they do not prove the `d1fc139` replay.
 
-| Receipt | Run | What it establishes |
-|---|---|---|
-| `candidate-d1fc139-arcpy-and-sdk-scalar-verified.json` | see PR body | Installed ArcGIS SDK and licensed ArcPy both import all 119 advertised tasks over verified TLS and remotely compute `geometry.area` = 12 for the literal 3x4 rectangle. |
+On 2026-09-19 the owned fixture was found stopped after a host shutdown. Its
+existing containers were restarted in dependency order (Postgres, private Redis,
+server, TLS proxy, then tracer); its image, catalog and TLS certificate were
+preserved. The unchanged `ready-check.sh` passed on the digest above: verified
+HTTPS, 119 advertised tasks, Pro's captured `GetServiceDescriptionsEx` envelope
+returning 200, bare `/services` returning 200, unauthenticated SOAP job access
+returning 401, and `exportImage` returning TIFF bytes. These are server readiness
+checks, not desktop observations.
+
+The unchanged `probe-soap-auth-controls.py` was also rerun on this digest. Its
+[receipt](../../../../tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/Fixtures/EsriToolboxReplay/candidate-d1fc139-soap-auth-controls-verified.json)
+passes all 24 checks over verified HTTPS:
+
+- The literal 3 by 4 rectangle returns independently expected area 12, with
+  `MeasureResult`, `geometry.area`, SRID 3857 and Polygon metadata.
+- Anonymous, invalid API-key and invalid bearer callers each receive a 401 SOAP
+  fault from all seven execution/job operations, with no job state disclosed.
+- Denied cancellations leave the owner's successful job intact, and malformed
+  authorized input returns 400.
+
+The receipt explicitly records `desktop_ui_exercised: false`.
 
 ## What is still open
 
