@@ -6893,6 +6893,7 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesCollectionsExceptionMappingTests.GetCollection_WhenMetadataGraphThrowsResourceNotFound_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesCollectionsExceptionMappingTests.GetCollection_WhenMetadataGraphThrowsUnexpectedInvalidOperation_ReturnsInternalServerError",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetCollection_IncludesItemsLinksForAllSupportedFormats",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetCollection_LinksToThePart5Schema",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesSpatialReferenceTests.GetCollection_WithNon4326Layer_IncludesStorageCrs",
         "Honua.Server.Tests.Features.Styling.OgcStylesEndpointTests.GetCollection_IncludesStylesAndStylesheetLinks",
         "Honua.Server.Tests.OgcFeaturesEndpointTests.GetCollection_WithInvalidId_Returns404",
@@ -7097,6 +7098,20 @@
       "capability": "serve.ogc-api-features"
     },
     {
+      "id": "get-ogc-features-collections-collectionid-schema",
+      "route": "/ogc/features/collections/{collectionId}/schema",
+      "method": "GET",
+      "family": "OGC API Features",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetSchema_ReturnsAPart5DocumentWithRoles"
+      ],
+      "proof_ledger_surface": "ogc-api-features",
+      "maturity": "implemented",
+      "capability": "serve.ogc-api-features"
+    },
+    {
       "id": "get-ogc-features-conformance",
       "route": "/ogc/features/conformance",
       "method": "GET",
@@ -7108,6 +7123,7 @@
         "Honua.Server.Tests.Comprehensive.TestQualityValidationTests.TestCoverage_CriticalEndpoints_AreFullyCovered",
         "Honua.Server.Tests.Features.API.EndpointCoverageTests.OgcApi_GetConformance_ShouldReturnConformanceClasses",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetConformance_AdvertisesOnlyEvidenceBackedFeaturesClasses",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetConformance_DeclaresPart5Schemas",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Features.OgcFeaturesEnhancementsTests.GetConformance_DoesNotAdvertiseGmlSf0",
         "Honua.Server.Tests.OgcFeaturesEndpointTests.GetConformance_ReturnsCacheHeaders",
         "Honua.Server.Tests.OgcFeaturesEndpointTests.GetConformance_ReturnsValidConformanceDeclarationWithRequiredClasses"
@@ -13672,7 +13688,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_HeadMissingArtifact_Returns404",
-        "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_HeadRequest_Returns200WithContentLengthAndNoBody"
+        "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_HeadRequest_Returns200WithContentLengthAndNoBody",
+        "Honua.Server.Tests.Features.Admin.PMTilesPublishEndpointTests.PMTilesProxy_RepeatedHeadRequests_KeepReportingTheArtifactLength"
       ],
       "proof_ledger_surface": "vector-tiles-mvt",
       "maturity": "implemented",
@@ -18606,6 +18623,48 @@
       "capability": "geocoding.forward"
     },
     {
+      "id": "post-rest-services-geocodeserver-geocodeaddresses",
+      "route": "/rest/services/GeocodeServer/geocodeAddresses",
+      "method": "POST",
+      "family": "GeoServices REST GeocodeServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_FormPost_IsServedOnTheNamedAndUnnamedLocator"
+      ],
+      "proof_ledger_surface": "geocode-server",
+      "maturity": "implemented",
+      "capability": "geocoding.batch"
+    },
+    {
+      "id": "post-rest-services-geocodeserver-reversegeocode",
+      "route": "/rest/services/GeocodeServer/reverseGeocode",
+      "method": "POST",
+      "family": "GeoServices REST GeocodeServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.ReverseGeocodeAndSuggest_FormPost_AreServedOnTheUnnamedLocator"
+      ],
+      "proof_ledger_surface": "geocode-server",
+      "maturity": "implemented",
+      "capability": "geocoding.reverse"
+    },
+    {
+      "id": "post-rest-services-geocodeserver-suggest",
+      "route": "/rest/services/GeocodeServer/suggest",
+      "method": "POST",
+      "family": "GeoServices REST GeocodeServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.ReverseGeocodeAndSuggest_FormPost_AreServedOnTheUnnamedLocator"
+      ],
+      "proof_ledger_surface": "geocode-server",
+      "maturity": "implemented",
+      "capability": "geocoding.forward"
+    },
+    {
       "id": "post-rest-services-utilities-geometry-geometryserver",
       "route": "/rest/services/Utilities/Geometry/GeometryServer",
       "method": "POST",
@@ -19497,6 +19556,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_FormPost_IsServedOnTheNamedAndUnnamedLocator",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_Post_EmitsJsSdkAddressesToLocationsResponseShape",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_Post_ReturnsLocationsArray",
         "Honua.Server.Tests.Features.Geocoding.GeocodingEndpointTests.BatchGeocode_Post_WithEsriAddressesParameter_ReturnsLocationsArray",
@@ -19863,6 +19923,7 @@
       "proving_tests": [
         "Honua.Server.Tests.FeatureServerEndpointTests.AddFeatures_WithFeaturePayload_ReturnsAddResults",
         "Honua.Server.Tests.Features.Licensing.FeatureEditsDeniedPathSkipsResourceValidatorTests.AddFeatures_UnlicensedHostWithBrokenResourceValidator_Returns402NotA500",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.AddFeatures_WithNullSystemMaintainedObjectId_AssignsOneInstead",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.MutationEndpoints_AcceptValidEdits_AndRoundTripEachState",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.MutationEndpoints_RejectInvalidEdits_WithoutChangingStoredState",
         "Honua.Server.Tests.Seed.ClientCompatSeedMigratedDatabaseTests.ClientCompatSeed_OnServerMigratedDatabase_ServesTheTenFixtureNamesAndAcceptsScratchLayerWrites"
@@ -20311,7 +20372,8 @@
         "Honua.Server.Tests.FeatureServerEndpointTests.UpdateFeatures_WithFeaturePayload_ReturnsUpdateResults",
         "Honua.Server.Tests.Features.Admin.RowLevelSecurityEndpointsTests.RlsPolicy_BlocksEditAndDeleteOfHiddenRow_OnDefaultObjectIdLayer",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.MutationEndpoints_AcceptValidEdits_AndRoundTripEachState",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.MutationEndpoints_RejectInvalidEdits_WithoutChangingStoredState"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.MutationEndpoints_RejectInvalidEdits_WithoutChangingStoredState",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerMutationScenarioTests.UpdateFeatures_WithNullSystemMaintainedObjectId_IsStillRejected"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
@@ -21621,6 +21683,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_EnvelopeAndContentTypeVersionsMustMatch",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_ExportImage_AcceptsEveryAdvertisedMosaicMethod",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_ExportImage_DelegatesToCanonicalRasterExport",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_ExportImage_ServesRawBandSequentialSamples",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_GetImage_RejectsMultispectralPngProjection",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_GetImage_ReturnsBipPixelsFollowedByPackedNoDataMask",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostSoapImageServer_GetServiceInfo_ClassifiesNad83AsGeographic",

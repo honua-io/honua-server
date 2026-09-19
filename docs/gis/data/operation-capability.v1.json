@@ -7,13 +7,13 @@
     "capabilities": "docs/gis/data/feature-catalog.json"
   },
   "summary": {
-    "operationCount": 493,
+    "operationCount": 494,
     "unresolvedCount": 0,
     "capabilityCount": 23,
     "perSpec": {
       "admin-api": 401,
       "ogc-api-coverages": 8,
-      "ogc-api-features": 19,
+      "ogc-api-features": 20,
       "ogc-api-maps": 9,
       "ogc-api-processes": 10,
       "ogc-api-tiles": 13,
@@ -40,7 +40,7 @@
       "scene.bim-ingest": 1,
       "scene.pointcloud-ingest": 1,
       "serve.ogc-api-coverages": 8,
-      "serve.ogc-api-features": 18,
+      "serve.ogc-api-features": 19,
       "serve.ogc-api-maps": 9,
       "serve.ogc-api-tiles": 13,
       "serve.stac": 10
@@ -4296,6 +4296,16 @@
       "family": "OGC API Features",
       "maturity": "implemented",
       "catalogEntryId": "get-ogc-features-collections-collectionid-queryables"
+    },
+    {
+      "spec": "ogc-api-features",
+      "method": "GET",
+      "path": "/ogc/features/collections/{collectionId}/schema",
+      "operationId": null,
+      "capability": "serve.ogc-api-features",
+      "family": "OGC API Features",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-features-collections-collectionid-schema"
     },
     {
       "spec": "ogc-api-features",
