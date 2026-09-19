@@ -503,6 +503,14 @@ EV = {
     "pyqgis-stac-search": _pyqgis("stac", "1.0.0", 4, cert_id="CERT-QFLT-01"),
     "pyqgis-stac-asset": _pyqgis("stac", "1.0.0", 4, cert_id="CERT-RNDR-URL-01"),
     "pyqgis-pmtiles": _pyqgis("pmtiles", "3", 6, cert_id="CERT-CONN-01"),
+    "pyqgis-cog": _pyqgis("cog", "GeoTIFF", 4, cert_id="CERT-RNDR-01"),
+    "qgis-ui-ui-op-cog-range-read": (
+        "honua-client-compat/evidence/native-qgis-cog-20260919-a/results.json - "
+        f"UI-OP-COG-RANGE-READ, QGIS {QGIS_LTR_BUILD} (windows-computer-use receipt: Data "
+        "Source Manager > Raster > Protocol HTTP/HTTPS/FTP added /api/v1/rasters/cog/cog/0/1.tif "
+        "through the gdal provider, Layer Properties 64x64 Float32 EPSG:4326, Identify Band 1 = 100 "
+        "== ImageServer identify; server log shows GDAL/3.13.3 HEAD 200 and Range GET 206), pass"
+    ),
     "pyqgis-styles": _pyqgis("ogc-api-styles", "1.0", 3, cert_id="CERT-RNDR-SYM-01"),
     "pyqgis-sta-entities": _pyqgis("sensorthings", "1.1", 3, cert_id="CERT-DISC-01"),
     "pyqgis-sta-expand": _pyqgis("sensorthings", "1.1", 3, cert_id="CERT-SCHM-01"),
@@ -542,17 +550,6 @@ def _experimental_gate(capability: str, extra: str = "") -> str:
         f"Capabilities:Experimental:{capability}:Enabled=true." + extra
     )
 
-
-COG_GAP = (
-    "no COG-serving surface in this configuration. The cloud-raster catalog "
-    "refuses the fixture's storage outright (Cog/Models/CogModels.cs: 'Local "
-    "storage is not supported for COG serving', and the container runs "
-    "FileStorage__Provider=Local); ImageServerExportHandler rejects "
-    "RasterFormat.COG; and WCS / OGC-API-Coverages GetCoverage emit plain GTiff "
-    "stamped Accept-Ranges: none. The only range-capable public route is the "
-    "scene asset endpoint, so closing this needs a COG fixture served from there "
-    "- not a client change, since QGIS opens a COG natively over /vsicurl/."
-)
 
 PGROUTING_GATE = (
     "pgRouting is not installed in the fixture's database image. It is available to "
@@ -993,13 +990,13 @@ MATRIX: list[dict] = [
     {
         "protocol": "cog", "version": "GeoTIFF",
         "operations": {
-            # QGIS opens a COG natively over HTTP (gdal provider, /vsicurl/), so
-            # this is entirely a server-side gap - and not a 404 from a route that
-            # exists: nothing in honua serves COG bytes with ranges in this
-            # configuration.
+            # The fixture seed publishes test_service layer 0's raster through
+            # POST /api/v1/admin/raster-artifacts/cog; the public range proxy
+            # /api/v1/rasters/cog/{artifactId} answers HEAD with the real length
+            # and 206 for ranges, which is what GDAL /vsicurl needs.
             "range-read": {"pro-ui": NS, "arcpy": NS,
-                           "qgis-ui": _blocked(COG_GAP),
-                           "pyqgis": _blocked(COG_GAP)},
+                           "qgis-ui": ("pass", "qgis-ui-ui-op-cog-range-read"),
+                           "pyqgis": ("pass", "pyqgis-cog")},
         },
     },
     {

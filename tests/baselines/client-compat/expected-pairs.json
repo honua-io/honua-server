@@ -87,6 +87,10 @@
       "protocol": "sensorthings"
     },
     {
+      "client_lane": "desktop-qgis",
+      "protocol": "cog"
+    },
+    {
       "client_lane": "cli",
       "protocol": "ogc-features"
     },

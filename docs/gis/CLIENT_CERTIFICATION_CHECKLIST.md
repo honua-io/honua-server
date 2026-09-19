@@ -182,10 +182,10 @@ lane × protocol pair appears with no checklist row.
 |---|---|---|---|---|
 | `pro-ui` | ArcGIS Pro 3.7.1.1904 | 34/94 | 60 | blocked 6, fail 2, n/a-no-client 11, n/a-superseded 3, not-started 52, pass 20 |
 | `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 84/94 | 10 | blocked 4, n/a-no-client 59, not-started 6, pass 25 |
-| `qgis-ui` | QGIS 3.44.14 LTR | 93/94 | 1 | blocked 1, n/a-no-client 40, n/a-superseded 3, pass 50 |
-| `pyqgis` | QGIS 3.44.14 LTR | 93/94 | 1 | blocked 1, n/a-no-client 40, n/a-superseded 3, pass 50 |
+| `qgis-ui` | QGIS 3.44.14 LTR | 94/94 | 0 | n/a-no-client 40, n/a-superseded 3, pass 51 |
+| `pyqgis` | QGIS 3.44.14 LTR | 94/94 | 0 | n/a-no-client 40, n/a-superseded 3, pass 51 |
 
-**304 of 376 cells closed; 72 open.**
+**306 of 376 cells closed; 70 open.**
 
 ### Cells
 
@@ -427,7 +427,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| range-read | not-started | not-started | blocked | blocked |
+| range-read | not-started | not-started | pass | pass |
 
 #### i3s-sceneserver 1.x
 

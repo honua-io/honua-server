@@ -37,22 +37,20 @@
         "blocked": 4
       },
       "qgis-ui": {
-        "pass": 50,
+        "pass": 51,
         "n/a-no-client": 40,
-        "n/a-superseded": 3,
-        "blocked": 1
+        "n/a-superseded": 3
       },
       "pyqgis": {
-        "pass": 50,
+        "pass": 51,
         "n/a-no-client": 40,
-        "n/a-superseded": 3,
-        "blocked": 1
+        "n/a-superseded": 3
       }
     },
     "overall": {
       "cells": 376,
-      "closed": 304,
-      "open": 72
+      "closed": 306,
+      "open": 70
     }
   },
   "rows": [
@@ -2086,12 +2084,12 @@
           "state": "not-started"
         },
         "qgis-ui": {
-          "state": "blocked",
-          "cause": "no COG-serving surface in this configuration. The cloud-raster catalog refuses the fixture's storage outright (Cog/Models/CogModels.cs: 'Local storage is not supported for COG serving', and the container runs FileStorage__Provider=Local); ImageServerExportHandler rejects RasterFormat.COG; and WCS / OGC-API-Coverages GetCoverage emit plain GTiff stamped Accept-Ranges: none. The only range-capable public route is the scene asset endpoint, so closing this needs a COG fixture served from there - not a client change, since QGIS opens a COG natively over /vsicurl/."
+          "state": "pass",
+          "evidence": "honua-client-compat/evidence/native-qgis-cog-20260919-a/results.json - UI-OP-COG-RANGE-READ, QGIS 3.44.14-Solothurn (windows-computer-use receipt: Data Source Manager > Raster > Protocol HTTP/HTTPS/FTP added /api/v1/rasters/cog/cog/0/1.tif through the gdal provider, Layer Properties 64x64 Float32 EPSG:4326, Identify Band 1 = 100 == ImageServer identify; server log shows GDAL/3.13.3 HEAD 200 and Range GET 206), pass"
         },
         "pyqgis": {
-          "state": "blocked",
-          "cause": "no COG-serving surface in this configuration. The cloud-raster catalog refuses the fixture's storage outright (Cog/Models/CogModels.cs: 'Local storage is not supported for COG serving', and the container runs FileStorage__Provider=Local); ImageServerExportHandler rejects RasterFormat.COG; and WCS / OGC-API-Coverages GetCoverage emit plain GTiff stamped Accept-Ranges: none. The only range-capable public route is the scene asset endpoint, so closing this needs a COG fixture served from there - not a client change, since QGIS opens a COG natively over /vsicurl/."
+          "state": "pass",
+          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-cog.cert.json - CERT-RNDR-01, protocol cog GeoTIFF, client desktop-qgis 3.44.14-Solothurn, 4 passed 0 failed"
         }
       }
     },
