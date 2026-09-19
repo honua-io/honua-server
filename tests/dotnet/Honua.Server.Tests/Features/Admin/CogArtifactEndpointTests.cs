@@ -120,13 +120,13 @@ public sealed class CogArtifactEndpointTests : IAsyncLifetime
     public async Task CogProxy_Head_ReportsTheArtifactLengthOnEveryProbe()
     {
         var descriptor = await PublishAsync();
-        var url = descriptor.GetProperty("url").GetString()!;
+        var artifactId = descriptor.GetProperty("artifactId").GetString()!;
 
         // GDAL /vsicurl sizes the file from HEAD before every open; the length must be
         // stable across probes (the output cache used to replay a zero on the second one).
         for (var attempt = 1; attempt <= 3; attempt++)
         {
-            using var request = new HttpRequestMessage(HttpMethod.Head, url);
+            using var request = new HttpRequestMessage(HttpMethod.Head, $"/api/v1/rasters/cog/{artifactId}");
             request.Headers.AcceptEncoding.ParseAdd("gzip, deflate, br");
             using var response = await _client.SendAsync(request);
 
