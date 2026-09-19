@@ -363,7 +363,7 @@ internal sealed class QueryFormatter : IQueryFormatter
     /// 10, and the edit round-trip that clones a template row found nothing to clone.
     /// GeoJSON keeps the nested value, where it is valid; only the Esri shape flattens.
     /// </remarks>
-    private static object? GeoServicesAttributeValue(object? value)
+    internal static object? GeoServicesAttributeValue(object? value)
         => FeatureAttributeValueNormalizer.Normalize(value) switch
         {
             JsonElement { ValueKind: JsonValueKind.Array or JsonValueKind.Object } element => element.GetRawText(),
@@ -1332,7 +1332,12 @@ internal sealed class StreamingQueryFormatter
                     objectIdWritten = true;
                 }
 
-                WriteJsonValue(writer, fieldName, kvp.Value, cancellationToken, dateFieldNames);
+                // Same flattening as the materialised Esri shape: a jsonb array or object
+                // is advertised as esriFieldTypeString, so it must stream as its JSON text.
+                // ArcGIS Pro sends attribute-only reads (returnGeometry=false, paged and
+                // ordered by objectid) down this streaming path, and dropped every row
+                // when the value arrived as a nested array.
+                WriteJsonValue(writer, fieldName, QueryFormatter.GeoServicesAttributeValue(kvp.Value), cancellationToken, dateFieldNames);
             }
         }
 
