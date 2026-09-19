@@ -24,9 +24,9 @@
     "per_lane": {
       "pro-ui": {
         "pass": 20,
-        "not-started": 52,
+        "not-started": 46,
+        "n/a-no-client": 17,
         "n/a-superseded": 3,
-        "n/a-no-client": 11,
         "fail": 2,
         "blocked": 6
       },
@@ -49,8 +49,8 @@
     },
     "overall": {
       "cells": 376,
-      "closed": 306,
-      "open": 70
+      "closed": 312,
+      "open": 64
     }
   },
   "rows": [
@@ -376,7 +376,8 @@
       "operation": "Transaction-Insert",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/use-wfs-services.html: \"WFS with transactions is not yet supported. The layer behaves as a read-only data source.\" (fetched 2026-09-19)"
         },
         "arcpy": {
           "state": "n/a-no-client",
@@ -398,7 +399,8 @@
       "operation": "Transaction-Update",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/use-wfs-services.html: \"WFS with transactions is not yet supported. The layer behaves as a read-only data source.\" (fetched 2026-09-19)"
         },
         "arcpy": {
           "state": "n/a-no-client",
@@ -420,7 +422,8 @@
       "operation": "Transaction-Delete",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/use-wfs-services.html: \"WFS with transactions is not yet supported. The layer behaves as a read-only data source.\" (fetched 2026-09-19)"
         },
         "arcpy": {
           "state": "n/a-no-client",
@@ -753,7 +756,8 @@
       "operation": "transactions-part4",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/use-ogc-api-services.html: \"Since the OGC API Features layer is not editable, you cannot make edits to the data or schema through ArcGIS Pro.\" (fetched 2026-09-19)"
         },
         "arcpy": {
           "state": "n/a-no-client",
@@ -775,7 +779,8 @@
       "operation": "landing-tilesets",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/use-ogc-api-services.html: \"Currently, the ArcGIS Pro client supports only the map tiles type of the OGC API Tiles specification.\" (fetched 2026-09-19); every tileset of the fixture is dataType vector (GET /ogc/tiles/collections/0/tiles on image sha256:6001b3b8ac05... lists only Mapbox Vector Tile tilesets), so there is no map-tiles tileset for Pro to add."
         },
         "arcpy": {
           "state": "n/a-no-client",
@@ -797,7 +802,8 @@
       "operation": "tile",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/use-ogc-api-services.html: \"Currently, the ArcGIS Pro client supports only the map tiles type of the OGC API Tiles specification.\" (fetched 2026-09-19); every tileset of the fixture is dataType vector (GET /ogc/tiles/collections/0/tiles on image sha256:6001b3b8ac05... lists only Mapbox Vector Tile tilesets), so there is no map-tiles tileset for Pro to add."
         },
         "arcpy": {
           "state": "n/a-no-client",

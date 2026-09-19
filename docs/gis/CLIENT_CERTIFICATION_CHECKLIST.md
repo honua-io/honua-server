@@ -180,12 +180,12 @@ lane × protocol pair appears with no checklist row.
 
 | Lane | Client build | Closed | Open | Breakdown |
 |---|---|---|---|---|
-| `pro-ui` | ArcGIS Pro 3.7.1.1904 | 34/94 | 60 | blocked 6, fail 2, n/a-no-client 11, n/a-superseded 3, not-started 52, pass 20 |
+| `pro-ui` | ArcGIS Pro 3.7.1.1904 | 40/94 | 54 | blocked 6, fail 2, n/a-no-client 17, n/a-superseded 3, not-started 46, pass 20 |
 | `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 84/94 | 10 | blocked 4, n/a-no-client 59, not-started 6, pass 25 |
 | `qgis-ui` | QGIS 3.44.14 LTR | 94/94 | 0 | n/a-no-client 40, n/a-superseded 3, pass 51 |
 | `pyqgis` | QGIS 3.44.14 LTR | 94/94 | 0 | n/a-no-client 40, n/a-superseded 3, pass 51 |
 
-**306 of 376 cells closed; 70 open.**
+**312 of 376 cells closed; 64 open.**
 
 ### Cells
 
@@ -221,9 +221,9 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 | DescribeFeatureType | pass | pass | pass | pass |
 | GetFeature | pass | pass | pass | pass |
 | GetPropertyValue | not-started | n/a-no-client | n/a-no-client | n/a-no-client |
-| Transaction-Insert | not-started | n/a-no-client | pass | pass |
-| Transaction-Update | not-started | n/a-no-client | pass | pass |
-| Transaction-Delete | not-started | n/a-no-client | pass | pass |
+| Transaction-Insert | n/a-no-client | n/a-no-client | pass | pass |
+| Transaction-Update | n/a-no-client | n/a-no-client | pass | pass |
+| Transaction-Delete | n/a-no-client | n/a-no-client | pass | pass |
 | ListStoredQueries | not-started | n/a-no-client | n/a-no-client | n/a-no-client |
 
 #### wcs 1.0.0
@@ -253,14 +253,14 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 | item | not-started | n/a-no-client | pass | pass |
 | bbox-datetime-filter | not-started | n/a-no-client | pass | pass |
 | crs-negotiation | not-started | n/a-no-client | pass | pass |
-| transactions-part4 | not-started | n/a-no-client | pass | pass |
+| transactions-part4 | n/a-no-client | n/a-no-client | pass | pass |
 
 #### ogc-api-tiles 1.0
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| landing-tilesets | not-started | n/a-no-client | n/a-no-client | n/a-no-client |
-| tile | not-started | n/a-no-client | n/a-no-client | n/a-no-client |
+| landing-tilesets | n/a-no-client | n/a-no-client | n/a-no-client | n/a-no-client |
+| tile | n/a-no-client | n/a-no-client | n/a-no-client | n/a-no-client |
 
 #### stac 1.0.0
 

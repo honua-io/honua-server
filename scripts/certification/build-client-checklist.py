@@ -87,6 +87,23 @@ CITE = {
         "1.1.1, 1.1.2 or 2.0.1 can consume the service; Pro exposes a Version "
         "selector and negotiates the highest, so it uses 2.0.1 here."
     ),
+    "pro-wfs-read-only": (
+        "doc.esri.com/en/arcgis-pro/latest/help/data/services/use-wfs-services.html: "
+        '"WFS with transactions is not yet supported. The layer behaves as a read-only '
+        'data source." (fetched 2026-09-19)'
+    ),
+    "pro-oapif-read-only": (
+        "doc.esri.com/en/arcgis-pro/latest/help/data/services/use-ogc-api-services.html: "
+        '"Since the OGC API Features layer is not editable, you cannot make edits to the '
+        'data or schema through ArcGIS Pro." (fetched 2026-09-19)'
+    ),
+    "pro-oapi-tiles-map-only": (
+        "doc.esri.com/en/arcgis-pro/latest/help/data/services/use-ogc-api-services.html: "
+        '"Currently, the ArcGIS Pro client supports only the map tiles type of the OGC API '
+        'Tiles specification." (fetched 2026-09-19); every tileset of the fixture is '
+        "dataType vector (GET /ogc/tiles/collections/0/tiles on image sha256:6001b3b8ac05... "
+        "lists only Mapbox Vector Tile tilesets), so there is no map-tiles tileset for Pro to add."
+    ),
     "pro-no-sta": (
         "No SensorThings client ships in ArcGIS Pro; its OGC API support is limited "
         "to Features and Tiles per the Add OGC API services page."
@@ -609,9 +626,9 @@ MATRIX: list[dict] = [
             "GetFeature": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-wfs-getfeature"),
                            "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-getfeature"), "pyqgis": ("pass", "pyqgis-wfs")},
             "GetPropertyValue": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": ("n/a-no-client", "qgis-wfs-no-propertyvalue"), "pyqgis": ("n/a-no-client", "qgis-wfs-no-propertyvalue")},
-            "Transaction-Insert": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-transaction-insert"), "pyqgis": ("pass", "pyqgis-wfst-insert")},
-            "Transaction-Update": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-transaction-update"), "pyqgis": ("pass", "pyqgis-wfst-update")},
-            "Transaction-Delete": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-transaction-delete"), "pyqgis": ("pass", "pyqgis-wfst-delete")},
+            "Transaction-Insert": {"pro-ui": ("n/a-no-client", "pro-wfs-read-only"), "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-transaction-insert"), "pyqgis": ("pass", "pyqgis-wfst-insert")},
+            "Transaction-Update": {"pro-ui": ("n/a-no-client", "pro-wfs-read-only"), "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-transaction-update"), "pyqgis": ("pass", "pyqgis-wfst-update")},
+            "Transaction-Delete": {"pro-ui": ("n/a-no-client", "pro-wfs-read-only"), "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-transaction-delete"), "pyqgis": ("pass", "pyqgis-wfst-delete")},
             "ListStoredQueries": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-wfs-read-only"), "qgis-ui": ("n/a-no-client", "qgis-wfs-no-propertyvalue"), "pyqgis": ("n/a-no-client", "qgis-wfs-no-propertyvalue")},
         },
     },
@@ -660,17 +677,17 @@ MATRIX: list[dict] = [
                                      "qgis-ui": ("pass", "qgis-ui-ui-op-oapif-bbox-datetime-filter"), "pyqgis": ("pass", "pyqgis-oapif")},
             "crs-negotiation": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
                                 "qgis-ui": ("pass", "qgis-ui-ui-op-oapif-crs-negotiation"), "pyqgis": ("pass", "pyqgis-oapif")},
-            "transactions-part4": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "transactions-part4": {"pro-ui": ("n/a-no-client", "pro-oapif-read-only"), "arcpy": ("n/a-no-client", "arcpy-modules"),
                                    "qgis-ui": ("pass", "qgis-ui-ui-op-oapif-transactions-part4"), "pyqgis": ("pass", "pyqgis-oapif-part4")},
         },
     },
     {
         "protocol": "ogc-api-tiles", "version": "1.0",
         "operations": {
-            "landing-tilesets": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "landing-tilesets": {"pro-ui": ("n/a-no-client", "pro-oapi-tiles-map-only"), "arcpy": ("n/a-no-client", "arcpy-modules"),
                                  "qgis-ui": ("n/a-no-client", "qgis-registry"),
                                  "pyqgis": ("n/a-no-client", "qgis-registry")},
-            "tile": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
+            "tile": {"pro-ui": ("n/a-no-client", "pro-oapi-tiles-map-only"), "arcpy": ("n/a-no-client", "arcpy-modules"),
                      "qgis-ui": ("n/a-no-client", "qgis-registry"),
                      "pyqgis": ("n/a-no-client", "qgis-registry")},
         },
