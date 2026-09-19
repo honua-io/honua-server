@@ -32,7 +32,6 @@ import pytest
 from .conftest import (
     CertificationEvidenceCollector,
     EXPECTED_CRS_EPSG,
-    GEO_TOLERANCE,
     make_wcs_layer,
 )
 
