@@ -180,8 +180,8 @@ lane × protocol pair appears with no checklist row.
 
 | Lane | Client build | Closed | Open | Breakdown |
 |---|---|---|---|---|
-| `pro-ui` | ArcGIS Pro 3.7.1.1904 | 40/94 | 54 | blocked 6, fail 2, n/a-no-client 17, n/a-superseded 3, not-started 46, pass 20 |
-| `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 90/94 | 4 | blocked 4, n/a-no-client 59, pass 31 |
+| `pro-ui` | ArcGIS Pro 3.7.1.1904 | 40/94 | 54 | fail 2, n/a-no-client 17, n/a-superseded 3, not-started 52, pass 20 |
+| `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 90/94 | 4 | fail 4, n/a-no-client 59, pass 31 |
 | `qgis-ui` | QGIS 3.44.14 LTR | 94/94 | 0 | n/a-no-client 40, n/a-superseded 3, pass 51 |
 | `pyqgis` | QGIS 3.44.14 LTR | 94/94 | 0 | n/a-no-client 40, n/a-superseded 3, pass 51 |
 
@@ -292,7 +292,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 | relatedRecords | fail | n/a-no-client | n/a-no-client | n/a-no-client |
 | statistics | not-started | pass | n/a-no-client | n/a-no-client |
 | domains | not-started | pass | pass | pass |
-| replica-sync | blocked | n/a-no-client | n/a-no-client | n/a-no-client |
+| replica-sync | not-started | n/a-no-client | n/a-no-client | n/a-no-client |
 
 #### mapserver GeoServices REST
 
@@ -352,15 +352,15 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| route-solve | blocked | blocked | n/a-no-client | n/a-no-client |
-| service-area | blocked | blocked | n/a-no-client | n/a-no-client |
+| route-solve | not-started | fail | n/a-no-client | n/a-no-client |
+| service-area | not-started | fail | n/a-no-client | n/a-no-client |
 
 #### versionmanagementserver GeoServices REST
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| create-version | blocked | blocked | n/a-no-client | n/a-no-client |
-| reconcile-post | blocked | blocked | n/a-no-client | n/a-no-client |
+| create-version | not-started | fail | n/a-no-client | n/a-no-client |
+| reconcile-post | not-started | fail | n/a-no-client | n/a-no-client |
 
 #### geoservices-soap GeoServices SOAP
 
@@ -433,7 +433,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| scene-layer | blocked | pass | n/a-no-client | n/a-no-client |
+| scene-layer | not-started | pass | n/a-no-client | n/a-no-client |
 
 #### 3d-tiles 1.0
 

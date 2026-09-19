@@ -408,6 +408,18 @@ EV = {
         "honua-esri-compat/evidence/arcpy-client-compat-20260919-f-gp/certification/20260919T184352Z-desktop-arcgis-gp-gpserver.cert.json - "
         "operations GP-OP-CANCEL-JOB, ArcGIS Pro/arcpy 3.7.1.1904: Result.cancel() was accepted on the submitted job; status after the call was 8 (a fast task may already have reached a terminal state, which is not a "
     ),
+    "arcpy-naserver-standalone-probe": (
+        "honua-esri-compat/evidence/arcpy-standalone-probes-20260919/naserver-arcpy-nax.md - "
+        "ArcGIS Pro/arcpy 3.7.1.1904: arcpy.nax.Route stand-alone dictionary fails at the utility "
+        "service: Task 'GetTravelModes' on service 'test_service' was not found; NAServer service "
+        "and Route layer resources answer 404 while Route/solve returns a route over the seeded grid"
+    ),
+    "arcpy-vms-workspace-probe": (
+        "honua-esri-compat/evidence/arcpy-standalone-probes-20260919/versionmanagement-arcpy.md - "
+        "ArcGIS Pro/arcpy 3.7.1.1904: CreateVersion on the FeatureServer URL fails ERROR 000301 "
+        "workspace is of the wrong type after 14 GET admin/services/test_service.MapServer -> 404; "
+        "no request reaches the VersionManagementServer, which answers its own resources"
+    ),
     "arcpy-geocodeserver-geocodeaddresses": (
         "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-gp-geocodeserver.cert.json - "
         "extensions GC-EXT-01, ArcGIS Pro/arcpy 3.7.1.1904: arcpy Locator geocoded a single-line address through arcgis/rest/services/GeocodeServer ->"
@@ -577,36 +589,6 @@ NS = "not-started"
 def _blocked(reason: str) -> tuple[str, str]:
     return ("blocked", reason)
 
-
-# Two causes that were previously written as though they were external walls.
-# Both are switches inside our own fixture, so they are stated as such: a cause
-# that overstates the obstacle is how ready work stays parked.
-
-def _experimental_gate(capability: str, extra: str = "") -> str:
-    """Cause for a capability the fixture has switched off.
-
-    GET /api/v1/capabilities/manifest reports these as
-    reasonCode=experimental-disabled, and the 404 body names the config key
-    itself. Recording them as missing artifacts or server defects - which is what
-    four of these cells did - parks work that is one setting away from running.
-    Fetch that manifest authenticated: anonymously 60 of 77 capabilities read as
-    unavailable purely for lack of a token.
-    """
-    return (
-        f"the {capability} capability is switched off in the client-compat "
-        f"fixture (capability manifest reports "
-        f"reasonCode=experimental-disabled). Unblocked by setting "
-        f"Capabilities:Experimental:{capability}:Enabled=true." + extra
-    )
-
-
-PGROUTING_GATE = (
-    "pgRouting is not installed in the fixture's database image. It is available to "
-    "it: postgis/postgis:16-3.4 is Debian bullseye with the PGDG repo already "
-    "configured, and postgresql-16-pgrouting resolves to 3.8.0-1.pgdg110+1. "
-    "Unblocked by a derived image that installs the package and creates the "
-    "extension, not by waiting on anything upstream."
-)
 
 
 MATRIX: list[dict] = [
@@ -807,11 +789,8 @@ MATRIX: list[dict] = [
                 # dataFormat but json. GDAL ships no .geodatabase driver - only
                 # OpenFileGDB, for the .gdb directory format - so that format has no
                 # writer in our toolchain.
-                "pro-ui": _blocked(_experimental_gate(
-                    "sync.offline",
-                    " The surface is implemented, not missing. Once enabled, the "
-                    "residual limit to test is that replica delivery is Esri JSON "
-                    "only, while Pro offline requests dataFormat=sqlite.")),
+                "pro-ui": NS,  # sync.offline is enabled on the fixture (syncEnabled=true live);
+                #  the Pro offline-map flow has not been exercised yet
                 "arcpy": ("n/a-no-client", "arcpy-no-replica"),
                 "qgis-ui": ("n/a-no-client", "qgis-rest-no-advanced"),
                 "pyqgis": ("n/a-no-client", "qgis-rest-no-advanced")},
@@ -915,12 +894,17 @@ MATRIX: list[dict] = [
     {
         "protocol": "naserver", "version": "GeoServices REST",
         "operations": {
-            "route-solve": {"pro-ui": _blocked(PGROUTING_GATE),
-                            "arcpy": _blocked(PGROUTING_GATE),
+            # pgRouting is installed in the fixture image and the routing grid seed
+            # (tests/seed/client-compat-routing-v1.sql) makes Route/solve and
+            # ServiceArea/solveServiceArea return results. The clients still cannot
+            # bind the service: honua-server#5035 (no NAServer metadata resources,
+            # no NetworkAnalysisUtilities GetTravelModes/GetToolInfo tasks).
+            "route-solve": {"pro-ui": NS,
+                            "arcpy": ("fail", "arcpy-naserver-standalone-probe", "honua-server#5035"),
                             "qgis-ui": ("n/a-no-client", "qgis-registry"),
                             "pyqgis": ("n/a-no-client", "qgis-registry")},
-            "service-area": {"pro-ui": _blocked(PGROUTING_GATE),
-                             "arcpy": _blocked(PGROUTING_GATE),
+            "service-area": {"pro-ui": NS,
+                             "arcpy": ("fail", "arcpy-naserver-standalone-probe", "honua-server#5035"),
                              "qgis-ui": ("n/a-no-client", "qgis-registry"),
                              "pyqgis": ("n/a-no-client", "qgis-registry")},
         },
@@ -928,12 +912,16 @@ MATRIX: list[dict] = [
     {
         "protocol": "versionmanagementserver", "version": "GeoServices REST",
         "operations": {
-            "create-version": {"pro-ui": _blocked("versioning.branch capability is experimental"),
-                               "arcpy": _blocked("versioning.branch capability is experimental"),
+            # versioning.branch is enabled in the client-compat fixture and the
+            # VersionManagementServer answers its resources; arcpy's branch-versioning
+            # tools reject the feature service as a workspace because the Admin API
+            # service resource they validate against is not published (honua-server#5036).
+            "create-version": {"pro-ui": NS,
+                               "arcpy": ("fail", "arcpy-vms-workspace-probe", "honua-server#5036"),
                                "qgis-ui": ("n/a-no-client", "qgis-no-versioning"),
                                "pyqgis": ("n/a-no-client", "qgis-no-versioning")},
-            "reconcile-post": {"pro-ui": _blocked("versioning.branch capability is experimental"),
-                               "arcpy": _blocked("versioning.branch capability is experimental"),
+            "reconcile-post": {"pro-ui": NS,
+                               "arcpy": ("fail", "arcpy-vms-workspace-probe", "honua-server#5036"),
                                "qgis-ui": ("n/a-no-client", "qgis-no-versioning"),
                                "pyqgis": ("n/a-no-client", "qgis-no-versioning")},
         },
@@ -1055,12 +1043,8 @@ MATRIX: list[dict] = [
             # itself: the manifest reports serve.i3s-scene as
             # reasonCode=experimental-disabled. Whether a scene also needs
             # publishing cannot be established until the surface is switched on.
-            "scene-layer": {"pro-ui": _blocked(_experimental_gate(
-                                "serve.i3s-scene",
-                                " Previously recorded as 'no scene published; "
-                                "SceneServer returns code 404'; that 404 is the gate. "
-                                "Whether a scene artifact is also required is "
-                                "untestable until it is on.")),
+            "scene-layer": {"pro-ui": NS,  # serve.i3s-scene is enabled and the seeded scene
+                                    #  serves live; not yet exercised through Pro
                             "arcpy": ("pass", "arcpy-i3s-sceneserver-scene-layer"),
                             "qgis-ui": ("n/a-no-client", "qgis-registry"),
                             "pyqgis": ("n/a-no-client", "qgis-registry")},

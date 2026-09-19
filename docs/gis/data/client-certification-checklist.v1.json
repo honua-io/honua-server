@@ -24,16 +24,15 @@
     "per_lane": {
       "pro-ui": {
         "pass": 20,
-        "not-started": 46,
+        "not-started": 52,
         "n/a-no-client": 17,
         "n/a-superseded": 3,
-        "fail": 2,
-        "blocked": 6
+        "fail": 2
       },
       "arcpy": {
         "pass": 31,
         "n/a-no-client": 59,
-        "blocked": 4
+        "fail": 4
       },
       "qgis-ui": {
         "pass": 51,
@@ -1188,8 +1187,7 @@
       "operation": "replica-sync",
       "lanes": {
         "pro-ui": {
-          "state": "blocked",
-          "cause": "the sync.offline capability is switched off in the client-compat fixture (capability manifest reports reasonCode=experimental-disabled). Unblocked by setting Capabilities:Experimental:sync.offline:Enabled=true. The surface is implemented, not missing. Once enabled, the residual limit to test is that replica delivery is Esri JSON only, while Pro offline requests dataFormat=sqlite."
+          "state": "not-started"
         },
         "arcpy": {
           "state": "n/a-no-client",
@@ -1746,12 +1744,12 @@
       "operation": "route-solve",
       "lanes": {
         "pro-ui": {
-          "state": "blocked",
-          "cause": "pgRouting is not installed in the fixture's database image. It is available to it: postgis/postgis:16-3.4 is Debian bullseye with the PGDG repo already configured, and postgresql-16-pgrouting resolves to 3.8.0-1.pgdg110+1. Unblocked by a derived image that installs the package and creates the extension, not by waiting on anything upstream."
+          "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
-          "cause": "pgRouting is not installed in the fixture's database image. It is available to it: postgis/postgis:16-3.4 is Debian bullseye with the PGDG repo already configured, and postgresql-16-pgrouting resolves to 3.8.0-1.pgdg110+1. Unblocked by a derived image that installs the package and creates the extension, not by waiting on anything upstream."
+          "state": "fail",
+          "issue": "honua-server#5035",
+          "evidence": "honua-esri-compat/evidence/arcpy-standalone-probes-20260919/naserver-arcpy-nax.md - ArcGIS Pro/arcpy 3.7.1.1904: arcpy.nax.Route stand-alone dictionary fails at the utility service: Task 'GetTravelModes' on service 'test_service' was not found; NAServer service and Route layer resources answer 404 while Route/solve returns a route over the seeded grid"
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -1769,12 +1767,12 @@
       "operation": "service-area",
       "lanes": {
         "pro-ui": {
-          "state": "blocked",
-          "cause": "pgRouting is not installed in the fixture's database image. It is available to it: postgis/postgis:16-3.4 is Debian bullseye with the PGDG repo already configured, and postgresql-16-pgrouting resolves to 3.8.0-1.pgdg110+1. Unblocked by a derived image that installs the package and creates the extension, not by waiting on anything upstream."
+          "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
-          "cause": "pgRouting is not installed in the fixture's database image. It is available to it: postgis/postgis:16-3.4 is Debian bullseye with the PGDG repo already configured, and postgresql-16-pgrouting resolves to 3.8.0-1.pgdg110+1. Unblocked by a derived image that installs the package and creates the extension, not by waiting on anything upstream."
+          "state": "fail",
+          "issue": "honua-server#5035",
+          "evidence": "honua-esri-compat/evidence/arcpy-standalone-probes-20260919/naserver-arcpy-nax.md - ArcGIS Pro/arcpy 3.7.1.1904: arcpy.nax.Route stand-alone dictionary fails at the utility service: Task 'GetTravelModes' on service 'test_service' was not found; NAServer service and Route layer resources answer 404 while Route/solve returns a route over the seeded grid"
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -1792,12 +1790,12 @@
       "operation": "create-version",
       "lanes": {
         "pro-ui": {
-          "state": "blocked",
-          "cause": "versioning.branch capability is experimental"
+          "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
-          "cause": "versioning.branch capability is experimental"
+          "state": "fail",
+          "issue": "honua-server#5036",
+          "evidence": "honua-esri-compat/evidence/arcpy-standalone-probes-20260919/versionmanagement-arcpy.md - ArcGIS Pro/arcpy 3.7.1.1904: CreateVersion on the FeatureServer URL fails ERROR 000301 workspace is of the wrong type after 14 GET admin/services/test_service.MapServer -> 404; no request reaches the VersionManagementServer, which answers its own resources"
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -1815,12 +1813,12 @@
       "operation": "reconcile-post",
       "lanes": {
         "pro-ui": {
-          "state": "blocked",
-          "cause": "versioning.branch capability is experimental"
+          "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
-          "cause": "versioning.branch capability is experimental"
+          "state": "fail",
+          "issue": "honua-server#5036",
+          "evidence": "honua-esri-compat/evidence/arcpy-standalone-probes-20260919/versionmanagement-arcpy.md - ArcGIS Pro/arcpy 3.7.1.1904: CreateVersion on the FeatureServer URL fails ERROR 000301 workspace is of the wrong type after 14 GET admin/services/test_service.MapServer -> 404; no request reaches the VersionManagementServer, which answers its own resources"
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -2110,8 +2108,7 @@
       "operation": "scene-layer",
       "lanes": {
         "pro-ui": {
-          "state": "blocked",
-          "cause": "the serve.i3s-scene capability is switched off in the client-compat fixture (capability manifest reports reasonCode=experimental-disabled). Unblocked by setting Capabilities:Experimental:serve.i3s-scene:Enabled=true. Previously recorded as 'no scene published; SceneServer returns code 404'; that 404 is the gate. Whether a scene artifact is also required is untestable until it is on."
+          "state": "not-started"
         },
         "arcpy": {
           "state": "pass",
