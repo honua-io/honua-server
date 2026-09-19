@@ -46,6 +46,7 @@ What gets verified against actual desktop apps, browser clients, GDAL, BI tools,
 - **Client template runbook** — [`gis/CLIENT_TEMPLATE_RUNBOOK.md`](../../gis/CLIENT_TEMPLATE_RUNBOOK.md). How to run a manual client smoke-cert.
 - **Nightly gap report** — [`gis/gap-report.md`](../../gis/gap-report.md). Auto-refreshed by the `client-interop-nightly` workflow; do not hand-edit.
 - **Historical certification snapshot** — [`gis/certification-evidence/`](../../gis/certification-evidence). Timestamped snapshots retained for release evidence.
+- **Bounded 2026.1 roster on `nightly-2cc2213`** — [`client-certification-2cc2213/`](client-certification-2cc2213/README.md). Candidate-bound receipts for the 59 governed QGIS/GDAL/MapLibre/OWSLib/PySTAC cells (honua-server#3434), produced by `certification/bounded-roster/`; 43 pass, 15 fail, 1 blocked.
 
 ## Cross-server interop
 

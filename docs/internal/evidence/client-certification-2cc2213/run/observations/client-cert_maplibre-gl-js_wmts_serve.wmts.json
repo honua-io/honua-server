@@ -1,0 +1,67 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/maplibre-gl-js/wmts/serve.wmts",
+  "canonical_client": "MapLibre GL JS",
+  "client_lane": "js-maplibre",
+  "client_version": "5.7",
+  "client_version_detail": "maplibre-gl@5.7.3",
+  "surface": "wmts",
+  "operation": "serve.wmts",
+  "protocol_version": "1.0.0",
+  "protocol_profile": "WMTS 1.0.0 RESTful",
+  "started_at": "2026-09-16T21:48:38.793624Z",
+  "finished_at": "2026-09-16T21:48:46.030288Z",
+  "duration_ms": 7237,
+  "status": "pass",
+  "exercised_capabilities": [
+    "positive",
+    "negative",
+    "auth",
+    "crs-axis",
+    "media-schema"
+  ],
+  "summary": "all 5 checks passed across 5 governed facets",
+  "primary_request_url": "http://honua:5000/rest/services/browser_compat/MapServer/WMTS/2000/default/WebMercatorQuad/14/6331/2621.png",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "tile template from GetCapabilities rendered through a raster source",
+      "outcome": "pass",
+      "detail": "template /rest/services/browser_compat/MapServer/WMTS/2000/default/WebMercatorQuad/{z}/{y}/{x}.png; painted 65 px around pt-alpha",
+      "request_url": null,
+      "duration_ms": 973
+    },
+    {
+      "facet": "negative",
+      "name": "an unknown WMTS layer surfaces as a MapLibre tile error",
+      "outcome": "pass",
+      "detail": "responses [400]; nothing rendered; MapLibre error statuses [400]",
+      "request_url": null,
+      "duration_ms": 519
+    },
+    {
+      "facet": "auth",
+      "name": "transformRequest credentials gate the protected source",
+      "outcome": "pass",
+      "detail": "(drawn at pt-alpha, statuses) {'anonymous': (0, [(401, 'application/xml')]), 'wrong-api-key': (0, [(401, 'application/xml')]), 'expired-bearer': (0, [(401, 'application/xml')]), 'api-key': (65, [(200, 'image/png')]), 'oidc-bearer': (65, [(200, 'image/png')])}",
+      "request_url": null,
+      "duration_ms": 2839
+    },
+    {
+      "facet": "crs-axis",
+      "name": "EPSG:3857 content lands on pt-alpha's projected pixel and nowhere empty",
+      "outcome": "pass",
+      "detail": "painted pixels around pt-alpha 65; around empty sea 0",
+      "request_url": null,
+      "duration_ms": 1288
+    },
+    {
+      "facet": "media-schema",
+      "name": "responses decode as image/png",
+      "outcome": "pass",
+      "detail": "['image/png']; no MapLibre errors; {\"idle\": true, \"errors\": [], \"responses\": 9, \"status_types\": [[200, \"image/png\"]]}",
+      "request_url": null,
+      "duration_ms": 486
+    }
+  ]
+}

@@ -1,0 +1,49 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/gdal/flatgeobuf/feature-read",
+  "canonical_client": "GDAL",
+  "client_lane": "gdal-flatgeobuf",
+  "client_version": "3.8.4",
+  "client_version_detail": "GDAL 3.8.4, released 2024/02/08",
+  "surface": "flatgeobuf",
+  "operation": "feature-read",
+  "protocol_version": "FlatGeobuf 3",
+  "protocol_profile": "FeatureServer query f=fgb",
+  "started_at": "2026-09-16T21:42:22.816552Z",
+  "finished_at": "2026-09-16T21:42:22.880398Z",
+  "duration_ms": 64,
+  "status": "pass",
+  "exercised_capabilities": [
+    "positive",
+    "metadata",
+    "crs-axis"
+  ],
+  "summary": "all 3 checks passed across 3 governed facets",
+  "primary_request_url": "http://honua:5000/rest/services/cng/FeatureServer/1000/query?where=1%3D1&outFields=*&f=fgb",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "read every CNG feature from the FlatGeobuf response",
+      "outcome": "pass",
+      "detail": "6 features with verified buffers: ['Baytown', 'Dateline Post', 'Equator Station', 'Harbor City', 'Meridian Marker', 'Polar Outpost']",
+      "request_url": null,
+      "duration_ms": 39
+    },
+    {
+      "facet": "metadata",
+      "name": "header feature count, extent and typed schema describe the seeded layer",
+      "outcome": "pass",
+      "detail": "count 6; geometry Point; extent (-122.4194, 179.5, 0.0, 86.0); fields {'objectid': ('Integer64', 'None'), 'name': ('String', 'None'), 'category': ('String', 'None'), 'population': ('Integer', 'None'), 'ratio': ('Real', 'None'), 'active': ('Integer', 'Boolean'), 'observed_at': ('DateTime', 'None')}",
+      "request_url": null,
+      "duration_ms": 13
+    },
+    {
+      "facet": "crs-axis",
+      "name": "the header CRS is EPSG:4326 and coordinates are longitude/latitude",
+      "outcome": "pass",
+      "detail": "EPSG:4326, data axis mapping [2, 1]; Harbor City POINT (-122.4194 37.7749); Dateline Post x=179.5 stays in range",
+      "request_url": null,
+      "duration_ms": 11
+    }
+  ]
+}
