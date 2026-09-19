@@ -37,6 +37,12 @@ psql -v ON_ERROR_STOP=1 -f tests/seed/client-compat-v1.sql
 echo "Applying raster coverage seed: tests/seed/client-compat-raster-v1.sql"
 psql -v ON_ERROR_STOP=1 -f tests/seed/client-compat-raster-v1.sql
 
+# Routing fixture: pgRouting is installed and the server registers the default
+# network dataset, but no edges were seeded, so NAServer Route/ServiceArea
+# solves answered "No route could be solved". A small street grid closes that.
+echo "Applying routing grid seed: tests/seed/client-compat-routing-v1.sql"
+psql -v ON_ERROR_STOP=1 -f tests/seed/client-compat-routing-v1.sql
+
 echo "Applying browser-compat YAML seed: tests/seed/browser-compat.yaml"
 bash tests/seed/apply-yaml-seed.sh tests/seed/browser-compat.yaml
 
