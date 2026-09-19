@@ -123,3 +123,22 @@ identity check even when the fixture is on the right image.
 
 Native Pro desktop UI receipts are still separate. Each receipt above records
 `desktop_ui_exercised: false`, and no desktop UI pass is claimed.
+
+## Replay after the Pro SOAP discovery fixes (nightly d1fc139)
+
+On 2026-09-19 the existing fixture was restarted on NativeAOT source
+`d1fc139a64ce33c817bd927bacb2103714221515`, image
+`sha256:4bac230b40b0b07e396af54e2fc801420d2957bb31a6b6dafb3d402a8444d350`.
+This nightly contains the local-name SOAP argument binding and site-root fixes.
+The [fixture evidence](../../../../../../../docs/internal/evidence/gp-desktop-fixture-d1fc139/README.md#replay-evidence-on-this-nightly)
+records readiness, the earlier failed client run, and the fresh passing replays.
+
+| Receipt | Proof |
+| --- | --- |
+| [SDK and ArcPy scalar](candidate-d1fc139-arcpy-and-sdk-scalar-verified.json) | Four checks: each installed client imports all 119 tasks and returns independently expected area 12 with measure metadata. |
+| [ArcPy complex values](candidate-d1fc139-arcpy-complex-values-verified.json) | Six checks: Buffer, multivalue Union, FeatureSet Clip, attribute filter, near-table output and actual cancellation. |
+| [SOAP authorization](candidate-d1fc139-soap-auth-controls-verified.json) | 24 checks: authorized area result, 21 denials without job-state leaks, intact owner job after denied cancellations, and malformed authorized input. |
+
+These replays do not fulfill the operator-owned native Pro desktop criterion of
+#4614. A passing native receipt and screenshots are still required; all three
+files truthfully record `desktop_ui_exercised: false`.
