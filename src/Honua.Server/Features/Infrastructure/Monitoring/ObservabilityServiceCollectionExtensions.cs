@@ -191,6 +191,15 @@ internal static class ObservabilityServiceCollectionExtensions
                 // alone would store it and replay a transient fault for the TTL (#4980).
                 // Deliberately cached tile refusals are re-admitted by TileOutcomeOutputCachePolicy.
                 policy.AddPolicy<BypassOutputCacheOnErrorEnvelopePolicy>();
+                // A cached HEAD entry replays with Content-Length: 0 (the framework stamps the
+                // cached body length), which makes GDAL /vsicurl and other range-aware clients
+                // treat the resource as empty on the second probe. HEAD never touches the cache.
+                policy.AddPolicy<BypassOutputCacheOnHeadRequestPolicy>();
+                // Output caching never produces 206/Content-Range. Once an unranged GET has
+                // warmed an artifact's entry, every ranged GET within the TTL would be answered
+                // from cache as a whole-body 200 - GDAL /vsicurl, PMTiles and COG readers then
+                // download the entire object per read. Range requests skip lookup and storage.
+                policy.AddPolicy<BypassOutputCacheOnRangeRequestPolicy>();
                 // A Redis output cache outlives the deployment that changes what may be stored,
                 // so entries written by an earlier build — including the error envelopes the
                 // policy above now refuses — would keep being replayed until their TTL expires.
