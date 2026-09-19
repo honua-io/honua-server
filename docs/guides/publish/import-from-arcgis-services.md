@@ -12,6 +12,16 @@ You'll have a layer from a public ArcGIS REST service copied into PostGIS and pu
 
 The GeoServices import API discovers layers on a live ArcGIS Server / ArcGIS Online service, pages features into a PostGIS table, and auto-publishes the result as a Honua layer. This guide covers a simple one-service import; for full migrations (inventory scans, styles, batches) see [Migrate from ArcGIS Server](../migrate/from-arcgis-server.md).
 
+Source relationship declarations are retained during discovery, including their
+related table IDs, key fields, roles, cardinality and composite ownership flag.
+A single-layer import does not apply those cross-resource bindings. If the source
+declares relationships, its row transfer can succeed while the job reports
+`NeedsReview` with `fidelity.relationship.omitted` differences. Import the related
+resources and use a reviewed relationship manifest with the published target IDs;
+verify related-record queries before treating the dependency migration as complete.
+Composite ownership requires a separate behavior review. A name match or a complete
+row count is not proof that a relationship was recreated.
+
 > Prefer an SDK? The same endpoints are wrapped by `honua-sdk-js` and `honua-sdk-dotnet`. Also available in Honua Console — UI guide coming soon.
 
 ## Steps
