@@ -9698,6 +9698,7 @@
         "Honua.Server.Tests.FeatureServerEndpointTests.GetServiceMetadata_WithUnsupportedFormat_Returns400",
         "Honua.Server.Tests.FeatureServerEndpointTests.GetServiceMetadata_WithValidServiceId_ReturnsServiceInfo",
         "Honua.Server.Tests.FeatureServerEndpointTests.GetServiceMetadata_WithWrongHttpMethod_Returns405",
+        "Honua.Server.Tests.Features.FeatureServer.FeatureServerServiceRootRelationshipsTests.ServiceRoot_ListsTheRelationshipsItsLayersDeclare",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_AdminAndRoleControlsAgreeWithServiceAndLayerHandoffs",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_DeniedDirectory_UsesSoapFaultWithRestStatus",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_UsesSameRbacFilteredEntriesAsRestDirectory",
@@ -20459,6 +20460,20 @@
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_WithValidFile_ReturnsSuccess",
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_WithoutFile_Returns400",
         "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_WithoutWriteToken_ReturnsUnauthorizedForWritableOperations"
+      ],
+      "proof_ledger_surface": "feature-server",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-featureserver"
+    },
+    {
+      "id": "post-rest-services-serviceid-featureserver-layerid-featureid-attachments",
+      "route": "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments",
+      "method": "POST",
+      "family": "GeoServices REST FeatureServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.AttachmentEndpointTests.AttachmentInfos_WithFormPost_ReturnsTheSameListAsGet"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
