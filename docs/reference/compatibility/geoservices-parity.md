@@ -29,6 +29,31 @@ Status vocabulary:
 - **Stub** — the route exists and returns the spec-shaped response, but the backing data model is deferred; read-style stubs return empty/`false` results and mutation stubs return HTTP 400 rather than fabricating success.
 - **Not implemented** — the operation is not exposed.
 
+## Spatial query input budgets
+
+FeatureServer and MapServer layer and service `query` routes declare the
+`geometry` parameter as structured spatial input for both GET and POST. Its
+decoded UTF-8 size is bounded by `Limits:Geometry:MaxGeometrySize`, and coordinates
+across all parts are bounded by `Limits:Geometry:MaxVerticesPerGeometry`.
+The existing GeoServices geometry parser also validates shape and JSON depth;
+positions must contain finite ordinates. These limits do not simplify geometry.
+
+For POST, the same parameter validation applies to URL-encoded forms, multipart
+forms and supported JSON media types, using the query handler's body conversion
+rules. The body remains available to that handler after validation. Supported
+true-curve filters retain their original definition in the request; validation
+uses the existing densifier with an output-vertex budget shared across all parts.
+Expansion stops at that budget rather than allocating an oversized result first.
+
+Other text parameters and headers retain their existing limits and injection
+validation. A parameter named `geometry` on an unrelated route does not receive
+the spatial allowance. Clients should use the SDK's POST query transport for
+large geometries because intermediary URL limits still apply to GET requests.
+Oversized or invalid geometry returns the established validation error response
+with the applicable budget or shape error. Admission alone does not establish
+source-to-target result parity; migrated applications must reconcile their
+spatial query results against their source services.
+
 ## Service summary
 
 | Service | Parity | Implemented surface | Headline gaps |
