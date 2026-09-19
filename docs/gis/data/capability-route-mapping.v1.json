@@ -259,6 +259,11 @@
     },
     {
       "family": "Admin API",
+      "routePrefix": "/api/v1/admin/raster-artifacts",
+      "capability": "raster.cloud-cog-serving"
+    },
+    {
+      "family": "Admin API",
       "routePrefix": "/api/v1/admin/oidc",
       "capability": "identity.oidc"
     },
@@ -410,6 +415,10 @@
     {
       "family": "MVT + TileJSON + PMTiles",
       "capability": "serve.vector-tiles"
+    },
+    {
+      "family": "Cloud Optimized GeoTIFF",
+      "capability": "raster.cloud-cog-serving"
     },
     {
       "family": "Metrics",

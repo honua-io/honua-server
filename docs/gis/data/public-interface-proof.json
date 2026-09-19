@@ -3857,6 +3857,50 @@
       ]
     },
     {
+      "surfaceId": "cog-range-proxy",
+      "displayName": "Published Cloud Optimized GeoTIFF range proxy",
+      "surfaceKind": "http-route-family",
+      "protocol": "Cloud Optimized GeoTIFF",
+      "canonicalIdentifier": "/api/v1/rasters/cog/{artifactId}",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/rasters/cog/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus COG artifact endpoint integration tests (publish, HEAD length, 206 ranges, cache bypass)",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/CogArtifactEndpointTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "QGIS gdal provider over GDAL /vsicurl (pyqgis lane) and the desktop client checklist",
+          "executionLane": "ci:client-compat-pyqgis",
+          "evidenceLocations": [
+            "tests/python/pyqgis/test_cog_client_compat.py",
+            "tests/baselines/client-compat/pyqgis/desktop-qgis-cog.cert.json",
+            "docs/gis/CLIENT_CERTIFICATION_CHECKLIST.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": "Record the QGIS build and GDAL version in the .cert.json envelope."
+        }
+      ]
+    },
+    {
       "surfaceId": "terrain-rgb-tiles",
       "displayName": "Terrain-RGB elevation tiles",
       "surfaceKind": "http-route-family",
