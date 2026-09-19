@@ -169,6 +169,10 @@ internal static class ObservabilityServiceCollectionExtensions
             {
                 policy.AddPolicy<RouteTagOutputCachePolicy>();
                 policy.AddPolicy<AnonymousOnlyOutputCachePolicy>();
+                // A cached HEAD entry replays with Content-Length: 0 (the framework stamps the
+                // cached body length), which makes GDAL /vsicurl and other range-aware clients
+                // treat the resource as empty on the second probe. HEAD never touches the cache.
+                policy.AddPolicy<BypassOutputCacheOnHeadRequestPolicy>();
                 policy.VaryByValue(static context => ResolveTenantOutputCacheKey(context));
                 // Metadata responses (service directory, capabilities, collections, STAC,
                 // tiles, styles) are filtered by the process-wide license edition and

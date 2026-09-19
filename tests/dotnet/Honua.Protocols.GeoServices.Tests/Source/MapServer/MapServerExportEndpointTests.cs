@@ -207,6 +207,10 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
         export.Height.Should().Be(256);
         export.Extent.Should().NotBeNull();
         export.Href.Should().NotBeNullOrWhiteSpace();
+        // ArcGIS Pro, arcpy and QGIS request the href verbatim: it must be absolute, never /temp/{id}.
+        Uri.TryCreate(export.Href, UriKind.Absolute, out var href).Should().BeTrue(export.Href);
+        href!.Scheme.Should().BeOneOf("http", "https");
+        href.AbsolutePath.Should().StartWith("/temp/");
         export.Scale.Should().NotBeNull();
     }
 
@@ -305,6 +309,10 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
         export.Height.Should().Be(256);
         export.Extent.Should().NotBeNull();
         export.Href.Should().NotBeNullOrWhiteSpace();
+        // ArcGIS Pro, arcpy and QGIS request the href verbatim: it must be absolute, never /temp/{id}.
+        Uri.TryCreate(export.Href, UriKind.Absolute, out var href).Should().BeTrue(export.Href);
+        href!.Scheme.Should().BeOneOf("http", "https");
+        href.AbsolutePath.Should().StartWith("/temp/");
         export.Scale.Should().NotBeNull();
     }
 
@@ -884,6 +892,27 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
 
         // PA-070/PA-117: GeoServices always returns HTTP 200; error code is in the JSON body.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    // QGIS's ArcGIS Map Service provider draws its "(All layers)" node with "layers=show:"
+    // (a prefix and no ids). ArcGIS Server renders the default layer visibility for that;
+    // rejecting it left every QGIS "(All layers)" export with "Error 400: Bad Request".
+    [Theory]
+    [InlineData("show:")]
+    [InlineData("hide:")]
+    [InlineData("include:")]
+    [InlineData("exclude:")]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithPrefixOnlyLayers_RendersDefaultVisibility(string layers)
+    {
+        var response = await Fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&size=64,64&f=image&layers={layers}");
+
+        var content = await response.Content.ReadAsByteArrayAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, Encoding.UTF8.GetString(content));
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        content.Should().NotBeEmpty();
     }
 
     // #1302: MapServer/export must accept the GeoServices-standard layers visibility

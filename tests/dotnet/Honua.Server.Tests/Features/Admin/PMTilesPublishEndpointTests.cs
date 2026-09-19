@@ -284,6 +284,40 @@ public sealed class PMTilesPublishEndpointTests : IAsyncLifetime
         body.Length.Should().Be(0, "HEAD responses must not transfer a body");
     }
 
+    // GDAL /vsicurl (QGIS, ArcGIS Pro) sizes the archive from a HEAD before every open. The
+    // output cache used to store the first HEAD as an empty-bodied entry and replay it with
+    // Content-Length: 0, so only the first probe within the TTL ever saw the real size.
+    [IntegrationTest]
+    [Endpoint("HEAD /api/v1/tiles/pmtiles/{*artifactId}")]
+    public async Task PMTilesProxy_RepeatedHeadRequests_KeepReportingTheArtifactLength()
+    {
+        var jobId = await StartPublishJobAsync();
+        var (status, finalJson) = await WaitForJobCompletionAsync(jobId);
+        status.Should().Be(OperationStatus.Completed, "publish job must complete to test HEAD probes");
+        var descriptor = GetPropertyCaseInsensitive(finalJson!.RootElement, "publishedArtifact");
+        var artifactId = GetPropertyCaseInsensitive(descriptor, "artifactId").GetString()!;
+        var sizeBytes = GetPropertyCaseInsensitive(descriptor, "sizeBytes").GetInt64();
+        finalJson.Dispose();
+
+        for (var attempt = 1; attempt <= 3; attempt++)
+        {
+            using var headRequest = new HttpRequestMessage(HttpMethod.Head, $"/api/v1/tiles/pmtiles/{artifactId}");
+            headRequest.Headers.AcceptEncoding.ParseAdd("gzip, deflate, br");
+            using var headResponse = await _client.SendAsync(headRequest);
+
+            headResponse.StatusCode.Should().Be(HttpStatusCode.OK, $"HEAD attempt {attempt}");
+            headResponse.Content.Headers.ContentLength.Should().Be(
+                sizeBytes,
+                $"HEAD attempt {attempt} must report the artifact length, not a replayed empty cache entry");
+            headResponse.Headers.Contains("Age").Should().BeFalse(
+                $"HEAD attempt {attempt} must not be served from the output cache");
+        }
+
+        // A GET after the HEAD probes still serves the whole archive.
+        var whole = await _client.GetByteArrayAsync($"/api/v1/tiles/pmtiles/{artifactId}");
+        whole.LongLength.Should().Be(sizeBytes);
+    }
+
     [IntegrationTest]
     [Endpoint("HEAD /api/v1/tiles/pmtiles/{*artifactId}")]
     public async Task PMTilesProxy_HeadMissingArtifact_Returns404()

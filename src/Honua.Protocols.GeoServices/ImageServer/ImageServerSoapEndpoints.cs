@@ -484,15 +484,7 @@ internal static class ImageServerSoapEndpoints
     }
 
     internal static string ResolveImageUrl(HttpContext context, string href)
-    {
-        if (Uri.TryCreate(href, UriKind.Absolute, out var absoluteHref)
-            && (absoluteHref.Scheme == Uri.UriSchemeHttp || absoluteHref.Scheme == Uri.UriSchemeHttps))
-        {
-            return href;
-        }
-
-        return $"{BaseUrlResolver.GetBaseUrl(context)}{(href.StartsWith('/') ? string.Empty : "/")}{href}";
-    }
+        => GeoServicesImageHrefResolver.ResolveAbsoluteHref(context, href);
 
     private static async Task<IResult> HandleGetImageAsync(
         XElement operation,

@@ -1211,7 +1211,9 @@ public class ImageServerExportHandlerTests
         var result = await _handler.ExportImageAsync(context, 1, request);
 
         var jsonResult = result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>().Which;
-        jsonResult.Value!.Href.Should().Be("/temp/test.png");
+        // ArcGIS clients fetch the href verbatim, so the envelope must resolve the
+        // temporary-file path to an absolute URL (local origin here: no PUBLIC_BASE_URL).
+        jsonResult.Value!.Href.Should().Be("http://localhost/temp/test.png");
         jsonResult.Value.Width.Should().Be(256);
         jsonResult.Value.Height.Should().Be(256);
     }
