@@ -31,9 +31,9 @@
         "blocked": 6
       },
       "arcpy": {
-        "pass": 25,
+        "pass": 27,
         "n/a-no-client": 59,
-        "not-started": 6,
+        "not-started": 4,
         "blocked": 4
       },
       "qgis-ui": {
@@ -49,8 +49,8 @@
     },
     "overall": {
       "cells": 376,
-      "closed": 312,
-      "open": 64
+      "closed": 314,
+      "open": 62
     }
   },
   "rows": [
@@ -1078,7 +1078,8 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904, UI-FEAT-CREATE, UI-FEAT-EDIT, UI-FEAT-DELETE: Create Features digitised objectid 2044 (POST /FeatureServer/applyEdits 200, independent query returned the point at -122.3854312, 37.7664971), the Attributes pane changed value 60->61 and back (each state re-read from the service), and table Delete + Save Edits removed 2044 (independent count back to 12)"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260919-f-edit/certification/20260919T162438Z-desktop-arcgis-featureserver.cert.json - FS-OP-APPLY-EDITS (and ADD/UPDATE/DELETE-FEATURES, FS-OP-APPEND), ArcGIS Pro/arcpy 3.7.1.1904: da.InsertCursor over the token-bearing layer URL committed one feature (new objectid observed from a fresh ArcPy process), da.UpdateCursor.deleteRow removed it and the count returned to 10; Append added and cleanup restored the fixture; run verdict pass"
         },
         "qgis-ui": {
           "state": "pass",
@@ -2087,7 +2088,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260919-f-edit/certification/20260919T162438Z-desktop-arcgis-cog.cert.json - CERT-CONN-01, CERT-DISC-01, CERT-DISC-02, CERT-RNDR-01, ArcGIS Pro/arcpy 3.7.1.1904: HEAD 200 image/tiff, arcpy.Raster describes the published COG as 64x64/1 band over the fixture extent, HEAD length stable and Range 0-3 -> 206 with the TIFF magic after an unranged warm-up, RasterToNumPyArray at (-122.42, 37.77) = 100 == ImageServer identify"
         },
         "qgis-ui": {
           "state": "pass",

@@ -521,6 +521,22 @@ EV = {
     "pyqgis-stac-asset": _pyqgis("stac", "1.0.0", 4, cert_id="CERT-RNDR-URL-01"),
     "pyqgis-pmtiles": _pyqgis("pmtiles", "3", 6, cert_id="CERT-CONN-01"),
     "pyqgis-cog": _pyqgis("cog", "GeoTIFF", 4, cert_id="CERT-RNDR-01"),
+    "arcpy-cog-range-read": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260919-f-edit/certification/"
+        "20260919T162438Z-desktop-arcgis-cog.cert.json - CERT-CONN-01, CERT-DISC-01, CERT-DISC-02, "
+        "CERT-RNDR-01, ArcGIS Pro/arcpy 3.7.1.1904: HEAD 200 image/tiff, arcpy.Raster describes the "
+        "published COG as 64x64/1 band over the fixture extent, HEAD length stable and Range 0-3 -> 206 "
+        "with the TIFF magic after an unranged warm-up, RasterToNumPyArray at (-122.42, 37.77) = 100 "
+        "== ImageServer identify"
+    ),
+    "arcpy-featureserver-apply-edits": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260919-f-edit/certification/"
+        "20260919T162438Z-desktop-arcgis-featureserver.cert.json - FS-OP-APPLY-EDITS (and ADD/UPDATE/"
+        "DELETE-FEATURES, FS-OP-APPEND), ArcGIS Pro/arcpy 3.7.1.1904: da.InsertCursor over the "
+        "token-bearing layer URL committed one feature (new objectid observed from a fresh ArcPy process), "
+        "da.UpdateCursor.deleteRow removed it and the count returned to 10; Append added and cleanup "
+        "restored the fixture; run verdict pass"
+    ),
     "qgis-ui-ui-op-cog-range-read": (
         "honua-client-compat/evidence/native-qgis-cog-20260919-a/results.json - "
         f"UI-OP-COG-RANGE-READ, QGIS {QGIS_LTR_BUILD} (windows-computer-use receipt: Data "
@@ -741,7 +757,7 @@ MATRIX: list[dict] = [
             # "objectid: null" 1006 rejection did not reproduce on 3.44.14: the
             # form's Autogenerate OID is omitted from the payload and the insert
             # and delete commit (UI-OP-FS-APPLYEDITS).
-            "applyEdits": {"pro-ui": ("pass", "pro-matrix-ui-feat-edits"), "arcpy": NS,
+            "applyEdits": {"pro-ui": ("pass", "pro-matrix-ui-feat-edits"), "arcpy": ("pass", "arcpy-featureserver-apply-edits"),
                            "qgis-ui": ("pass", "qgis-ui-ui-op-fs-applyedits"),
                            "pyqgis": ("pass", "pyqgis-fs-applyedits")},
             # Both fails are tracked. #5012 is the per-feature attachments POST
@@ -1011,7 +1027,7 @@ MATRIX: list[dict] = [
             # POST /api/v1/admin/raster-artifacts/cog; the public range proxy
             # /api/v1/rasters/cog/{artifactId} answers HEAD with the real length
             # and 206 for ranges, which is what GDAL /vsicurl needs.
-            "range-read": {"pro-ui": NS, "arcpy": NS,
+            "range-read": {"pro-ui": NS, "arcpy": ("pass", "arcpy-cog-range-read"),
                            "qgis-ui": ("pass", "qgis-ui-ui-op-cog-range-read"),
                            "pyqgis": ("pass", "pyqgis-cog")},
         },
