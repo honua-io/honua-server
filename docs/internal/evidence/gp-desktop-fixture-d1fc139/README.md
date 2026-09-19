@@ -121,7 +121,18 @@ passes all 24 checks over verified HTTPS:
 - Denied cancellations leave the owner's successful job intact, and malformed
   authorized input returns 400.
 
-The receipt explicitly records `desktop_ui_exercised: false`.
+The [complex-value replay](https://github.com/honua-io/honua-esri-compat/actions/runs/35433375337)
+also passed on 2026-09-19. Its [downloaded receipt](../../../../tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/Fixtures/EsriToolboxReplay/candidate-d1fc139-arcpy-complex-values-verified.json)
+records six passing ArcPy checks: Buffer bounds and offset vertices with area
+between the independently derived octagon/circle bounds, multivalue Union area
+20, FeatureSet Clip area 4 with attributes preserved, attribute filter area 12,
+GenerateNearTable output with `NEAR_DIST=0`, and actual `Cancelled` status 8.
+The producer checks the loaded polygon type and spatial reference as well as
+geometry and values. Nodata does not apply to these vector fixtures.
+
+Producer revisions are `903a0663a0dad13c6276ddbf4bc7f530ef5bfe38` for the scalar
+replay and `16e1bd9c206ad2fb11f12bece58e1e604bf5e1ed` for the complex replay.
+All three receipts explicitly record `desktop_ui_exercised: false`.
 
 ## What is still open
 
