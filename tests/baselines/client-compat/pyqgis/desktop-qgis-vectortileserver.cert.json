@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260918T230324Z",
+  "run_date": "2026-09-18T23:03:24.632395+00:00",
+  "server_version": "unknown",
+  "server_commit": "",
+  "fixture_revision": "sha256:7cf9f0e0c2ba2de6aadef788b86e0371762627dfdb4fe5f1e4088cc993ba62d4",
+  "server_config_revision": "sha256:3eb71252f241546d4fa9fc23799296de3a75592f189449f056dadf103313998f",
+  "client_lane": "desktop-qgis",
+  "client_version": "3.44.14-Solothurn",
+  "protocol": "vectortileserver",
+  "protocol_version": "10.8",
+  "environment": "local",
+  "results": [
+    {
+      "test_case_id": "CERT-CONN-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 18,
+      "measured_delta": null,
+      "notes": "VectorTileServer info parsed by the arcgisvectortileservice provider for browser_compat: zoom 0..18.",
+      "evidence_ref": "http://honua:5000/rest/services/browser_compat/VectorTileServer?f=json"
+    },
+    {
+      "test_case_id": "CERT-RNDR-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 31,
+      "measured_delta": null,
+      "notes": "VectorTileServer served a 128-byte .pbf at 12/1583/655 and the arcgisvectortileservice provider rendered 31 opaque pixels over the seeded cluster.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SYM-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "The service style (1 style layers) converted into 3 QGIS vector tile style(s) through the arcgisvectortileservice provider.",
+      "evidence_ref": "http://honua:5000/rest/services/browser_compat/VectorTileServer/resources/styles/root.json"
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "passed": 3,
+    "failed": 0,
+    "skipped": 0,
+    "not_applicable": 0
+  },
+  "cite_results": null,
+  "extensions": []
+}

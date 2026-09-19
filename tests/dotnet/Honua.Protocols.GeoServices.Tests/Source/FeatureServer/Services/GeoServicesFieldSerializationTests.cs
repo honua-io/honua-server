@@ -178,6 +178,45 @@ public sealed class GeoServicesFieldSerializationTests
     }
 
     [Fact]
+    public async Task Streaming_Json_JsonFields_AreFlattenedToTheirJsonText()
+    {
+        // ArcGIS Pro reads attributes without geometry (returnGeometry=false, paged and
+        // ordered by objectid) through the streaming path. A jsonb array or object is
+        // advertised as esriFieldTypeString, and Pro drops every row whose string field
+        // carries a nested value, so the streaming shape must flatten it exactly like
+        // the materialised one does.
+        var formatter = new StreamingQueryFormatter(Options.Create(new LimitsOptions()));
+        var resource = CreateResource(
+            new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+            new MetadataV2Field { Name = "tags", Type = MetadataV2FieldType.Json },
+            new MetadataV2Field { Name = "numbers", Type = MetadataV2FieldType.Json },
+            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String });
+
+        using var tags = JsonDocument.Parse("""["red", "blue"]""");
+        using var numbers = JsonDocument.Parse("""{"a": 1, "b": [2, 3]}""");
+        var feature = Feature.Create(
+            1,
+            geometry: null,
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 1L,
+                ["tags"] = tags.RootElement.Clone(),
+                ["numbers"] = numbers.RootElement.Clone(),
+                ["name"] = "alpha"
+            }.ToImmutableDictionary());
+
+        var json = await StreamGeoServicesJsonAsync(formatter, feature, resource);
+        using var document = JsonDocument.Parse(json);
+        var attributes = document.RootElement.GetProperty("features")[0].GetProperty("attributes");
+
+        attributes.GetProperty("tags").ValueKind.Should().Be(JsonValueKind.String);
+        attributes.GetProperty("tags").GetString().Should().Be("""["red", "blue"]""");
+        attributes.GetProperty("numbers").ValueKind.Should().Be(JsonValueKind.String);
+        attributes.GetProperty("numbers").GetString().Should().Be("""{"a": 1, "b": [2, 3]}""");
+        attributes.GetProperty("name").GetString().Should().Be("alpha");
+    }
+
+    [Fact]
     public async Task Streaming_Json_DateValues_HandleDateTimeAndDateOnlyClrTypes()
     {
         var formatter = new StreamingQueryFormatter(Options.Create(new LimitsOptions()));

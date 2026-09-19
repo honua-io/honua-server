@@ -48,6 +48,14 @@ internal readonly record struct ImageServerLayerResolution(
     public string? ServiceId { get; init; }
 
     public RasterMergeStrategy MergeStrategy { get; init; }
+
+    /// <summary>
+    /// Whether the owning service enables the Elevation protocol, i.e. the operator has
+    /// declared this raster a height field. Drives <c>serviceDataType</c> on both the REST
+    /// and SOAP service documents, which is the only signal Esri clients use to treat an
+    /// image service as an elevation source.
+    /// </summary>
+    public bool ElevationEnabled { get; init; }
 }
 
 internal sealed class MetadataV2ImageServerLayerResolver(
@@ -142,6 +150,7 @@ internal sealed class MetadataV2ImageServerLayerResolver(
             null)
         {
             ServiceId = service.Metadata.Id,
+            ElevationEnabled = MetadataV2ServiceProtocols.IsProtocolEnabled(service, MetadataV2ServiceProtocols.Elevation),
             MergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(layer.Resource, mosaicRule: null)
         };
     }

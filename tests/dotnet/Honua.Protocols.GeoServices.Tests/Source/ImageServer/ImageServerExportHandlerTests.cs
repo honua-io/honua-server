@@ -983,6 +983,46 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithBsqFormat_RequestsRawSamplesAndStoresThemAsOctetStream()
+    {
+        // "bsq" is the raw band-sequential sample buffer Esri clients read image-service
+        // pixels through (SOAP ExportImage with esriImageBSQ maps onto it). It must reach
+        // the raster store as RasterFormat.Raw and be stored for the href as octet-stream.
+        SetupLayerAndRasters();
+        RasterQuery? capturedQuery = null;
+        string? storedContentType = null;
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedQuery = callInfo.ArgAt<RasterQuery>(2);
+                return CreateTestRasterResult() with { ContentType = "application/octet-stream", Data = new byte[256 * 256] };
+            });
+        _temporaryFileService.StoreTemporaryFileAsync(
+            Arg.Any<byte[]>(),
+            Arg.Any<string>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<ClaimsPrincipal?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                storedContentType = callInfo.ArgAt<string>(1);
+                return "/temp/test";
+            });
+        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
+            .Returns(new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 });
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(format: "bsq");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Value.OutputFormat.Should().Be(RasterFormat.Raw);
+        storedContentType.Should().Be("application/octet-stream");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ExportImageAsync_WithTiffCompression_MapsCompressionIntoRasterQuery()
     {
         SetupLayerAndRasters();
@@ -1171,7 +1211,9 @@ public class ImageServerExportHandlerTests
         var result = await _handler.ExportImageAsync(context, 1, request);
 
         var jsonResult = result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>().Which;
-        jsonResult.Value!.Href.Should().Be("/temp/test.png");
+        // ArcGIS clients fetch the href verbatim, so the envelope must resolve the
+        // temporary-file path to an absolute URL (local origin here: no PUBLIC_BASE_URL).
+        jsonResult.Value!.Href.Should().Be("http://localhost/temp/test.png");
         jsonResult.Value.Width.Should().Be(256);
         jsonResult.Value.Height.Should().Be(256);
     }

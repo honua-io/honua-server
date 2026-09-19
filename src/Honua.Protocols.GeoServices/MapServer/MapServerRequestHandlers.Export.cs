@@ -235,7 +235,10 @@ internal static partial class MapServerEndpoints
 
             var timeValue = GetValue(values, "time");
             var timeRelationValue = NormalizeTimeRelation(GetValue(values, "timeRelation"));
-            var layersValue = GetValue(values, "layers");
+            // QGIS's ArcGIS Map Service provider renders its "(All layers)" node with
+            // "layers=show:" (a visibility prefix and no ids); ArcGIS Server treats that as the
+            // default layer visibility, so normalise it to "no layers parameter" instead of 400.
+            var layersValue = NormalizeEmptyLayerSpec(GetValue(values, "layers"));
             if (HasEmptyLayerToken(layersValue))
             {
                 return StandardErrorHelpers.CreateBadRequest(context, "layers parameter contains an empty layer id.");
@@ -566,7 +569,7 @@ internal static partial class MapServerEndpoints
 
             var response = new ExportImageResponse
             {
-                Href = imageUrl,
+                Href = GeoServicesImageHrefResolver.ResolveAbsoluteHref(context, imageUrl),
                 Width = imageWidth,
                 Height = imageHeight,
                 Extent = new EsriExtent
@@ -1794,6 +1797,30 @@ internal static partial class MapServerEndpoints
         }
 
         return (ExportLayerVisibility.Show, ParseLayerIds(spec));
+    }
+
+    /// <summary>
+    /// Returns null when the layers parameter is only a visibility prefix ("show:", "hide:",
+    /// "include:" or "exclude:") with no layer ids, so the export falls back to the service's
+    /// default layer visibility; any other value is returned unchanged.
+    /// </summary>
+    internal static string? NormalizeEmptyLayerSpec(string? layersParam)
+    {
+        if (string.IsNullOrWhiteSpace(layersParam))
+        {
+            return layersParam;
+        }
+
+        var spec = layersParam.Trim();
+        foreach (var prefix in new[] { "show:", "hide:", "include:", "exclude:" })
+        {
+            if (spec.Length == prefix.Length && spec.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+        }
+
+        return layersParam;
     }
 
     private static bool HasEmptyLayerToken(string? layersParam)

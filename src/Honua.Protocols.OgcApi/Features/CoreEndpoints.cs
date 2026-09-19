@@ -238,7 +238,17 @@ internal static class CoreEndpoints
                 // class promoted here because the exact-candidate lane validates
                 // the queryables schema, while its CQL2/filter probes are not a
                 // complete class suite.
-                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables"
+                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables",
+
+                // OGC API Features Part 5 - Schemas. There is no ETS for Part 5;
+                // the class is proven by the PyQGIS client-compat lane instead:
+                // QGIS 3.44 reads the schema link only when this class is
+                // declared, and builds a layer's fields from it. Without it an
+                // empty collection loads with no fields and cannot take an
+                // insert, which is what test_oapif_transactions_client_compat
+                // exercises against an empty scratch collection.
+                "http://www.opengis.net/spec/ogcapi-features-5/1.0/conf/schemas",
+                "http://www.opengis.net/spec/ogcapi-features-5/1.0/conf/core-roles-features"
 
             // Filtering, CQL2, and Part 4 remain implemented or
             // test-covered in places, but are not advertised until an exact

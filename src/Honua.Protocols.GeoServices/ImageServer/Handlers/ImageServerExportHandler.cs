@@ -273,7 +273,7 @@ internal sealed class ImageServerExportHandler
             // omit the extent entirely instead of inventing a 1×1 envelope.
             var exportResponse = new ExportImageResponse
             {
-                Href = imageUrl,
+                Href = GeoServicesImageHrefResolver.ResolveAbsoluteHref(context, imageUrl),
                 Width = result.Width,
                 Height = result.Height,
                 Extent = BuildExtent(extent, request.Bbox, bboxSrid: SpatialReferenceHelpers.TryParseSrid(request.BboxSr), result.Srid),
@@ -480,7 +480,7 @@ internal sealed class ImageServerExportHandler
             cancellationToken: cancellationToken);
         var response = new ExportImageResponse
         {
-            Href = imageUrl,
+            Href = GeoServicesImageHrefResolver.ResolveAbsoluteHref(context, imageUrl),
             Width = raster.Width,
             Height = raster.Height,
             Extent = BuildExtent(raster.Extent, request.Bbox, bboxSrid, raster.Srid),
@@ -682,10 +682,10 @@ internal sealed class ImageServerExportHandler
             }
 
             if (!TryParseExportFormat(request.Format, out var outputFormat) ||
-                outputFormat is RasterFormat.COG or RasterFormat.Raw)
+                outputFormat is RasterFormat.COG)
             {
                 error = new ExportParameterParseError(
-                    "format must be one of the supported export formats: png, png8, png24, png32, jpg, jpeg, jpgpng, tiff, tif.");
+                    "format must be one of the supported export formats: png, png8, png24, png32, jpg, jpeg, jpgpng, tiff, tif, bsq.");
                 return false;
             }
 
