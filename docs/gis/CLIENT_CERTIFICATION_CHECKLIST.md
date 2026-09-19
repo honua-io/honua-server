@@ -180,12 +180,12 @@ lane × protocol pair appears with no checklist row.
 
 | Lane | Client build | Closed | Open | Breakdown |
 |---|---|---|---|---|
-| `pro-ui` | ArcGIS Pro 3.7.1.1904 | 28/94 | 66 | blocked 7, fail 2, n/a-no-client 11, n/a-superseded 3, not-started 57, pass 14 |
-| `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 83/94 | 11 | blocked 5, n/a-no-client 59, not-started 6, pass 24 |
+| `pro-ui` | ArcGIS Pro 3.7.1.1904 | 28/94 | 66 | blocked 6, fail 2, n/a-no-client 11, n/a-superseded 3, not-started 58, pass 14 |
+| `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 84/94 | 10 | blocked 4, n/a-no-client 59, not-started 6, pass 25 |
 | `qgis-ui` | QGIS 3.44.14 LTR | 45/94 | 49 | blocked 1, n/a-no-client 38, n/a-superseded 3, not-started 48, pass 4 |
 | `pyqgis` | QGIS 3.44.14 LTR | 93/94 | 1 | blocked 1, n/a-no-client 40, n/a-superseded 3, pass 50 |
 
-**249 of 376 cells closed; 127 open.**
+**250 of 376 cells closed; 126 open.**
 
 ### Cells
 
@@ -445,6 +445,6 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| point-query | blocked | blocked | n/a-no-client | n/a-no-client |
+| point-query | not-started | pass | n/a-no-client | n/a-no-client |
 
 <!-- END GENERATED TABLES -->

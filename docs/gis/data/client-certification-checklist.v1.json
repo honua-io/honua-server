@@ -24,17 +24,17 @@
     "per_lane": {
       "pro-ui": {
         "pass": 14,
-        "not-started": 57,
+        "not-started": 58,
         "n/a-superseded": 3,
         "n/a-no-client": 11,
         "fail": 2,
-        "blocked": 7
+        "blocked": 6
       },
       "arcpy": {
-        "pass": 24,
+        "pass": 25,
         "n/a-no-client": 59,
         "not-started": 6,
-        "blocked": 5
+        "blocked": 4
       },
       "qgis-ui": {
         "not-started": 48,
@@ -52,8 +52,8 @@
     },
     "overall": {
       "cells": 376,
-      "closed": 249,
-      "open": 127
+      "closed": 250,
+      "open": 126
     }
   },
   "rows": [
@@ -1301,7 +1301,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-imageserver.cert.json - operations IS-OP-IDENTIFY, ArcGIS Pro/arcpy 3.7.1.1904: GetCellValue (identify) at (-122.4150,37.7650) -> NoData"
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-imageserver.cert.json - operations IS-OP-IDENTIFY, ArcGIS Pro/arcpy 3.7.1.1904: GetCellValue (identify) at (-122.4150,37.7650) -> 180, matching the service's identify ('180')"
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -2093,12 +2093,11 @@
       "operation": "point-query",
       "lanes": {
         "pro-ui": {
-          "state": "blocked",
-          "cause": "the native /elevation surface answers 200 once the Elevation protocol is enabled, but no client treats this as an elevation service: getSamples is implemented and returns values, while serviceDataType is the hard-coded literal esriImageServiceDataTypeGeneric in ImageServerMetadataHandler and ImageServerSoapEndpoints. esriImageServiceDataTypeElevation and elevationInfo appear nowhere in src/, so making it data-driven is a server change, not a fixture one."
+          "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
-          "cause": "the native /elevation surface answers 200 once the Elevation protocol is enabled, but no client treats this as an elevation service: getSamples is implemented and returns values, while serviceDataType is the hard-coded literal esriImageServiceDataTypeGeneric in ImageServerMetadataHandler and ImageServerSoapEndpoints. esriImageServiceDataTypeElevation and elevationInfo appear nowhere in src/, so making it data-driven is a server change, not a fixture one."
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-imageserver.cert.json - extensions IS-EXT-ELEV-01, ArcGIS Pro/arcpy 3.7.1.1904: arcpy read elevation 180 at (-122.4150,37.7650) through RasterToNumPyArray, matching the service's identify ('180'); serviceDataType=esriImageServiceDataTypeElevation"
         },
         "qgis-ui": {
           "state": "n/a-no-client",

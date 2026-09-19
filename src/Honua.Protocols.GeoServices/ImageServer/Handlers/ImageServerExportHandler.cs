@@ -682,10 +682,10 @@ internal sealed class ImageServerExportHandler
             }
 
             if (!TryParseExportFormat(request.Format, out var outputFormat) ||
-                outputFormat is RasterFormat.COG or RasterFormat.Raw)
+                outputFormat is RasterFormat.COG)
             {
                 error = new ExportParameterParseError(
-                    "format must be one of the supported export formats: png, png8, png24, png32, jpg, jpeg, jpgpng, tiff, tif.");
+                    "format must be one of the supported export formats: png, png8, png24, png32, jpg, jpeg, jpgpng, tiff, tif, bsq.");
                 return false;
             }
 

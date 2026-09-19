@@ -373,7 +373,7 @@ internal static class ImageServerSoapEndpoints
             new XElement("DefaultCompressionQuality", 75),
             new XElement("DefaultResamplingMethod", "RSP_BilinearInterpolation"),
             new XElement("DefaultMosaicMethod", "esriMosaic" + ImageServerMosaicRule.DefaultMosaicMethod),
-            new XElement("SupportBSQ", false),
+            new XElement("SupportBSQ", true),
             new XElement("SupportsTime", false),
             new XElement("MensurationCapabilities", "Basic"),
             new XElement("HasRasterAttributeTable", false),
@@ -767,7 +767,7 @@ internal static class ImageServerSoapEndpoints
         var format = MapImageFormat(FindDescendantValue(imageType, "ImageFormat"));
         if (format is null)
         {
-            error = "ImageFormat must be PNG, JPG, or TIFF.";
+            error = "ImageFormat must be PNG, JPG, TIFF, or BSQ.";
             return false;
         }
 
@@ -1173,6 +1173,10 @@ internal static class ImageServerSoapEndpoints
             null or "" or "esriImagePNG" or "esriImagePNG24" or "esriImagePNG32" => "png",
             "esriImageJPG" => "jpg",
             "esriImageTIFF" => "tiff",
+            // Raw band-sequential samples: how ArcGIS Pro and arcpy read image-service
+            // pixels (Raster, RasterToNumPyArray, GetCellValue all ExportImage as BSQ and
+            // fetch the ImageURL). SupportBSQ in GetServiceInfo advertises it.
+            "esriImageBSQ" => "bsq",
             _ => null
         };
 
@@ -1181,6 +1185,7 @@ internal static class ImageServerSoapEndpoints
         {
             "jpg" or "jpeg" => "esriImageJPG",
             "tif" or "tiff" => "esriImageTIFF",
+            "bsq" => "esriImageBSQ",
             _ => "esriImagePNG"
         };
 

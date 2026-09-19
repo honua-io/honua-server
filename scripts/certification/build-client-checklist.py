@@ -316,7 +316,7 @@ EV = {
     ),
     "arcpy-imageserver-identify": (
         "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-imageserver.cert.json - "
-        "operations IS-OP-IDENTIFY, ArcGIS Pro/arcpy 3.7.1.1904: GetCellValue (identify) at (-122.4150,37.7650) -> NoData"
+        "operations IS-OP-IDENTIFY, ArcGIS Pro/arcpy 3.7.1.1904: GetCellValue (identify) at (-122.4150,37.7650) -> 180, matching the service's identify ('180')"
     ),
     "arcpy-wms-getcapabilities": (
         "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-ogc-wms.cert.json - "
@@ -369,6 +369,10 @@ EV = {
     "arcpy-geocodeserver-reversegeocode": (
         "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-gp-geocodeserver.cert.json - "
         "extensions GC-EXT-02, ArcGIS Pro/arcpy 3.7.1.1904: arcpy Locator reverse-geocoded (-122.42, 37.77) through arcgis/rest/services/GeocodeServer"
+    ),
+    "arcpy-elevation-point-query": (
+        "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-imageserver.cert.json - "
+        "extensions IS-EXT-ELEV-01, ArcGIS Pro/arcpy 3.7.1.1904: arcpy read elevation 180 at (-122.4150,37.7650) through RasterToNumPyArray, matching the service's identify ('180'); serviceDataType=esriImageServiceDataTypeElevation"
     ),
     "pro-matrix": (
         "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - "
@@ -465,16 +469,6 @@ COG_GAP = (
     "stamped Accept-Ranges: none. The only range-capable public route is the "
     "scene asset endpoint, so closing this needs a COG fixture served from there "
     "- not a client change, since QGIS opens a COG natively over /vsicurl/."
-)
-
-ESRI_ELEVATION_IDENTITY = (
-    "the native /elevation surface answers 200 once the Elevation protocol is "
-    "enabled, but no client treats this as an elevation service: getSamples is "
-    "implemented and returns values, while serviceDataType is the hard-coded "
-    "literal esriImageServiceDataTypeGeneric in ImageServerMetadataHandler and "
-    "ImageServerSoapEndpoints. esriImageServiceDataTypeElevation and "
-    "elevationInfo appear nowhere in src/, so making it data-driven is a server "
-    "change, not a fixture one."
 )
 
 PGROUTING_GATE = (
@@ -959,8 +953,8 @@ MATRIX: list[dict] = [
             # list. Restored in tests/seed/client-compat-v1.sql, and
             # /elevation/0/value now answers 200. The native surface is reachable
             # and merely unexercised; the Esri elevation identity is a real gap.
-            "point-query": {"pro-ui": _blocked(ESRI_ELEVATION_IDENTITY),
-                            "arcpy": _blocked(ESRI_ELEVATION_IDENTITY),
+            "point-query": {"pro-ui": NS,
+                            "arcpy": ("pass", "arcpy-elevation-point-query"),
                             "qgis-ui": ("n/a-no-client", "qgis-no-imageserver-raster"),
                             "pyqgis": ("n/a-no-client", "qgis-no-imageserver-raster")},
         },
