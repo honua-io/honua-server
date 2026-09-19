@@ -93,6 +93,14 @@ failed on 2026-09-17 while importing ArcPy, with Windows fatal exception
 The successful installed-client receipts on `2cc2213` remain historical evidence;
 they do not prove the `d1fc139` replay.
 
+[Attempt 2](https://github.com/honua-io/honua-esri-compat/actions/runs/35151843737/attempts/2)
+passed on 2026-09-19 after the fixture restart. The downloaded
+[SDK/ArcPy receipt](../../../../tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/Fixtures/EsriToolboxReplay/candidate-d1fc139-arcpy-and-sdk-scalar-verified.json)
+records all four checks passing: ArcGIS API for Python 2.4.3 and ArcPy 3.7.1 each
+import all 119 tasks and remotely compute area 12 with the expected measure,
+units, SRID and geometry-type metadata. The original failure remains visible in
+the run history; the later pass does not establish its root cause.
+
 On 2026-09-19 the owned fixture was found stopped after a host shutdown. Its
 existing containers were restarted in dependency order (Postgres, private Redis,
 server, TLS proxy, then tracer); its image, catalog and TLS certificate were
