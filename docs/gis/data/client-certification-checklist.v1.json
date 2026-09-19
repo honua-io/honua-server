@@ -23,8 +23,8 @@
   "summary": {
     "per_lane": {
       "pro-ui": {
-        "pass": 14,
-        "not-started": 58,
+        "pass": 20,
+        "not-started": 52,
         "n/a-superseded": 3,
         "n/a-no-client": 11,
         "fail": 2,
@@ -51,8 +51,8 @@
     },
     "overall": {
       "cells": 376,
-      "closed": 298,
-      "open": 78
+      "closed": 304,
+      "open": 72
     }
   },
   "rows": [
@@ -108,7 +108,8 @@
       "operation": "GetFeatureInfo",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904, UI-SERVICE-WMS: Explore pop-up on the WMS layer returned the text/plain GetFeatureInfo body 'Layer=UI Points, category=A, name=ui-point-07, objectid=10, value=60', matching the service and the server-side GetFeatureInfo in all three advertised formats"
         },
         "arcpy": {
           "state": "n/a-no-client",
@@ -309,7 +310,8 @@
       "operation": "DescribeFeatureType",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904, UI-SERVICE-WFS: the WFS layer added through Add WFS Layer(s) carries the typed schema DescribeFeatureType declares (GmlID, objectid, name, category, value, Shape Point) over 5 successful WFS requests, and its rows match the REST oracle"
         },
         "arcpy": {
           "state": "pass",
@@ -1068,7 +1070,8 @@
       "operation": "applyEdits",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904, UI-FEAT-CREATE, UI-FEAT-EDIT, UI-FEAT-DELETE: Create Features digitised objectid 2044 (POST /FeatureServer/applyEdits 200, independent query returned the point at -122.3854312, 37.7664971), the Attributes pane changed value 60->61 and back (each state re-read from the service), and table Delete + Save Edits removed 2044 (independent count back to 12)"
         },
         "arcpy": {
           "state": "not-started"
@@ -1250,7 +1253,8 @@
       "operation": "identify",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904, UI-SERVICE-MAP: Explore pop-up on the MapServer layer returned UI Points (1) name ui-point-07, objectid 10, category A, value 60, matching the service; Pro issued POST MapServer/identify 200"
         },
         "arcpy": {
           "state": "n/a-no-client",
@@ -1272,7 +1276,8 @@
       "operation": "legend",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904, UI-SERVICE-MAP: the Map Image Layer's sublayer UI Points resolved the server legend entry 'Default' (POST MapServer/legend 200) alongside the export render"
         },
         "arcpy": {
           "state": "n/a-no-client",
@@ -1406,7 +1411,8 @@
       "operation": "style",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904, UI-SERVICE-ESRI-VECTOR: the Vector Tile Service layer rendered with the service's resources/styles/root.json (Mapbox v8, layer esri-circle over source-layer 'layer'), all 12 fixture points styled, re-rendered after the map was reopened"
         },
         "arcpy": {
           "state": "pass",

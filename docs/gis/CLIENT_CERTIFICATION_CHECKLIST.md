@@ -180,12 +180,12 @@ lane × protocol pair appears with no checklist row.
 
 | Lane | Client build | Closed | Open | Breakdown |
 |---|---|---|---|---|
-| `pro-ui` | ArcGIS Pro 3.7.1.1904 | 28/94 | 66 | blocked 6, fail 2, n/a-no-client 11, n/a-superseded 3, not-started 58, pass 14 |
+| `pro-ui` | ArcGIS Pro 3.7.1.1904 | 34/94 | 60 | blocked 6, fail 2, n/a-no-client 11, n/a-superseded 3, not-started 52, pass 20 |
 | `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 84/94 | 10 | blocked 4, n/a-no-client 59, not-started 6, pass 25 |
 | `qgis-ui` | QGIS 3.44.14 LTR | 93/94 | 1 | blocked 1, n/a-no-client 40, n/a-superseded 3, pass 50 |
 | `pyqgis` | QGIS 3.44.14 LTR | 93/94 | 1 | blocked 1, n/a-no-client 40, n/a-superseded 3, pass 50 |
 
-**298 of 376 cells closed; 78 open.**
+**304 of 376 cells closed; 72 open.**
 
 ### Cells
 
@@ -199,7 +199,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 |---|---|---|---|---|
 | GetCapabilities | pass | pass | pass | pass |
 | GetMap | pass | pass | pass | pass |
-| GetFeatureInfo | not-started | n/a-no-client | pass | pass |
+| GetFeatureInfo | pass | n/a-no-client | pass | pass |
 | GetLegendGraphic | not-started | n/a-no-client | pass | pass |
 | styles | not-started | n/a-no-client | pass | pass |
 | time-dimension | not-started | n/a-no-client | pass | pass |
@@ -218,7 +218,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | GetCapabilities | pass | pass | pass | pass |
-| DescribeFeatureType | not-started | pass | pass | pass |
+| DescribeFeatureType | pass | pass | pass | pass |
 | GetFeature | pass | pass | pass | pass |
 | GetPropertyValue | not-started | n/a-no-client | n/a-no-client | n/a-no-client |
 | Transaction-Insert | not-started | n/a-no-client | pass | pass |
@@ -287,7 +287,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 | layer-metadata | pass | pass | pass | pass |
 | query | pass | pass | pass | pass |
 | identify | pass | pass | pass | pass |
-| applyEdits | not-started | not-started | pass | pass |
+| applyEdits | pass | not-started | pass | pass |
 | attachments | fail | n/a-no-client | n/a-no-client | n/a-no-client |
 | relatedRecords | fail | n/a-no-client | n/a-no-client | n/a-no-client |
 | statistics | not-started | pass | n/a-no-client | n/a-no-client |
@@ -300,8 +300,8 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 |---|---|---|---|---|
 | service-info | pass | pass | pass | pass |
 | export | pass | pass | pass | pass |
-| identify | not-started | n/a-no-client | pass | pass |
-| legend | not-started | n/a-no-client | pass | pass |
+| identify | pass | n/a-no-client | pass | pass |
+| legend | pass | n/a-no-client | pass | pass |
 
 #### imageserver GeoServices REST
 
@@ -317,7 +317,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 |---|---|---|---|---|
 | service-info | pass | pass | pass | pass |
 | tile | pass | pass | pass | pass |
-| style | not-started | pass | pass | pass |
+| style | pass | pass | pass | pass |
 
 #### gpserver GeoServices REST
 

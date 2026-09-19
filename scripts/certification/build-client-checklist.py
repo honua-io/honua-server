@@ -391,6 +391,30 @@ EV = {
         "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - "
         "ArcGIS Pro 3.7.1.1904"
     ),
+    "pro-matrix-ui-feat-edits": (
+        "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - "
+        "ArcGIS Pro 3.7.1.1904, UI-FEAT-CREATE, UI-FEAT-EDIT, UI-FEAT-DELETE: Create Features digitised objectid 2044 (POST /FeatureServer/applyEdits 200, independent query returned the point at -122.3854312, 37.7664971), the Attributes pane changed value 60->61 and back (each state re-read from the service), and table Delete + Save Edits removed 2044 (independent count back to 12)"
+    ),
+    "pro-matrix-ui-service-map-identify": (
+        "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - "
+        "ArcGIS Pro 3.7.1.1904, UI-SERVICE-MAP: Explore pop-up on the MapServer layer returned UI Points (1) name ui-point-07, objectid 10, category A, value 60, matching the service; Pro issued POST MapServer/identify 200"
+    ),
+    "pro-matrix-ui-service-map-legend": (
+        "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - "
+        "ArcGIS Pro 3.7.1.1904, UI-SERVICE-MAP: the Map Image Layer's sublayer UI Points resolved the server legend entry 'Default' (POST MapServer/legend 200) alongside the export render"
+    ),
+    "pro-matrix-ui-service-wms-featureinfo": (
+        "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - "
+        "ArcGIS Pro 3.7.1.1904, UI-SERVICE-WMS: Explore pop-up on the WMS layer returned the text/plain GetFeatureInfo body 'Layer=UI Points, category=A, name=ui-point-07, objectid=10, value=60', matching the service and the server-side GetFeatureInfo in all three advertised formats"
+    ),
+    "pro-matrix-ui-service-vts-style": (
+        "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - "
+        "ArcGIS Pro 3.7.1.1904, UI-SERVICE-ESRI-VECTOR: the Vector Tile Service layer rendered with the service's resources/styles/root.json (Mapbox v8, layer esri-circle over source-layer 'layer'), all 12 fixture points styled, re-rendered after the map was reopened"
+    ),
+    "pro-matrix-ui-service-wfs-describe": (
+        "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - "
+        "ArcGIS Pro 3.7.1.1904, UI-SERVICE-WFS: the WFS layer added through Add WFS Layer(s) carries the typed schema DescribeFeatureType declares (GmlID, objectid, name, category, value, Shape Point) over 5 successful WFS requests, and its rows match the REST oracle"
+    ),
     "qgis-ltr": (
         "honua-client-compat/evidence/native-qgis-ltr-20260916-a/results.json - "
         "QGIS 3.44.14-Solothurn"
@@ -548,7 +572,7 @@ MATRIX: list[dict] = [
                                 "pyqgis": ("pass", "pyqgis-wms-caps")},
             "GetMap": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-wms-getmap"),
                        "qgis-ui": ("pass", "qgis-ui-ui-op-wms-getmap"), "pyqgis": ("pass", "pyqgis-wms-getmap")},
-            "GetFeatureInfo": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-no-wms-identify"), "qgis-ui": ("pass", "qgis-ui-ui-op-wms-getfeatureinfo"),
+            "GetFeatureInfo": {"pro-ui": ("pass", "pro-matrix-ui-service-wms-featureinfo"), "arcpy": ("n/a-no-client", "arcpy-no-wms-identify"), "qgis-ui": ("pass", "qgis-ui-ui-op-wms-getfeatureinfo"),
                                "pyqgis": ("pass", "pyqgis-wms-featureinfo")},
             "GetLegendGraphic": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-modules"),
                                  "qgis-ui": ("pass", "qgis-ui-ui-op-wms-getlegendgraphic"),
@@ -583,7 +607,7 @@ MATRIX: list[dict] = [
         "operations": {
             "GetCapabilities": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-wfs-getcapabilities"),
                                 "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-getcapabilities"), "pyqgis": ("pass", "pyqgis-wfs")},
-            "DescribeFeatureType": {"pro-ui": NS, "arcpy": ("pass", "arcpy-wfs-describefeaturetype"), "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-describefeaturetype"),
+            "DescribeFeatureType": {"pro-ui": ("pass", "pro-matrix-ui-service-wfs-describe"), "arcpy": ("pass", "arcpy-wfs-describefeaturetype"), "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-describefeaturetype"),
                                     "pyqgis": ("pass", "pyqgis-wfs")},
             "GetFeature": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-wfs-getfeature"),
                            "qgis-ui": ("pass", "qgis-ui-ui-op-wfs-getfeature"), "pyqgis": ("pass", "pyqgis-wfs")},
@@ -703,7 +727,7 @@ MATRIX: list[dict] = [
             # "objectid: null" 1006 rejection did not reproduce on 3.44.14: the
             # form's Autogenerate OID is omitted from the payload and the insert
             # and delete commit (UI-OP-FS-APPLYEDITS).
-            "applyEdits": {"pro-ui": NS, "arcpy": NS,
+            "applyEdits": {"pro-ui": ("pass", "pro-matrix-ui-feat-edits"), "arcpy": NS,
                            "qgis-ui": ("pass", "qgis-ui-ui-op-fs-applyedits"),
                            "pyqgis": ("pass", "pyqgis-fs-applyedits")},
             # Both fails are tracked. #5012 is the per-feature attachments POST
@@ -754,9 +778,9 @@ MATRIX: list[dict] = [
                              "qgis-ui": ("pass", "qgis-ui-ui-op-mapserver-service-info"), "pyqgis": ("pass", "pyqgis-ms-info")},
             "export": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-mapserver-export"),
                        "qgis-ui": ("pass", "qgis-ui-ui-op-mapserver-export"), "pyqgis": ("pass", "pyqgis-ms-export")},
-            "identify": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-rest-only-ops"), "qgis-ui": ("pass", "qgis-ui-ui-op-mapserver-identify"),
+            "identify": {"pro-ui": ("pass", "pro-matrix-ui-service-map-identify"), "arcpy": ("n/a-no-client", "arcpy-rest-only-ops"), "qgis-ui": ("pass", "qgis-ui-ui-op-mapserver-identify"),
                          "pyqgis": ("pass", "pyqgis-ms-identify")},
-            "legend": {"pro-ui": NS, "arcpy": ("n/a-no-client", "arcpy-rest-only-ops"), "qgis-ui": ("pass", "qgis-ui-ui-op-mapserver-legend"),
+            "legend": {"pro-ui": ("pass", "pro-matrix-ui-service-map-legend"), "arcpy": ("n/a-no-client", "arcpy-rest-only-ops"), "qgis-ui": ("pass", "qgis-ui-ui-op-mapserver-legend"),
                        "pyqgis": ("pass", "pyqgis-ms-legend")},
         },
     },
@@ -781,7 +805,7 @@ MATRIX: list[dict] = [
                              "qgis-ui": ("pass", "qgis-ui-ui-op-vts-service-info"), "pyqgis": ("pass", "pyqgis-vts-info")},
             "tile": {"pro-ui": ("pass", "pro-matrix"), "arcpy": ("pass", "arcpy-vectortileserver-tile"),
                      "qgis-ui": ("pass", "qgis-ui-ui-op-vts-tile"), "pyqgis": ("pass", "pyqgis-vts-tile")},
-            "style": {"pro-ui": NS, "arcpy": ("pass", "arcpy-vectortileserver-style"), "qgis-ui": ("pass", "qgis-ui-ui-op-vts-style"),
+            "style": {"pro-ui": ("pass", "pro-matrix-ui-service-vts-style"), "arcpy": ("pass", "arcpy-vectortileserver-style"), "qgis-ui": ("pass", "qgis-ui-ui-op-vts-style"),
                       "pyqgis": ("pass", "pyqgis-vts-style")},
         },
     },
