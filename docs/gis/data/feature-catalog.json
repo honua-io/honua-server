@@ -5416,6 +5416,23 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "get-api-v1-rasters-cog-artifactid",
+      "route": "/api/v1/rasters/cog/{*artifactId}",
+      "method": "GET",
+      "family": "Cloud Optimized GeoTIFF",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_FullGet_ServesTheExportedBytesVerbatim",
+        "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_RangeAfterAWarmFullGet_IsNotServedFromTheOutputCache",
+        "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_RangeRequest_Returns206WithExactlyThoseBytes",
+        "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_UnknownArtifact_Returns404"
+      ],
+      "proof_ledger_surface": "cog-range-proxy",
+      "maturity": "implemented",
+      "capability": "raster.cloud-cog-serving"
+    },
+    {
       "id": "get-api-v1-realtime-incidents-sse",
       "route": "/api/v1/realtime/incidents/sse",
       "method": "GET",
@@ -13680,6 +13697,20 @@
       "capability": "serve.wfs"
     },
     {
+      "id": "head-api-v1-rasters-cog-artifactid",
+      "route": "/api/v1/rasters/cog/{*artifactId}",
+      "method": "HEAD",
+      "family": "Cloud Optimized GeoTIFF",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_Head_ReportsTheArtifactLengthOnEveryProbe"
+      ],
+      "proof_ledger_surface": "cog-range-proxy",
+      "maturity": "implemented",
+      "capability": "raster.cloud-cog-serving"
+    },
+    {
       "id": "head-api-v1-tiles-pmtiles-artifactid",
       "route": "/api/v1/tiles/pmtiles/{*artifactId}",
       "method": "HEAD",
@@ -16543,6 +16574,21 @@
       "proof_ledger_surface": "control-plane-admin",
       "maturity": "implemented",
       "capability": "admin.control-plane"
+    },
+    {
+      "id": "post-api-v1-admin-raster-artifacts-cog",
+      "route": "/api/v1/admin/raster-artifacts/cog",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.PublishCog_ExportsThePrimaryRasterUnderADeterministicKey",
+        "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.PublishCog_UnknownLayer_Returns404"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "raster.cloud-cog-serving"
     },
     {
       "id": "post-api-v1-admin-rate-limits",

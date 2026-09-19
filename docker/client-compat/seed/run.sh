@@ -67,6 +67,13 @@ else
     echo "WARNING: PMTiles publish did not complete; the pmtiles certification cell will fail on a 404." >&2
 fi
 
+echo "Publishing the Cloud Optimized GeoTIFF for test_service/0"
+if python3 /usr/local/bin/publish-cog.py; then
+    :
+else
+    echo "WARNING: COG publish did not complete; the cog certification cells will fail on a 404." >&2
+fi
+
 echo "Generating the 3D Tiles / I3S scene from browser_compat/2002"
 if python3 /usr/local/bin/publish-scene.py; then
     :

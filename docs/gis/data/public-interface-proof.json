@@ -3861,6 +3861,50 @@
       ]
     },
     {
+      "surfaceId": "cog-range-proxy",
+      "displayName": "Published Cloud Optimized GeoTIFF range proxy",
+      "surfaceKind": "http-route-family",
+      "protocol": "Cloud Optimized GeoTIFF",
+      "canonicalIdentifier": "/api/v1/rasters/cog/{artifactId}",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/rasters/cog/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus COG artifact endpoint integration tests (publish, HEAD length, 206 ranges, cache bypass)",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/CogArtifactEndpointTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "QGIS gdal provider over GDAL /vsicurl (pyqgis lane) and the desktop client checklist",
+          "executionLane": "ci:client-compat-pyqgis",
+          "evidenceLocations": [
+            "tests/python/pyqgis/test_cog_client_compat.py",
+            "tests/baselines/client-compat/pyqgis/desktop-qgis-cog.cert.json",
+            "docs/gis/CLIENT_CERTIFICATION_CHECKLIST.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": "Record the QGIS build and GDAL version in the .cert.json envelope."
+        }
+      ]
+    },
+    {
       "surfaceId": "terrain-rgb-tiles",
       "displayName": "Terrain-RGB elevation tiles",
       "surfaceKind": "http-route-family",
@@ -4169,7 +4213,7 @@
         },
         {
           "proofClass": "scenario-depth",
-          "proofMechanism": "Deterministic tileset.json/GLB byte-equality across runs, ECEF projection of WGS-84 vertices, EXT_structural_metadata attribute round-trip (Integer\u2192INT32 with clamping warnings, BigInteger\u2192INT64 with 8-byte bufferView alignment and coercion warnings, all-null STRING column emits a >=1-byte values bufferView), fan triangulation of polygon outer rings, polygon extrusion bounding-region uses BaseHeightField/extrusionHeight (not vertex Z), layer-not-found / unsupported-geometry / feature-cap / scene-id-conflict / options-invalid problem-detail mapping, staging-then-promote concurrency contract (loser's 409 leaves winner's final-path bytes byte-identical), Postgres feature-source cancellation throws between batches, and scene-registry registration after a successful generation are exercised by core and server tests",
+          "proofMechanism": "Deterministic tileset.json/GLB byte-equality across runs, ECEF projection of WGS-84 vertices, EXT_structural_metadata attribute round-trip (Integer→INT32 with clamping warnings, BigInteger→INT64 with 8-byte bufferView alignment and coercion warnings, all-null STRING column emits a >=1-byte values bufferView), fan triangulation of polygon outer rings, polygon extrusion bounding-region uses BaseHeightField/extrusionHeight (not vertex Z), layer-not-found / unsupported-geometry / feature-cap / scene-id-conflict / options-invalid problem-detail mapping, staging-then-promote concurrency contract (loser's 409 leaves winner's final-path bytes byte-identical), Postgres feature-source cancellation throws between batches, and scene-registry registration after a successful generation are exercised by core and server tests",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
             "tests/dotnet/Honua.Core.Tests/Features/Scene/Generation/EcefCoordinateTransformTests.cs",
@@ -4381,7 +4425,7 @@
       "displayName": "MCP operator surface (server-owned)",
       "surfaceKind": "http-route-family",
       "protocol": "MCP",
-      "canonicalIdentifier": "POST /mcp \u2014 JSON-RPC 2.0 operator surface",
+      "canonicalIdentifier": "POST /mcp — JSON-RPC 2.0 operator surface",
       "parentSurfaceId": null,
       "endpointPrefixes": [],
       "endpointExactMatches": [
