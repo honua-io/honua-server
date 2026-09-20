@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1136,
+    "total": 1138,
     "byStatus": {
-      "not-executable": 1123,
+      "not-executable": 1125,
       "unvalidated": 10,
       "passed": 3
     }
@@ -12894,6 +12894,32 @@
       "language": "plain"
     },
     {
+      "id": "2f3d6ffbf95029e3",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/client-certification-2cc2213/README.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 151,
+      "language": "plain"
+    },
+    {
+      "id": "6bb08aabc1ac2dfe",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/client-certification-2cc2213/README.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 2,
+      "line": 163,
+      "language": "plain"
+    },
+    {
       "id": "f3c13419fefa6dcd",
       "kind": "docs-fence",
       "path": "docs/internal/evidence/client-certification-2cc2213/fix-4996/README.md",
@@ -13332,7 +13358,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 111,
+      "line": 119,
       "language": "json"
     },
     {
@@ -13345,7 +13371,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 146,
+      "line": 154,
       "language": "bash"
     },
     {
@@ -13358,7 +13384,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 156,
+      "line": 164,
       "language": "bash"
     },
     {
