@@ -1,0 +1,125 @@
+# Candidate overlay for the bounded 2026.1 external-client roster (honua-server#3434).
+#
+# Layered over docker/client-compat/compose.yml by run-roster.sh:
+#
+#   * `honua` runs the immutable imaged candidate, addressed by index digest, so no
+#     lane can certify a locally built server. run-roster.sh resolves and pulls the
+#     digest and refuses anything that is not `ghcr.io/honua-io/honua-server@sha256:`.
+#   * Clients never reach `honua` directly. They sit on the `roster-clients`
+#     network, where the only host named `honua` is the `wire` recording proxy, and
+#     the proxy forwards to the candidate with the original Host header. Every
+#     request a client makes is therefore logged on the wire (proxy/record_wire.py)
+#     and joined to the cell that made it.
+#   * Paths come from ROSTER_HOME/ROSTER_REPO_ROOT because compose resolves an
+#     overlay's relative paths against the base file's directory.
+#   * Lane images are built from pinned client releases (lanes/*/Dockerfile). The
+#     client network is internal: a lane cannot fetch anything at run time.
+
+services:
+  honua:
+    image: ${HONUA_CANDIDATE_IMAGE:?set HONUA_CANDIDATE_IMAGE to the candidate image digest reference}
+    pull_policy: never
+    build: !reset null
+    networks:
+      compat:
+        aliases:
+          - candidate-origin
+
+  wire:
+    profiles: ["roster"]
+    image: python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254
+    command: ["python", "/proxy/record_wire.py"]
+    environment:
+      WIRE_LOG: /wire/wire.jsonl
+      WIRE_PUBLIC_ORIGIN: http://honua:5000
+      WIRE_UPSTREAM: http://candidate-origin:5000
+      WIRE_ASSETS: /assets
+    volumes:
+      - ${ROSTER_HOME}/proxy:/proxy:ro
+      - ${ROSTER_RUN_DIR}/assets:/assets:ro
+      - ${ROSTER_RUN_DIR:?set ROSTER_RUN_DIR}/wire:/wire
+    networks:
+      compat: {}
+      roster-clients:
+        aliases:
+          - honua
+
+  lane-python:
+    profiles: ["roster"]
+    build:
+      context: ${ROSTER_HOME:?set ROSTER_HOME}
+      dockerfile: lanes/python/Dockerfile
+    image: honua-roster/lane-python:local
+    environment: &lane-env
+      ROSTER_BASE_URL: http://honua:5000
+      ROSTER_OBSERVATIONS: /run/observations
+      ROSTER_REQUIREMENTS: /roster/requirements.json
+      PYTHONPATH: /roster/lib:/roster
+      # The fixture's auth profile, read by run-roster.sh from the client-compat
+      # `honua` service definition so this overlay never restates it.
+      HONUA_CERT_API_KEY: ${ROSTER_FIXTURE_ADMIN_KEY:?run through run-roster.sh}
+      HONUA_CERT_OIDC_ISSUER: ${ROSTER_FIXTURE_OIDC_ISSUER:?run through run-roster.sh}
+      HONUA_CERT_OIDC_AUDIENCE: ${ROSTER_FIXTURE_OIDC_AUDIENCE:?run through run-roster.sh}
+      HONUA_CERT_OIDC_SIGNING_KEY: ${ROSTER_FIXTURE_OIDC_SIGNING_KEY:?run through run-roster.sh}
+    volumes: &lane-volumes
+      - ${ROSTER_HOME}/lib:/roster/lib:ro
+      - ${ROSTER_HOME}/lanes:/roster/lanes:ro
+      - ${ROSTER_REPO_ROOT}/tests/python/shared:/roster/shared:ro
+      - ${ROSTER_REPO_ROOT:?set ROSTER_REPO_ROOT}/certification/client-protocol-requirements.v1.json:/roster/requirements.json:ro
+      - ${ROSTER_RUN_DIR}/observations:/run/observations
+    networks:
+      - roster-clients
+
+  lane-gdal-3.8.4:
+    profiles: ["roster"]
+    build:
+      context: ${ROSTER_HOME:?set ROSTER_HOME}
+      dockerfile: lanes/gdal/Dockerfile
+      args:
+        GDAL_IMAGE: ghcr.io/osgeo/gdal:ubuntu-small-3.8.4
+    image: honua-roster/lane-gdal:3.8.4
+    environment: *lane-env
+    volumes: *lane-volumes
+    networks:
+      - roster-clients
+
+  lane-gdal-3.13.3:
+    profiles: ["roster"]
+    build:
+      context: ${ROSTER_HOME:?set ROSTER_HOME}
+      dockerfile: lanes/gdal/Dockerfile
+      args:
+        GDAL_IMAGE: ghcr.io/osgeo/gdal:ubuntu-small-3.13.3
+    image: honua-roster/lane-gdal:3.13.3
+    environment: *lane-env
+    volumes: *lane-volumes
+    networks:
+      - roster-clients
+
+  lane-qgis:
+    profiles: ["roster"]
+    build:
+      context: ${ROSTER_HOME:?set ROSTER_HOME}
+      dockerfile: lanes/qgis/Dockerfile
+    image: honua-roster/lane-qgis:3.44.13
+    environment:
+      <<: *lane-env
+      QT_QPA_PLATFORM: offscreen
+    volumes: *lane-volumes
+    networks:
+      - roster-clients
+
+  lane-maplibre:
+    profiles: ["roster"]
+    build:
+      context: ${ROSTER_HOME:?set ROSTER_HOME}
+      dockerfile: lanes/maplibre/Dockerfile
+    image: honua-roster/lane-maplibre:local
+    environment: *lane-env
+    volumes: *lane-volumes
+    networks:
+      - roster-clients
+
+networks:
+  roster-clients:
+    internal: true

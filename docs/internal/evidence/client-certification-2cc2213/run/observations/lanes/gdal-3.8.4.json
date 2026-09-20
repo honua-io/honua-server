@@ -1,0 +1,27 @@
+{
+  "lane": "gdal-3.8.4",
+  "started_at": "2026-09-16T21:42:14.260044Z",
+  "python": "3.10.12",
+  "platform": "Linux-6.6.114.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
+  "cells": [
+    "gdal_ogc_cells.features_landing",
+    "gdal_ogc_cells.features_conformance",
+    "gdal_ogc_cells.features_collections",
+    "gdal_ogc_cells.features_collection",
+    "gdal_ogc_cells.features_items",
+    "gdal_ogc_cells.features_item",
+    "gdal_ogc_cells.features_queryables",
+    "gdal_ogc_cells.features_transactions",
+    "gdal_ogc_cells.features_service",
+    "gdal_ogc_cells.wfs_operation",
+    "gdal_ogc_cells.wfs_service",
+    "gdal_ogc_cells.wcs_operation",
+    "gdal_ogc_cells.wcs_service",
+    "gdal_ogc_cells.coverages_service",
+    "gdal_cng_cells.flatgeobuf",
+    "gdal_cng_cells.cog_dataset_read"
+  ],
+  "client_identity": "GDAL 3.8.4, released 2024/02/08",
+  "finished_at": "2026-09-16T21:44:29.188723Z",
+  "harness_failures": []
+}

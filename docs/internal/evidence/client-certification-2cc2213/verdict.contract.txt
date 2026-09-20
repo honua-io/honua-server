@@ -1,0 +1,7 @@
+mode=contract requiredCells=59 {'pass': 0, 'fail': 0, 'skip': 59}
+  no-candidate: 3
+  producer-lane-not-emitted: 29
+  producer-surface-not-emitted: 27
+  owner honua-io/honua-release: 3
+  owner honua-io/honua-server: 56
+FAIL: the bounded 2026.1 external-client roster is not certified. Missing, skipped, stale, mismatched and source-built required cells fail closed.
