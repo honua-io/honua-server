@@ -6717,7 +6717,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesCollectionIdentityTests.Collections_ResourceAliases_ReturnUniqueAccessibleCollectionIds",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesDepthTests.CoverageEndpoints_WithUnknownCollection_ReturnNotFound",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesDepthTests.MetadataEndpoints_WithUnknownQueryParameter_ReturnBadRequest",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesEndpointsTests.Coverages_MetadataEndpoints_ReturnOgcCoverageDocuments"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesEndpointsTests.Coverages_MetadataEndpoints_ReturnOgcCoverageDocuments",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesEndpointsTests.Coverages_SignedByteRange_ReportsEightBitType"
       ],
       "proof_ledger_surface": "ogc-api-coverages",
       "maturity": "preview",
@@ -6742,15 +6743,18 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesDepthTests.Coverage_MultipleScalingParameters_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesDepthTests.Coverage_UnsupportedFormatParameters_ReturnBadRequest",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesDepthTests.Coverage_Wgs84Output_OmitsContentCrsHeader",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesEndpointsTests.Coverages_GeographicSubset_OrderIndependent_AndGdalScalingAlias",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesEndpointsTests.Coverages_GetCoverage_AcceptPng_ReturnsPng",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesEndpointsTests.Coverages_GetCoverage_AntimeridianBbox_UsesSplitClipGeometry",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesEndpointsTests.Coverages_GetCoverage_DefaultGeoTiffWithBbox_ReturnsRasterBytesAndHeaders",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesEndpointsTests.Coverages_GetCoverage_ProjectedBboxScaling_UsesStorageCrsUnits",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesEndpointsTests.Coverages_GetCoverage_PropertiesCrsAndScale_MapToRasterQuery",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesEndpointsTests.Coverages_GetCoverage_UnsupportedParameters_ReturnProblemDetails",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesEndpointsTests.Coverages_InvalidSubsetOrAmbiguousScaling_RejectsBeforeExport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesOversizeDepthTests.Coverage_EmptyExportResult_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesOversizeDepthTests.Coverage_NativeSizeExceedsCap_WithBboxOrDownsampling_Succeeds",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesOversizeDepthTests.Coverage_NativeSizeExceedsCap_WithoutSubsetting_ReturnsBadRequest"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesOversizeDepthTests.Coverage_NativeSizeExceedsCap_WithoutSubsetting_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Coverages.OgcCoveragesOversizeDepthTests.Coverage_NativeSubset_EnforcesClippedGridCapBeforeExport"
       ],
       "proof_ledger_surface": "ogc-api-coverages",
       "maturity": "preview",
