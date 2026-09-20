@@ -449,6 +449,17 @@ internal static class ServiceSettingsEndpoints
                         };
                     }
 
+                    if (request.Editing?.SupportsAttachments is bool supportsAttachments)
+                    {
+                        // Preserve existing editor tracking and policy. For a legacy resource,
+                        // use the canonical model defaults without changing publication grants.
+                        var editing = next.Editing ?? new MetadataV2ResourceEditing();
+                        next = next with
+                        {
+                            Editing = editing with { SupportsAttachments = supportsAttachments }
+                        };
+                    }
+
                     if (request.TimeInfo is { } incomingTimeInfo)
                     {
                         var existingTemporal = next.Temporal;
@@ -502,7 +513,8 @@ internal static class ServiceSettingsEndpoints
                     ApiResponse<object>.Failure($"Layer {layerId} not found in service '{serviceName}'."));
             }
 
-            await InvalidateServiceCatalogCacheAsync(context, graphProvider, serviceName, logger).ConfigureAwait(false);
+            await InvalidateServiceCatalogCacheAsync(context, graphProvider, serviceName, logger,
+                request.Editing?.SupportsAttachments.HasValue == true ? persistedResource.Metadata.Id : null).ConfigureAwait(false);
 
             var response = BuildLayerMetadataResponse(
                 layerId,
@@ -510,7 +522,8 @@ internal static class ServiceSettingsEndpoints
                 persistedResource.Metadata,
                 persistedResource.AccessPolicy,
                 persistedResource.Temporal,
-                updatedRasterMosaic);
+                updatedRasterMosaic,
+                persistedResource.Editing);
             return TypedResults.Ok(ApiResponse<LayerMetadataResponse>.CreateSuccess(response));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -604,12 +617,14 @@ internal static class ServiceSettingsEndpoints
         MetadataV2ObjectMetadata metadata,
         AccessPolicy? accessPolicy,
         MetadataV2ResourceTemporal? timeInfo,
-        RasterMosaicResponse? rasterMosaic)
+        RasterMosaicResponse? rasterMosaic,
+        MetadataV2ResourceEditing? editing)
     {
         return new LayerMetadataResponse
         {
             LayerId = layerId,
             LayerName = layerName,
+            Editing = editing,
             License = metadata.License,
             Attribution = metadata.Attribution,
             Publisher = metadata.Publisher,
@@ -803,7 +818,8 @@ internal static class ServiceSettingsEndpoints
         HttpContext context,
         IMetadataV2GraphProvider graphProvider,
         string serviceName,
-        ILogger<ServiceSettingsEndpointsLog> logger)
+        ILogger<ServiceSettingsEndpointsLog> logger,
+        string? resourceId = null)
     {
         var cacheInvalidator = context.RequestServices.GetService<OutputCacheInvalidationService>();
         if (cacheInvalidator == null)
@@ -822,7 +838,7 @@ internal static class ServiceSettingsEndpoints
                 .Select(s => s.Metadata.Id)
                 .ToHashSet(StringComparer.Ordinal);
             var layerIds = snapshot.Graph.Publications
-                .Where(p => serviceIds.Contains(p.ServiceId))
+                .Where(p => serviceIds.Contains(p.ServiceId) || (resourceId is not null && p.ResourceId == resourceId))
                 .Select(p => p.LayerIndex)
                 .Where(layerIndex => layerIndex.HasValue)
                 .Select(layerIndex => layerIndex!.Value)
@@ -830,7 +846,7 @@ internal static class ServiceSettingsEndpoints
                 .ToArray();
 
             await cacheInvalidator.InvalidateServiceCatalogAsync(
-                serviceName,
+                resourceId is null ? serviceName : null,
                 layerIds,
                 context.RequestAborted).ConfigureAwait(false);
         }
