@@ -69,22 +69,25 @@ public sealed class BranchVersioningMetadataTests : IAsyncLifetime
         }
 
         await fixture.InitializeAsync();
-        using var service = await ReadAsync($"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer?f=json");
+        BranchVersioningPublicationFixture.ConfigureManagedPublications(fixture);
+        using var service = await ReadAsync($"/rest/services/{BranchVersioningPublicationFixture.ServiceName}/FeatureServer?f=json");
         service.RootElement.GetProperty("supportsBranchVersioning").GetBoolean().Should().Be(expectedManagement);
         service.RootElement.GetProperty("hasVersionedData").GetBoolean().Should().Be(expectedData);
         service.RootElement.GetProperty("isDataVersioned").GetBoolean().Should().Be(expectedData);
         service.RootElement.TryGetProperty("versionManagementServerUrl", out _).Should().Be(expectedManagement);
+        service.RootElement.GetProperty("layers").GetArrayLength().Should().BeGreaterThan(0,
+            "the host-gate fixture must exercise representative managed publications");
 
         foreach (var layer in service.RootElement.GetProperty("layers").EnumerateArray())
         {
             using var metadata = await ReadAsync(
-                $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{layer.GetProperty("id").GetInt32()}?f=json");
+                $"/rest/services/{BranchVersioningPublicationFixture.ServiceName}/FeatureServer/{layer.GetProperty("id").GetInt32()}?f=json");
             metadata.RootElement.GetProperty("isDataVersioned").GetBoolean().Should().Be(expectedData);
             metadata.RootElement.GetProperty("isDataBranchVersioned").GetBoolean().Should().Be(expectedData,
                 "native ArcPy distinguishes branch-versioned feature classes using layer metadata");
         }
 
-        using var admin = await ReadAsync($"/admin/services/{WebAppFixture.TestServiceId}.MapServer?f=json");
+        using var admin = await ReadAsync($"/admin/services/{BranchVersioningPublicationFixture.ServiceName}.MapServer?f=json");
         admin.RootElement.GetProperty("properties").GetProperty("isBranchVersioned").GetString()
             .Should().Be(expectedData ? "true" : "false");
         admin.RootElement.GetProperty("extensions").EnumerateArray()
@@ -94,8 +97,16 @@ public sealed class BranchVersioningMetadataTests : IAsyncLifetime
         async Task<JsonDocument> ReadAsync(string url)
         {
             using var response = await fixture.Client.GetAsync(url);
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            return JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+            var document = JsonDocument.Parse(body);
+            document.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+                "owned test metadata must not return a protocol error: {0}", body);
+            var requiredProperty = url.Contains("/admin/", StringComparison.Ordinal) ? "properties"
+                : url.Contains("/FeatureServer?", StringComparison.Ordinal) ? "hasVersionedData" : "isDataVersioned";
+            document.RootElement.TryGetProperty(requiredProperty, out _).Should().BeTrue(
+                "owned test metadata must contain {0}; response: {1}", requiredProperty, body);
+            return document;
         }
     }
 }

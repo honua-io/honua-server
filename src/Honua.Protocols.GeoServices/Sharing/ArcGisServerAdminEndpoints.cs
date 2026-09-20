@@ -118,7 +118,8 @@ public static class ArcGisServerAdminEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Service '{serviceName}.{serviceType}' was not found.");
         }
 
-        var branchVersioning = FeatureServerEndpoints.IsBranchVersioningAvailable(context);
+        var branchVersioning = await FeatureServerEndpoints.HasAccessibleBranchVersionedPublicationsAsync(
+            context, service, snapshot, context.RequestAborted).ConfigureAwait(false);
         var versionManagement = FeatureServerEndpoints.IsVersionManagementAvailable(context, branchVersioning);
         var featureServer = protocols.Contains("FeatureServer");
         var document = new JsonObject
