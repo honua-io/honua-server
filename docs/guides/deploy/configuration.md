@@ -44,6 +44,22 @@ Secrets don't have to be inlined. Two mechanisms exist:
 1. **Connection-string references** — `ConnectionStrings__DefaultConnection` accepts provider-prefixed references such as `aws:secretsmanager:...` or `env:...`, resolved at startup before migrations run.
 2. **Metadata secret references** — connection metadata stores a structured reference instead of a value: `{"provider": "env", "ref": "MY_DB_PASSWORD"}` (optional `version`), with providers like `env`, `azure-key-vault`, or `connection-registry`.
 
+### References supplied in a request
+
+Imports, workflow source steps and registered connections can name a server-side secret instead of carrying the value (`accessTokenSecretReference`, `passwordSecretReference`, `honuaApiKeySecretReference`, workflow `tokenSecretReference`/`passwordSecretReference`, and a connection's `secretReference`). These references are governed by an operator allowlist and are **refused by default**: with no entry configured, no request-supplied reference is resolved. References in the server's own configuration (the mechanisms above, the admin password, licensing and storage credentials) are not affected.
+
+| Variable | Meaning |
+|---|---|
+| `Security__RequestSecretReferences__AllowedEnvironmentVariables__0..n` | Environment variable names a request may name as `env:NAME`. Exact, case-sensitive match. |
+| `Security__RequestSecretReferences__AllowedEnvironmentVariablePrefixes__0..n` | Name prefixes a request may name as `env:NAME`, for example `HONUA_IMPORT_`. A prefix never matches a name containing `__`, so variables that bind server configuration can only be permitted by an exact entry. |
+| `Security__RequestSecretReferences__AllowedSecretReferencePrefixes__0..n` | Whole-reference prefixes for the other providers, including the provider segment, for example `aws:secretsmanager:honua/imports/` or `azure:keyvault:honua-imports:`. |
+
+A request-supplied reference must be the whole value, in the form `provider:identifier` (`env:HONUA_IMPORT_ARCGIS_TOKEN`). Placeholders such as `{env:NAME}` inside a longer string, surrounding whitespace, and literal connection strings are not references and are rejected. A refused or unresolvable reference is reported with one generic message; the server log records the provider and the reason.
+
+Give imports and connections their own variables or secret path rather than allowlisting the server's credentials (`HONUA_ADMIN_PASSWORD`, `ConnectionStrings__DefaultConnection`, `Security__ConnectionEncryption__MasterKey`, cloud access keys).
+
+**Upgrading:** deployments that already use request-supplied references must add matching entries before upgrading. Until they do, affected imports and workflow steps fail, new connections that use `secretReference` are rejected, and existing registered connections that resolve their credentials through `secretReference` stop resolving. Connections stored with an encrypted password are unaffected.
+
 ## License renewal and source precedence
 
 A successful admin upload persists `<LicensePath>.uploaded`, which startup reads before a resolved `Licensing__LicenseContentSecretRef`, `Licensing__LicenseContent`, or the ordinary `Licensing__LicensePath` file. Updating an environment variable or replacing that ordinary file does not override an existing upload at the same path. Renew by uploading the replacement, or stop the server and remove the override before switching to a configured source. Persist and back up the containing directory. The [license renewal procedure](../../concepts/editions-and-licensing.md#renew-or-replace-a-license) explains source alignment and verification after restart.

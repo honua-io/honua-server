@@ -159,11 +159,44 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
             Port = 5432,
             DatabaseName = "testdb",
             Username = "testuser",
-            SecretReference = "env:TEST_DB_CONNECTION",
+            SecretReference = "env:HONUA_TEST_DB_CONNECTION",
             SecretType = "environment",
             SslRequired = true,
             SslMode = "Require"
         };
+
+        // A value that is not a whole reference, or a reference the operator policy does not
+        // permit, is rejected before anything is stored or probed.
+        foreach (var refusedReference in new[]
+        {
+            "env:UNLISTED_DB_CONNECTION",
+            "Host=localhost;Database=testdb;Username=testuser;Password={env:HONUA_TEST_DB_CONNECTION}",
+            "Host=localhost;Database=testdb;Username=testuser;Password=inline"
+        })
+        {
+            var refusedJson = JsonSerializer.Serialize(
+                new CreateSecureConnectionRequest
+                {
+                    Name = $"test-secretref-refused-{Guid.NewGuid():N}",
+                    Host = "localhost",
+                    Port = 5432,
+                    DatabaseName = "testdb",
+                    Username = "testuser",
+                    SecretReference = refusedReference,
+                    SecretType = "environment",
+                    SslRequired = true,
+                    SslMode = "Require"
+                },
+                _jsonOptions);
+
+            using var refusedCreate = new StringContent(refusedJson, Encoding.UTF8, "application/json");
+            var refusedCreateResponse = await _client.PostAsync("/api/v1/admin/connections", refusedCreate);
+            Assert.Equal(HttpStatusCode.BadRequest, refusedCreateResponse.StatusCode);
+
+            using var refusedTest = new StringContent(refusedJson, Encoding.UTF8, "application/json");
+            var refusedTestResponse = await _client.PostAsync("/api/v1/admin/connections/test", refusedTest);
+            Assert.Equal(HttpStatusCode.BadRequest, refusedTestResponse.StatusCode);
+        }
 
         var jsonContent = JsonSerializer.Serialize(request, _jsonOptions);
         using var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");

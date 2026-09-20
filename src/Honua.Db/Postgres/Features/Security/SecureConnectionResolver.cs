@@ -72,7 +72,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
 
     private readonly ISecureConnectionRegistry _registry;
     private readonly IConnectionEncryptionService _encryptionService;
-    private readonly IConnectionSecretResolver _secretResolver;
+    private readonly IRequestSecretReferenceResolver _secretResolver;
     private readonly ILogger<SecureConnectionResolver> _logger;
     // Optional: when present, health checks route to the per-provider driver so non-PostgreSQL connections
     // (MySQL, SQL Server, Oracle) are tested with the right ADO.NET provider instead of always via Npgsql.
@@ -82,7 +82,7 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
     public SecureConnectionResolver(
         ISecureConnectionRegistry registry,
         IConnectionEncryptionService encryptionService,
-        IConnectionSecretResolver secretResolver,
+        IRequestSecretReferenceResolver secretResolver,
         ILogger<SecureConnectionResolver> logger,
         Honua.Core.Features.Security.Abstractions.IConnectionDriverRegistry? connectionDriverRegistry = null)
     {
@@ -208,8 +208,9 @@ internal sealed class SecureConnectionResolver : ISecureConnectionResolver
             }
             else if (!string.IsNullOrWhiteSpace(connection.SecretRef))
             {
-                // Resolve from external secret manager
-                connectionString = await _secretResolver.ResolveConnectionStringAsync(connection.SecretRef, cancellationToken);
+                // Resolve from external secret manager. The stored reference originated in a
+                // request, so it is resolved under the operator policy as a whole-string reference.
+                connectionString = await _secretResolver.ResolveAsync(connection.SecretRef, cancellationToken);
 
                 _logConnectionStringResolvedFromSecret(_logger, connection.Name, null);
             }

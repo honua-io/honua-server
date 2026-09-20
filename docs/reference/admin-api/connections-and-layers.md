@@ -24,7 +24,7 @@ All endpoints require admin authentication — see [Authentication](../../guides
 | POST | `/api/v1/admin/connections/encryption/validate` | Validate encryption service status |
 | POST | `/api/v1/admin/connections/encryption/rotate-key` | Trigger credential key rotation (may be rejected by policy) |
 
-Validation rules: supply either `password` or `secretReference` (+ `secretType`), not both. `sslMode` accepts `Disable`, `Allow`, `Prefer`, `Require`, `VerifyCA`, `VerifyFull`; `sslMode=Disable` is rejected when `sslRequired=true`.
+Validation rules: supply either `password` or `secretReference` (+ `secretType`), not both. `secretReference` must be a whole `provider:identifier` value permitted by the operator's `Security__RequestSecretReferences__*` allowlist ([References supplied in a request](../../guides/deploy/configuration.md#references-supplied-in-a-request)); placeholders and literal connection strings are rejected, and no reference is permitted while the allowlist is empty. `sslMode` accepts `Disable`, `Allow`, `Prefer`, `Require`, `VerifyCA`, `VerifyFull`; `sslMode=Disable` is rejected when `sslRequired=true`.
 
 In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/connections` with this body:
 
