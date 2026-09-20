@@ -23,6 +23,19 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
 {
     private const int LayerId = 9002;
 
+    [Fact]
+    public void TransformIfNeeded_BindsRasterExpressionOnce()
+    {
+        const string rasterExpression = "ST_Clip(raster, ST_MakeEnvelope(@minX, @minY, @maxX, @maxY, ST_SRID(raster)))";
+
+        var sql = RasterProjectionSql.TransformIfNeeded(rasterExpression, "@outputSrid");
+
+        sql.Should().Contain($"FROM (SELECT {rasterExpression} AS rast) projection_source");
+        sql.Split(rasterExpression, StringSplitOptions.None).Should().HaveCount(2);
+        sql.Should().Contain("ST_SRID(projection_source.rast)");
+        sql.Should().Contain("ST_Transform(projection_source.rast, @outputSrid)");
+    }
+
     [IntegrationTest]
     public async Task QueryRastersAsync_WithTimestampAndGeometry_UsesLayerSnapshotBeforeGeometryFilter()
     {

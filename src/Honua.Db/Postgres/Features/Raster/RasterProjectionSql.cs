@@ -11,7 +11,12 @@ internal static class RasterProjectionSql
     // Unlike the geometry overload, ST_Transform(raster, its_own_srid) is not an
     // identity: GDAL can square non-square pixels and change the grid and extent.
     internal static string TransformIfNeeded(string raster, string targetSrid)
-        => $"(CASE WHEN ST_SRID({raster}) = {targetSrid} THEN {raster} ELSE ST_Transform({raster}, {targetSrid}) END)";
+        => $"""
+            (SELECT CASE WHEN ST_SRID(projection_source.rast) = {targetSrid}
+                THEN projection_source.rast
+                ELSE ST_Transform(projection_source.rast, {targetSrid}) END
+             FROM (SELECT {raster} AS rast) projection_source)
+            """;
 
     // GDAL can change the geographic footprint of non-square or rotated rasters
     // while resizing. Resize the pixel array on a unit grid, then restore the
