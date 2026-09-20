@@ -737,7 +737,9 @@ class RealBaselinesReleaseTierTests(unittest.TestCase):
         # VectorTileServer, STAC, PMTiles, OGC API - Styles, SensorThings, WMS,
         # WMTS added to OGC API Features, WFS and WCS). The assertion is a
         # tripwire for envelopes appearing or vanishing unnoticed, not a cap.
-        self.assertEqual(37, len(self.receipts))
+        # 37 -> 39 adds the QGIS 3D Tiles and COG envelopes. These baselines
+        # still cannot pass the independently pinned release denominator below.
+        self.assertEqual(39, len(self.receipts))
 
     def test_no_committed_baseline_certifies_any_governed_cell(self):
         summary = module.summarize(self.verdicts)
