@@ -1123,7 +1123,7 @@ FOLLOWUP_EXCLUSIONS_REQUIRING_REVIEW = {
 EXCLUSIONS_REQUIRING_REVIEW.update(FOLLOWUP_EXCLUSIONS_REQUIRING_REVIEW)
 
 
-# Operation-specific native SDK receipts can resolve an audited exclusion while
+# Operation-specific native receipts can resolve an audited exclusion while
 # retaining both the original claim and the intervening review state.
 RESOLVED_EXCLUSION_EVIDENCE = {
     ("stac", "1.0.0", operation, "arcpy"): (
@@ -1171,6 +1171,21 @@ for protocol, version, operation, detail in (
         "honua-client-compat/evidence/pyqgis-deep-exclusions-20260920-d/observations.json (retained at commit 046a74c); "
         f"PyQGIS 3.44.14-Solothurn / GDAL 3.13.3: {detail}; "
         "server 25fa17d9cfa72340c9de4a33a743f19ff0911800 / image 0ad6f6c9d81e; Development JIT SDK evidence, no UI credit"
+    )
+
+# Only these two operations have fresh inspected native GUI receipts. The later
+# Properties hang leaves identify, elevation and TileJSON UI obligations open.
+for operation, case_id, detail in (
+    ("service-info", "UI-OP-IMAGESERVER-SERVICE-INFO", "native ArcGIS REST connection tree discovery and added layer information: ImageServer URL, EPSG:4326 and fixture extent inspected"),
+    ("exportImage", "UI-OP-IMAGESERVER-EXPORT-IMAGE", "native added ImageServer layer canvas inspected against independent PNG control; QGIS/34414 exportImage HTTP200,765x724 PNG2682bytes at2026-09-20T09:37:31Z, trace6f136fe7c94227895d3b74a229d701ed"),
+):
+    RESOLVED_EXCLUSION_EVIDENCE[("imageserver", "GeoServices REST", operation, "qgis-ui")] = (
+        "honua-client-compat/evidence/native-qgis-image-tilejson-20260920-a/results.json "
+        "(retained at honua-client-compat commit 2312dd99970f07b7ca0d38657e1c94a9b632edd3); "
+        f"{case_id}, QGIS 3.44.14-Solothurn, windows-computer-use inspected checkpoint receipts: {detail}; "
+        "plan SHA256 790e0e594128c2ccbb86c674d4735468671b4505d17207f3d2576548e8936f9f; "
+        "server 25fa17d9cfa72340c9de4a33a743f19ff0911800 / image 0ad6f6c9d81e; "
+        "existing native authentication configuration reference; not an anonymous-native claim; Development JIT UI diagnostic evidence, no shipping NativeAOT claim"
     )
 
 

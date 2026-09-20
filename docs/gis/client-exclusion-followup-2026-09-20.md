@@ -1,5 +1,7 @@
 # Deeper client exclusion audit, September 20, 2026
 
+Historical SDK-only stage: the later [QGIS ImageServer UI diagnostic](qgis-imageserver-ui-2026-09-20.md) adds two inspected GUI operations and carries current totals.
+
 The follow-up overturns more unsupported exclusion claims and proves six more
 native Python-lane operations. Of the 82 exclusions left after the first audit,
 64 now reopen for review, leaving 18 provisional exclusions. This does not assert

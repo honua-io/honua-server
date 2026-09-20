@@ -18,7 +18,7 @@ class ExclusionReviewTests(unittest.TestCase):
         self.assertEqual([], checklist.validate(rows))
         cells = [cell for row in rows for cell in row["lanes"].values()]
         self.assertEqual(376, len(cells))
-        self.assertEqual(165, sum(cell["state"] == "pass" for cell in cells))
+        self.assertEqual(167, sum(cell["state"] == "pass" for cell in cells))
         reopened = [cell for cell in cells if "previous_exclusion" in cell]
         self.assertEqual(149, len(reopened))
         for cell in reopened:
@@ -30,16 +30,29 @@ class ExclusionReviewTests(unittest.TestCase):
             self.assertTrue(cell["previous_exclusion"]["state"].startswith("n/a-"))
             self.assertTrue(cell["previous_exclusion"]["citation"])
 
-    def test_only_receipted_sdk_operations_resolve_exclusions(self):
+    def test_only_receipted_operations_resolve_exclusions(self):
         rows = checklist.build_rows()
         resolved = {(row["protocol"], row["version"], row["operation"], lane)
                     for row in rows for lane, cell in row["lanes"].items()
                     if "previous_review" in cell}
         self.assertEqual(set(checklist.RESOLVED_EXCLUSION_EVIDENCE), resolved)
-        self.assertEqual(12, len(resolved))
-        self.assertTrue(all(key[3] in ("arcpy", "pyqgis") for key in resolved))
+        self.assertEqual(14, len(resolved))
+        gui = {key for key in resolved if key[3] not in ("arcpy", "pyqgis")}
+        self.assertEqual({("imageserver", "GeoServices REST", "service-info", "qgis-ui"),
+                          ("imageserver", "GeoServices REST", "exportImage", "qgis-ui")}, gui)
+        for key in gui:
+            self.assertIn("native-qgis-image-tilejson-20260920-a/results.json", checklist.RESOLVED_EXCLUSION_EVIDENCE[key])
+            self.assertIn("windows-computer-use", checklist.RESOLVED_EXCLUSION_EVIDENCE[key])
         self.assertEqual(20, sum(row["lanes"]["pro-ui"]["state"] == "pass" for row in rows))
-        self.assertEqual(51, sum(row["lanes"]["qgis-ui"]["state"] == "pass" for row in rows))
+        self.assertEqual(53, sum(row["lanes"]["qgis-ui"]["state"] == "pass" for row in rows))
+
+    def test_properties_hang_does_not_close_unperformed_gui_operations(self):
+        rows = checklist.build_rows()
+        for protocol, operation in (("imageserver", "identify"), ("elevation", "point-query"),
+                                    ("tilejson", "descriptor")):
+            row = next(row for row in rows if row["protocol"] == protocol and row["operation"] == operation)
+            self.assertEqual("blocked", row["lanes"]["qgis-ui"]["state"])
+            self.assertNotIn("previous_review", row["lanes"]["qgis-ui"])
 
     def test_old_exclusion_cannot_be_restored_as_closed(self):
         rows = copy.deepcopy(checklist.build_rows())

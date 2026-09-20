@@ -192,10 +192,10 @@ lane × protocol pair appears with no checklist row.
 |---|---|---|---|---|
 | `pro-ui` | ArcGIS Pro 3.7.1.1904 | 24/94 | 70 | blocked 16, fail 2, n/a-no-client 4, not-started 52, pass 20 |
 | `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 38/94 | 56 | blocked 54, fail 2, n/a-no-client 2, pass 36 |
-| `qgis-ui` | QGIS 3.44.14 LTR | 57/94 | 37 | blocked 37, n/a-no-client 6, pass 51 |
+| `qgis-ui` | QGIS 3.44.14 LTR | 59/94 | 35 | blocked 35, n/a-no-client 6, pass 53 |
 | `pyqgis` | QGIS 3.44.14 LTR | 64/94 | 30 | blocked 30, n/a-no-client 6, pass 58 |
 
-**183 of 376 cells closed; 193 open.**
+**185 of 376 cells closed; 191 open.**
 
 ### Cells
 
@@ -317,8 +317,8 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| service-info | not-started | pass | blocked | pass |
-| exportImage | not-started | pass | blocked | pass |
+| service-info | not-started | pass | pass | pass |
+| exportImage | not-started | pass | pass | pass |
 | identify | not-started | pass | blocked | blocked |
 
 #### vectortileserver GeoServices REST
