@@ -3,16 +3,13 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Honua.Core.Features.FeatureStore.Abstractions;
-using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Portal.Abstractions;
 using Honua.Infrastructure.Helpers;
-using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
+using Honua.Protocols.GeoServices.FeatureServer;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Protocols.GeoServices.Sharing;
 
@@ -121,7 +118,8 @@ public static class ArcGisServerAdminEndpoints
             return StandardErrorHelpers.CreateNotFound(context, $"Service '{serviceName}.{serviceType}' was not found.");
         }
 
-        var branchVersioning = IsBranchVersioningAvailable(context);
+        var branchVersioning = FeatureServerEndpoints.IsBranchVersioningAvailable(context);
+        var versionManagement = FeatureServerEndpoints.IsVersionManagementAvailable(context, branchVersioning);
         var featureServer = protocols.Contains("FeatureServer");
         var document = new JsonObject
         {
@@ -140,7 +138,7 @@ public static class ArcGisServerAdminEndpoints
                 ["isDataVersioned"] = Flag(branchVersioning && featureServer),
                 ["maxRecordCount"] = "2000",
             },
-            ["extensions"] = BuildExtensions(protocols, branchVersioning),
+            ["extensions"] = BuildExtensions(protocols, branchVersioning, versionManagement),
             ["datasets"] = new JsonArray(),
             ["portalProperties"] = null,
         };
@@ -149,7 +147,7 @@ public static class ArcGisServerAdminEndpoints
         return Results.Text(document.ToJsonString(new JsonSerializerOptions { WriteIndented = pretty }), JsonContentType);
     }
 
-    private static JsonArray BuildExtensions(HashSet<string> protocols, bool branchVersioning)
+    private static JsonArray BuildExtensions(HashSet<string> protocols, bool branchVersioning, bool versionManagement)
     {
         var extensions = new JsonArray();
         if (protocols.Contains("FeatureServer"))
@@ -162,7 +160,7 @@ public static class ArcGisServerAdminEndpoints
                 ["isBranchVersioned"] = Flag(branchVersioning),
                 ["allowTrueCurvesUpdates"] = "false",
             }));
-            if (branchVersioning)
+            if (versionManagement)
             {
                 extensions.Add(Extension("VersionManagementServer", string.Empty, new JsonObject()));
             }
@@ -204,28 +202,4 @@ public static class ArcGisServerAdminEndpoints
 
     /// <summary>The Admin API spells booleans as strings.</summary>
     private static JsonValue Flag(bool value) => JsonValue.Create(value ? "true" : "false");
-
-    /// <summary>
-    /// The same decision the FeatureServer root makes for supportsBranchVersioning: a
-    /// version manager that supports versioning plus the branch-versioning entitlement.
-    /// </summary>
-    private static bool IsBranchVersioningAvailable(HttpContext context)
-    {
-        IVersionManager? versionManager;
-        try
-        {
-            versionManager = context.RequestServices.GetService<IVersionManager>();
-        }
-        catch (InvalidOperationException)
-        {
-            return false;
-        }
-
-        if (versionManager is not { SupportsVersioning: true })
-        {
-            return false;
-        }
-
-        return LicenseGate.IsEntitlementActive(context.RequestServices, FeatureCatalog.BranchVersioningKey);
-    }
 }

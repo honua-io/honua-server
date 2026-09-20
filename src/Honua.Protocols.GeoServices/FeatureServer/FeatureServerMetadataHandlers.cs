@@ -153,6 +153,7 @@ internal static partial class FeatureServerEndpoints
                 supportsGeobufOutput: featureReader is IGeobufFeatureStore,
                 supportsAttachmentUploads: supportsAttachmentUploads,
                 branchVersioningEnabled: branchVersioningEnabled,
+                versionManagementEnabled: IsVersionManagementAvailable(context, branchVersioningEnabled),
                 offlineSyncEnabled: offlineSyncEnabled);
 
             FeatureServerLog.ServiceMetadataReturned(logger, service.Metadata.Name, response.Layers.Length);
@@ -174,11 +175,11 @@ internal static partial class FeatureServerEndpoints
 
     /// <summary>
     /// Whether branch versioning is available for the current request: the active feature provider
-    /// supports it (Postgres) and the Pro branch-versioning entitlement is active (#1272,
-    /// ADR-0051). Drives the service-metadata versioning capability flags so the advertised surface
-    /// matches the runtime-registered VersionManagementServer routes.
+    /// supports it (Postgres) and the Pro branch-versioning entitlement is active (#1272, ADR-0051).
+    /// Drives service, layer and Admin data-versioning metadata. The separate experimental VMS
+    /// gate does not disable FeatureServer gdbVersion queries or replication.
     /// </summary>
-    private static bool IsBranchVersioningAvailable(HttpContext context)
+    internal static bool IsBranchVersioningAvailable(HttpContext context)
     {
         // Resolve defensively: the IVersionManager registration constructs a provider-specific manager
         // (e.g. PostgresVersionManager) that itself depends on IDatabaseConnectionProvider. When that
@@ -203,6 +204,13 @@ internal static partial class FeatureServerEndpoints
         return Honua.Infrastructure.Licensing.LicenseGate.IsEntitlementActive(
             context.RequestServices, FeatureCatalog.BranchVersioningKey);
     }
+
+    /// <summary>
+    /// Whether the companion VMS lifecycle surface is enabled in addition to versioned data access.
+    /// </summary>
+    internal static bool IsVersionManagementAvailable(HttpContext context, bool branchVersioningAvailable)
+        => branchVersioningAvailable && CapabilityFlagOptions.IsExperimentalEnabled(
+            context.RequestServices.GetRequiredService<IConfiguration>(), "versioning.branch");
 
     /// <summary>
     /// Handle layer metadata requests
@@ -347,6 +355,7 @@ internal static partial class FeatureServerEndpoints
                 extrusionInfo: extrusionInfo,
                 supportsGeobufOutput: featureReader is IGeobufFeatureStore,
                 supportsAttachmentUploads: supportsAttachmentUploads,
+                branchVersioningEnabled: IsBranchVersioningAvailable(context),
                 offlineSyncEnabled: offlineSyncEnabled);
 
             FeatureServerLog.LayerMetadataReturned(logger, serviceId, resolvedLayerId, resource.Metadata.Name);
