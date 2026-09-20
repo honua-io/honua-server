@@ -1137,3 +1137,14 @@ this shard at `HONUA_SHARD_CAPACITY_EXHAUSTED` (100.1%, exit 124) on their first
 attempts. The `HONUA_SHARD_OVER_MAX_UTILIZATION` error quoted there came from the
 advisory step, which never failed the job; see the advisory contract under
 policy 4.
+
+## OGC API Maps capacity split (#5006)
+
+`OGC API Maps and Tiles` exhausted its 22-minute test cap on
+[35164215061 attempt 1](https://github.com/honua-io/honua-server/actions/runs/35164215061/attempts/1)
+while still producing output seven seconds earlier. Its current filter selects
+Maps and Records; Tiles was already split out. The successful retry's TRX
+supports a whole-class split of about 360s / 407s into `OGC API Maps Basic and
+Conformance` and `OGC API Maps Rendering and Records`. Both keep the **22m test /
+32m job caps**, with an exact-partition contract preserving the original suite.
+See [the rebalance evidence and registration details](shard-rebalance-5006.md).
