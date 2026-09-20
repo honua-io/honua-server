@@ -62,3 +62,19 @@ denominator changes are used.
 The before/after artifacts are focused local fix-candidate evidence. They do
 not replace the original immutable `nightly-2cc2213` receipts or certify an
 official release artifact.
+
+## Local build and formatting
+
+The server published successfully with:
+
+```bash
+HONUA_MSBUILD_NODE_CAP=4 dotnet publish src/Honua.Server/Honua.Server.csproj \
+  -c Debug --no-restore -p:PublishAot=false -p:UseAppHost=false \
+  --self-contained false -o artifacts/wcs4997
+```
+
+Both changed projects were formatted successfully with `timeout 20m dotnet
+format <project> --no-restore --include <changed-files>`: the protocol project
+included only `Wcs20Handler.cs` and `Wcs20CoverageBackend.cs`; the test project
+included only `Wcs20EndpointsTests.cs`. The formatter expanded the new test's
+extent initializer; no unrelated files changed.

@@ -1015,7 +1015,11 @@ public sealed class Wcs20EndpointsTests : IAsyncLifetime
             Srid = nativeSrid,
             Extent = new RasterExtent
             {
-                XMin = minimum, YMin = minimum, XMax = maximum, YMax = maximum, Srid = nativeSrid
+                XMin = minimum,
+                YMin = minimum,
+                XMax = maximum,
+                YMax = maximum,
+                Srid = nativeSrid
             }
         };
         _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
