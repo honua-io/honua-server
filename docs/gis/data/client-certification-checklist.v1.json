@@ -37,19 +37,20 @@
       },
       "qgis-ui": {
         "pass": 53,
-        "n/a-no-client": 6,
-        "blocked": 35
+        "n/a-no-client": 5,
+        "blocked": 36
       },
       "pyqgis": {
         "pass": 58,
-        "n/a-no-client": 6,
-        "blocked": 30
+        "n/a-no-client": 5,
+        "blocked": 30,
+        "fail": 1
       }
     },
     "overall": {
       "cells": 376,
-      "closed": 184,
-      "open": 192
+      "closed": 182,
+      "open": 194
     }
   },
   "rows": [
@@ -1403,12 +1404,22 @@
           "citation": "docs/gis/arcpy-local-calculation-verdict-audit-2026-09-20.md: Historical receipt counts SearchCursor rows locally; it does not prove a native outStatistics/groupByFieldsForStatistics request. Fresh remote aggregate evidence and independent result assertions are required."
         },
         "qgis-ui": {
-          "state": "n/a-no-client",
-          "citation": "docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html section 11.1.7.3 'Using ArcGIS REST Servers' documents service-tree browsing, layer loading, expression-builder attribute filters and a view-extent option. Attachments, related records, replica/sync and server-side statistics appear nowhere. Confirmed by wire capture through a logging proxy on 2026-09-17: the provider issues no outStatistics request and computes min/max/sum locally from an outFields=* download, and exposes no attachment, relationship or replica member. A binary string scan was not used - it reports no esriSpatialRel in any shipped QGIS library while spatial filtering demonstrably works. This closes the qgis-ui lane as well as pyqgis: every finding above is at the provider layer - no attachment or replica member on the provider, discoverRelations returning empty, statistics computed locally from an outFields=* download - and the desktop UI is driven by that same arcgisfeatureserver provider. A request the provider never issues cannot be issued by a panel drawn on top of it, and the cited source is the user-manual chapter describing that UI."
+          "state": "blocked",
+          "citation": "honua-client-compat/docs/reports/pyqgis-featureserver-exclusion-followup-2026-09-20.md at ac9e4dc: native OGR/ESRIJSON consumes a configured outStatistics URL. The AFS provider limitation does not exclude the entire client. PyQGIS ungrouped values and project reload pass; grouped output fails; GUI remains untested.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html section 11.1.7.3 'Using ArcGIS REST Servers' documents service-tree browsing, layer loading, expression-builder attribute filters and a view-extent option. Attachments, related records, replica/sync and server-side statistics appear nowhere. Confirmed by wire capture through a logging proxy on 2026-09-17: the provider issues no outStatistics request and computes min/max/sum locally from an outFields=* download, and exposes no attachment, relationship or replica member. A binary string scan was not used - it reports no esriSpatialRel in any shipped QGIS library while spatial filtering demonstrably works. This closes the qgis-ui lane as well as pyqgis: every finding above is at the provider layer - no attachment or replica member on the provider, discoverRelations returning empty, statistics computed locally from an outFields=* download - and the desktop UI is driven by that same arcgisfeatureserver provider. A request the provider never issues cannot be issued by a panel drawn on top of it, and the cited source is the user-manual chapter describing that UI."
+          }
         },
         "pyqgis": {
-          "state": "n/a-no-client",
-          "citation": "docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html section 11.1.7.3 'Using ArcGIS REST Servers' documents service-tree browsing, layer loading, expression-builder attribute filters and a view-extent option. Attachments, related records, replica/sync and server-side statistics appear nowhere. Confirmed by wire capture through a logging proxy on 2026-09-17: the provider issues no outStatistics request and computes min/max/sum locally from an outFields=* download, and exposes no attachment, relationship or replica member. A binary string scan was not used - it reports no esriSpatialRel in any shipped QGIS library while spatial filtering demonstrably works. This closes the qgis-ui lane as well as pyqgis: every finding above is at the provider layer - no attachment or replica member on the provider, discoverRelations returning empty, statistics computed locally from an outFields=* download - and the desktop UI is driven by that same arcgisfeatureserver provider. A request the provider never issues cannot be issued by a panel drawn on top of it, and the cited source is the user-manual chapter describing that UI."
+          "state": "fail",
+          "citation": "honua-client-compat/docs/reports/pyqgis-featureserver-exclusion-followup-2026-09-20.md at ac9e4dc: native OGR/ESRIJSON consumes a configured outStatistics URL. The AFS provider limitation does not exclude the entire client. PyQGIS ungrouped values and project reload pass; grouped output fails; GUI remains untested.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html section 11.1.7.3 'Using ArcGIS REST Servers' documents service-tree browsing, layer loading, expression-builder attribute filters and a view-extent option. Attachments, related records, replica/sync and server-side statistics appear nowhere. Confirmed by wire capture through a logging proxy on 2026-09-17: the provider issues no outStatistics request and computes min/max/sum locally from an outFields=* download, and exposes no attachment, relationship or replica member. A binary string scan was not used - it reports no esriSpatialRel in any shipped QGIS library while spatial filtering demonstrably works. This closes the qgis-ui lane as well as pyqgis: every finding above is at the provider layer - no attachment or replica member on the provider, discoverRelations returning empty, statistics computed locally from an outFields=* download - and the desktop UI is driven by that same arcgisfeatureserver provider. A request the provider never issues cannot be issued by a panel drawn on top of it, and the cited source is the user-manual chapter describing that UI."
+          },
+          "issue": "https://github.com/honua-io/honua-server/issues/5043",
+          "evidence": "honua-client-compat/evidence/pyqgis-featureserver-statistics-url-20260920-c/observations.json and native-results.json at ac9e4dc: QGIS/PyQGIS 3.44.14-Solothurn native OGR configured-URL aggregate count/sum passes before/after project reload; grouped outStatistics + orderByFields produces an invalid native layer and JSON error 500. Independent SQL and correlated PostgreSQL 42803 retained. Zero UI credit; JIT source 25fa17d9."
         }
       }
     },
