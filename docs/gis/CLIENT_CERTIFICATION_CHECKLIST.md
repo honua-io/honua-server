@@ -192,11 +192,11 @@ lane × protocol pair appears with no checklist row.
 | Lane | Client build | Closed | Open | Breakdown |
 |---|---|---|---|---|
 | `pro-ui` | ArcGIS Pro 3.7.1.1904 | 24/94 | 70 | blocked 16, fail 2, n/a-no-client 4, not-started 52, pass 20 |
-| `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 38/94 | 56 | blocked 54, fail 2, n/a-no-client 2, pass 36 |
-| `qgis-ui` | QGIS 3.44.14 LTR | 58/94 | 36 | blocked 36, n/a-no-client 5, pass 53 |
-| `pyqgis` | QGIS 3.44.14 LTR | 64/94 | 30 | blocked 30, n/a-no-client 5, pass 59 |
+| `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 36/94 | 58 | blocked 56, fail 2, pass 36 |
+| `qgis-ui` | QGIS 3.44.14 LTR | 56/94 | 38 | blocked 38, n/a-no-client 3, pass 53 |
+| `pyqgis` | QGIS 3.44.14 LTR | 66/94 | 28 | blocked 28, n/a-no-client 3, pass 63 |
 
-**184 of 376 cells closed; 192 open.**
+**182 of 376 cells closed; 194 open.**
 
 ### Cells
 
@@ -231,11 +231,11 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 | GetCapabilities | pass | pass | pass | pass |
 | DescribeFeatureType | pass | pass | pass | pass |
 | GetFeature | pass | pass | pass | pass |
-| GetPropertyValue | not-started | blocked | n/a-no-client | n/a-no-client |
+| GetPropertyValue | not-started | blocked | blocked | pass |
 | Transaction-Insert | n/a-no-client | blocked | pass | pass |
 | Transaction-Update | n/a-no-client | blocked | pass | pass |
 | Transaction-Delete | n/a-no-client | blocked | pass | pass |
-| ListStoredQueries | not-started | blocked | n/a-no-client | n/a-no-client |
+| ListStoredQueries | not-started | blocked | blocked | pass |
 
 #### wcs 1.0.0
 
@@ -270,8 +270,8 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| landing-tilesets | blocked | blocked | blocked | blocked |
-| tile | blocked | blocked | blocked | blocked |
+| landing-tilesets | blocked | blocked | blocked | pass |
+| tile | blocked | blocked | blocked | pass |
 
 #### stac 1.0.0
 
@@ -363,8 +363,8 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| route-solve | not-started | n/a-no-client | blocked | blocked |
-| service-area | not-started | n/a-no-client | blocked | blocked |
+| route-solve | not-started | blocked | blocked | blocked |
+| service-area | not-started | blocked | blocked | blocked |
 
 #### versionmanagementserver GeoServices REST
 

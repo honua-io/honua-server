@@ -18,11 +18,11 @@ class ExclusionReviewTests(unittest.TestCase):
         self.assertEqual([], checklist.validate(rows))
         cells = [cell for row in rows for cell in row["lanes"].values()]
         self.assertEqual(376, len(cells))
-        self.assertEqual(168, sum(cell["state"] == "pass" for cell in cells))
+        self.assertEqual(172, sum(cell["state"] == "pass" for cell in cells))
         self.assertEqual(4, sum(cell["state"] == "fail" for cell in cells))
-        self.assertEqual(136, sum(cell["state"] == "blocked" for cell in cells))
+        self.assertEqual(138, sum(cell["state"] == "blocked" for cell in cells))
         reopened = [cell for cell in cells if "previous_exclusion" in cell]
-        self.assertEqual(151, len(reopened))
+        self.assertEqual(157, len(reopened))
         for cell in reopened:
             self.assertIn(cell["state"], ("blocked", "pass", "fail"))
             if cell["state"] == "pass":
@@ -39,8 +39,8 @@ class ExclusionReviewTests(unittest.TestCase):
                     for row in rows for lane, cell in row["lanes"].items()
                     if "previous_review" in cell}
         self.assertEqual(set(checklist.RESOLVED_EXCLUSION_EVIDENCE), resolved)
-        self.assertEqual(14, len(resolved))
-        self.assertEqual(15, sum(cell["state"] == "pass" and "previous_exclusion" in cell
+        self.assertEqual(18, len(resolved))
+        self.assertEqual(19, sum(cell["state"] == "pass" and "previous_exclusion" in cell
                                  for row in rows for cell in row["lanes"].values()))
         gui = {key for key in resolved if key[3] not in ("arcpy", "pyqgis")}
         self.assertEqual({("imageserver", "GeoServices REST", "service-info", "qgis-ui"),
@@ -111,6 +111,36 @@ class ExclusionReviewTests(unittest.TestCase):
                     if row["protocol"] == "featureserver" and row["operation"] == "statistics")
         del cell["previous_failure"]
         self.assertTrue(any("retain its failure receipt" in error for error in checklist.validate(rows)))
+
+    def test_configured_native_reads_keep_gui_operations_open(self):
+        rows = checklist.build_rows()
+        property_value = next(row for row in rows if row["operation"] == "GetPropertyValue")
+        stored_queries = next(row for row in rows if row["operation"] == "ListStoredQueries")
+        self.assertEqual("pass", property_value["lanes"]["pyqgis"]["state"])
+        self.assertEqual("blocked", property_value["lanes"]["qgis-ui"]["state"])
+        self.assertEqual("pass", stored_queries["lanes"]["pyqgis"]["state"])
+        self.assertEqual("blocked", stored_queries["lanes"]["qgis-ui"]["state"])
+        for lane in ("qgis-ui", "pyqgis"):
+            self.assertEqual("n/a-no-client", stored_queries["lanes"][lane]["previous_exclusion"]["state"])
+        self.assertIn("official WFS 2.0 XSD", stored_queries["lanes"]["pyqgis"]["evidence"])
+        for row in rows:
+            if row["protocol"] == "ogc-api-tiles":
+                self.assertEqual("pass", row["lanes"]["pyqgis"]["state"])
+                self.assertEqual("blocked", row["lanes"]["qgis-ui"]["state"])
+                self.assertIn("WorldCRS84Quad", row["lanes"]["pyqgis"]["evidence"])
+                self.assertIn("WebMercator default", row["lanes"]["pyqgis"]["evidence"])
+
+    def test_alternative_network_tools_reopen_review_without_native_credit(self):
+        rows = checklist.build_rows()
+        for row in rows:
+            if row["protocol"] == "naserver":
+                cell = row["lanes"]["arcpy"]
+                self.assertEqual("blocked", cell["state"])
+                self.assertEqual("n/a-no-client", cell["previous_exclusion"]["state"])
+                self.assertNotIn("evidence", cell)
+                self.assertIn("source inventory", cell["citation"])
+                cell.update(cell["previous_exclusion"])
+                self.assertTrue(any("native operation entrypoint" in error for error in checklist.validate(rows)))
 
 
 if __name__ == "__main__":
