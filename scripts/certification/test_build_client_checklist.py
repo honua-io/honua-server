@@ -18,9 +18,9 @@ class ExclusionReviewTests(unittest.TestCase):
         self.assertEqual([], checklist.validate(rows))
         cells = [cell for row in rows for cell in row["lanes"].values()]
         self.assertEqual(376, len(cells))
-        self.assertEqual(159, sum(cell["state"] == "pass" for cell in cells))
+        self.assertEqual(165, sum(cell["state"] == "pass" for cell in cells))
         reopened = [cell for cell in cells if "previous_exclusion" in cell]
-        self.assertEqual(85, len(reopened))
+        self.assertEqual(149, len(reopened))
         for cell in reopened:
             self.assertIn(cell["state"], ("blocked", "pass"))
             if cell["state"] == "pass":
@@ -36,7 +36,7 @@ class ExclusionReviewTests(unittest.TestCase):
                     for row in rows for lane, cell in row["lanes"].items()
                     if "previous_review" in cell}
         self.assertEqual(set(checklist.RESOLVED_EXCLUSION_EVIDENCE), resolved)
-        self.assertEqual(6, len(resolved))
+        self.assertEqual(12, len(resolved))
         self.assertTrue(all(key[3] in ("arcpy", "pyqgis") for key in resolved))
         self.assertEqual(20, sum(row["lanes"]["pro-ui"]["state"] == "pass" for row in rows))
         self.assertEqual(51, sum(row["lanes"]["qgis-ui"]["state"] == "pass" for row in rows))
@@ -46,6 +46,15 @@ class ExclusionReviewTests(unittest.TestCase):
         cell = next(row["lanes"]["arcpy"] for row in rows if row["protocol"] == "wcs")
         cell.update(cell["previous_exclusion"])
         self.assertTrue(any("disputed exclusion" in error for error in checklist.validate(rows)))
+
+    def test_numeric_sampling_does_not_certify_imageserver_identify(self):
+        rows = checklist.build_rows()
+        elevation = next(row for row in rows if row["protocol"] == "elevation")
+        identify = next(row for row in rows if row["protocol"] == "imageserver"
+                        and row["operation"] == "identify")
+        self.assertEqual("pass", elevation["lanes"]["pyqgis"]["state"])
+        self.assertEqual("blocked", identify["lanes"]["pyqgis"]["state"])
+        self.assertEqual("blocked", elevation["lanes"]["qgis-ui"]["state"])
 
 
 if __name__ == "__main__":

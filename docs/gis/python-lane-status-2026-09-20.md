@@ -1,5 +1,7 @@
 # Python client certification status, September 20, 2026
 
+Historical stage: see the [deeper exclusion follow-up](client-exclusion-followup-2026-09-20.md) for current totals and additional native paths.
+
 Six previously excluded SDK cells now have native evidence: ArcPy STAC
 catalog-landing, collections and item-search; PyQGIS WCS 2.0.1 GetCapabilities,
 DescribeCoverage and GetCoverage. The checklist retains all 85 original disputed

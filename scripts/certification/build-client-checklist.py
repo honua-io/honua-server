@@ -16,9 +16,8 @@ The two rules that make the target finishable:
 
 * A cell closes as ``pass`` (evidence naming the client build) or ``n/a-*`` (a
   vendor-documentation or provider-registry citation). Nothing else counts.
-* ``n/a`` is not a shrug. ArcGIS Pro genuinely has no SensorThings client and QGIS
-  genuinely has no GPServer client; without a closable state for those the
-  denominator could never reach zero, which invites fudging the numerator.
+* ``n/a`` needs operation-specific evidence covering the native paths in scope.
+  A failed URI, missing fixture or incomplete module inventory cannot close it.
 
 Run with --check to validate without writing (CI mode).
 """
@@ -1103,6 +1102,26 @@ EXCLUSIONS_REQUIRING_REVIEW = {
     "arcpy-no-soap": "The broad REST-only premise conflicts with the existing ArcPy GP SOAP workflow; catalog discovery needs a specific probe.",
 }
 
+FOLLOWUP_REVIEW_REPORT = "docs/gis/client-exclusion-followup-2026-09-20.md"
+FOLLOWUP_EXCLUSIONS_REQUIRING_REVIEW = {
+    "arcpy-no-candidates": "The installed and documented Locator class exposes geocode and suggest; fresh native calls against Honua return independently validated candidates and suggestions.",
+    "arcpy-rest-only-ops": "The citation is a harness exclusion rule, not capability evidence. ExportAttachments/AddAttachments exist and mapping objects come from factories; attachment/relationship fixtures and native mapping requests need specific review.",
+    "arcpy-no-replica": "CreateReplica's input contract does not establish absence of every native offline path. CreateReplicaFromServer targets a different GeoDataServer protocol and cannot settle FeatureServer replica/sync.",
+    "arcpy-wfs-read-only": "The WFSToFeatureClass parameter list bounds one conversion tool, not native saved layers, connections or licensed extension paths for these operations.",
+    "arcpy-no-wms-identify": "Missing MakeWMSLayer and module-level identify names do not cover factory-returned mapping objects; the exact GetFeatureInfo request path needs review.",
+    "arcpy-no-geometryserver": "Module-name matching is not a complete native client inventory. Review concrete native tools and requests; local geometry calculations alone cannot certify remote GeometryServer operations.",
+    "pro-no-sta": "An OGC API menu's supported standards do not establish absence of SensorThings through every native layer, representation or extension path.",
+    "pro-ogcapi": "The native OGC API connection menu supports Features/Tiles; alternative native representations, saved layers and licensed extensions need operation-specific review before excluding other APIs.",
+    "qgis-no-tilejson": "Stock QgsVectorTileUtils.updateUriSources consumes remote TileJSON through a standard Mapbox GL style source.url; direct XYZ descriptor failure does not establish no client.",
+    "qgis-no-imageserver-raster": "Stock arcgismapserver explicitly supports ImageServer rendering, and stock GDAL AGS reads numeric TIFF pixels. Dynamic 0x0 dimensions and the narrower identify-parser failure do not exclude elevation sampling.",
+    "qgis-gp-algorithms": "No specialized GP processing entry was found, but a provider/algorithm registry scan is not operation-specific proof for all discovery/job paths. The broader native SDK scope needs a retained source/request inventory.",
+    "qgis-no-esri-locator": "The old receipt asserts stock QGIS has no Esri locator without an operation-specific native API/source inventory; fresh inventory has not found a specialized path but cannot justify the universal claim.",
+    "qgis-local-geometry": "Observed local GEOS/GDAL computation does not by itself exclude every remote native SDK path. A remote-operation source/request inventory is still required.",
+    "qgis-no-versioning": "A missing dedicated provider or UI is not an operation-specific review of SDK and connection paths for create/reconcile/post; retain the work until the citation is sufficient.",
+    "qgis-rest-only": "REST discovery observed in one provider does not prove absence of every native SOAP catalog path; review exact request builders and shared providers.",
+}
+EXCLUSIONS_REQUIRING_REVIEW.update(FOLLOWUP_EXCLUSIONS_REQUIRING_REVIEW)
+
 
 # Operation-specific native SDK receipts can resolve an audited exclusion while
 # retaining both the original claim and the intervening review state.
@@ -1129,6 +1148,30 @@ RESOLVED_EXCLUSION_EVIDENCE.update({
     )
     for operation in ("GetCapabilities", "DescribeCoverage", "GetCoverage")
 })
+
+
+RESOLVED_EXCLUSION_EVIDENCE.update({
+    ("geocodeserver", "GeoServices REST", operation, "arcpy"): (
+        "honua-esri-compat/evidence/arcpy-exclusion-followup-20260920-d/observations.json (retained at commit b691b03); "
+        f"native Locator {operation}: ten geocode candidates or five suggestions validated against separate HTTP controls, "
+        "including addresses/scores/WGS84 XY or suggestion texts/magic keys/collection flags; geocode forStorage=False; "
+        "ArcGIS Pro 3.7.1.1904 executable version/hash bound alongside ArcPy 3.7.1 build 1901; "
+        "server 25fa17d9cfa72340c9de4a33a743f19ff0911800 / image 0ad6f6c9d81e; Development JIT SDK evidence, no UI credit"
+    )
+    for operation in ("findAddressCandidates", "suggest")
+})
+
+for protocol, version, operation, detail in (
+    ("tilejson", "3.0.0", "descriptor", "stock updateUriSources consumes a remote TileJSON URL from a standard Mapbox GL style; exact template and native decoded feature geometry validated within MVT grid tolerance; direct descriptor-as-XYZ still fails"),
+    ("imageserver", "GeoServices REST", "service-info", "stock arcgismapserver constructor CRS and extent match independent ImageServer metadata"),
+    ("imageserver", "GeoServices REST", "exportImage", "stock arcgismapserver 64x64 ARGB block corner colors match independent exportImage PNG; dynamic provider 0x0 native dimensions do not prevent rendering"),
+    ("elevation", "Esri", "point-query", "stock GDAL AGS TIFF numeric sample 10 at [-122.498828125,37.83890625] matches independent ImageServer identify at the same point; four corners/affine grid match SQL and native project reload repeats samples; does not certify native identify endpoint"),
+):
+    RESOLVED_EXCLUSION_EVIDENCE[(protocol, version, operation, "pyqgis")] = (
+        "honua-client-compat/evidence/pyqgis-deep-exclusions-20260920-d/observations.json (retained at commit 046a74c); "
+        f"PyQGIS 3.44.14-Solothurn / GDAL 3.13.3: {detail}; "
+        "server 25fa17d9cfa72340c9de4a33a743f19ff0911800 / image 0ad6f6c9d81e; Development JIT SDK evidence, no UI credit"
+    )
 
 
 def build_rows() -> list[dict]:
@@ -1160,8 +1203,11 @@ def build_rows() -> list[dict]:
                         "citation": cell["citation"],
                     }
                     cell["state"] = "blocked"
+                    review_report = (FOLLOWUP_REVIEW_REPORT
+                                     if ref in FOLLOWUP_EXCLUSIONS_REQUIRING_REVIEW
+                                     else EXCLUSION_REVIEW_REPORT)
                     cell["citation"] = (
-                        f"{EXCLUSION_REVIEW_REPORT}: exclusion evidence review pending. "
+                        f"{review_report}: exclusion evidence review pending. "
                         + EXCLUSIONS_REQUIRING_REVIEW[ref]
                     )
                 resolution = RESOLVED_EXCLUSION_EVIDENCE.get(
