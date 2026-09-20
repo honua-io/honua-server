@@ -259,7 +259,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Output size as width,height or axis-size pairs such as x(512),y(512), with each axis from 1 through 8192 pixels. Named axes may appear in either order; scaleSize is a legacy alias."
+            "description": "Output size as width,height or axis-size pairs such as x(512),y(512), with each axis from 1 through 8192 pixels. Canonical named axes must be in x-then-y order; the legacy scaleSize alias also permits reversed named axes."
           },
           {
             "name": "f",

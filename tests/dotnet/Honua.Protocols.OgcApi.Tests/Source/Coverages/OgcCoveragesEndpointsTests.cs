@@ -348,8 +348,9 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
             query.OutputWidth.Should().Be(3);
             query.OutputHeight.Should().Be(2);
             query.ClipRegion.Should().NotBeNull();
-            query.ClipRegion!.Value.Srid.Should().Be(4326);
-            var envelope = new WKBReader().Read(query.ClipRegion.Value.Geometry).EnvelopeInternal;
+            var clip = query.ClipRegion ?? throw new InvalidOperationException("Expected a spatial clip.");
+            clip.Srid.Should().Be(4326);
+            var envelope = new WKBReader().Read(clip.Geometry).EnvelopeInternal;
             envelope.MinX.Should().Be(-122.44);
             envelope.MaxX.Should().Be(-122.42);
             envelope.MinY.Should().Be(37.74);
@@ -381,6 +382,19 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest, query);
         }
         _exportQueries.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("GET /ogc/coverages/collections/{collectionId}")]
+    public async Task Coverages_SignedByteRange_ReportsEightBitType()
+    {
+        var raster = CreateRasterInfo() with { PixelType = "8BSI" };
+        _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(raster));
+        using var document = await GetJsonAsync($"/ogc/coverages/collections/{WebAppFixture.TestLayerId}");
+        document.RootElement.GetProperty("rangetype").GetProperty("field").EnumerateArray()
+            .Select(field => field.GetProperty("definition").GetString()).Should().Equal("INT8", "INT8", "INT8");
     }
 
     private static RasterInfo CreateRasterInfo()

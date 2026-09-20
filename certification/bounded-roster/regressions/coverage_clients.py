@@ -29,7 +29,7 @@ def decode(data):
     assert dataset.GetSpatialRef().GetAuthorityCode(None) == "4326"
     result = {"size": [2, 2], "values": values, "nodata": band.GetNoDataValue(),
               "geotransform": dataset.GetGeoTransform(), "srid": 4326}
-    dataset = None
+    del dataset
     gdal.Unlink(path)
     return result
 
@@ -71,8 +71,8 @@ def gdal_checks(base):
             assert response.headers.get_content_type() == "image/tiff"
             trims.append(decode(response.read()))
     assert trims[0] == trims[1]
-    window = None
-    dataset = None
+    del window
+    del dataset
     gdal.PopErrorHandler()
     assert any("/coverage?" in request for request in requests), requests
     return {"client": "GDAL 3.8.4", "window_values": values, "trims": trims, "requests": requests}

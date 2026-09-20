@@ -817,7 +817,8 @@ internal sealed class OgcCoveragesHandler
         var definition = raster.PixelType.ToUpperInvariant() switch
         {
             "1BB" or "2BUI" or "4BUI" or "8BUI" => "UINT8",
-            "8BSI" or "16BSI" => "INT16",
+            "8BSI" => "INT8",
+            "16BSI" => "INT16",
             "16BUI" => "UINT16",
             "32BSI" => "INT32",
             "32BUI" => "UINT32",
@@ -1392,6 +1393,17 @@ internal sealed class OgcCoveragesHandler
             return ScalingResult.Successful(query with { OutputWidth = width, OutputHeight = height });
         }
 
+        if (context.Request.Query.ContainsKey("subset") && query.ClipRegion is { } nativeClip &&
+            (raster.Width > MaxScaleSize || raster.Height > MaxScaleSize))
+        {
+            var nativeSizeError = await ValidateNativeSubsetSizeAsync(raster, storageSrid, nativeClip, cancellationToken)
+                .ConfigureAwait(false);
+            if (nativeSizeError is not null)
+            {
+                return ScalingResult.Failure(nativeSizeError);
+            }
+        }
+
         // No scaling parameters were supplied, so the coverage is exported at native
         // resolution and fully buffered in memory. Apply the same MaxScaleSize cap as
         // the scaled paths to a full-extent export so a plain GET of a very large
@@ -1406,6 +1418,56 @@ internal sealed class OgcCoveragesHandler
         }
 
         return ScalingResult.Successful(query);
+    }
+
+    private async ValueTask<string?> ValidateNativeSubsetSizeAsync(
+        RasterInfo raster,
+        int storageSrid,
+        RasterClipRegion clip,
+        CancellationToken cancellationToken)
+    {
+        var error = $"Native subset must not exceed {MaxScaleSize.ToString(CultureInfo.InvariantCulture)} pixels on either axis. Select a smaller subset or use scale-size to bound the output.";
+        if (raster.Extent is not { } extent || extent.Srid.GetValueOrDefault(storageSrid) != storageSrid ||
+            raster.Width <= 0 || raster.Height <= 0 ||
+            (raster.GeoTransform is { Length: >= 6 } transform && (transform[2] != 0 || transform[4] != 0)))
+        {
+            // A rotated or unknown native grid cannot safely establish the output
+            // window from its envelope. Explicit scaling still provides a bound.
+            return error;
+        }
+
+        var nativeWidth = extent.XMax - extent.XMin;
+        var nativeHeight = extent.YMax - extent.YMin;
+        if (!IsFinitePositive(nativeWidth) || !IsFinitePositive(nativeHeight))
+        {
+            return error;
+        }
+
+        var envelope = new WKBReader().Read(clip.Geometry).EnvelopeInternal;
+        var clipSrid = clip.Srid ?? storageSrid;
+        var bounds = clipSrid == storageSrid
+            ? (MinX: envelope.MinX, MinY: envelope.MinY, MaxX: envelope.MaxX, MaxY: envelope.MaxY)
+            : await _coordinateTransformService.TransformExtentAsync(
+                envelope.MinX, envelope.MinY, envelope.MaxX, envelope.MaxY,
+                clipSrid, storageSrid, cancellationToken).ConfigureAwait(false);
+        if (!bounds.HasValue)
+        {
+            return error;
+        }
+
+        // Clip to the native footprint first (including an omitted/unrestricted
+        // axis), then round outward to bound every possibly touched grid cell.
+        var minX = Math.Clamp(bounds.Value.MinX, extent.XMin, extent.XMax);
+        var maxX = Math.Clamp(bounds.Value.MaxX, extent.XMin, extent.XMax);
+        var minY = Math.Clamp(bounds.Value.MinY, extent.YMin, extent.YMax);
+        var maxY = Math.Clamp(bounds.Value.MaxY, extent.YMin, extent.YMax);
+        var width = Math.Ceiling((maxX - extent.XMin) / nativeWidth * raster.Width) -
+                    Math.Floor((minX - extent.XMin) / nativeWidth * raster.Width);
+        var height = Math.Ceiling((maxY - extent.YMin) / nativeHeight * raster.Height) -
+                     Math.Floor((minY - extent.YMin) / nativeHeight * raster.Height);
+        return !double.IsFinite(width) || !double.IsFinite(height) || width > MaxScaleSize || height > MaxScaleSize
+            ? error
+            : null;
     }
 
     private static bool TryParseResolution(string value, out double pixelWidth, out double pixelHeight)
