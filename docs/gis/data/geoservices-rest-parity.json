@@ -4004,7 +4004,8 @@
       "drillDownDoc": "docs/reference/compatibility/geoservices-parity.md",
       "implementedSurface": [
         "service directory (/rest/services)",
-        "REST info (/rest/info) auth-discovery document"
+        "REST info (/rest/info) auth-discovery document",
+        "authenticated read-only Admin API service resource for workspace discovery, including the siteless alias"
       ],
       "knownGaps": [
         "/rest/info always reports isTokenBasedSecurity=false and omits tokenServicesUrl",
@@ -4014,10 +4015,12 @@
       "evidence": {
         "code": [
           "src/Honua.Protocols.GeoServices/Catalog/GeoservicesCatalogEndpoints.cs",
-          "src/Honua.Protocols.GeoServices/Catalog/GeoservicesCatalogModels.cs"
+          "src/Honua.Protocols.GeoServices/Catalog/GeoservicesCatalogModels.cs",
+          "src/Honua.Protocols.GeoServices/Sharing/ArcGisServerAdminEndpoints.cs"
         ],
         "tests": [
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogEndpointTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogEndpointTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Sharing/ArcGisServerAdminServiceResourceTests.cs"
         ]
       },
       "operations": {
@@ -4037,7 +4040,25 @@
             "notes": "Graph-backed service directory, RBAC-filtered per principal, listing every service type a publication exposes. Returns 401/403 rather than a misleading empty list when every publication is denied. Does not emit folders; currentVersion is deliberately omitted (see knownLimitations)."
           }
         ],
-        "partial": [],
+        "partial": [
+          {
+            "name": "Admin service resource (workspace discovery)",
+            "status": "partial",
+            "esriPaths": [
+              "/admin/services/{serviceName}.{serviceType}"
+            ],
+            "honuaEndpoints": [
+              "GET /admin/services/{serviceName}.{serviceType}",
+              "GET /rest/admin/{serviceName}.{serviceType}",
+              "POST /admin/services/{serviceName}.{serviceType}",
+              "POST /rest/admin/{serviceName}.{serviceType}"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "Authenticated, read-only projection of visible published services with protocol extensions and branch-versioning flags controlled by capability and license checks. Both canonical and siteless spellings accept GET and POST. Hosting properties are compatibility defaults, datasets is empty, and no administrative mutations are served. ArcPy workspace and branch-versioning replay remains pending (#5036); this resource is not full Admin API parity."
+          }
+        ],
         "stub": [
           {
             "name": "REST Info",
