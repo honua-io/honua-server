@@ -20,9 +20,9 @@ class ExclusionReviewTests(unittest.TestCase):
         self.assertEqual(376, len(cells))
         self.assertEqual(166, sum(cell["state"] == "pass" for cell in cells))
         reopened = [cell for cell in cells if "previous_exclusion" in cell]
-        self.assertEqual(149, len(reopened))
+        self.assertEqual(151, len(reopened))
         for cell in reopened:
-            self.assertIn(cell["state"], ("blocked", "pass"))
+            self.assertIn(cell["state"], ("blocked", "pass", "fail"))
             if cell["state"] == "pass":
                 self.assertEqual("blocked", cell["previous_review"]["state"])
                 self.assertTrue(cell["previous_review"]["citation"])
@@ -79,6 +79,20 @@ class ExclusionReviewTests(unittest.TestCase):
         self.assertNotIn("evidence", cell)
         cell.update(cell["previous_pass"])
         self.assertTrue(any("local calculation" in error for error in checklist.validate(rows)))
+
+    def test_native_ogr_statistics_reopens_only_exact_qgis_operations(self):
+        rows = checklist.build_rows()
+        statistics = next(row for row in rows if row["protocol"] == "featureserver" and row["operation"] == "statistics")
+        self.assertEqual("blocked", statistics["lanes"]["qgis-ui"]["state"])
+        sdk = statistics["lanes"]["pyqgis"]
+        self.assertEqual("fail", sdk["state"])
+        self.assertTrue(sdk["issue"].endswith("/5043"))
+        self.assertIn("native-results.json", sdk["evidence"])
+        for lane in ("qgis-ui", "pyqgis"):
+            self.assertEqual("n/a-no-client", statistics["lanes"][lane]["previous_exclusion"]["state"])
+            for operation in ("attachments", "relatedRecords", "replica-sync"):
+                row = next(row for row in rows if row["protocol"] == "featureserver" and row["operation"] == operation)
+                self.assertEqual("n/a-no-client", row["lanes"][lane]["state"])
 
 
 if __name__ == "__main__":

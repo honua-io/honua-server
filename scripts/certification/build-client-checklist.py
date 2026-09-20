@@ -1198,6 +1198,28 @@ REVIEWED_PASS_GAPS = {
     ),
 }
 
+OPERATION_EXCLUSION_REVIEWS = {
+    ("featureserver", "GeoServices REST", "statistics", lane): (
+        "honua-client-compat/docs/reports/pyqgis-featureserver-exclusion-followup-2026-09-20.md "
+        "at ac9e4dc: native OGR/ESRIJSON consumes a configured outStatistics URL. "
+        "The AFS provider limitation does not exclude the entire client. "
+        "PyQGIS ungrouped values and project reload pass; grouped output fails; GUI remains untested."
+    ) for lane in ("qgis-ui", "pyqgis")
+}
+
+NATIVE_REVIEW_FAILURES = {
+    ("featureserver", "GeoServices REST", "statistics", "pyqgis"): {
+        "issue": "https://github.com/honua-io/honua-server/issues/5043",
+        "evidence": (
+            "honua-client-compat/evidence/pyqgis-featureserver-statistics-url-20260920-c/observations.json "
+            "and native-results.json at ac9e4dc: QGIS/PyQGIS 3.44.14-Solothurn native OGR "
+            "configured-URL aggregate count/sum passes before/after project reload; grouped "
+            "outStatistics + orderByFields produces an invalid native layer and JSON error 500. "
+            "Independent SQL and correlated PostgreSQL 42803 retained. Zero UI credit; JIT source 25fa17d9."
+        ),
+    },
+}
+
 
 def build_rows() -> list[dict]:
     rows: list[dict] = []
@@ -1222,7 +1244,9 @@ def build_rows() -> list[dict]:
                     cell["evidence"] = EV[ref]
                 elif ref is not None:
                     cell["cause"] = ref
-                if state.startswith("n/a-") and ref in EXCLUSIONS_REQUIRING_REVIEW:
+                key = (entry["protocol"], entry["version"], operation, lane)
+                operation_review = OPERATION_EXCLUSION_REVIEWS.get(key)
+                if state.startswith("n/a-") and (ref in EXCLUSIONS_REQUIRING_REVIEW or operation_review):
                     cell["previous_exclusion"] = {
                         "state": state,
                         "citation": cell["citation"],
@@ -1231,7 +1255,7 @@ def build_rows() -> list[dict]:
                     review_report = (FOLLOWUP_REVIEW_REPORT
                                      if ref in FOLLOWUP_EXCLUSIONS_REQUIRING_REVIEW
                                      else EXCLUSION_REVIEW_REPORT)
-                    cell["citation"] = (
+                    cell["citation"] = operation_review or (
                         f"{review_report}: exclusion evidence review pending. "
                         + EXCLUSIONS_REQUIRING_REVIEW[ref]
                     )
@@ -1257,6 +1281,10 @@ def build_rows() -> list[dict]:
                     }
                     cell["state"] = "blocked"
                     cell["citation"] = pass_gap
+                native_failure = NATIVE_REVIEW_FAILURES.get(key)
+                if native_failure:
+                    cell.update(native_failure)
+                    cell["state"] = "fail"
                 cells[lane] = cell
             rows.append({
                 "protocol": entry["protocol"],
@@ -1285,6 +1313,8 @@ def validate(rows: list[dict]) -> list[str]:
             }:
                 problems.append(
                     f"{where}/{lane}: disputed exclusion requires operation-specific evidence review")
+            if state.startswith("n/a-") and (row["protocol"], row["version"], row["operation"], lane) in OPERATION_EXCLUSION_REVIEWS:
+                problems.append(f"{where}/{lane}: native operation entrypoint disproves the exclusion")
             if state in NEEDS_CITATION and not (
                 cell.get("citation") or cell.get("cause")
             ):
