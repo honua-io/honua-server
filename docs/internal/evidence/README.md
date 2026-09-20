@@ -16,6 +16,7 @@ This file does not store evidence itself. It points at the doc that does.
 
 What we run, what passes, what the formal certification posture is.
 
+- **STAC 3384 live acceptance (2026-09-20)** — [acceptance record](stac-3384-live-acceptance-2026-09-20.md). Restored items/search, failed governed replay, deployment-binding mismatch, and the remaining Python staging dependency.
 - **CITE runbook** — [`contributor/cite-runbook.md`](../contributor/cite-runbook.md). How to run every automated CITE suite locally and in CI (Features, Tiles, Maps, WMS 1.3, WMTS 1.0, WFS 2.0, WCS 2.0.1, KML 2.2, GML 3.2, GeoPackage 1.2). Per-suite scope, scripts, workflow files, and open issues.
 - **OGC CITE conformance evidence** — [`contributor/ogc-cite-conformance-evidence.md`](../contributor/ogc-cite-conformance-evidence.md). Stable, website-linkable summary of which suites are currently passing on trunk. Refreshed when a suite's state changes.
 - **OGC certification path** — [`contributor/ogc-certification-path.md`](../contributor/ogc-certification-path.md). Decision record: formal OGC certification is currently deferred. Includes the evidence baseline matrix and the criteria for reopening a submission.
