@@ -167,27 +167,28 @@ public class SecureConnectionEndpointsTests : IAsyncLifetime
 
         // A value that is not a whole reference, or a reference the operator policy does not
         // permit, is rejected before anything is stored or probed.
-        foreach (var refusedReference in new[]
+        var refusedPayloads = new[]
         {
             "env:UNLISTED_DB_CONNECTION",
             "Host=localhost;Database=testdb;Username=testuser;Password={env:HONUA_TEST_DB_CONNECTION}",
             "Host=localhost;Database=testdb;Username=testuser;Password=inline"
-        })
+        }.Select(refusedReference => JsonSerializer.Serialize(
+            new CreateSecureConnectionRequest
+            {
+                Name = $"test-secretref-refused-{Guid.NewGuid():N}",
+                Host = "localhost",
+                Port = 5432,
+                DatabaseName = "testdb",
+                Username = "testuser",
+                SecretReference = refusedReference,
+                SecretType = "environment",
+                SslRequired = true,
+                SslMode = "Require"
+            },
+            _jsonOptions));
+
+        foreach (var refusedJson in refusedPayloads)
         {
-            var refusedJson = JsonSerializer.Serialize(
-                new CreateSecureConnectionRequest
-                {
-                    Name = $"test-secretref-refused-{Guid.NewGuid():N}",
-                    Host = "localhost",
-                    Port = 5432,
-                    DatabaseName = "testdb",
-                    Username = "testuser",
-                    SecretReference = refusedReference,
-                    SecretType = "environment",
-                    SslRequired = true,
-                    SslMode = "Require"
-                },
-                _jsonOptions);
 
             using var refusedCreate = new StringContent(refusedJson, Encoding.UTF8, "application/json");
             var refusedCreateResponse = await _client.PostAsync("/api/v1/admin/connections", refusedCreate);

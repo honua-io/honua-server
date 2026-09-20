@@ -58,31 +58,20 @@ public sealed partial class RequestSecretReferenceOptions
     {
         var errors = new List<string>();
 
-        foreach (var name in AllowedEnvironmentVariables)
-        {
-            if (!EnvironmentVariableNamePattern().IsMatch(name))
-            {
-                errors.Add($"{SectionName}:AllowedEnvironmentVariables entry '{name}' is not a valid environment variable name.");
-            }
-        }
+        errors.AddRange(AllowedEnvironmentVariables
+            .Where(static name => !EnvironmentVariableNamePattern().IsMatch(name))
+            .Select(static name =>
+                $"{SectionName}:AllowedEnvironmentVariables entry '{name}' is not a valid environment variable name."));
 
-        foreach (var prefix in AllowedEnvironmentVariablePrefixes)
-        {
-            if (!EnvironmentVariableNamePattern().IsMatch(prefix))
-            {
-                errors.Add($"{SectionName}:AllowedEnvironmentVariablePrefixes entry '{prefix}' is not a valid environment variable name prefix.");
-            }
-        }
+        errors.AddRange(AllowedEnvironmentVariablePrefixes
+            .Where(static prefix => !EnvironmentVariableNamePattern().IsMatch(prefix))
+            .Select(static prefix =>
+                $"{SectionName}:AllowedEnvironmentVariablePrefixes entry '{prefix}' is not a valid environment variable name prefix."));
 
-        foreach (var prefix in AllowedSecretReferencePrefixes)
-        {
-            if (!RequestSecretReference.TryParse(prefix, out var parsed) ||
-                parsed.IsEnvironment)
-            {
-                errors.Add(
-                    $"{SectionName}:AllowedSecretReferencePrefixes entry '{prefix}' must be '<provider>:<identifier-prefix>' for a non-environment provider.");
-            }
-        }
+        errors.AddRange(AllowedSecretReferencePrefixes
+            .Where(static prefix => !RequestSecretReference.TryParse(prefix, out var parsed) || parsed.IsEnvironment)
+            .Select(static prefix =>
+                $"{SectionName}:AllowedSecretReferencePrefixes entry '{prefix}' must be '<provider>:<identifier-prefix>' for a non-environment provider."));
 
         return errors;
     }
