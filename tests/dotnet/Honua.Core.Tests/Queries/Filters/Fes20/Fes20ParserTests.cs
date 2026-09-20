@@ -67,6 +67,54 @@ public sealed class Fes20ParserTests
             .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
     }
 
+    [Theory]
+    [InlineData("And")]
+    [InlineData("Or")]
+    public void ParseFilter_FlatLogicalOperatorBeyondOperandLimit_ThrowsParseException(string element)
+    {
+        var act = () => Fes20Parser.ParseFilter(FlatLogicalFilter(element, FilterParserGuard.MaxExpressionDepth + 1));
+
+        act.Should().Throw<Fes20ParseException>()
+            .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
+    }
+
+    [UnitTest]
+    public void ParseFilter_FlatLogicalOperatorWithinDepthLimit_ReturnsLeftDeepChain()
+    {
+        // N comparison operands fold into a tree of depth N + 1.
+        var result = Fes20Parser.ParseFilter(FlatLogicalFilter("And", FilterParserGuard.MaxExpressionDepth - 1));
+
+        result.Should().BeOfType<BinaryExpression>().Which.Operator.Should().Be(BinaryOperator.And);
+    }
+
+    [UnitTest]
+    public void ParseFilter_FlatLogicalOperatorUnderNegationsBeyondDepthLimit_ThrowsParseException()
+    {
+        // Operand count and XML nesting are each within their limits; the folded tree is not.
+        const int negations = 10;
+        var inner = FlatLogicalBody("And", FilterParserGuard.MaxExpressionDepth - negations);
+        var filterXml = @"<fes:Filter xmlns:fes=""http://www.opengis.net/fes/2.0"">" +
+            string.Concat(Enumerable.Repeat("<fes:Not>", negations)) +
+            inner +
+            string.Concat(Enumerable.Repeat("</fes:Not>", negations)) +
+            "</fes:Filter>";
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>()
+            .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
+    }
+
+    private static string FlatLogicalFilter(string element, int operandCount)
+        => @"<fes:Filter xmlns:fes=""http://www.opengis.net/fes/2.0"">" + FlatLogicalBody(element, operandCount) + "</fes:Filter>";
+
+    private static string FlatLogicalBody(string element, int operandCount)
+        => $"<fes:{element}>" +
+           string.Concat(Enumerable.Repeat(
+               "<fes:PropertyIsEqualTo><fes:ValueReference>name</fes:ValueReference><fes:Literal>a</fes:Literal></fes:PropertyIsEqualTo>",
+               operandCount)) +
+           $"</fes:{element}>";
+
     [UnitTest]
     public void ParseFilter_PropertyIsLikeWithEscapeCharAndMatchCaseFalse_ReturnsLowerLikeExpression()
     {

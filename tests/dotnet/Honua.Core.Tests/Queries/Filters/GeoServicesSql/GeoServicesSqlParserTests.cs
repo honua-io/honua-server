@@ -92,6 +92,41 @@ public class GeoServicesSqlParserTests
             .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
     }
 
+    [Theory]
+    [InlineData("AND")]
+    [InlineData("OR")]
+    public void Parse_FlatLogicalSequenceBeyondOperandLimit_ThrowsArgumentException(string keyword)
+    {
+        var filter = string.Join($" {keyword} ", Enumerable.Repeat("name = 'a'", FilterParserGuard.MaxExpressionDepth + 1));
+
+        var act = () => _parser.Parse(filter);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
+    }
+
+    [Fact]
+    public void Parse_FlatLogicalSequenceWithinDepthLimit_ReturnsLeftDeepChain()
+    {
+        // N comparison operands fold into a tree of depth N + 1.
+        var filter = string.Join(" OR ", Enumerable.Repeat("name = 'a'", FilterParserGuard.MaxExpressionDepth - 1));
+
+        var expression = _parser.Parse(filter);
+
+        expression.Should().BeOfType<BinaryExpression>().Which.Operator.Should().Be(BinaryOperator.Or);
+    }
+
+    [Fact]
+    public void Parse_FlatArithmeticSequenceBeyondDepthLimit_ThrowsArgumentException()
+    {
+        var filter = "size" + string.Concat(Enumerable.Repeat(" + 1", FilterParserGuard.MaxExpressionDepth + 1)) + " > 0";
+
+        var act = () => _parser.Parse(filter);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
+    }
+
     [Fact]
     public void Parse_DateLiteral_ProducesDateOnly()
     {
