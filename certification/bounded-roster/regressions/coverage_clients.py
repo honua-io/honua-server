@@ -2,7 +2,7 @@
 """Real GDAL 3.8.4 / OWSLib 0.36.0 proof for coverage-fixture.sql.
 
 Run the gdal mode in the pinned GDAL image and the owslib mode in an image
-with OWSLib 0.36.0 and GDAL bindings. Values come from the authored grid,
+with OWSLib 0.36.0 and Rasterio. Values come from the authored grid,
 never from a snapshot of the server's current output.
 """
 import argparse
@@ -12,12 +12,9 @@ import struct
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-from osgeo import gdal
-
-gdal.UseExceptions()
-
-
 def decode(data):
+    from osgeo import gdal
+
     path = "/vsimem/coverage-4996.tif"
     gdal.FileFromMemBuffer(path, data)
     dataset = gdal.Open(path)
@@ -36,6 +33,9 @@ def decode(data):
 
 
 def gdal_checks(base):
+    from osgeo import gdal
+
+    gdal.UseExceptions()
     assert gdal.VersionInfo("RELEASE_NAME") == "3.8.4"
     dataset = gdal.OpenEx("OGCAPI:" + base + "/ogc/coverages/collections/2496",
                           gdal.OF_RASTER, open_options=["API=COVERAGE", "CACHE=NO"])
@@ -63,6 +63,7 @@ def gdal_checks(base):
 def owslib_checks(base):
     import owslib
     from owslib.ogcapi.coverages import Coverages
+    from rasterio.io import MemoryFile
 
     assert owslib.__version__ == "0.36.0"
     client = Coverages(base + "/ogc/coverages")
@@ -73,8 +74,17 @@ def owslib_checks(base):
             data = data.read()
         if isinstance(data, io.BytesIO):
             data = data.getvalue()
-        results.append(decode(data))
-    assert results[0] == results[1]
+        with MemoryFile(data) as memory, memory.open() as dataset:
+            assert (dataset.width, dataset.height, dataset.count) == (2, 2, 1)
+            values = dataset.read(1).tolist()
+            assert values == [[11, -9999], [21, 22]], values
+            assert dataset.nodata == -9999
+            assert dataset.transform.to_gdal() == (-123, 1, 0, 39, 0, -1)
+            assert dataset.crs.to_epsg() == 4326
+            results.append({"values": values, "nodata": dataset.nodata,
+                            "geotransform": dataset.transform.to_gdal(), "srid": 4326,
+                            "request": client.request})
+    assert results[0]["values"] == results[1]["values"]
     return {"client": "OWSLib 0.36.0", "trims": results}
 
 

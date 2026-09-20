@@ -700,6 +700,8 @@ internal sealed class OgcCoveragesHandler
             StorageCrs = storageCrs,
             Grid = CreateGrid(raster),
             Domain = CreateDomain(raster),
+            DomainSet = CreateDomainSet(raster, storageSrid),
+            RangeType = CreateRangeType(raster),
             DefaultFields = CreateDefaultFields(raster)
         };
     }
@@ -775,6 +777,61 @@ internal sealed class OgcCoveragesHandler
         return transformed.HasValue
             ? (transformed.Value.MinX, transformed.Value.MinY, transformed.Value.MaxX, transformed.Value.MaxY)
             : null;
+    }
+
+    private static CoverageDomainSet? CreateDomainSet(RasterInfo raster, int storageSrid)
+    {
+        if (raster.Extent is not { } extent || raster.Width <= 0 || raster.Height <= 0 ||
+            (raster.GeoTransform is { Length: >= 6 } transform && (transform[2] != 0 || transform[4] != 0)))
+        {
+            return null;
+        }
+
+        return new CoverageDomainSet
+        {
+            GeneralGrid = new CoverageGeneralGrid
+            {
+                SrsName = storageSrid == 4326 ? SpatialReferenceHelpers.Crs84Uri : CreateEpsgUri(storageSrid),
+                AxisLabels = storageSrid == 4326 ? ["Lon", "Lat"] : ["x", "y"],
+                Axes =
+                [
+                    new CoverageGridAxis
+                    {
+                        LowerBound = extent.XMin,
+                        UpperBound = extent.XMax,
+                        Resolution = (extent.XMax - extent.XMin) / raster.Width
+                    },
+                    new CoverageGridAxis
+                    {
+                        LowerBound = extent.YMin,
+                        UpperBound = extent.YMax,
+                        Resolution = (extent.YMax - extent.YMin) / raster.Height
+                    }
+                ]
+            }
+        };
+    }
+
+    private static CoverageRangeType CreateRangeType(RasterInfo raster)
+    {
+        var definition = raster.PixelType.ToUpperInvariant() switch
+        {
+            "1BB" or "2BUI" or "4BUI" or "8BUI" => "UINT8",
+            "8BSI" or "16BSI" => "INT16",
+            "16BUI" => "UINT16",
+            "32BSI" => "INT32",
+            "32BUI" => "UINT32",
+            "32BF" => "FLOAT32",
+            _ => "FLOAT64"
+        };
+        return new CoverageRangeType
+        {
+            Fields = CreateDefaultFields(raster).Select(name => new CoverageRangeField
+            {
+                Name = name,
+                Definition = definition
+            }).ToImmutableArray()
+        };
     }
 
     private static CoverageGrid CreateGrid(RasterInfo raster)

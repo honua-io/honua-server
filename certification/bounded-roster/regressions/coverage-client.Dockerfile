@@ -1,5 +1,4 @@
-FROM ghcr.io/osgeo/gdal:ubuntu-small-3.8.4@sha256:60d3bc2f8b09ca1a7ef2db0239699b2c03713aa02be6e525e731c0020bbb10a4
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends python3-pip \
-    && python3 -m pip install OWSLib==0.36.0 \
+FROM python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254
+RUN python -m pip install --no-cache-dir OWSLib==0.36.0 rasterio==1.4.3
+RUN apt-get update && apt-get install -y --no-install-recommends libexpat1 \
     && rm -rf /var/lib/apt/lists/*

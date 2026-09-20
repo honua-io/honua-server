@@ -95,6 +95,11 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
         storageCrsBbox.Should().ContainSingle();
         storageCrsBbox[0].EnumerateArray().Should().HaveCount(4);
         collection.GetProperty("grid").GetProperty("width").GetInt32().Should().Be(64);
+        var generalGrid = collection.GetProperty("domainset").GetProperty("generalGrid");
+        generalGrid.GetProperty("srsName").GetString().Should().EndWith("CRS84");
+        generalGrid.GetProperty("axisLabels").EnumerateArray().Select(axis => axis.GetString()).Should().Equal("Lon", "Lat");
+        generalGrid.GetProperty("axis")[0].GetProperty("resolution").GetDouble().Should().BeApproximately(0.003125, 1e-12);
+        collection.GetProperty("rangetype").GetProperty("field").GetArrayLength().Should().Be(3);
         collection.GetProperty("defaultFields").EnumerateArray().Select(field => field.GetString())
             .Should().Equal("band_1", "band_2", "band_3");
 
