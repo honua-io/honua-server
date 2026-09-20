@@ -376,6 +376,14 @@ internal sealed class Wcs20Handler
             return CreateGetCoverageParameterError(temporalError);
         }
 
+        if (sliceBounds is { } bounds &&
+            await ValidateSpatialSubsetAsync(context.Request.Query, coverage.Coverage.Value.Raster, bounds, cancellationToken)
+                .ConfigureAwait(false) is { } spatialError)
+        {
+            Wcs20Log.ValidationFailed(_logger, Wcs20Utilities.Operations.GetCoverage, spatialError.Detail);
+            return CreateGetCoverageParameterError(spatialError);
+        }
+
         telemetry
             .WithTag(HonuaTelemetry.Tags.LayerId, coverage.Coverage.Value.LayerId)
             .WithTag("honua.coverage.id", coverageId.Raw)
@@ -414,6 +422,43 @@ internal sealed class Wcs20Handler
             result.ContentType);
 
         return Results.File(result.Data, result.ContentType);
+    }
+
+    private async ValueTask<WcsParameterError?> ValidateSpatialSubsetAsync(
+        IQueryCollection query,
+        RasterInfo raster,
+        RasterExtent bounds,
+        CancellationToken cancellationToken)
+    {
+        if (!TryResolveExtent(raster, out var extent) || (extent.Srid ?? raster.Srid) is not { } nativeSrid)
+        {
+            return null;
+        }
+
+        var subsetSrid = bounds.Srid ?? nativeSrid;
+        var nativeBounds = subsetSrid == nativeSrid
+            ? (MinX: bounds.XMin, MinY: bounds.YMin, MaxX: bounds.XMax, MaxY: bounds.YMax)
+            : await _coverageBackend.TransformExtentAsync(bounds, subsetSrid, nativeSrid, cancellationToken)
+                .ConfigureAwait(false);
+
+        // A disjoint or merely touching window has no coverage to export. Letting
+        // it reach ST_Clip/ST_AsGDALRaster can turn invalid subsetting into a 500.
+        // Partial overlap remains valid: the canonical raster backend clips it.
+        if (!nativeBounds.HasValue ||
+            nativeBounds.Value.MaxX <= extent.XMin || nativeBounds.Value.MinX >= extent.XMax ||
+            nativeBounds.Value.MaxY <= extent.YMin || nativeBounds.Value.MinY >= extent.YMax)
+        {
+            return new WcsParameterError(
+                Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
+                nativeBounds.HasValue
+                    ? "Spatial subset does not intersect the coverage extent."
+                    : "Spatial subset could not be transformed to the coverage CRS.",
+                string.IsNullOrWhiteSpace(GetQueryValue(query, Wcs20Utilities.Parameters.BBox))
+                    ? Wcs20Utilities.Parameters.Subset
+                    : Wcs20Utilities.Parameters.BBox);
+        }
+
+        return null;
     }
 
     private async Task<IResult> HandleZarrGetCoverageAsync(

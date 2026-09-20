@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 
@@ -12,13 +13,23 @@ namespace Honua.Protocols.Ogc.Classic.Wcs20;
 internal sealed class Wcs20CoverageBackend(
     IRasterStore rasterStore,
     IZarrStore zarrStore,
-    IZarrRasterSliceReader zarrRasterSliceReader)
+    IZarrRasterSliceReader zarrRasterSliceReader,
+    ICoordinateTransformService coordinateTransformService)
 {
     internal Task<RasterInfo?> GetPrimaryRasterInfoAsync(int layerId, CancellationToken cancellationToken)
         => rasterStore.GetPrimaryRasterInfoAsync(layerId, cancellationToken);
 
     internal Task<RasterExtent?> GetExtentAsync(int layerId, long rasterId, CancellationToken cancellationToken)
         => rasterStore.GetExtentAsync(layerId, rasterId, cancellationToken);
+
+    internal ValueTask<(double MinX, double MinY, double MaxX, double MaxY)?> TransformExtentAsync(
+        RasterExtent extent,
+        int sourceSrid,
+        int targetSrid,
+        CancellationToken cancellationToken)
+        => coordinateTransformService.TransformExtentAsync(
+            extent.XMin, extent.YMin, extent.XMax, extent.YMax,
+            sourceSrid, targetSrid, cancellationToken);
 
     internal Task<RasterResult> ExportImageAsync(
         int layerId,
