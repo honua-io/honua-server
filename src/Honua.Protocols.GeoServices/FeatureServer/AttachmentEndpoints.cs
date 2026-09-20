@@ -72,17 +72,12 @@ internal static partial class AttachmentEndpoints
             // GET queryAttachments stays consistent with addAttachment.
             .CacheOutput(policy => policy.NoCache());
 
-        // GET and POST: ArcGIS Pro lists a feature's attachments with a form POST to this
-        // resource (the Attachments tab of the Attributes pane), exactly as it POSTs query.
-        // Answering POST with a 405 envelope left the pane at "Attachments (0)" after a
-        // successful addAttachment.
-        endpoints.Map("/rest/services/{serviceId}/FeatureServer/{layerId:int}/{featureId:long}/attachments", HandleAttachmentInfos)
+        endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/{featureId:long}/attachments", HandleAttachmentInfos)
             .WithDisplayName("Get Feature Attachment Infos")
             .WithName("AttachmentInfos")
             .WithSummary("Get attachment infos for a specific feature")
             .WithDescription("Returns the canonical attachment infos resource for a feature")
             .WithTags("FeatureServer", "Attachments")
-            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get, HttpMethods.Post }))
             // Per-feature attachment lists are mutable: an addAttachment/updateAttachment/
             // deleteAttachments must be visible to the very next get_list for the same OID.
             // The anonymous-only output-cache base policy would otherwise cache the empty
@@ -603,12 +598,6 @@ internal static partial class AttachmentEndpoints
         var requestedFormat = context.Request.Query.TryGetValue("f", out var formatValue)
             ? formatValue.ToString()
             : null;
-        if (requestedFormat is null && HttpMethods.IsPost(context.Request.Method) && context.Request.HasFormContentType)
-        {
-            // Pro sends f=json in the form body of its POST.
-            var form = await context.Request.ReadFormAsync(context.RequestAborted);
-            requestedFormat = form.TryGetValue("f", out var formFormat) ? formFormat.ToString() : null;
-        }
         if (!FeatureServerEndpoints.TryValidateOutputFormat(
                 requestedFormat,
                 FeatureServerEndpoints.JsonOnlyFormats,

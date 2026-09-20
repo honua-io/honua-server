@@ -91,7 +91,6 @@ internal static partial class FeatureServerEndpoints
             Publisher = service.Metadata.Publisher,
             Links = GeoServicesGovernanceProjection.ProjectLinks(service.Metadata),
             Layers = [.. publications.Select(pair => MapLayerInfoV2(pair.Resource, pair.Publication, snapshot))],
-            Relationships = BuildServiceRelationshipsV2(publications, snapshot),
             SpatialReference = spatialReference,
             InitialExtent = serviceExtent,
             FullExtent = serviceExtent,
@@ -721,38 +720,6 @@ internal static partial class FeatureServerEndpoints
     /// no publication exists on this service for the related resource, the relationship is
     /// skipped (clients can't address it as an integer layer id anyway).
     /// </summary>
-    /// <summary>
-    /// The service-level relationship list: every relationship a visible layer declares,
-    /// once per relationship id, and only when the related layer is itself visible in the
-    /// service. ArcGIS Pro enables Related Data on a selection only when the service root
-    /// lists the relationship class; a layer-only listing left the menu at "None available"
-    /// (honua-esri-compat native-pro-matrix-20260917-a, UI-FEAT-RELATIONSHIPS).
-    /// </summary>
-    internal static LayerRelationshipInfo[] BuildServiceRelationshipsV2(
-        IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
-        MetadataV2GraphSnapshot snapshot)
-    {
-        ArgumentNullException.ThrowIfNull(publications);
-        ArgumentNullException.ThrowIfNull(snapshot);
-
-        var visibleLayerIds = publications.Select(pair => pair.Publication.LayerIndex).ToHashSet();
-        var byId = new SortedDictionary<int, LayerRelationshipInfo>();
-        foreach (var pair in publications)
-        {
-            foreach (var relationship in BuildRelationshipResponseV2(pair.Resource, snapshot))
-            {
-                if (!visibleLayerIds.Contains(relationship.RelatedTableId))
-                {
-                    continue;
-                }
-
-                byId.TryAdd(relationship.Id, relationship);
-            }
-        }
-
-        return [.. byId.Values];
-    }
-
     internal static LayerRelationshipInfo[] BuildRelationshipResponseV2(
         MetadataV2Resource resource,
         MetadataV2GraphSnapshot snapshot)

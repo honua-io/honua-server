@@ -351,11 +351,7 @@ internal static class ImageServerSoapEndpoints
             new XElement("MinPixelSize", "0"),
             new XElement("MaxPixelSize", "0"),
             new XElement("CopyrightText", string.Empty),
-            // Mirrors the REST document: the literal Generic hid every elevation service
-            // from Esri clients, which key elevation behaviour on this one element.
-            new XElement("ServiceDataType", revalidation.Resolution.ElevationEnabled
-                ? "esriImageServiceDataTypeElevation"
-                : "esriImageServiceDataTypeGeneric"),
+            new XElement("ServiceDataType", "esriImageServiceDataTypeGeneric"),
             BuildDoubleArray("MinValues", statistics.Select(static value => value.MinValue ?? 0)),
             BuildDoubleArray("MaxValues", statistics.Select(static value => value.MaxValue ?? 0)),
             BuildDoubleArray("MeanValues", statistics.Select(static value => value.MeanValue ?? 0)),
@@ -373,7 +369,7 @@ internal static class ImageServerSoapEndpoints
             new XElement("DefaultCompressionQuality", 75),
             new XElement("DefaultResamplingMethod", "RSP_BilinearInterpolation"),
             new XElement("DefaultMosaicMethod", "esriMosaic" + ImageServerMosaicRule.DefaultMosaicMethod),
-            new XElement("SupportBSQ", true),
+            new XElement("SupportBSQ", false),
             new XElement("SupportsTime", false),
             new XElement("MensurationCapabilities", "Basic"),
             new XElement("HasRasterAttributeTable", false),
@@ -484,7 +480,15 @@ internal static class ImageServerSoapEndpoints
     }
 
     internal static string ResolveImageUrl(HttpContext context, string href)
-        => GeoServicesImageHrefResolver.ResolveAbsoluteHref(context, href);
+    {
+        if (Uri.TryCreate(href, UriKind.Absolute, out var absoluteHref)
+            && (absoluteHref.Scheme == Uri.UriSchemeHttp || absoluteHref.Scheme == Uri.UriSchemeHttps))
+        {
+            return href;
+        }
+
+        return $"{BaseUrlResolver.GetBaseUrl(context)}{(href.StartsWith('/') ? string.Empty : "/")}{href}";
+    }
 
     private static async Task<IResult> HandleGetImageAsync(
         XElement operation,
@@ -759,7 +763,7 @@ internal static class ImageServerSoapEndpoints
         var format = MapImageFormat(FindDescendantValue(imageType, "ImageFormat"));
         if (format is null)
         {
-            error = "ImageFormat must be PNG, JPG, TIFF, or BSQ.";
+            error = "ImageFormat must be PNG, JPG, or TIFF.";
             return false;
         }
 
@@ -1165,10 +1169,6 @@ internal static class ImageServerSoapEndpoints
             null or "" or "esriImagePNG" or "esriImagePNG24" or "esriImagePNG32" => "png",
             "esriImageJPG" => "jpg",
             "esriImageTIFF" => "tiff",
-            // Raw band-sequential samples: how ArcGIS Pro and arcpy read image-service
-            // pixels (Raster, RasterToNumPyArray, GetCellValue all ExportImage as BSQ and
-            // fetch the ImageURL). SupportBSQ in GetServiceInfo advertises it.
-            "esriImageBSQ" => "bsq",
             _ => null
         };
 
@@ -1177,7 +1177,6 @@ internal static class ImageServerSoapEndpoints
         {
             "jpg" or "jpeg" => "esriImageJPG",
             "tif" or "tiff" => "esriImageTIFF",
-            "bsq" => "esriImageBSQ",
             _ => "esriImagePNG"
         };
 

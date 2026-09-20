@@ -201,30 +201,6 @@
         {
           "id": "esri-integration",
           "reason": "Power BI's packaged ArcGIS visual integration, which is neither raw FeatureServer nor OData."
-        },
-        {
-          "id": "ogc-api-styles",
-          "reason": "OGC API - Styles; QGIS has no styles client, so the pyqgis lane certifies the advertised SLD representation being fetched and applied through QgsVectorLayer.loadSldStyle."
-        },
-        {
-          "id": "pmtiles",
-          "reason": "PMTiles archive read over HTTP range requests; certified on the pyqgis lane against an archive published through the running server at fixture bring-up."
-        },
-        {
-          "id": "vectortileserver",
-          "reason": "Esri VectorTileServer; certified on the pyqgis lane once the protocol was enabled in the client-compat fixture, which had drifted from MetadataV2ServiceProtocols.All."
-        },
-        {
-          "id": "sensorthings",
-          "reason": "OGC SensorThings API; certified on the pyqgis lane against the QGIS SensorThings provider, which has no client-compat abbreviation row."
-        },
-        {
-          "id": "cog",
-          "reason": "Cloud Optimized GeoTIFF read over HTTP range requests; certified on the pyqgis lane against the artifact the client-compat seed publishes from test_service layer 0."
-        },
-        {
-          "id": "3d-tiles",
-          "reason": "OGC 3D Tiles scene consumed through the QGIS cesiumtiles provider; certified on the pyqgis lane against the scene the client-compat seed generates from browser_compat/2002."
         }
       ]
     },
@@ -314,22 +290,10 @@
       "activationState": "activated",
       "rosterOrigin": "artifact",
       "sourceStatus": "Live nightly",
-      "clientVersionPolicy": "QGIS LTR pinned by the pyqgis lane container image tag; the runtime version is captured into every envelope (currently 3.44.14-Solothurn).",
+      "clientVersionPolicy": "QGIS LTR pinned by the pyqgis lane container image tag; the runtime version is captured into every envelope (currently 3.44.13-Solothurn).",
       "protocolSurfaces": [
-        "3d-tiles",
-        "cog",
-        "featureserver",
-        "mapserver",
-        "ogc-api-styles",
         "ogc-features",
-        "pmtiles",
-        "sensorthings",
-        "stac",
-        "vectortileserver",
-        "wcs",
-        "wfs",
-        "wms",
-        "wmts"
+        "wfs"
       ],
       "operationApplicability": {
         "applicable": [

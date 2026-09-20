@@ -728,60 +728,6 @@
         }
       }
     },
-    "/collections/{collectionId}/schema": {
-      "get": {
-        "summary": "Get the feature schema of a collection",
-        "description": "OGC API Features Part 5: JSON Schema of the properties a feature of the collection carries, with x-ogc-role marking the id and primary geometry",
-        "tags": [
-          "OGC API Features"
-        ],
-        "parameters": [
-          {
-            "name": "collectionId",
-            "in": "path",
-            "required": true,
-            "description": "Collection identifier",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "f",
-            "in": "query",
-            "required": false,
-            "description": "Output format (json, schemajson, or schema+json)",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "json",
-                "schemajson",
-                "schema+json"
-              ]
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Feature schema",
-            "content": {
-              "application/schema+json": {
-                "schema": {
-                  "type": "object"
-                }
-              },
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Collection not found"
-          }
-        }
-      }
-    },
     "/collections/{collectionId}/items/{featureId}": {
       "get": {
         "summary": "Get a specific feature from a collection",

@@ -169,15 +169,6 @@ internal static class ObservabilityServiceCollectionExtensions
             {
                 policy.AddPolicy<RouteTagOutputCachePolicy>();
                 policy.AddPolicy<AnonymousOnlyOutputCachePolicy>();
-                // A cached HEAD entry replays with Content-Length: 0 (the framework stamps the
-                // cached body length), which makes GDAL /vsicurl and other range-aware clients
-                // treat the resource as empty on the second probe. HEAD never touches the cache.
-                policy.AddPolicy<BypassOutputCacheOnHeadRequestPolicy>();
-                // Output caching never produces 206/Content-Range. Once an unranged GET has
-                // warmed an artifact's entry, every ranged GET within the TTL would be answered
-                // from cache as a whole-body 200 - GDAL /vsicurl, PMTiles and COG readers then
-                // download the entire object per read. Range requests skip lookup and storage.
-                policy.AddPolicy<BypassOutputCacheOnRangeRequestPolicy>();
                 policy.VaryByValue(static context => ResolveTenantOutputCacheKey(context));
                 // Metadata responses (service directory, capabilities, collections, STAC,
                 // tiles, styles) are filtered by the process-wide license edition and

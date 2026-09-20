@@ -1214,38 +1214,6 @@
     {
       "id": "NB-STAC-VALID-01",
       "category": "NB-STAC"
-    },
-    {
-      "id": "NB-PQG-3DT-01",
-      "category": "NB-PQG"
-    },
-    {
-      "id": "NB-PQG-3DT-02",
-      "category": "NB-PQG"
-    },
-    {
-      "id": "NB-PQG-OAPIFT-01",
-      "category": "NB-PQG"
-    },
-    {
-      "id": "NB-PQG-OAPIFT-02",
-      "category": "NB-PQG"
-    },
-    {
-      "id": "NB-PQG-OAPIFT-03",
-      "category": "NB-PQG"
-    },
-    {
-      "id": "NB-PQG-WFST-01",
-      "category": "NB-PQG"
-    },
-    {
-      "id": "NB-PQG-WFST-02",
-      "category": "NB-PQG"
-    },
-    {
-      "id": "NB-PQG-WFST-03",
-      "category": "NB-PQG"
     }
   ],
   "plannedLanes": [
@@ -1371,8 +1339,7 @@
         "CERT-RNDR-02",
         "CERT-RNDR-SYM-01",
         "CERT-RNDR-LIN-01",
-        "CERT-RNDR-FIL-01",
-        "NB-PQG-*"
+        "CERT-RNDR-FIL-01"
       ],
       "manual": [
         "CERT-RNDR-LBL-01",

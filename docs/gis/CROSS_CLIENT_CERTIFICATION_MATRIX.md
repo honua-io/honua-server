@@ -140,7 +140,7 @@ Planned lanes do not enter the active `lanes` array or `expected-pairs.json` unt
 | **JS — Esri Leaflet** (Playwright) | Automated §§ | FeatureServer + MapServer browser subset | EL-EXT-01 … EL-EXT-04 |
 | **JS — Cesium** (Playwright) | Automated ¶¶ | WMS, WMTS, OGC API Tiles, OGC API Maps imagery subset | JS-CES-IMG-01, JS-CES-TILE-01 |
 | **Desktop — ArcGIS Pro** | Stub (REST) + manual/scheduled licensed runner scaffold | REST common-core via `arcgis-stub`; Portal/Sharing facade discovery via the `arcgis-stub` `portal` protocol (CERT-PRTL-\*); licensed `desktop-arcgis` workflow emits FeatureServer + MapServer envelopes when an explicitly enabled self-hosted Windows ArcGIS Pro runner is available | DSK-EXT-01, DSK-EXT-02, CERT-PRTL-\* |
-| **Desktop — QGIS** | Automated (PyQGIS) + manual per runbook | Core CERT-\* through RNDR-01/02/SYM/LIN/FIL; RNDR-LBL/SPR/URL remain manual | DSK-EXT-01, DSK-EXT-02 (manual); NB-PQG-\* (8) |
+| **Desktop — QGIS** | Automated (PyQGIS) + manual per runbook | Core CERT-\* through RNDR-01/02/SYM/LIN/FIL; RNDR-LBL/SPR/URL remain manual | DSK-EXT-01, DSK-EXT-02 (manual) |
 | **CLI / SDK** (admin SDK, pytest, Microsoft.OData.Client) | Automated | All CERT-\* except CERT-RNDR (OData via Microsoft.OData.Client xUnit suite) | CLI-EXT-01, CLI-EXT-02 |
 | **BI — Power BI** | Manual per runbook | CERT-CONN, AUTH, DISC, SCHM, QFLT, PAGE, ERRH, RNDR † | BI-EXT-01, BI-EXT-02 |
 | **BI — Excel** | Manual per runbook | CERT-CONN, AUTH, DISC, SCHM, QFLT, PAGE, ERRH, RNDR † | BI-EXT-01, BI-EXT-02 |
@@ -499,21 +499,6 @@ The five canonical analyst lanes ([#3392](https://github.com/honua-io/honua-serv
 | NB-STAC-SEARCH-08 | NB-STAC | An identical bbox + datetime + sortby search returned the same ordered ids (['1', '2', '3']) over both GET and POST | stac | pass/fail |
 | NB-STAC-SEARCH-09 | NB-STAC | limit=3 with max_items=4 crossed a page boundary and yielded four distinct items | stac | pass/fail |
 | NB-STAC-VALID-01 | NB-STAC | stac-api-validator validated core, collections, features, item-search, filter against http://honua:5000/stac with exit code 0 | stac | pass/fail |
-
-#### `desktop-qgis` — PyQGIS provider extensions (8 cases)
-
-Beyond the common core, the PyQGIS lane certifies the QGIS providers that reach surfaces the core does not name: the cesiumtiles provider against the published 3D Tiles scene, and the write paths of the OAPIF and WFS providers (OGC API Features Part 4 transactions and WFS-T). Every result is confirmed by an independent server-side read, never by the provider's own commit status.
-
-| Test Case ID | Category | Description | Protocol(s) | Evidence |
-|---|---|---|---|---|
-| NB-PQG-3DT-01 | NB-PQG | QgsTiledSceneLayer loads the published 3D Tiles tileset through the cesiumtiles provider with the scene CRS and a layer extent inside the source polygon layer's extent | 3d-tiles | pass/fail |
-| NB-PQG-3DT-02 | NB-PQG | Content tiles enumerated from the cesiumtiles index at geometric error 0 are fetched through retrieveContent as glTF binary addressed under the tileset's own location | 3d-tiles | pass/fail |
-| NB-PQG-OAPIFT-01 | NB-PQG | OGC API Features Part 4 create through the OAPIF provider adds a feature, confirmed by an independent items read rather than commitChanges(); authenticated with the session authcfg API key | ogc-features | pass/fail |
-| NB-PQG-OAPIFT-02 | NB-PQG | OGC API Features Part 4 update rewrites an attribute in place, confirmed server-side, with no extra row created | ogc-features | pass/fail |
-| NB-PQG-OAPIFT-03 | NB-PQG | OGC API Features Part 4 delete removes the feature and leaves every other row in place, confirmed server-side | ogc-features | pass/fail |
-| NB-PQG-WFST-01 | NB-PQG | WFS-T Insert through the QGIS WFS provider creates a feature, confirmed by an independent OGC API Features read; an anonymous Transaction is refused | wfs | pass/fail |
-| NB-PQG-WFST-02 | NB-PQG | WFS-T Update rewrites an attribute in place, confirmed server-side, with no extra row created | wfs | pass/fail |
-| NB-PQG-WFST-03 | NB-PQG | WFS-T Delete removes the feature and leaves every other row intact, confirmed server-side | wfs | pass/fail |
 
 ## ID Stability Policy
 

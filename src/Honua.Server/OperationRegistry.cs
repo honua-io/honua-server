@@ -32,7 +32,6 @@ public static class OperationRegistry
     private const string Wms111 = "WMS-1.1.1";
     private const string Wmts10 = "WMTS-1.0.0";
     private const string Wcs201 = "WCS-2.0.1";
-    private const string Wcs10 = "WCS-1.0.0";
     private const string Wps202 = "WPS-2.0.2";
     private const string ODataV4 = "OData-v4";
     private const string Grpc = "Grpc";
@@ -87,13 +86,6 @@ public static class OperationRegistry
         new(Wcs201, "GetCapabilities"),
         new(Wcs201, "DescribeCoverage"),
         new(Wcs201, "GetCoverage"),
-
-        // WCS 1.0.0 compatibility operations, served from the same routes by
-        // version negotiation. Stock QGIS ships a WCS 1.0/1.1 client only
-        // (honua-server#5020).
-        new(Wcs10, "GetCapabilities"),
-        new(Wcs10, "DescribeCoverage"),
-        new(Wcs10, "GetCoverage"),
 
         // WPS 2.0.2 operations (KVP and XML dispatched through GET|POST /wps)
         new(Wps202, "GetCapabilities"),

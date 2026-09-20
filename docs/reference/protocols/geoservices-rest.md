@@ -30,7 +30,6 @@ Honua serves a GeoServices REST surface under `/rest/services`, plus a Portal Sh
 | GET | `/sharing/rest/search` | Portal item search. |
 | GET | `/sharing/rest/content/items/{id}`, `.../{id}/data` | Portal item metadata and data. |
 | GET, POST | `/sharing/rest/oauth2/authorize`, `/callback`, `/token` | Portal OAuth2 named-user bridge. |
-| GET, POST | `/admin/services/{serviceName}.{serviceType}`, `/rest/admin/{serviceName}.{serviceType}` | Read-only ArcGIS Server Admin API service resource (type, extensions, branch-versioning availability). Requires a signed-in caller who can read the service; arcpy's branch-versioning tools validate a feature-service workspace through it. |
 
 > Open `https://server.example.com/rest/services?f=json` in a browser.
 

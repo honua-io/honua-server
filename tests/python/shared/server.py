@@ -108,11 +108,6 @@ class HonuaServer:
             "HONUA_DEV_AUTH": "true",
             "HONUA_DEV_AUTH_ALLOW_BYPASS": "true",
             "HONUA_ADMIN_PASSWORD": "ClientCompatAdmin123!",
-            # The ArcGIS JS API sends its credential in X-Esri-Authorization, so the
-            # Esri identity probes assert it survives a CORS preflight. With no allowed
-            # origin the server correctly emits no CORS headers at all and there is
-            # nothing to assert against, so configure one.
-            "Cors__AllowedOrigins__0": "http://localhost:3000",
             "HONUA_REGISTER_TEST_INFRASTRUCTURE": "true",
             "HONUA_SKIP_MIGRATIONS": "true",
             # Disable HTTPS redirection for tests

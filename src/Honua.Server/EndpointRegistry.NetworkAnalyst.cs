@@ -16,11 +16,5 @@ public static partial class EndpointRegistry
         new("POST", "/rest/services/{serviceId}/NAServer/ClosestFacility/solveClosestFacility"),
         new("POST", "/rest/services/{serviceId}/NAServer/ODCostMatrix/solveODCostMatrix"),
         new("POST", "/rest/services/{serviceId}/NAServer/LocationAllocation/solveLocationAllocation"),
-        // NAServer service and analysis-layer resources read by ArcGIS Pro / arcpy.nax
-        // before they bind a stand-alone routing service (#5035)
-        new("GET", "/rest/services/{serviceId}/NAServer"),
-        new("POST", "/rest/services/{serviceId}/NAServer"),
-        new("GET", "/rest/services/{serviceId}/NAServer/{layerName}"),
-        new("POST", "/rest/services/{serviceId}/NAServer/{layerName}"),
     ];
 }

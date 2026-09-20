@@ -610,7 +610,6 @@ BEGIN
             SELECT to_jsonb(ARRAY[
                 'FeatureServer',
                 'MapServer',
-                'VectorTileServer',
                 'ImageServer',
                 'GPServer',
                 'OgcFeatures',
@@ -668,10 +667,6 @@ BEGIN
                 -- to anonymous only when no policy was seeded. (honua-server#1345.)
                 COALESCE(s.metadata -> 'accessPolicy', jsonb_build_object('allowAnonymous', true)) AS service_access_policy,
                 COALESCE(l.metadata -> 'accessPolicy', jsonb_build_object('allowAnonymous', true)) AS layer_access_policy,
-                jsonb_strip_nulls(jsonb_build_object(
-                    'honua.io/attachments', COALESCE(l.metadata #>> '{annotations,honua.io/attachments}', l.metadata ->> 'honua.io/attachments'),
-                    'supportsAttachments', COALESCE(l.metadata #>> '{annotations,supportsAttachments}', l.metadata ->> 'supportsAttachments')
-                )) AS layer_annotations,
                 -- Temporal (time-aware) configuration carried through from v1 layer
                 -- metadata so a layer published with timeInfo compiles into the v2
                 -- resource's typed temporal slot. Without this the GeoServices
@@ -707,7 +702,7 @@ BEGIN
                         'title', layer_name,
                         'description', layer_description,
                         'labels', '{}'::jsonb,
-                        'annotations', layer_annotations,
+                        'annotations', '{}'::jsonb,
                         'keywords', '[]'::jsonb,
                         'themes', '[]'::jsonb
                     ),
@@ -765,21 +760,7 @@ BEGIN
                         FROM honua.layer_fields lf
                         WHERE lf.layer_id = layer_rows.layer_id
                     ), '[]'::jsonb),
-                    'relationships', COALESCE((
-                        SELECT jsonb_agg(jsonb_build_object(
-                            'id', 'rel-' || r.layer_id::text || '-' || r.relationship_id::text,
-                            'name', r.name,
-                            'description', r.description,
-                            'relatedResourceId', 'res-layer-' || r.related_layer_id::text,
-                            'role', r.relationship_type,
-                            'cardinality', 'one-to-many',
-                            'originField', r.origin_foreign_key,
-                            'destinationField', r.destination_foreign_key,
-                            'esriRelationshipId', r.relationship_id
-                        ) ORDER BY r.relationship_id)
-                        FROM honua.relationships r
-                        WHERE r.layer_id = layer_rows.layer_id
-                    ), '[]'::jsonb),
+                    'relationships', '[]'::jsonb,
                     'styleResourceIds', '[]'::jsonb,
                     'spatial', jsonb_build_object(
                         'spatialReference', jsonb_build_object(
@@ -936,8 +917,8 @@ BEGIN
                     -- OperationNotSupported and GPServer service/task routes 404 with
                     -- "GPServer is not enabled". Mirrors MetadataV2CompatSnapshotSql.
                     -- (honua-server#1412.)
-                    'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'VectorTileServer', 'ImageServer', 'GPServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
-                    'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'VectorTileServer', 'ImageServer', 'GPServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
+                    'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'ImageServer', 'GPServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
+                    'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'ImageServer', 'GPServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
                     'options', jsonb_build_object('capabilities', to_jsonb(service_capabilities)),
                     'accessPolicy', service_access_policy,
                     'status', (SELECT value FROM status_doc),

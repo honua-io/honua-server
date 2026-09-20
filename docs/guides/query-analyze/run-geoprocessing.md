@@ -89,8 +89,6 @@ ArcPy discovers the same catalog through `POST /services/{serviceId}/GPServer`.
 The SOAP adapter supports `SubmitJob`, `Execute`, `GetJobStatus`, `GetJobMessages`,
 `GetJobResult`, `GetJobToolName`, and `CancelJob` through the same authorized job
 handlers as REST. Job ownership, tenant and service/task binding checks apply.
-`GetJobStatus` also accepts the optional `GetProgressMsg` boolean that ArcGIS Pro
-sends while polling a job; the status response shape does not change.
 Failed synchronous execution produces a SOAP fault; cancellation succeeds only
 when the canonical runtime confirms it. The mixed catalog continues to advertise
 asynchronous execution, while SOAP `Execute` accepts sync-eligible tasks.
