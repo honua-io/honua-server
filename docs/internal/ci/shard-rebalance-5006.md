@@ -71,3 +71,34 @@ exactly one owner.
 The full local `bash scripts/ci/validate-ci-router.sh` suite passed, including
 new source/test descriptors and class owner pins. Hosted `CI Router Validation`
 also passed in [run 35498558862](https://github.com/honua-io/honua-server/actions/runs/35498558862).
+
+## Hosted proof (2026-09-20)
+
+Dispatched `ci.yml` with `full_ci=true` on
+`fix/5006-ogc-maps-tiles-shards` at `7bcd8ecd0eccb2814aab278061648072e8d47ae8`:
+[run 35498558862](https://github.com/honua-io/honua-server/actions/runs/35498558862).
+Subsequent commits only record validation in this document; the tested shard
+catalog and router assertions are unchanged.
+
+| Shard | Job | Passed cases | Test seconds | Budget utilization |
+|---|---|---:|---:|---:|
+| OGC API Maps Basic and Conformance | [106046189469](https://github.com/honua-io/honua-server/actions/runs/35498558862/job/106046189469) | 36 | 170 (2m 50s) | 12.9% |
+| OGC API Maps Rendering and Records | [106046189389](https://github.com/honua-io/honua-server/actions/runs/35498558862/job/106046189389) | 96 | 405 (6m 45s) | 30.7% |
+
+Both jobs succeeded on attempt 1. Both timing records report `passed`,
+`capacity_status: ok`, and the unchanged 1,320-second cap. The headroom audit
+passed `--max-utilization 0.8`. This is one measurement, not a p90 cohort;
+Basic and Conformance was faster than its historical sizing estimate.
+
+Comparing TRX inventories by class, method and parameterized display name
+preserves all 129 baseline cases exactly once. The only additions are the
+three `OgcMapsBasicTests.GetCollection_*` cases introduced on trunk by #5009
+(`e8b672b096`), verified against that commit's diff. The combined result is
+132 passed, zero failed/skipped, zero missing and zero duplicate cases.
+
+The full matrix is **not claimed green**: Python Integration Tests failed
+three Esri identity expectations (service lookup and HTTPS token issuance),
+and File and Raster Import failed
+`ImportFile_DefaultOperationalSchema_CanDiscoverPublishAndQueryFeatureServer`
+with an object/string JSON mismatch at `ImportEndpointTests.cs:667`. Those jobs,
+their tests and product code are unchanged by this partition-only change.
