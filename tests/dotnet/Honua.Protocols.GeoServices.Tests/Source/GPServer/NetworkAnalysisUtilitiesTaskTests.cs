@@ -107,20 +107,24 @@ public sealed class NetworkAnalysisUtilitiesTaskTests : IClassFixture<NAServerEn
         // Esri embeds toolInfo as a JSON object, not an encoded string.
         var root = result.GetProperty("value");
         root.ValueKind.Should().Be(JsonValueKind.Object);
-        root.GetProperty("networkDataset").GetProperty("networkAttributes").EnumerateArray()
+        // The shape an ArcGIS Enterprise 11.5 NetworkAnalysisUtilities service answers with.
+        root.GetProperty("isPortal").GetBoolean().Should().BeTrue();
+        var network = root.GetProperty("networkDataset");
+        network.GetProperty("defaultCostAttribute").GetString().Should().Be("TravelTime");
+        network.GetProperty("defaultRestrictions").GetArrayLength().Should().Be(0);
+        network.GetProperty("networkAttributes").EnumerateArray()
             .Select(a => a.GetProperty("name").GetString()).Should().Contain("TravelTime");
-        root.GetProperty("networkDataset").GetProperty("networkSources").EnumerateArray()
-            .Select(s => s.GetProperty("elementType").GetString()).Should().Contain(["esriNETEdge", "esriNETJunction"]);
         root.GetProperty("serviceLimits").GetProperty("maximumStops").GetInt32().Should().BeGreaterThan(0);
-        root.GetProperty("supportedTravelModes").GetArrayLength().Should().BeGreaterThan(0);
-        root.GetProperty("defaultTravelMode").GetString().Should().HaveLength(16);
+        root.GetProperty("serviceLimits").GetProperty("forceHierarchyBeyondDistanceUnits").GetString().Should().Be("Miles");
     }
 
     [IntegrationTest]
-    [Operation(Operations.ErrorHandling)]
+    [Operation(Operations.ProcessExecution)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
-    public async Task GetToolInfo_RejectsAToolNoSolverOwns()
+    public async Task GetToolInfo_DescribesTheNetworkForAToolNoSolverOwns()
     {
+        // ArcGIS Pro asks for every routing tool a portal could carry while binding;
+        // an error envelope here is dereferenced by its native reader.
         using var payload = new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("f", "json"),
@@ -129,11 +133,33 @@ public sealed class NetworkAnalysisUtilitiesTaskTests : IClassFixture<NAServerEn
         ]);
         using var response = await _fixture.Client.PostAsync($"/rest/services/{ServiceId}/GPServer/GetToolInfo/execute", payload);
 
-        // GeoServices REST errors travel as HTTP 200 envelopes carrying the Esri code.
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var error = document.RootElement.GetProperty("error");
-        error.GetProperty("code").GetInt32().Should().Be(400);
-        error.GetProperty("details")[0].GetString().Should().Contain("GetToolInfo");
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        var toolInfo = document.RootElement.GetProperty("results")[0].GetProperty("value");
+        toolInfo.GetProperty("networkDataset").GetProperty("defaultCostAttribute").GetString().Should().Be("TravelTime");
+        toolInfo.GetProperty("serviceLimits").TryGetProperty("maximumStops", out _).Should().BeFalse("no solver here owns the VRP tool, so no tool-specific limit is claimed");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    public async Task GetToolInfo_DescribesTheNetworkWhenNoToolIsNamed()
+    {
+        // The exact call ArcGIS Pro 3.7.1 makes in portal mode (captured through a
+        // logging proxy): no serviceName, no toolName. An error envelope here crashed
+        // arcpy.nax natively.
+        using var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("includeNetworkSourceInfo", "true"),
+        ]);
+        using var response = await _fixture.Client.PostAsync($"/rest/services/{ServiceId}/GPServer/GetToolInfo/execute", payload);
+
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse();
+        var toolInfo = document.RootElement.GetProperty("results")[0].GetProperty("value");
+        toolInfo.GetProperty("isPortal").GetBoolean().Should().BeTrue();
+        toolInfo.GetProperty("networkDataset").GetProperty("networkAttributes").GetArrayLength().Should().BeGreaterThan(0);
     }
 
     [IntegrationTest]

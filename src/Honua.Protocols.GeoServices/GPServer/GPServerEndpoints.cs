@@ -254,15 +254,18 @@ internal static partial class GPServerEndpoints
             return formatError;
         }
 
+        // The utility tasks answer for every service id, like the NAServer solves they
+        // describe: the portal's helperServices point at the Routing service id, which
+        // publishes no catalog tasks of its own.
+        if (NAServerMetadata.IsUtilityTask(taskName))
+        {
+            return HandleNetworkAnalysisUtilityTaskInfo(context, taskName);
+        }
+
         var serviceValidation = await ValidateServiceAsync(context, serviceId, logger, ct);
         if (!serviceValidation.IsValid)
         {
             return serviceValidation.ErrorResult!;
-        }
-
-        if (NAServerMetadata.IsUtilityTask(taskName))
-        {
-            return HandleNetworkAnalysisUtilityTaskInfo(context, taskName);
         }
 
         var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
@@ -299,12 +302,6 @@ internal static partial class GPServerEndpoints
 
         try
         {
-            var serviceValidation = await ValidateServiceAsync(context, serviceId, logger, ct);
-            if (!serviceValidation.IsValid)
-            {
-                return serviceValidation.ErrorResult!;
-            }
-
             if (readSoapParameters is null && NAServerMetadata.IsUtilityTask(taskName))
             {
                 // The utility tasks are synchronous by contract (Esri publishes them as
@@ -314,6 +311,12 @@ internal static partial class GPServerEndpoints
                         context,
                         $"Task '{taskName}' is synchronous. Use the execute route."),
                     "Utility task has no job form");
+            }
+
+            var serviceValidation = await ValidateServiceAsync(context, serviceId, logger, ct);
+            if (!serviceValidation.IsValid)
+            {
+                return serviceValidation.ErrorResult!;
             }
 
             // Auth must precede parameter reading to guarantee 401/403 before 400
@@ -434,17 +437,18 @@ internal static partial class GPServerEndpoints
 
         try
         {
+            if (readSoapParameters is null && NAServerMetadata.IsUtilityTask(taskName))
+            {
+                // Read-only projection of the routing provider: no job, no job
+                // authorization, anonymous like the NAServer solves it describes, and
+                // answered for every service id like them (#5035).
+                return await HandleNetworkAnalysisUtilityExecuteAsync(context, taskName, ct).ConfigureAwait(false);
+            }
+
             var serviceValidation = await ValidateServiceAsync(context, serviceId, logger, ct);
             if (!serviceValidation.IsValid)
             {
                 return serviceValidation.ErrorResult!;
-            }
-
-            if (readSoapParameters is null && NAServerMetadata.IsUtilityTask(taskName))
-            {
-                // Read-only projection of the routing provider: no job, no job
-                // authorization, anonymous like the NAServer solves it describes (#5035).
-                return await HandleNetworkAnalysisUtilityExecuteAsync(context, taskName, ct).ConfigureAwait(false);
             }
 
             // Auth must precede parameter reading to guarantee 401/403 before 400.

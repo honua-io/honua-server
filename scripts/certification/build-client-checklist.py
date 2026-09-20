@@ -240,6 +240,17 @@ CITE = {
         "URL template, not a descriptor. Nothing in this client reads a TileJSON "
         "document, so the cell is unreachable however the server behaves."
     ),
+    "arcpy-nax-web-tools-only": (
+        "ArcGIS Pro 3.7 arcpy.nax reference (network data source: a network dataset, a portal, or a "
+        "stand-alone routing service dictionary whose url names the web-tool GP service) and "
+        "honua-esri-compat/evidence/arcpy-client-compat-20260919-p-na/certification/"
+        "20260920T000204Z-desktop-arcgis-gp-naserver.cert.json: with the NAServer service and layer "
+        "resources, the NetworkAnalysisUtilities tasks, portal helperServices and networkanalysis "
+        "privileges all published, arcpy.nax answers 'Portal ... is not configured with the Route web "
+        "tool' and, in the stand-alone form, posts to <url>/FindRoutes. arcpy.nax models every analysis "
+        "on Esri's asynchronous routing web tools and never issues the NAServer solve; the synchronous "
+        "NAServer layers are consumed by the Pro user interface (pro-ui lane)."
+    ),
     "arcpy-rest-only-ops": (
         "honua-esri-compat arcpy_probes contract, run arcpy-client-compat-20260918-c: "
         "the operation is a REST operation with no core-arcpy surface - arcpy has "
@@ -896,15 +907,17 @@ MATRIX: list[dict] = [
         "operations": {
             # pgRouting is installed in the fixture image and the routing grid seed
             # (tests/seed/client-compat-routing-v1.sql) makes Route/solve and
-            # ServiceArea/solveServiceArea return results. The clients still cannot
-            # bind the service: honua-server#5035 (no NAServer metadata resources,
-            # no NetworkAnalysisUtilities GetTravelModes/GetToolInfo tasks).
+            # ServiceArea/solveServiceArea return results; the NAServer metadata,
+            # NetworkAnalysisUtilities tasks and portal helperServices shipped for
+            # honua-server#5035. arcpy still has no path to the NAServer solve: arcpy.nax
+            # drives only Esri's asynchronous routing web tools (n/a-no-client, cited).
+            # The synchronous layers are the Pro user interface's path (pro-ui).
             "route-solve": {"pro-ui": NS,
-                            "arcpy": ("fail", "arcpy-naserver-standalone-probe", "honua-server#5035"),
+                            "arcpy": ("n/a-no-client", "arcpy-nax-web-tools-only"),
                             "qgis-ui": ("n/a-no-client", "qgis-registry"),
                             "pyqgis": ("n/a-no-client", "qgis-registry")},
             "service-area": {"pro-ui": NS,
-                             "arcpy": ("fail", "arcpy-naserver-standalone-probe", "honua-server#5035"),
+                             "arcpy": ("n/a-no-client", "arcpy-nax-web-tools-only"),
                              "qgis-ui": ("n/a-no-client", "qgis-registry"),
                              "pyqgis": ("n/a-no-client", "qgis-registry")},
         },

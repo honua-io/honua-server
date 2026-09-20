@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -43,6 +44,13 @@ internal static class NAServerMetadata
     /// <summary>Utility task names in the order they are listed.</summary>
     public static readonly string[] UtilityTaskNames = [GetToolInfoTask, GetTravelModesTask];
 
+    /// <summary>
+    /// The service id the portal's helperServices address. The NAServer adapter and
+    /// the utility tasks answer for every service id, so the portal advertises a
+    /// stable, Esri-shaped one rather than picking an arbitrary published service.
+    /// </summary>
+    public const string PortalRoutingServiceId = "Routing";
+
     /// <summary>Impedance attribute name advertised for every travel mode.</summary>
     public const string TimeAttributeName = "TravelTime";
 
@@ -78,6 +86,10 @@ internal static class NAServerMetadata
     public static bool IsKnownLayer(string? layerName)
         => layerName is not null && Layers.Any(l => l.Name.Equals(layerName, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>The id clients should select when the user has chosen no travel mode.</summary>
+    public static string DefaultTravelModeId(NetworkDataset dataset)
+        => TravelModeId(dataset.TravelProfiles[0]);
+
     /// <summary>Serializes a document as compact or indented JSON.</summary>
     public static string Serialize(JsonNode document, bool pretty)
         => document.ToJsonString(pretty ? PrettyJson : CompactJson);
@@ -107,7 +119,8 @@ internal static class NAServerMetadata
             document[layer.ServiceCollection] = names;
         }
 
-        document["serviceLimits"] = BuildServiceLimits(null);
+        document["networkDatasetLayers"] = new JsonArray();
+        document["serviceLimits"] = new JsonObject();
         return document;
     }
 
@@ -127,39 +140,66 @@ internal static class NAServerMetadata
             return null;
         }
 
-        var travelModes = BuildTravelModes(dataset);
+        // Shaped after a real ArcGIS Enterprise 11.5 analysis layer: travel modes carry
+        // an ordinal itemId here (the 16-character id lives in GetTravelModes),
+        // defaultTravelMode is that ordinal, network classes describe their fields as
+        // fieldName/defaultValue/candidateFields, and the locate settings name the
+        // sources. ArcGIS Pro's native reader is exact about these shapes.
+        var travelModes = dataset.TravelProfiles
+            .Select((profile, index) => BuildTravelMode(profile, dataset, itemId: (index + 1).ToString(CultureInfo.InvariantCulture)))
+            .ToList();
         var document = new JsonObject
         {
             ["layerName"] = layer.Name,
             ["layerType"] = layer.LayerType,
             ["impedance"] = TimeAttributeName,
             ["restrictions"] = new JsonArray(),
-            ["snapTolerance"] = 5000,
-            ["maxSnapTolerance"] = 5000,
+            ["snapTolerance"] = 0,
+            ["maxSnapTolerance"] = 20000,
             ["snapToleranceUnits"] = "esriMeters",
+            ["locateSettings"] = new JsonObject
+            {
+                ["default"] = new JsonObject
+                {
+                    ["tolerance"] = 20000,
+                    ["toleranceUnits"] = "esriMeters",
+                    ["allowAutoRelocate"] = true,
+                    ["sources"] = new JsonArray(new JsonObject { ["name"] = dataset.EdgeTable }),
+                },
+            },
             ["ignoreInvalidLocations"] = true,
             ["restrictUTurns"] = "esriNFSBAllowBacktrack",
             ["useHierarchy"] = false,
+            ["hierarchyAttributeName"] = "",
+            ["hierarchyLevelCount"] = 0,
+            ["hierarchyMaxValues"] = new JsonArray(),
+            ["hierarchyNumTransitions"] = new JsonArray(),
             ["hasZ"] = false,
             ["hasM"] = false,
-            ["outputSpatialReference"] = SpatialReference(dataset.Srid),
-            ["defaultTravelMode"] = TravelModeId(dataset.TravelProfiles[0]),
+            ["outputSpatialReference"] = new JsonObject { ["wkid"] = dataset.Srid },
+            ["defaultTravelMode"] = "1",
             ["supportedTravelModes"] = new JsonArray([.. travelModes]),
             ["networkDataset"] = BuildNetworkDataset(dataset),
             ["networkClasses"] = BuildNetworkClasses(layer.Name),
             ["accumulateAttributeNames"] = new JsonArray(),
             ["attributeParameterValues"] = new JsonArray(),
-            ["trafficSupport"] = "NONE",
-            ["serviceLimits"] = BuildServiceLimits(configuration),
+            ["trafficSupport"] = "esriNTSNone",
+            ["startTime"] = null,
+            ["startTimeIsUTC"] = false,
+            ["useStartTime"] = false,
+            ["timeWindowsAreUTC"] = false,
+            ["preserveObjectID"] = false,
+            ["serviceLimits"] = new JsonObject(),
         };
 
         switch (layer.Name)
         {
             case "Route":
-                document["returnDirections"] = false;
+                document["returnDirections"] = true;
                 document["supportsDirections"] = true;
                 document["directionsLanguage"] = "en";
                 document["directionsSupportedLanguages"] = new JsonArray("en");
+                document["directionsStyleNames"] = new JsonArray("NA Desktop", "NA Navigation");
                 document["directionsLengthUnits"] = "esriNAUKilometers";
                 document["directionsTimeAttribute"] = TimeAttributeName;
                 document["findBestSequence"] = false;
@@ -167,7 +207,7 @@ internal static class NAServerMetadata
                 document["preserveLastStop"] = true;
                 document["useTimeWindows"] = false;
                 document["outputLineType"] = "esriNAOutputLineTrueShape";
-                document["supportsPreservingObjectID"] = false;
+                document["supportsPreservingObjectID"] = true;
                 break;
             case "ServiceArea":
                 document["defaultBreaks"] = new JsonArray(5, 10, 15);
@@ -316,33 +356,36 @@ internal static class NAServerMetadata
         RoutingConfiguration configuration,
         bool includeNetworkSourceInfo = false)
     {
+        // ArcGIS Pro's native reader expects a toolInfo document back from every
+        // GetToolInfo call and dereferences an error envelope. In portal mode (captured
+        // on Pro 3.7.1 through a logging proxy) it calls the task with only
+        // f=json&includeNetworkSourceInfo=true - no serviceName, no toolName - and in
+        // stand-alone mode it names asyncRoute/FindRoutes; it may also ask about tools
+        // no solver here owns (asyncVRP, ...). The document describes the network in
+        // every case; only the serviceLimits section varies with the tool named.
         var layer = ResolveLayer(serviceName, toolName);
-        if (layer is null || !layer.IsSupported(capabilities))
-        {
-            return null;
-        }
+        var limitsFor = layer is not null && layer.IsSupported(capabilities) ? layer.Name : string.Empty;
 
-        // Esri publishes toolInfo as an embedded JSON object (the documented example
-        // shows "value": { "networkDataset": ..., "serviceLimits": ... }), not as an
-        // encoded string, and arcpy.nax reads it that way.
-        var networkDataset = new JsonObject
-        {
-            ["name"] = dataset.Name,
-            ["attributeParameterValues"] = new JsonArray(),
-            ["networkAttributes"] = BuildNetworkAttributes(),
-            ["trafficSupport"] = "NONE",
-        };
-        if (includeNetworkSourceInfo)
-        {
-            networkDataset["networkSources"] = BuildNetworkSources(dataset, includeSchema: true);
-        }
-
+        // Esri publishes toolInfo as an embedded JSON object, exactly the shape an
+        // ArcGIS Enterprise 11.5 NetworkAnalysisUtilities service answers with:
+        // isPortal, networkDataset {attributeParameterValues, defaultCostAttribute,
+        // defaultRestrictions, networkAttributes, trafficSupport} and serviceLimits.
+        // That reference omits networkSources even with includeNetworkSourceInfo=true,
+        // and ArcGIS Pro's native reader is exact about the shape, so nothing extra
+        // is added here.
+        _ = includeNetworkSourceInfo;
         var toolInfo = new JsonObject
         {
-            ["networkDataset"] = networkDataset,
-            ["serviceLimits"] = BuildServiceLimits(configuration),
-            ["supportedTravelModes"] = new JsonArray([.. BuildTravelModes(dataset)]),
-            ["defaultTravelMode"] = TravelModeId(dataset.TravelProfiles[0]),
+            ["isPortal"] = true,
+            ["networkDataset"] = new JsonObject
+            {
+                ["attributeParameterValues"] = new JsonArray(),
+                ["defaultCostAttribute"] = TimeAttributeName,
+                ["defaultRestrictions"] = new JsonArray(),
+                ["networkAttributes"] = BuildNetworkAttributes(),
+                ["trafficSupport"] = "NONE",
+            },
+            ["serviceLimits"] = BuildServiceLimits(configuration, limitsFor),
         };
 
         return new JsonObject
@@ -394,10 +437,15 @@ internal static class NAServerMetadata
     private static List<JsonObject> BuildTravelModes(NetworkDataset dataset)
         => dataset.TravelProfiles.Select(profile => BuildTravelMode(profile, dataset)).ToList();
 
-    private static JsonObject BuildTravelMode(RoutingTravelProfile profile, NetworkDataset dataset)
+    /// <summary>
+    /// One travel mode document. GetTravelModes carries the 16-character <c>id</c>; the
+    /// analysis layer resource carries the ordinal <c>itemId</c> instead, as real
+    /// ArcGIS Server layers do.
+    /// </summary>
+    private static JsonObject BuildTravelMode(RoutingTravelProfile profile, NetworkDataset dataset, string? itemId = null)
         => new()
         {
-            ["id"] = TravelModeId(profile),
+            [itemId is null ? "id" : "itemId"] = itemId ?? TravelModeId(profile),
             ["name"] = TravelModeName(profile),
             ["type"] = TravelModeType(profile),
             ["description"] = $"Travel profile '{profile.Name}' of network dataset '{dataset.Name}' "
@@ -524,51 +572,104 @@ internal static class NAServerMetadata
             Attribute(DistanceAttributeName, "Kilometers", "esriNAUKilometers"));
     }
 
+    /// <summary>
+    /// The input network classes of an analysis layer in the shape ArcGIS Server
+    /// publishes: each class lists its fields as fieldName / defaultValue /
+    /// candidateFields (the names a client maps input columns from).
+    /// </summary>
     private static JsonArray BuildNetworkClasses(string layerName)
     {
-        var classes = new JsonArray();
-        var inputs = layerName switch
-        {
-            "Route" => new[] { "Stops" },
-            "ServiceArea" => new[] { "Facilities" },
-            "ClosestFacility" => new[] { "Incidents", "Facilities" },
-            "ODCostMatrix" => new[] { "Origins", "Destinations" },
-            "LocationAllocation" => new[] { "Facilities", "DemandPoints" },
-            _ => Array.Empty<string>(),
-        };
-        foreach (var name in inputs.Concat(["Barriers", "PolylineBarriers", "PolygonBarriers"]))
-        {
-            classes.Add(new JsonObject
+        static JsonObject NaField(string name, JsonNode? defaultValue = null, params string[] candidates)
+            => new()
             {
-                ["className"] = name,
-                ["candidateFieldNames"] = new JsonArray("Name"),
-                ["fields"] = new JsonArray(
-                    Field("ObjectID", "esriFieldTypeOID", "ObjectID", null),
-                    Field("Name", "esriFieldTypeString", "Name", 500)),
-            });
+                ["fieldName"] = name,
+                ["defaultValue"] = defaultValue,
+                ["candidateFields"] = candidates.Length == 0 ? null : new JsonArray([.. candidates.Select(c => (JsonNode)JsonValue.Create(c))]),
+            };
+
+        static JsonObject NaClass(string name, params JsonObject[] fields)
+            => new() { ["className"] = name, ["fields"] = new JsonArray([.. fields]) };
+
+        var nameCandidates = new[] { "Name", "Address", "Label", "Location", "Description", "Title" };
+        JsonObject Points(string className, params JsonObject[] extra)
+            => NaClass(className, [NaField("Shape"), NaField("Name", null, nameCandidates), NaField("CurbApproach", 0), .. extra]);
+
+        var classes = new List<JsonObject>();
+        switch (layerName)
+        {
+            case "Route":
+                classes.Add(NaClass("Stops",
+                    NaField("Shape"), NaField("Name", null, nameCandidates),
+                    NaField("RouteName", null, "RouteName", "Route", "RouteID"),
+                    NaField("Sequence", 1), NaField("TimeWindowStart"), NaField("TimeWindowEnd"),
+                    NaField("CurbApproach", 0), NaField("LocationType", 0)));
+                break;
+            case "ServiceArea":
+                classes.Add(Points("Facilities", NaField($"Breaks_{TimeAttributeName}")));
+                break;
+            case "ClosestFacility":
+                classes.Add(Points("Incidents", NaField("TargetFacilityCount"), NaField($"Cutoff_{TimeAttributeName}")));
+                classes.Add(Points("Facilities"));
+                break;
+            case "ODCostMatrix":
+                classes.Add(Points("Origins", NaField("TargetDestinationCount"), NaField($"Cutoff_{TimeAttributeName}")));
+                classes.Add(Points("Destinations"));
+                break;
+            case "LocationAllocation":
+                classes.Add(Points("Facilities", NaField("FacilityType", 0), NaField("Weight", 1)));
+                classes.Add(Points("DemandPoints", NaField("Weight", 1)));
+                break;
         }
 
-        return classes;
+        classes.Add(NaClass("Barriers", NaField("Shape"), NaField("Name", null, nameCandidates), NaField("BarrierType", 0), NaField("CurbApproach", 0)));
+        classes.Add(NaClass("PolylineBarriers", NaField("Shape"), NaField("Name", null, nameCandidates), NaField("BarrierType", 0), NaField($"Attr_{TimeAttributeName}", 1)));
+        classes.Add(NaClass("PolygonBarriers", NaField("Shape"), NaField("Name", null, nameCandidates), NaField("BarrierType", 0), NaField($"Attr_{TimeAttributeName}", 1)));
+        return new JsonArray([.. classes]);
     }
 
-    private static JsonObject BuildServiceLimits(RoutingConfiguration? configuration)
+    /// <summary>
+    /// The serviceLimits block of toolInfo, with the key names an ArcGIS Enterprise
+    /// utility service publishes for the solver in question; a null value means the
+    /// limit is not enforced, as on a real server.
+    /// </summary>
+    private static JsonObject BuildServiceLimits(RoutingConfiguration configuration, string layerName)
     {
-        var limits = new JsonObject();
-        if (configuration is null)
+        var limits = new JsonObject
         {
-            return limits;
+            ["forceHierarchyBeyondDistance"] = null,
+            ["forceHierarchyBeyondDistanceUnits"] = "Miles",
+            ["maximumFeaturesAffectedByLineBarriers"] = configuration.MaxBarriers,
+            ["maximumFeaturesAffectedByPointBarriers"] = configuration.MaxBarriers,
+            ["maximumFeaturesAffectedByPolygonBarriers"] = configuration.MaxBarriers,
+        };
+        switch (layerName)
+        {
+            case "Route":
+                limits["maximumStops"] = configuration.MaxStops;
+                limits["maximumStopsPerRoute"] = configuration.MaxStops;
+                break;
+            case "ServiceArea":
+                limits["maximumFacilities"] = configuration.MaxFacilities;
+                limits["maximumNumberOfBreaks"] = configuration.MaxBreaks;
+                limits["maximumBreakTimeValue"] = null;
+                limits["maximumBreakDistanceValue"] = null;
+                break;
+            case "ClosestFacility":
+                limits["maximumFacilities"] = configuration.MaxFacilities;
+                limits["maximumFacilitiesToFind"] = configuration.MaxClosestFacilities;
+                limits["maximumIncidents"] = configuration.MaxIncidents;
+                break;
+            case "ODCostMatrix":
+                limits["maximumOrigins"] = configuration.MaxOrigins;
+                limits["maximumDestinations"] = configuration.MaxDestinations;
+                break;
+            case "LocationAllocation":
+                limits["maximumFacilities"] = configuration.MaxFacilities;
+                limits["maximumFacilitiesToFind"] = configuration.MaxFacilities;
+                limits["maximumDemandPoints"] = configuration.MaxStops;
+                break;
         }
 
-        limits["maximumFeaturesAffectedByPointBarriers"] = configuration.MaxBarriers;
-        limits["maximumFeaturesAffectedByLineBarriers"] = configuration.MaxBarriers;
-        limits["maximumFeaturesAffectedByPolygonBarriers"] = configuration.MaxBarriers;
-        limits["maximumStops"] = configuration.MaxStops;
-        limits["maximumFacilities"] = configuration.MaxFacilities;
-        limits["maximumIncidents"] = configuration.MaxIncidents;
-        limits["maximumFacilitiesToFind"] = configuration.MaxClosestFacilities;
-        limits["maximumOrigins"] = configuration.MaxOrigins;
-        limits["maximumDestinations"] = configuration.MaxDestinations;
-        limits["maximumBreaks"] = configuration.MaxBreaks;
         return limits;
     }
 

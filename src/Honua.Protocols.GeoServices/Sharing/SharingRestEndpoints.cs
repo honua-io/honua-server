@@ -334,7 +334,7 @@ public static class SharingRestEndpoints
         return Results.Json(response, SharingRestJsonContext.Default.SharingInfoResponse, contentType: JsonContentType);
     }
 
-    private static IResult HandlePortalSelfAsync(
+    private static async Task<IResult> HandlePortalSelfAsync(
         HttpContext context,
         string? f,
         [FromServices] ILogger<SharingRestLog> logger)
@@ -351,6 +351,7 @@ public static class SharingRestEndpoints
             {
                 Username = ResolveUsername(principal),
                 FullName = ResolveDisplayName(principal),
+                Privileges = await BuildPrivilegesAsync(context).ConfigureAwait(false),
             }
             : null;
 
@@ -359,12 +360,52 @@ public static class SharingRestEndpoints
             Id = "0123456789ABCDEF",
             Name = "Honua",
             User = user,
+            HelperServices = await BuildHelperServicesAsync(context).ConfigureAwait(false),
         };
 
         return Results.Json(response, SharingRestJsonContext.Default.PortalSelfResponse, contentType: JsonContentType);
     }
 
-    private static IResult HandleCommunitySelfAsync(
+    /// <summary>
+    /// The routing helper services (#5035): the NAServer analysis layers the provider
+    /// supports and the GP service carrying GetTravelModes/GetToolInfo, all addressed
+    /// under the <c>Routing</c> service id the NAServer adapter serves for every id.
+    /// Omitted when the host has no routing provider at all.
+    /// </summary>
+    private static async Task<PortalHelperServices?> BuildHelperServicesAsync(HttpContext context)
+    {
+        var capabilities = await TryGetRoutingCapabilitiesAsync(context).ConfigureAwait(false);
+        if (capabilities is null)
+        {
+            return null;
+        }
+
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
+        var root = $"{baseUrl}/rest/services/{NAServer.NAServerMetadata.PortalRoutingServiceId}";
+
+        string? defaultTravelMode = null;
+        var datasets = context.RequestServices.GetService<Honua.Routing.Features.Routing.Abstractions.INetworkDatasetResolver>();
+        var configuration = context.RequestServices.GetService<IOptions<Honua.Routing.Features.Routing.Domain.RoutingConfiguration>>()?.Value;
+        if (datasets is not null && configuration is not null)
+        {
+            var dataset = await NAServer.NAServerEndpoints.ResolveDatasetAsync(datasets, configuration, context.RequestAborted).ConfigureAwait(false);
+            defaultTravelMode = NAServer.NAServerMetadata.DefaultTravelModeId(dataset);
+        }
+
+        PortalHelperService? Solver(bool supported, string layer)
+            => supported ? new PortalHelperService { Url = $"{root}/NAServer/{layer}", DefaultTravelMode = defaultTravelMode } : null;
+
+        return new PortalHelperServices
+        {
+            Route = Solver(capabilities.SupportsRoute, "Route"),
+            ServiceArea = Solver(capabilities.SupportsServiceArea, "ServiceArea"),
+            ClosestFacility = Solver(capabilities.SupportsClosestFacility, "ClosestFacility"),
+            OdCostMatrix = Solver(capabilities.SupportsOdCostMatrix, "ODCostMatrix"),
+            RoutingUtilities = new PortalHelperService { Url = $"{root}/GPServer" },
+        };
+    }
+
+    private static async Task<IResult> HandleCommunitySelfAsync(
         HttpContext context,
         string? f,
         [FromServices] ILogger<SharingRestLog> logger)
@@ -389,9 +430,84 @@ public static class SharingRestEndpoints
         {
             Username = ResolveUsername(principal),
             FullName = ResolveDisplayName(principal),
+            Privileges = await BuildPrivilegesAsync(context).ConfigureAwait(false),
         };
 
         return Results.Json(response, SharingRestJsonContext.Default.CommunitySelfResponse, contentType: JsonContentType);
+    }
+
+    /// <summary>
+    /// The routing provider's capabilities, or <c>null</c> when the host has no usable
+    /// routing: no provider registered, or a provider that refuses to describe itself
+    /// (the unavailable provider throws). portals/self must keep answering either way.
+    /// </summary>
+    private static async Task<Honua.Routing.Features.Routing.Domain.RoutingProviderCapabilities?> TryGetRoutingCapabilitiesAsync(HttpContext context)
+    {
+        var routing = context.RequestServices.GetService<Honua.Routing.Features.Routing.Abstractions.IRoutingProvider>();
+        if (routing is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return await routing.GetCapabilitiesAsync(context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The portal privileges an authenticated principal holds. Esri clients gate their
+    /// routing tools on <c>premium:user:networkanalysis</c> and the per-solver
+    /// sub-privileges, so those are derived from the routing provider's capabilities
+    /// rather than asserted; a host with no routing advertises none of them (#5035).
+    /// </summary>
+    private static async Task<string[]> BuildPrivilegesAsync(HttpContext context)
+    {
+        var privileges = new List<string> { "portal:user:viewOrgItems" };
+        var capabilities = await TryGetRoutingCapabilitiesAsync(context).ConfigureAwait(false);
+        if (capabilities is null)
+        {
+            return [.. privileges];
+        }
+
+        var solvers = new List<string>();
+        if (capabilities.SupportsRoute)
+        {
+            solvers.Add("premium:user:networkanalysis:routing");
+            solvers.Add("premium:user:networkanalysis:optimizedrouting");
+        }
+
+        if (capabilities.SupportsServiceArea)
+        {
+            solvers.Add("premium:user:networkanalysis:servicearea");
+        }
+
+        if (capabilities.SupportsClosestFacility)
+        {
+            solvers.Add("premium:user:networkanalysis:closestfacility");
+        }
+
+        if (capabilities.SupportsOdCostMatrix)
+        {
+            solvers.Add("premium:user:networkanalysis:origindestinationcostmatrix");
+        }
+
+        if (capabilities.SupportsLocationAllocation)
+        {
+            solvers.Add("premium:user:networkanalysis:locationallocation");
+        }
+
+        if (solvers.Count > 0)
+        {
+            privileges.Add("premium:user:networkanalysis");
+            privileges.AddRange(solvers);
+        }
+
+        return [.. privileges];
     }
 
     private static async Task<IResult> HandleSearchAsync(

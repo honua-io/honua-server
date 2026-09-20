@@ -31,8 +31,8 @@
       },
       "arcpy": {
         "pass": 31,
-        "n/a-no-client": 59,
-        "fail": 4
+        "n/a-no-client": 61,
+        "fail": 2
       },
       "qgis-ui": {
         "pass": 51,
@@ -47,8 +47,8 @@
     },
     "overall": {
       "cells": 376,
-      "closed": 318,
-      "open": 58
+      "closed": 320,
+      "open": 56
     }
   },
   "rows": [
@@ -1747,9 +1747,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "fail",
-          "issue": "honua-server#5035",
-          "evidence": "honua-esri-compat/evidence/arcpy-standalone-probes-20260919/naserver-arcpy-nax.md - ArcGIS Pro/arcpy 3.7.1.1904: arcpy.nax.Route stand-alone dictionary fails at the utility service: Task 'GetTravelModes' on service 'test_service' was not found; NAServer service and Route layer resources answer 404 while Route/solve returns a route over the seeded grid"
+          "state": "n/a-no-client",
+          "citation": "ArcGIS Pro 3.7 arcpy.nax reference (network data source: a network dataset, a portal, or a stand-alone routing service dictionary whose url names the web-tool GP service) and honua-esri-compat/evidence/arcpy-client-compat-20260919-p-na/certification/20260920T000204Z-desktop-arcgis-gp-naserver.cert.json: with the NAServer service and layer resources, the NetworkAnalysisUtilities tasks, portal helperServices and networkanalysis privileges all published, arcpy.nax answers 'Portal ... is not configured with the Route web tool' and, in the stand-alone form, posts to <url>/FindRoutes. arcpy.nax models every analysis on Esri's asynchronous routing web tools and never issues the NAServer solve; the synchronous NAServer layers are consumed by the Pro user interface (pro-ui lane)."
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -1770,9 +1769,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "fail",
-          "issue": "honua-server#5035",
-          "evidence": "honua-esri-compat/evidence/arcpy-standalone-probes-20260919/naserver-arcpy-nax.md - ArcGIS Pro/arcpy 3.7.1.1904: arcpy.nax.Route stand-alone dictionary fails at the utility service: Task 'GetTravelModes' on service 'test_service' was not found; NAServer service and Route layer resources answer 404 while Route/solve returns a route over the seeded grid"
+          "state": "n/a-no-client",
+          "citation": "ArcGIS Pro 3.7 arcpy.nax reference (network data source: a network dataset, a portal, or a stand-alone routing service dictionary whose url names the web-tool GP service) and honua-esri-compat/evidence/arcpy-client-compat-20260919-p-na/certification/20260920T000204Z-desktop-arcgis-gp-naserver.cert.json: with the NAServer service and layer resources, the NetworkAnalysisUtilities tasks, portal helperServices and networkanalysis privileges all published, arcpy.nax answers 'Portal ... is not configured with the Route web tool' and, in the stand-alone form, posts to <url>/FindRoutes. arcpy.nax models every analysis on Esri's asynchronous routing web tools and never issues the NAServer solve; the synchronous NAServer layers are consumed by the Pro user interface (pro-ui lane)."
         },
         "qgis-ui": {
           "state": "n/a-no-client",

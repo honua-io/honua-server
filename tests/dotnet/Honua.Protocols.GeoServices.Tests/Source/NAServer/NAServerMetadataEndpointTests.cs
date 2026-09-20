@@ -81,21 +81,25 @@ public sealed class NAServerMetadataEndpointTests : IClassFixture<NAServerEndpoi
 
         var modes = root.GetProperty("supportedTravelModes").EnumerateArray().ToArray();
         modes.Should().NotBeEmpty("the default network dataset declares at least the driving profile");
+        // As on a real ArcGIS Server layer, the layer's modes carry an ordinal itemId and
+        // defaultTravelMode names one of them; the 16-character ids live in GetTravelModes.
         var defaultMode = root.GetProperty("defaultTravelMode").GetString();
-        modes.Select(m => m.GetProperty("id").GetString()).Should().Contain(defaultMode);
-        modes[0].GetProperty("id").GetString().Should().HaveLength(16, "Esri travel mode ids are 16 characters");
+        modes.Select(m => m.GetProperty("itemId").GetString()).Should().Contain(defaultMode);
         modes[0].GetProperty("impedanceAttributeName").GetString().Should().Be("TravelTime");
         modes[0].GetProperty("type").GetString().Should().Be("AUTOMOBILE");
+        root.GetProperty("locateSettings").GetProperty("default").GetProperty("sources").GetArrayLength().Should().BeGreaterThan(0);
 
         var attributes = root.GetProperty("networkDataset").GetProperty("networkAttributes").EnumerateArray()
             .Select(a => a.GetProperty("name").GetString()).ToArray();
         attributes.Should().Contain(["TravelTime", "Kilometers"]);
         root.GetProperty("networkDataset").GetProperty("state").GetString().Should().Be("esriNDSStateBuilt");
 
-        var classes = root.GetProperty("networkClasses").EnumerateArray()
-            .Select(c => c.GetProperty("className").GetString()).ToArray();
-        classes.Should().Contain(["Stops", "Barriers", "PolylineBarriers", "PolygonBarriers"]);
-        root.GetProperty("serviceLimits").GetProperty("maximumStops").GetInt32().Should().BeGreaterThan(0);
+        var classes = root.GetProperty("networkClasses").EnumerateArray().ToArray();
+        classes.Select(c => c.GetProperty("className").GetString())
+            .Should().Contain(["Stops", "Barriers", "PolylineBarriers", "PolygonBarriers"]);
+        var stops = classes.Single(c => c.GetProperty("className").GetString() == "Stops");
+        stops.GetProperty("fields").EnumerateArray().Select(f => f.GetProperty("fieldName").GetString())
+            .Should().Contain(["Shape", "Name", "Sequence"], "input classes describe their fields the way ArcGIS Server does");
     }
 
     [IntegrationTest]

@@ -78,7 +78,7 @@ internal static partial class GPServerEndpoints
             return SetSpanErrorAndReturn(
                 StandardErrorHelpers.CreateBadRequest(
                     context,
-                    "GetToolInfo needs a toolName (or serviceName) naming a solver the routing provider supports: "
+                    "GetToolInfo needs a serviceName or toolName, for example: "
                     + NAServerMetadata.DescribeToolNames() + "."),
                 "GetToolInfo tool not supported");
         }
