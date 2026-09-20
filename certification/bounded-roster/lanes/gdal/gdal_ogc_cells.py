@@ -88,7 +88,7 @@ def _oapif_auth(cell: Cell, target: str) -> None:
                 dataset = _open_vector(target)
                 layer = dataset.GetLayerByName(PROTECTED_COLLECTION) or dataset.GetLayer(0)
                 outcomes[label] = layer.GetFeatureCount()
-                dataset = None
+                del dataset
         expect(all(outcomes[label] == 401 for label in ("anonymous", "wrong-api-key", "expired-bearer")), outcomes)
         expect(outcomes["api-key"] == 10 and outcomes["oidc-bearer"] == 10, outcomes)
         c.detail = f"{target}: {outcomes}"
@@ -105,7 +105,7 @@ def _oapif_crs_axis(cell: Cell, connection: str) -> None:
             layer.SetSpatialFilterRect(-122.47, 37.715, -122.44, 37.745)
             windowed = sorted(_features(layer))
             layer.SetSpatialFilter(None)
-            dataset = None
+            del dataset
         bbox_requests = record.fetched_path("bbox=")
         expect(located == {fid: value[2] for fid, value in FIXTURE.items()}, f"lon/lat coordinates differ: {located}")
         expect(windowed == [3, 4], f"bbox window returned {windowed}")
@@ -197,7 +197,7 @@ def features_landing() -> None:
         dataset = _open_vector("OAPIF:" + OAPIF)
         names = {dataset.GetLayer(i).GetName() for i in range(dataset.GetLayerCount())}
         count = dataset.GetLayerByName("0").GetFeatureCount()
-        dataset = None
+        del dataset
         expect(names == PUBLIC_COLLECTIONS, f"layers {sorted(names)}")
         expect(OAPIF in record.fetched, f"landing page not fetched: {record.fetched}")
         return f"opened the API root as {len(names)} layers {sorted(names)}; layer 0 has {count} features"
@@ -228,7 +228,7 @@ def features_collections() -> None:
     def positive(record) -> str:
         dataset = _open_vector("OAPIF:" + OAPIF)
         names = {dataset.GetLayer(i).GetName() for i in range(dataset.GetLayerCount())}
-        dataset = None
+        del dataset
         listed, _ = _json_with_headers(OAPIF + "/collections")
         advertised = {collection["id"] for collection in listed["collections"]}
         expect(names == advertised == PUBLIC_COLLECTIONS, f"layers {sorted(names)} vs advertised {sorted(advertised)}")
@@ -249,7 +249,7 @@ def features_collection() -> None:
         layer = dataset.GetLayer(0)
         metadata = layer.GetMetadata()
         extent = layer.GetExtent()
-        dataset = None
+        del dataset
         expect(metadata.get("TITLE") == "Test Layer", metadata)
         expect(metadata.get("TEMPORAL_INTERVAL_MIN", "").startswith("2024-01-01")
                and metadata.get("TEMPORAL_INTERVAL_MAX", "").startswith("2024-01-10"), metadata)
@@ -268,7 +268,7 @@ def features_items() -> None:
     def positive(record) -> str:
         dataset = _open_vector("OAPIF:" + OAPIF + "/collections/0")
         features = _features(dataset.GetLayer(0))
-        dataset = None
+        del dataset
         expect(features == {fid: value for fid, value in FIXTURE.items()}, f"features differ: {features}")
         expect(record.fetched_path("/collections/0/items"), record.fetched)
         return f"read all {len(features)} fixture features with names, status and geometry"
@@ -291,7 +291,7 @@ def features_item() -> None:
             missing = "feature" if missing is not None else None
         except RuntimeError as error:
             missing = gdalkit.http_status_in(str(error))
-        dataset = None
+        del dataset
         item_requests = record.fetched_path("/items/3")
         expect(values == FIXTURE[3],
                f"GetFeature(3) returned {values}, expected {FIXTURE[3]}: GDAL requested {item_requests} without a "
@@ -315,7 +315,7 @@ def features_queryables() -> None:
         layer = dataset.GetLayer(0)
         layer.SetAttributeFilter("status = 'active'")
         selected = sorted(_features(layer))
-        dataset = None
+        del dataset
         queryables, _ = _json_with_headers(target)
         expect("status" in queryables.get("properties", {}), queryables)
         expect(selected == [1, 3, 5, 7, 9], selected)
@@ -352,7 +352,7 @@ def features_transactions() -> None:
                 created = "created"
             except RuntimeError as error:
                 created = str(error)
-            dataset = None
+            del dataset
         expect(any(capabilities.values()) and created == "created",
                f"GDAL {gdal.__version__}'s OAPIF driver is read-only: update-mode open -> {update_open!r}, write "
                f"capabilities {capabilities}, CreateFeature -> {created!r}; the governed transaction operation "
@@ -373,7 +373,7 @@ def features_service() -> None:
         with gdalkit.session() as record:
             dataset = _open_vector(connection)
             features = _features(dataset.GetLayer(0))
-            dataset = None
+            del dataset
         expect(features == FIXTURE, features)
         c.detail = f"{len(features)} features match the fixture; fetched {sorted(set(record.fetched))}"
     with cell.check("pagination", "driver follows next links across pages") as c:
@@ -382,7 +382,7 @@ def features_service() -> None:
             layer = dataset.GetLayer(0)
             layer.ResetReading()
             fids = [feature.GetFID() for feature in layer]
-            dataset = None
+            del dataset
         pages = record.fetched_path("/collections/0/items")
         expect(sorted(fids) == sorted(FIXTURE) and len(fids) == len(set(fids)), fids)
         expect(len([page for page in pages if "limit=3" in page or "offset=" in page]) >= 4, pages)
@@ -393,7 +393,7 @@ def features_service() -> None:
             layer = dataset.GetLayer(0)
             layer.ResetReading()
             first = [layer.GetNextFeature().GetFID() for _ in range(4)]
-            dataset = None
+            del dataset
         requests = [page for page in record.fetched_path("/collections/0/items") if "limit=4" in page]
         expect(requests, record.fetched)
         payload, _ = _json_with_headers(OAPIF + "/collections/0/items?limit=4")
@@ -425,7 +425,7 @@ def _wfs_checks(cell: Cell) -> None:
             dataset = _open_vector("WFS:" + WFS)
             layer = _wfs_layer(dataset)
             features = {fid: value for fid, value in _features(layer).items()}
-            dataset = None
+            del dataset
         names = sorted(value[0] for value in features.values())
         expect(names == sorted(value[0] for value in FIXTURE.values()), names)
         expect(record.fetched_path("REQUEST=GetFeature") and record.fetched_path("REQUEST=DescribeFeatureType"),
@@ -440,7 +440,7 @@ def _wfs_checks(cell: Cell) -> None:
                 outcome = "absent" if layer is None else "present"
             except RuntimeError as error:
                 outcome = str(error)
-            dataset = None
+            del dataset
         expect(outcome == "absent" or "exception" in outcome.lower(), outcome)
         c.detail = f"typed open -> {message!r}; layer lookup -> {outcome}"
     with cell.check("auth", "the protected feature type is advertised only to authenticated principals") as c:
@@ -456,7 +456,7 @@ def _wfs_checks(cell: Cell) -> None:
                         advertised[label] = len(_features(dataset.GetLayerByName(protected[0])))
                     else:
                         advertised[label] = "hidden"
-                    dataset = None
+                    del dataset
                 except RuntimeError as error:
                     advertised[label] = gdalkit.http_status_in(str(error)) or str(error)[:80]
         expect(all(advertised[label] in ("hidden", 401) for label in ("anonymous", "wrong-api-key", "expired-bearer")),
@@ -472,7 +472,7 @@ def _wfs_checks(cell: Cell) -> None:
             located = {value[0]: value[2] for value in _features(layer).values()}
             layer.SetSpatialFilterRect(-122.47, 37.715, -122.44, 37.745)
             windowed = sorted(value[0] for value in _features(layer).values())
-            dataset = None
+            del dataset
         expect(code == "4326", code)
         expect([round(v, 3) for v in extent] == [-122.49, -122.37, 37.71, 37.79], extent)
         expect(located["gamma"] == FIXTURE[3][2], located)
@@ -484,7 +484,7 @@ def _wfs_checks(cell: Cell) -> None:
             layer = _wfs_layer(dataset)
             types = _field_types(layer)
             geometry_type = ogr.GeometryTypeToName(layer.GetGeomType())
-            dataset = None
+            del dataset
         expect(types.get("name") == "String" and types.get("count") == "Integer", types)
         expect("Point" in geometry_type, geometry_type)
         c.detail = f"fields {types}; geometry {geometry_type}"
@@ -506,7 +506,7 @@ def wfs_service() -> None:
             dataset = _open_vector("WFS:" + WFS)
             layer = _wfs_layer(dataset)
             names = [value[0] for value in _features(layer).values()]
-            dataset = None
+            del dataset
         pages = [value for value in record.fetched_path("REQUEST=GetFeature") if "STARTINDEX=" in value.upper()]
         expect(sorted(names) == sorted(value[0] for value in FIXTURE.values()), names)
         expect(len(pages) >= 4, pages)
@@ -517,7 +517,7 @@ def wfs_service() -> None:
             layer = _wfs_layer(dataset)
             layer.ResetReading()
             first = [layer.GetNextFeature() for _ in range(4)]
-            dataset = None
+            del dataset
         counted = [value for value in record.fetched_path("REQUEST=GetFeature") if "COUNT=4" in value.upper()]
         expect(counted and all(feature is not None for feature in first), record.fetched)
         c.detail = f"COUNT=4 requests {counted[:2]}"
@@ -535,7 +535,7 @@ def _wcs_checks(cell: Cell) -> None:
             dataset = gdalkit.wcs_open(connection)
             size = (dataset.RasterXSize, dataset.RasterYSize)
             minmax = dataset.GetRasterBand(1).ComputeRasterMinMax(False)
-            dataset = None
+            del dataset
         expect(size == (64, 64) and minmax == (180.0, 180.0), (size, minmax))
         expect(record.fetched_path("REQUEST=GetCoverage"), record.fetched)
         c.detail = f"{size} min/max {minmax}; requests {sorted(set(record.fetched))}"
@@ -559,7 +559,7 @@ def _wcs_checks(cell: Cell) -> None:
             transform = dataset.GetGeoTransform()
             code = dataset.GetSpatialRef().GetAuthorityCode(None)
             dataset.GetRasterBand(1).ReadRaster(8, 8, 16, 16)
-            dataset = None
+            del dataset
         expect(code in ("4326", "CRS84"), code)
         expect([round(value, 8) for value in transform] == [-122.45, 0.00109375, 0.0, 37.8, 0.0, -0.00109375], transform)
         subsets = [value for value in record.fetched_path("REQUEST=GetCoverage") if "SUBSET=x" in value]
@@ -571,7 +571,7 @@ def _wcs_checks(cell: Cell) -> None:
             band = dataset.GetRasterBand(1)
             data_type = gdal.GetDataTypeName(band.DataType)
             band.ReadRaster(0, 0, 64, 64)
-            dataset = None
+            del dataset
         formats = [value for value in record.fetched_path("REQUEST=GetCoverage") if "Format=image/tiff" in value]
         expect(data_type == "Byte" and formats, (data_type, record.fetched))
         c.detail = f"band type {data_type}; GetCoverage Format=image/tiff requests {len(formats)}"
@@ -596,7 +596,7 @@ def wcs_service() -> None:
             band = dataset.GetRasterBand(1)
             corner = set(bytes(band.ReadRaster(60, 60, 4, 4)))
             pixel = set(bytes(band.ReadRaster(63, 0, 1, 1)))
-            dataset = None
+            del dataset
         expect(corner == {180} and pixel == {180}, (corner, pixel))
         c.detail = f"bottom-right 4x4 {corner}, top-right pixel {pixel}; requests {len(record.fetched)}"
     cell.write()
@@ -624,7 +624,7 @@ def coverages_service() -> None:
                     f"GDAL {gdal.__version__} OGCAPI: {error}; the collection advertises coverage links "
                     f"{coverage_links}, which this driver release does not recognise as a coverage endpoint")
             size = (dataset.RasterXSize, dataset.RasterYSize)
-            dataset = None
+            del dataset
         expect(size == (64, 64), size)
         c.detail = f"{size}; requests {sorted(set(record.fetched))}"
 
@@ -651,7 +651,7 @@ def coverages_service() -> None:
             with gdalkit.session():
                 dataset = open_coverage()
                 c.detail = f"{dataset.RasterXSize}x{dataset.RasterYSize}"
-                dataset = None
+                del dataset
     cell.write()
 
 

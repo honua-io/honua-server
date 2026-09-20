@@ -93,7 +93,7 @@ def open_failure(connection: str, headers: dict[str, str] | None = None, flags: 
             return str(error) + (" | " + " | ".join(record.errors) if record.errors else "")
         if dataset is None:
             return " | ".join(record.errors) or "open returned None"
-        dataset = None
+        del dataset  # Release the GDAL handle before leaving this session.
         return None
 
 
