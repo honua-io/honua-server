@@ -57,8 +57,14 @@ On managed PostgreSQL layers, concurrent PATCH requests may return `409 Conflict
 | `bbox`, `bbox-crs` | 4 or 6 values; anti-meridian supported; any registry-resolvable EPSG CRS. |
 | `crs` | Output CRS; response includes `Content-Crs`. Part 2 CRS conformance is advertised and exercised by the CITE evidence bundle. |
 | `datetime` | RFC 3339 instant or interval; requires temporal fields. |
-| `filter`, `filter-lang`, `filter-crs` | CQL2 filtering: `cql2-text` (default) and `cql2-json`. Filtering is implemented and blocking-tested, but its complete CQL2/Features Part 3 classes are not currently advertised. |
+| `filter`, `filter-lang`, `filter-crs` | CQL2 filtering: `cql2-text` (default) and `cql2-json`; `cql-text` is a legacy desktop-client alias for the text parser. Part 3 queryables/filter/features-filter and CQL2 basic/text/JSON classes are advertised. |
 | Queryable properties | Simple-valued queryables accepted directly as query parameters (combined with AND). |
+
+WGS84 collections advertise longitude/latitude `storageCrs=CRS84`, with CRS84 first
+in the supported CRS list. Default pages and single items use that axis order; an
+explicit EPSG:4326 request still returns latitude/longitude. Queryables retain
+the Part 3 JSON Schema and also expose a legacy property index and short link
+relation for GDAL 3.8.4.
 
 CQL2 parsing and translation support is broader than the currently advertised
 classes. Unsupported operators and functions return 400; the specialized

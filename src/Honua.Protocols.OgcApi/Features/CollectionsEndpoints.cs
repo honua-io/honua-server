@@ -719,6 +719,13 @@ internal static class CollectionsEndpoints
             type: MediaTypes.SchemaJson,
             title: "Queryables"));
 
+        // GDAL 3.8's draft Part 3 implementation recognizes the short relation.
+        collectionLinks.Add(Link.Create(
+            href: $"{baseUrl}/ogc/features/collections/{collectionSegment}/queryables",
+            rel: "queryables",
+            type: MediaTypes.Json,
+            title: "Queryables (legacy clients)"));
+
         // Part 5 schema link. The media type matters: QGIS selects the schema link by
         // rel and takes only an application/schema+json one.
         collectionLinks.Add(Link.Create(
@@ -847,7 +854,9 @@ internal static class CollectionsEndpoints
         if (resourceSrid.HasValue)
         {
             storageCrsDefinition = await crsRegistry.ResolveAsync(
-                resourceSrid.Value.ToOgcCrs(),
+                // PostGIS WGS84 ordinates are longitude/latitude. Advertise that
+                // order so clients use the same CRS for pages and default items.
+                resourceSrid.Value == 4326 ? OgcFeaturesUtilities.Crs84Uri : resourceSrid.Value.ToOgcCrs(),
                 cancellationToken);
         }
         var supportedCrs = await OgcFeaturesUtilities.GetSupportedCrsUrisAsync(
@@ -925,7 +934,12 @@ internal static class CollectionsEndpoints
             Title = $"Queryables for {displayName}",
             Description = $"Schema for queryable properties of the {displayName} collection",
             Properties = properties.ToImmutable(),
-            Required = requiredFields.ToImmutableArray()
+            Required = requiredFields.ToImmutableArray(),
+            LegacyQueryables = properties
+                .Where(static property => property.Value.Type != "object")
+                .OrderBy(static property => property.Key, StringComparer.Ordinal)
+                .Select(static property => new LegacyQueryable { Id = property.Key, Type = property.Value.Type })
+                .ToImmutableArray()
         };
     }
 

@@ -1055,6 +1055,11 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         [
             "http://www.opengis.net/spec/ogcapi-features-2/1.0/conf/crs",
             "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables",
+            "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/filter",
+            "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/features-filter",
+            "http://www.opengis.net/spec/cql2/1.0/conf/basic-cql2",
+            "http://www.opengis.net/spec/cql2/1.0/conf/cql2-text",
+            "http://www.opengis.net/spec/cql2/1.0/conf/cql2-json",
         ]);
     }
 

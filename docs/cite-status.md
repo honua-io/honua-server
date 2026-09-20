@@ -49,16 +49,18 @@ GetFeatureInfo, and `application/vnd.ogc.gml` GML FeatureInfo.
 
 ## Profile Scope, In One Line Each
 
-- **OGC API Features `default`** — Part 1 Core on the seeded fixture. Part 2,
-  Part 4, and the specialized CQL2 classes are not included in the public
-  conformance declaration until an exact-candidate lane proves their complete
-  classes.
+- **OGC API Features `default`** — Part 1 Core on the seeded fixture, plus the
+  advertised Part 2 CRS class. Part 4 and specialized CQL2 classes remain
+  unadvertised pending complete class evidence.
 - **OGC API building blocks** — the exact-candidate
   `ogc-api-building-block-conformance.yml` lane runs the complete vendored CQL2,
   MVT/TMS 2.0, Maps, and Schemathesis validator set. Its artifact is evidence
-  for the narrower Features Part 3/queryables claim; CQL2/filter probes remain
-  blocking regression coverage but do not certify complete CQL2 classes. It is
-  not folded into the official ETS totals above.
+  for Features Part 3 and CQL2 behavior. The runtime declares queryables,
+  filter, features-filter, basic-cql2, cql2-text and cql2-json so desktop clients
+  can discover server-side filtering. Literal-fixture integration regressions
+  and pinned GDAL/QGIS client probes supplement that lane; these are not an
+  official complete-class CQL2 certification and are not folded into the ETS
+  totals above.
 - **OGC API Tiles `default`** — vector + raster tiles against the seeded tile
   matrix sets.
 - **GeoPackage 1.2 `applicable`** — core and feature classes for Honua's

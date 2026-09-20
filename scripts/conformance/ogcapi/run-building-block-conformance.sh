@@ -164,13 +164,13 @@ cat > "$RESULTS_DIR/candidate.json" <<EOF
 }
 EOF
 
-# Keep the declaration boundary executable. The building-block validators
-# validate live queryables and exercise CQL2/filter behavior, but they are not a
-# complete ETS-equivalent class suite. Only queryables is advertised from this
-# lane; Part 2 CRS is advertised because the complete ETS class runs in
-# cite-evidence-report.yml, whose bundle fails on any skipped test. This check
-# prevents a future endpoint edit from silently widening the public claim
-# without widening an evidence lane.
+# Keep the declaration boundary executable. These are the implemented discovery
+# classes required by GDAL/QGIS (#4995), proven by live building-block behavior,
+# seeded integration assertions and the pinned-client receipts under
+# docs/internal/evidence/client-certification-2cc2213/fixes-4994-4995/.
+# This lane is not a complete ETS-equivalent class certification. Part 2 CRS
+# also has the complete ETS class in cite-evidence-report.yml. Exact equality
+# continues to reject unevidenced optional CQL2 and Features Part 4 classes.
 python3 - "$RESULTS_DIR/conformance.json" <<'PY'
 import json
 import sys
@@ -178,6 +178,11 @@ import sys
 expected = {
     "http://www.opengis.net/spec/ogcapi-features-2/1.0/conf/crs",
     "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables",
+    "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/filter",
+    "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/features-filter",
+    "http://www.opengis.net/spec/cql2/1.0/conf/basic-cql2",
+    "http://www.opengis.net/spec/cql2/1.0/conf/cql2-text",
+    "http://www.opengis.net/spec/cql2/1.0/conf/cql2-json",
 }
 target_prefixes = (
     "http://www.opengis.net/spec/ogcapi-features-2/",
