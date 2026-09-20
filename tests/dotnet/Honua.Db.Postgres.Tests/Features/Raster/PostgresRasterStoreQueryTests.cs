@@ -354,6 +354,54 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
     }
 
     [IntegrationTheory]
+    [InlineData(4096, 4096, 0, 0)]
+    [InlineData(16, 8, 0.00000001, -0.00000002)]
+    [InlineData(1, 1, 0.00000001, -0.00000002)]
+    public async Task Resize_WithSmallGridCoefficients_PreservesNumericGeoreference(
+        int width, int height, double skewX, double skewY)
+    {
+        await using var connection = await fixture.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH pattern AS (
+                SELECT ST_AddBand(
+                    ST_MakeEmptyRaster(64, 64, -122.5, 37.84, 0.00234375, -0.0021875, @skewX, @skewY, 4326),
+                    '32BF'::text, 7, -9999) AS original
+            ), resized AS MATERIALIZED (
+                SELECT original, {RasterProjectionSql.ResizePreservingGrid("original", "@width", "@height")} AS rast
+                FROM pattern
+            )
+            SELECT ST_Width(rast), ST_Height(rast), ST_SRID(rast),
+                ST_UpperLeftX(rast), ST_UpperLeftY(rast), ST_ScaleX(rast), ST_ScaleY(rast),
+                ST_SkewX(rast), ST_SkewY(rast),
+                ST_HausdorffDistance(ST_ConvexHull(original), ST_ConvexHull(rast)),
+                ST_Value(rast, 1, 1, 1), ST_Value(rast, 1, @width, @height),
+                ST_BandPixelType(rast, 1), ST_BandNoDataValue(rast, 1)
+            FROM resized
+            """;
+        command.Parameters.AddWithValue("width", width);
+        command.Parameters.AddWithValue("height", height);
+        command.Parameters.AddWithValue("skewX", skewX);
+        command.Parameters.AddWithValue("skewY", skewY);
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetInt32(0).Should().Be(width);
+        reader.GetInt32(1).Should().Be(height);
+        reader.GetInt32(2).Should().Be(4326);
+        reader.GetDouble(3).Should().Be(-122.5);
+        reader.GetDouble(4).Should().Be(37.84);
+        reader.GetDouble(5).Should().BeApproximately(0.00234375 * 64 / width, 1e-15);
+        reader.GetDouble(6).Should().BeApproximately(-0.0021875 * 64 / height, 1e-15);
+        reader.GetDouble(7).Should().BeApproximately(skewX * 64 / height, 1e-15);
+        reader.GetDouble(8).Should().BeApproximately(skewY * 64 / width, 1e-15);
+        reader.GetDouble(9).Should().BeApproximately(0, 1e-9);
+        reader.GetDouble(10).Should().Be(7);
+        reader.GetDouble(11).Should().Be(7);
+        reader.GetString(12).Should().Be("32BF");
+        reader.GetDouble(13).Should().Be(-9999);
+    }
+
+    [IntegrationTheory]
     [InlineData(64, 64)]
     [InlineData(59, 57)]
     [InlineData(32, 16)]
