@@ -1,15 +1,15 @@
 # Four-client protocol status, September 20, 2026
 
-**167 passes, 4 recorded failures, 135 blocked, 52 not started and 18 provisional exclusions** across 94 operations and four client lanes (376 cells). This is a rollup of retained evidence from multiple runs and candidates, not a complete certification of the current runtime. Blocked means the operation still needs proof; it does not mean Honua lacks the protocol.
+**166 passes, 4 recorded failures, 136 blocked, 52 not started and 18 provisional exclusions** across 94 operations and four client lanes (376 cells). This is a rollup of retained evidence from multiple runs and candidates, not a complete certification of the current runtime. Blocked means the operation still needs proof; it does not mean Honua lacks the protocol.
 
-The active server fix branch is `feat/wcs-10-serving`, [PR 5038](https://github.com/honua-io/honua-server/pull/5038). The latest native QGIS evidence is committed in `honua-client-compat` at `2312dd99970f07b7ca0d38657e1c94a9b632edd3`. ArcPy follow-up evidence is on `fix/native-evidence-scope-20260920` at `b691b03`.
+The active server fix branch is `feat/wcs-10-serving`, [PR 5038](https://github.com/honua-io/honua-server/pull/5038). The latest native QGIS evidence is committed in `honua-client-compat` at `3f6b22f`. ArcPy follow-up evidence is on `fix/native-evidence-scope-20260920` at `af68d30`.
 
 ## Client totals
 
 | Client | Pass | Fail | Blocked | Not started | Provisional exclusions | Total |
 |---|---:|---:|---:|---:|---:|---:|
 | ArcGIS Pro UI 3.7.1.1904 | 20 | 2 | 16 | 52 | 4 | 94 |
-| ArcPy 3.7.1 | 36 | 2 | 54 | 0 | 2 | 94 |
+| ArcPy 3.7.1 | 35 | 2 | 55 | 0 | 2 | 94 |
 | QGIS UI 3.44.14 LTR | 53 | 0 | 35 | 0 | 6 | 94 |
 | PyQGIS 3.44.14 LTR | 58 | 0 | 30 | 0 | 6 | 94 |
 
@@ -28,7 +28,7 @@ Each cell describes the operations in that protocol/version for one client. The 
 | ogc-api-tiles | 1.0 | 2 | 2 blocked | 2 blocked | 2 blocked | 2 blocked |
 | stac | 1.0.0 | 4 | 4 unstarted | 3 pass, 1 blocked | 4 pass | 4 pass |
 | sensorthings | 1.1 | 3 | 3 blocked | 3 blocked | 3 pass | 3 pass |
-| featureserver | GeoServices REST | 10 | 5 pass, 2 fail, 3 unstarted | 7 pass, 3 blocked | 6 pass, 4 excluded | 6 pass, 4 excluded |
+| featureserver | GeoServices REST | 10 | 5 pass, 2 fail, 3 unstarted | 6 pass, 4 blocked | 6 pass, 4 excluded | 6 pass, 4 excluded |
 | mapserver | GeoServices REST | 4 | 4 pass | 2 pass, 2 blocked | 4 pass | 4 pass |
 | imageserver | GeoServices REST | 3 | 3 unstarted | 3 pass | 2 pass, 1 blocked | 2 pass, 1 blocked |
 | vectortileserver | GeoServices REST | 3 | 3 pass | 3 pass | 3 pass | 3 pass |
@@ -53,6 +53,10 @@ Each cell describes the operations in that protocol/version for one client. The 
 | elevation | Esri | 1 | 1 unstarted | 1 pass | 1 blocked | 1 pass |
 
 Full operation names, client build bindings, issue references and historical evidence are in the [operation checklist](CLIENT_CERTIFICATION_CHECKLIST.md) and its [JSON](data/client-certification-checklist.v1.json). The checksum below binds this dated snapshot; later checklist changes do not retroactively change this report.
+
+## Corrected evidence claim
+
+One earlier ArcPy statistics pass counted rows locally instead of demonstrating a remote `outStatistics` request. It is now blocked, with the original pass and receipt retained as history. The [verdict audit](arcpy-local-calculation-verdict-audit-2026-09-20.md) explains the correction. This is an evidence defect, not an additional server failure or exclusion.
 
 ## Recorded failures awaiting a passing native retest
 
@@ -80,7 +84,7 @@ The remaining exclusions are client-operation assessments, not declarations that
 
 ## Latest runtime and desktop findings
 
-The fresh native QGIS run proved ImageServer discovery and exportImage display. Layer Properties then stopped responding, with increasing CPU and memory use after its metadata, legend and image requests had completed. Identify, numeric elevation and TileJSON UI cases remain blocked; no new exclusion was introduced. The [desktop diagnostic](qgis-imageserver-ui-2026-09-20.md) has the request correlation and precise receipts.
+The first native QGIS run proved ImageServer discovery and exportImage display. A subsequent run also read numeric elevation 100 before and after saving/reopening its native project, but Properties hung before the required grid/type inspection. That full elevation cell remains blocked. The isolated offscreen QtWebKit diagnostic also failed on trivial local HTML, so it does not prove a Honua cause. In the original run, Layer Properties then stopped responding, with increasing CPU and memory use after its metadata, legend and image requests had completed. Identify, numeric elevation and TileJSON UI cases remain blocked; no new exclusion was introduced. The [desktop diagnostic](qgis-imageserver-ui-2026-09-20.md) has the request correlation and precise receipts.
 
 The current diagnostic server is Development/JIT source `25fa17d9cfa72340c9de4a33a743f19ff0911800`, image `sha256:0ad6f6c9d81ead9772cf0f0a2e282321811bc5d059c53dc78570a4f6f07f7780`. Enterprise/experimental configuration was already enabled, and both PostGIS and postgis_raster 3.4.3 were installed. The new ImageServer paths did not require installing raster support or obtaining a new license. These runtime facts do not imply that every optional protocol contract is implemented.
 
@@ -90,7 +94,7 @@ The authoritative [CITE snapshot](../cite-status.md), reviewed September 15, rep
 
 ## Snapshot verification
 
-- Source checklist SHA-256: `10f2a929696a1ce86ea0dbb1ec54e7d2016d797ccdb479f953437ff83cd0d514`.
+- Source checklist SHA-256: `fb5e70ffca85fa5ab97a55ca2000976fed54a206e99f1b9b95dc580c380f0b76`.
 - Protocol/version groups: 32; operation rows: 94; lane cells: 376.
 - Counts were recomputed from every retained lane state; no excluded or blocked case was removed.
-- Native QGIS evidence contract, input and image hashes, secret scan and all 240 client harness tests passed. The full native run gate remains blocked by three unattempted operations.
+- Native QGIS evidence contract, input and image hashes, secret scan and all 240 client harness tests passed. The original native run gate remains blocked by three unattempted operations; the follow-up run retains all five blocked cases, including the partially performed elevation check.
