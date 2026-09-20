@@ -1,41 +1,20 @@
 --- a/certification/bounded-roster/lanes/gdal/gdal_ogc_cells.py
 +++ b/certification/bounded-roster/lanes/gdal/gdal_ogc_cells.py
-@@ -96,8 +96,8 @@
- 
- def _oapif_crs_axis(cell: Cell, connection: str) -> None:
-     with cell.check("crs-axis", "EPSG:4326 lat/lon bbox and EPSG:3857 output agree with the lon/lat fixture") as c:
+@@ -99,2 +99,2 @@
 -        with gdalkit.session() as record:
 -            dataset = _open_vector(connection)
 +        with gdalkit.session(OSR_DEFAULT_AXIS_MAPPING_STRATEGY="TRADITIONAL_GIS_ORDER") as record:
 +            dataset = _open_vector(connection, ["CRS=EPSG:4326"])
-             layer = dataset.GetLayerByName("0") or dataset.GetLayer(0)
-             srs = layer.GetSpatialRef()
-             expect(srs is not None and srs.GetAuthorityCode(None) == "4326", "layer SRS is not EPSG:4326")
 --- a/certification/bounded-roster/lanes/qgis/qgis_cells.py
 +++ b/certification/bounded-roster/lanes/qgis/qgis_cells.py
-@@ -1,5 +1,7 @@
- """QGIS 3.44.13-Solothurn bounded-roster cells (lane ``desktop-qgis``)."""
- from __future__ import annotations
+@@ -2,0 +3,2 @@
 +
 +from qgis.PyQt.QtCore import QVariant
- 
- from qgis.core import (
-     Qgis,
-@@ -117,14 +119,14 @@
-     with cell.check("media-schema", "GeoJSON items negotiate their media type and decode to typed fields") as c:
-         with qgiskit.recording() as recorder:
-             layer = _oapif("0")
+@@ -120 +122 @@
 -            fields = {field.name(): field.typeName() for field in layer.fields()}
 +            fields = {field.name(): field.type() for field in layer.fields()}
-             geometry = QgsWkbTypes.displayString(layer.wkbType())
-             list(layer.getFeatures())
-         items = [item for item in recorder.matching("/collections/0/items") if item.method == "GET"]
-         expect(items and all((item.content_type or "").startswith("application/geo+json") for item in items),
-                [(item.url, item.content_type) for item in items])
+@@ -126,2 +128,2 @@
 -        expect(geometry == "Point" and fields.get("count", "").lower().startswith(("int", "integer"))
 -               and "date" in fields.get("created_at", "").lower(), (geometry, fields))
 +        expect(geometry == "Point" and fields.get("count") == QVariant.LongLong
 +               and fields.get("created_at") == QVariant.DateTime, (geometry, fields))
-         c.detail = f"geometry {geometry}; fields {fields}; items served {items[0].content_type}"
- 
- 
