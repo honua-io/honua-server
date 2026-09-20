@@ -1,13 +1,14 @@
 # Client certification checklist — four lanes
 
 The [first exclusion audit](client-exclusion-audit-2026-09-20.md) and
-[deeper follow-up](client-exclusion-followup-2026-09-20.md) preserve 149 disputed
-historical exclusions. Twelve now resolve with native SDK receipts, retaining
-their intervening review states; 18 other exclusions remain provisional.
-The current aggregate is **165 passes, 4 failures, 137 blocked, 52 not started
-and 18 exclusions** across 376 cells. The generated tables are current; the
-original baseline narrative below is historical. Missing fixtures, licenses,
-flags or a failed connection method cannot establish `n/a-no-client`.
+[deeper follow-up](client-exclusion-followup-2026-09-20.md) preserve disputed
+historical exclusions and their intervening review states. Native SDK and UI
+receipts resolve individual operations; unsupported historical passes are also
+reopened when their evidence does not prove the named server operation.
+The generated tables below contain the current totals for all 376 cells; the
+[protocol status report](CLIENT_PROTOCOL_STATUS_2026-09-20.md) explains the latest
+findings. The original baseline narrative below is historical. Missing fixtures,
+licenses, flags or a failed connection method cannot establish `n/a-no-client`.
 
 ## Goal
 

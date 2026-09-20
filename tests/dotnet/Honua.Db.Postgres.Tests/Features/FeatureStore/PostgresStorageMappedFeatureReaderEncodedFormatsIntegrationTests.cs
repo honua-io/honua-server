@@ -161,6 +161,94 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
                 new TileLimits { MaxTileSize = payload.Length - 1 }));
     }
 
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    public async Task QueryStatisticsAsync_OrdersGroupedFieldsWithJsonbAndPhysicalStorage(
+        bool useAttributes, bool ascending)
+    {
+        await _fixture.ExecuteAsync($"""
+            INSERT INTO {_schema}.cities (objectid, name, population) VALUES
+                (3, 'Honolulu', 10), (4, NULL, 5);
+            UPDATE {_schema}.cities SET attributes =
+                jsonb_build_object('name', name, 'population', population);
+            """);
+        var reader = CreateReader(attributesColumn: useAttributes ? "attributes" : null);
+        var query = new FeatureQuery
+        {
+            GroupByFields = ["name"],
+            OutStatistics =
+            [
+                new StatisticDefinition
+                {
+                    StatisticType = StatisticType.Count,
+                    OnStatisticField = "objectid",
+                    OutStatisticFieldName = "feature_count"
+                },
+                new StatisticDefinition
+                {
+                    StatisticType = StatisticType.Sum,
+                    OnStatisticField = "population",
+                    OutStatisticFieldName = "total_population"
+                }
+            ],
+            Having = [new HavingCondition
+            {
+                StatisticType = StatisticType.Count,
+                OnStatisticField = "objectid",
+                Operator = HavingComparisonOperator.GreaterThan,
+                Value = 0
+            }],
+            OrderBy = [new OrderByClause("NAME", ascending) { NullOrdering = NullOrdering.NullsLast }],
+            Limit = 3,
+            Offset = 0
+        };
+
+        var rows = await reader.QueryStatisticsAsync(1, query, CancellationToken.None);
+
+        rows.Should().HaveCount(3);
+        rows.Select(row => row["name"]).Should().Equal(
+            ascending ? new object?[] { "Honolulu", "Kahului", null } : new object?[] { "Kahului", "Honolulu", null });
+        var honolulu = rows.Single(row => Equals(row["name"], "Honolulu"));
+        Convert.ToInt64(honolulu["feature_count"], System.Globalization.CultureInfo.InvariantCulture).Should().Be(2);
+        Convert.ToInt64(honolulu["total_population"], System.Globalization.CultureInfo.InvariantCulture).Should().Be(350010);
+        var nullGroup = rows[^1];
+        Convert.ToInt64(nullGroup["feature_count"], System.Globalization.CultureInfo.InvariantCulture).Should().Be(1);
+        Convert.ToInt64(nullGroup["total_population"], System.Globalization.CultureInfo.InvariantCulture).Should().Be(5);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task QueryStatisticsAsync_OrdersSecondGroupFieldBeforeFirst(bool useAttributes)
+    {
+        await _fixture.ExecuteAsync($"""
+            UPDATE {_schema}.cities SET attributes =
+                jsonb_build_object('name', name, 'population', population);
+            """);
+        var reader = CreateReader(attributesColumn: useAttributes ? "attributes" : null);
+        var query = new FeatureQuery
+        {
+            GroupByFields = ["name", "population"],
+            OutStatistics = [new StatisticDefinition
+            {
+                StatisticType = StatisticType.Count,
+                OnStatisticField = "objectid",
+                OutStatisticFieldName = "feature_count"
+            }],
+            OrderBy = [new OrderByClause("POPULATION"), new OrderByClause("name", ascending: false)]
+        };
+
+        var rows = await reader.QueryStatisticsAsync(1, query, CancellationToken.None);
+
+        rows.Should().HaveCount(2);
+        rows.Select(row => row["name"]).Should().Equal("Kahului", "Honolulu");
+        rows.Select(row => Convert.ToInt64(row["feature_count"], System.Globalization.CultureInfo.InvariantCulture))
+            .Should().Equal(1L, 1L);
+    }
+
     private PostgresStorageMappedFeatureReader CreateReader(
         string? attributesColumn = null,
         bool includeNamespacedField = false)

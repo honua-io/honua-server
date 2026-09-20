@@ -948,7 +948,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                     throw new ArgumentException($"Statistics ORDER BY field '{clause.Field}' was not declared.");
                 }
 
-                expression = ResolveColumnExpression(groupField, sql);
+                // Group fields lead the SELECT list. Order by that output position so a
+                // JSONB key reuses the exact grouped expression: resolving it again binds
+                // a new parameter, which PostgreSQL treats as a different expression and
+                // rejects with 42803 even when both parameter values name the same key.
+                expression = (groupByFields.IndexOf(groupField) + 1).ToString(CultureInfo.InvariantCulture);
             }
 
             expressions.Add($"{expression} {(clause.Ascending ? "ASC" : "DESC")}{FeatureQueryBuilder.GetNullOrderingSuffix(clause.NullOrdering)}");
