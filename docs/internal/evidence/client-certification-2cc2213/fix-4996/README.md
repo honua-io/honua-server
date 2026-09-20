@@ -41,6 +41,13 @@ prove that server-side trimming returns exactly 2x2 pixels.
 - Initial fixed image: `honua-server:ogc4996-fixed`, digest
   `sha256:968179d47f9e3d7da9ce26ea9160e658b5c967a130fee7e59a3400692009b859`,
   source `d954867713`. Both independent pixel proofs and both roster cells pass.
+- Final image: `honua-server:ogc4996-final`, digest
+  `sha256:6ed902e720d852c656c40745a7c278978897eaef5582b8f804be9175ad14844c`,
+  source `3f62ff449078656a6c155d4eb0a17b263b2dd753` (runtime changes in
+  `ccd520ff95`). Both pixel proofs and both unchanged six-facet roster cells
+  pass again; `*-final.json` and `final-candidate.json` record the results and
+  packaging hashes. This overlays the rebuilt protocol assembly and served
+  OpenAPI document onto the initial fixed image, covering every runtime change.
 - Final source additionally retains the canonical `scale-size` x-then-y
   restriction; only GDAL's `scaleSize` alias accepts reversed scale axes.
   This preserves the pre-existing negative regression assertion. Review fixes
