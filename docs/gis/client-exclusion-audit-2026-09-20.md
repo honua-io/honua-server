@@ -3,7 +3,7 @@
 The four-lane checklist previously closed 167 cells as exclusions. Review found
 that several reasons establish only an incomplete probe or an unsuitable fixture,
 not the absence of a client capability. The current projection reopens 85 cells
-as `blocked` for exclusion-evidence review. This does not assert that all 79 are
+as `blocked` for exclusion-evidence review. This does not assert that all 85 are
 supported. It means the recorded reason cannot yet justify removing them from
 open work. Every reopened cell retains its original state and citation in
 `previous_exclusion`; historical runs and receipts are unchanged.
