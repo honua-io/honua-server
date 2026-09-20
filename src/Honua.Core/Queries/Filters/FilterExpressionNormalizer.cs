@@ -110,15 +110,20 @@ public static class FilterExpressionNormalizer
                     $"Filter expression exceeds the maximum nesting depth of {MaxExpressionDepth}.");
             }
 
-            if (++visited > maxNodes)
-            {
-                throw new ArgumentException(
-                    $"Filter expression exceeds the maximum size of {maxNodes} nodes.");
-            }
+            visited++;
 
             foreach (var child in EnumerateChildren(current))
             {
                 stack.Push((child, depth + 1));
+
+                // Every queued node will be visited, so visited + queued is already a lower
+                // bound on the tree size. Checking while queuing keeps the work list itself
+                // within the cap when a single node has a very large number of children.
+                if ((long)visited + stack.Count > maxNodes)
+                {
+                    throw new ArgumentException(
+                        $"Filter expression exceeds the maximum size of {maxNodes} nodes.");
+                }
             }
         }
     }
