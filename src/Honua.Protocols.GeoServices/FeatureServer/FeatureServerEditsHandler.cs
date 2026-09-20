@@ -328,7 +328,7 @@ internal sealed class FeatureServerEditsHandler(
             FeatureEditResult editResult;
             for (var attempt = 0; ; attempt++)
             {
-                editContext = await ProcessEditOperationsAsync(request, resource, storageLayerId.Value, editPrincipal, lockScope, cancellationToken);
+                editContext = await ProcessEditOperationsAsync(request, resource, storageLayerId.Value, versionContext, editPrincipal, lockScope, cancellationToken);
                 editContext.GuardUpdateSnapshot = retryStaleUpdate;
                 await ApplyPluginEditPipelineAsync(serviceId, layerId, resource, editContext, cancellationToken)
                     .ConfigureAwait(false);
@@ -495,6 +495,7 @@ internal sealed class FeatureServerEditsHandler(
         ApplyEditsRequest request,
         MetadataV2Resource resource,
         int storageLayerId,
+        VersionContext? versionContext,
         EditPrincipal principal,
         EditLockScope? lockScope,
         CancellationToken cancellationToken)
@@ -504,7 +505,8 @@ internal sealed class FeatureServerEditsHandler(
             AddResults = request.Adds is { Length: > 0 } ? new EditResult?[request.Adds.Length] : null,
             UpdateResults = request.Updates is { Length: > 0 } ? new EditResult?[request.Updates.Length] : null,
             DeleteResults = request.Deletes is { Length: > 0 } ? new EditResult?[request.Deletes.Length] : null,
-            LockScope = lockScope
+            LockScope = lockScope,
+            VersionContext = versionContext is { IsDefault: false } ? versionContext : null
         };
 
         await ProcessAddOperationsAsync(request, context, resource, principal, cancellationToken);
@@ -628,6 +630,7 @@ internal sealed class FeatureServerEditsHandler(
                 resource,
                 storageLayerId,
                 slotObjectIds,
+                context.VersionContext,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (ArgumentException ex)
@@ -789,6 +792,7 @@ internal sealed class FeatureServerEditsHandler(
                 resource,
                 storageLayerId,
                 slotObjectIds,
+                context.VersionContext,
                 cancellationToken).ConfigureAwait(false);
         }
         catch (ArgumentException ex)
@@ -1498,6 +1502,9 @@ internal sealed class FeatureServerEditsHandler(
         /// when no lease is held anywhere and per-feature evaluation is unnecessary (#4402).
         /// </summary>
         public EditLockScope? LockScope { get; init; }
+
+        /// <summary>The branch whose visible rows must supply edit validation and partial-update snapshots.</summary>
+        public VersionContext? VersionContext { get; init; }
     }
 
     /// <summary>
@@ -1572,6 +1579,7 @@ internal sealed class FeatureServerEditsHandler(
         MetadataV2Resource resource,
         int storageLayerId,
         long?[] slotObjectIds,
+        VersionContext? versionContext,
         CancellationToken cancellationToken)
     {
         var objectIds = new List<long>(slotObjectIds.Length);
@@ -1593,6 +1601,7 @@ internal sealed class FeatureServerEditsHandler(
                 new FeatureQuery
                 {
                     ObjectIds = objectIds.ToImmutableArray(),
+                    VersionContext = versionContext,
                     Limit = objectIds.Count
                 },
                 cancellationToken).ConfigureAwait(false);
@@ -1628,6 +1637,7 @@ internal sealed class FeatureServerEditsHandler(
             new FeatureQuery
             {
                 SqlFilter = translation.SqlFilter,
+                VersionContext = versionContext,
                 Limit = objectIds.Count
             },
             cancellationToken).ConfigureAwait(false);
