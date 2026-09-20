@@ -4,6 +4,7 @@
 using System.Data;
 using System.Data.Common;
 using System.Globalization;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
@@ -30,10 +31,71 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
 
         var sql = RasterProjectionSql.TransformIfNeeded(rasterExpression, "@outputSrid");
 
-        sql.Should().Contain($"FROM (SELECT {rasterExpression} AS rast) projection_source");
+        sql.Should().Contain($"FROM (SELECT {rasterExpression} AS rast OFFSET 0) projection_source");
         sql.Split(rasterExpression, StringSplitOptions.None).Should().HaveCount(2);
         sql.Should().Contain("ST_SRID(projection_source.rast)");
         sql.Should().Contain("ST_Transform(projection_source.rast, @outputSrid)");
+    }
+
+    [IntegrationTheory]
+    [InlineData("projection")]
+    [InlineData("resize")]
+    [InlineData("projection-and-resize")]
+    public async Task RasterProjection_WithClippedInput_PlannerComputesClipOnce(string operation)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            await InsertQuadrantRasterAsync(schemaName);
+            const string clippedRaster = "ST_Clip(raster, ST_MakeEnvelope(0, 0, 2, 2, ST_SRID(raster)))";
+            var expression = operation switch
+            {
+                "projection" => RasterProjectionSql.TransformIfNeeded(clippedRaster, "4326"),
+                "resize" => RasterProjectionSql.ResizePreservingGrid(clippedRaster, "4", "3"),
+                _ => RasterProjectionSql.ResizePreservingGrid(
+                    RasterProjectionSql.TransformIfNeeded(clippedRaster, "4326"), "4", "3")
+            };
+
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var command = connection.CreateCommand();
+            // Use a real table column so immutable raster expressions cannot be
+            // constant-folded. Inspect PostgreSQL's optimized expressions, not the
+            // generated SQL: a plain SELECT alias is pulled up into every CASE arm.
+            command.CommandText = $"EXPLAIN (VERBOSE, FORMAT JSON, COSTS OFF) SELECT {expression} FROM raster_data";
+            var planJson = (string)(await command.ExecuteScalarAsync())!;
+            using var plan = JsonDocument.Parse(planJson);
+            var outputs = EnumeratePlanOutputs(plan.RootElement[0].GetProperty("Plan")).ToArray();
+
+            outputs.Sum(output => output.Split("st_clip(", StringSplitOptions.None).Length - 1)
+                .Should().Be(1, "the planner must keep a single raster computation below the projection/resize consumers");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    private static IEnumerable<string> EnumeratePlanOutputs(JsonElement node)
+    {
+        if (node.TryGetProperty("Output", out var outputs))
+        {
+            foreach (var output in outputs.EnumerateArray())
+            {
+                yield return output.GetString()!;
+            }
+        }
+
+        if (node.TryGetProperty("Plans", out var children))
+        {
+            foreach (var child in children.EnumerateArray())
+            {
+                foreach (var output in EnumeratePlanOutputs(child))
+                {
+                    yield return output;
+                }
+            }
+        }
     }
 
     [IntegrationTest]

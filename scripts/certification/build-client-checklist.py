@@ -1208,6 +1208,19 @@ OPERATION_EXCLUSION_REVIEWS = {
 }
 
 NATIVE_REVIEW_FAILURES = {
+    ("featureserver", "GeoServices REST", "statistics", "arcpy"): {
+        "issue": "https://github.com/honua-io/honua-server/issues/5045",
+        "evidence": (
+            "honua-esri-compat/evidence/arcpy-dbms-statistics-20260920-e/observations.json "
+            "(SHA-256 65eb956676b7b69000240ba2b82974ab100860339a1da717c056d8c8d53c235e), "
+            "native GET/POST trace and arcpy-dbms-statistics-readback-20260920/observations.json: "
+            "ArcPy 3.7.1 sends real outStatistics. Ungrouped values match SQL count3/sum6, "
+            "but missing response fields leave a native output table with only OBJECTID. "
+            "Grouped statistics returns server error500 (#5043). Activated Conda environment "
+            "with isolated user-site imports and ordinary remote control; zero UI credit; "
+            "stable JIT source25fa17d9. Historical local-count pass remains invalid."
+        ),
+    },
     ("featureserver", "GeoServices REST", "statistics", "pyqgis"): {
         "issue": "https://github.com/honua-io/honua-server/issues/5043",
         "evidence": (
