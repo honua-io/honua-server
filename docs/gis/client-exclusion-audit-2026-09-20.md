@@ -1,5 +1,9 @@
 # Client exclusion audit — September 20, 2026
 
+Follow-up: the [Python lane report](python-lane-status-2026-09-20.md) resolves six
+of these audited exclusions with native SDK receipts. The counts and observations
+below describe the initial audit; the generated checklist carries current totals.
+
 The four-lane checklist previously closed 167 cells as exclusions. Review found
 that several reasons establish only an incomplete probe or an unsuitable fixture,
 not the absence of a client capability. The current projection reopens 85 cells

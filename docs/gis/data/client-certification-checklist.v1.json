@@ -30,9 +30,9 @@
         "fail": 2
       },
       "arcpy": {
-        "pass": 31,
+        "pass": 34,
         "n/a-no-client": 19,
-        "blocked": 42,
+        "blocked": 39,
         "fail": 2
       },
       "qgis-ui": {
@@ -41,15 +41,15 @@
         "blocked": 18
       },
       "pyqgis": {
-        "pass": 51,
+        "pass": 54,
         "n/a-no-client": 25,
-        "blocked": 18
+        "blocked": 15
       }
     },
     "overall": {
       "cells": 376,
-      "closed": 235,
-      "open": 141
+      "closed": 241,
+      "open": 135
     }
   },
   "rows": [
@@ -606,12 +606,16 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The dedicated WCS provider's version limit does not exclude the bundled GDAL provider: a fresh QgsRasterLayer/GDAL WCS 2.0.1 diagnostic loads 64x64 and reads a non-NoData pixel.",
+          "state": "pass",
           "previous_exclusion": {
             "state": "n/a-superseded",
             "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
-          }
+          },
+          "previous_review": {
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The dedicated WCS provider's version limit does not exclude the bundled GDAL provider: a fresh QgsRasterLayer/GDAL WCS 2.0.1 diagnostic loads 64x64 and reads a non-NoData pixel."
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-sdk-roundtrip-20260920-i/observations.json (retained at honua-client-compat commit 2452daa); GetCapabilities, stock PyQGIS 3.44.14-Solothurn / GDAL 3.13.3: fresh native capabilities and description caches, four-corner pixel reads before/after QgsProject reload, separate full/subset TIFF grid controls against SQL; server 25fa17d9cfa72340c9de4a33a743f19ff0911800 / image 0ad6f6c9d81e; Development JIT SDK evidence, no UI credit"
         }
       }
     },
@@ -640,12 +644,16 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The dedicated WCS provider's version limit does not exclude the bundled GDAL provider: a fresh QgsRasterLayer/GDAL WCS 2.0.1 diagnostic loads 64x64 and reads a non-NoData pixel.",
+          "state": "pass",
           "previous_exclusion": {
             "state": "n/a-superseded",
             "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
-          }
+          },
+          "previous_review": {
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The dedicated WCS provider's version limit does not exclude the bundled GDAL provider: a fresh QgsRasterLayer/GDAL WCS 2.0.1 diagnostic loads 64x64 and reads a non-NoData pixel."
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-sdk-roundtrip-20260920-i/observations.json (retained at honua-client-compat commit 2452daa); DescribeCoverage, stock PyQGIS 3.44.14-Solothurn / GDAL 3.13.3: fresh native capabilities and description caches, four-corner pixel reads before/after QgsProject reload, separate full/subset TIFF grid controls against SQL; server 25fa17d9cfa72340c9de4a33a743f19ff0911800 / image 0ad6f6c9d81e; Development JIT SDK evidence, no UI credit"
         }
       }
     },
@@ -674,12 +682,16 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The dedicated WCS provider's version limit does not exclude the bundled GDAL provider: a fresh QgsRasterLayer/GDAL WCS 2.0.1 diagnostic loads 64x64 and reads a non-NoData pixel.",
+          "state": "pass",
           "previous_exclusion": {
             "state": "n/a-superseded",
             "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
-          }
+          },
+          "previous_review": {
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The dedicated WCS provider's version limit does not exclude the bundled GDAL provider: a fresh QgsRasterLayer/GDAL WCS 2.0.1 diagnostic loads 64x64 and reads a non-NoData pixel."
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-sdk-roundtrip-20260920-i/observations.json (retained at honua-client-compat commit 2452daa); GetCoverage, stock PyQGIS 3.44.14-Solothurn / GDAL 3.13.3: fresh native capabilities and description caches, four-corner pixel reads before/after QgsProject reload, separate full/subset TIFF grid controls against SQL; server 25fa17d9cfa72340c9de4a33a743f19ff0911800 / image 0ad6f6c9d81e; Development JIT SDK evidence, no UI credit"
         }
       }
     },
@@ -979,12 +991,16 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "state": "pass",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "previous_review": {
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS."
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-stac-metadata-20260920-d/observations.json (retained at honua-esri-compat commit 1490b03); GetSTACInfo catalog-landing: native metadata validated against separate HTTP and fixture controls; installed ArcGIS Pro 3.7.1.1904 executable SHA-256 bound alongside ArcPy 3.7.1 build 1901; server 6ac9debbccdd716639db89ce1f36821472f5018e / image 737851273827; Development JIT SDK evidence, no UI credit"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1005,12 +1021,16 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "state": "pass",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "previous_review": {
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS."
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-stac-metadata-20260920-d/observations.json (retained at honua-esri-compat commit 1490b03); GetSTACInfo collections: native metadata validated against separate HTTP and fixture controls; installed ArcGIS Pro 3.7.1.1904 executable SHA-256 bound alongside ArcPy 3.7.1 build 1901; server 6ac9debbccdd716639db89ce1f36821472f5018e / image 737851273827; Development JIT SDK evidence, no UI credit"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1031,12 +1051,16 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "state": "pass",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "previous_review": {
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS."
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-stac-metadata-20260920-d/observations.json (retained at honua-esri-compat commit 1490b03); GetSTACInfo item-search: native metadata validated against separate HTTP and fixture controls; installed ArcGIS Pro 3.7.1.1904 executable SHA-256 bound alongside ArcPy 3.7.1 build 1901; server 6ac9debbccdd716639db89ce1f36821472f5018e / image 737851273827; Development JIT SDK evidence, no UI credit"
         },
         "qgis-ui": {
           "state": "pass",

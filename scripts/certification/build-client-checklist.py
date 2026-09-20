@@ -1104,6 +1104,33 @@ EXCLUSIONS_REQUIRING_REVIEW = {
 }
 
 
+# Operation-specific native SDK receipts can resolve an audited exclusion while
+# retaining both the original claim and the intervening review state.
+RESOLVED_EXCLUSION_EVIDENCE = {
+    ("stac", "1.0.0", operation, "arcpy"): (
+        "honua-esri-compat/evidence/arcpy-stac-metadata-20260920-d/observations.json "
+        "(retained at honua-esri-compat commit 1490b03); "
+        f"GetSTACInfo {operation}: native metadata validated against separate HTTP and fixture controls; "
+        "installed ArcGIS Pro 3.7.1.1904 executable SHA-256 bound alongside ArcPy 3.7.1 build 1901; "
+        "server 6ac9debbccdd716639db89ce1f36821472f5018e / image 737851273827; "
+        "Development JIT SDK evidence, no UI credit"
+    )
+    for operation in ("catalog-landing", "collections", "item-search")
+}
+
+
+RESOLVED_EXCLUSION_EVIDENCE.update({
+    ("wcs", "2.0.1", operation, "pyqgis"): (
+        "honua-client-compat/evidence/pyqgis-sdk-roundtrip-20260920-i/observations.json (retained at honua-client-compat commit 2452daa); "
+        f"{operation}, stock PyQGIS 3.44.14-Solothurn / GDAL 3.13.3: fresh native capabilities and description caches, "
+        "four-corner pixel reads before/after QgsProject reload, separate full/subset TIFF grid controls against SQL; "
+        "server 25fa17d9cfa72340c9de4a33a743f19ff0911800 / image 0ad6f6c9d81e; "
+        "Development JIT SDK evidence, no UI credit"
+    )
+    for operation in ("GetCapabilities", "DescribeCoverage", "GetCoverage")
+})
+
+
 def build_rows() -> list[dict]:
     rows: list[dict] = []
     for entry in MATRIX:
@@ -1137,6 +1164,17 @@ def build_rows() -> list[dict]:
                         f"{EXCLUSION_REVIEW_REPORT}: exclusion evidence review pending. "
                         + EXCLUSIONS_REQUIRING_REVIEW[ref]
                     )
+                resolution = RESOLVED_EXCLUSION_EVIDENCE.get(
+                    (entry["protocol"], entry["version"], operation, lane))
+                if resolution:
+                    if "previous_exclusion" not in cell:
+                        raise ValueError("An exclusion resolution must preserve its original claim")
+                    cell["previous_review"] = {
+                        "state": cell["state"],
+                        "citation": cell.pop("citation"),
+                    }
+                    cell["state"] = "pass"
+                    cell["evidence"] = resolution
                 cells[lane] = cell
             rows.append({
                 "protocol": entry["protocol"],

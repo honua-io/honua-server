@@ -2,7 +2,9 @@
 
 The [September 20 exclusion audit](client-exclusion-audit-2026-09-20.md) reopens
 85 previously excluded cells for evidence review, preserving each original claim
-in `previous_exclusion`. The generated tables below are current; the original
+in `previous_exclusion`. The [Python lane follow-up](python-lane-status-2026-09-20.md)
+resolves six of these cells with native SDK receipts, retaining their intervening
+review states in `previous_review`. The generated tables below are current; the original
 baseline narrative is historical. Missing fixtures, licenses, flags, or a failed
 single connection method cannot by themselves establish `n/a-no-client`.
 
@@ -187,11 +189,11 @@ lane × protocol pair appears with no checklist row.
 | Lane | Client build | Closed | Open | Breakdown |
 |---|---|---|---|---|
 | `pro-ui` | ArcGIS Pro 3.7.1.1904 | 33/94 | 61 | blocked 7, fail 2, n/a-no-client 13, not-started 52, pass 20 |
-| `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 50/94 | 44 | blocked 42, fail 2, n/a-no-client 19, pass 31 |
+| `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 53/94 | 41 | blocked 39, fail 2, n/a-no-client 19, pass 34 |
 | `qgis-ui` | QGIS 3.44.14 LTR | 76/94 | 18 | blocked 18, n/a-no-client 25, pass 51 |
-| `pyqgis` | QGIS 3.44.14 LTR | 76/94 | 18 | blocked 18, n/a-no-client 25, pass 51 |
+| `pyqgis` | QGIS 3.44.14 LTR | 79/94 | 15 | blocked 15, n/a-no-client 25, pass 54 |
 
-**235 of 376 cells closed; 141 open.**
+**241 of 376 cells closed; 135 open.**
 
 ### Cells
 
@@ -244,9 +246,9 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| GetCapabilities | not-started | blocked | blocked | blocked |
-| DescribeCoverage | not-started | blocked | blocked | blocked |
-| GetCoverage | not-started | blocked | blocked | blocked |
+| GetCapabilities | not-started | blocked | blocked | pass |
+| DescribeCoverage | not-started | blocked | blocked | pass |
+| GetCoverage | not-started | blocked | blocked | pass |
 
 #### ogc-api-features 1.0
 
@@ -272,9 +274,9 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| catalog-landing | not-started | blocked | pass | pass |
-| collections | not-started | blocked | pass | pass |
-| item-search | not-started | blocked | pass | pass |
+| catalog-landing | not-started | pass | pass | pass |
+| collections | not-started | pass | pass | pass |
+| item-search | not-started | pass | pass | pass |
 | asset-download | not-started | blocked | pass | pass |
 
 #### sensorthings 1.1
