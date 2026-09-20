@@ -10005,6 +10005,7 @@
         "Honua.Server.Tests.FeatureServerEndpointTests.GetLayerMetadata_WithWrongHttpMethod_Returns405",
         "Honua.Server.Tests.FeatureServerEndpointTests.GetLayerMetadata_WithoutSavedStyle_SynthesizesDefaultRenderer",
         "Honua.Server.Tests.Features.Admin.LayerFieldConfigurationEndpointsTests.UpdateLayerFields_WithAliasDomainAndHiddenField_PersistsAndHydratesCatalog",
+        "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.AttachmentIntent_RoundTripsWithoutChangingOtherMetadata_AndInvalidatesAliases",
         "Honua.Server.Tests.Features.Infrastructure.LayerEnablementIntegrationTests.DisabledLayer_ReturnsNotFoundAcrossProtocols",
         "Honua.Server.Tests.Features.Protocols.GeoServices.BigIntegerFieldContractTests.Get_BigIntegerField_UsesEsriTypeAndPreservesValues",
         "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesSoapCatalogDiscoveryTests.PostSoapCatalog_AdminAndRoleControlsAgreeWithServiceAndLayerHandoffs",
@@ -23080,6 +23081,10 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.AttachmentIntent_InvalidBoolean_IsRejectedWithoutMutation",
+        "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.AttachmentIntent_OmittedOrNullPreservesLegacyMetadata_ExplicitValueUsesCanonicalDefaults",
+        "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.AttachmentIntent_RoundTripsWithoutChangingOtherMetadata_AndInvalidatesAliases",
+        "Honua.Server.Tests.Features.Admin.ServiceSettingsAttachmentAuthoringTests.AttachmentIntent_WhenPublicationRelinks_DoesNotChangeEitherResource",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.LegacyLayer_WithoutSourceGovernance_OmitsOptionalProjectionFields",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_GovernancePatch_ClearsUnmanagedCanonicalLinks",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_GovernancePatch_ReconcilesRelationsAndRefreshesLicenseTitle",

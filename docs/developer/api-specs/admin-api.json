@@ -24939,6 +24939,9 @@
           },
           "rasterMosaic": {
             "$ref": "#/components/schemas/RasterMosaicResponse"
+          },
+          "editing": {
+            "$ref": "#/components/schemas/MetadataV2ResourceEditing"
           }
         }
       },
@@ -25113,6 +25116,9 @@
           },
           "rasterMosaic": {
             "$ref": "#/components/schemas/UpdateRasterMosaicRequest"
+          },
+          "editing": {
+            "$ref": "#/components/schemas/UpdateLayerEditingRequest"
           }
         }
       },
@@ -47426,6 +47432,136 @@
             "type": "integer",
             "format": "int32",
             "description": "Number of records the baseline digest covers."
+          }
+        }
+      },
+      "CogArtifactPublishRequest": {
+        "type": "object",
+        "required": [
+          "layerId"
+        ],
+        "properties": {
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "description": "Publication layer index whose primary raster is exported."
+          }
+        },
+        "additionalProperties": false
+      },
+      "CogArtifactDescriptor": {
+        "type": "object",
+        "required": [
+          "artifactId",
+          "layerId",
+          "rasterId",
+          "sizeBytes",
+          "contentType",
+          "url",
+          "width",
+          "height",
+          "bandCount",
+          "publishedAt"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": "string",
+            "description": "Deterministic object key, `cog/{layerId}/{rasterId}.tif`; also the `{artifactId}` of the range proxy.",
+            "example": "cog/0/1.tif"
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rasterId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Identifier of the layer's primary raster."
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "contentType": {
+            "type": "string",
+            "example": "image/tiff; application=geotiff; profile=cloud-optimized"
+          },
+          "url": {
+            "type": "string",
+            "description": "Root-relative range proxy path `/api/v1/rasters/cog/{artifactId}`.",
+            "example": "/api/v1/rasters/cog/cog/0/1.tif"
+          },
+          "width": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "height": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "bandCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "srid": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "UpdateLayerEditingRequest": {
+        "type": "object",
+        "nullable": true,
+        "description": "Partial attachment intent only; existing GlobalID, editor tracking, access policy and publication edit grants are preserved.",
+        "properties": {
+          "supportsAttachments": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Null or omission preserves attachment intent. True or false updates the canonical resource flag. Runtime attachment operations still require the configured store and authorization."
+          }
+        }
+      },
+      "MetadataV2ResourceEditing": {
+        "type": "object",
+        "nullable": true,
+        "properties": {
+          "globalIdField": {
+            "type": "string",
+            "nullable": true
+          },
+          "creatorField": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAtField": {
+            "type": "string",
+            "nullable": true
+          },
+          "editorField": {
+            "type": "string",
+            "nullable": true
+          },
+          "updatedAtField": {
+            "type": "string",
+            "nullable": true
+          },
+          "canModify": {
+            "type": "boolean",
+            "default": true
+          },
+          "supportsAttachments": {
+            "type": "boolean",
+            "default": false
+          },
+          "supportsRelatedRecords": {
+            "type": "boolean",
+            "default": true
           }
         }
       }

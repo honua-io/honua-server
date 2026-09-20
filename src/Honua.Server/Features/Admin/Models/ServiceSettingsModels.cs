@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Metadata.Domain.V2;
+
 namespace Honua.Server.Features.Admin.Models;
 
 /// <summary>
@@ -110,6 +112,9 @@ internal sealed class UpdateTimeInfoRequest
 /// </summary>
 internal sealed class LayerMetadataResponse
 {
+    /// <summary>Persisted canonical editing metadata; attachment intent does not grant edit access.</summary>
+    public MetadataV2ResourceEditing? Editing { get; init; }
+
     /// <summary>The layer identifier.</summary>
     public required int LayerId { get; init; }
 
@@ -146,6 +151,9 @@ internal sealed class LayerMetadataResponse
 /// </summary>
 internal sealed class UpdateLayerMetadataRequest
 {
+    /// <summary>Partial attachment configuration. Omitted values preserve existing metadata.</summary>
+    public UpdateLayerEditingRequest? Editing { get; init; }
+
     /// <summary>
     /// SPDX license expression or <c>proprietary</c>. Null preserves the current value;
     /// an empty string clears it.
@@ -172,6 +180,13 @@ internal sealed class UpdateLayerMetadataRequest
 
     /// <summary>Raster mosaic updates.</summary>
     public UpdateRasterMosaicRequest? RasterMosaic { get; init; }
+}
+
+/// <summary>Attachment intent only; does not change GlobalID, editor tracking or edit permissions.</summary>
+internal sealed class UpdateLayerEditingRequest
+{
+    /// <summary>Whether the resource supports attachments. Null preserves the existing declaration.</summary>
+    public bool? SupportsAttachments { get; init; }
 }
 
 /// <summary>
