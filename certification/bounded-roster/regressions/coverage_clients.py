@@ -43,9 +43,9 @@ def gdal_checks(base):
 
     def capture(_level, _number, message):
         if not message.startswith("GDAL: GDALClose"):
-            match = re.search(r"https?://[^\s)]+", message)
-            if match:
-                requests.append(match.group())
+            match = re.search(r'https?://[^\s"<>]+', message)
+            if match and "${" not in match.group():
+                requests.append(match.group().rstrip(","))
 
     gdal.SetConfigOption("CPL_DEBUG", "ON")
     gdal.PushErrorHandler(capture)
@@ -71,6 +71,8 @@ def gdal_checks(base):
             assert response.headers.get_content_type() == "image/tiff"
             trims.append(decode(response.read()))
     assert trims[0] == trims[1]
+    window = None
+    dataset = None
     gdal.PopErrorHandler()
     assert any("/coverage?" in request for request in requests), requests
     return {"client": "GDAL 3.8.4", "window_values": values, "trims": trims, "requests": requests}
