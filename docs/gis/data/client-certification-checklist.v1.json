@@ -30,10 +30,10 @@
         "fail": 2
       },
       "arcpy": {
-        "pass": 35,
+        "pass": 36,
         "blocked": 54,
-        "fail": 3,
-        "n/a-no-client": 2
+        "n/a-no-client": 2,
+        "fail": 2
       },
       "qgis-ui": {
         "pass": 53,
@@ -41,16 +41,15 @@
         "blocked": 36
       },
       "pyqgis": {
-        "pass": 58,
+        "pass": 59,
         "n/a-no-client": 5,
-        "blocked": 30,
-        "fail": 1
+        "blocked": 30
       }
     },
     "overall": {
       "cells": 376,
-      "closed": 182,
-      "open": 194
+      "closed": 184,
+      "open": 192
     }
   },
   "rows": [
@@ -1396,14 +1395,18 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "fail",
           "previous_pass": {
             "state": "pass",
             "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-featureserver.cert.json - operations FS-PRM-OUTSTATISTICS-GROUPBYFIELDSFORSTATISTICS, ArcGIS Pro/arcpy 3.7.1.1904: outStatistics (count) computed over the cursor -> 3"
           },
-          "citation": "docs/gis/arcpy-local-calculation-verdict-audit-2026-09-20.md: Historical receipt counts SearchCursor rows locally; it does not prove a native outStatistics/groupByFieldsForStatistics request. Fresh remote aggregate evidence and independent result assertions are required.",
-          "issue": "https://github.com/honua-io/honua-server/issues/5045",
-          "evidence": "honua-esri-compat/evidence/arcpy-dbms-statistics-20260920-e/observations.json (SHA-256 65eb956676b7b69000240ba2b82974ab100860339a1da717c056d8c8d53c235e), native GET/POST trace and arcpy-dbms-statistics-readback-20260920/observations.json: ArcPy 3.7.1 sends real outStatistics. Ungrouped values match SQL count3/sum6, but missing response fields leave a native output table with only OBJECTID. Grouped statistics returns server error500 (#5043). Activated Conda environment with isolated user-site imports and ordinary remote control; zero UI credit; stable JIT source25fa17d9. Historical local-count pass remains invalid."
+          "previous_failure": {
+            "state": "fail",
+            "issue": "https://github.com/honua-io/honua-server/issues/5045",
+            "evidence": "honua-esri-compat/evidence/arcpy-dbms-statistics-20260920-e/observations.json (SHA-256 65eb956676b7b69000240ba2b82974ab100860339a1da717c056d8c8d53c235e), native GET/POST trace and arcpy-dbms-statistics-readback-20260920/observations.json: ArcPy 3.7.1 sends real outStatistics. Ungrouped values match SQL count3/sum6, but missing response fields leave a native output table with only OBJECTID. Grouped statistics returns server error500 (#5043). Activated Conda environment with isolated user-site imports and ordinary remote control; zero UI credit; stable JIT source25fa17d9. Historical local-count pass remains invalid.",
+            "citation": "docs/gis/arcpy-local-calculation-verdict-audit-2026-09-20.md: Historical receipt counts SearchCursor rows locally; it does not prove a native outStatistics/groupByFieldsForStatistics request. Fresh remote aggregate evidence and independent result assertions are required."
+          },
+          "state": "pass",
+          "evidence": "honua-esri-compat/evidence/arcpy-dbms-statistics-candidate-review-20260920/observations.json at 58e23f3 (adjudication SHA-256 ba8ca609b24d5fad6503c7ebc2cbf37a4b6b915332b2e0895b09a2c994fd8126), arcpy-dbms-statistics-20260920-g/observations.json (SHA-256 0dab84d39ee1597992f0b0633d6108e5f8913ec5ca94c7f5ecc2d440ddb1769f), wire/trace.jsonl and readback.json: ArcPy 3.7.1 build1901 / ArcGIS Pro 3.7.1.1904 native DBMS Statistics sends ungrouped and grouped outStatistics POSTs (requests6/7); complete HTTP200 responses include Integer counts/Double sums, persisted native GDB fields and values match fresh SQL count3/sum6 and active2/4/inactive1/2. Worker0/readback0, no trace gaps/drops, verified TLS, stable JIT source8b7aea9f6 image28d09586. Isolated activated Conda environment; zero GUI credit. Prior local calculation and failed/incomplete native runs remain history."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -1414,14 +1417,18 @@
           }
         },
         "pyqgis": {
-          "state": "fail",
-          "citation": "honua-client-compat/docs/reports/pyqgis-featureserver-exclusion-followup-2026-09-20.md at ac9e4dc: native OGR/ESRIJSON consumes a configured outStatistics URL. The AFS provider limitation does not exclude the entire client. PyQGIS ungrouped values and project reload pass; grouped output fails; GUI remains untested.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html section 11.1.7.3 'Using ArcGIS REST Servers' documents service-tree browsing, layer loading, expression-builder attribute filters and a view-extent option. Attachments, related records, replica/sync and server-side statistics appear nowhere. Confirmed by wire capture through a logging proxy on 2026-09-17: the provider issues no outStatistics request and computes min/max/sum locally from an outFields=* download, and exposes no attachment, relationship or replica member. A binary string scan was not used - it reports no esriSpatialRel in any shipped QGIS library while spatial filtering demonstrably works. This closes the qgis-ui lane as well as pyqgis: every finding above is at the provider layer - no attachment or replica member on the provider, discoverRelations returning empty, statistics computed locally from an outFields=* download - and the desktop UI is driven by that same arcgisfeatureserver provider. A request the provider never issues cannot be issued by a panel drawn on top of it, and the cited source is the user-manual chapter describing that UI."
           },
-          "issue": "https://github.com/honua-io/honua-server/issues/5043",
-          "evidence": "honua-client-compat/evidence/pyqgis-featureserver-statistics-url-20260920-c/observations.json and native-results.json at ac9e4dc: QGIS/PyQGIS 3.44.14-Solothurn native OGR configured-URL aggregate count/sum passes before/after project reload; grouped outStatistics + orderByFields produces an invalid native layer and JSON error 500. Independent SQL and correlated PostgreSQL 42803 retained. Zero UI credit; JIT source 25fa17d9."
+          "previous_failure": {
+            "state": "fail",
+            "issue": "https://github.com/honua-io/honua-server/issues/5043",
+            "evidence": "honua-client-compat/evidence/pyqgis-featureserver-statistics-url-20260920-c/observations.json and native-results.json at ac9e4dc: QGIS/PyQGIS 3.44.14-Solothurn native OGR configured-URL aggregate count/sum passes before/after project reload; grouped outStatistics + orderByFields produces an invalid native layer and JSON error 500. Independent SQL and correlated PostgreSQL 42803 retained. Zero UI credit; JIT source 25fa17d9.",
+            "citation": "honua-client-compat/docs/reports/pyqgis-featureserver-exclusion-followup-2026-09-20.md at ac9e4dc: native OGR/ESRIJSON consumes a configured outStatistics URL. The AFS provider limitation does not exclude the entire client. PyQGIS ungrouped values and project reload pass; grouped output fails; GUI remains untested."
+          },
+          "state": "pass",
+          "evidence": "honua-client-compat/evidence/pyqgis-featureserver-statistics-url-20260920-d/observations.json at 9d6e362 (SHA-256 6a66f62f33b26aac35af10bad5ac64345b9e85145ecc728f668f37713d8a55a3), native-results.json: QGIS/PyQGIS 3.44.14-Solothurn native OGR/ESRIJSON configured URLs pass count3/sum6 and grouped active2/4/inactive1/2 with output fields, independent SQL and project reload; worker0, verified TLS, stable JIT source8b7aea9f6 image28d09586. No AFS aggregate-pushdown or GUI credit. Earlier grouped failure is preserved."
         }
       }
     },

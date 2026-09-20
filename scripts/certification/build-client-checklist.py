@@ -1233,6 +1233,33 @@ NATIVE_REVIEW_FAILURES = {
     },
 }
 
+# A repaired replay supersedes the verdict, never the retained failure receipt.
+NATIVE_REPLAY_RESOLUTIONS = {
+    ("featureserver", "GeoServices REST", "statistics", "arcpy"): (
+        "honua-esri-compat/evidence/arcpy-dbms-statistics-candidate-review-20260920/observations.json "
+        "at 58e23f3 "
+        "(adjudication SHA-256 ba8ca609b24d5fad6503c7ebc2cbf37a4b6b915332b2e0895b09a2c994fd8126), "
+        "arcpy-dbms-statistics-20260920-g/observations.json "
+        "(SHA-256 0dab84d39ee1597992f0b0633d6108e5f8913ec5ca94c7f5ecc2d440ddb1769f), "
+        "wire/trace.jsonl and readback.json: ArcPy 3.7.1 build1901 / ArcGIS Pro 3.7.1.1904 "
+        "native DBMS Statistics sends ungrouped and grouped outStatistics POSTs (requests6/7); "
+        "complete HTTP200 responses include Integer counts/Double sums, persisted native GDB "
+        "fields and values match fresh SQL count3/sum6 and active2/4/inactive1/2. "
+        "Worker0/readback0, no trace gaps/drops, verified TLS, stable JIT source8b7aea9f6 "
+        "image28d09586. Isolated activated Conda environment; zero GUI credit. "
+        "Prior local calculation and failed/incomplete native runs remain history."
+    ),
+    ("featureserver", "GeoServices REST", "statistics", "pyqgis"): (
+        "honua-client-compat/evidence/pyqgis-featureserver-statistics-url-20260920-d/observations.json "
+        "at 9d6e362 "
+        "(SHA-256 6a66f62f33b26aac35af10bad5ac64345b9e85145ecc728f668f37713d8a55a3), "
+        "native-results.json: QGIS/PyQGIS 3.44.14-Solothurn native OGR/ESRIJSON configured URLs "
+        "pass count3/sum6 and grouped active2/4/inactive1/2 with output fields, independent SQL "
+        "and project reload; worker0, verified TLS, stable JIT source8b7aea9f6 image28d09586. "
+        "No AFS aggregate-pushdown or GUI credit. Earlier grouped failure is preserved."
+    ),
+}
+
 
 def build_rows() -> list[dict]:
     rows: list[dict] = []
@@ -1298,6 +1325,15 @@ def build_rows() -> list[dict]:
                 if native_failure:
                     cell.update(native_failure)
                     cell["state"] = "fail"
+                replay = NATIVE_REPLAY_RESOLUTIONS.get(key)
+                if replay:
+                    if cell["state"] != "fail":
+                        raise ValueError("A repaired replay must preserve an observed failure")
+                    cell["previous_failure"] = {
+                        name: cell.pop(name) for name in ("state", "issue", "evidence", "citation")
+                        if name in cell
+                    }
+                    cell.update(state="pass", evidence=replay)
                 cells[lane] = cell
             rows.append({
                 "protocol": entry["protocol"],
@@ -1343,6 +1379,13 @@ def validate(rows: list[dict]) -> list[str]:
                     f"{where}/{lane}: a fail requires the receipt that observed it")
             if state == "pass":
                 evidence = cell.get("evidence")
+                key = (row["protocol"], row["version"], row["operation"], lane)
+                if key in NATIVE_REPLAY_RESOLUTIONS:
+                    prior = cell.get("previous_failure", {})
+                    observed = NATIVE_REVIEW_FAILURES[key]
+                    if (prior.get("state") != "fail"
+                            or any(prior.get(name) != observed[name] for name in ("issue", "evidence"))):
+                        problems.append(f"{where}/{lane}: repaired replay must retain its failure receipt")
                 if ((row["protocol"], row["version"], row["operation"], lane)
                         in REVIEWED_PASS_GAPS and evidence == EV["arcpy-featureserver-statistics"]):
                     problems.append(

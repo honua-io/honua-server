@@ -192,11 +192,11 @@ lane × protocol pair appears with no checklist row.
 | Lane | Client build | Closed | Open | Breakdown |
 |---|---|---|---|---|
 | `pro-ui` | ArcGIS Pro 3.7.1.1904 | 24/94 | 70 | blocked 16, fail 2, n/a-no-client 4, not-started 52, pass 20 |
-| `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 37/94 | 57 | blocked 54, fail 3, n/a-no-client 2, pass 35 |
+| `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 38/94 | 56 | blocked 54, fail 2, n/a-no-client 2, pass 36 |
 | `qgis-ui` | QGIS 3.44.14 LTR | 58/94 | 36 | blocked 36, n/a-no-client 5, pass 53 |
-| `pyqgis` | QGIS 3.44.14 LTR | 63/94 | 31 | blocked 30, fail 1, n/a-no-client 5, pass 58 |
+| `pyqgis` | QGIS 3.44.14 LTR | 64/94 | 30 | blocked 30, n/a-no-client 5, pass 59 |
 
-**182 of 376 cells closed; 194 open.**
+**184 of 376 cells closed; 192 open.**
 
 ### Cells
 
@@ -301,7 +301,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 | applyEdits | pass | pass | pass | pass |
 | attachments | fail | blocked | n/a-no-client | n/a-no-client |
 | relatedRecords | fail | blocked | n/a-no-client | n/a-no-client |
-| statistics | not-started | fail | blocked | fail |
+| statistics | not-started | pass | blocked | pass |
 | domains | not-started | pass | pass | pass |
 | replica-sync | not-started | blocked | n/a-no-client | n/a-no-client |
 
