@@ -194,9 +194,9 @@ lane × protocol pair appears with no checklist row.
 | `pro-ui` | ArcGIS Pro 3.7.1.1904 | 24/94 | 70 | blocked 16, fail 2, n/a-no-client 4, not-started 52, pass 20 |
 | `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 36/94 | 58 | blocked 56, fail 2, pass 36 |
 | `qgis-ui` | QGIS 3.44.14 LTR | 56/94 | 38 | blocked 38, n/a-no-client 3, pass 53 |
-| `pyqgis` | QGIS 3.44.14 LTR | 66/94 | 28 | blocked 28, n/a-no-client 3, pass 63 |
+| `pyqgis` | QGIS 3.44.14 LTR | 67/94 | 27 | blocked 27, n/a-no-client 3, pass 64 |
 
-**182 of 376 cells closed; 194 open.**
+**183 of 376 cells closed; 193 open.**
 
 ### Cells
 
@@ -390,7 +390,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| map | blocked | blocked | blocked | blocked |
+| map | blocked | blocked | blocked | pass |
 
 #### ogc-api-coverages 1.0
 

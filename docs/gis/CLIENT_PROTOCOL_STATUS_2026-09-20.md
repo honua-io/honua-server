@@ -1,8 +1,10 @@
 # Four-client protocol status, September 20, 2026
 
-**172 passes, 4 recorded failures, 138 blocked, 52 not started and 10 provisional exclusions** across 94 operations and four client lanes (376 cells). This is a rollup of retained evidence from multiple runs and candidates, not a complete certification of the current runtime. Blocked means the operation still needs proof; it does not mean Honua lacks the protocol.
+**173 passes, 4 recorded failures, 137 blocked, 52 not started and 10 provisional exclusions** across 94 operations and four client lanes (376 cells). This is a rollup of retained evidence from multiple runs and candidates, not a complete certification of the current runtime. Blocked means the operation still needs proof; it does not mean Honua lacks the protocol.
 
-The active server fix branch is `feat/wcs-10-serving`, [PR 5038](https://github.com/honua-io/honua-server/pull/5038). The latest native QGIS evidence is committed in `honua-client-compat` at [a294c9c](https://github.com/honua-io/honua-client-compat/commit/a294c9caa7606fe0b93b52ca76cb0cf9e6d1482d), following the statistics/raster replay commit [9d6e362](https://github.com/honua-io/honua-client-compat/commit/9d6e362c4bd46d56ced7ea1ffedc5b8aac84698e). ArcPy follow-up evidence is on `fix/native-evidence-scope-20260920` at [58e23f3](https://github.com/honua-io/honua-esri-compat/commit/58e23f3f87a40688611010f954865d25f9f4d3ca); the later source-only routing/extension inventory is committed at [f923cc3](https://github.com/honua-io/honua-esri-compat/commit/f923cc3bb52b9731a75030bd4d66d7c7c80aeba9).
+The active server fix branch is `feat/wcs-10-serving`, [PR 5038](https://github.com/honua-io/honua-server/pull/5038). The earlier WFS and Tiles evidence is committed in `honua-client-compat` at [a294c9c](https://github.com/honua-io/honua-client-compat/commit/a294c9caa7606fe0b93b52ca76cb0cf9e6d1482d), following the statistics/raster replay commit [9d6e362](https://github.com/honua-io/honua-client-compat/commit/9d6e362c4bd46d56ced7ea1ffedc5b8aac84698e). ArcPy follow-up evidence is on `fix/native-evidence-scope-20260920` at [58e23f3](https://github.com/honua-io/honua-esri-compat/commit/58e23f3f87a40688611010f954865d25f9f4d3ca); the later source-only routing/extension inventory is committed at [f923cc3](https://github.com/honua-io/honua-esri-compat/commit/f923cc3bb52b9731a75030bd4d66d7c7c80aeba9).
+
+The latest additional native Maps evidence is [a37a12e](https://github.com/honua-io/honua-client-compat/commit/a37a12e3f19f9b9f2ecfecc2f68af3a5df77c13d). The later qualified-version-name and same-host HTTP WCS diagnostics are [9b2315d](https://github.com/honua-io/honua-esri-compat/commit/9b2315d06988a32fcbab79608676826870f09c65); those diagnostics add no native certification credit.
 
 ## Client totals
 
@@ -11,7 +13,7 @@ The active server fix branch is `feat/wcs-10-serving`, [PR 5038](https://github.
 | ArcGIS Pro UI 3.7.1.1904 | 20 | 2 | 16 | 52 | 4 | 94 |
 | ArcPy 3.7.1 | 36 | 2 | 56 | 0 | 0 | 94 |
 | QGIS UI 3.44.14 LTR | 53 | 0 | 38 | 0 | 3 | 94 |
-| PyQGIS 3.44.14 LTR | 63 | 0 | 28 | 0 | 3 | 94 |
+| PyQGIS 3.44.14 LTR | 64 | 0 | 27 | 0 | 3 | 94 |
 
 ## Protocol-by-protocol results
 
@@ -39,7 +41,7 @@ Each cell describes the operations in that protocol/version for one client. The 
 | versionmanagementserver | GeoServices REST | 2 | 2 unstarted | 2 fail | 2 blocked | 2 blocked |
 | geoservices-soap | GeoServices SOAP | 1 | 1 unstarted | 1 blocked | 1 blocked | 1 blocked |
 | odata | v4 | 2 | 2 blocked | 2 blocked | 2 blocked | 2 blocked |
-| ogc-api-maps | 1.0 | 1 | 1 blocked | 1 blocked | 1 blocked | 1 blocked |
+| ogc-api-maps | 1.0 | 1 | 1 blocked | 1 blocked | 1 blocked | 1 pass |
 | ogc-api-coverages | 1.0 | 1 | 1 blocked | 1 blocked | 1 blocked | 1 blocked |
 | ogc-api-records | 1.0 | 1 | 1 blocked | 1 blocked | 1 blocked | 1 blocked |
 | ogc-api-processes | 1.0 | 1 | 1 blocked | 1 blocked | 1 blocked | 1 blocked |
@@ -110,7 +112,11 @@ New geographic OGC API Tiles run c selects the advertised WorldCRS84Quad at zoom
 
 Further WCS1 traces retain complete native XML/TIFF HTTP 200 responses with no receive drops. Native ArcPy can read the exact returned TIFF locally; MakeWCSLayer still fails with both the bundled and Pro-selected Conda environments. A fresh owned TEMP/TMP directory causes a new GetCapabilities request but still fails after eight successful responses. Localhost diagnostics construct layers with the same description/TIFF bodies, including gzip/chunked XML and a separate full-original-path control; they change the authority, transport and capabilities links and earn no native service credit. The original path ancestry alone does not reproduce the failure. Neither a cache cause nor a server transport defect is proven. No new WCS exclusion or pass was introduced.
 
+New stock OGCAPI Maps run a passes one PyQGIS collection-map operation: GDAL and QgsRasterLayer consume the advertised HTTPS collection URL with `API=MAP`, preserve the actual CRS/grid/extent, and match all 196,024 channel bytes of an independent PNG before and after separate project reload. The read uses the native 229 by 214 overview of a 15,000,000 by 14,000,000 virtual raster. An independent stdlib PNG decoder and 33 artifact hashes verify the receipt. This proves collection rendering, not top-level discovery, full-resolution reading, every style/parameter or GUI. The retained native debug log lacks request detail, so wire correlation is not claimed. Server and SQL feature/raster fixtures remain unchanged. The separate dataset landing response omits extent and CRS metadata and still needs repair; this collection pass does not close that defect. See the [native Maps report](https://github.com/honua-io/honua-client-compat/blob/a37a12e3f19f9b9f2ecfecc2f68af3a5df77c13d/docs/reports/pyqgis-ogc-maps-native-2026-09-20.md).
+
 A separate HTTPS responder using the existing matching certificate reproduces the WCS failure without Honua or Caddy serving its responses. The corresponding HTTP control succeeds. An original-service replay with process-local CA-bundle variables still fails; whether the failing ArcPy path consumes those variables is unproven. These diagnostics narrow the connection investigation without establishing a server fix or a new exclusion.
+
+The subsequent [same-host HTTP diagnostic](https://github.com/honua-io/honua-esri-compat/blob/9b2315d06988a32fcbab79608676826870f09c65/docs/reports/arcpy-wcs-same-host-http-diagnostic-2026-09-20.md) also creates and removes a native WCS layer using `host.docker.internal` and the original path. All 24 WCS operation responses succeed; five incidental discovery requests receive 501. Hostname alone therefore does not explain the earlier difference, but scheme, ephemeral port and execution time remain confounded. One connection reset appeared in the unretained launcher console; error-free transport is not claimed. This remains an adapted response diagnostic with zero live-service certification credit.
 
 A separate owned-branch REST/SQL diagnostic confirms [#5044](https://github.com/honua-io/honua-server/issues/5044): a successful branch edit appears in the SQL overlay, but the storage-mapped FeatureServer query returns DEFAULT despite the exact branch GUID. The owned branch/delta were removed and DEFAULT remained unchanged. This is a newly tested query variant, not a retroactive failure of the historical DEFAULT-query receipt. The fresh repaired-image diagnostic now returns branch value 7920 while DEFAULT remains 1, agrees with the stored overlay, and removes its owned version/delta with DEFAULT unchanged. This proves the targeted server diagnostic, with no native-client credit.
 
@@ -132,7 +138,7 @@ The authoritative [CITE snapshot](../cite-status.md), reviewed September 15, rep
 
 ## Snapshot verification
 
-- Source checklist SHA-256: `0fc39d4db2491b1ed920a2ad5448a8b8ba8dea9ecc986af8ca79648f58f0829e`.
+- Source checklist SHA-256: `0f0904d351e6804e2af523b0afa7ffc59e842c399c807d798be7fe2941e83699`.
 - Protocol/version groups: 32; operation rows: 94; lane cells: 376.
 - Counts were recomputed from every retained lane state; no excluded or blocked case was removed.
 - Native QGIS evidence contract, input and image hashes, secret scan and all 243 client harness tests passed. The latest replay commit retained 43 immutable evidence files with staged-byte verification; its first gate failure identified two stale report hashes, and the regenerated artifacts passed the complete gate. The original native run gate remains blocked by three unattempted operations; the follow-up run retains all five blocked cases, including the partially performed elevation check.
@@ -140,4 +146,6 @@ The authoritative [CITE snapshot](../cite-status.md), reviewed September 15, rep
 - The latest Esri evidence commit passed all 303 harness tests in 46.04 seconds, evidence and fixture contract validation, exact template-byte comparison and source manifest freshness checks. Its 327 immutable evidence files were checked against staged bytes and scanned for credentials; offline gates add no native-client passes.
 - The subsequent Esri routing/extension inventory at `f923cc3` passes all 303 tests in 52.75 seconds plus fixture execution/validation, exact regeneration and matrix freshness checks. Its six immutable evidence files match staged bytes; it adds source-backed review obligations and no native passes.
 
-- Ten checklist tests pass; an independent comparison confirms all 32 protocol groups and 128 lane summaries match the 376 JSON cells and the recorded checksum.
+- The Maps evidence package at `a37a12e` passes 271 harness tests and shared snapshot checks. All 189 selected immutable evidence files match their originals with zero missing or changed blobs. The verifier now fails committed-revision mismatches and missing files unless explicit historical audit mode is selected; eight real-Git regressions cover that distinction.
+- Esri diagnostic package `9b2315d` passes 303 tests, fixture checks and corrected source-matrix freshness. The initial freshness failure is retained; canonical regeneration changed only the existing partial VMS descriptor's GET/POST route text and notes, preserving every operation and status. All 25 new evidence files match their immutable Git bytes.
+- Eleven checklist tests pass; an independent comparison confirms all 32 protocol groups and 128 lane summaries match the 376 JSON cells and the recorded checksum.

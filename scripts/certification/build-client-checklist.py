@@ -1283,6 +1283,22 @@ RESOLVED_EXCLUSION_EVIDENCE.update({
     ) for operation in ("landing-tilesets", "tile")
 })
 
+RESOLVED_EXCLUSION_EVIDENCE[("ogc-api-maps", "1.0", "map", "pyqgis")] = (
+    "honua-client-compat/evidence/pyqgis-ogc-maps-native-20260920-a/observations.json "
+    "(honua-client-compat commit a37a12e3f19f9b9f2ecfecc2f68af3a5df77c13d; "
+    "SHA-256 7ef0d4aae453e4a0e49de193d4623146af5c1d6f17f8a2eba1e706297b69a638), "
+    "native-results.json (SHA-256 acd9ee15ad025dbb251b89d4813a267222f8d1648a179b3d4e4f0c4e8bf94d5c): "
+    "PyQGIS 3.44.14-Solothurn / GDAL 3.13.3 stock OGCAPI API=MAP collection URL, "
+    "native GDAL and QgsRasterLayer reads plus separate QgsProject reload match all 196024 "
+    "channel bytes of an independent HTTPS PNG, independently decoded from retained bytes. "
+    "Read uses the actual 229x214 native overview of the 15000000x14000000 virtual grid; "
+    "no synthetic bounds, response adapter or full-resolution-read claim. Verified TLS, "
+    "unchanged SQL feature/raster fixture and runtime, worker exit0 and owned shutdown; "
+    "server 8b7aea9f6c73504d968560227926e3b8b4c5ddd0 / image 28d09586daf7. "
+    "Collection-map consumption only: no root discovery, useful wire trace or UI credit. "
+    "Development JIT SDK evidence; dataset landing metadata defect remains open"
+)
+
 NATIVE_REVIEW_FAILURES = {
     ("featureserver", "GeoServices REST", "statistics", "arcpy"): {
         "issue": "https://github.com/honua-io/honua-server/issues/5045",
