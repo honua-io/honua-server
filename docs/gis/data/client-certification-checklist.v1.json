@@ -38,20 +38,18 @@
       "qgis-ui": {
         "pass": 51,
         "n/a-no-client": 25,
-        "n/a-superseded": 3,
-        "blocked": 15
+        "blocked": 18
       },
       "pyqgis": {
         "pass": 51,
         "n/a-no-client": 25,
-        "n/a-superseded": 3,
-        "blocked": 15
+        "blocked": 18
       }
     },
     "overall": {
       "cells": 376,
-      "closed": 241,
-      "open": 135
+      "closed": 235,
+      "open": 141
     }
   },
   "rows": [
@@ -600,12 +598,20 @@
           }
         },
         "qgis-ui": {
-          "state": "n/a-superseded",
-          "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The dedicated WCS provider's version limit does not exclude the bundled GDAL provider: a fresh QgsRasterLayer/GDAL WCS 2.0.1 diagnostic loads 64x64 and reads a non-NoData pixel.",
+          "previous_exclusion": {
+            "state": "n/a-superseded",
+            "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
+          }
         },
         "pyqgis": {
-          "state": "n/a-superseded",
-          "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The dedicated WCS provider's version limit does not exclude the bundled GDAL provider: a fresh QgsRasterLayer/GDAL WCS 2.0.1 diagnostic loads 64x64 and reads a non-NoData pixel.",
+          "previous_exclusion": {
+            "state": "n/a-superseded",
+            "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
+          }
         }
       }
     },
@@ -626,12 +632,20 @@
           }
         },
         "qgis-ui": {
-          "state": "n/a-superseded",
-          "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The dedicated WCS provider's version limit does not exclude the bundled GDAL provider: a fresh QgsRasterLayer/GDAL WCS 2.0.1 diagnostic loads 64x64 and reads a non-NoData pixel.",
+          "previous_exclusion": {
+            "state": "n/a-superseded",
+            "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
+          }
         },
         "pyqgis": {
-          "state": "n/a-superseded",
-          "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The dedicated WCS provider's version limit does not exclude the bundled GDAL provider: a fresh QgsRasterLayer/GDAL WCS 2.0.1 diagnostic loads 64x64 and reads a non-NoData pixel.",
+          "previous_exclusion": {
+            "state": "n/a-superseded",
+            "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
+          }
         }
       }
     },
@@ -652,12 +666,20 @@
           }
         },
         "qgis-ui": {
-          "state": "n/a-superseded",
-          "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The dedicated WCS provider's version limit does not exclude the bundled GDAL provider: a fresh QgsRasterLayer/GDAL WCS 2.0.1 diagnostic loads 64x64 and reads a non-NoData pixel.",
+          "previous_exclusion": {
+            "state": "n/a-superseded",
+            "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
+          }
         },
         "pyqgis": {
-          "state": "n/a-superseded",
-          "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The dedicated WCS provider's version limit does not exclude the bundled GDAL provider: a fresh QgsRasterLayer/GDAL WCS 2.0.1 diagnostic loads 64x64 and reads a non-NoData pixel.",
+          "previous_exclusion": {
+            "state": "n/a-superseded",
+            "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
+          }
         }
       }
     },

@@ -2,15 +2,15 @@
 
 The four-lane checklist previously closed 167 cells as exclusions. Review found
 that several reasons establish only an incomplete probe or an unsuitable fixture,
-not the absence of a client capability. The current projection reopens 79 cells
+not the absence of a client capability. The current projection reopens 85 cells
 as `blocked` for exclusion-evidence review. This does not assert that all 79 are
 supported. It means the recorded reason cannot yet justify removing them from
 open work. Every reopened cell retains its original state and citation in
 `previous_exclusion`; historical runs and receipts are unchanged.
 
 The denominator stays at 94 operations / 376 cells. The 153 recorded passes and
-four existing failures are unchanged. There are now 79 review-blocked cells and
-52 not-started cells: 241 closed, 135 open, with 88 remaining exclusions. Remaining
+four existing failures are unchanged. There are now 85 review-blocked cells and
+52 not-started cells: 235 closed, 141 open, with 82 remaining exclusions. Remaining
 exclusions are not automatically endorsed by this first audit.
 
 | Reopened claim | Cells | Why the exclusion is insufficient |
@@ -18,6 +18,7 @@ exclusions are not automatically endorsed by this first audit.
 | Generic ArcPy module-list citation | 38 | Modules are not a complete inventory of tools, layer files, connection files, or CIM-backed access. Installed `arcpy.management.MakeWCSLayer` directly contradicts the WCS claim. |
 | ArcPy `Map.addDataFromPath` service-type probe | 3 | Failure through one method does not exclude other native ArcPy entry points. |
 | Unnamed missing QGIS provider | 30 | The citation supplies neither the provider name nor a receipt. Shared GDAL/OGR drivers must be considered; the installed GDAL exposes OGCAPI. |
+| QGIS WCS 2.0.1 excluded using the dedicated WCS provider | 6 | The stock GDAL provider successfully loads WCS 2.0.1 and reads a pixel; the dedicated provider does not define the entire client surface. |
 | Pro WCS 1.0 superseded by default negotiation | 3 | A default preference for 2.0.1 does not establish that explicitly selecting 1.0.0 is impossible. |
 | Pro OGC API Tiles vector-only fixture | 2 | Pro documents map tiles support. Missing map tiles in a fixture is a setup or server metadata problem to investigate. |
 | Pro OData excluded using an OGC classic service list | 2 | OData is not an OGC classic service; the citation cannot establish absence. |
@@ -56,6 +57,14 @@ changed during this audit.
   public Caddy root through `CURL_CA_BUNDLE` removed that TLS error without
   disabling verification. The raster layer then reported no raster band for
   this vector collection, while the vector layer read a feature successfully.
+- A fresh `QgsRasterLayer` with provider `gdal` and a standard WCS_GDAL service
+  definition selecting WCS 2.0.1 loads coverage_0 as 64x64, one band, EPSG:4326.
+  A 2x2 block read returns 100.0 at row 0 / column 0, with `isNoData=false`.
+  Thus the QGIS WCS 2.0.1 exclusions must also reopen. This is an SDK diagnostic,
+  not a native UI pass or complete pixel/conformance certification.
+  The reproducible probe is `honua-client-compat/scripts/probe-qgis-excluded-raster-paths.py`;
+  its fresh redacted output is
+  `honua-client-compat/evidence/exclusion-audit-qgis-20260920-a/observations.json`.
 - The compatibility server image remains
   `sha256:f2e3ee8d7c3975efec1fe84fc9778a119dad77e7af55af8ff9caf3bd0123b4cf`.
   Allowlisted Docker environment inspection shows `ASPNETCORE_ENVIRONMENT=Development`
@@ -109,6 +118,7 @@ Sources checked September 20, 2026:
 - [Esri Reconcile Versions](https://doc.esri.com/en/arcgis-pro/latest/tool-reference/data-management/reconcile-versions.html)
 - [Esri OGC API service use](https://doc.esri.com/en/arcgis-pro/latest/help/data/services/use-ogc-api-services.html)
 - [GDAL OGCAPI driver](https://gdal.org/en/stable/drivers/raster/ogcapi.html)
+- [GDAL WCS driver and supported versions](https://gdal.org/en/stable/drivers/raster/wcs.html)
 - [PostGIS GDAL driver inventory](https://postgis.net/docs/RT_ST_GDALDrivers.html)
 - [PostGIS enabled-driver configuration](https://postgis.net/docs/postgis_gdal_enabled_drivers.html)
 

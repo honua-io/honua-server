@@ -1,7 +1,7 @@
 # Client certification checklist — four lanes
 
 The [September 20 exclusion audit](client-exclusion-audit-2026-09-20.md) reopens
-79 previously excluded cells for evidence review, preserving each original claim
+85 previously excluded cells for evidence review, preserving each original claim
 in `previous_exclusion`. The generated tables below are current; the original
 baseline narrative is historical. Missing fixtures, licenses, flags, or a failed
 single connection method cannot by themselves establish `n/a-no-client`.
@@ -188,10 +188,10 @@ lane × protocol pair appears with no checklist row.
 |---|---|---|---|---|
 | `pro-ui` | ArcGIS Pro 3.7.1.1904 | 33/94 | 61 | blocked 7, fail 2, n/a-no-client 13, not-started 52, pass 20 |
 | `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 50/94 | 44 | blocked 42, fail 2, n/a-no-client 19, pass 31 |
-| `qgis-ui` | QGIS 3.44.14 LTR | 79/94 | 15 | blocked 15, n/a-no-client 25, n/a-superseded 3, pass 51 |
-| `pyqgis` | QGIS 3.44.14 LTR | 79/94 | 15 | blocked 15, n/a-no-client 25, n/a-superseded 3, pass 51 |
+| `qgis-ui` | QGIS 3.44.14 LTR | 76/94 | 18 | blocked 18, n/a-no-client 25, pass 51 |
+| `pyqgis` | QGIS 3.44.14 LTR | 76/94 | 18 | blocked 18, n/a-no-client 25, pass 51 |
 
-**241 of 376 cells closed; 135 open.**
+**235 of 376 cells closed; 141 open.**
 
 ### Cells
 
@@ -244,9 +244,9 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| GetCapabilities | not-started | blocked | n/a-superseded | n/a-superseded |
-| DescribeCoverage | not-started | blocked | n/a-superseded | n/a-superseded |
-| GetCoverage | not-started | blocked | n/a-superseded | n/a-superseded |
+| GetCapabilities | not-started | blocked | blocked | blocked |
+| DescribeCoverage | not-started | blocked | blocked | blocked |
+| GetCoverage | not-started | blocked | blocked | blocked |
 
 #### ogc-api-features 1.0
 

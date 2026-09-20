@@ -1096,6 +1096,7 @@ EXCLUSIONS_REQUIRING_REVIEW = {
     "arcpy-modules": "A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
     "arcpy-mp-web-service-types": "Failure through one addDataFromPath method does not exclude saved layers, connection files or geoprocessing tools.",
     "qgis-registry": "The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+    "qgis-wcs-provider": "The dedicated WCS provider's version limit does not exclude the bundled GDAL provider: a fresh QgsRasterLayer/GDAL WCS 2.0.1 diagnostic loads 64x64 and reads a non-NoData pixel.",
     "pro-wcs-versions": "Default negotiation of 2.0.1 does not exclude explicitly selecting WCS 1.0.0.",
     "pro-oapi-tiles-map-only": "A vector-only fixture is not proof that Pro lacks the documented map-tiles client; provision or verify a map tileset.",
     "pro-ogc-classic": "An OGC classic service list cannot establish absence of OData support.",

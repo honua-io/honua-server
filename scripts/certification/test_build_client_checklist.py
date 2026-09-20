@@ -20,7 +20,7 @@ class ExclusionReviewTests(unittest.TestCase):
         self.assertEqual(376, len(cells))
         self.assertEqual(153, sum(cell["state"] == "pass" for cell in cells))
         reopened = [cell for cell in cells if "previous_exclusion" in cell]
-        self.assertEqual(79, len(reopened))
+        self.assertEqual(85, len(reopened))
         for cell in reopened:
             self.assertEqual("blocked", cell["state"])
             self.assertTrue(cell["previous_exclusion"]["state"].startswith("n/a-"))
