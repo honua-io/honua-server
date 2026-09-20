@@ -572,18 +572,7 @@ def test_cert_qflt_02_bbox_filter(
     )
     started = time.perf_counter()
 
-    # Scoped to COLLECTION_ID, like every sibling search here. The /stac landing
-    # page advertises collections 10, 11 and 12 as well, which are per-test layers
-    # the OWSLib lane creates and removes, so an unscoped search spans whatever
-    # that lane last left behind - unscoped /stac/search reports numberMatched=20
-    # against this collection's 10. This case asserts a fixed count, and it passed
-    # unscoped only because those transient collections happen to hold nothing
-    # inside SUBSET_BBOX. That is luck, not design.
-    search = api_client.search(
-        collections=[COLLECTION_ID],
-        bbox=list(canonical_fixture.SUBSET_BBOX),
-        limit=100,
-    )
+    search = api_client.search(bbox=list(canonical_fixture.SUBSET_BBOX), limit=100)
     items = list(search.items())
 
     assert len(items) == canonical_fixture.SUBSET_BBOX_FEATURE_COUNT, (

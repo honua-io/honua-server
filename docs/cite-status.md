@@ -79,14 +79,7 @@ GetFeatureInfo, and `application/vnd.ogc.gml` GML FeatureInfo.
 - **WPS 2.0 `basic-async`** — official ETS Basic and Asynchronous conformance
   classes against the canonical process/job runtime.
 - **WMS 1.1.1 / 1.3 `default`** — the official ETS default profiles.
-- **WMTS 1.0 `default`** — the official ETS default profile. It does **not**
-  schema-validate the capabilities document. This profile reported 60/60 while
-  `GetCapabilities` failed
-  `schemas.opengis.net/wmts/1.0/wmtsGetCapabilities_response.xsd` at every layer:
-  `MaxTileRow` and `MaxTileCol` are `xs:positiveInteger`, and the server emitted
-  `0` for tile matrix 0. Found by client certification, not by CITE. A green run
-  here therefore does not imply a schema-valid document, so protocol-level XSD
-  assertions belong in the `Honua.Protocols.OgcClassic.Tests` WMTS suite.
+- **WMTS 1.0 `default`** — the official ETS default profile.
 
 ## OGC API surfaces without an official CITE ETS
 

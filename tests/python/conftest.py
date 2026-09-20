@@ -114,20 +114,9 @@ def honua_server(
 
 
 @pytest.fixture(scope="session")
-def base_url(request: pytest.FixtureRequest) -> str:
-    """Base URL of the Honua server under test.
-
-    ``HONUA_TEST_BASE_URL`` points a lane at an already-running server instead of
-    starting one, which is how the docker/client-compat lanes operate — each has
-    been carrying its own private override (``HONUA_PYQGIS_BASE_URL``,
-    ``HONUA_GDAL_*``) because the shared fixture offered no way to do it. The
-    override is resolved before ``honua_server`` is requested, so neither the
-    server subprocess nor the PostGIS container is started when it is set.
-    """
-    override = os.getenv("HONUA_TEST_BASE_URL")
-    if override:
-        return override.rstrip("/")
-    return request.getfixturevalue("honua_server").base_url
+def base_url(honua_server: HonuaServer) -> str:
+    """Get the base URL of the running Honua server."""
+    return honua_server.base_url
 
 
 # =============================================================================
@@ -251,21 +240,12 @@ def test_collection_id() -> str:
 
 
 @pytest.fixture(autouse=True)
-def reset_worker_state(request: pytest.FixtureRequest) -> None:
-    """Reset worker-scoped data before each test for isolation.
-
-    Skipped under ``HONUA_TEST_BASE_URL``: a server supplied from outside owns
-    its own data, and there is no PostGIS fixture to reset against. This mirrors
-    the docker/client-compat lanes, where the one-shot seed job owns the data and
-    nothing resets between tests. The fixtures are resolved lazily so requesting
-    them does not start a PostGIS container that the run does not need.
-    """
-    if os.getenv("HONUA_TEST_BASE_URL"):
-        return
-
-    postgis: PostGISFixture = request.getfixturevalue("postgis")
-    worker_schema: str = request.getfixturevalue("worker_schema")
-    test_layer_id: int = request.getfixturevalue("test_layer_id")
+def reset_worker_state(
+    postgis: PostGISFixture,
+    worker_schema: str,
+    test_layer_id: int,
+) -> None:
+    """Reset worker-scoped data before each test for isolation."""
     postgis.reset_worker_data(worker_schema, layer_id=test_layer_id)
 
 

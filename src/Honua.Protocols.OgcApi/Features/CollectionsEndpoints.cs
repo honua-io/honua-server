@@ -48,20 +48,6 @@ internal static class CollectionsEndpoints
         MediaTypes.Html
     ];
 
-    private static readonly IReadOnlyDictionary<string, string> _schemaFormatParameters =
-        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["json"] = MediaTypes.Json,
-            ["schemajson"] = MediaTypes.SchemaJson,
-            ["schema+json"] = MediaTypes.SchemaJson
-        };
-
-    private static readonly string[] _schemaSupportedMediaTypes =
-    [
-        MediaTypes.SchemaJson,
-        MediaTypes.Json
-    ];
-
     /// <summary>
     /// Maps collections management endpoints
     /// </summary>
@@ -99,17 +85,6 @@ internal static class CollectionsEndpoints
             .Produces<QueryablesSchema>(200, MediaTypes.Json)
             .Produces<QueryablesSchema>(200, MediaTypes.SchemaJson)
             .Produces<string>(200, MediaTypes.Html)
-            .Produces(404);
-
-        endpoints.MapGet("/ogc/features/collections/{collectionId}/schema", HandleGetSchema)
-            .WithDisplayName("OGC API Features Schema")
-            .WithName("CollectionSchema")
-            .WithSummary("Get OGC API Features Part 5 feature schema")
-            .WithDescription("Get the JSON Schema of the properties a feature of the collection carries")
-            .WithTags("OGC API Features")
-            .CacheOutput("OgcQueryables")
-            .Produces<FeatureSchemaDocument>(200, MediaTypes.SchemaJson)
-            .Produces<FeatureSchemaDocument>(200, MediaTypes.Json)
             .Produces(404);
 
         return endpoints;
@@ -531,89 +506,6 @@ internal static class CollectionsEndpoints
     }
 
     /// <summary>
-    /// Handles the OGC API Features Part 5 schema request.
-    /// </summary>
-    private static async Task<IResult> HandleGetSchema(
-        string collectionId,
-        HttpContext context,
-        string? f,
-        [FromServices] ILogger<OgcFeaturesEndpoints.OgcFeaturesEndpointsLog> logger)
-    {
-        try
-        {
-            var validationError = OgcCommonUtilities.ValidateQueryParameters(context.Request, OgcFeaturesUtilities.AllowedQueryParameters.Metadata);
-            if (validationError is not null)
-            {
-                return StandardErrorHelpers.CreateBadRequest(context, validationError.Value ?? "Invalid query parameters.");
-            }
-
-            if (!OgcCommonUtilities.TryGetOutputFormat(
-                    f,
-                    context,
-                    _schemaFormatParameters,
-                    _schemaSupportedMediaTypes,
-                    MediaTypes.SchemaJson,
-                    out var outputFormat,
-                    out var formatError))
-            {
-                return OgcCommonUtilities.CreateFormatError(context, formatError);
-            }
-
-            var effectiveToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-            var collectionResolution = await ResolveCollectionIdAsync(context, collectionId, effectiveToken);
-            if (!collectionResolution.Found)
-            {
-                if (collectionResolution.ErrorResult != null)
-                {
-                    return collectionResolution.ErrorResult;
-                }
-
-                OgcFeaturesLog.CollectionNotFound(logger, collectionId);
-                return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
-            }
-
-            collectionId = collectionResolution.ResolvedCollectionId;
-            OgcFeaturesLog.CollectionRequested(logger, collectionId);
-
-            var validation = await LayerValidationHelpers.ValidateCollectionWithAccessV2Async(
-                context,
-                collectionId,
-                requiredProtocol: OgcFeaturesProtocolName,
-                cancellationToken: effectiveToken);
-            if (!validation.IsValid)
-            {
-                return validation.ErrorResult!;
-            }
-
-            var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var schemaId = $"{baseUrl}/ogc/features/collections/{Uri.EscapeDataString(collectionId)}/schema";
-            var schema = CreateFeatureSchema(validation.Resource!, schemaId);
-
-            return OgcCommonUtilities.FormatMetadataResponse(schema, OgcJsonContext.Default.FeatureSchemaDocument, outputFormat, "Schema");
-        }
-        catch (OperationCanceledException)
-            when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
-        {
-            throw;
-        }
-        catch (ResourceNotFoundException)
-        {
-            OgcFeaturesLog.CollectionNotFound(logger, collectionId);
-            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
-        }
-        // Intentionally generic: this is the top-level request handler boundary; any
-        // unanticipated failure must map to a generic 500 rather than crash the request.
-        catch (Exception ex) when (ex is not OutOfMemoryException)
-        {
-            CollectionsEndpointLogging.LogCollectionQueryFailed(logger, collectionId, ex);
-            HonuaTelemetry.RecordException(Activity.Current, ex);
-            return StandardErrorHelpers.CreateInternalServerError(
-                context,
-                "An error occurred while retrieving the collection schema.");
-        }
-    }
-
-    /// <summary>
     /// Metadata v2 builder for an OGC API Features <see cref="CollectionInfo"/>. The collection
     /// id is the publication's <c>ServiceLocalId</c>, falling back to its resource name when the
     /// publication carries no explicit local id. Spatial extent is read from the typed
@@ -718,14 +610,6 @@ internal static class CollectionsEndpoints
             rel: RelationTypes.Queryables,
             type: MediaTypes.SchemaJson,
             title: "Queryables"));
-
-        // Part 5 schema link. The media type matters: QGIS selects the schema link by
-        // rel and takes only an application/schema+json one.
-        collectionLinks.Add(Link.Create(
-            href: $"{baseUrl}/ogc/features/collections/{collectionSegment}/schema",
-            rel: RelationTypes.Schema,
-            type: MediaTypes.SchemaJson,
-            title: "Schema"));
 
         // Style link (MapLibre style JSON) — uses the storage layer id as the v1 catalog does.
         var storageLayerId = snapshot.ResolveStorageLayerId(publication);
@@ -928,100 +812,6 @@ internal static class CollectionsEndpoints
             Required = requiredFields.ToImmutableArray()
         };
     }
-
-    /// <summary>
-    /// Builds the OGC API Features Part 5 feature schema from
-    /// <see cref="MetadataV2Resource.SchemaFields"/>: every non-geometry field becomes a
-    /// property, the primary id field carries <c>x-ogc-role: id</c> and is read-only, and
-    /// the primary geometry carries <c>x-ogc-role: primary-geometry</c> with the Part 5
-    /// <c>geometry-*</c> format of the resource's declared geometry type.
-    /// </summary>
-    private static FeatureSchemaDocument CreateFeatureSchema(
-        MetadataV2Resource resource,
-        string schemaId)
-    {
-        var properties = ImmutableDictionary.CreateBuilder<string, FeatureSchemaProperty>();
-        var requiredFields = new List<string>();
-        var geometryField = resource.FindPrimaryGeometryField();
-        var idFieldName = resource.FindPrimaryIdField()?.Name;
-        var sequence = 1;
-
-        foreach (var field in resource.SchemaFields)
-        {
-            if (geometryField is not null &&
-                string.Equals(field.Name, geometryField.Name, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            if (field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
-            {
-                continue;
-            }
-
-            var (type, format) = GetJsonSchemaTypeAndFormatV2(field.Type);
-            var isId = idFieldName is not null &&
-                string.Equals(field.Name, idFieldName, StringComparison.OrdinalIgnoreCase);
-
-            properties[field.Name] = new FeatureSchemaProperty
-            {
-                Type = type,
-                Format = format,
-                Title = field.Alias ?? field.Title ?? field.Name,
-                Description = field.Description,
-                MaxLength = type == "string" ? field.Length : null,
-                OgcRole = isId ? "id" : null,
-                ReadOnly = isId ? true : null,
-                PropertySeq = sequence++
-            };
-
-            // The id is server-assigned: a client never has to send it.
-            if (!field.Nullable && !isId)
-            {
-                requiredFields.Add(field.Name);
-            }
-        }
-
-        if (geometryField is not null)
-        {
-            properties[geometryField.Name] = new FeatureSchemaProperty
-            {
-                Title = geometryField.Alias ?? geometryField.Title ?? geometryField.Name,
-                Description = geometryField.Description,
-                Format = GetPart5GeometryFormat(resource.ReadGeometryType()),
-                OgcRole = "primary-geometry",
-                PropertySeq = sequence
-            };
-        }
-
-        var displayName = resource.Metadata.Title ?? resource.Metadata.Name;
-
-        return new FeatureSchemaDocument
-        {
-            Id = schemaId,
-            Type = "object",
-            Title = $"Schema for {displayName}",
-            Description = $"Schema of the properties a feature of the {displayName} collection carries",
-            Properties = properties.ToImmutable(),
-            Required = requiredFields.ToImmutableArray()
-        };
-    }
-
-    /// <summary>
-    /// Maps the resource's declared geometry type to the Part 5 <c>geometry-*</c> format.
-    /// </summary>
-    private static string GetPart5GeometryFormat(MetadataV2GeometryType geometryType)
-        => geometryType switch
-        {
-            MetadataV2GeometryType.Point => "geometry-point",
-            MetadataV2GeometryType.MultiPoint => "geometry-multipoint",
-            MetadataV2GeometryType.LineString => "geometry-linestring",
-            MetadataV2GeometryType.MultiLineString => "geometry-multilinestring",
-            MetadataV2GeometryType.Polygon => "geometry-polygon",
-            MetadataV2GeometryType.MultiPolygon => "geometry-multipolygon",
-            MetadataV2GeometryType.GeometryCollection => "geometry-geometrycollection",
-            _ => "geometry-any"
-        };
 
     /// <summary>
     /// Builds a queryables JSON Schema property from a V2 schema field.

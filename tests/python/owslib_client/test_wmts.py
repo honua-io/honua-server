@@ -294,35 +294,15 @@ def test_ext_tile_matrix_sets(wmts: WebMapTileService,
 
 
 @pytest.mark.cert("NB-OWS-WMTS-CAP-03")
-def test_ext_tile_matrix_set_links_resolve(wmts: WebMapTileService, wmts_layer: str,
-                                           wmts_collector: CertificationEvidenceCollector) -> None:
-    """Every linked tile matrix set must be defined, and any limits must be in range.
-
-    This case used to require TileMatrixSetLimits to be present. The server no
-    longer advertises them: the limits it emitted were derived from the gridset
-    rather than the layer, so they constrained nothing, and their level-0 entry
-    made the whole document fail WMTS 1.0.0 schema validation because MaxTileRow
-    and MaxTileCol are typed xs:positiveInteger.
-
-    The claim being certified is unchanged - a client must not be steered at a
-    tile that does not exist - but with the layer spanning the full matrix set the
-    mechanism is that every linked set resolves to a real definition. A link
-    naming an undefined set steers the client at nothing at all, which is worse
-    than a missing limit. The range check is retained for whenever limits do
-    appear, so reintroducing them cannot slip past unchecked.
-    """
+def test_ext_tile_matrix_set_limits(wmts: WebMapTileService, wmts_layer: str,
+                                    wmts_collector: CertificationEvidenceCollector) -> None:
+    """TileMatrixSetLimits must exist and stay inside the matrix they constrain."""
     layer = wmts[wmts_layer]
-    resolved = 0
-    limits_checked = 0
+    checked = 0
     for set_name, link in layer.tilematrixsetlinks.items():
-        assert set_name in wmts.tilematrixsets, (
-            f"layer links tile matrix set {set_name!r}, which the capabilities do not define"
-        )
         tile_matrix_set = wmts.tilematrixsets[set_name]
-        assert tile_matrix_set.tilematrix, f"{set_name} is defined with no tile matrices"
-        resolved += 1
-
-        for identifier, limits in (link.tilematrixlimits or {}).items():
+        assert link.tilematrixlimits, f"{set_name} link declares no TileMatrixSetLimits"
+        for identifier, limits in link.tilematrixlimits.items():
             matrix = tile_matrix_set.tilematrix[identifier]
             assert 0 <= int(limits.mintilerow) <= int(limits.maxtilerow) <= int(matrix.matrixheight) - 1, (
                 f"{set_name}/{identifier}: row limits {limits.mintilerow}..{limits.maxtilerow} "
@@ -332,16 +312,15 @@ def test_ext_tile_matrix_set_links_resolve(wmts: WebMapTileService, wmts_layer: 
                 f"{set_name}/{identifier}: column limits {limits.mintilecol}..{limits.maxtilecol} "
                 f"fall outside a matrix of width {matrix.matrixwidth}"
             )
-            limits_checked += 1
-
-    assert resolved > 0, "the layer links no tile matrix set at all"
+            checked += 1
+    assert checked > 0
     wmts_collector.record(
         "NB-OWS-WMTS-CAP-03", "pass",
-        measured_count=resolved,
+        measured_count=checked,
         notes=(
-            f"{resolved} linked tile matrix set(s) resolve to a definition carrying tile "
-            f"matrices; {limits_checked} TileMatrixLimits entries checked for range "
-            "(none advertised, because the layer spans the full matrix set)."
+            f"{checked} TileMatrixLimits entries across both grids stay within the row/column "
+            "range of the tile matrix they constrain, so a limits-aware client cannot be steered "
+            "at a tile that does not exist."
         ),
     )
 

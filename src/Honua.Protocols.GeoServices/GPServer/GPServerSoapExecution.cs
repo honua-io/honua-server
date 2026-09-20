@@ -60,21 +60,13 @@ internal static partial class GPServerSoapExecution
 
     internal static string ReadJobId(XElement operation)
     {
-        switch (operation.Name.LocalName)
+        if (operation.Name.LocalName == "GetJobResult")
         {
-            case "GetJobResult":
-                ValidateChildren(operation, "JobID", "ParameterNames", "Options");
-                break;
-            case "GetJobStatus":
-                // ArcGIS Pro 3.7.1 polls with <GetProgressMsg>true</GetProgressMsg> beside
-                // the JobID (observed live, 2026-09-20). The flag only asks the server to
-                // fold progress text into its status; the response shape is unchanged.
-                ValidateChildren(operation, "JobID", "GetProgressMsg");
-                ReadOptionalBoolean(operation, "GetProgressMsg");
-                break;
-            default:
-                ValidateChildren(operation, "JobID");
-                break;
+            ValidateChildren(operation, "JobID", "ParameterNames", "Options");
+        }
+        else
+        {
+            ValidateChildren(operation, "JobID");
         }
         return RequiredScalar(operation, "JobID");
     }
@@ -278,25 +270,6 @@ internal static partial class GPServerSoapExecution
             throw Invalid($"{name} requires a non-empty scalar value.");
         }
         return child.Value;
-    }
-
-    private static bool? ReadOptionalBoolean(XElement parent, string name)
-    {
-        var child = parent.Element(name);
-        if (child is null || IsNil(child))
-        {
-            return null;
-        }
-        if (child.HasElements)
-        {
-            throw Invalid($"{name} must be an xs:boolean.");
-        }
-        return child.Value.Trim() switch
-        {
-            "true" or "1" => true,
-            "false" or "0" => false,
-            _ => throw Invalid($"{name} must be an xs:boolean.")
-        };
     }
 
     private static void ValidateChildren(XElement parent, params string[] names)

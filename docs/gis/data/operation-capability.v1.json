@@ -7,13 +7,13 @@
     "capabilities": "docs/gis/data/feature-catalog.json"
   },
   "summary": {
-    "operationCount": 495,
+    "operationCount": 493,
     "unresolvedCount": 0,
     "capabilityCount": 23,
     "perSpec": {
-      "admin-api": 402,
+      "admin-api": 401,
       "ogc-api-coverages": 8,
-      "ogc-api-features": 20,
+      "ogc-api-features": 19,
       "ogc-api-maps": 9,
       "ogc-api-processes": 10,
       "ogc-api-tiles": 13,
@@ -34,13 +34,13 @@
       "import.geoserver": 5,
       "import.geoservices": 10,
       "process.ogc-api-processes": 10,
-      "raster.cloud-cog-serving": 6,
+      "raster.cloud-cog-serving": 5,
       "raster.multidim-coverage": 11,
       "routing.solve": 13,
       "scene.bim-ingest": 1,
       "scene.pointcloud-ingest": 1,
       "serve.ogc-api-coverages": 8,
-      "serve.ogc-api-features": 19,
+      "serve.ogc-api-features": 18,
       "serve.ogc-api-maps": 9,
       "serve.ogc-api-tiles": 13,
       "serve.stac": 10
@@ -3119,16 +3119,6 @@
     },
     {
       "spec": "admin-api",
-      "method": "POST",
-      "path": "/api/v1/admin/raster-artifacts/cog",
-      "operationId": "publishCogArtifact",
-      "capability": "raster.cloud-cog-serving",
-      "family": "Admin API",
-      "maturity": "implemented",
-      "catalogEntryId": "post-api-v1-admin-raster-artifacts-cog"
-    },
-    {
-      "spec": "admin-api",
       "method": "GET",
       "path": "/api/v1/admin/rate-limits",
       "operationId": "listRateLimitPolicies",
@@ -4306,16 +4296,6 @@
       "family": "OGC API Features",
       "maturity": "implemented",
       "catalogEntryId": "get-ogc-features-collections-collectionid-queryables"
-    },
-    {
-      "spec": "ogc-api-features",
-      "method": "GET",
-      "path": "/ogc/features/collections/{collectionId}/schema",
-      "operationId": null,
-      "capability": "serve.ogc-api-features",
-      "family": "OGC API Features",
-      "maturity": "implemented",
-      "catalogEntryId": "get-ogc-features-collections-collectionid-schema"
     },
     {
       "spec": "ogc-api-features",

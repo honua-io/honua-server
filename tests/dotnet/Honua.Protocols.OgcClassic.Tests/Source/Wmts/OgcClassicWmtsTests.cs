@@ -421,6 +421,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         content.Should().Contain("<ows:Operation name=\"GetFeatureInfo\">");
         content.Should().Contain("<LegendURL ");
+        content.Should().Contain("<TileMatrixSetLimits>");
         content.Should().Contain("<WellKnownScaleSet>");
         content.Should().Contain("<Themes>");
         content.Should().Contain("resourceType=\"FeatureInfo\"");
@@ -435,7 +436,7 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.Wmts)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/WMTS")]
-    public async Task Wmts_GetCapabilities_AdvertisesSupportedCrsAndNoUnschemableTileMatrixLimits()
+    public async Task Wmts_GetCapabilities_AdvertisesCorrectTileMatrixLimitsAndSupportedCrs()
     {
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities&VERSION=1.0.0");
@@ -443,21 +444,9 @@ public sealed class OgcClassicWmtsTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         content.Should().Contain("<ows:SupportedCRS>urn:ogc:def:crs:EPSG:6.18:3:3857</ows:SupportedCRS>");
-
-        // The tile matrix id is read from the TileMatrixSet definition. This previously
-        // asserted <TileMatrix>1</TileMatrix>, which only ever appeared inside
-        // TileMatrixLimits, so it proved a limits artifact was present rather than that
-        // the matrix is advertised at all.
-        content.Should().Contain("<ows:Identifier>1</ows:Identifier>");
-
-        // WMTS 1.0.0 types MaxTileRow and MaxTileCol as xs:positiveInteger, so a zero is
-        // not merely unhelpful - it makes the whole document fail
-        // schemas.opengis.net/wmts/1.0/wmtsGetCapabilities_response.xsd, which is how this
-        // shipped while the CITE WMTS 1.0 ETS reported 60/60. The limits we emitted were
-        // derived from the gridset rather than the layer, so they constrained nothing and
-        // are now omitted entirely; this asserts the zero cannot come back.
-        content.Should().NotContain("<MaxTileRow>0</MaxTileRow>");
-        content.Should().NotContain("<MaxTileCol>0</MaxTileCol>");
+        content.Should().Contain("<TileMatrix>1</TileMatrix>");
+        content.Should().Contain("<MaxTileRow>1</MaxTileRow>");
+        content.Should().Contain("<MaxTileCol>1</MaxTileCol>");
     }
 
     [IntegrationTest]

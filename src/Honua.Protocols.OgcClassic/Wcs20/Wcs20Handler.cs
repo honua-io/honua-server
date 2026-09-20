@@ -30,7 +30,7 @@ namespace Honua.Protocols.Ogc.Classic.Wcs20;
 /// CITE conformance: 82/82 (WCS 2.0 `core` profile, 100% pass on trunk).
 /// Authoritative status: <see href="../../../../../../docs/cite-status.md">docs/cite-status.md</see>.
 /// </summary>
-internal sealed partial class Wcs20Handler
+internal sealed class Wcs20Handler
 {
     private static readonly XNamespace Wcs = Wcs20Utilities.WcsNamespace;
     private static readonly XNamespace Ows = Wcs20Utilities.OwsNamespace;
@@ -128,21 +128,6 @@ internal sealed partial class Wcs20Handler
                 return commonError;
             }
 
-            // Version selection, mirroring how Wfs20DispatcherEndpoint serves WFS 1.0.0
-            // and 1.1.0 beside 2.0.0: the routes, endpoint registry entries and
-            // telemetry classifiers stay as they are, and only the encoding differs
-            // (honua-server#5020). Stock QGIS speaks WCS 1.0/1.1 only, so without this
-            // branch no QGIS client can open a coverage.
-            if (Wcs20Utilities.IsVersion10(
-                    GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.Version),
-                    GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.AcceptVersions)))
-            {
-                var legacyResult = await HandleWcs10Async(context, scope, operation, cancellationToken)
-                    .ConfigureAwait(false);
-                Wcs20Log.RequestCompleted(_logger, operation, scope.DisplayName);
-                return legacyResult;
-            }
-
             IResult result;
             if (string.Equals(operation, Wcs20Utilities.Operations.GetCapabilities, StringComparison.OrdinalIgnoreCase))
             {
@@ -199,7 +184,7 @@ internal sealed partial class Wcs20Handler
             {
                 return Wcs20ErrorResults.CreateBadRequest(
                     Wcs20Utilities.ExceptionCodes.VersionNegotiationFailed,
-                    $"Unsupported version. This service supports WCS {Wcs20Utilities.Version} and {Wcs20Utilities.Version10}.",
+                    $"Unsupported version. This service supports only WCS {Wcs20Utilities.Version}.",
                     Wcs20Utilities.Parameters.AcceptVersions);
             }
         }
@@ -844,20 +829,7 @@ internal sealed partial class Wcs20Handler
         // ServiceId-as-name routing used by /ogc/services/{serviceId}/...
         if (!snapshot.Index.ServicesById.TryGetValue(serviceId, out var service))
         {
-            // A display name does not identify one service. The canonical graph
-            // projects a single logical service across several protocol facets that
-            // intentionally share a name while carrying distinct ids - see
-            // 051_RelaxMetadataV2ServiceNameIndex.sql, which dropped the unique name
-            // index for exactly this reason, and the V1 compat snapshot, which emits
-            // those same-named facets. Taking the first name match and then asking
-            // whether it enables WCS rejects the request whenever the match happens to
-            // be the feature or map facet, even though the image facet serves
-            // coverages: every WCS route answered "WCS is not enabled for this
-            // service" while ImageServer on the same name answered 200. So pick the
-            // facet that actually serves this protocol, and only fall back to a bare
-            // name match so a service genuinely without WCS still reports that.
-            service = FindServiceForProtocol(snapshot, serviceId, WcsProtocolName)
-                ?? snapshot.FindService(serviceId);
+            service = snapshot.FindService(serviceId);
         }
 
         if (service is null || !service.IsRoutable())
@@ -886,21 +858,6 @@ internal sealed partial class Wcs20Handler
 
         return new ServiceResolutionResult(service, null);
     }
-
-    /// <summary>
-    /// Finds the routable service with this display name that enables
-    /// <paramref name="protocol"/>. Returns <c>null</c> when no same-named facet serves
-    /// it, so the caller can fall back to a plain name match and report the protocol as
-    /// disabled rather than the service as missing.
-    /// </summary>
-    private static MetadataV2Service? FindServiceForProtocol(
-        MetadataV2GraphSnapshot snapshot,
-        string serviceName,
-        string protocol)
-        => snapshot.Graph.Services.FirstOrDefault(candidate =>
-            string.Equals(candidate.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase)
-            && candidate.IsRoutable()
-            && IsProtocolEnabled(candidate, protocol));
 
     private static bool IsProtocolEnabled(MetadataV2Service service, string protocol)
         => service.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase));
@@ -997,7 +954,7 @@ internal sealed partial class Wcs20Handler
         {
             return Wcs20ErrorResults.CreateBadRequest(
                 Wcs20Utilities.ExceptionCodes.VersionNegotiationFailed,
-                $"Unsupported version '{version}'. This service supports WCS {Wcs20Utilities.Version} and {Wcs20Utilities.Version10}.",
+                $"Unsupported version '{version}'. This service supports only WCS {Wcs20Utilities.Version}.",
                 Wcs20Utilities.Parameters.Version);
         }
 

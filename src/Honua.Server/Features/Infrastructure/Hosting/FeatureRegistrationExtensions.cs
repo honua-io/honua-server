@@ -252,7 +252,6 @@ internal static class FeatureRegistrationExtensions
     private static IServiceCollection AddPMTilesProxy(this IServiceCollection services)
     {
         services.AddSingleton<PMTilesProxyService>();
-        services.AddScoped<Honua.Server.Features.Protocols.Rasters.CogArtifacts.CogArtifactService>();
         return services;
     }
 
@@ -275,7 +274,6 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapZarrEndpoints();
         endpoints.MapGeoservicesCatalogEndpoints();
         endpoints.MapSharingRestEndpoints();
-        endpoints.MapArcGisServerAdminEndpoints();
         endpoints.MapImageServerEndpoints();
         endpoints.MapMapServerEndpoints();
         endpoints.MapVectorTileServerEndpoints();
@@ -314,7 +312,6 @@ internal static class FeatureRegistrationExtensions
             endpoints.MapScenePointCloudIngestEndpoints();
         }
         endpoints.MapPMTilesProxyEndpoints();
-        Honua.Server.Features.Protocols.Rasters.CogArtifacts.CogArtifactEndpoints.MapCogArtifactEndpoints(endpoints);
         endpoints.MapStyleEndpoints();
         endpoints.MapOgcCoveragesEndpoints();
         endpoints.MapEdrEndpoints();

@@ -28,7 +28,7 @@ internal readonly record struct StretchBounds(double Lo, double Hi);
 /// </summary>
 internal sealed class PostgresRasterStore : IRasterStore
 {
-    private static readonly FrozenSet<string> _allowedOutputFormats = new[] { "GTiff", "PNG", "JPEG", "COG", "EHdr" }.ToFrozenSet(StringComparer.Ordinal);
+    private static readonly FrozenSet<string> _allowedOutputFormats = new[] { "GTiff", "PNG", "JPEG", "COG" }.ToFrozenSet(StringComparer.Ordinal);
     private static readonly FrozenSet<string> _allowedResamplingAlgorithms = new[] { "NearestNeighbor", "Bilinear", "Cubic", "Lanczos" }.ToFrozenSet(StringComparer.Ordinal);
     private static readonly FrozenSet<string> _allowedZonalStatistics = new[] { "count", "sum", "mean", "min", "max", "stddev", "variance" }.ToFrozenSet(StringComparer.Ordinal);
 
@@ -652,7 +652,6 @@ internal sealed class PostgresRasterStore : IRasterStore
                    ST_Height(rast) AS height,
                    ST_SRID(rast) AS srid,
                    ST_NumBands(rast) AS band_count,
-                   ST_BandPixelType(rast, 1) AS pixel_type,
                    ST_XMin(ST_Envelope(rast)) AS xmin,
                    ST_YMin(ST_Envelope(rast)) AS ymin,
                    ST_XMax(ST_Envelope(rast)) AS xmax,
@@ -684,7 +683,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         var heightOrd = reader.GetOrdinal("height");
         var sridOrd = reader.GetOrdinal("srid");
         var bandCountOrd = reader.GetOrdinal("band_count");
-        var pixelTypeOrd = reader.GetOrdinal("pixel_type");
         var xminOrd = reader.GetOrdinal("xmin");
         var yminOrd = reader.GetOrdinal("ymin");
         var xmaxOrd = reader.GetOrdinal("xmax");
@@ -695,8 +693,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         var height = reader.GetInt32(heightOrd);
         var srid = reader.GetInt32(sridOrd);
         var bandCount = reader.GetInt32(bandCountOrd);
-        var pixelType = reader.IsDBNull(pixelTypeOrd) ? null : reader.GetString(pixelTypeOrd);
-        data = FinishRawExport(query, data, width, height, bandCount, pixelType);
         var extent = new RasterExtent
         {
             XMin = reader.GetDouble(xminOrd),
@@ -716,26 +712,8 @@ internal sealed class PostgresRasterStore : IRasterStore
             Height = height,
             Srid = srid,
             BandCount = bandCount,
-            PixelType = pixelType,
             Extent = extent
         };
-    }
-
-    /// <summary>
-    /// For <see cref="RasterFormat.Raw"/>, turns the EHdr driver's band-interleaved-by-line
-    /// buffer into the band-sequential layout the format promises; every other format is
-    /// returned as encoded. The EHdr primary file carries no header, so the sample count
-    /// is checked against the raster's dimensions here rather than trusted.
-    /// </summary>
-    internal static byte[] FinishRawExport(RasterQuery query, byte[] data, int width, int height, int bandCount, string? pixelType)
-    {
-        if (query.OutputFormat != RasterFormat.Raw || data.Length == 0)
-        {
-            return data;
-        }
-
-        var bytesPerSample = RasterInterleave.BytesPerSample(pixelType);
-        return RasterInterleave.BandInterleavedByLineToBandSequential(data, width, height, bandCount, bytesPerSample);
     }
 
     internal static string[] BuildExportCreationOptions(RasterQuery query, string formatName)
@@ -1999,7 +1977,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         var srid = reader.IsDBNull(sridOrd) ? query.OutputSrid : reader.GetInt32(sridOrd);
         var bandCount = reader.IsDBNull(bandCountOrd) ? 0 : reader.GetInt32(bandCountOrd);
         var pixelType = reader.IsDBNull(pixelTypeOrd) ? null : reader.GetString(pixelTypeOrd);
-        data = FinishRawExport(query, data, width, height, bandCount, pixelType);
 
         return new RasterResult
         {

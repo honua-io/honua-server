@@ -94,7 +94,6 @@ internal static class MetadataV2AttributeValidation
 
         var errors = new List<string>();
         var builder = ImmutableDictionary.CreateBuilder<string, object?>(StringComparer.OrdinalIgnoreCase);
-        var primaryIdFieldName = resource.FindPrimaryIdField()?.Name;
 
         foreach (var (key, rawValue) in attributes)
         {
@@ -124,31 +123,6 @@ internal static class MetadataV2AttributeValidation
             }
 
             var normalizedValue = NormalizeAttributeValue(rawValue);
-
-            // An explicit null on a server-assigned field means "not supplied", not
-            // "set to null". A client cannot set such a field, so a supplied null
-            // cannot mean anything else. Rejecting it broke every stock desktop
-            // digitizing session: QGIS serialises the unset system-maintained object
-            // id as "objectid": null on insert, and the non-nullable check failed the
-            // whole edit with error 1006, while the identical request with the member
-            // omitted succeeded and returned an assigned objectId. Dropping it here
-            // lets the store assign the value exactly as it does when the member is
-            // absent.
-            //
-            // "Server-assigned" is decided by the same rule the edit pipeline uses to
-            // decide which fields a create may omit, not by Editable alone. Editable
-            // defaults to true and most published layers never set it, so the object
-            // id is Editable=true in canonical metadata even though every GeoServices
-            // projection reports it editable:false. Keying on Editable alone made this
-            // relaxation fire on the one fixture that declared the flag and miss the
-            // client-compat fixture, where the same QGIS insert still failed with 1006.
-            if (!isUpdate
-                && normalizedValue is null
-                && (!field.Editable || field.IsServerAssignedIdField(primaryIdFieldName)))
-            {
-                continue;
-            }
-
             var error = ValidateAttributeValue(field, normalizedValue, mode);
             if (error != null)
             {

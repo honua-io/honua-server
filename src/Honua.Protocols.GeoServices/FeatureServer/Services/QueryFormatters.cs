@@ -348,28 +348,6 @@ internal sealed class QueryFormatter : IQueryFormatter
     /// <summary>
     /// Filters attributes based on outFields parameter
     /// </summary>
-    /// <summary>
-    /// Normalises one attribute value for the Esri JSON feature shape. On top of the
-    /// shared normaliser, a structured JSON value (a jsonb array or object, which the
-    /// store hands over as a <see cref="JsonElement"/>) becomes its JSON text.
-    /// </summary>
-    /// <remarks>
-    /// The layer document advertises a <c>Json</c> field as <c>esriFieldTypeString</c>
-    /// (<see cref="MapFieldTypeToGeoServices"/>), so the value must be a string too. Left
-    /// as a <see cref="JsonElement"/> it serialised as a nested array, and ArcGIS Pro's
-    /// feature-service reader, finding a non-string in a string field, dropped every
-    /// row that projected it: a <c>da.SearchCursor</c> over the seeded <c>tags</c> or
-    /// <c>numbers</c> field returned 0 of 10 rows while every other field returned all
-    /// 10, and the edit round-trip that clones a template row found nothing to clone.
-    /// GeoJSON keeps the nested value, where it is valid; only the Esri shape flattens.
-    /// </remarks>
-    internal static object? GeoServicesAttributeValue(object? value)
-        => FeatureAttributeValueNormalizer.Normalize(value) switch
-        {
-            JsonElement { ValueKind: JsonValueKind.Array or JsonValueKind.Object } element => element.GetRawText(),
-            var normalized => normalized
-        };
-
     private static Dictionary<string, object?> FilterAttributes(
         ImmutableDictionary<string, object?> attributes,
         string[]? outFields,
@@ -387,7 +365,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             {
                 if (ShouldIncludeGeoServicesAttribute(name, declaredAttributeFields, runtimeAttributeFields))
                 {
-                    all[name] = GeoServicesAttributeValue(value);
+                    all[name] = FeatureAttributeValueNormalizer.Normalize(value);
                 }
             }
 
@@ -419,7 +397,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             attributes.ContainsKey(field)
             && ShouldIncludeGeoServicesAttribute(field, declaredAttributeFields, runtimeAttributeFields)))
         {
-            filtered[field] = GeoServicesAttributeValue(attributes[field]);
+            filtered[field] = FeatureAttributeValueNormalizer.Normalize(attributes[field]);
         }
 
         return filtered;
@@ -658,18 +636,11 @@ internal sealed class QueryFormatter : IQueryFormatter
         // The layer's object-id field must be typed esriFieldTypeOID regardless of its
         // SQL type so Esri clients can locate the OID field by type (see issue #1299).
         var isObjectId = field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase);
-        var geoServicesType = isObjectId ? "esriFieldTypeOID" : MapFieldTypeToGeoServices(field.Type);
-        // Keyed on the *advertised* type, not the canonical one: Json and Time fields
-        // are advertised as esriFieldTypeString too, and the layer document already
-        // gave them the conventional length. The query response left theirs null,
-        // and an Esri client that maps a null string length to 0 then discarded
-        // every row projecting such a field - arcpy's SearchCursor over the seeded
-        // Json fields returned 0 of 10 rows while every other field returned all 10.
-        var isString = string.Equals(geoServicesType, "esriFieldTypeString", StringComparison.Ordinal);
+        var isString = !isObjectId && field.Type == MetadataV2FieldType.String;
         return new GeoServicesFieldInfo
         {
             Name = field.Name,
-            Type = geoServicesType,
+            Type = isObjectId ? "esriFieldTypeOID" : MapFieldTypeToGeoServices(field.Type),
             SqlType = field.SqlType ?? MapFieldTypeToSql(field.Type),
             Alias = field.Alias ?? field.Title ?? field.Name,
             // Esri clients (arcpy/.NET SDK) require a positive length on string fields;
@@ -1332,12 +1303,7 @@ internal sealed class StreamingQueryFormatter
                     objectIdWritten = true;
                 }
 
-                // Same flattening as the materialised Esri shape: a jsonb array or object
-                // is advertised as esriFieldTypeString, so it must stream as its JSON text.
-                // ArcGIS Pro sends attribute-only reads (returnGeometry=false, paged and
-                // ordered by objectid) down this streaming path, and dropped every row
-                // when the value arrived as a nested array.
-                WriteJsonValue(writer, fieldName, QueryFormatter.GeoServicesAttributeValue(kvp.Value), cancellationToken, dateFieldNames);
+                WriteJsonValue(writer, fieldName, kvp.Value, cancellationToken, dateFieldNames);
             }
         }
 

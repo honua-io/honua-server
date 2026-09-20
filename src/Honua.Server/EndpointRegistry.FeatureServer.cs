@@ -114,7 +114,6 @@ public static partial class EndpointRegistry
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/queryAttachments"),
         new("GET", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments"),
-        new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/updateAttachment"),
         new("POST", "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments"),

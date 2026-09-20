@@ -118,61 +118,6 @@ public static class MetadataV2SpatialExtensions
     }
 
     /// <summary>
-    /// Determines whether <paramref name="field"/> is a server-assigned identifier field, which
-    /// must never be required from a create/update client payload and whose explicit
-    /// <c>null</c> on insert means "not supplied". A field qualifies when it carries the
-    /// <c>id.primary</c> semantic role, when its name matches the resource's authoritative
-    /// primary-id field name (<see cref="FindPrimaryIdField"/>, which falls back to the
-    /// conventional <c>objectid</c>/<c>id</c> name), OR when it is the conventional
-    /// server-assigned integer object-id field (an integer/big-integer field named
-    /// <see cref="Honua.Core.Features.Shared.Models.FieldNames.ObjectId"/>).
-    /// </summary>
-    /// <remarks>
-    /// This is deliberately not <see cref="MetadataV2Field.Editable"/>. That flag defaults to
-    /// true and most published layers never set it, so the object id is Editable=true in
-    /// canonical metadata even though every GeoServices projection reports it editable:false.
-    /// The edit pipeline's required-attribute gate and the mutation validator's null-on-insert
-    /// relaxation both need the same answer to "may the client leave this field to the
-    /// server?", and both had drifted from it in different ways; this is the one rule.
-    /// <para>
-    /// The semantic-role check alone is insufficient: many seeded and published layers declare a
-    /// non-nullable <c>objectid</c> field without the <c>id.primary</c> role. BH2-014 (#2456) added a
-    /// per-field required-attribute gate that keyed exclusively on the role, so every create that
-    /// omitted <c>objectid</c> — the normal case, since the server assigns it — was rejected with
-    /// "Required attribute(s) missing for create operation: objectid". c4dada39 keyed the skip on the
-    /// resource's authoritative id-field name as well. That still missed layers that declare BOTH a
-    /// distinct public primary id (e.g. a string field with the <c>id.primary</c> role) AND a
-    /// separate server-assigned integer <c>objectid</c>: <see cref="FindPrimaryIdField"/> resolves
-    /// to the roled public id, so the conventional <c>objectid</c> fell through and every create
-    /// omitting it was rejected with a 500. Recognising the conventional integer object-id
-    /// independently of the resolved primary id restores those creates while still rejecting
-    /// genuinely-missing non-id required fields.
-    /// </para>
-    /// </remarks>
-    public static bool IsServerAssignedIdField(this MetadataV2Field field, string? primaryIdFieldName)
-    {
-        ArgumentNullException.ThrowIfNull(field);
-        for (var i = 0; i < field.SemanticRoles.Count; i++)
-        {
-            if (string.Equals(field.SemanticRoles[i], "id.primary", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        if (primaryIdFieldName is not null
-            && string.Equals(field.Name, primaryIdFieldName, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        // Conventional server-assigned integer object-id (Esri-style OID): auto-assigned on insert
-        // even when a distinct public primary-id field carries the id.primary role.
-        return field.Type is MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger
-            && string.Equals(field.Name, Honua.Core.Features.Shared.Models.FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
     /// Returns the field declaring the <c>id.primary</c> semantic role, falling back
     /// to any field named <c>objectid</c> or <c>id</c> (case-insensitive).
     /// </summary>
