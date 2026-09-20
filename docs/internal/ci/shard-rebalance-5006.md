@@ -61,3 +61,9 @@ branch with `full_ci=true`, then download both `server-test-results-ogc-api-maps
 artifacts and audit their timing records with `audit-shard-headroom.py`.
 Compare the two TRX case inventories with the successful baseline to verify
 that the split preserves all 129 integration cases.
+
+Local coverage validation passed: all 1,489 covered classes have owners, all
+21 declared partitions are exact, and all 76 shard filters / 513 clauses select
+tests. Evaluating the baseline TRX through the live capability mapper assigns
+33 cases to Basic and Conformance and 96 to Rendering and Records, each with
+exactly one owner.
