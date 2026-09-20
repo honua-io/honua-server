@@ -156,6 +156,12 @@ public sealed class FeatureServerResponse
     public bool HasVersionedData { get; init; }
 
     /// <summary>
+    /// Whether accessible service publications expose branch-versioned data. This is the
+    /// standard service discovery flag; Honua currently versions data only through branches.
+    /// </summary>
+    public bool HasBranchVersionedData => HasVersionedData;
+
+    /// <summary>
     /// Whether the service's data is branch-versioned. Mirrors Esri's service-level
     /// <c>isDataVersioned</c> flag; tracks <see cref="HasVersionedData"/>.
     /// </summary>

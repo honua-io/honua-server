@@ -2599,7 +2599,7 @@
           "esriPaths": [
             "/VersionManagementServer"
           ],
-          "notes": "Returns a hardcoded descriptor (defaultVersionName \"sde.DEFAULT\", capabilities \"Create,Delete,Alter,Reconcile,Post\") after a service-read check only. It does not consult the provider's versioning support, so a non-Postgres store advertises five capabilities whose mutations then return 501."
+          "notes": "GET and POST return the descriptor after service-read, branch-versioning entitlement, and accessible bound-publication capability checks. The descriptor still uses a capability string rather than the Esri capability object and does not expose a durable DEFAULT version GUID; native workspace initialization remains unresolved."
         },
         {
           "name": "List versions; version info",

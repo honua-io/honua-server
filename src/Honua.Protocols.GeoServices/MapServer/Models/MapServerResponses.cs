@@ -136,6 +136,10 @@ internal sealed class MapServerResponse
     [JsonPropertyName("supportedQueryFormats")]
     public string? SupportedQueryFormats { get; init; }
 
+    /// <summary>Companion feature and version-management extensions available to the caller.</summary>
+    [JsonPropertyName("supportedExtensions")]
+    public string SupportedExtensions { get; init; } = string.Empty;
+
     /// <summary>
     /// Minimum visible scale for the service.
     /// </summary>

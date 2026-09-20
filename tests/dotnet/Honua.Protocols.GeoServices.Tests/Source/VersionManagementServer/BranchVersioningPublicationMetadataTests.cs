@@ -17,12 +17,13 @@ using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
+using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer;
 
 [Collection("Database")]
 [Protocol(TestProtocols.FeatureServer)]
-public sealed class BranchVersioningPublicationMetadataTests(BranchVersioningPublicationFixture fixture)
+public sealed class BranchVersioningPublicationMetadataTests(BranchVersioningPublicationFixture fixture, ITestOutputHelper output)
     : IClassFixture<BranchVersioningPublicationFixture>
 {
     private WebAppFixture App => fixture.App;
@@ -36,6 +37,12 @@ public sealed class BranchVersioningPublicationMetadataTests(BranchVersioningPub
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /admin/services/{serviceName}.{serviceType}")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer")]
+    [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task ManagedPublication_AdvertisesAtLayerServiceAndAdmin()
     {
         SetGraph(WithPublications(ManagedPublication));
@@ -45,6 +52,12 @@ public sealed class BranchVersioningPublicationMetadataTests(BranchVersioningPub
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /admin/services/{serviceName}.{serviceType}")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer")]
+    [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task ExplicitPublicationBinding_OverridesSameResourcesManagedPrimary()
     {
         var (externalPublication, externalBinding) = ExternalPublication();
@@ -61,6 +74,12 @@ public sealed class BranchVersioningPublicationMetadataTests(BranchVersioningPub
     [InlineData(false)]
     [InlineData(true)]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /admin/services/{serviceName}.{serviceType}")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer")]
+    [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task ExternalOnlyService_DoesNotAdvertiseRegardlessOfSourceBackedFlag(bool sourceBacked)
     {
         var (publication, binding) = ExternalPublication(sourceBacked);
@@ -72,6 +91,11 @@ public sealed class BranchVersioningPublicationMetadataTests(BranchVersioningPub
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /admin/services/{serviceName}.{serviceType}")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer")]
+    [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer")]
     public async Task EmptyService_DoesNotInheritHostVersioningCapability()
     {
         SetGraph(WithPublications());
@@ -80,6 +104,11 @@ public sealed class BranchVersioningPublicationMetadataTests(BranchVersioningPub
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /admin/services/{serviceName}.{serviceType}")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer")]
+    [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer")]
     public async Task RetiredManagedPublication_DoesNotMakeExternalServiceVersioned()
     {
         var (publication, binding) = ExternalPublication();
@@ -91,6 +120,12 @@ public sealed class BranchVersioningPublicationMetadataTests(BranchVersioningPub
 
     [IntegrationTest]
     [Operation(Operations.Security)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /admin/services/{serviceName}.{serviceType}")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer")]
+    [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task InaccessibleManagedResource_DoesNotLeakVersioningThroughServiceOrAdmin()
     {
         var (publication, binding) = ExternalPublication();
@@ -115,6 +150,12 @@ public sealed class BranchVersioningPublicationMetadataTests(BranchVersioningPub
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /admin/services/{serviceName}.{serviceType}")]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer")]
+    [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer")]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
     public async Task SelectedReaderWithoutBranchCapability_DoesNotInheritPostgresHostCapability()
     {
         const string connectionId = "be8ac38b-40e2-4775-951d-b98f361f307f";
@@ -179,6 +220,7 @@ public sealed class BranchVersioningPublicationMetadataTests(BranchVersioningPub
     {
         using var service = await ReadAsync($"/rest/services/{fixture.Service.Metadata.Name}/FeatureServer?f=json");
         service.RootElement.GetProperty("hasVersionedData").GetBoolean().Should().Be(expected);
+        service.RootElement.GetProperty("hasBranchVersionedData").GetBoolean().Should().Be(expected);
         service.RootElement.GetProperty("isDataVersioned").GetBoolean().Should().Be(expected);
         service.RootElement.GetProperty("supportsBranchVersioning").GetBoolean().Should().Be(expected);
         service.RootElement.TryGetProperty("versionManagementServerUrl", out _).Should().Be(expected);
@@ -188,6 +230,22 @@ public sealed class BranchVersioningPublicationMetadataTests(BranchVersioningPub
         extensions.Single(extension => extension.GetProperty("typeName").GetString() == "FeatureServer")
             .GetProperty("properties").GetProperty("isBranchVersioned").GetString().Should().Be(expected ? "true" : "false");
         extensions.Any(extension => extension.GetProperty("typeName").GetString() == "VersionManagementServer").Should().Be(expected);
+        using var map = await ReadAsync($"/rest/services/{fixture.Service.Metadata.Name}/MapServer?f=json");
+        var mapExtensions = map.RootElement.GetProperty("supportedExtensions").GetString()!.Split(',');
+        mapExtensions.Contains("VersionManagementServer").Should().Be(expected);
+        var vmsUrl = $"/rest/services/{fixture.Service.Metadata.Name}/VersionManagementServer?f=json";
+        using var vmsGet = await App.Client.GetAsync(vmsUrl);
+        using var vmsPost = await App.Client.PostAsync(vmsUrl,
+            new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json" }));
+        if (expected)
+        {
+            await BranchVersioningPublicationFixture.AssertVersionManagementSuccessAsync(vmsGet, vmsPost);
+        }
+        else
+        {
+            await BranchVersioningPublicationFixture.AssertVersionManagementErrorAsync(vmsGet, 501, output);
+            await BranchVersioningPublicationFixture.AssertVersionManagementErrorAsync(vmsPost, 501, output);
+        }
     }
 
     private async Task<JsonDocument> ReadAsync(string path)
@@ -199,7 +257,8 @@ public sealed class BranchVersioningPublicationMetadataTests(BranchVersioningPub
         document.RootElement.TryGetProperty("error", out _).Should().BeFalse(
             "owned test metadata must not return a protocol error: {0}", body);
         var requiredProperty = path.Contains("/admin/", StringComparison.Ordinal) ? "properties"
-            : path.Contains("/FeatureServer?", StringComparison.Ordinal) ? "hasVersionedData" : "isDataVersioned";
+            : path.Contains("/FeatureServer?", StringComparison.Ordinal) ? "hasVersionedData"
+                : path.Contains("/MapServer?", StringComparison.Ordinal) ? "supportedExtensions" : "isDataVersioned";
         document.RootElement.TryGetProperty(requiredProperty, out _).Should().BeTrue(
             "owned test metadata must contain {0}; response: {1}", requiredProperty, body);
         return document;
@@ -208,6 +267,8 @@ public sealed class BranchVersioningPublicationMetadataTests(BranchVersioningPub
 
 public sealed class BranchVersioningPublicationFixture : IAsyncLifetime
 {
+    private static readonly string[] _errorPropertyNames = ["error"];
+
     internal const string ServiceName = "branch-publication-capability";
     public WebAppFixture App { get; } = new WebAppFixture().WithTestLicense(HonuaEdition.Enterprise);
     public MetadataV2Graph Baseline { get; private set; } = null!;
@@ -228,6 +289,37 @@ public sealed class BranchVersioningPublicationFixture : IAsyncLifetime
         // No time-extent discovery is needed for these metadata capability tests.
         Baseline = snapshot.Graph with { Resources = snapshot.Graph.Resources.Select(resource => resource with { Temporal = null }).ToArray() };
         Service = snapshot.Index.ServicesByName[ServiceName];
+    }
+
+    internal static async Task AssertVersionManagementSuccessAsync(HttpResponseMessage get, HttpResponseMessage post)
+    {
+        var getBody = await get.Content.ReadAsStringAsync();
+        var postBody = await post.Content.ReadAsStringAsync();
+        get.StatusCode.Should().Be(HttpStatusCode.OK, getBody);
+        post.StatusCode.Should().Be(HttpStatusCode.OK, postBody);
+        postBody.Should().Be(getBody);
+        using var document = JsonDocument.Parse(getBody);
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse(getBody);
+        document.RootElement.GetProperty("defaultVersionName").GetString().Should().Be("sde.DEFAULT");
+        document.RootElement.GetProperty("capabilities").GetString().Should().Contain("Create");
+    }
+
+    internal static async Task AssertVersionManagementErrorAsync(HttpResponseMessage response, int expectedCode, ITestOutputHelper output)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        output.WriteLine("{0} {1}: HTTP {2}; {3}", response.RequestMessage!.Method,
+            response.RequestMessage.RequestUri!.AbsolutePath, (int)response.StatusCode, body);
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.EnumerateObject().Select(property => property.Name).Should().Equal(_errorPropertyNames,
+            "a denied discovery request must not contain successful version metadata: {0}", body);
+        var error = document.RootElement.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(expectedCode, body);
+        error.GetProperty("message").GetString().Should().Be(expectedCode == 501 ? "Not Implemented" : "Payment Required", body);
+        var expectedDetail = expectedCode == 501
+            ? "Branch versioning is not supported by the service's accessible publications."
+            : $"entitlement: {FeatureCatalog.BranchVersioningKey}";
+        error.GetProperty("details").EnumerateArray().Select(detail => detail.GetString()).Should().Contain(expectedDetail, body);
     }
 
     internal static void ConfigureManagedPublications(WebAppFixture app)
