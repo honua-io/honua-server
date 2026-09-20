@@ -1,65 +1,16 @@
 --- a/certification/bounded-roster/lanes/gdal/gdal_ogc_cells.py
 +++ b/certification/bounded-roster/lanes/gdal/gdal_ogc_cells.py
-@@ -54,9 +54,10 @@
- def _json_with_headers(target: str, headers: dict | None = None) -> tuple[dict, dict]:
-     """Read a JSON document through GDAL's /vsicurl/ and return it with GDAL's response headers."""
-     import json
-+    from urllib.parse import quote
- 
-     with gdalkit.session(headers):
--        path = "/vsicurl?use_head=no&url=" + target
-+        path = "/vsicurl?use_head=no&url=" + quote(target, safe="")
-         handle = gdal.VSIFOpenL(path, "rb")
-         expect(handle is not None, f"GDAL could not open {target}")
-         chunks = []
-@@ -95,12 +96,12 @@
- 
+@@ -96,8 +96,8 @@
  
  def _oapif_crs_axis(cell: Cell, connection: str) -> None:
--    with cell.check("crs-axis", "EPSG:4326 lat/lon bbox and EPSG:3857 output agree with the lon/lat fixture") as c:
-+    with cell.check("crs-axis", "CRS84 default, explicit EPSG:4326 bbox and EPSG:3857 output agree with the fixture") as c:
-         with gdalkit.session() as record:
-             dataset = _open_vector(connection)
+     with cell.check("crs-axis", "EPSG:4326 lat/lon bbox and EPSG:3857 output agree with the lon/lat fixture") as c:
+-        with gdalkit.session() as record:
+-            dataset = _open_vector(connection)
++        with gdalkit.session(OSR_DEFAULT_AXIS_MAPPING_STRATEGY="TRADITIONAL_GIS_ORDER") as record:
++            dataset = _open_vector(connection, ["CRS=EPSG:4326"])
              layer = dataset.GetLayerByName("0") or dataset.GetLayer(0)
              srs = layer.GetSpatialRef()
--            expect(srs is not None and srs.GetAuthorityCode(None) == "4326", "layer SRS is not EPSG:4326")
-+            expect(srs is not None and srs.GetAuthorityCode(None) == "CRS84", "default layer SRS is not CRS84")
-             located = {fid: value[2] for fid, value in _features(layer).items()}
-             layer.SetSpatialFilterRect(-122.47, 37.715, -122.44, 37.745)
-             windowed = sorted(_features(layer))
-@@ -109,8 +110,19 @@
-         bbox_requests = record.fetched_path("bbox=")
-         expect(located == {fid: value[2] for fid, value in FIXTURE.items()}, f"lon/lat coordinates differ: {located}")
-         expect(windowed == [3, 4], f"bbox window returned {windowed}")
--        expect(bbox_requests and "bbox-crs=http://www.opengis.net/def/crs/EPSG/0/4326" in bbox_requests[-1]
--               and "bbox=37.7" in bbox_requests[-1], f"GDAL did not send a latitude-first EPSG:4326 bbox: {bbox_requests}")
-+        expect(bbox_requests and "bbox-crs=http://www.opengis.net/def/crs/OGC/1.3/CRS84" in bbox_requests[-1]
-+               and "bbox=-122.4" in bbox_requests[-1], f"GDAL did not send a longitude-first CRS84 bbox: {bbox_requests}")
-+        # GDAL 3.8.4 IsSame ignores geographic axis order: even CRS=EPSG:4326
-+        # selects the first equivalent (now correctly CRS84) advertised URI.
-+        # Exercise the explicit latitude-first path through GDAL's HTTP reader.
-+        explicit, headers = _json_with_headers(
-+            url("/ogc/features/collections/0/items?bbox=37.715,-122.47,37.745,-122.44"
-+                "&bbox-crs=http://www.opengis.net/def/crs/EPSG/0/4326"
-+                "&crs=http://www.opengis.net/def/crs/EPSG/0/4326"))
-+        expected_lat_lon = {3: (37.73, -122.46), 4: (37.74, -122.445)}
-+        expect({f["id"]: tuple(f["geometry"]["coordinates"]) for f in explicit["features"]}
-+               == expected_lat_lon, explicit)
-+        expect(headers.get("content-crs") == "<http://www.opengis.net/def/crs/EPSG/0/4326>", headers)
-         with gdalkit.session() as projected_record:
-             dataset = _open_vector(connection, ["PREFERRED_CRS=EPSG:3857"])
-             layer = dataset.GetLayerByName("0") or dataset.GetLayer(0)
-@@ -122,8 +134,8 @@
-                f"EPSG:3857 feature 1 {projected} != {expected}")
-         expect(any("crs=http://www.opengis.net/def/crs/EPSG/0/3857" in value for value in projected_record.fetched),
-                projected_record.fetched)
--        c.detail = (f"lon/lat features match the fixture; lat-first EPSG:4326 bbox {bbox_requests[-1].split('?', 1)[1]} "
--                    f"-> features {windowed}; crs=EPSG:3857 feature 1 {projected}")
-+        c.detail = (f"lon/lat features match the fixture; default CRS84 bbox {bbox_requests[-1].split('?', 1)[1]} "
-+                    f"-> features {windowed}; explicit EPSG:4326 lat/lon values and header match; crs=EPSG:3857 feature 1 {projected}")
- 
- 
- def _srs(code: int) -> osr.SpatialReference:
+             expect(srs is not None and srs.GetAuthorityCode(None) == "4326", "layer SRS is not EPSG:4326")
 --- a/certification/bounded-roster/lanes/qgis/qgis_cells.py
 +++ b/certification/bounded-roster/lanes/qgis/qgis_cells.py
 @@ -1,5 +1,7 @@
