@@ -18,9 +18,9 @@ class ExclusionReviewTests(unittest.TestCase):
         self.assertEqual([], checklist.validate(rows))
         cells = [cell for row in rows for cell in row["lanes"].values()]
         self.assertEqual(376, len(cells))
-        self.assertEqual(172, sum(cell["state"] == "pass" for cell in cells))
+        self.assertEqual(173, sum(cell["state"] == "pass" for cell in cells))
         self.assertEqual(4, sum(cell["state"] == "fail" for cell in cells))
-        self.assertEqual(138, sum(cell["state"] == "blocked" for cell in cells))
+        self.assertEqual(137, sum(cell["state"] == "blocked" for cell in cells))
         reopened = [cell for cell in cells if "previous_exclusion" in cell]
         self.assertEqual(157, len(reopened))
         for cell in reopened:
@@ -39,8 +39,8 @@ class ExclusionReviewTests(unittest.TestCase):
                     for row in rows for lane, cell in row["lanes"].items()
                     if "previous_review" in cell}
         self.assertEqual(set(checklist.RESOLVED_EXCLUSION_EVIDENCE), resolved)
-        self.assertEqual(18, len(resolved))
-        self.assertEqual(19, sum(cell["state"] == "pass" and "previous_exclusion" in cell
+        self.assertEqual(19, len(resolved))
+        self.assertEqual(20, sum(cell["state"] == "pass" and "previous_exclusion" in cell
                                  for row in rows for cell in row["lanes"].values()))
         gui = {key for key in resolved if key[3] not in ("arcpy", "pyqgis")}
         self.assertEqual({("imageserver", "GeoServices REST", "service-info", "qgis-ui"),
@@ -141,6 +141,15 @@ class ExclusionReviewTests(unittest.TestCase):
                 self.assertIn("source inventory", cell["citation"])
                 cell.update(cell["previous_exclusion"])
                 self.assertTrue(any("native operation entrypoint" in error for error in checklist.validate(rows)))
+
+    def test_collection_maps_overview_does_not_close_other_client_lanes(self):
+        row = next(row for row in checklist.build_rows() if row["protocol"] == "ogc-api-maps")
+        self.assertEqual("pass", row["lanes"]["pyqgis"]["state"])
+        for lane in ("pro-ui", "arcpy", "qgis-ui"):
+            self.assertEqual("blocked", row["lanes"][lane]["state"])
+        evidence = row["lanes"]["pyqgis"]["evidence"]
+        for qualification in ("229x214 native overview", "no root discovery", "dataset landing metadata defect"):
+            self.assertIn(qualification, evidence)
 
 
 if __name__ == "__main__":

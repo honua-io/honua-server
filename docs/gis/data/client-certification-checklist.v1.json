@@ -40,15 +40,15 @@
         "n/a-no-client": 3
       },
       "pyqgis": {
-        "pass": 63,
+        "pass": 64,
         "n/a-no-client": 3,
-        "blocked": 28
+        "blocked": 27
       }
     },
     "overall": {
       "cells": 376,
-      "closed": 182,
-      "open": 194
+      "closed": 183,
+      "open": 193
     }
   },
   "rows": [
@@ -2510,12 +2510,16 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "state": "pass",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
-          }
+          },
+          "previous_review": {
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI."
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-ogc-maps-native-20260920-a/observations.json (honua-client-compat commit a37a12e3f19f9b9f2ecfecc2f68af3a5df77c13d; SHA-256 7ef0d4aae453e4a0e49de193d4623146af5c1d6f17f8a2eba1e706297b69a638), native-results.json (SHA-256 acd9ee15ad025dbb251b89d4813a267222f8d1648a179b3d4e4f0c4e8bf94d5c): PyQGIS 3.44.14-Solothurn / GDAL 3.13.3 stock OGCAPI API=MAP collection URL, native GDAL and QgsRasterLayer reads plus separate QgsProject reload match all 196024 channel bytes of an independent HTTPS PNG, independently decoded from retained bytes. Read uses the actual 229x214 native overview of the 15000000x14000000 virtual grid; no synthetic bounds, response adapter or full-resolution-read claim. Verified TLS, unchanged SQL feature/raster fixture and runtime, worker exit0 and owned shutdown; server 8b7aea9f6c73504d968560227926e3b8b4c5ddd0 / image 28d09586daf7. Collection-map consumption only: no root discovery, useful wire trace or UI credit. Development JIT SDK evidence; dataset landing metadata defect remains open"
         }
       }
     },
