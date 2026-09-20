@@ -30,8 +30,8 @@
         "fail": 2
       },
       "arcpy": {
-        "pass": 36,
-        "blocked": 54,
+        "pass": 35,
+        "blocked": 55,
         "n/a-no-client": 2,
         "fail": 2
       },
@@ -48,8 +48,8 @@
     },
     "overall": {
       "cells": 376,
-      "closed": 185,
-      "open": 191
+      "closed": 184,
+      "open": 192
     }
   },
   "rows": [
@@ -1395,8 +1395,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-featureserver.cert.json - operations FS-PRM-OUTSTATISTICS-GROUPBYFIELDSFORSTATISTICS, ArcGIS Pro/arcpy 3.7.1.1904: outStatistics (count) computed over the cursor -> 3"
+          "state": "blocked",
+          "previous_pass": {
+            "state": "pass",
+            "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-featureserver.cert.json - operations FS-PRM-OUTSTATISTICS-GROUPBYFIELDSFORSTATISTICS, ArcGIS Pro/arcpy 3.7.1.1904: outStatistics (count) computed over the cursor -> 3"
+          },
+          "citation": "docs/gis/arcpy-local-calculation-verdict-audit-2026-09-20.md: Historical receipt counts SearchCursor rows locally; it does not prove a native outStatistics/groupByFieldsForStatistics request. Fresh remote aggregate evidence and independent result assertions are required."
         },
         "qgis-ui": {
           "state": "n/a-no-client",

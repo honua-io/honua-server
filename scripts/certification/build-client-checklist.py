@@ -1189,6 +1189,16 @@ for operation, case_id, detail in (
     )
 
 
+REVIEWED_PASS_GAPS = {
+    ("featureserver", "GeoServices REST", "statistics", "arcpy"): (
+        "docs/gis/arcpy-local-calculation-verdict-audit-2026-09-20.md: "
+        "Historical receipt counts SearchCursor rows locally; it does not prove "
+        "a native outStatistics/groupByFieldsForStatistics request. Fresh remote "
+        "aggregate evidence and independent result assertions are required."
+    ),
+}
+
+
 def build_rows() -> list[dict]:
     rows: list[dict] = []
     for entry in MATRIX:
@@ -1236,6 +1246,17 @@ def build_rows() -> list[dict]:
                     }
                     cell["state"] = "pass"
                     cell["evidence"] = resolution
+                pass_gap = REVIEWED_PASS_GAPS.get(
+                    (entry["protocol"], entry["version"], operation, lane))
+                if pass_gap:
+                    if cell["state"] != "pass":
+                        raise ValueError("A reviewed pass gap must preserve a previous pass")
+                    cell["previous_pass"] = {
+                        "state": cell["state"],
+                        "evidence": cell.pop("evidence"),
+                    }
+                    cell["state"] = "blocked"
+                    cell["citation"] = pass_gap
                 cells[lane] = cell
             rows.append({
                 "protocol": entry["protocol"],
@@ -1279,6 +1300,10 @@ def validate(rows: list[dict]) -> list[str]:
                     f"{where}/{lane}: a fail requires the receipt that observed it")
             if state == "pass":
                 evidence = cell.get("evidence")
+                if ((row["protocol"], row["version"], row["operation"], lane)
+                        in REVIEWED_PASS_GAPS and evidence == EV["arcpy-featureserver-statistics"]):
+                    problems.append(
+                        f"{where}/{lane}: reviewed local calculation cannot certify a remote operation")
                 if not evidence:
                     problems.append(
                         f"{where}/{lane}: a pass requires an evidence reference")
