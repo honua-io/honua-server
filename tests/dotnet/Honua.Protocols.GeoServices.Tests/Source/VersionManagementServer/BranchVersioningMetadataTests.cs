@@ -29,21 +29,33 @@ public sealed class BranchVersioningMetadataTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    [Endpoint("GET /admin/services/{serviceName}.{serviceType}")]
     public Task EnabledProviderAndLicense_AdvertiseBranchVersioningAtEveryLevel()
         => AssertMetadataAsync(HonuaEdition.Enterprise, experimentalEnabled: true, providerSupported: true, expectedData: true, expectedManagement: true);
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    [Endpoint("GET /admin/services/{serviceName}.{serviceType}")]
     public Task DisabledExperimentalCapability_KeepsVersionedDataWithoutVersionManagement()
         => AssertMetadataAsync(HonuaEdition.Enterprise, experimentalEnabled: false, providerSupported: true, expectedData: true, expectedManagement: false);
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    [Endpoint("GET /admin/services/{serviceName}.{serviceType}")]
     public Task UnlicensedProvider_DoesNotAdvertiseBranchVersioning()
         => AssertMetadataAsync(HonuaEdition.Community, experimentalEnabled: true, providerSupported: true, expectedData: false, expectedManagement: false);
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}")]
+    [Endpoint("GET /admin/services/{serviceName}.{serviceType}")]
     public Task UnsupportedProvider_DoesNotAdvertiseBranchVersioning()
         => AssertMetadataAsync(HonuaEdition.Enterprise, experimentalEnabled: true, providerSupported: false, expectedData: false, expectedManagement: false);
 
