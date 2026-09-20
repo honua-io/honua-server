@@ -1384,7 +1384,7 @@ internal sealed class OgcCoveragesHandler
             ?? OgcCommonUtilities.GetQueryValue(context.Request, "scaleSize");
         if (!string.IsNullOrWhiteSpace(scaleSize))
         {
-            if (!TryParseScaleSize(scaleSize, out var width, out var height))
+            if (!TryParseScaleSize(scaleSize, context.Request.Query.ContainsKey("scaleSize"), out var width, out var height))
             {
                 return ScalingResult.Failure($"scale-size must be width,height or axis size pairs such as x(512),y(512), with values from 1 to {MaxScaleSize.ToString(CultureInfo.InvariantCulture)}.");
             }
@@ -1431,7 +1431,7 @@ internal sealed class OgcCoveragesHandler
         return TryParsePositiveDouble(parts[1], out pixelHeight);
     }
 
-    private static bool TryParseScaleSize(string value, out int width, out int height)
+    private static bool TryParseScaleSize(string value, bool allowReversedAxes, out int width, out int height)
     {
         width = height = 0;
         var parts = value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
@@ -1447,7 +1447,7 @@ internal sealed class OgcCoveragesHandler
 
         return (TryParseAxisSize(parts[0], isX: true, out width) &&
                 TryParseAxisSize(parts[1], isX: false, out height)) ||
-               (TryParseAxisSize(parts[1], isX: true, out width) &&
+               (allowReversedAxes && TryParseAxisSize(parts[1], isX: true, out width) &&
                 TryParseAxisSize(parts[0], isX: false, out height));
     }
 
