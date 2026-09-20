@@ -66,15 +66,15 @@ public sealed class OgcFeaturesClientDiscoveryTests : IAsyncLifetime
     {
         using var conformance = await GetJsonAsync("/ogc/features/conformance");
         conformance.RootElement.GetProperty("conformsTo").EnumerateArray().Select(value => value.GetString())
-            .Should().Contain(new[]
-            {
+            .Should().Contain(
+            [
                 "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables",
                 "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/filter",
                 "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/features-filter",
                 "http://www.opengis.net/spec/cql2/1.0/conf/basic-cql2",
                 "http://www.opengis.net/spec/cql2/1.0/conf/cql2-text",
                 "http://www.opengis.net/spec/cql2/1.0/conf/cql2-json",
-            });
+            ]);
         using var queryables = await GetJsonAsync("/ogc/features/collections/0/queryables");
         queryables.RootElement.GetProperty("properties").GetProperty("category")
             .GetProperty("type").GetString().Should().Be("string");

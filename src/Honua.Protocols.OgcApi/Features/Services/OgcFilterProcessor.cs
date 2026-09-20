@@ -341,6 +341,13 @@ internal sealed partial class OgcFilterProcessor
             return FilterLanguageResult.Success(resolved);
         }
 
+        // GDAL 3.8 emits the draft spelling for its CQL attribute expressions.
+        // Parse and validate it through the same CQL2 text pipeline.
+        if (string.Equals(filterLang, "cql-text", StringComparison.OrdinalIgnoreCase))
+        {
+            return FilterLanguageResult.Success(FilterLangCql2Text);
+        }
+
         if (string.Equals(filterLang, FilterLangCql2Text, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(filterLang, FilterLangCql2Json, StringComparison.OrdinalIgnoreCase))
         {
