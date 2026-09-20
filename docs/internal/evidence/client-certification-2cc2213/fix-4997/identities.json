@@ -17,5 +17,14 @@
   "roster_module_sha256": "33b480381d93a4a892d2d462f17ce4102ab10b99a46fdd95cd01cea96c901729",
   "requirements_sha256": "976cf90cc70a2e6a611448b495447a56158ff274d1c498ae3acc7ce4c747adfe",
   "runtime_source_commit": "45733503e4ad0c35cef9f795fb9502c077606842",
-  "evidence_scope": "local fix candidate, not an official release-artifact certification"
+  "evidence_scope": "local fix candidate, not an official release-artifact certification",
+  "fixed_image": {
+    "name": "honua-server:wcs4997-fixed",
+    "id": "sha256:e07df631fac2fb5a913931e266ac19a991937e32bdf8475c89fca38b58bcdfb2",
+    "packaging": "Entire dotnet publish output copied onto honua-server:ogc4996-final runtime image",
+    "protocol_assembly_sha256": "df4e095a49ab2d4f15bc02327a3f582b17a500cc92a156dedd00d9069457de6f",
+    "endpoint_test_protocol_assembly_sha256": "df4e095a49ab2d4f15bc02327a3f582b17a500cc92a156dedd00d9069457de6f",
+    "publish_trimmed": true,
+    "publish_aot": false
+  }
 }

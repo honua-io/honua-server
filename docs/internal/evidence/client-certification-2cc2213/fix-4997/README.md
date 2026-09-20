@@ -40,7 +40,13 @@ Use an isolated `docker/client-compat/compose.yml` project and the current
 `docker/client-compat/seed/run.sh` with its normal SQL/YAML seeds. An older local
 seed image refers to a removed raster seed file: mount and invoke the current
 script when using that image. Apply `coverage-fixture.sql` after the normal
-seed. Do not reuse another lane's database or Redis.
+seed. The legacy seed also resets the raster columns' storage mode after
+migration journaling. Before current-trunk startup, reapply the owning
+`055_SetRasterDataExternalStorage.sql` to this isolated database with schema
+`honua`; this restores EXTERNAL storage on `raster_data.raster` and
+`raster_tiles.tile_data` without changing fixture pixel values. The current
+server correctly refuses readiness while those migration-owned settings are
+missing. Do not reuse another lane's database or Redis.
 
 Publish the fixed server with the lane's PATH `dotnet`, `PublishAot=false`,
 `UseAppHost=false`, and `--self-contained false`. Package that entire output
@@ -78,3 +84,25 @@ format <project> --no-restore --include <changed-files>`: the protocol project
 included only `Wcs20Handler.cs` and `Wcs20CoverageBackend.cs`; the test project
 included only `Wcs20EndpointsTests.cs`. The formatter expanded the new test's
 extent initializer; no unrelated files changed.
+
+## External-client results
+
+| Check | Before | Fixed published image |
+| --- | --- | --- |
+| Seven outside windows, including projected coordinates and an edge touch | Seven HTTP 500 `NoApplicableCode` failures | Seven HTTP 404 `InvalidSubsetting` responses, locator `SUBSET` |
+| Three independent pixel/nodata/CRS/geotransform assertions | Pass | Pass |
+| Unchanged OWSLib `serve.wcs` roster cell | Boundary fails; other five facets pass | All six facets pass |
+
+`owslib-before.json` and `owslib-after.json` contain the real-client results.
+`roster-before/` and `roster-after/` contain the unchanged governed cell's
+observations. `identities.json` records the local image IDs, published and
+endpoint-test assembly hashes, source revision, and fixture/harness hashes.
+The published image uses the project's default trimming; the endpoint tests
+exercise the untrimmed build from the same runtime source.
+
+The eight new endpoint cases also failed before the fix: their substituted
+export backend returned its test PNG because invalid requests reached export.
+That deliberately isolates the missing pre-export validation; the real PostGIS
+client replay above independently reproduces and resolves the HTTP 500.
+`endpoint-before.json` retains the eight assertion failures, with no skipped
+cases. No acceptance criterion is released.

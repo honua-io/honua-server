@@ -1,0 +1,221 @@
+{
+  "result": "pass",
+  "client": "OWSLib 0.36.0",
+  "fixture": "coverage-fixture.sql",
+  "negative_checks": [
+    {
+      "subsets": [
+        [
+          "Long",
+          -100,
+          -99.9
+        ],
+        [
+          "Lat",
+          10,
+          10.1
+        ]
+      ],
+      "status": 404,
+      "code": "InvalidSubsetting",
+      "locator": "SUBSET"
+    },
+    {
+      "subsets": [
+        [
+          "Long",
+          -126,
+          -125
+        ]
+      ],
+      "status": 404,
+      "code": "InvalidSubsetting",
+      "locator": "SUBSET"
+    },
+    {
+      "subsets": [
+        [
+          "Long",
+          -119,
+          -118
+        ]
+      ],
+      "status": 404,
+      "code": "InvalidSubsetting",
+      "locator": "SUBSET"
+    },
+    {
+      "subsets": [
+        [
+          "Lat",
+          34,
+          35
+        ]
+      ],
+      "status": 404,
+      "code": "InvalidSubsetting",
+      "locator": "SUBSET"
+    },
+    {
+      "subsets": [
+        [
+          "Lat",
+          41,
+          42
+        ]
+      ],
+      "status": 404,
+      "code": "InvalidSubsetting",
+      "locator": "SUBSET"
+    },
+    {
+      "subsets": [
+        [
+          "Long",
+          -125,
+          -124
+        ]
+      ],
+      "status": 404,
+      "code": "InvalidSubsetting",
+      "locator": "SUBSET"
+    },
+    {
+      "subsets": [
+        [
+          "x",
+          0,
+          1000
+        ],
+        [
+          "y",
+          0,
+          1000
+        ]
+      ],
+      "status": 404,
+      "code": "InvalidSubsetting",
+      "locator": "SUBSET"
+    }
+  ],
+  "positive_checks": [
+    {
+      "subsets": [
+        [
+          "Long",
+          -123,
+          -121
+        ],
+        [
+          "Lat",
+          37,
+          39
+        ]
+      ],
+      "values": [
+        [
+          11,
+          -9999
+        ],
+        [
+          21,
+          22
+        ]
+      ],
+      "geotransform": [
+        -123,
+        1,
+        0,
+        39,
+        0,
+        -1
+      ],
+      "nodata": -9999.0,
+      "size": [
+        2,
+        2
+      ],
+      "srid": 4326,
+      "dtype": "float32"
+    },
+    {
+      "subsets": [
+        [
+          "Lat",
+          37,
+          39
+        ],
+        [
+          "Long",
+          -123,
+          -121
+        ]
+      ],
+      "values": [
+        [
+          11,
+          -9999
+        ],
+        [
+          21,
+          22
+        ]
+      ],
+      "geotransform": [
+        -123,
+        1,
+        0,
+        39,
+        0,
+        -1
+      ],
+      "nodata": -9999.0,
+      "size": [
+        2,
+        2
+      ],
+      "srid": 4326,
+      "dtype": "float32"
+    },
+    {
+      "subsets": [
+        [
+          "Long",
+          -125,
+          -122
+        ],
+        [
+          "Lat",
+          38,
+          41
+        ]
+      ],
+      "values": [
+        [
+          0,
+          1
+        ],
+        [
+          10,
+          11
+        ]
+      ],
+      "geotransform": [
+        -124,
+        1,
+        0,
+        40,
+        0,
+        -1
+      ],
+      "nodata": -9999.0,
+      "size": [
+        2,
+        2
+      ],
+      "srid": 4326,
+      "dtype": "float32"
+    }
+  ],
+  "failures": []
+}
