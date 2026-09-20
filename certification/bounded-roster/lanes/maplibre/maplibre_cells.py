@@ -163,7 +163,6 @@ def _wms_checks(cell: Cell, session, feature_info: bool) -> None:
         expect(alpha["painted"] > 0 and 200 in _statuses(outcome, "REQUEST=GetMap"), browserkit.summarize(outcome))
         detail.append(f"painted {alpha['painted']} px around pt-alpha")
         if feature_info:
-            x, y = alpha["point"]
             # CRS:84 is lon/lat in WMS 1.3.0; pt-alpha sits at the centre pixel of this window.
             info = session.fetch(
                 BASE_URL + WMS_BASE.format(service="browser_compat") + "?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetFeatureInfo"

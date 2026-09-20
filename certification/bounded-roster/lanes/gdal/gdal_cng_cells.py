@@ -10,9 +10,7 @@ serves both GDAL lane images.
 """
 from __future__ import annotations
 
-import struct
-
-from osgeo import gdal, ogr, osr
+from osgeo import gdal, ogr
 
 import gdalkit
 from cellkit import Cell, expect
