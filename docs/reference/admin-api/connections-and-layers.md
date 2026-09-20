@@ -101,7 +101,7 @@ Layer metadata accepts `rasterMosaic.mergeStrategy` values `newest`, `oldest`, `
 
 The layer metadata update accepts the same `license`, `attribution`, `publisher`, `licenseUrl`, and `sourceUrl` fields and limits as publish. It is a patch: an omitted or `null` governance field preserves its current value, while an empty string clears that field (or removes the corresponding link). A license-only patch derives or refreshes the canonical link for a standalone SPDX identifier unless an explicit custom license URL already exists. Malformed SPDX expressions, over-limit text, non-HTTP(S)/relative URLs, embedded URL credentials, and control characters return `400`; rejected values are not copied into canonical metadata.
 
-Run `PUT /api/v1/admin/services/city/access-policy` with `{"readRole":"viewer","writeRole":"editor","allowAnonymousRead":false}`.
+Run `PUT /api/v1/admin/services/city/access-policy` with `{"allowAnonymous":true,"allowAnonymousWrite":false,"allowedWriteRoles":["editor"]}`. Omitted fields keep their current value.
 
 ## Related guides
 

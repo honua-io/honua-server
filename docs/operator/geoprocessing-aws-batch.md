@@ -8,7 +8,7 @@ description: "By default Honua runs geoprocessing (GP) jobs on the local / Kuber
 By default Honua runs geoprocessing (GP) jobs on the **local / Kubernetes Job**
 baseline workload (`geoprocessing-local`). To run GP jobs on **AWS Batch**
 instead — using the Fargate job-definition pool provisioned by the
-[honua-iac](https://github.com/honua-io) serverless substrate — you supply the
+[honua-iac](https://github.com/honua-io/honua-iac) serverless substrate — you supply the
 substrate ARNs to the `geoprocessing-aws-batch` execution workload that already
 ships (gated off) in `appsettings.json`.
 
@@ -64,13 +64,13 @@ The four tiers differ only by ephemeral (scratch) storage:
 timeout / retry stay per-submit overrides and are unaffected by tier selection.
 
 > **Tier selection.** The runtime tier selector that maps `batch.ephemeral_gib`
-> to the right `batch.job_definition_arn.{tier}` is on `trunk` (#2181). When no
+> to the right `batch.job_definition_arn.{tier}` ships with the server. When no
 > per-tier keys are configured the backend honors the **single**
 > `batch.job_definition_arn` key for back-compat. The parameter-key contract
 > (`batch.job_queue_arn`, `batch.region`, `batch.job_definition_arn`,
 > `batch.job_definition_arn.{s,m,l,xl}`) is identical on both sides.
 
-## Per-job resource sizing (#2165)
+## Per-job resource sizing
 
 Per-job sizing is **runtime and instant** — no terraform, no agent in the job
 path. Each GP job carries a resource profile that is mapped onto the

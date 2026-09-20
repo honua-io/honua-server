@@ -9,29 +9,10 @@ Last reviewed: 2026-09-15
 Owner: Honua Server platform
 
 This page is the single fixed-path answer to "what is the current OGC CITE
-pass rate for each protocol on `trunk`?" It exists so re-grading agents and
-auditors can find an authoritative number without spelunking workflow artifacts.
+pass rate for each protocol on `trunk`?" It exists so that number has one address.
 
-**Source of truth.** This page is the single canonical snapshot of OGC CITE
-per-suite pass rates. [`docs/contributor/ogc-cite-conformance-evidence.md`](internal/contributor/ogc-cite-conformance-evidence.md)
-is the stable, website-linkable evidence-run narrative (workflow links,
-artifact contents, refresh steps) and links here for the numbers rather than
-restating them — see that page. The `x-honua-cite-compliance` vendor
-extension in `src/Honua.Server/openapi.json` and the other four
-`*-openapi.json` files also declares this page as its `authoritativeSource`,
-and an architecture test
-(`tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/CiteStatusComplianceDriftTests.cs`)
-gates every one of those five files against the table below so they can
-never silently drift from it.
-
-**Local results note.** The per-suite result directories
-(`cite-results/`, `cite-wfs20-results/`, `cite-tiles-results/`,
-`cite-wms-results/`, `cite-wmts-results/`, `cite-gpkg12-results/`,
-`cite-gml32-results/`, `cite-kml22-results/`, and `.tmp-cite/`) are gitignored.
-The authoritative artifacts live in the GitHub Actions
-[`CITE Evidence Report`](https://github.com/honua-io/honua-server/actions/workflows/cite-evidence-report.yml)
-workflow runs. Do not infer the current pass rate from an empty local
-directory — check the workflow.
+Every row is backed by a run of the CITE Evidence Report workflow, which runs
+weekly and fails if any suite regresses or this page goes stale.
 
 ## Current Per-Protocol Status
 
@@ -65,24 +46,6 @@ advertised by this server and is not part of the profile. WMS 1.1.1 is likewise 
 the runner exercises version negotiation, 1.1.1 axis order,
 `WMT_MS_Capabilities`, `application/vnd.ogc.se_xml` exceptions, `X`/`Y`
 GetFeatureInfo, and `application/vnd.ogc.gml` GML FeatureInfo.
-
-### Common Re-Grading Mistakes To Avoid
-
-- **"WFS 2.0 CITE remains at 166/167."** Incorrect. The `basic` profile is
-  167/167 (100%) on run 33583116921; the receipt records zero failures and zero
-  skipped tests.
-- **"No CITE results in the repo, so CITE is unimplemented."** Incorrect.
-  Result directories are gitignored (see `.gitignore`); they only exist as CI
-  artifacts. The workflows, runners, and Docker compositions all live under
-  `.github/workflows/cite-*.yml`, `scripts/conformance/cite/`, and
-  `docker/cite/` and are functional.
-- **"Each `applicable` profile leaves classes skipped, so the suite is
-  incomplete."** Incorrect for the public claim. Honua's public CITE evidence
-  standard requires every reported assertion to pass and skipped/failed/CantTell
-  to be zero in the chosen profile. The skipped counts that the raw ETS
-  `default` profile shows for KML 2.2, GeoPackage 1.2, GML 3.2, etc. are for
-  optional class families that Honua's exported documents do not exercise; the
-  contributor doc explains each per-suite scope.
 
 ## Profile Scope, In One Line Each
 
@@ -160,41 +123,3 @@ WPS 2.0 Basic and Async conformance is included in the authoritative aggregate
 above: 21/21 selected assertions passed, with 22/22 raw assertions passing when
 the unselected Sync class is included. The ETS source is pinned to
 `e2acc691440fad98d32e873a6b7237c9d759b8df`.
-
-## How To Refresh This Page
-
-The
-[`CITE Evidence Report` workflow](https://github.com/honua-io/honua-server/actions/workflows/cite-evidence-report.yml)
-now runs on a weekly schedule (Friday 08:00 UTC, after the Wed/Thu per-suite
-crons) in addition to `workflow_dispatch` (honua-server#2944). A scheduled or
-manual run also asserts this page's "Last reviewed" date is no more than 14
-days old (`scripts/ci/check-cite-status-freshness.sh`) — the workflow fails
-and opens/updates a `cite-evidence` issue when either a suite regresses or
-this page has gone stale, since the automated run does not itself rewrite the
-hand-maintained table below.
-
-1. Trigger the workflow on `trunk` (or wait for the weekly schedule).
-2. Wait for `allPassed=true` (the workflow fails otherwise).
-3. Copy the per-suite totals from the
-   `cite-conformance-evidence-*` artifact's `conformance-summary.md` into the
-   table above.
-4. Update "Last reviewed", the run number, the commit SHA, and the run date.
-5. If a suite regresses, update this page (the canonical numbers), the
-   evidence-run narrative in `docs/contributor/ogc-cite-conformance-evidence.md`,
-   and the `x-honua-cite-compliance` vendor extension in the affected
-   `*-openapi.json` file(s) in the same commit — `CiteStatusComplianceDriftTests`
-   fails the build if any of them disagree. Downgrade the public claim until
-   the regression clears.
-
-## Related Documents
-
-- [`docs/contributor/ogc-cite-conformance-evidence.md`](internal/contributor/ogc-cite-conformance-evidence.md)
-  — stable, website-linkable evidence-run narrative; see this page for the
-  canonical per-suite numbers.
-- [`docs/contributor/cite-runbook.md`](internal/contributor/cite-runbook.md) —
-  per-suite scope, scripts, workflow files, and open issues.
-- [`docs/contributor/ogc-certification-path.md`](internal/contributor/ogc-certification-path.md)
-  — decision record on formal OGC certification posture.
-- [`docs/contributor/CI_QUALITY_GATES.md`](internal/contributor/CI_QUALITY_GATES.md)
-  — gate model that triggers each `cite-*-conformance.yml` workflow.
-- [`docs/evidence/README.md`](internal/evidence/README.md) — top-level evidence index.

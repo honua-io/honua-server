@@ -72,7 +72,7 @@ Community requires no license and is unaffected by license expiry. Pro and Enter
 
 ## Commercial boundaries for 2026.1
 
-The [2026-09-04 commercial-boundaries ruling](https://github.com/honua-io/honua-flow/blob/trunk/docs/2026.1-quality-contract.md) separates edition entitlement from release maturity. These edition assignments apply with licensing enabled; Disabled mode grants them all without changing maturity:
+Edition entitlement and release maturity are separate axes: paying for a capability does not make it GA, and a Preview capability is not free. These edition assignments apply with licensing enabled; Disabled mode grants them all without changing maturity:
 
 | Capability | Edition | 2026.1 boundary |
 |---|---|---|

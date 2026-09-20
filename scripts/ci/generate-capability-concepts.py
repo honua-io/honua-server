@@ -226,10 +226,9 @@ def render(entry: dict, facts: dict, documented: list[tuple[str, str]] | None = 
     lines.append("")
 
     lines.append(
-        "The facts above come from `docs/gis/data/capability-keys.v1.json` and "
-        "`capability-matrix.v1.json`, both generated from the server's own registry and test "
-        "evidence. This page is a pure function of those two files — nothing in it depends on "
-        "what the prose happens to say, so an unrelated documentation edit cannot stale it."
+        "The facts above come from the server's capability registry and capability matrix, "
+        "which are generated from the server's own route catalog and test evidence rather "
+        "than from prose."
     )
     lines.append("")
     # Somewhere to go. Without this the page ends at a table of counts and an
@@ -290,12 +289,6 @@ def render(entry: dict, facts: dict, documented: list[tuple[str, str]] | None = 
         lines.append("- [All capabilities](README.md) — the full index with editions and status")
         lines.append("- [Editions and licensing](../../concepts/editions-and-licensing.md) — what each edition includes")
         lines.append("- [Capability matrix](../../gis/data/capability-matrix.v1.json) — the generated evidence for this key")
-        lines.append("")
-        lines.append(
-            "Writing the page that documents it? Declare "
-            f'`resource: "honua://capability/{key}"` in its frontmatter, or add the key under a '
-            "`resources:` list if the page already claims another one, and it will be linked here."
-        )
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -317,17 +310,10 @@ def render_index(entries: list[tuple[str, str, str, str, str]]) -> str:
         "identity the capability matrix, the licensing registry and the route mapping use — so an",
         "answer found here joins to the evidence without a name lookup.",
         "",
-        "These are generated from the registry by `scripts/ci/generate-capability-concepts.py`,",
-        "and they are a pure function of `docs/gis/data/capability-keys.v1.json` and",
-        "`capability-matrix.v1.json`. Edit the registry, not these pages.",
-        "",
-        "The bundle contract these pages obey — frontmatter, concept types, what is generated —",
-        "is described in [Open Knowledge Format](../README.md).",
-        "",
-        "Which prose pages discuss a capability is a question about the prose, so it is not baked",
-        "in here — a page rewritten elsewhere would silently stale all 117 of these. Run",
-        "`scripts/ci/generate-capability-concepts.py --report` for that view and for the",
-        "capabilities no page in the bundle names yet.",
+        "Each page carries the registry's own facts for one capability — category, edition,",
+        "lifecycle status and surface maturity — and links to the pages that document it.",
+        "How the bundle is shaped — frontmatter, concept types, capability identity — is",
+        "described in [Open Knowledge Format](../README.md).",
         "",
         "A capability appearing here is not a statement that it is generally available.",
         "**Status** is the registry's own lifecycle value, and a fifth of these are not GA:",

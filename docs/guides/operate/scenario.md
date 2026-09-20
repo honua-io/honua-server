@@ -19,37 +19,6 @@ separate approval. Follow progress in the terminal or Console. Ordinary users
 do not need to manage Git branches, PRs or telemetry queries. The numbered
 sections below provide the advanced API/MCP procedure for operators and replay.
 
-> **Qualification is still incomplete.** Replay uses the image digest pinned in
-> the accepted platform manifest, even before the final signed release lock is
-> cut. The observation, service-staging and approval checks below pass on that
-> pin. A deployment actuator, placement recovery and the installed clients are
-> not yet qualified on it. The [evidence
-> disposition](../../internal/contributor/operate-docs-precut-evidence.md)
-> records the remaining receipt requirements.
-
-## Check the installed contract
-
-The accepted manifest pins server `548b7a5` (image `sha256:29974ee7…`). On
-September 15 three unchanged harnesses passed on that digest. Each checked the
-image's registry digest and OCI source revision before boot, and each ran
-against isolated PostGIS and Redis containers:
-
-| Check | Observed result and operator decision |
-|---|---|
-| Read health/findings through REST and MCP | The [read observation](evidence/3302-accepted-548b7a5-read-observation.json) passes five REST reads and four MCP calls. On both surfaces, independently expected fixture values hold: no findings or events, and disabled alerting stays `notConfigured` without observation/success clocks. Read success does not establish deployment-source outage handling or permission to change a target. |
-| Read Operate status | The image returns `schemaVersion=1.1` with `slo.configured=false`, `slo.availability=null` and a `replica-local` diagnostic tail. Follow the [metric semantics](metrics.md#platform-slo-and-local-diagnostics); do not turn that diagnostic into protection evidence. |
-| Discover scenario tools | The authenticated `full` view pages through 124 descriptors. All five scenario tools are present, `honua_propose_operation` is absent, and `honua_propose_finding` requires `findingId` and `candidateId`. Discovery executes nothing. |
-| Discover operation kinds | `AdminConfigChange`, `Deploy`, `Geoprocess` and `MetadataRelease` are registered. Registration says nothing about the selected backend's rollback support, prior revision or verification policy. Complete the target-specific checks before approval. |
-| Stage a protected service revision | The [staging replay](evidence/3302-accepted-548b7a5-staging.json) passes all five installed scenarios. During staging the live revision stays at 3 with its ETag, and the operation binds that prior identity. A killed and restarted server keeps the durable operation without activating it. Recovery restores the prior graph and verifies six rows and their coordinates, while keeping an independently seeded committed edit. Owned-only recovery after a concurrent edit keeps another service's access policy. Preparations naming a missing resource, an unproven ETL compensation or a cancelled ETL fail with those blockers. |
-| Approve separately | The [approval replay](evidence/3302-accepted-548b7a5-approval.json) passes five server API checks with separately minted approve and read-only keys. Denied decisions change neither proposal nor draft. Approval deletes only the approved draft, and rejection preserves the other. An expired approval key cannot rotate or authenticate. |
-
-These receipts cover metadata service staging and server API approval only.
-They do not exercise a deployment actuator, a deployment-source outage,
-ECS-small, the installed DevOps client or Console. The earlier `7ba4226` pin
-failed staging and returned status schema `1.0`; the [evidence
-disposition](../../internal/contributor/operate-docs-precut-evidence.md) keeps
-those receipts.
-
 ## Progress and protection
 
 These are the required client descriptions of server truth, not additional API
@@ -167,20 +136,6 @@ approval, target, prior revision and policy digest; do not let the model create
 a new proposal to bypass missing evidence. Restoration still requires verified
 functional recovery, or the outcome is **Needs attention**.
 
-In an isolated replay, interrupt only the telemetry backend identified by the
-fixture, retain its unavailable observation, attempt the finding proposal,
-and assert the blocked reason plus unchanged proposal/actuator counts.
-Restore that backend and wait for complete fresh evidence before retrying.
-The [live outage harness contract](evidence-posture.md#live-outagerecovery-proof)
-defines the controls; they are test-harness endpoints, not product routes.
-
-The [executed Windows outage receipt](evidence/3475-windows-outage.json)
-already demonstrates this suppression for an isolated alert-dispatch source:
-zero new proposals and unchanged dispatch rows, followed by fresh recovery.
-Its `candidateQualification=false` is intentional. It does not replace this
-deployment/readiness scenario, prove partial/unverified deployment sources,
-or promote customer alerting beyond Preview.
-
 ## 4. Propose, poll, and approve separately
 
 Only after that gate passes, call discovered `honua_propose_finding` with
@@ -264,14 +219,8 @@ The proposer then polls the same proposal. Approval alone is not actuator
 success. A conflict or changed authority requires inspection and a newly
 reviewed proposal, not blind replay with broader credentials.
 
-On the isolated candidate fixture, also attempt self-approval, an unauthorized
-or cross-tenant actor's proposal read, wrong-tenant/wrong-owner targets, and narrowed OAuth
-scope replay. Assert denial and zero unauthorized actuation. The
-[source proof map](../../internal/contributor/operate-docs-precut-evidence.md#authorization-and-freshness-proof-map)
-names existing #3474 and related negative coverage; it does not claim those
-tests were rerun against the candidate. A same-tenant reviewer with the
-required read authority must be able to inspect the proposal; a different
-actor is not automatically an unauthorized actor.
+A same-tenant reviewer with the required read authority must be able to inspect
+the proposal; a different actor is not automatically an unauthorized actor.
 
 ## 5. Verify the update or recovery
 
@@ -301,9 +250,7 @@ against independently seeded expected values; include schema compatibility and
 render/query correctness where the changed service uses them. The recovery arm
 must observe the prior revision/configuration and the preserved data, not just
 the load balancer's routing state. Retain detection/recovery durations and
-failed checks. The [protected recovery certificate](https://github.com/honua-io/honua-release/issues/321)
-owns the installed fault matrix; missing or skipped mandatory cells block the
-protected claim for that target.
+failed checks.
 
 ## 6. Inspect or approve visually (optional)
 
@@ -337,9 +284,6 @@ handoff, then verify the registered backend through the server control plane.
 
 Application rollback and database restore are different operations. Consult
 [Upgrade and rollback](../deploy/upgrade-and-rollback.md) before reverting an
-image across schema changes. Local Docker and AWS ECS-small are the bounded
-placement targets; exact-candidate certification is still required for both.
-EKS, Azure, hosted models, broad autonomous remediation and #3300 performance
-depth are outside this scenario. Whole-catalog GP and four cloud-native
-formats retain their separate 2026.1 GA qualification requirements; customer
-alerting and offline sync remain Preview.
+image across schema changes. EKS, Azure, hosted models and broad autonomous
+remediation are outside this scenario; customer alerting and offline sync remain
+Preview.
