@@ -35,6 +35,7 @@ public static partial class EndpointRegistry
 
         // GeoServices VersionManagementServer — Esri-style branch versioning (#1272, ADR-0051).
         new("GET", "/rest/services/{serviceId}/VersionManagementServer"),
+        new("POST", "/rest/services/{serviceId}/VersionManagementServer"),
         new("GET", "/rest/services/{serviceId}/VersionManagementServer/versions"),
         new("GET", "/rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}"),
         new("POST", "/rest/services/{serviceId}/VersionManagementServer/create"),

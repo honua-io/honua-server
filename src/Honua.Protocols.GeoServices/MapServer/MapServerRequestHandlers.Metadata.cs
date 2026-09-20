@@ -109,7 +109,8 @@ internal static partial class MapServerEndpoints
                 visibleLayers,
                 limitsOptions.Query.MaxRecordCount,
                 limitsOptions.Tiles.MaxTileZoom,
-                MergeServiceTimeInfo(timeInfos));
+                MergeServiceTimeInfo(timeInfos),
+                await BuildSupportedFeatureExtensionsAsync(context, service, snapshot, cancellationToken).ConfigureAwait(false));
 
             stopwatch.Stop();
             scope.SetSuccess(visibleLayers.Length);
@@ -256,7 +257,8 @@ internal static partial class MapServerEndpoints
         IReadOnlyList<MapServerMetadataLayerDescriptor> layers,
         int maxRecordCount,
         int maxTileZoom,
-        FeatureServerTimeInfo? timeInfo)
+        FeatureServerTimeInfo? timeInfo,
+        string supportedExtensions)
     {
         var serviceSpatialReference = ResolveServiceSpatialReference(service, layers);
         var serviceExtent = ResolveServiceExtent(layers, serviceSpatialReference);
@@ -298,6 +300,7 @@ internal static partial class MapServerEndpoints
             SingleFusedMapCache = false,
             Units = ResolveMapUnits(serviceSpatialReference),
             Capabilities = BuildMapServerCapabilities(),
+            SupportedExtensions = supportedExtensions,
             FullExtent = serviceExtent,
             InitialExtent = serviceExtent,
             MaxImageWidth = service.Settings?.MaxImageWidth ?? 4096,
@@ -317,6 +320,32 @@ internal static partial class MapServerEndpoints
             },
             TileInfo = BuildTileInfo(maxTileZoom)
         };
+    }
+
+    private static async Task<string> BuildSupportedFeatureExtensionsAsync(
+        HttpContext context, MetadataV2Service service, MetadataV2GraphSnapshot snapshot,
+        CancellationToken cancellationToken)
+    {
+        if (!service.Protocols.Contains(ServiceProtocols.FeatureServer, StringComparer.OrdinalIgnoreCase))
+        {
+            return string.Empty;
+        }
+
+        // FeatureServer itself remains available for external/non-versioned readers. The
+        // companion VMS requires the exact bound publication capability and its own gate.
+        var (publications, error) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
+            context, FeatureServerEndpoints.GetRoutableFeaturePublicationsV2(service, snapshot),
+            static pair => pair.Resource, service, AuthorizationOperation.Metadata, cancellationToken).ConfigureAwait(false);
+        if (error != null || publications.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        var branchVersioning = await FeatureServerEndpoints.HasAccessibleBranchVersionedPublicationsAsync(
+            context, service, snapshot, cancellationToken).ConfigureAwait(false);
+        return FeatureServerEndpoints.IsVersionManagementAvailable(context, branchVersioning)
+            ? "FeatureServer,VersionManagementServer"
+            : "FeatureServer";
     }
 
     private static TileInfo BuildTileInfo(int maxTileZoom)
@@ -422,7 +451,7 @@ internal static partial class MapServerEndpoints
             Capabilities = layerCapabilities,
             SupportsAdvancedQueries = true,
             // Mirror hasAttachments + relationships from the same source the FeatureServer
-            // layer metadata uses (annotation-driven attachments + the canonical resource
+            // layer metadata uses (canonical attachment capability + the canonical resource
             // relationships) so a MapServer sublayer advertises the related records and
             // attachments the equivalent FeatureServer layer does (#1923).
             HasAttachments = FeatureServerEndpoints.ResourceSupportsAttachmentsV2(resource),

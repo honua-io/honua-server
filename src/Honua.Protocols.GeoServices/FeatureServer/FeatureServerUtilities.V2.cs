@@ -990,15 +990,14 @@ internal static partial class FeatureServerEndpoints
             .Any(capability => capability.Equals("Sync", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
-    /// V2 equivalent of <c>layer.SupportsAttachments</c>. V2 doesn't model attachments on the
-    /// canonical resource shape; the resource opts in via <c>resource.Metadata.Annotations</c>
-    /// (<c>honua.io/attachments=true</c>) or the legacy <c>"supportsAttachments"</c> annotation.
+    /// Resolves canonical attachment support, falling back to annotations only when
+    /// editing metadata is absent on a legacy resource.
     /// </summary>
     internal static bool ResourceSupportsAttachmentsV2(MetadataV2Resource resource)
     {
-        // Canonical annotation key. Keep the legacy spelling alongside so resources migrated
-        // verbatim from v1 still resolve.
-        return TryReadBoolAnnotation(resource.Metadata.Annotations, "honua.io/attachments") ??
+        // Explicit canonical false must override a stale legacy true annotation.
+        return resource.Editing?.SupportsAttachments ??
+               TryReadBoolAnnotation(resource.Metadata.Annotations, "honua.io/attachments") ??
                TryReadBoolAnnotation(resource.Metadata.Annotations, "supportsAttachments") ??
                false;
     }
