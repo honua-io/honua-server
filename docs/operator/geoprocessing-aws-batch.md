@@ -96,6 +96,14 @@ profile &gt; workload baseline. The local/Kubernetes baseline does **not**
 carry these keys (they are meaningless off AWS Batch), preserving the GP Devkit
 local-runner spec parity.
 
+The `gp.resource.*` sizing keys are the only sizing input a job submission
+accepts. Every other parameter the workload definition or a compute backend
+owns — `batch.*`, `env.*`, `process.*`, `k8s.*`, `azure.*` — comes from the
+registered workload definition (or is stamped by the server) and is
+authoritative: a job submission whose protocol metadata names a key in one of
+those namespaces is refused with a validation error, and a submission-supplied
+key can never replace a value the workload definition declares.
+
 ## Health-gating a GP substrate deploy
 
 When the durable GP substrate (compute-env / queue / IAM / ECR / job-def tier
