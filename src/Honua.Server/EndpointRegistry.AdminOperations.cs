@@ -103,7 +103,6 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/admin/field-workflows/exports"),
         new("GET", "/api/v1/admin/field-workflows/exports"),
 
-        new("POST", "/api/v1/admin/raster-artifacts/cog"),
         new("POST", "/api/v1/admin/tile-operations/jobs"),
         new("GET", "/api/v1/admin/tile-operations/jobs/{jobId}"),
         new("GET", "/api/v1/admin/tile-operations/jobs"),

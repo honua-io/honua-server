@@ -319,18 +319,10 @@ internal static class Wfs20DispatcherEndpoint
                     cancellationToken).ConfigureAwait(false);
             }
 
-            if (string.Equals(requestParam, Wfs20Utilities.Operations.Transaction, StringComparison.OrdinalIgnoreCase))
-            {
-                // QGIS negotiates 2.0.0 for reads and then issues every Transaction as
-                // WFS 1.0.0. The handler rewrites a 1.x document into the 2.0 shape and
-                // answers in the requesting version's response shape (see
-                // Wfs20Handler.Transaction.Legacy), so the one edit pipeline serves both.
-                return await handler.HandleTransactionAsync(context, cancellationToken).ConfigureAwait(false);
-            }
             return Wfs20Handler.CreateLegacyWfsException(
                 version,
                 "OperationNotSupported",
-                $"Unsupported WFS {version} operation '{requestParam}'. Supported operations: GetCapabilities, DescribeFeatureType, GetFeature, Transaction.",
+                $"Unsupported WFS {version} operation '{requestParam}'. Supported operations: GetCapabilities, DescribeFeatureType, GetFeature.",
                 "request",
                 StatusCodes.Status501NotImplemented);
         }

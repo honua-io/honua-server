@@ -319,54 +319,6 @@ public sealed partial class GPServerSoapEndpointsTests
         await jobs.DidNotReceiveWithAnyArgs().GetJobResultsAsync(default!, default!, default);
     }
 
-    [IntegrationTest]
-    [Operation(Operations.Query)]
-    [Endpoint("POST /services/{serviceId}/GPServer")]
-    [InterfaceOperation(TestProtocols.GPServer, "GetJobStatus")]
-    public async Task SoapGetJobStatus_AcceptsTheGetProgressMsgFlagArcGisProSends()
-    {
-        // ArcGIS Pro 3.7.1 polls a submitted job with <GetProgressMsg>true</GetProgressMsg>
-        // beside the JobID; rejecting it made Pro report a running job as failed.
-        var jobs = Substitute.For<IGeoprocessingJobService>();
-        jobs.GetJobAsync("soap-job", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>()).Returns(SoapJob());
-        using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
-        {
-            services.RemoveAll<IGeoprocessingJobService>();
-            services.AddSingleton(jobs);
-        });
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
-        using var response = await PostAsync(client, "GetJobStatus", "<JobID>soap-job</JobID><GetProgressMsg>true</GetProgressMsg>");
-        var body = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
-        var document = XDocument.Parse(body);
-        document.Descendants().Should().Contain(element => element.Name.LocalName == "GetJobStatusResponse");
-        document.Descendants("Result").Single().Value.Should().Be("esriJobExecuting");
-    }
-
-    [IntegrationTheory]
-    [InlineData("GetJobStatus", "<JobID>soap-job</JobID><Recurse>true</Recurse>")]
-    [InlineData("GetJobStatus", "<JobID>soap-job</JobID><GetProgressMsg>soon</GetProgressMsg>")]
-    [InlineData("GetJobMessages", "<JobID>soap-job</JobID><GetProgressMsg>true</GetProgressMsg>")]
-    [InlineData("GetJobToolName", "<JobID>soap-job</JobID><GetProgressMsg>true</GetProgressMsg>")]
-    [InlineData("CancelJob", "<JobID>soap-job</JobID><GetProgressMsg>true</GetProgressMsg>")]
-    [Operation(Operations.ErrorHandling)]
-    [Endpoint("POST /services/{serviceId}/GPServer")]
-    public async Task SoapJobOperation_UnrecognisedOrMalformedArgument_IsStillRejected(string operation, string arguments)
-    {
-        var jobs = Substitute.For<IGeoprocessingJobService>();
-        jobs.GetJobAsync("soap-job", Arg.Any<ClaimsPrincipal>(), Arg.Any<CancellationToken>()).Returns(SoapJob());
-        using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
-        {
-            services.RemoveAll<IGeoprocessingJobService>();
-            services.AddSingleton(jobs);
-        });
-        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
-        using var response = await PostAsync(client, operation, arguments);
-        var text = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, text);
-        XDocument.Parse(text).Descendants(XName.Get("Fault", Soap11)).Should().ContainSingle();
-    }
-
     private static ExecutionJobRecord SoapJob(string serviceId = "alpha") => new()
     {
         OperationId = "soap-job",

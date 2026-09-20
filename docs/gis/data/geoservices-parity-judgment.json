@@ -2188,7 +2188,7 @@
           "esriPaths": [
             "/GPServer/{taskName}"
           ],
-          "notes": "Returns task metadata projected from the built-in IProcessCatalog, including parameter descriptions and Esri data types. Implemented in #723. Every GP service also publishes the NetworkAnalysisUtilities tasks GetTravelModes and GetToolInfo (synchronous, anonymous projections of the routing provider) so arcpy.nax and ArcGIS Pro can bind the NAServer next to it (#5035)."
+          "notes": "Returns task metadata projected from the built-in IProcessCatalog, including parameter descriptions and Esri data types. Implemented in #723."
         },
         {
           "name": "Job Status (generic)",
@@ -2464,35 +2464,16 @@
       "evidence": {
         "code": [
           "src/Honua.Protocols.GeoServices/NAServer/NAServerEndpoints.cs",
-          "src/Honua.Protocols.GeoServices/NAServer/NAServerMetadata.cs",
           "src/Honua.Protocols.GeoServices/NAServer/NAServerParameterTranslation.cs",
           "src/Honua.Protocols.GeoServices/NAServer/NAServerResultMapping.cs",
           "src/Honua.Routing/Features/Routing/Abstractions/IRoutingProvider.cs"
         ],
         "tests": [
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerEndpointTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerTranslationUnitTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerMetadataEndpointTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/NetworkAnalysisUtilitiesTaskTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerTranslationUnitTests.cs"
         ]
       },
       "operations": [
-        {
-          "name": "Service resource",
-          "status": "implemented",
-          "esriPaths": [
-            "/NAServer"
-          ],
-          "notes": "GET and POST return the Esri network service resource: one analysis layer name per solver the configured IRoutingProvider advertises (routeLayers, serviceAreaLayers, closestFacilityLayers, odCostMatrixLayers, locationAllocationLayers). ArcGIS Pro's Catalog pane reads it before listing the service (#5035)."
-        },
-        {
-          "name": "Analysis layer resource",
-          "status": "implemented",
-          "esriPaths": [
-            "/NAServer/{layerName}"
-          ],
-          "notes": "GET and POST return the Esri network analysis layer resource for Route, ServiceArea, ClosestFacility, ODCostMatrix and LocationAllocation: impedance and travel modes projected from the active network dataset's travel profiles, network attributes and sources, input network classes and the configured service limits. Unknown or unsupported layers answer 404. Together with the GetTravelModes/GetToolInfo tasks every GPServer publishes, this is what arcpy.nax and Pro read to bind a stand-alone routing service (#5035)."
-        },
         {
           "name": "Route solve",
           "status": "implemented",
@@ -2669,8 +2650,7 @@
       "drillDownDoc": "docs/reference/compatibility/geoservices-parity.md",
       "implementedSurface": [
         "service directory (/rest/services)",
-        "REST info (/rest/info) auth-discovery document",
-        "authenticated read-only Admin API service resource for workspace discovery, including the siteless alias"
+        "REST info (/rest/info) auth-discovery document"
       ],
       "knownGaps": [
         "/rest/info always reports isTokenBasedSecurity=false and omits tokenServicesUrl",
@@ -2680,12 +2660,10 @@
       "evidence": {
         "code": [
           "src/Honua.Protocols.GeoServices/Catalog/GeoservicesCatalogEndpoints.cs",
-          "src/Honua.Protocols.GeoServices/Catalog/GeoservicesCatalogModels.cs",
-          "src/Honua.Protocols.GeoServices/Sharing/ArcGisServerAdminEndpoints.cs"
+          "src/Honua.Protocols.GeoServices/Catalog/GeoservicesCatalogModels.cs"
         ],
         "tests": [
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogEndpointTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Sharing/ArcGisServerAdminServiceResourceTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogEndpointTests.cs"
         ]
       },
       "operations": [
@@ -2696,14 +2674,6 @@
             "/rest/services"
           ],
           "notes": "Graph-backed service directory, RBAC-filtered per principal, listing every service type a publication exposes. Returns 401/403 rather than a misleading empty list when every publication is denied. Does not emit folders; currentVersion is deliberately omitted (see knownLimitations)."
-        },
-        {
-          "name": "Admin service resource (workspace discovery)",
-          "status": "partial",
-          "esriPaths": [
-            "/admin/services/{serviceName}.{serviceType}"
-          ],
-          "notes": "Authenticated, read-only projection of visible published services with protocol extensions and branch-versioning flags controlled by capability and license checks. Both canonical and siteless spellings accept GET and POST. Hosting properties are compatibility defaults, datasets is empty, and no administrative mutations are served. ArcPy workspace and branch-versioning replay remains pending (#5036); this resource is not full Admin API parity."
         },
         {
           "name": "REST Info",

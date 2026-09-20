@@ -42,9 +42,11 @@ internal sealed class PostgresMetadataV2LegacyCatalogProjector : IMetadataV2Lega
     /// <inheritdoc />
     public async Task<MetadataV2Graph?> BuildFromLegacyCatalogAsync(CancellationToken cancellationToken = default)
     {
+        var catalogSchema = SchemaSearchPath.ValidateAndQuote(_schemaName);
+        var sql = MetadataV2CompatSnapshotSql.BuildDocumentFromV1Catalog
+            .Replace(MetadataV2CompatSnapshotSql.CatalogSchemaPlaceholder, catalogSchema, StringComparison.Ordinal);
+
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
-        var sql = await MetadataV2CompatSnapshotSql.BuildQueryAsync(
-            connection, transaction: null, _schemaName, cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("@environment", _environment);
 

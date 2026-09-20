@@ -119,22 +119,14 @@ public class WmtsCustomTileMatrixSetXmlTests
     }
 
     [Fact]
-    public void AppendCustomTileMatrixSetLinks_LinksTheGridsetWithoutUnschemableLimits()
+    public void AppendCustomTileMatrixSetLinks_EmitsLimitsForEachLevel()
     {
         var sb = new StringBuilder();
         WmtsRequestHandlers.AppendWmtsCustomTileMatrixSetLinks(sb, RegistryWith(GeographicGrid()), 18);
         var xml = sb.ToString();
 
         xml.Should().Contain("<TileMatrixSet>DemoGeographic</TileMatrixSet>");
-
-        // This previously asserted <MaxTileRow>0</MaxTileRow>, pinning a value WMTS 1.0.0
-        // cannot express: MaxTileRow and MaxTileCol are xs:positiveInteger, so the level-0
-        // entry made the whole capabilities document fail
-        // schemas.opengis.net/wmts/1.0/wmtsGetCapabilities_response.xsd. The limits were
-        // derived from the gridset rather than the layer, so they constrained nothing and
-        // are omitted entirely.
-        xml.Should().NotContain("<TileMatrixSetLimits>");
-        xml.Should().NotContain("<MaxTileRow>0</MaxTileRow>");
-        xml.Should().NotContain("<MaxTileCol>0</MaxTileCol>");
+        xml.Should().Contain("<MaxTileCol>1</MaxTileCol>");
+        xml.Should().Contain("<MaxTileRow>0</MaxTileRow>");
     }
 }

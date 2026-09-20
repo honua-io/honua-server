@@ -302,77 +302,6 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
-    [Endpoint("GET /ogc/features/collections/{collectionId}/schema")]
-    public async Task GetSchema_ReturnsAPart5DocumentWithRoles()
-    {
-        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}/schema");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/schema+json",
-            "Part 5 schemas are JSON Schema documents, and QGIS only takes a schema link of that media type");
-
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        json.RootElement.GetProperty("$schema").GetString().Should().Be("https://json-schema.org/draft/2020-12/schema");
-        json.RootElement.GetProperty("$id").GetString()
-            .Should().EndWith($"/ogc/features/collections/{TestCollectionId}/schema");
-
-        var properties = json.RootElement.GetProperty("properties");
-        properties.TryGetProperty("name", out var nameProperty).Should().BeTrue("every attribute is in the schema, not only the filterable ones");
-        nameProperty.GetProperty("type").GetString().Should().Be("string");
-
-        var roles = properties.EnumerateObject()
-            .Where(property => property.Value.TryGetProperty("x-ogc-role", out _))
-            .ToDictionary(property => property.Value.GetProperty("x-ogc-role").GetString()!, property => property.Value);
-
-        roles.Should().ContainKey("id");
-        roles["id"].GetProperty("readOnly").GetBoolean().Should().BeTrue("the id is server-assigned");
-        roles["id"].GetProperty("type").GetString().Should().Be("integer");
-
-        roles.Should().ContainKey("primary-geometry");
-        roles["primary-geometry"].GetProperty("format").GetString().Should().StartWith("geometry-");
-        roles["primary-geometry"].TryGetProperty("type", out _).Should().BeFalse(
-            "a geometry is described by its format alone; a typed property would be read as an attribute by clients that build fields from the schema");
-
-        var required = json.RootElement.GetProperty("required").EnumerateArray().Select(value => value.GetString()).ToArray();
-        required.Should().NotContain(roles["id"].GetProperty("title").GetString(), "a client never has to send the server-assigned id");
-    }
-
-    [IntegrationTest]
-    [Endpoint("GET /ogc/features/collections/{collectionId}")]
-    public async Task GetCollection_LinksToThePart5Schema()
-    {
-        var response = await _fixture.Client.GetAsync($"/ogc/features/collections/{TestCollectionId}");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var schemaLinks = json.RootElement.GetProperty("links").EnumerateArray()
-            .Where(link => link.GetProperty("rel").GetString() == RelationTypes.Schema)
-            .ToArray();
-
-        schemaLinks.Should().ContainSingle();
-        schemaLinks[0].GetProperty("type").GetString().Should().Be("application/schema+json");
-        schemaLinks[0].GetProperty("href").GetString().Should().EndWith($"/ogc/features/collections/{TestCollectionId}/schema");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.GetMetadata)]
-    [Endpoint("GET /ogc/features/conformance")]
-    public async Task GetConformance_DeclaresPart5Schemas()
-    {
-        var response = await _fixture.Client.GetAsync("/ogc/features/conformance");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var classes = json.RootElement.GetProperty("conformsTo").EnumerateArray().Select(value => value.GetString()).ToArray();
-
-        classes.Should().Contain("http://www.opengis.net/spec/ogcapi-features-5/1.0/conf/schemas",
-            "QGIS reads the schema link only when this class is declared");
-        classes.Should().Contain("http://www.opengis.net/spec/ogcapi-features-5/1.0/conf/core-roles-features");
-    }
-
-    [IntegrationTest]
     [Endpoint("GET /ogc/features/collections/{collectionId}")]
     public async Task GetCollection_IncludesItemsLinksForAllSupportedFormats()
     {
@@ -1055,6 +984,11 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
         [
             "http://www.opengis.net/spec/ogcapi-features-2/1.0/conf/crs",
             "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables",
+            "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/filter",
+            "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/features-filter",
+            "http://www.opengis.net/spec/cql2/1.0/conf/basic-cql2",
+            "http://www.opengis.net/spec/cql2/1.0/conf/cql2-text",
+            "http://www.opengis.net/spec/cql2/1.0/conf/cql2-json",
         ]);
     }
 

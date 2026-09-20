@@ -20,12 +20,6 @@
     },
     {
       "family": "uncategorized",
-      "routePrefix": "/sensorthings",
-      "capability": "serve.sensorthings",
-      "note": "Discoverability alias redirecting to the canonical /sta/v1.1 root. The SensorThings spec leaves the service root prefix to the deployment, so nothing makes /sta guessable; honua-server#4202 was filed against /sensorthings. Same capability as the canonical routes, which match on the 'OGC SensorThings API v1.1' family."
-    },
-    {
-      "family": "uncategorized",
       "routePrefix": "/services",
       "method": "POST",
       "capability": "serve.geoservices-root"
@@ -265,11 +259,6 @@
     },
     {
       "family": "Admin API",
-      "routePrefix": "/api/v1/admin/raster-artifacts",
-      "capability": "raster.cloud-cog-serving"
-    },
-    {
-      "family": "Admin API",
       "routePrefix": "/api/v1/admin/oidc",
       "capability": "identity.oidc"
     },
@@ -325,10 +314,6 @@
     {
       "family": "ArcGIS Portal Sharing",
       "capability": "identity.portal-sharing"
-    },
-    {
-      "family": "ArcGIS Server Admin",
-      "capability": "serve.geoservices-featureserver"
     },
     {
       "family": "Capability Manifest HTTP",
@@ -425,10 +410,6 @@
     {
       "family": "MVT + TileJSON + PMTiles",
       "capability": "serve.vector-tiles"
-    },
-    {
-      "family": "Cloud Optimized GeoTIFF",
-      "capability": "raster.cloud-cog-serving"
     },
     {
       "family": "Metrics",

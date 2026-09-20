@@ -2680,7 +2680,7 @@ internal sealed partial class FeatureServerQueryHandler(
         var features = rows.Select(row =>
         {
             var attributes = row.Where(pair => fieldIndices.ContainsKey(pair.Key))
-                .ToDictionary(pair => pair.Key, pair => QueryFormatter.GeoServicesAttributeValue(pair.Value), StringComparer.OrdinalIgnoreCase);
+                .ToDictionary(pair => pair.Key, pair => GeoServicesAttributeValue(pair.Value), StringComparer.OrdinalIgnoreCase);
             GeoServicesFieldConventions.CoerceDateAttributes(attributes, dateFields);
             return new GeoServicesFeature { Attributes = attributes, IncludeGeometry = false };
         }).ToArray();
@@ -2704,6 +2704,16 @@ internal sealed partial class FeatureServerQueryHandler(
             }
         }
     }
+
+    // Statistics rows use the same Esri string projection as ordinary feature
+    // rows. Keep the compatibility conversion local so the trunk QueryFormatter
+    // remains authoritative after #5042 withdrew its broader formatter change.
+    private static object? GeoServicesAttributeValue(object? value)
+        => FeatureAttributeValueNormalizer.Normalize(value) switch
+        {
+            JsonElement { ValueKind: JsonValueKind.Array or JsonValueKind.Object } element => element.GetRawText(),
+            var normalized => normalized
+        };
 
     private static bool TryParseStatisticsDefinitions(
         string outStatisticsJson,

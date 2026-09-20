@@ -163,12 +163,6 @@ internal static class RasterParsingHelpers
             case "cog":
                 rasterFormat = RasterFormat.COG;
                 return true;
-            case "bsq":
-                // Band-sequential raw samples, the layout Esri clients read image-service
-                // pixels in (esriImageBSQ). No container: width, height, band count and
-                // pixel type travel in the response metadata.
-                rasterFormat = RasterFormat.Raw;
-                return true;
             default:
                 rasterFormat = RasterFormat.PNG;
                 return false;

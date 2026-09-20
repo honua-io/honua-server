@@ -1,0 +1,76 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/gdal/ogc-api-coverages/serve.ogc-api-coverages",
+  "canonical_client": "GDAL",
+  "client_lane": "gdal",
+  "client_version": "3.8.4",
+  "client_version_detail": "GDAL 3.8.4, released 2024/02/08",
+  "surface": "ogc-api-coverages",
+  "operation": "serve.ogc-api-coverages",
+  "protocol_version": "OGC API - Coverages 1.0",
+  "protocol_profile": "core+geotiff",
+  "started_at": "2026-09-20T09:06:04.407997Z",
+  "finished_at": "2026-09-20T09:06:05.210609Z",
+  "duration_ms": 803,
+  "status": "pass",
+  "exercised_capabilities": [
+    "positive",
+    "negative",
+    "auth",
+    "boundary",
+    "crs-axis",
+    "media-schema"
+  ],
+  "summary": "all 6 checks passed across 6 governed facets",
+  "primary_request_url": "http://honua:5000/ogc/coverages/collections/2000/coverage",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "open the collection with the OGCAPI driver's coverage API",
+      "outcome": "pass",
+      "detail": "(64, 64); requests ['http://honua:5000/ogc/coverages/collections/2000']",
+      "request_url": null,
+      "duration_ms": 62
+    },
+    {
+      "facet": "negative",
+      "name": "an unknown coverage collection is refused",
+      "outcome": "pass",
+      "detail": "{\"type\":\"about:blank\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"Collection \\u0027999999\\u0027 not found.\",\"instance\":\"/ogc/coverages/collections/999999\",\"correlationId\":\"00-8da1daa7cfab031a3b0024c7f2",
+      "request_url": null,
+      "duration_ms": 113
+    },
+    {
+      "facet": "auth",
+      "name": "a protected coverage collection is challenged",
+      "outcome": "pass",
+      "detail": "{'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401}",
+      "request_url": null,
+      "duration_ms": 504
+    },
+    {
+      "facet": "boundary",
+      "name": "an edge window reads through a spatially subset request",
+      "outcome": "pass",
+      "detail": "64x64",
+      "request_url": null,
+      "duration_ms": 32
+    },
+    {
+      "facet": "crs-axis",
+      "name": "the coverage is georeferenced in lon/lat",
+      "outcome": "pass",
+      "detail": "64x64",
+      "request_url": null,
+      "duration_ms": 50
+    },
+    {
+      "facet": "media-schema",
+      "name": "the coverage decodes as GeoTIFF",
+      "outcome": "pass",
+      "detail": "64x64",
+      "request_url": null,
+      "duration_ms": 40
+    }
+  ]
+}

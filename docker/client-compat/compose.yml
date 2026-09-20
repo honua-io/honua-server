@@ -16,15 +16,7 @@
 
 services:
   postgres:
-    # Derived from postgis/postgis:16-3.4 to add pgRouting, which NAServer needs.
-    # The NAServer cells were recorded as blocked on "no pgRouting extension in
-    # postgis/postgis:16-3.4" - true, but that image is Debian bullseye with the
-    # PGDG repo already configured, so the package is one apt-get away rather
-    # than a wall.
-    image: client-compat-postgres:latest
-    build:
-      context: ./postgres
-      dockerfile: Dockerfile
+    image: postgis/postgis:16-3.4
     environment:
       POSTGRES_DB: honua_compat
       POSTGRES_USER: postgres
@@ -32,8 +24,6 @@ services:
       POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
     networks:
       - compat
-    volumes:
-      - ./postgres/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
@@ -102,10 +92,6 @@ services:
       PGUSER: postgres
       PGPASSWORD: compat_password
       PGDATABASE: honua_compat
-      # Needed only for the PMTiles publish at the end of run.sh, which must go
-      # through the running server. Read at call time, never echoed.
-      HONUA_BASE_URL: http://honua:5000
-      HONUA_ADMIN_PASSWORD: ClientCompatAdmin123!
     # The real server must own schema creation and its migration journal.
     # Seeding first creates migration-owned tables without journal entries,
     # which correctly makes startup/readiness reject the fixture (#4731/#4735).
@@ -136,56 +122,10 @@ services:
       Kestrel__Endpoints__Http__Protocols: Http1
       Kestrel__Endpoints__Grpc__Url: http://+:5001
       Kestrel__Endpoints__Grpc__Protocols: Http2
-      # The fixture's public identity. Every advertised URL is derived from this by
-      # BaseUrlResolver: /rest/info soapUrl and authInfo.tokenServicesUrl, the SOAP
-      # catalog Url elements and the REST handoff URLs. It is overridable because a
-      # client that is not itself on this network cannot reach `honua`, and an
-      # unreachable advertised URL is indistinguishable from a broken server.
-      #
-      # The arcpy lane is the case that forced this: arcpy runs on the Windows host
-      # against a TCP bridge, so it read soapUrl/tokenServicesUrl as http://honua:5000,
-      # could not resolve the name, and reported "SOAP catalog URLs leaked a different
-      # origin", "an advertised REST handoff URL did not resolve" and the
-      # "Parameters are not valid" cascade that is arcpy's answer to an input that
-      # never resolved. Those were three fixture-configuration artifacts being
-      # recorded as server defects.
-      #
-      # Set HONUA_CLIENT_COMPAT_PUBLIC_BASE_URL to http://host.docker.internal:18080
-      # for a run that includes an off-network client. That name resolves on both
-      # sides - to the host gateway from inside the network, to the host address from
-      # Windows - so the in-network and host-side lanes certify against one identity
-      # rather than two, which is what makes their receipts comparable.
-      PUBLIC_BASE_URL: ${HONUA_CLIENT_COMPAT_PUBLIC_BASE_URL:-http://honua:5000}
+      PUBLIC_BASE_URL: http://honua:5000
       HostValidation__AllowedHosts__0: honua
       HostValidation__AllowedHosts__1: localhost
-      HostValidation__AllowedHosts__2: host.docker.internal
-      HostValidation__AllowedHosts__3: 127.0.0.1
       HONUA_ADMIN_PASSWORD: ClientCompatAdmin123!
-      # Capability gates the certification audit found were misrecorded as
-      # server defects or missing artifacts. GET /api/v1/capabilities/manifest
-      # reports each as reasonCode=experimental-disabled, and each endpoint's own
-      # 404 body names the key. Enabled individually: the global
-      # Capabilities:Experimental:Enabled switch would also turn on the
-      # Databricks, Snowflake, Redshift and mTLS surfaces and change this fixture
-      # under every other lane.
-      Capabilities__Experimental__serve.sensorthings__Enabled: "true"
-      Capabilities__Experimental__versioning.branch__Enabled: "true"
-      Capabilities__Experimental__sync.offline__Enabled: "true"
-      Capabilities__Experimental__serve.i3s-scene__Enabled: "true"
-      Capabilities__Experimental__serve.3d-tiles-scene__Enabled: "true"
-      # Scene generation writes tilesets under SceneGeneration:OutputRoot, whose
-      # default is the relative "scenes-generated", i.e. /app/scenes-generated -
-      # owned by root in the image while the process runs as 1001. Every
-      # POST /api/v1/admin/scenes/generate therefore failed with
-      # UnauthorizedAccessException and surfaced as 503 "temporarily
-      # unavailable", so no 3D Tiles or I3S scene could ever be published on this
-      # fixture. /tmp is writable by the runtime user, like the other scratch
-      # roots the image provisions there.
-      SceneGeneration__OutputRoot: /tmp/honua-scenes
-      # The ArcGIS JS API sends its credential in X-Esri-Authorization; the Esri
-      # identity probes assert it survives a CORS preflight, which needs an allowed
-      # origin configured or the server correctly emits no CORS headers at all.
-      Cors__AllowedOrigins__0: http://localhost:3000
       # Deterministic local OIDC verifier for certification auth breadth. No
       # external IdP is contacted: client lanes mint short-lived HS256 tokens
       # against this test-only issuer/audience/signing-key tuple.
@@ -340,11 +280,6 @@ services:
       HONUA_BASE_URL: http://honua:5000
       HONUA_PYQGIS_SERVICE_ID: test_service
       HONUA_PYQGIS_COLLECTION_ID: "0"
-      # The FeatureServer edit endpoints require an Esri token; HTTP Basic is
-      # refused with 499. Without this the applyEdits certification case skips
-      # instead of exercising the edit path. Read from the environment at call
-      # time by the test, never logged or written into an envelope.
-      HONUA_ADMIN_PASSWORD: ClientCompatAdmin123!
     depends_on:
       honua:
         condition: service_healthy

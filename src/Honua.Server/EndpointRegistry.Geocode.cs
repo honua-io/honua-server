@@ -26,10 +26,7 @@ public static partial class EndpointRegistry
         new("GET", "/rest/services/GeocodeServer/findAddressCandidates"),
         new("POST", "/rest/services/GeocodeServer/findAddressCandidates"),
         new("GET", "/rest/services/GeocodeServer/reverseGeocode"),
-        new("POST", "/rest/services/GeocodeServer/reverseGeocode"),
         new("GET", "/rest/services/GeocodeServer/suggest"),
-        new("POST", "/rest/services/GeocodeServer/suggest"),
         new("GET", "/rest/services/GeocodeServer/geocodeAddresses"),
-        new("POST", "/rest/services/GeocodeServer/geocodeAddresses"),
     ];
 }

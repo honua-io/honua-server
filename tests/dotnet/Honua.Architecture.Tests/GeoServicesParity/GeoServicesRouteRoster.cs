@@ -50,9 +50,7 @@ namespace Honua.Architecture.Tests.GeoServicesParity;
 ///   <item><description>
 ///     <c>/sharing/rest/*</c> (ArcGIS portal sharing) and the catalog roots
 ///     <c>/rest/info</c> and <c>/rest/services</c> carry no service address, so they
-///     normalize to themselves. The Admin API service resource and its siteless
-///     <c>/rest/admin/</c> alias normalize to the canonical <c>/admin/services/</c>
-///     spelling and belong to the catalog's workspace-discovery surface;
+///     normalize to themselves;
 ///   </description></item>
 ///   <item><description>
 ///     the HTTP method is <b>not</b> part of the key. <c>GET</c> and <c>POST</c> forms
@@ -78,7 +76,7 @@ internal static class GeoServicesRouteRoster
     /// <summary>Synthetic service type for <c>/sharing/rest/*</c>.</summary>
     public const string PortalSharingServiceType = "PortalSharing";
 
-    /// <summary>Synthetic service type for catalog roots and Admin API workspace discovery.</summary>
+    /// <summary>Synthetic service type for the catalog roots (<c>/rest/info</c>, <c>/rest/services</c>).</summary>
     public const string CatalogServiceType = "Catalog";
 
     /// <summary>
@@ -189,13 +187,12 @@ internal static class GeoServicesRouteRoster
 
     /// <summary>
     /// True for the route families the GeoServices REST parity matrix is answerable for:
-    /// the Esri service tree (<c>/rest/services/*</c>), REST catalog roots, Admin service
-    /// resources, and the ArcGIS portal-sharing surface. Scoping on the served path (rather than on the
+    /// the Esri service tree (<c>/rest/services/*</c>), the REST catalog roots, and the
+    /// ArcGIS portal-sharing surface. Scoping on the served path (rather than on the
     /// proof ledger's hand-maintained family labels) keeps the roster mechanical.
     /// </summary>
     private static bool IsGeoServicesRoute(string route)
         => route.StartsWith("/rest/", StringComparison.OrdinalIgnoreCase)
-            || route.StartsWith("/admin/services/", StringComparison.OrdinalIgnoreCase)
             || route.StartsWith("/sharing/rest/", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
@@ -206,13 +203,6 @@ internal static class GeoServicesRouteRoster
     public static (string ServiceType, string EsriPath)? Normalize(string route)
     {
         var path = RouteConstraintRegex.Replace(route.Trim(), "{${name}}");
-
-        const string AdminServiceResource = "/admin/services/{serviceName}.{serviceType}";
-        if (string.Equals(path, AdminServiceResource, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(path, "/rest/admin/{serviceName}.{serviceType}", StringComparison.OrdinalIgnoreCase))
-        {
-            return (CatalogServiceType, AdminServiceResource);
-        }
 
         if (path.StartsWith("/sharing/rest/", StringComparison.OrdinalIgnoreCase))
         {

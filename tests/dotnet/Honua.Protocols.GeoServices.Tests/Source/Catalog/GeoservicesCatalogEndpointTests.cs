@@ -1104,7 +1104,7 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
             result.Elements().Single(element => element.Name.LocalName == "DefaultMosaicMethod")
                 .Value.Should().Be("esriMosaicByAttribute");
             result.Elements().Single(element => element.Name.LocalName == "SupportBSQ")
-                .Value.Should().Be("true", "ExportImage serves esriImageBSQ, which is how arcpy reads pixels");
+                .Value.Should().Be("false");
             result.Descendants().Single(element => element.Name.LocalName == "WKID")
                 .Value.Should().Be("4326");
 
@@ -1516,65 +1516,6 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
                 Arg.Any<CancellationToken>());
             await rasterStore.DidNotReceive().ListRastersAsync(
                 Arg.Any<int>(),
-                Arg.Any<CancellationToken>());
-        }
-        finally
-        {
-            await fixture.DisposeAsync();
-        }
-    }
-
-    // arcpy reads image-service pixels (Raster, RasterToNumPyArray, GetCellValue) through SOAP
-    // ExportImage in esriImageBSQ: raw band-sequential samples, no container. Before this was
-    // served the client got "ImageFormat must be PNG, JPG, or TIFF." and read every cell as NoData.
-    [IntegrationTest]
-    [Operation(Operations.Export)]
-    [InterfaceOperation(TestProtocols.ImageServer, "ExportImage")]
-    [Endpoint("POST /services/{serviceId}/ImageServer")]
-    public async Task PostSoapImageServer_ExportImage_ServesRawBandSequentialSamples()
-    {
-        var rasterStore = CreateSoapRasterStore();
-        var fixture = new WebAppFixture().ConfigureServices(services => services.AddSingleton(rasterStore));
-        await fixture.InitializeAsync();
-        try
-        {
-            const string operation = """
-                <ExportImage xmlns="http://www.esri.com/schemas/ArcGIS/10.8"
-                             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-                  <ImageDescription xsi:type="GeoImageDescription">
-                    <Extent xsi:type="EnvelopeN">
-                      <XMin>-180</XMin><YMin>-90</YMin><XMax>180</XMax><YMax>90</YMax>
-                      <SpatialReference xsi:type="GeographicCoordinateSystem"><WKID>4326</WKID></SpatialReference>
-                    </Extent>
-                    <Width>3</Width><Height>3</Height>
-                    <PixelType>U8</PixelType>
-                    <Interpolation>RSP_NearestNeighbor</Interpolation>
-                  </ImageDescription>
-                  <ImageType xsi:type="ImageType">
-                    <ImageFormat>esriImageBSQ</ImageFormat>
-                    <ImageReturnType>esriImageReturnMimeData</ImageReturnType>
-                  </ImageType>
-                </ExportImage>
-                """;
-            using var response = await PostSoapOperationAsync(
-                fixture.Client,
-                $"/services/{WebAppFixture.TestServiceId}/ImageServer",
-                operation);
-
-            response.Be200Ok();
-            var payload = XDocument.Parse(await response.Content.ReadAsStringAsync());
-            var result = payload.Descendants().Single(element => element.Name.LocalName == "Result");
-            result.Elements().Single(element => element.Name.LocalName == "ImageType")
-                .Value.Should().Be("esriImageBSQ");
-            result.Elements().Single(element => element.Name.LocalName == "ImageData")
-                .Value.Should().NotBeEmpty("the samples travel inline for esriImageReturnMimeData");
-
-            await rasterStore.Received().ExportImageAsync(
-                Arg.Any<int>(),
-                Arg.Any<long>(),
-                Arg.Is<RasterQuery>(query => query.OutputFormat == RasterFormat.Raw
-                    && query.OutputWidth == 3 && query.OutputHeight == 3
-                    && query.ResamplingAlgorithm == ResamplingAlgorithm.NearestNeighbor),
                 Arg.Any<CancellationToken>());
         }
         finally

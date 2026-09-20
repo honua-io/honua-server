@@ -10,6 +10,20 @@ This guide covers migration for the Honua control-plane/admin API only.
 This guide covers the Honua control-plane (admin) API only. For SDK support windows and
 release-channel expectations, see [Server + SDK compatibility](../concepts/ecosystem.md).
 
+## Withdrawal of the COG publication endpoint
+
+The revert of PR #5027 in PR #5042 withdraws the newly added
+`POST /api/v1/admin/raster-artifacts/cog` endpoint and its
+`CogArtifactDescriptor` and `CogArtifactPublishRequest` contract schemas.
+The landing caused regressions in the trailing integration matrix, so its
+additions are being withdrawn together before they are reintroduced.
+
+Clients built against that trunk revision must stop calling this endpoint and
+regenerate from the restored admin contract. There is no replacement admin
+endpoint for this publication operation in the restored contract; defer workflows
+that depend on it until a validated implementation is available. Existing raster
+import and serving operations retain their previous contracts.
+
 ## Migration Baseline
 
 Before regenerating or upgrading SDK artifacts:

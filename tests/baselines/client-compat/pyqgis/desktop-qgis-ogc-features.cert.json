@@ -1,21 +1,21 @@
 {
   "schema_version": "1.0",
-  "run_id": "20260918T230324Z",
-  "run_date": "2026-09-18T23:03:24.582965+00:00",
-  "server_version": "unknown",
-  "server_commit": "",
-  "fixture_revision": "sha256:7cf9f0e0c2ba2de6aadef788b86e0371762627dfdb4fe5f1e4088cc993ba62d4",
+  "run_id": "20260822T025706Z",
+  "run_date": "2026-08-22T02:57:06.792964+00:00",
+  "server_version": "source@1589e829426631bc358e45e4d1c86591f0ea32c5",
+  "server_commit": "1589e829426631bc358e45e4d1c86591f0ea32c5",
+  "fixture_revision": "sha256:e9322c83952c7f9113ca88685d4f5e918c048c9e57755020b6162c4e01bae2d6",
   "server_config_revision": "sha256:3eb71252f241546d4fa9fc23799296de3a75592f189449f056dadf103313998f",
   "client_lane": "desktop-qgis",
-  "client_version": "3.44.14-Solothurn",
+  "client_version": "3.44.13-Solothurn",
   "protocol": "ogc-features",
   "protocol_version": "1.0",
-  "environment": "local",
+  "environment": "ci",
   "results": [
     {
       "test_case_id": "CERT-CONN-01",
       "status": "pass",
-      "duration_ms": 415,
+      "duration_ms": 412,
       "measured_count": null,
       "measured_delta": null,
       "notes": "OAPIF provider connected and layer loaded successfully.",
@@ -51,7 +51,7 @@
     {
       "test_case_id": "CERT-DISC-01",
       "status": "pass",
-      "duration_ms": 102,
+      "duration_ms": 19,
       "measured_count": 10,
       "measured_delta": null,
       "notes": "Collection 0 discovered with 10 features.",
@@ -157,54 +157,27 @@
       "evidence_ref": ""
     },
     {
-      "test_case_id": "NB-PQG-OAPIFT-01",
-      "status": "pass",
-      "duration_ms": null,
-      "measured_count": 1,
-      "measured_delta": null,
-      "notes": "OGC API Features Part 4 create through the QGIS OAPIF provider added 'pyqgis-oapift-create', confirmed by an independent /items read rather than by commitChanges(). Authenticated with the X-API-Key header from the session authcfg; an anonymous write is refused.",
-      "evidence_ref": ""
-    },
-    {
-      "test_case_id": "NB-PQG-OAPIFT-02",
-      "status": "pass",
-      "duration_ms": null,
-      "measured_count": null,
-      "measured_delta": null,
-      "notes": "OGC API Features Part 4 update rewrote 'name' from 'pyqgis-oapift-update-seed' to 'pyqgis-oapift-update' in place, confirmed server-side, with no extra row created.",
-      "evidence_ref": ""
-    },
-    {
-      "test_case_id": "NB-PQG-OAPIFT-03",
-      "status": "pass",
-      "duration_ms": null,
-      "measured_count": 1,
-      "measured_delta": null,
-      "notes": "OGC API Features Part 4 delete removed 'pyqgis-oapift-delete' and left every other row in place, confirmed server-side.",
-      "evidence_ref": ""
-    },
-    {
       "test_case_id": "CERT-RNDR-01",
       "status": "pass",
-      "duration_ms": 107,
+      "duration_ms": 70,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "Headless render produced 1453 byte PNG.",
+      "notes": "Headless render produced 1449 byte PNG.",
       "evidence_ref": ""
     },
     {
       "test_case_id": "CERT-RNDR-02",
       "status": "pass",
-      "duration_ms": 135,
+      "duration_ms": 42,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "Post-reload render: 1488 byte PNG (pre-reload: 1488 bytes).",
+      "notes": "Post-reload render: 1464 byte PNG (pre-reload: 1464 bytes).",
       "evidence_ref": ""
     },
     {
       "test_case_id": "CERT-RNDR-SYM-01",
       "status": "pass",
-      "duration_ms": 171,
+      "duration_ms": 34,
       "measured_count": 2160,
       "measured_delta": null,
       "notes": "QgsMarkerSymbol render produced 2160 pixels matching the declared symbol color (30, 100, 200) (tolerance 35).",
@@ -213,7 +186,7 @@
     {
       "test_case_id": "CERT-RNDR-LIN-01",
       "status": "pass",
-      "duration_ms": 86,
+      "duration_ms": 31,
       "measured_count": 7182,
       "measured_delta": null,
       "notes": "Marker outline produced 7182 pixels matching the declared stroke color (26, 26, 46) (tolerance 35). Substantiated via marker outline until the line-geometry fixture follow-on lands.",
@@ -222,7 +195,7 @@
     {
       "test_case_id": "CERT-RNDR-FIL-01",
       "status": "pass",
-      "duration_ms": 89,
+      "duration_ms": 30,
       "measured_count": 7858,
       "measured_delta": null,
       "notes": "Marker fill produced 7858 pixels matching the declared fill color (30, 100, 200) (tolerance 35). Substantiated via marker fill until the polygon-geometry fixture follow-on lands.",
@@ -230,8 +203,8 @@
     }
   ],
   "summary": {
-    "total": 24,
-    "passed": 21,
+    "total": 21,
+    "passed": 18,
     "failed": 0,
     "skipped": 3,
     "not_applicable": 0
