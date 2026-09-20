@@ -106,3 +106,20 @@ That deliberately isolates the missing pre-export validation; the real PostGIS
 client replay above independently reproduces and resolves the HTTP 500.
 `endpoint-before.json` retains the eight assertion failures, with no skipped
 cases. No acceptance criterion is released.
+
+## Focused .NET result
+
+The final focused run passed **24/24**, with zero failures or skipped tests:
+eight new outside-window endpoint cases, two new valid cross-CRS cases,
+eight request-CRS unit cases, the two existing Zarr trim cases, and four
+existing plain/subset/malformed/reversed-bound endpoint cases.
+`endpoint-after.json` records every test name, outcome, counter, and the exact
+filter. The test project was rebuilt using `BuildProjectReferences=false`
+after the complete local dependency build; its copied WCS assembly hash was
+verified against the rebuilt protocol assembly. No tests were weakened,
+removed, or skipped.
+
+The pre-PR script's dry run selected the WFS/WCS/WPS shard. The local checks
+above replace its solution-targeted formatting step with the operator-required
+changed-project-only invocations. The PR's normal required gates remain the
+admission checks for its exact head.
