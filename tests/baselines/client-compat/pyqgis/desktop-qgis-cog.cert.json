@@ -1,0 +1,61 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260919T153452Z",
+  "run_date": "2026-09-19T15:34:52.901639+00:00",
+  "server_version": "unknown",
+  "server_commit": "16e3ba0bc01dbf5ec2d197f3897ac03aef8fda1d",
+  "fixture_revision": "sha256:7cf9f0e0c2ba2de6aadef788b86e0371762627dfdb4fe5f1e4088cc993ba62d4",
+  "server_config_revision": "sha256:3eb71252f241546d4fa9fc23799296de3a75592f189449f056dadf103313998f",
+  "client_lane": "desktop-qgis",
+  "client_version": "3.44.14-Solothurn",
+  "protocol": "cog",
+  "protocol_version": "GeoTIFF",
+  "environment": "local",
+  "results": [
+    {
+      "test_case_id": "CERT-CONN-01",
+      "status": "pass",
+      "duration_ms": 78,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "QgsRasterLayer opened the range-proxied COG through the stock gdal provider.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 1,
+      "measured_delta": null,
+      "notes": "64x64, 1 band, EPSG:4326, extent (-122.5, 37.7, -122.35, 37.84).",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 1977,
+      "measured_delta": null,
+      "notes": "HEAD reported 1977 bytes twice, unranged GET returned 1977 bytes, and Range: bytes=0-3 answered 206 with the TIFF magic after it.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "provider.sample at (-122.42, 37.77) = 100.000000, ImageServer identify = 100.000000.",
+      "evidence_ref": ""
+    }
+  ],
+  "summary": {
+    "total": 4,
+    "passed": 4,
+    "failed": 0,
+    "skipped": 0,
+    "not_applicable": 0
+  },
+  "cite_results": null,
+  "extensions": []
+}

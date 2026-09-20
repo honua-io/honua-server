@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Db.Postgres.Features.Infrastructure;
+using Npgsql;
+
 namespace Honua.Db.Postgres.Features.Metadata;
 
 /// <summary>
@@ -27,6 +30,38 @@ internal static class MetadataV2CompatSnapshotSql
     /// </summary>
     internal const string CatalogSchemaPlaceholder = "__CATALOG_SCHEMA__";
 
+    /// <summary>Optional relationship table, or a typed empty relation for older V1 catalogs.</summary>
+    internal const string RelationshipRowsPlaceholder = "__RELATIONSHIP_ROWS__";
+
+    internal const string EmptyRelationshipRows = """
+        SELECT NULL::integer AS layer_id, NULL::integer AS relationship_id,
+               NULL::text AS name, NULL::integer AS related_layer_id,
+               NULL::text AS relationship_type, NULL::text AS origin_foreign_key,
+               NULL::text AS destination_foreign_key, NULL::text AS description
+        WHERE FALSE
+        """;
+
+    /// <summary>Builds the shared query without requiring the optional V1 relationship table.</summary>
+    internal static async Task<string> BuildQueryAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction? transaction,
+        string schemaName,
+        CancellationToken cancellationToken)
+    {
+        var catalogSchema = SchemaSearchPath.ValidateAndQuote(schemaName);
+        // A missing optional table must not make UndefinedTable handling hide every layer.
+        await using var relationshipTable = new NpgsqlCommand(
+            "SELECT to_regclass(format('%I.%I', @schema, 'relationships')) IS NOT NULL;", connection, transaction);
+        relationshipTable.Parameters.AddWithValue("schema", schemaName);
+        var hasRelationships = (bool)(await relationshipTable.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) ?? false);
+        var relationshipRows = hasRelationships
+            ? $"SELECT layer_id, relationship_id, name, related_layer_id, relationship_type, origin_foreign_key, destination_foreign_key, description FROM {catalogSchema}.relationships"
+            : EmptyRelationshipRows;
+        return BuildDocumentFromV1Catalog
+            .Replace(CatalogSchemaPlaceholder, catalogSchema, StringComparison.Ordinal)
+            .Replace(RelationshipRowsPlaceholder, relationshipRows, StringComparison.Ordinal);
+    }
+
     /// <summary>
     /// Read-only query template returning a single <c>jsonb</c> column: the synthesized
     /// Metadata v2 graph document for the bound <c>@environment</c>. Returns <c>NULL</c>
@@ -36,6 +71,9 @@ internal static class MetadataV2CompatSnapshotSql
     internal const string BuildDocumentFromV1Catalog =
         """
             WITH
+            relationship_rows AS (
+                __RELATIONSHIP_ROWS__
+            ),
             status_doc AS (
                 SELECT jsonb_build_object('lifecycle', 'active', 'state', 'ready') AS value
             ),
@@ -43,6 +81,7 @@ internal static class MetadataV2CompatSnapshotSql
                 SELECT to_jsonb(ARRAY[
                     'FeatureServer',
                     'MapServer',
+                    'VectorTileServer',
                     'ImageServer',
                     'GPServer',
                     'OgcFeatures',
@@ -107,6 +146,11 @@ internal static class MetadataV2CompatSnapshotSql
                     -- to anonymous only when no policy was seeded. (honua-server#1345.)
                     COALESCE(s.metadata -> 'accessPolicy', jsonb_build_object('allowAnonymous', true)) AS service_access_policy,
                     COALESCE(l.metadata -> 'accessPolicy', jsonb_build_object('allowAnonymous', true)) AS layer_access_policy,
+                    -- Annotation values are strings in Metadata v2, even when V1 used JSON booleans.
+                    jsonb_strip_nulls(jsonb_build_object(
+                        'honua.io/attachments', COALESCE(l.metadata #>> '{annotations,honua.io/attachments}', l.metadata ->> 'honua.io/attachments'),
+                        'supportsAttachments', COALESCE(l.metadata #>> '{annotations,supportsAttachments}', l.metadata ->> 'supportsAttachments')
+                    )) AS layer_annotations,
                     -- Temporal (time-aware) configuration carried through from v1 layer
                     -- metadata so a layer published with timeInfo (startTimeField /
                     -- endTimeField / trackIdField) compiles into the v2 resource's typed
@@ -146,7 +190,7 @@ internal static class MetadataV2CompatSnapshotSql
                             'title', layer_name,
                             'description', layer_description,
                             'labels', '{}'::jsonb,
-                            'annotations', '{}'::jsonb,
+                            'annotations', layer_annotations,
                             'keywords', '[]'::jsonb,
                             'themes', '[]'::jsonb
                         ),
@@ -204,7 +248,21 @@ internal static class MetadataV2CompatSnapshotSql
                             FROM __CATALOG_SCHEMA__.layer_fields lf
                             WHERE lf.layer_id = layer_rows.layer_id
                         ), '[]'::jsonb),
-                        'relationships', '[]'::jsonb,
+                        'relationships', COALESCE((
+                            SELECT jsonb_agg(jsonb_build_object(
+                                'id', 'rel-' || r.layer_id::text || '-' || r.relationship_id::text,
+                                'name', r.name,
+                                'description', r.description,
+                                'relatedResourceId', 'res-layer-' || r.related_layer_id::text,
+                                'role', r.relationship_type,
+                                'cardinality', 'one-to-many',
+                                'originField', r.origin_foreign_key,
+                                'destinationField', r.destination_foreign_key,
+                                'esriRelationshipId', r.relationship_id
+                            ) ORDER BY r.relationship_id)
+                            FROM relationship_rows r
+                            WHERE r.layer_id = layer_rows.layer_id
+                        ), '[]'::jsonb),
                         'styleResourceIds', '[]'::jsonb,
                         'spatial', jsonb_build_object(
                             'spatialReference', jsonb_build_object(
@@ -365,8 +423,8 @@ internal static class MetadataV2CompatSnapshotSql
                         -- the WCS GetCapabilities preflight 404s with OperationNotSupported even
                         -- though the raster-backed layers exist; without GPServer the GeoServices
                         -- GPServer service/task routes 404 with "GPServer is not enabled". (honua-server#1412.)
-                        'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'ImageServer', 'GPServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
-                        'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'ImageServer', 'GPServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
+                        'protocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'VectorTileServer', 'ImageServer', 'GPServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
+                        'enabledProtocols', to_jsonb(ARRAY['FeatureServer', 'MapServer', 'VectorTileServer', 'ImageServer', 'GPServer', 'OData', 'Grpc', 'OgcFeatures', 'Wfs20', 'Wms', 'Wmts', 'Wcs', 'OGC-API-Maps', 'OGC-API-Tiles', 'OGC-API-Coverages']::text[]),
                         'options', jsonb_build_object('capabilities', to_jsonb(service_capabilities)),
                         'accessPolicy', service_access_policy,
                         'status', (SELECT value FROM status_doc),

@@ -45,6 +45,12 @@ public static partial class EndpointRegistry
 
         // OGC SensorThings API (STA v1.1) read surface (#1747)
         new("GET", "/sta/v1.1"),
+        // Discoverability aliases redirecting to the canonical /sta/v1.1 roots
+        // above. See the comment in SensorThingsEndpoints.MapSensorThingsEndpoints:
+        // the spec does not standardise the prefix, and /sensorthings is the guess
+        // that #4202 and the certification audit both made.
+        new("GET", "/sensorthings/v1.1"),
+        new("GET", "/sensorthings/v1.1/{*staPath}"),
         new("GET", "/sta/v1.1/Things"),
         new("GET", "/sta/v1.1/Things({id})"),
         new("GET", "/sta/v1.1/Sensors"),

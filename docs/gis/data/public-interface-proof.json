@@ -1769,6 +1769,53 @@
       ]
     },
     {
+      "surfaceId": "arcgis-server-admin",
+      "displayName": "ArcGIS Server Admin API service resource (read-only projection)",
+      "surfaceKind": "http-route-family",
+      "protocol": "ArcGIS Server Admin",
+      "canonicalIdentifier": "/admin/services/{serviceName}.{serviceType}",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/admin/services/",
+        "/rest/admin/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus Admin API service-resource integration tests (GET and POST, signed-in read, anonymous refusal, unknown service and unserved type hidden as 404)",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.Portal.cs",
+            "src/Honua.Protocols.GeoServices/Sharing/ArcGisServerAdminEndpoints.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Sharing/ArcGisServerAdminServiceResourceTests.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-io/honua-server#5036",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "The resource is a read-only projection of what the public FeatureServer root already states (protocols, capabilities, branch-versioning availability via the same IVersionManager + entitlement decision) and names no host, cluster or data-store detail; the EndpointRegistry drift gate keeps the two route rows and their [Endpoint]-attributed tests in step.",
+          "executionLane": "ci:architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.Portal.cs",
+            "src/Honua.Protocols.GeoServices/Sharing/ArcGisServerAdminEndpoints.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Sharing/ArcGisServerAdminServiceResourceTests.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-io/honua-server#5036",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "geocode-server",
       "displayName": "GeoServices REST GeocodeServer",
       "surfaceKind": "http-route-family",
@@ -2484,12 +2531,15 @@
       "operationKeys": [
         "WCS-2.0.1::GetCapabilities",
         "WCS-2.0.1::DescribeCoverage",
-        "WCS-2.0.1::GetCoverage"
+        "WCS-2.0.1::GetCoverage",
+        "WCS-1.0.0::GetCapabilities",
+        "WCS-1.0.0::DescribeCoverage",
+        "WCS-1.0.0::GetCoverage"
       ],
       "proofs": [
         {
           "proofClass": "route-coverage",
-          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks",
+          "proofMechanism": "EndpointRegistry coverage and deployed-route drift checks. WCS 1.0.0 is served from these same routes by version negotiation rather than on its own path, so its GetCapabilities, DescribeCoverage and GetCoverage operations are covered by this surface; stock QGIS ships a WCS 1.0/1.1 client only, which is why 1.0.0 is served at all.",
           "executionLane": "ci:test-all+architecture",
           "evidenceLocations": [
             "src/Honua.Server/EndpointRegistry.cs",
@@ -3174,10 +3224,11 @@
       "displayName": "OGC SensorThings API (STA v1.1)",
       "surfaceKind": "http-route-family",
       "protocol": "OGC SensorThings API v1.1",
-      "canonicalIdentifier": "/sta/v1.1",
+      "canonicalIdentifier": "/sta/v1.1 (alias: /sensorthings/v1.1)",
       "parentSurfaceId": null,
       "endpointPrefixes": [
-        "/sta/v1.1"
+        "/sta/v1.1",
+        "/sensorthings/v1.1"
       ],
       "endpointExactMatches": [],
       "endpointContains": [],
@@ -3853,6 +3904,50 @@
           "status": "implemented",
           "linkedTicket": "#464",
           "versionCaptureRule": "Record the exact MapLibre GL JS version, run date, and immutable MVT .cert.json link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md."
+        }
+      ]
+    },
+    {
+      "surfaceId": "cog-range-proxy",
+      "displayName": "Published Cloud Optimized GeoTIFF range proxy",
+      "surfaceKind": "http-route-family",
+      "protocol": "Cloud Optimized GeoTIFF",
+      "canonicalIdentifier": "/api/v1/rasters/cog/{artifactId}",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/rasters/cog/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus COG artifact endpoint integration tests (publish, HEAD length, 206 ranges, cache bypass)",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/CogArtifactEndpointTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "QGIS gdal provider over GDAL /vsicurl (pyqgis lane) and the desktop client checklist",
+          "executionLane": "ci:client-compat-pyqgis",
+          "evidenceLocations": [
+            "tests/python/pyqgis/test_cog_client_compat.py",
+            "tests/baselines/client-compat/pyqgis/desktop-qgis-cog.cert.json",
+            "docs/gis/CLIENT_CERTIFICATION_CHECKLIST.md"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": "Record the QGIS build and GDAL version in the .cert.json envelope."
         }
       ]
     },

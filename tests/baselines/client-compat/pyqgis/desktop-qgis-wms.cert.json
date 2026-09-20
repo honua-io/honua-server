@@ -1,0 +1,106 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260918T230324Z",
+  "run_date": "2026-09-18T23:03:24.610346+00:00",
+  "server_version": "unknown",
+  "server_commit": "",
+  "fixture_revision": "sha256:7cf9f0e0c2ba2de6aadef788b86e0371762627dfdb4fe5f1e4088cc993ba62d4",
+  "server_config_revision": "sha256:3eb71252f241546d4fa9fc23799296de3a75592f189449f056dadf103313998f",
+  "client_lane": "desktop-qgis",
+  "client_version": "3.44.14-Solothurn",
+  "protocol": "wms",
+  "protocol_version": "1.3.0",
+  "environment": "local",
+  "results": [
+    {
+      "test_case_id": "CERT-CONN-01",
+      "status": "pass",
+      "duration_ms": 9,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "GetCapabilities parsed and the requested layer resolved.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-DISC-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "All three browser_compat layers resolved: ['Browser Points', 'Browser Lines', 'Browser Polygons'].",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 65536,
+      "measured_delta": null,
+      "notes": "GetMap returned a 256x256 block through the wms provider.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-GEOM-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Layer CRS resolved to EPSG:4326.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-SCHM-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "GetFeatureInfo returned a provider-parsable identify result.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-ERRH-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Unknown layer yielded an invalid layer rather than a silent blank.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-URL-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 3904,
+      "measured_delta": null,
+      "notes": "GetLegendGraphic returned a 122x32 legend image via the capabilities LegendURL.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-RNDR-SYM-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "Style 'default' rendered through the provider; the server rejected an unadvertised style with 400.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 1,
+      "measured_delta": null,
+      "notes": "Advertised time Dimension '2024-01-01T12:00:00Z/2024-01-10T12:00:00Z/PT0S' accepted by QGIS as 1 available range(s); time-aware GetMap rendered.",
+      "evidence_ref": "2024-01-01T12:00:00Z/2024-01-10T12:00:00Z/PT0S"
+    }
+  ],
+  "summary": {
+    "total": 9,
+    "passed": 9,
+    "failed": 0,
+    "skipped": 0,
+    "not_applicable": 0
+  },
+  "cite_results": null,
+  "extensions": []
+}

@@ -1,10 +1,10 @@
 {
   "schema_version": "1.0",
-  "run_id": "20260829T205535Z",
-  "run_date": "2026-08-29T20:55:35.537514+00:00",
-  "server_version": "1.0.0+e358ef1b50961de6fe6e4fae172e544418b7fe0c",
-  "server_commit": "e358ef1b50961de6fe6e4fae172e544418b7fe0c",
-  "fixture_revision": "sha256:62fe29ac1e00af62ce6f7708f2a0ff9d959c4730c9a27abe24467489e103a312",
+  "run_id": "20260918T081523Z",
+  "run_date": "2026-09-18T08:15:23.930508+00:00",
+  "server_version": "2026.1.1",
+  "server_commit": "defedd5a93c7b66155c1b185415bae81c92290f7",
+  "fixture_revision": "sha256:f1029ff590000dff56c9dcf109e510ab13d3456d25a6d9121c10a850d42081e4",
   "server_config_revision": "sha256:3eb71252f241546d4fa9fc23799296de3a75592f189449f056dadf103313998f",
   "client_lane": "py-owslib",
   "client_version": "0.36.0",
@@ -55,7 +55,7 @@
     {
       "test_case_id": "CERT-DISC-01",
       "status": "pass",
-      "duration_ms": 0,
+      "duration_ms": 1,
       "measured_count": 3,
       "measured_delta": null,
       "notes": "WebMapService.contents listed 3 named layers (['Browser Points', 'Browser Lines', 'Browser Polygons']), each nested under the service root layer.",
@@ -68,7 +68,7 @@
       "duration_ms": 0,
       "measured_count": 3,
       "measured_delta": null,
-      "notes": "Layer 'Browser Points': queryable=1, abstract present, CRS options ['EPSG:4326', 'EPSG:3857', 'CRS:84'], EX_GeographicBoundingBox (-122.44, 37.76, -122.4, 37.79), styles ['default'].",
+      "notes": "Layer 'Browser Points': queryable=1, abstract present, CRS options ['CRS:84', 'EPSG:4326', 'EPSG:3857'], EX_GeographicBoundingBox (-122.44, 37.76, -122.4, 37.79), styles ['default'].",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -145,7 +145,7 @@
     {
       "test_case_id": "CERT-GEOM-02",
       "status": "pass",
-      "duration_ms": 18,
+      "duration_ms": 44,
       "measured_count": 173,
       "measured_delta": null,
       "notes": "OWSLib emitted the WMS 1.3.0 CRS parameter (crs=EPSG:3857, never the 1.1.1 SRS spelling) for a CRS the layer advertises, and the server returned rendered content at the requested size instead of a ServiceException. The response is imagery, so the CRS is substantiated by the request/response pair plus the CRS:84/EPSG:4326 axis-order equivalence proved in NB-OWS-WMS-MAP-02.",
@@ -158,7 +158,7 @@
       "duration_ms": 7,
       "measured_count": null,
       "measured_delta": null,
-      "notes": "OWSLib raised owslib.util.ServiceException from the server's WMS ServiceExceptionReport, and the message names the undefined layer: \"Layer 'does-not-exist-9999' is not defined.\"",
+      "notes": "OWSLib raised owslib.util.ServiceException from the server's WMS ServiceExceptionReport, and the message names the undefined layer: '<?xml version=\"1.0\" encoding=\"UTF-8\"?>\\n<ServiceExceptionReport xmlns=\"http://www.opengis.net/ogc\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" version='",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -175,7 +175,7 @@
     {
       "test_case_id": "CERT-RNDR-01",
       "status": "pass",
-      "duration_ms": 88,
+      "duration_ms": 49,
       "measured_count": 173,
       "measured_delta": null,
       "notes": "GetMap returned a decodable 256x200 PNG at the requested size and format, with 173 non-transparent pixels over the seeded extent. This is server-rendered imagery accepted and decoded by the client, not client-side drawing: OWSLib has no drawing surface.",
@@ -255,10 +255,10 @@
   ],
   "summary": {
     "total": 24,
-    "passed": 9,
+    "passed": 8,
     "failed": 0,
     "skipped": 0,
-    "not_applicable": 15
+    "not_applicable": 16
   },
   "cite_results": null,
   "extensions": [
@@ -378,7 +378,7 @@
       "duration_ms": null,
       "measured_count": 3,
       "measured_delta": null,
-      "notes": "All 3 advertised GetFeatureInfo formats identified the same feature with a body matching the declared media type: text/plain=46B, application/vnd.ogc.gml=570B, application/json=117B",
+      "notes": "All 3 advertised GetFeatureInfo formats identified the same feature with a body matching the declared media type: text/plain=46B, application/vnd.ogc.gml=570B, application/json=195B",
       "evidence_ref": "",
       "protocol_version": null
     },

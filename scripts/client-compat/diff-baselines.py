@@ -319,7 +319,10 @@ def write_gap_report(
         lines.append("")
 
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("\n".join(lines) + "\n")
+    # The report carries non-ASCII status glyphs, and the default encoding on
+    # Windows is cp1252, which cannot encode them. CI runs this on Linux, so
+    # the crash only ever surfaced on the Windows certification runner.
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
 
 
 def main() -> int:
