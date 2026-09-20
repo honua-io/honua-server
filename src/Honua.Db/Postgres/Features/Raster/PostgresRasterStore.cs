@@ -598,7 +598,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         {
             if (!frameClipExtent)
             {
-                rasterExpr = $"ST_Transform({rasterExpr}, @outputSrid)";
+                rasterExpr = RasterProjectionSql.TransformIfNeeded(rasterExpr, "@outputSrid");
             }
 
             extraParams.Add(("@outputSrid", query.OutputSrid.Value));
@@ -1893,7 +1893,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         {
             if (!frameClipExtent)
             {
-                postMergeRasterExpr = $"ST_Transform({postMergeRasterExpr}, @outputSrid)";
+                postMergeRasterExpr = RasterProjectionSql.TransformIfNeeded(postMergeRasterExpr, "@outputSrid");
             }
 
             extraParams.Add(("@outputSrid", query.OutputSrid.Value));

@@ -105,7 +105,7 @@ internal sealed class PostgresRasterMapRenderer : IRasterMapRenderer
 
         if (effectiveOutputSrid.HasValue && effectiveOutputSrid.Value > 0)
         {
-            rasterExpr = $"ST_Transform({rasterExpr}, @outputSrid)";
+            rasterExpr = RasterProjectionSql.TransformIfNeeded(rasterExpr, "@outputSrid");
             extraParams.Add(("@outputSrid", effectiveOutputSrid.Value));
         }
 

@@ -6,6 +6,7 @@ using System.Data.Common;
 using System.Globalization;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Db.Postgres.Features.Raster;
 using Honua.TestKit;
@@ -141,6 +142,63 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
             result.ContentType.Should().Be("image/png");
             result.Width.Should().Be(64);
             result.Height.Should().Be(64);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData("single")]
+    [InlineData("mosaic")]
+    [InlineData("map")]
+    public async Task Export_WithUnchangedCrs_PreservesNonSquarePixelGrid(string path)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            var rasterId = await InsertQuadrantRasterAsync(schemaName);
+            await using (var connection = await fixture.GetConnectionAsync(schemaName))
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "UPDATE raster_data SET raster = ST_SetUpperLeft(ST_SetScale(raster, 2, -1), 0, 2) WHERE id = @id";
+                command.Parameters.AddWithValue("id", rasterId);
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var store = CreateStore(schemaName);
+            var query = new RasterQuery { OutputFormat = RasterFormat.TIFF, OutputSrid = 4326 };
+            var result = path switch
+            {
+                "single" => await store.ExportImageAsync(LayerId, rasterId, query),
+                "mosaic" => await store.ExportMosaicAsync(LayerId, [rasterId], RasterMergeStrategy.Newest, query),
+                _ => await new PostgresRasterMapRenderer(
+                    new FixtureConnectionProvider(fixture.DataSource),
+                    NullLogger<PostgresRasterMapRenderer>.Instance, schemaName)
+                    .RenderCollectionMapAsync(LayerId, new MapRenderRequest
+                    {
+                        BoundingBox = [0, 0, 4, 2],
+                        BoundingBoxCrs = 4326,
+                        Crs = 4326,
+                        Width = 2,
+                        Height = 2,
+                        Format = RasterFormat.TIFF
+                    })
+            };
+
+            // Decode actual exported bytes, not just the returned metadata. A same-CRS
+            // ST_Transform used to resample this 2x2 grid into square pixels.
+            var decoded = await ProbeExportedRasterAsync(schemaName, result.Data, 4326,
+                (1, 1.5), (3, 1.5), (1, 0.5), (3, 0.5));
+            decoded.Width.Should().Be(2);
+            decoded.Height.Should().Be(2);
+            decoded.XMin.Should().BeApproximately(0, 1e-9);
+            decoded.XMax.Should().BeApproximately(4, 1e-9);
+            decoded.YMin.Should().BeApproximately(0, 1e-9);
+            decoded.YMax.Should().BeApproximately(2, 1e-9);
+            decoded.Values.Should().Equal(1, 2, 3, 4);
         }
         finally
         {
