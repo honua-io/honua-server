@@ -8,6 +8,7 @@ never from a snapshot of the server's current output.
 import argparse
 import io
 import json
+import re
 import struct
 from urllib.parse import urlencode
 from urllib.request import urlopen
@@ -20,6 +21,7 @@ def decode(data):
     dataset = gdal.Open(path)
     assert (dataset.RasterXSize, dataset.RasterYSize, dataset.RasterCount) == (2, 2, 1)
     band = dataset.GetRasterBand(1)
+    assert band.DataType == gdal.GDT_Float32
     values = struct.unpack("=4f", band.ReadRaster(buf_type=gdal.GDT_Float32))
     assert values == (11, -9999, 21, 22), values
     assert band.GetNoDataValue() == -9999
@@ -37,9 +39,21 @@ def gdal_checks(base):
 
     gdal.UseExceptions()
     assert gdal.VersionInfo("RELEASE_NAME") == "3.8.4"
+    requests = []
+
+    def capture(_level, _number, message):
+        if not message.startswith("GDAL: GDALClose"):
+            match = re.search(r"https?://[^\s)]+", message)
+            if match:
+                requests.append(match.group())
+
+    gdal.SetConfigOption("CPL_DEBUG", "ON")
+    gdal.PushErrorHandler(capture)
     dataset = gdal.OpenEx("OGCAPI:" + base + "/ogc/coverages/collections/2496",
                           gdal.OF_RASTER, open_options=["API=COVERAGE", "CACHE=NO"])
     assert dataset is not None
+    assert (dataset.RasterXSize, dataset.RasterYSize, dataset.RasterCount) == (4, 4, 1)
+    assert dataset.GetRasterBand(1).DataType == gdal.GDT_Float32
     # Select the central quarter of the independently authored 4x4 grid.
     window = gdal.Translate("", dataset, format="MEM", projWin=[-123, 39, -121, 37],
                             width=2, height=2, resampleAlg="nearest")
@@ -57,7 +71,9 @@ def gdal_checks(base):
             assert response.headers.get_content_type() == "image/tiff"
             trims.append(decode(response.read()))
     assert trims[0] == trims[1]
-    return {"client": "GDAL 3.8.4", "window_values": values, "trims": trims}
+    gdal.PopErrorHandler()
+    assert any("/coverage?" in request for request in requests), requests
+    return {"client": "GDAL 3.8.4", "window_values": values, "trims": trims, "requests": requests}
 
 
 def owslib_checks(base):
@@ -76,6 +92,7 @@ def owslib_checks(base):
             data = data.getvalue()
         with MemoryFile(data) as memory, memory.open() as dataset:
             assert (dataset.width, dataset.height, dataset.count) == (2, 2, 1)
+            assert dataset.dtypes == ("float32",), dataset.dtypes
             values = dataset.read(1).tolist()
             assert values == [[11, -9999], [21, 22]], values
             assert dataset.nodata == -9999
