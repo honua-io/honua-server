@@ -327,6 +327,10 @@
       "capability": "identity.portal-sharing"
     },
     {
+      "family": "ArcGIS Server Admin",
+      "capability": "serve.geoservices-featureserver"
+    },
+    {
       "family": "Capability Manifest HTTP",
       "capability": "discovery.capability-manifest"
     },

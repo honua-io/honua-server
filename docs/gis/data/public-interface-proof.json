@@ -1769,6 +1769,53 @@
       ]
     },
     {
+      "surfaceId": "arcgis-server-admin",
+      "displayName": "ArcGIS Server Admin API service resource (read-only projection)",
+      "surfaceKind": "http-route-family",
+      "protocol": "ArcGIS Server Admin",
+      "canonicalIdentifier": "/admin/services/{serviceName}.{serviceType}",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/admin/services/",
+        "/rest/admin/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus Admin API service-resource integration tests (GET and POST, signed-in read, anonymous refusal, unknown service and unserved type hidden as 404)",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.Portal.cs",
+            "src/Honua.Protocols.GeoServices/Sharing/ArcGisServerAdminEndpoints.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Sharing/ArcGisServerAdminServiceResourceTests.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-io/honua-server#5036",
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "contract-governance",
+          "proofMechanism": "The resource is a read-only projection of what the public FeatureServer root already states (protocols, capabilities, branch-versioning availability via the same IVersionManager + entitlement decision) and names no host, cluster or data-store detail; the EndpointRegistry drift gate keeps the two route rows and their [Endpoint]-attributed tests in step.",
+          "executionLane": "ci:architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.Portal.cs",
+            "src/Honua.Protocols.GeoServices/Sharing/ArcGisServerAdminEndpoints.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Sharing/ArcGisServerAdminServiceResourceTests.cs",
+            "tests/dotnet/Honua.Architecture.Tests/ApiSurfaceCoverageTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "honua-io/honua-server#5036",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "geocode-server",
       "displayName": "GeoServices REST GeocodeServer",
       "surfaceKind": "http-route-family",

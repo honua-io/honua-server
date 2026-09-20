@@ -275,6 +275,7 @@ internal static class FeatureRegistrationExtensions
         endpoints.MapZarrEndpoints();
         endpoints.MapGeoservicesCatalogEndpoints();
         endpoints.MapSharingRestEndpoints();
+        endpoints.MapArcGisServerAdminEndpoints();
         endpoints.MapImageServerEndpoints();
         endpoints.MapMapServerEndpoints();
         endpoints.MapVectorTileServerEndpoints();
