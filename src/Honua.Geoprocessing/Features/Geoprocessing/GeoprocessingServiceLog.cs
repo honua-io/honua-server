@@ -245,4 +245,9 @@ internal static partial class GeoprocessingServiceLog
     public static partial void OgcProjectedProcessCount(
         ILogger logger,
         int count);
+
+    [LoggerMessage(8041, LogLevel.Warning, "Job submission refused: metadata key {MetadataKey} uses a reserved parameter namespace")]
+    public static partial void ReservedMetadataKeyRejected(
+        ILogger logger,
+        string metadataKey);
 }
