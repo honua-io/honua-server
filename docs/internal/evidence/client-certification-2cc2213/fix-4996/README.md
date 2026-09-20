@@ -88,3 +88,8 @@ patch is used for these two functions.
 These are focused fix-candidate proofs, not a claim that the other roster cells
 or the official release artifact have been recertified. No acceptance criterion
 is released and no protocol surface is demoted.
+
+Project-scoped `timeout 20m dotnet format --no-restore --include ...` passed for
+the changed protocol handler and the two changed Coverage test files after the
+review fixes. The served and developer OpenAPI subset/scaling parameter
+definitions match; Python syntax and `git diff --check` also pass.
