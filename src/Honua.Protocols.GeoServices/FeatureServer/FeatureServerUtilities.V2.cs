@@ -46,6 +46,7 @@ internal static partial class FeatureServerEndpoints
     /// <param name="supportsGeobufOutput">Whether the runtime supports geobuf output.</param>
     /// <param name="supportsAttachmentUploads">Whether attachment uploads are wired up.</param>
     /// <param name="branchVersioningEnabled">Whether branch versioning is available (Postgres + Pro entitlement).</param>
+    /// <param name="versionManagementEnabled">Whether the experimental VMS lifecycle surface is enabled.</param>
     /// <param name="offlineSyncEnabled">Whether disconnected-sync routes are enabled by lifecycle configuration.</param>
     private static FeatureServerResponse MapServiceToResponseV2(
         MetadataV2Service service,
@@ -55,6 +56,7 @@ internal static partial class FeatureServerEndpoints
         bool supportsGeobufOutput,
         bool supportsAttachmentUploads,
         bool branchVersioningEnabled,
+        bool versionManagementEnabled,
         bool offlineSyncEnabled)
     {
         ArgumentNullException.ThrowIfNull(service);
@@ -107,8 +109,8 @@ internal static partial class FeatureServerEndpoints
             SyncCapabilities = offlineSyncEnabled && ServiceSupportsSyncV2(service) ? new FeatureServerSyncCapabilities() : null,
             HasVersionedData = branchVersioningEnabled,
             IsDataVersioned = branchVersioningEnabled,
-            SupportsBranchVersioning = branchVersioningEnabled,
-            VersionManagementServerUrl = branchVersioningEnabled
+            SupportsBranchVersioning = versionManagementEnabled,
+            VersionManagementServerUrl = versionManagementEnabled
                 ? $"/rest/services/{service.Metadata.Name}/VersionManagementServer"
                 : null,
         };
@@ -129,6 +131,7 @@ internal static partial class FeatureServerEndpoints
         FeatureServerExtrusionInfo? extrusionInfo,
         bool supportsGeobufOutput,
         bool supportsAttachmentUploads,
+        bool branchVersioningEnabled,
         bool offlineSyncEnabled)
     {
         ArgumentNullException.ThrowIfNull(service);
@@ -210,6 +213,8 @@ internal static partial class FeatureServerEndpoints
             SupportsReturningQueryExtent = supportsAdvancedQueries,
             SupportsRollbackOnFailureParameter = supportsEditing,
             SupportsApplyEditsWithGlobalIds = false,
+            IsDataVersioned = branchVersioningEnabled,
+            IsDataBranchVersioned = branchVersioningEnabled,
             HasAttachments = supportsQueryAttachments,
             // When the layer exposes attachments, advertise the attachment-capability
             // flags Esri clients inspect. The JS SDK gates queryAttachments(where) on
