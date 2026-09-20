@@ -31,9 +31,9 @@
       },
       "arcpy": {
         "pass": 35,
-        "blocked": 55,
-        "n/a-no-client": 2,
-        "fail": 2
+        "blocked": 54,
+        "fail": 3,
+        "n/a-no-client": 2
       },
       "qgis-ui": {
         "pass": 53,
@@ -1396,12 +1396,14 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "fail",
           "previous_pass": {
             "state": "pass",
             "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-featureserver.cert.json - operations FS-PRM-OUTSTATISTICS-GROUPBYFIELDSFORSTATISTICS, ArcGIS Pro/arcpy 3.7.1.1904: outStatistics (count) computed over the cursor -> 3"
           },
-          "citation": "docs/gis/arcpy-local-calculation-verdict-audit-2026-09-20.md: Historical receipt counts SearchCursor rows locally; it does not prove a native outStatistics/groupByFieldsForStatistics request. Fresh remote aggregate evidence and independent result assertions are required."
+          "citation": "docs/gis/arcpy-local-calculation-verdict-audit-2026-09-20.md: Historical receipt counts SearchCursor rows locally; it does not prove a native outStatistics/groupByFieldsForStatistics request. Fresh remote aggregate evidence and independent result assertions are required.",
+          "issue": "https://github.com/honua-io/honua-server/issues/5045",
+          "evidence": "honua-esri-compat/evidence/arcpy-dbms-statistics-20260920-e/observations.json (SHA-256 65eb956676b7b69000240ba2b82974ab100860339a1da717c056d8c8d53c235e), native GET/POST trace and arcpy-dbms-statistics-readback-20260920/observations.json: ArcPy 3.7.1 sends real outStatistics. Ungrouped values match SQL count3/sum6, but missing response fields leave a native output table with only OBJECTID. Grouped statistics returns server error500 (#5043). Activated Conda environment with isolated user-site imports and ordinary remote control; zero UI credit; stable JIT source25fa17d9. Historical local-count pass remains invalid."
         },
         "qgis-ui": {
           "state": "blocked",

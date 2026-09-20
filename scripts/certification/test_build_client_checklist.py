@@ -19,6 +19,8 @@ class ExclusionReviewTests(unittest.TestCase):
         cells = [cell for row in rows for cell in row["lanes"].values()]
         self.assertEqual(376, len(cells))
         self.assertEqual(166, sum(cell["state"] == "pass" for cell in cells))
+        self.assertEqual(6, sum(cell["state"] == "fail" for cell in cells))
+        self.assertEqual(136, sum(cell["state"] == "blocked" for cell in cells))
         reopened = [cell for cell in cells if "previous_exclusion" in cell]
         self.assertEqual(151, len(reopened))
         for cell in reopened:
@@ -69,14 +71,15 @@ class ExclusionReviewTests(unittest.TestCase):
         self.assertEqual("blocked", identify["lanes"]["pyqgis"]["state"])
         self.assertEqual("blocked", elevation["lanes"]["qgis-ui"]["state"])
 
-    def test_local_arcpy_count_reopens_remote_statistics_and_keeps_history(self):
+    def test_native_arcpy_failure_keeps_invalid_local_count_history(self):
         rows = checklist.build_rows()
         cell = next(row["lanes"]["arcpy"] for row in rows
                     if row["protocol"] == "featureserver" and row["operation"] == "statistics")
-        self.assertEqual("blocked", cell["state"])
+        self.assertEqual("fail", cell["state"])
         self.assertEqual("pass", cell["previous_pass"]["state"])
         self.assertEqual(checklist.EV["arcpy-featureserver-statistics"], cell["previous_pass"]["evidence"])
-        self.assertNotIn("evidence", cell)
+        self.assertTrue(cell["issue"].endswith("/5045"))
+        self.assertIn("arcpy-dbms-statistics-20260920-e", cell["evidence"])
         cell.update(cell["previous_pass"])
         self.assertTrue(any("local calculation" in error for error in checklist.validate(rows)))
 
