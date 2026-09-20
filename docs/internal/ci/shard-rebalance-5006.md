@@ -67,3 +67,7 @@ Local coverage validation passed: all 1,489 covered classes have owners, all
 tests. Evaluating the baseline TRX through the live capability mapper assigns
 33 cases to Basic and Conformance and 96 to Rendering and Records, each with
 exactly one owner.
+
+The full local `bash scripts/ci/validate-ci-router.sh` suite passed, including
+new source/test descriptors and class owner pins. Hosted `CI Router Validation`
+also passed in [run 35498558862](https://github.com/honua-io/honua-server/actions/runs/35498558862).
