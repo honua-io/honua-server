@@ -6,8 +6,8 @@ using Honua.Core.Features.FeatureStore.Domain;
 namespace Honua.Protocols.GeoServices.VersionManagementServer;
 
 /// <summary>
-/// Access-control helpers for the VersionManagementServer branch-version surface (BH3-002/003/004).
-/// Centralizes the two version authorization policies so every VMS endpoint applies them
+/// Access-control helpers for branch metadata, feature data and version lifecycle operations.
+/// Centralizes version authorization policies so the GeoServices adapters apply them
 /// consistently and the logic is unit-testable without a running server.
 /// </summary>
 internal static class VersionAccessPolicy
@@ -58,4 +58,16 @@ internal static class VersionAccessPolicy
     internal static bool CanManageVersion(GdbVersion version, string? callerName, bool isAdmin)
         => isAdmin
            || string.Equals(version.Owner, callerName, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Returns whether an already authorized resource editor may change a branch's feature data.
+    /// Public data edits are broader than owner-only version lifecycle management.
+    /// </summary>
+    /// <param name="version">The canonical branch descriptor.</param>
+    /// <param name="callerName">The authenticated principal's name, or null.</param>
+    /// <param name="isAdmin">Whether the caller holds the administrator role.</param>
+    /// <returns>True for Public branches or the branch owner/administrator.</returns>
+    internal static bool CanEditVersionData(GdbVersion version, string? callerName, bool isAdmin)
+        => version.Access == VersionAccess.Public || CanManageVersion(version, callerName, isAdmin);
+
 }

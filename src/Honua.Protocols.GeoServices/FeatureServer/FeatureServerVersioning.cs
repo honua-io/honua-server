@@ -4,8 +4,10 @@
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
+using Honua.Protocols.GeoServices.VersionManagementServer;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -38,11 +40,11 @@ internal static class FeatureServerVersioning
         HttpContext context,
         string? gdbVersion,
         CancellationToken cancellationToken)
-        => ResolveAsync(context, gdbVersion, cancellationToken);
+        => ResolveAsync(context, gdbVersion, forEdit: true, cancellationToken);
 
     /// <summary>
-    /// Resolves the <c>gdbVersion</c> parameter for a query request. Identical gating to the edit
-    /// path; the canonical read overlay is a no-op for DEFAULT.
+    /// Resolves the <c>gdbVersion</c> parameter for a query request with the same provider/license
+    /// gates as edits and the shared branch visibility policy. DEFAULT has no read overlay.
     /// </summary>
     /// <param name="context">The HTTP context.</param>
     /// <param name="gdbVersion">The requested version identity, or null/empty for DEFAULT.</param>
@@ -52,11 +54,12 @@ internal static class FeatureServerVersioning
         HttpContext context,
         string? gdbVersion,
         CancellationToken cancellationToken)
-        => ResolveAsync(context, gdbVersion, cancellationToken);
+        => ResolveAsync(context, gdbVersion, forEdit: false, cancellationToken);
 
     private static async Task<(VersionContext? Version, IResult? Error)> ResolveAsync(
         HttpContext context,
         string? gdbVersion,
+        bool forEdit,
         CancellationToken cancellationToken)
     {
         // Fast DEFAULT path: no version requested. Do not touch the entitlement service or the
@@ -88,6 +91,24 @@ internal static class FeatureServerVersioning
         {
             return (null, StandardErrorHelpers.CreateNotFound(
                 context, $"Version '{gdbVersion}' was not found."));
+        }
+
+        if (!resolved.Value.IsDefault)
+        {
+            var descriptor = await versionManager.GetVersionAsync(
+                resolved.Value.VersionId!.Value, cancellationToken).ConfigureAwait(false);
+            var callerName = context.User?.Identity?.Name;
+            var isAdmin = ServiceDataEditorAuthorization.IsAdminPrincipal(context);
+            if (descriptor is null || !VersionAccessPolicy.IsVersionVisible(descriptor.Value, callerName, isAdmin))
+            {
+                // Do not let a data query confirm the existence of another user's private branch.
+                return (null, StandardErrorHelpers.CreateNotFound(context, $"Version '{gdbVersion}' was not found."));
+            }
+
+            if (forEdit && !VersionAccessPolicy.CanEditVersionData(descriptor.Value, callerName, isAdmin))
+            {
+                return (null, StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage));
+            }
         }
 
         return (resolved.Value, null);

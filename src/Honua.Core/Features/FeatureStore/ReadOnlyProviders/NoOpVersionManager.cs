@@ -31,6 +31,10 @@ public sealed class NoOpVersionManager : IVersionManager
         => throw new NotSupportedException("Branch versioning is not supported by this data provider.");
 
     /// <inheritdoc />
+    public Task<GdbVersion?> GetVersionAsync(Guid versionId, CancellationToken cancellationToken = default)
+        => Task.FromResult<GdbVersion?>(null);
+
+    /// <inheritdoc />
     public Task<IReadOnlyList<GdbVersion>> ListAsync(CancellationToken cancellationToken = default)
         => Task.FromResult<IReadOnlyList<GdbVersion>>(Array.Empty<GdbVersion>());
 

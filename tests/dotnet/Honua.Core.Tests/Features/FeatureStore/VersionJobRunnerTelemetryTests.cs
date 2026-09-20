@@ -89,6 +89,9 @@ public sealed class VersionJobRunnerTelemetryTests
         public Task<GdbVersion?> AlterAsync(AlterVersionRequest request, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 
+        public Task<GdbVersion?> GetVersionAsync(Guid versionId, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
         public Task<IReadOnlyList<GdbVersion>> ListAsync(CancellationToken cancellationToken = default)
             => throw new NotSupportedException();
 

@@ -146,6 +146,10 @@ internal sealed partial class PostgresVersionManager : IVersionManager
     }
 
     /// <inheritdoc />
+    public Task<GdbVersion?> GetVersionAsync(Guid versionId, CancellationToken cancellationToken = default)
+        => FindByIdentityAsync(versionId.ToString("D"), cancellationToken);
+
+    /// <inheritdoc />
     public async Task<IReadOnlyList<GdbVersion>> ListAsync(CancellationToken cancellationToken = default)
     {
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);

@@ -401,20 +401,12 @@ internal sealed partial class FeatureServerQueryExecutor
         FeatureProviderReadOperation operation,
         CancellationToken cancellationToken)
     {
-        if (_providerQueryRouter == null
-            || _metadataGraphProvider == null
-            || !ShouldRouteProviderReaderV2(publication))
+        var reader = await ResolveBoundReaderV2Async(
+            service, resource, publication, storageLayerId, operation, cancellationToken).ConfigureAwait(false);
+        if (reader == null)
         {
             return _streamingFeatureStore;
         }
-
-        var reader = await ResolveReaderV2Async(
-            service,
-            resource,
-            publication,
-            storageLayerId,
-            operation,
-            cancellationToken).ConfigureAwait(false);
 
         return reader as IStreamingFeatureStore
             ?? throw new InvalidOperationException("Streaming feature output is not supported by the configured feature store.");
@@ -427,24 +419,39 @@ internal sealed partial class FeatureServerQueryExecutor
         int storageLayerId,
         FeatureProviderReadOperation operation,
         CancellationToken cancellationToken)
+        => await ResolveBoundReaderV2Async(
+            service, resource, publication, storageLayerId, operation, cancellationToken).ConfigureAwait(false)
+            ?? _featureReader;
+
+    private async Task<IFeatureReader?> ResolveBoundReaderV2Async(
+        MetadataV2Service service,
+        MetadataV2Resource resource,
+        MetadataV2Publication publication,
+        int storageLayerId,
+        FeatureProviderReadOperation operation,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(resource);
         ArgumentNullException.ThrowIfNull(publication);
 
-        // When no provider router is wired (test/in-process fixtures) or the
-        // graph does not yet route through a per-tenant connection, fall back
-        // to the shared feature reader. This matches the legacy resolver gate.
-        if (_providerQueryRouter == null
-            || _metadataGraphProvider == null
-            || !ShouldRouteProviderReaderV2(publication))
+        if (_providerQueryRouter == null || _metadataGraphProvider == null)
         {
-            return _featureReader;
+            return null;
         }
 
         var snapshot = await _metadataGraphProvider
             .GetCurrentAsync(cancellationToken)
             .ConfigureAwait(false);
+
+        // A publication can inherit the resource's primary binding. Use the same
+        // canonical selection as the provider router instead of treating only
+        // explicit publication overrides as bound data.
+        if (snapshot.ResolveStorageBinding(publication) == null &&
+            string.IsNullOrEmpty(publication.StorageBindingId))
+        {
+            return null;
+        }
 
         return await _providerQueryRouter
             .ResolveReaderAsync(
@@ -458,12 +465,4 @@ internal sealed partial class FeatureServerQueryExecutor
             .ConfigureAwait(false);
     }
 
-    private static bool ShouldRouteProviderReaderV2(MetadataV2Publication publication)
-    {
-        // Mirrors the legacy provider-reader gate: route through the
-        // provider router only when the publication has a backing storage
-        // binding (the V2 graph form of "source-backed"). The router itself
-        // walks the snapshot to find the binding's connection.
-        return !string.IsNullOrEmpty(publication.StorageBindingId);
-    }
 }

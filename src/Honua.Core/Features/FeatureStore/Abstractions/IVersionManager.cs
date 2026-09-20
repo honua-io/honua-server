@@ -44,6 +44,12 @@ public interface IVersionManager
     /// <returns>The updated version, or null when not found.</returns>
     Task<GdbVersion?> AlterAsync(AlterVersionRequest request, CancellationToken cancellationToken = default);
 
+    /// <summary>Reads one existing branch descriptor by its canonical identity.</summary>
+    /// <param name="versionId">The branch identity; DEFAULT is not a branch record.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The branch descriptor, or null when the branch does not exist.</returns>
+    Task<GdbVersion?> GetVersionAsync(Guid versionId, CancellationToken cancellationToken = default);
+
     /// <summary>Lists all branch versions (excluding the implicit DEFAULT).</summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The known branch versions.</returns>

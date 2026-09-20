@@ -71,6 +71,90 @@ public sealed class FeatureServerQueryExecutorTests
             .CountAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
     }
 
+    [Theory]
+    [InlineData(null, false)]
+    [InlineData(null, true)]
+    [InlineData("binding-roads", false)]
+    [InlineData("binding-roads", true)]
+    [InlineData("missing-override", true)]
+    public async Task StatisticsAsync_UsesCanonicalBindingAndPreservesVersion(string? explicitBinding, bool namedVersion)
+    {
+        var sharedReader = Substitute.For<IFeatureReader>();
+        var boundReader = Substitute.For<IFeatureReader>();
+        var service = CreateService();
+        var resource = CreatePointResource(storageBindingIds: ["binding-roads"]);
+        var publication = CreatePublication(service, resource, explicitBinding);
+        var graphProvider = CreateGraphProvider(service, resource, publication, CreateStorageBinding(resource, "binding-roads"));
+        var query = new FeatureQuery
+        {
+            VersionContext = namedVersion ? new VersionContext { VersionId = Guid.NewGuid() } : null
+        };
+        var expected = ImmutableArray.Create<IReadOnlyDictionary<string, object?>>(new Dictionary<string, object?> { ["n"] = 7L });
+        using var cancellation = new CancellationTokenSource();
+        boundReader.QueryStatisticsAsync(7, query, cancellation.Token).Returns(expected);
+        var sut = CreateSut(sharedReader, providerQueryRouter: CreateProviderRouter(boundReader), metadataGraphProvider: graphProvider);
+
+        var actual = await sut.QueryStatisticsAsync(service, resource, publication, 7, query, cancellation.Token);
+
+        actual.Should().Equal(expected);
+        await boundReader.Received(1).QueryStatisticsAsync(7, query, cancellation.Token);
+        sharedReader.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CountAsync_WithUnresolvableExplicitBinding_FailsWithoutSharedFallback()
+    {
+        var sharedReader = Substitute.For<IFeatureReader>();
+        var service = CreateService();
+        var resource = CreatePointResource();
+        var publication = CreatePublication(service, resource, "missing-binding");
+        var graphProvider = CreateGraphProvider(service, resource, publication);
+        var sut = CreateSut(sharedReader, providerQueryRouter: CreateProviderRouter(Substitute.For<IFeatureReader>()), metadataGraphProvider: graphProvider);
+
+        Func<Task> act = () => sut.CountAsync(service, resource, publication, 7, new FeatureQuery(), CancellationToken.None);
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*does not resolve to a storage binding*");
+        sharedReader.ReceivedCalls().Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task StreamQueryAsync_InheritsBindingWithoutSharedFallback(bool supportsStreaming)
+    {
+        var sharedReader = Substitute.For<IFeatureReader>();
+        var sharedStream = Substitute.For<IStreamingFeatureStore>();
+        var boundReader = supportsStreaming
+            ? Substitute.For<IFeatureReader, IStreamingFeatureStore>()
+            : Substitute.For<IFeatureReader>();
+        var service = CreateService();
+        var resource = CreatePointResource(storageBindingIds: ["binding-roads"]);
+        var publication = CreatePublication(service, resource);
+        var graphProvider = CreateGraphProvider(service, resource, publication, CreateStorageBinding(resource, "binding-roads"));
+        var sut = CreateSut(sharedReader, sharedStream, CreateProviderRouter(boundReader), graphProvider);
+        if (supportsStreaming)
+        {
+            ((IStreamingFeatureStore)boundReader).StreamFeaturesAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+                .Returns(_ => (IAsyncEnumerable<Feature>)StreamFeatures([CreateFeature(13, "bound-only")]));
+        }
+        var context = CreateHttpContext();
+        Func<Task> act = () => sut.StreamQueryAsync(service, resource, publication, 7, new FeatureQuery { Limit = 2 },
+            new QueryParameters { F = "json", ReturnGeometry = false }, null, context, CancellationToken.None);
+
+        if (supportsStreaming)
+        {
+            await act();
+            using var document = JsonDocument.Parse(await ReadResponseAsync(context));
+            document.RootElement.GetProperty("features")[0].GetProperty("attributes").GetProperty("name").GetString().Should().Be("bound-only");
+        }
+        else
+        {
+            await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Streaming feature output is not supported*");
+        }
+        sharedReader.ReceivedCalls().Should().BeEmpty();
+        sharedStream.ReceivedCalls().Should().BeEmpty();
+    }
+
     [Fact]
     public async Task QueryWithValidationAsync_WhenReaderThrowsArgumentException_ThrowsInvalidOperationException()
     {

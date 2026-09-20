@@ -340,6 +340,42 @@ public sealed class FeatureServerMutationScenarioTests : IAsyncLifetime
         await AssertFeatureNameAsync(702, "second");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Query_InheritedSharedTableBinding_IsolatesRequestedObjectIdsByLayer()
+    {
+        await using (var connection = await _fixture.Postgres.DataSource.OpenConnectionAsync())
+        await using (var seed = connection.CreateCommand())
+        {
+            using var identifierBuilder = new Npgsql.NpgsqlCommandBuilder();
+            var schema = identifierBuilder.QuoteIdentifier(_fixture.CurrentSchema!);
+            seed.CommandText = $$"""
+                INSERT INTO {{schema}}.features (layer_id, objectid, geometry, attributes)
+                VALUES (0,17001,NULL,'{"name":"layer-zero-only"}'::jsonb),
+                       (1,17002,NULL,'{"name":"layer-one-only"}'::jsonb)
+                """;
+            await seed.ExecuteNonQueryAsync();
+        }
+
+        foreach (var layer in new[] { 0, 1 })
+        {
+            var path = $"/rest/services/test/FeatureServer/{layer}/query?f=json&objectIds=17001,17002";
+            using var response = await _fixture.Client.GetAsync(path + "&outFields=name&returnGeometry=false");
+            response.Be200Ok();
+            var body = await response.Content.ReadAsStringAsync();
+            using var document = JsonDocument.Parse(body);
+            document.RootElement.TryGetProperty("error", out _).Should().BeFalse(body);
+            var feature = document.RootElement.GetProperty("features").EnumerateArray().Should().ContainSingle().Which;
+            feature.GetProperty("attributes").GetProperty("name").GetString()
+                .Should().Be(layer == 0 ? "layer-zero-only" : "layer-one-only");
+            using var countResponse = await _fixture.Client.GetAsync(path + "&returnCountOnly=true");
+            countResponse.Be200Ok();
+            using var countDocument = JsonDocument.Parse(await countResponse.Content.ReadAsStringAsync());
+            countDocument.RootElement.GetProperty("count").GetInt32().Should().Be(1);
+        }
+    }
+
     private async Task<HttpResponseMessage> PostJsonAsync(string path, string json)
     {
         using var content = new StringContent(json, Encoding.UTF8, "application/json");
