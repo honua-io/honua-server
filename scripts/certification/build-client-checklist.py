@@ -1207,6 +1207,82 @@ OPERATION_EXCLUSION_REVIEWS = {
     ) for lane in ("qgis-ui", "pyqgis")
 }
 
+OPERATION_EXCLUSION_REVIEWS.update({
+    ("wfs", "2.0.0", "GetPropertyValue", lane): (
+        "honua-client-compat/docs/reports/pyqgis-wfs-property-url-2026-09-20.md: "
+        "stock PyQGIS OGR consumes the exact GetPropertyValue URL as GeoJSON, with numeric/text "
+        "projection, independent SQL/HTTP and native project reload. The stock WFS provider's "
+        "request-generation gap does not exclude this native consumer. GUI remains untested."
+    ) for lane in ("qgis-ui", "pyqgis")
+})
+
+RESOLVED_EXCLUSION_EVIDENCE[("wfs", "2.0.0", "GetPropertyValue", "pyqgis")] = (
+    "honua-client-compat/evidence/pyqgis-wfs-property-url-20260920-a/observations.json "
+    "(honua-client-compat commit a294c9caa7606fe0b93b52ca76cb0cf9e6d1482d; "
+    "SHA-256 3a960ac74971097e6d3f639f56fc21fc80d05aab81ccfe1f942dc9d584c92f77): "
+    "PyQGIS 3.44.14-Solothurn / GDAL 3.13.3 stock OGR configured GetPropertyValue URL, "
+    "numeric count and text status projections match independent SQL/HTTP and separate QgsProject reloads; "
+    "server 8b7aea9f6c73504d968560227926e3b8b4c5ddd0 / image 28d09586daf7; "
+    "verified TLS, unchanged runtime, worker exit0. Native GeoJSON consumption, not WFS provider "
+    "request generation; Development JIT SDK evidence, zero UI credit"
+)
+
+OPERATION_EXCLUSION_REVIEWS.update({
+    ("naserver", "GeoServices REST", operation, "arcpy"): (
+        "honua-esri-compat/docs/reports/arcpy-routing-and-interop-exclusion-review-2026-09-20.md; "
+        "evidence/arcpy-routing-interop-inventory-20260920/observations.json "
+        "(honua-esri-compat commit f923cc3bb52b9731a75030bd4d66d7c7c80aeba9; "
+        "SHA-256 860f90626eb97cc18b983ac3690e53c3d287b8a5f13255d61c0f7dac43820301): "
+        f"installed {constructor} and arcpy.na.Solve are distinct native GP entrypoints from "
+        "the inspected nax path; primary documentation supports portal-backed input with Basic. "
+        "The prior nax asynchronous-GP observation does not exclude these analysis-layer workflows. "
+        "An owned layer and exact synchronous NAServer request/result still require a native probe; "
+        "this is source inventory, not a native pass or proof of compiled transport."
+    ) for operation, constructor in (("route-solve", "arcpy.na.MakeRouteAnalysisLayer"),
+                                       ("service-area", "arcpy.na.MakeServiceAreaAnalysisLayer"))
+})
+
+OPERATION_EXCLUSION_REVIEWS.update({
+    ("wfs", "2.0.0", "ListStoredQueries", lane): (
+        "honua-client-compat/docs/reports/pyqgis-wfs-storedqueries-gmlas-2026-09-20.md: "
+        "stock GDAL GMLAS and PyQGIS interpret the actual response using the official WFS 2.0 "
+        "schema. Native query/title/return-type tables and parent keys match independent XML "
+        "and project reload. This configured native metadata consumer disproves the broad "
+        "no-client assessment; dedicated WFS-provider request generation and GUI remain untested."
+    ) for lane in ("qgis-ui", "pyqgis")
+})
+
+RESOLVED_EXCLUSION_EVIDENCE[("wfs", "2.0.0", "ListStoredQueries", "pyqgis")] = (
+    "honua-client-compat/evidence/pyqgis-wfs-storedqueries-gmlas-20260920-c/observations.json "
+    "(honua-client-compat commit a294c9caa7606fe0b93b52ca76cb0cf9e6d1482d; "
+    "SHA-256 1dce0b87bf0cc280788a263ed93c2f3438f688fe07f9cef7b04259357fceb91a), "
+    "native-results.json (SHA-256 cc80ed15ae9d8ddab6f43353128bc6cd6df12b913b94e6692268e73067833c63): "
+    "PyQGIS 3.44.14-Solothurn / GDAL 3.13.3 stock GMLAS using the official WFS 2.0 XSD "
+    "and native non-feature metadata configuration; three native tables preserve actual query ID, "
+    "title and eight return types with parent-child joins, independent XML before/after and "
+    "separate QgsProject reload. Verified TLS/private schema cache, worker exit0, unchanged "
+    "server 8b7aea9f6c73504d968560227926e3b8b4c5ddd0 / image 28d09586daf7. "
+    "Configured native schema consumption, not dedicated WFS-provider generation; "
+    "A/B failures preserved; Development JIT SDK evidence, zero GUI credit"
+)
+
+RESOLVED_EXCLUSION_EVIDENCE.update({
+    ("ogc-api-tiles", "1.0", operation, "pyqgis"): (
+        "honua-client-compat/evidence/pyqgis-ogc-tiles-world-crs84-20260920-c/observations.json "
+        "(honua-client-compat commit a294c9caa7606fe0b93b52ca76cb0cf9e6d1482d; "
+        "SHA-256 4258ee7bf0f7899f75be0cf9892a3d84f1e484b228435c059e6ffc15ded016d1), "
+        "native-result.json (SHA-256 f8838c05b3819a0d98cef15379dc48d0ff07f5e7caa8f9d7fe1d07d9eb3bf1db): "
+        f"{operation}, PyQGIS 3.44.14-Solothurn / GDAL 3.13.3 stock OGCAPI collection-based "
+        "tileset discovery and MVT consumption, advertised WorldCRS84Quad selected at zoom10 without "
+        "explicit bounds; all nine SQL fixture IDs/names/point geometries and CRS/extent match "
+        "before/after QgsProject reload within actual encoded tile-grid tolerance; "
+        "server 8b7aea9f6c73504d968560227926e3b8b4c5ddd0 / image 28d09586daf7, stable runtime/SQL, "
+        "verified TLS, worker exit0; post-run interpreter/image-source inspection is separately labelled. "
+        "Does not certify a top-level catalog chooser, WebMercator default discovery or GUI; "
+        "Development JIT SDK evidence, zero UI credit. Earlier failed attempt a and diagnostic b retained"
+    ) for operation in ("landing-tilesets", "tile")
+})
+
 NATIVE_REVIEW_FAILURES = {
     ("featureserver", "GeoServices REST", "statistics", "arcpy"): {
         "issue": "https://github.com/honua-io/honua-server/issues/5045",
