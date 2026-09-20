@@ -33,6 +33,7 @@ internal sealed class OgcCoveragesHandler
     private const int MaxScaleSize = 8192;
     private const string CoverageItemType = "coverage";
     private const string GeoTiffContentType = "image/tiff";
+    private const string GeoTiffLinkType = "image/tiff; application=geotiff";
     private const string PngContentType = "image/png";
     private const string CoveragesProtocol = "OGC-API-Coverages";
 
@@ -53,6 +54,7 @@ internal sealed class OgcCoveragesHandler
             "resolution",
             "scale-factor",
             "scale-size",
+            "scaleSize",
             "scale-axes",
             "datetime",
             "subset");
@@ -473,6 +475,7 @@ internal sealed class OgcCoveragesHandler
                     context,
                     f,
                     resolution.Raster!.Value,
+                    storageSrid,
                     supportedCrs,
                     out var rasterQuery,
                     out var negotiatedFormat,
@@ -657,7 +660,7 @@ internal sealed class OgcCoveragesHandler
         links.Add(Link.Create(
             href: $"{basePath}/coverage",
             rel: RelationTypes.Coverage,
-            type: GeoTiffContentType,
+            type: GeoTiffLinkType,
             title: "Coverage data"));
         links.Add(Link.Create(
             href: $"{basePath}/coverage?f=png",
@@ -899,9 +902,14 @@ internal sealed class OgcCoveragesHandler
             return "The datetime parameter is not applicable to a single-raster coverage. Temporal subsetting is supported only for multidimensional (Zarr) coverages with a time axis.";
         }
 
-        if (context.Request.Query.ContainsKey("subset"))
+        if (context.Request.Query.ContainsKey("subset") && context.Request.Query.ContainsKey("bbox"))
         {
-            return "The subset parameter is not supported by this OGC API Coverages implementation. Use bbox for spatial subsetting.";
+            return "Use only one of subset or bbox for spatial subsetting.";
+        }
+
+        if (context.Request.Query.ContainsKey("scale-size") && context.Request.Query.ContainsKey("scaleSize"))
+        {
+            return "Use only one of scale-size or its legacy alias scaleSize.";
         }
 
         if (context.Request.Query.ContainsKey("scale-axes"))
@@ -916,6 +924,7 @@ internal sealed class OgcCoveragesHandler
         HttpContext context,
         string? f,
         RasterInfo raster,
+        int storageSrid,
         IReadOnlyDictionary<string, CrsDefinition> supportedCrs,
         out RasterQuery rasterQuery,
         out CoverageFormat negotiatedFormat,
@@ -941,6 +950,17 @@ internal sealed class OgcCoveragesHandler
         if (!TryApplyBbox(context, supportedCrs, ref query, out error))
         {
             return false;
+        }
+
+        if (context.Request.Query.TryGetValue("subset", out var subsets))
+        {
+            if (!OgcCoverageSpatialSubset.TryParse(subsets, raster, storageSrid, out var subset, out error))
+            {
+                return false;
+            }
+
+            var subsetCrs = ResolveStorageCrsDefinition(subset.Srid);
+            query = query with { ClipRegion = CreateClipRegion(subset.MinX, subset.MinY, subset.MaxX, subset.MaxY, subsetCrs) };
         }
 
         if (!TryApplyOutputCrs(context, supportedCrs, ref query, out outputCrs, out error))
@@ -1005,6 +1025,8 @@ internal sealed class OgcCoveragesHandler
             case "tiff":
             case "tif":
             case GeoTiffContentType:
+            case GeoTiffLinkType:
+            case "image/tiff;application=geotiff":
                 format = new CoverageFormat(RasterFormat.TIFF, GeoTiffContentType, "geotiff");
                 return true;
             case "png":
@@ -1227,7 +1249,7 @@ internal sealed class OgcCoveragesHandler
             scalingParameters++;
         }
 
-        if (context.Request.Query.ContainsKey("scale-size"))
+        if (context.Request.Query.ContainsKey("scale-size") || context.Request.Query.ContainsKey("scaleSize"))
         {
             scalingParameters++;
         }
@@ -1252,6 +1274,7 @@ internal sealed class OgcCoveragesHandler
                     supportedCrs,
                     storageSrid,
                     requestedPixelSize,
+                    query,
                     cancellationToken)
                 .ConfigureAwait(false);
             if (validationError is not null)
@@ -1289,6 +1312,7 @@ internal sealed class OgcCoveragesHandler
                     supportedCrs,
                     storageSrid,
                     requestedPixelSize,
+                    query,
                     cancellationToken)
                 .ConfigureAwait(false);
             if (validationError is not null)
@@ -1299,7 +1323,8 @@ internal sealed class OgcCoveragesHandler
             return ScalingResult.Successful(query with { PixelSize = requestedPixelSize });
         }
 
-        var scaleSize = OgcCommonUtilities.GetQueryValue(context.Request, "scale-size");
+        var scaleSize = OgcCommonUtilities.GetQueryValue(context.Request, "scale-size")
+            ?? OgcCommonUtilities.GetQueryValue(context.Request, "scaleSize");
         if (!string.IsNullOrWhiteSpace(scaleSize))
         {
             if (!TryParseScaleSize(scaleSize, out var width, out var height))
@@ -1363,8 +1388,10 @@ internal sealed class OgcCoveragesHandler
             return true;
         }
 
-        return TryParseAxisSize(parts[0], isX: true, out width) &&
-               TryParseAxisSize(parts[1], isX: false, out height);
+        return (TryParseAxisSize(parts[0], isX: true, out width) &&
+                TryParseAxisSize(parts[1], isX: false, out height)) ||
+               (TryParseAxisSize(parts[1], isX: true, out width) &&
+                TryParseAxisSize(parts[0], isX: false, out height));
     }
 
     private static bool TryParseAxisSize(string value, bool isX, out int size)
@@ -1403,6 +1430,7 @@ internal sealed class OgcCoveragesHandler
         IReadOnlyDictionary<string, CrsDefinition> supportedCrs,
         int storageSrid,
         PixelSize pixelSize,
+        RasterQuery query,
         CancellationToken cancellationToken)
     {
         if (!IsFinitePositive(pixelSize.Width) || !IsFinitePositive(pixelSize.Height))
@@ -1415,6 +1443,7 @@ internal sealed class OgcCoveragesHandler
                 raster,
                 supportedCrs,
                 storageSrid,
+                query,
                 cancellationToken)
             .ConfigureAwait(false);
         if (!scaleExtentSize.HasValue)
@@ -1440,9 +1469,18 @@ internal sealed class OgcCoveragesHandler
         RasterInfo raster,
         IReadOnlyDictionary<string, CrsDefinition> supportedCrs,
         int storageSrid,
+        RasterQuery query,
         CancellationToken cancellationToken)
     {
         var storageCrs = ResolveStorageCrsDefinition(storageSrid);
+        if (context.Request.Query.ContainsKey("subset") && query.ClipRegion is { } clip)
+        {
+            var envelope = new WKBReader().Read(clip.Geometry).EnvelopeInternal;
+            return await TransformExtentForScaleValidationAsync(
+                envelope.MinX, envelope.MinY, envelope.MaxX, envelope.MaxY,
+                ResolveStorageCrsDefinition(clip.Srid ?? storageSrid), storageCrs, cancellationToken)
+                .ConfigureAwait(false);
+        }
         var bbox = OgcCommonUtilities.GetQueryValue(context.Request, "bbox");
         if (!string.IsNullOrWhiteSpace(bbox))
         {
