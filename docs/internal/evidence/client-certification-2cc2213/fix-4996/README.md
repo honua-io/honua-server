@@ -43,7 +43,13 @@ prove that server-side trimming returns exactly 2x2 pixels.
   source `d954867713`. Both independent pixel proofs and both roster cells pass.
 - Final source additionally retains the canonical `scale-size` x-then-y
   restriction; only GDAL's `scaleSize` alias accepts reversed scale axes.
-  This preserves the pre-existing negative regression assertion.
+  This preserves the pre-existing negative regression assertion. Review fixes
+  also report PostGIS `8BSI` as `INT8` and validate unscaled subset dimensions
+  against the existing 8192-pixel cap before export. The size regression uses
+  independently authored 20,000x20,000 grid metadata: full/native-axis and
+  omitted-axis trims exceed the cap; a 0.02-degree window at 0.00001 degrees
+  per pixel is bounded; explicit 128x64 scaling is accepted. Unknown or rotated
+  large grids require explicit scaling rather than guessing a safe window.
 - GDAL 3.8.4: `ghcr.io/osgeo/gdal:ubuntu-small-3.8.4`, digest
   `sha256:60d3bc2f8b09ca1a7ef2db0239699b2c03713aa02be6e525e731c0020bbb10a4`.
 - OWSLib 0.36.0 + Rasterio 1.4.3: image built with the adjacent
