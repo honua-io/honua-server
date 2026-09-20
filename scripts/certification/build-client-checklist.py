@@ -1087,6 +1087,22 @@ MATRIX: list[dict] = [
 ]
 
 
+EXCLUSION_REVIEW_REPORT = "docs/gis/client-exclusion-audit-2026-09-20.md"
+
+# Preserve the original claims in MATRIX/CITE and in each reopened cell. These
+# citations cannot close an operation until operation-specific review replaces
+# them. A module/provider inventory is not an exhaustive client capability test.
+EXCLUSIONS_REQUIRING_REVIEW = {
+    "arcpy-modules": "A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+    "arcpy-mp-web-service-types": "Failure through one addDataFromPath method does not exclude saved layers, connection files or geoprocessing tools.",
+    "qgis-registry": "The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+    "pro-wcs-versions": "Default negotiation of 2.0.1 does not exclude explicitly selecting WCS 1.0.0.",
+    "pro-oapi-tiles-map-only": "A vector-only fixture is not proof that Pro lacks the documented map-tiles client; provision or verify a map tileset.",
+    "pro-ogc-classic": "An OGC classic service list cannot establish absence of OData support.",
+    "arcpy-no-soap": "The broad REST-only premise conflicts with the existing ArcPy GP SOAP workflow; catalog discovery needs a specific probe.",
+}
+
+
 def build_rows() -> list[dict]:
     rows: list[dict] = []
     for entry in MATRIX:
@@ -1110,6 +1126,16 @@ def build_rows() -> list[dict]:
                     cell["evidence"] = EV[ref]
                 elif ref is not None:
                     cell["cause"] = ref
+                if state.startswith("n/a-") and ref in EXCLUSIONS_REQUIRING_REVIEW:
+                    cell["previous_exclusion"] = {
+                        "state": state,
+                        "citation": cell["citation"],
+                    }
+                    cell["state"] = "blocked"
+                    cell["citation"] = (
+                        f"{EXCLUSION_REVIEW_REPORT}: exclusion evidence review pending. "
+                        + EXCLUSIONS_REQUIRING_REVIEW[ref]
+                    )
                 cells[lane] = cell
             rows.append({
                 "protocol": entry["protocol"],
@@ -1133,6 +1159,11 @@ def validate(rows: list[dict]) -> list[str]:
             if state not in STATES:
                 problems.append(f"{where}/{lane}: unknown state {state!r}")
                 continue
+            if state.startswith("n/a-") and cell.get("citation") in {
+                CITE[ref] for ref in EXCLUSIONS_REQUIRING_REVIEW
+            }:
+                problems.append(
+                    f"{where}/{lane}: disputed exclusion requires operation-specific evidence review")
             if state in NEEDS_CITATION and not (
                 cell.get("citation") or cell.get("cause")
             ):

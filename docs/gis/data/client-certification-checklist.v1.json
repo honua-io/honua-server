@@ -25,30 +25,33 @@
       "pro-ui": {
         "pass": 20,
         "not-started": 52,
-        "n/a-no-client": 17,
-        "n/a-superseded": 3,
+        "n/a-no-client": 13,
+        "blocked": 7,
         "fail": 2
       },
       "arcpy": {
         "pass": 31,
-        "n/a-no-client": 61,
+        "n/a-no-client": 19,
+        "blocked": 42,
         "fail": 2
       },
       "qgis-ui": {
         "pass": 51,
-        "n/a-no-client": 40,
-        "n/a-superseded": 3
+        "n/a-no-client": 25,
+        "n/a-superseded": 3,
+        "blocked": 15
       },
       "pyqgis": {
         "pass": 51,
-        "n/a-no-client": 40,
-        "n/a-superseded": 3
+        "n/a-no-client": 25,
+        "n/a-superseded": 3,
+        "blocked": 15
       }
     },
     "overall": {
       "cells": 376,
-      "closed": 320,
-      "open": 56
+      "closed": 241,
+      "open": 135
     }
   },
   "rows": [
@@ -130,8 +133,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -152,8 +159,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -174,8 +185,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -197,8 +212,12 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "arcpy 3.7.1.1904 probe, 2026-09-18: the only arcpy path that consumes a web service is arcpy.mp Map.addDataFromPath, and its own validation names the complete set of service kinds it accepts - \"Invalid value for web_service_type: 'WMTS' (choices are: ['AUTOMATIC', 'ARCGIS_SERVER_WEB', 'KML', 'VECTOR_TILE', 'WMS'])\". AUTOMATIC against the WMTS endpoint fails with \"AUTOMATIC failed, a more specific web_service_type may need to be provided\", and the same probe added the WMS endpoint and exported a drawn PNG, so the boundary is the client's, not the fixture's. WMTS, WCS, 3D Tiles and the OGC APIs have no arcpy entry point; ArcGIS Pro's own UI adds them, which is the pro-ui lane."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. Failure through one addDataFromPath method does not exclude saved layers, connection files or geoprocessing tools.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "arcpy 3.7.1.1904 probe, 2026-09-18: the only arcpy path that consumes a web service is arcpy.mp Map.addDataFromPath, and its own validation names the complete set of service kinds it accepts - \"Invalid value for web_service_type: 'WMTS' (choices are: ['AUTOMATIC', 'ARCGIS_SERVER_WEB', 'KML', 'VECTOR_TILE', 'WMS'])\". AUTOMATIC against the WMTS endpoint fails with \"AUTOMATIC failed, a more specific web_service_type may need to be provided\", and the same probe added the WMS endpoint and exported a drawn PNG, so the boundary is the client's, not the fixture's. WMTS, WCS, 3D Tiles and the OGC APIs have no arcpy entry point; ArcGIS Pro's own UI adds them, which is the pro-ui lane."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -220,8 +239,12 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "arcpy 3.7.1.1904 probe, 2026-09-18: the only arcpy path that consumes a web service is arcpy.mp Map.addDataFromPath, and its own validation names the complete set of service kinds it accepts - \"Invalid value for web_service_type: 'WMTS' (choices are: ['AUTOMATIC', 'ARCGIS_SERVER_WEB', 'KML', 'VECTOR_TILE', 'WMS'])\". AUTOMATIC against the WMTS endpoint fails with \"AUTOMATIC failed, a more specific web_service_type may need to be provided\", and the same probe added the WMS endpoint and exported a drawn PNG, so the boundary is the client's, not the fixture's. WMTS, WCS, 3D Tiles and the OGC APIs have no arcpy entry point; ArcGIS Pro's own UI adds them, which is the pro-ui lane."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. Failure through one addDataFromPath method does not exclude saved layers, connection files or geoprocessing tools.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "arcpy 3.7.1.1904 probe, 2026-09-18: the only arcpy path that consumes a web service is arcpy.mp Map.addDataFromPath, and its own validation names the complete set of service kinds it accepts - \"Invalid value for web_service_type: 'WMTS' (choices are: ['AUTOMATIC', 'ARCGIS_SERVER_WEB', 'KML', 'VECTOR_TILE', 'WMS'])\". AUTOMATIC against the WMTS endpoint fails with \"AUTOMATIC failed, a more specific web_service_type may need to be provided\", and the same probe added the WMS endpoint and exported a drawn PNG, so the boundary is the client's, not the fixture's. WMTS, WCS, 3D Tiles and the OGC APIs have no arcpy entry point; ArcGIS Pro's own UI adds them, which is the pro-ui lane."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -242,8 +265,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -264,8 +291,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -465,12 +496,20 @@
       "operation": "GetCapabilities",
       "lanes": {
         "pro-ui": {
-          "state": "n/a-superseded",
-          "citation": "enterprise.arcgis.com WCS services: a client built for WCS 1.0.0, 1.1.0, 1.1.1, 1.1.2 or 2.0.1 can consume the service; Pro exposes a Version selector and negotiates the highest, so it uses 2.0.1 here."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. Default negotiation of 2.0.1 does not exclude explicitly selecting WCS 1.0.0.",
+          "previous_exclusion": {
+            "state": "n/a-superseded",
+            "citation": "enterprise.arcgis.com WCS services: a client built for WCS 1.0.0, 1.1.0, 1.1.1, 1.1.2 or 2.0.1 can consume the service; Pro exposes a Version selector and negotiates the highest, so it uses 2.0.1 here."
+          }
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -488,12 +527,20 @@
       "operation": "DescribeCoverage",
       "lanes": {
         "pro-ui": {
-          "state": "n/a-superseded",
-          "citation": "enterprise.arcgis.com WCS services: a client built for WCS 1.0.0, 1.1.0, 1.1.1, 1.1.2 or 2.0.1 can consume the service; Pro exposes a Version selector and negotiates the highest, so it uses 2.0.1 here."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. Default negotiation of 2.0.1 does not exclude explicitly selecting WCS 1.0.0.",
+          "previous_exclusion": {
+            "state": "n/a-superseded",
+            "citation": "enterprise.arcgis.com WCS services: a client built for WCS 1.0.0, 1.1.0, 1.1.1, 1.1.2 or 2.0.1 can consume the service; Pro exposes a Version selector and negotiates the highest, so it uses 2.0.1 here."
+          }
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -511,12 +558,20 @@
       "operation": "GetCoverage",
       "lanes": {
         "pro-ui": {
-          "state": "n/a-superseded",
-          "citation": "enterprise.arcgis.com WCS services: a client built for WCS 1.0.0, 1.1.0, 1.1.1, 1.1.2 or 2.0.1 can consume the service; Pro exposes a Version selector and negotiates the highest, so it uses 2.0.1 here."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. Default negotiation of 2.0.1 does not exclude explicitly selecting WCS 1.0.0.",
+          "previous_exclusion": {
+            "state": "n/a-superseded",
+            "citation": "enterprise.arcgis.com WCS services: a client built for WCS 1.0.0, 1.1.0, 1.1.1, 1.1.2 or 2.0.1 can consume the service; Pro exposes a Version selector and negotiates the highest, so it uses 2.0.1 here."
+          }
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -537,8 +592,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "n/a-superseded",
@@ -559,8 +618,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "n/a-superseded",
@@ -581,8 +644,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "n/a-superseded",
@@ -603,8 +670,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -625,8 +696,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -647,8 +722,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -669,8 +748,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -691,8 +774,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -713,8 +800,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -735,8 +826,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -758,8 +853,12 @@
           "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/use-ogc-api-services.html: \"Since the OGC API Features layer is not editable, you cannot make edits to the data or schema through ArcGIS Pro.\" (fetched 2026-09-19)"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -777,20 +876,36 @@
       "operation": "landing-tilesets",
       "lanes": {
         "pro-ui": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/use-ogc-api-services.html: \"Currently, the ArcGIS Pro client supports only the map tiles type of the OGC API Tiles specification.\" (fetched 2026-09-19); every tileset of the fixture is dataType vector (GET /ogc/tiles/collections/0/tiles on image sha256:6001b3b8ac05... lists only Mapbox Vector Tile tilesets), so there is no map-tiles tileset for Pro to add."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A vector-only fixture is not proof that Pro lacks the documented map-tiles client; provision or verify a map tileset.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/use-ogc-api-services.html: \"Currently, the ArcGIS Pro client supports only the map tiles type of the OGC API Tiles specification.\" (fetched 2026-09-19); every tileset of the fixture is dataType vector (GET /ogc/tiles/collections/0/tiles on image sha256:6001b3b8ac05... lists only Mapbox Vector Tile tilesets), so there is no map-tiles tileset for Pro to add."
+          }
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         },
         "pyqgis": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         }
       }
     },
@@ -800,20 +915,36 @@
       "operation": "tile",
       "lanes": {
         "pro-ui": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/use-ogc-api-services.html: \"Currently, the ArcGIS Pro client supports only the map tiles type of the OGC API Tiles specification.\" (fetched 2026-09-19); every tileset of the fixture is dataType vector (GET /ogc/tiles/collections/0/tiles on image sha256:6001b3b8ac05... lists only Mapbox Vector Tile tilesets), so there is no map-tiles tileset for Pro to add."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A vector-only fixture is not proof that Pro lacks the documented map-tiles client; provision or verify a map tileset.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/use-ogc-api-services.html: \"Currently, the ArcGIS Pro client supports only the map tiles type of the OGC API Tiles specification.\" (fetched 2026-09-19); every tileset of the fixture is dataType vector (GET /ogc/tiles/collections/0/tiles on image sha256:6001b3b8ac05... lists only Mapbox Vector Tile tilesets), so there is no map-tiles tileset for Pro to add."
+          }
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         },
         "pyqgis": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         }
       }
     },
@@ -826,8 +957,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -848,8 +983,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -870,8 +1009,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -892,8 +1035,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -915,8 +1062,12 @@
           "citation": "No SensorThings client ships in ArcGIS Pro; its OGC API support is limited to Features and Tiles per the Add OGC API services page."
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -938,8 +1089,12 @@
           "citation": "No SensorThings client ships in ArcGIS Pro; its OGC API support is limited to Features and Tiles per the Add OGC API services page."
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -961,8 +1116,12 @@
           "citation": "No SensorThings client ships in ArcGIS Pro; its OGC API support is limited to Features and Tiles per the Add OGC API services page."
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -1308,12 +1467,20 @@
           "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-imageserver.cert.json - operations IS-OP-SERVICE-METADATA, ArcGIS Pro/arcpy 3.7.1.1904: arcpy Describe(ImageServer) -> dataType=RasterLayer"
         },
         "qgis-ui": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         },
         "pyqgis": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         }
       }
     },
@@ -1330,12 +1497,20 @@
           "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-imageserver.cert.json - operations IS-OP-EXPORT-IMAGE, ArcGIS Pro/arcpy 3.7.1.1904: arcpy.Raster(ImageServer) opened (width=64)"
         },
         "qgis-ui": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         },
         "pyqgis": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         }
       }
     },
@@ -1352,12 +1527,20 @@
           "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-imageserver.cert.json - operations IS-OP-IDENTIFY, ArcGIS Pro/arcpy 3.7.1.1904: GetCellValue (identify) at (-122.4150,37.7650) -> 180, matching the service's identify ('180')"
         },
         "qgis-ui": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         },
         "pyqgis": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         }
       }
     },
@@ -1751,12 +1934,20 @@
           "citation": "ArcGIS Pro 3.7 arcpy.nax reference (network data source: a network dataset, a portal, or a stand-alone routing service dictionary whose url names the web-tool GP service) and honua-esri-compat/evidence/arcpy-client-compat-20260919-p-na/certification/20260920T000204Z-desktop-arcgis-gp-naserver.cert.json: with the NAServer service and layer resources, the NetworkAnalysisUtilities tasks, portal helperServices and networkanalysis privileges all published, arcpy.nax answers 'Portal ... is not configured with the Route web tool' and, in the stand-alone form, posts to <url>/FindRoutes. arcpy.nax models every analysis on Esri's asynchronous routing web tools and never issues the NAServer solve; the synchronous NAServer layers are consumed by the Pro user interface (pro-ui lane)."
         },
         "qgis-ui": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         },
         "pyqgis": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         }
       }
     },
@@ -1773,12 +1964,20 @@
           "citation": "ArcGIS Pro 3.7 arcpy.nax reference (network data source: a network dataset, a portal, or a stand-alone routing service dictionary whose url names the web-tool GP service) and honua-esri-compat/evidence/arcpy-client-compat-20260919-p-na/certification/20260920T000204Z-desktop-arcgis-gp-naserver.cert.json: with the NAServer service and layer resources, the NetworkAnalysisUtilities tasks, portal helperServices and networkanalysis privileges all published, arcpy.nax answers 'Portal ... is not configured with the Route web tool' and, in the stand-alone form, posts to <url>/FindRoutes. arcpy.nax models every analysis on Esri's asynchronous routing web tools and never issues the NAServer solve; the synchronous NAServer layers are consumed by the Pro user interface (pro-ui lane)."
         },
         "qgis-ui": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         },
         "pyqgis": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         }
       }
     },
@@ -1837,8 +2036,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "arcpy 3.7.1 module probe, 2026-09-18: no attribute matches 'soap' or 'wsdl'. arcpy speaks the REST surface only, so the GeoServices SOAP catalog has no arcpy caller."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The broad REST-only premise conflicts with the existing ArcPy GP SOAP workflow; catalog discovery needs a specific probe.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "arcpy 3.7.1 module probe, 2026-09-18: no attribute matches 'soap' or 'wsdl'. arcpy speaks the REST surface only, so the GeoServices SOAP catalog has no arcpy caller."
+          }
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -1856,20 +2059,36 @@
       "operation": "metadata",
       "lanes": {
         "pro-ui": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/ogc-services.html: Pro consumes WMS, WMTS, WCS and WFS only among OGC classic services."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. An OGC classic service list cannot establish absence of OData support.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/ogc-services.html: Pro consumes WMS, WMTS, WCS and WFS only among OGC classic services."
+          }
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         },
         "pyqgis": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         }
       }
     },
@@ -1879,20 +2098,36 @@
       "operation": "entity-query",
       "lanes": {
         "pro-ui": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/ogc-services.html: Pro consumes WMS, WMTS, WCS and WFS only among OGC classic services."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. An OGC classic service list cannot establish absence of OData support.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/ogc-services.html: Pro consumes WMS, WMTS, WCS and WFS only among OGC classic services."
+          }
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         },
         "pyqgis": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         }
       }
     },
@@ -1906,16 +2141,28 @@
           "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         },
         "pyqgis": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         }
       }
     },
@@ -1929,16 +2176,28 @@
           "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         },
         "pyqgis": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         }
       }
     },
@@ -1952,16 +2211,28 @@
           "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         },
         "pyqgis": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         }
       }
     },
@@ -1975,16 +2246,28 @@
           "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         },
         "pyqgis": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         }
       }
     },
@@ -1998,8 +2281,12 @@
           "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -2021,16 +2308,28 @@
           "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         },
         "pyqgis": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         }
       }
     },
@@ -2043,8 +2342,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "pass",
@@ -2065,8 +2368,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+          }
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -2113,12 +2420,20 @@
           "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-wf-scene-scene-vectortile.cert.json - extensions WF-3D-01, ArcGIS Pro/arcpy 3.7.1.1904: wf-scene layer added and loaded in ArcGIS Pro (1 layer(s) in map)"
         },
         "qgis-ui": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         },
         "pyqgis": {
-          "state": "n/a-no-client",
-          "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+          }
         }
       }
     },
@@ -2131,8 +2446,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "arcpy 3.7.1.1904 probe, 2026-09-18: the only arcpy path that consumes a web service is arcpy.mp Map.addDataFromPath, and its own validation names the complete set of service kinds it accepts - \"Invalid value for web_service_type: 'WMTS' (choices are: ['AUTOMATIC', 'ARCGIS_SERVER_WEB', 'KML', 'VECTOR_TILE', 'WMS'])\". AUTOMATIC against the WMTS endpoint fails with \"AUTOMATIC failed, a more specific web_service_type may need to be provided\", and the same probe added the WMS endpoint and exported a drawn PNG, so the boundary is the client's, not the fixture's. WMTS, WCS, 3D Tiles and the OGC APIs have no arcpy entry point; ArcGIS Pro's own UI adds them, which is the pro-ui lane."
+          "state": "blocked",
+          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. Failure through one addDataFromPath method does not exclude saved layers, connection files or geoprocessing tools.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "citation": "arcpy 3.7.1.1904 probe, 2026-09-18: the only arcpy path that consumes a web service is arcpy.mp Map.addDataFromPath, and its own validation names the complete set of service kinds it accepts - \"Invalid value for web_service_type: 'WMTS' (choices are: ['AUTOMATIC', 'ARCGIS_SERVER_WEB', 'KML', 'VECTOR_TILE', 'WMS'])\". AUTOMATIC against the WMTS endpoint fails with \"AUTOMATIC failed, a more specific web_service_type may need to be provided\", and the same probe added the WMS endpoint and exported a drawn PNG, so the boundary is the client's, not the fixture's. WMTS, WCS, 3D Tiles and the OGC APIs have no arcpy entry point; ArcGIS Pro's own UI adds them, which is the pro-ui lane."
+          }
         },
         "qgis-ui": {
           "state": "pass",
