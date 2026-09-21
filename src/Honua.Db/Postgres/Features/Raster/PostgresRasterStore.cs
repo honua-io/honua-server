@@ -537,28 +537,95 @@ internal sealed class PostgresRasterStore : IRasterStore
         var effectiveFormat = formatName == "COG" ? "GTiff" : formatName;
         var creationOptionsClause = BuildCreationOptionsClause(BuildExportCreationOptions(query, effectiveFormat));
 
+        // Find one source raster to provide the layer's output layout. The source expression below
+        // deliberately mirrors the populated export pipeline: selection and rendering functions
+        // can change both the band count and the pixel type before the empty canvas is assembled.
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var referenceCommand = connection.CreateCommand();
+        referenceCommand.CommandText = $"""
+            SELECT id
+            FROM {_rasterDataTable}
+            WHERE layer_id = @layerId AND raster IS NOT NULL
+            LIMIT 1
+            """;
+        AddParameter(referenceCommand, "@layerId", layerId);
+        var referenceIdValue = await referenceCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        if (referenceIdValue is null || referenceIdValue == DBNull.Value)
+        {
+            // The layer holds no raster at all, so there is no band layout to copy and no empty
+            // image to describe. The caller reports not-found rather than inventing a shape.
+            return new RasterResult
+            {
+                Data = Array.Empty<byte>(),
+                ContentType = query.OutputFormat.ToContentType(),
+                Width = 0,
+                Height = 0
+            };
+        }
+
+        var referenceRasterId = Convert.ToInt64(referenceIdValue, CultureInfo.InvariantCulture);
+        var sourceExpr = "raster";
+        var sourceParams = new List<(string Name, object Value)>();
+        if (query.Bands is { Length: > 0 } bands)
+        {
+            if (bands.Any(static band => band <= 0))
+            {
+                throw new ArgumentException("Raster band numbers must be positive.", nameof(query));
+            }
+
+            sourceExpr = "ST_Band(raster, @bands)";
+            sourceParams.Add(("@bands", bands));
+        }
+
+        if (query.BandArithmetic is { } bandArithmetic)
+        {
+            sourceExpr = BuildBandArithmeticExpression(sourceExpr, bandArithmetic);
+        }
+
+        if (query.Terrain is { } terrain)
+        {
+            sourceExpr = BuildTerrainExpression(sourceExpr, terrain);
+        }
+
+        if (query.Stretch is { } stretch && CanResolveStretchBounds(stretch, query.BandArithmetic))
+        {
+            var stretchBounds = await ResolveStretchBoundsAsync(
+                stretch, layerId, referenceRasterId, query.Bands, cancellationToken).ConfigureAwait(false);
+            if (stretchBounds is { Count: > 0 })
+            {
+                sourceExpr = BuildStretchedRasterExpression(sourceExpr, stretchBounds);
+            }
+        }
+
+        if (query.Colormap is { Entries.Count: > 0 } colormap)
+        {
+            sourceExpr = BuildColormapExpression(sourceExpr, colormap);
+        }
+
         // Mirror the populated frame's SRID resolution: an explicit output SRID wins, otherwise the
-        // clip geometry's SRID, otherwise the layer's own.
+        // clip geometry's SRID, otherwise the transformed reference raster's own SRID.
         var clipSridIsKnown = clip.Srid is > 0;
         var geometryExpr = clipSridIsKnown
             ? "ST_GeomFromWKB(@clipGeom, @clipSrid)"
-            : "ST_SetSRID(ST_GeomFromWKB(@clipGeom), ST_SRID(r.raster))";
-        var sourceSridExpr = clipSridIsKnown ? "@clipSrid" : "ST_SRID(r.raster)";
+            : "ST_GeomFromWKB(@clipGeom, ST_SRID(s.rast))";
+        var sourceSridExpr = clipSridIsKnown ? "@clipSrid" : "ST_SRID(s.rast)";
         var targetSridExpr = query.OutputSrid is > 0 ? "@outputSrid" : sourceSridExpr;
 
-        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
         command.CommandText = $"""
             WITH reference AS (
                 SELECT raster
                 FROM {_rasterDataTable}
-                WHERE layer_id = @layerId AND raster IS NOT NULL
-                LIMIT 1
+                WHERE layer_id = @layerId AND id = @referenceRasterId AND raster IS NOT NULL
+            ),
+            source AS (
+                SELECT {sourceExpr} AS rast
+                FROM reference
             ),
             frame_bounds AS (
                 SELECT ST_Envelope(ST_Transform({geometryExpr}, {targetSridExpr})) AS geom,
                        {targetSridExpr} AS srid
-                FROM reference r
+                FROM source s
             ),
             frame_grid AS (
                 SELECT ST_MakeEmptyRaster(
@@ -572,10 +639,10 @@ internal sealed class PostgresRasterStore : IRasterStore
             transformed AS (
                 SELECT ST_AddBand(g.rast, ARRAY(
                            SELECT ROW(NULL, m.pixeltype, COALESCE(m.nodatavalue, 0), COALESCE(m.nodatavalue, 0))::addbandarg
-                           FROM generate_series(1, ST_NumBands(r.raster)) AS n,
-                                LATERAL ST_BandMetaData(r.raster, n) AS m
+                           FROM generate_series(1, ST_NumBands(s.rast)) AS n,
+                                LATERAL ST_BandMetaData(s.rast, n) AS m
                            ORDER BY n)) AS rast
-                FROM frame_grid g, reference r
+                FROM frame_grid g, source s
             )
             SELECT ST_AsGDALRaster(rast, '{effectiveFormat}'{creationOptionsClause}) AS data,
                    ST_Width(rast) AS width,
@@ -590,6 +657,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             FROM transformed
             """;
         AddParameter(command, "@layerId", layerId);
+        AddParameter(command, "@referenceRasterId", referenceRasterId);
         AddParameter(command, "@clipGeom", clip.Geometry);
         if (clipSridIsKnown)
         {
@@ -603,11 +671,14 @@ internal sealed class PostgresRasterStore : IRasterStore
             AddParameter(command, "@outputSrid", query.OutputSrid.Value);
         }
 
+        foreach (var (name, value) in sourceParams)
+        {
+            AddParameter(command, name, value);
+        }
+
         await using var reader = await ExecuteRasterExportReaderAsync(command, cancellationToken).ConfigureAwait(false);
         if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            // The layer holds no raster at all, so there is no band layout to copy and no empty
-            // image to describe. The caller reports not-found rather than inventing a shape.
             return new RasterResult
             {
                 Data = Array.Empty<byte>(),
