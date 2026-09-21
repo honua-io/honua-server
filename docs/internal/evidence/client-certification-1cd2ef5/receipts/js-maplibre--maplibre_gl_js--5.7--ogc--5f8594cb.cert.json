@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "run_id": "roster-20260921T094413Z-1cd2ef5",
-  "run_date": "2026-09-21T09:46:35.859171Z",
+  "run_id": "roster-20260921T095724Z-1cd2ef5",
+  "run_date": "2026-09-21T09:59:38.168428Z",
   "server_commit": "1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
   "server_version": {
     "success": true,
@@ -9,12 +9,12 @@
       "version": "2026.1.1",
       "metadataApiVersion": "metadata.honua.io/v2alpha1",
       "metadataSchemaVersion": "2.0.0-alpha.1",
-      "serverTime": "2026-09-21T09:44:32.9047765+00:00"
+      "serverTime": "2026-09-21T09:57:43.083255+00:00"
     },
     "message": null,
-    "timestamp": "2026-09-21T09:44:32.9047811+00:00"
+    "timestamp": "2026-09-21T09:57:43.0832557+00:00"
   },
-  "producer_source_sha": "0f64f2fd946cc3c9834874bd42d8e8a0b1f7341b",
+  "producer_source_sha": "4a2f6d875d21c21f25cba7e9ca1d164b6d4d57d5",
   "image_digest": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
   "fixture_revision": "docker/cng/seed.sql@1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
   "server_config_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
@@ -42,9 +42,9 @@
       ],
       "notes": "all 5 checks passed across 5 governed facets",
       "operation": "OGC-OP-OGC-API-TILES-LANDING-TILESETS",
-      "started_at": "2026-09-21T09:46:57.582616Z",
-      "finished_at": "2026-09-21T09:47:01.724225Z",
-      "duration_ms": 4142,
+      "started_at": "2026-09-21T09:59:58.408992Z",
+      "finished_at": "2026-09-21T10:00:02.443079Z",
+      "duration_ms": 4034,
       "protocol_version": "OGC API - Tiles 1.0",
       "checks": [
         {
@@ -53,7 +53,7 @@
           "outcome": "pass",
           "detail": "tileset item template http://honua:5000/ogc/tiles/collections/2000/tiles/WebMercatorQuad/{tileMatrix}/{tileRow}/{tileCol} -> queryRenderedFeatures at pt-alpha -> ['pt-alpha']; {\"idle\": true, \"errors\": [], \"responses\": 5, \"status_types\": [[200, \"application/vnd.mapbox-vector-tile\"], [200, \"text/javascript\"], [204, \"\"]]}",
           "request_url": null,
-          "duration_ms": 427
+          "duration_ms": 392
         },
         {
           "facet": "negative",
@@ -61,7 +61,7 @@
           "outcome": "pass",
           "detail": "responses [404]; nothing rendered; MapLibre error statuses []",
           "request_url": null,
-          "duration_ms": 358
+          "duration_ms": 360
         },
         {
           "facet": "auth",
@@ -69,7 +69,7 @@
           "outcome": "pass",
           "detail": "(drawn at pt-alpha, statuses) {'anonymous': (0, [(401, 'application/problem+json')]), 'wrong-api-key': (0, [(401, 'application/problem+json')]), 'expired-bearer': (0, [(401, 'application/problem+json')]), 'api-key': (1, [(200, 'application/vnd.mapbox-vector-tile'), (204, '')]), 'oidc-bearer': (1, [(200, 'application/vnd.mapbox-vector-tile'), (204, '')])}",
           "request_url": null,
-          "duration_ms": 1735
+          "duration_ms": 1751
         },
         {
           "facet": "crs-axis",
@@ -77,7 +77,7 @@
           "outcome": "pass",
           "detail": "features at pt-alpha's projected pixel ['pt-alpha']; at empty sea []",
           "request_url": null,
-          "duration_ms": 707
+          "duration_ms": 683
         },
         {
           "facet": "media-schema",
@@ -85,13 +85,13 @@
           "outcome": "pass",
           "detail": "['application/vnd.mapbox-vector-tile']; no MapLibre errors; {\"idle\": true, \"errors\": [], \"responses\": 4, \"status_types\": [[200, \"application/vnd.mapbox-vector-tile\"], [204, \"\"]]}",
           "request_url": null,
-          "duration_ms": 359
+          "duration_ms": 333
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:46:57.582616Z",
-          "2026-09-21T09:47:01.724225Z"
+          "2026-09-21T09:59:58.408992Z",
+          "2026-09-21T10:00:02.443079Z"
         ],
         "exchanges": 35,
         "wire_lines": [
@@ -131,7 +131,7 @@
           3370,
           3371
         ],
-        "wire_lines_sha256": "2007b5009f7bbc308ce4dd842df4609fe91b97596a70aa67bd91dbc956d3194d",
+        "wire_lines_sha256": "e11cd093add5af29f7198770f87b8a46ed5961007208de168b43ecea9e49c3d2",
         "statuses": {
           "200": 8,
           "204": 11,
@@ -152,7 +152,7 @@
       "test_case_id": "client-cert/maplibre-gl-js/ogc/OGC-OP-OGC-API-TILES-TILE",
       "status": "pass",
       "performed_by": "MapLibre GL JS",
-      "request_url": "http://honua:5000/rest/services/browser_compat/MapServer/WMTS/2000/default/WebMercatorQuad/15/12665/5241.png",
+      "request_url": "http://honua:5000/ogc/tiles/collections/2000/tiles/WebMercatorQuad/14/6332/2620?f=mvt",
       "exercised_capabilities": [
         "positive",
         "negative",
@@ -162,9 +162,9 @@
       ],
       "notes": "all 5 checks passed across 5 governed facets",
       "operation": "OGC-OP-OGC-API-TILES-TILE",
-      "started_at": "2026-09-21T09:46:53.109775Z",
-      "finished_at": "2026-09-21T09:46:57.469053Z",
-      "duration_ms": 4359,
+      "started_at": "2026-09-21T09:59:54.115436Z",
+      "finished_at": "2026-09-21T09:59:58.303900Z",
+      "duration_ms": 4188,
       "protocol_version": "OGC API - Tiles 1.0",
       "checks": [
         {
@@ -173,7 +173,7 @@
           "outcome": "pass",
           "detail": "queryRenderedFeatures at pt-alpha -> ['pt-alpha']; {\"idle\": true, \"errors\": [], \"responses\": 5, \"status_types\": [[200, \"application/vnd.mapbox-vector-tile\"], [200, \"text/javascript\"], [204, \"\"]]}",
           "request_url": null,
-          "duration_ms": 428
+          "duration_ms": 358
         },
         {
           "facet": "negative",
@@ -181,7 +181,7 @@
           "outcome": "pass",
           "detail": "responses [404]; nothing rendered; MapLibre error statuses []",
           "request_url": null,
-          "duration_ms": 350
+          "duration_ms": 358
         },
         {
           "facet": "auth",
@@ -189,7 +189,7 @@
           "outcome": "pass",
           "detail": "(drawn at pt-alpha, statuses) {'anonymous': (0, [(401, 'application/problem+json')]), 'wrong-api-key': (0, [(401, 'application/problem+json')]), 'expired-bearer': (0, [(401, 'application/problem+json')]), 'api-key': (1, [(200, 'application/vnd.mapbox-vector-tile'), (204, '')]), 'oidc-bearer': (1, [(200, 'application/vnd.mapbox-vector-tile'), (204, '')])}",
           "request_url": null,
-          "duration_ms": 1715
+          "duration_ms": 1735
         },
         {
           "facet": "crs-axis",
@@ -197,7 +197,7 @@
           "outcome": "pass",
           "detail": "features at pt-alpha's projected pixel ['pt-alpha']; at empty sea []",
           "request_url": null,
-          "duration_ms": 683
+          "duration_ms": 665
         },
         {
           "facet": "media-schema",
@@ -205,25 +205,16 @@
           "outcome": "pass",
           "detail": "['application/vnd.mapbox-vector-tile']; no MapLibre errors; {\"idle\": true, \"errors\": [], \"responses\": 4, \"status_types\": [[200, \"application/vnd.mapbox-vector-tile\"], [204, \"\"]]}",
           "request_url": null,
-          "duration_ms": 332
+          "duration_ms": 350
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:46:53.109775Z",
-          "2026-09-21T09:46:57.469053Z"
+          "2026-09-21T09:59:54.115436Z",
+          "2026-09-21T09:59:58.303900Z"
         ],
-        "exchanges": 44,
+        "exchanges": 32,
         "wire_lines": [
-          3288,
-          3289,
-          3290,
-          3291,
-          3292,
-          3293,
-          3294,
-          3295,
-          3296,
           3301,
           3302,
           3303,
@@ -255,14 +246,11 @@
           3329,
           3330,
           3331,
-          3332,
-          3337,
-          3338,
-          3339
+          3332
         ],
-        "wire_lines_sha256": "6717b14a8296481252acd98f974d4b94181e83c723dd1182846fed21fdd252f9",
+        "wire_lines_sha256": "8a3db5f308f468b3c2d7341f15a395221e06761b3b994ff4085e708fa2657e39",
         "statuses": {
-          "200": 17,
+          "200": 5,
           "204": 11,
           "401": 12,
           "404": 4
@@ -291,9 +279,9 @@
       ],
       "notes": "all 5 checks passed across 5 governed facets",
       "operation": "OGC-OP-WMS-GETCAPABILITIES-GETMAP-GETFEATUREINF",
-      "started_at": "2026-09-21T09:46:35.859171Z",
-      "finished_at": "2026-09-21T09:46:42.112910Z",
-      "duration_ms": 6254,
+      "started_at": "2026-09-21T09:59:38.168428Z",
+      "finished_at": "2026-09-21T09:59:43.313844Z",
+      "duration_ms": 5146,
       "protocol_version": "1.3.0",
       "checks": [
         {
@@ -302,7 +290,7 @@
           "outcome": "pass",
           "detail": "capabilities layers ['Browser Points', 'default', 'Browser Lines', 'default']; painted 65 px around pt-alpha; GetFeatureInfo at pt-alpha returned pt-alpha",
           "request_url": null,
-          "duration_ms": 940
+          "duration_ms": 607
         },
         {
           "facet": "negative",
@@ -310,7 +298,7 @@
           "outcome": "pass",
           "detail": "responses [400]; nothing rendered; MapLibre error statuses [400]",
           "request_url": null,
-          "duration_ms": 527
+          "duration_ms": 407
         },
         {
           "facet": "auth",
@@ -318,7 +306,7 @@
           "outcome": "pass",
           "detail": "(drawn at pt-alpha, statuses) {'anonymous': (0, [(401, 'text/xml')]), 'wrong-api-key': (0, [(401, 'text/xml')]), 'expired-bearer': (0, [(200, 'application/xml')]), 'api-key': (65, [(200, 'image/png')]), 'oidc-bearer': (65, [(200, 'image/png')])}",
           "request_url": null,
-          "duration_ms": 2299
+          "duration_ms": 2138
         },
         {
           "facet": "crs-axis",
@@ -326,7 +314,7 @@
           "outcome": "pass",
           "detail": "painted pixels around pt-alpha 65; around empty sea 0",
           "request_url": null,
-          "duration_ms": 1001
+          "duration_ms": 916
         },
         {
           "facet": "media-schema",
@@ -334,13 +322,13 @@
           "outcome": "pass",
           "detail": "['image/png']; no MapLibre errors; {\"idle\": true, \"errors\": [], \"responses\": 9, \"status_types\": [[200, \"image/png\"]]}",
           "request_url": null,
-          "duration_ms": 419
+          "duration_ms": 384
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:46:35.859171Z",
-          "2026-09-21T09:46:42.112910Z"
+          "2026-09-21T09:59:38.168428Z",
+          "2026-09-21T09:59:43.313844Z"
         ],
         "exchanges": 92,
         "wire_lines": [
@@ -437,7 +425,7 @@
           3106,
           3107
         ],
-        "wire_lines_sha256": "6d104741cc643d3f3d27f8a419acc59e343cb3b8843ef345ca2acbf4cb48349d",
+        "wire_lines_sha256": "095afe22dac7ec6afd931969911a474206a12164be727deb25b0ba9c78abf023",
         "statuses": {
           "200": 65,
           "400": 9,
@@ -457,7 +445,7 @@
       "test_case_id": "client-cert/maplibre-gl-js/ogc/OGC-OP-WMTS-GETCAPABILITIES-GETTILE",
       "status": "pass",
       "performed_by": "MapLibre GL JS",
-      "request_url": "http://honua:5000/rest/services/browser_compat/MapServer/WMS?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=Browser+Points&STYLES=&CRS=EPSG:3857&BBOX=-13629027.891360067,4548308.931081127,-13627804.898907505,4549531.923533689&WIDTH=256&HEIGHT=256&FORMAT=image/png&TRANSPARENT=TRUE",
+      "request_url": "http://honua:5000/rest/services/browser_compat/MapServer/WMTS?SERVICE=WMTS&REQUEST=GetCapabilities",
       "exercised_capabilities": [
         "positive",
         "negative",
@@ -467,9 +455,9 @@
       ],
       "notes": "all 5 checks passed across 5 governed facets",
       "operation": "OGC-OP-WMTS-GETCAPABILITIES-GETTILE",
-      "started_at": "2026-09-21T09:46:47.878701Z",
-      "finished_at": "2026-09-21T09:46:52.961573Z",
-      "duration_ms": 5113,
+      "started_at": "2026-09-21T09:59:48.836160Z",
+      "finished_at": "2026-09-21T09:59:53.941755Z",
+      "duration_ms": 5121,
       "protocol_version": "1.0.0",
       "checks": [
         {
@@ -478,7 +466,7 @@
           "outcome": "pass",
           "detail": "template /rest/services/browser_compat/MapServer/WMTS/2000/default/WebMercatorQuad/{z}/{y}/{x}.png; painted 65 px around pt-alpha",
           "request_url": null,
-          "duration_ms": 531
+          "duration_ms": 543
         },
         {
           "facet": "negative",
@@ -486,7 +474,7 @@
           "outcome": "pass",
           "detail": "responses [400]; nothing rendered; MapLibre error statuses [400]",
           "request_url": null,
-          "duration_ms": 403
+          "duration_ms": 385
         },
         {
           "facet": "auth",
@@ -494,7 +482,7 @@
           "outcome": "pass",
           "detail": "(drawn at pt-alpha, statuses) {'anonymous': (0, [(401, 'application/xml')]), 'wrong-api-key': (0, [(401, 'application/xml')]), 'expired-bearer': (0, [(401, 'application/xml')]), 'api-key': (65, [(200, 'image/png')]), 'oidc-bearer': (65, [(200, 'image/png')])}",
           "request_url": null,
-          "duration_ms": 2200
+          "duration_ms": 2188
         },
         {
           "facet": "crs-axis",
@@ -502,7 +490,7 @@
           "outcome": "pass",
           "detail": "painted pixels around pt-alpha 65; around empty sea 0",
           "request_url": null,
-          "duration_ms": 930
+          "duration_ms": 1004
         },
         {
           "facet": "media-schema",
@@ -510,25 +498,16 @@
           "outcome": "pass",
           "detail": "['image/png']; no MapLibre errors; {\"idle\": true, \"errors\": [], \"responses\": 9, \"status_types\": [[200, \"image/png\"]]}",
           "request_url": null,
-          "duration_ms": 429
+          "duration_ms": 403
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:46:47.878701Z",
-          "2026-09-21T09:46:52.961573Z"
+          "2026-09-21T09:59:48.836160Z",
+          "2026-09-21T09:59:53.941755Z"
         ],
-        "exchanges": 100,
+        "exchanges": 91,
         "wire_lines": [
-          3193,
-          3194,
-          3195,
-          3196,
-          3197,
-          3198,
-          3199,
-          3200,
-          3201,
           3206,
           3207,
           3208,
@@ -621,9 +600,9 @@
           3295,
           3296
         ],
-        "wire_lines_sha256": "49c89f2e78bf080afe4a33434d5ba78de39872150d4edc9d572f30d19b97e7f9",
+        "wire_lines_sha256": "a77038ae335daddef61c9a1703d6a8b2e53fb90c5a0370ac06982955af3d9371",
         "statuses": {
-          "200": 64,
+          "200": 55,
           "400": 9,
           "401": 27
         },
@@ -647,7 +626,7 @@
   "honua_evidence": {
     "release": "2026.1",
     "candidate": {
-      "run_id": "roster-20260921T094413Z-1cd2ef5",
+      "run_id": "roster-20260921T095724Z-1cd2ef5",
       "release": "2026.1",
       "cut": "pre-cut proof on the imaged trunk nightly (operator ruling A, 2026-09-16); no release cut exists",
       "tag": "nightly-1cd2ef5",
@@ -656,7 +635,7 @@
       "platform_image_id": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
       "source_sha": "1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
       "image_created": "2026-09-20T10:16:19.064Z",
-      "producer_source_sha": "0f64f2fd946cc3c9834874bd42d8e8a0b1f7341b",
+      "producer_source_sha": "4a2f6d875d21c21f25cba7e9ca1d164b6d4d57d5",
       "target": "local-docker",
       "durable_uri_base": "https://github.com/honua-io/honua-server/blob/trunk/docs/internal/evidence/client-certification-1cd2ef5/receipts/",
       "server_version": {
@@ -665,10 +644,10 @@
           "version": "2026.1.1",
           "metadataApiVersion": "metadata.honua.io/v2alpha1",
           "metadataSchemaVersion": "2.0.0-alpha.1",
-          "serverTime": "2026-09-21T09:44:32.9047765+00:00"
+          "serverTime": "2026-09-21T09:57:43.083255+00:00"
         },
         "message": null,
-        "timestamp": "2026-09-21T09:44:32.9047811+00:00"
+        "timestamp": "2026-09-21T09:57:43.0832557+00:00"
       }
     },
     "fixture": {
@@ -687,9 +666,9 @@
       "server_config": {
         "files": {
           "docker/client-compat/compose.yml": "c85c7b55aac33f0fa2bbd281ea3c34365a724ab1e71d79034969dd813de1dcd3",
-          "certification/bounded-roster/compose.candidate.yml": "176d14b8e8a5d0f8f5e953cec5c24127a9517db25893d4827fc7c1ac21c6f96b"
+          "certification/bounded-roster/compose.candidate.yml": "feb24b9187eaab0eba251aafa7b8de1a018e9326948ddf8aea0cad0bb4c30d7f"
         },
-        "sha256": "f66d14d60c6ab9969cc2ee9600986266280bb773d27002efc894c2826c2bc635"
+        "sha256": "8a7696b9ec86c4a0f433dceeaaa7a57ba3a1240655211c43d429c51fe6a9b51c"
       },
       "auth_profile": {
         "files": {
@@ -734,7 +713,7 @@
             "compression": null,
             "overviewLevelCount": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.534618+00:00"
+            "createdAt": "2026-09-21T09:57:52.788733+00:00"
           },
           {
             "id": 2,
@@ -751,7 +730,7 @@
             "compression": null,
             "overviewLevelCount": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.555466+00:00"
+            "createdAt": "2026-09-21T09:57:52.800567+00:00"
           }
         ],
         "zarr-stores": [
@@ -769,7 +748,7 @@
             "primaryVariable": null,
             "variables": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.5647182+00:00"
+            "createdAt": "2026-09-21T09:57:52.8109169+00:00"
           },
           {
             "id": 2,
@@ -785,7 +764,7 @@
             "primaryVariable": null,
             "variables": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.5731944+00:00"
+            "createdAt": "2026-09-21T09:57:52.8214186+00:00"
           }
         ]
       }
@@ -797,13 +776,13 @@
       "lane": {
         "lane": "maplibre",
         "image": "honua-roster/lane-maplibre:local",
-        "image_id": "sha256:6693ad1c30bdf4b8236aea487902e2ac4b499be4aeaf65eb6e99395139028240",
-        "base_image": "mcr.microsoft.com/playwright:v1.59.1-noble",
-        "base_repo_digests": ""
+        "image_id": "sha256:fb7e02633326c3345ba7788c9b351d8cd282270ac674f4a8fe09c8de9e7a4103",
+        "base_image": "mcr.microsoft.com/playwright:v1.59.1-noble@sha256:b0ab6f3cb99aa7803adbc14d9027ec1785fc6e433b97e134e0f8fe61683b6b53",
+        "base_repo_digests": "[\"mcr.microsoft.com/playwright:v1.59.1-noble@sha256:b0ab6f3cb99aa7803adbc14d9027ec1785fc6e433b97e134e0f8fe61683b6b53\"]"
       },
       "lane_identity": {
         "lane": "maplibre",
-        "started_at": "2026-09-21T09:46:35.588190Z",
+        "started_at": "2026-09-21T09:59:37.995322Z",
         "python": "3.12.3",
         "platform": "Linux-6.6.114.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
         "cells": [
@@ -830,7 +809,7 @@
           "typing_extensions==4.16.0"
         ],
         "client_identity": "maplibre-5.7 5.7.3\nmaplibre-6.5.0 6.5.0\nee5fc05a0677eaf69601d2c7db0d9ecd6cc27c3abc1d0733bc9ed34707cf8ef2  maplibre-5.7/LICENSE.txt\n73f83dfc6c1657c9bea85d17e14924baf9658378c2f1aa6efd640191b8b1e14b  maplibre-5.7/maplibre-gl-csp-dev.js\n3b5d6147b30552d42c67a8fab4da3f155640e9008487197beac152ea839c51c0  maplibre-5.7/maplibre-gl-csp-dev.js.map\nce34bc249893b466fea20c021ebe8b7a686ebcb5c7441c392349dfc1281ac666  maplibre-5.7/maplibre-gl-csp-worker-dev.js\n113e73d0105c224c2a91ccd2fdc57bcb838e15b27ff5817fbf414f1764f52bd3  maplibre-5.7/maplibre-gl-csp-worker-dev.js.map\n50c2677e0289262d4cbf21086c171fa273e01f634e1eef90b3e0a5bb628ffe96  maplibre-5.7/maplibre-gl-csp-worker.js\n4b9a3e395fcc2d1cce2e4ed70f3f14ee63d2fbdf43f7a1d25b69aa40e0c8a9c6  maplibre-5.7/maplibre-gl-csp-worker.js.map\n1cfc43c1efc96199b5a76b055084a86a61682a8351ee6ed13ffd2271dfc882ee  maplibre-5.7/maplibre-gl-csp.js\ncc9781cadcc6898785f352f23ae05273cb06aad052c5d6df3da64e5e19307edd  maplibre-5.7/maplibre-gl-csp.js.map\n3e40e54c4d569d5c64ebce8be11a327a38800bccf932277fde30900d25e2d0fc  maplibre-5.7/maplibre-gl-dev.js\nf8d360165e26df24e6e4a2904f4102781f5ad3804ef664428acfc92ceb9fc833  maplibre-5.7/maplibre-gl-dev.js.map\n43c1d886b5fdf0aac4e7135bd6f84b823d9f48283a648012665f9be52c01389f  maplibre-5.7/maplibre-gl.css\n36f187bf9cd4f34df910c87f97f47966d48b886a84be759cf0967bd4aa11a9c8  maplibre-5.7/maplibre-gl.d.ts\n2986bbddce2c7a944775791201fad5108ec8768fc2e3243cac607b23826e4bc0  maplibre-5.7/maplibre-gl.js\n0021328a596ce87bde0ad7fc94399a36402b3e0c2696b95344d28912b4392505  maplibre-5.7/maplibre-gl.js.map\nf482453730c8fae57ddf51950ebd8664d9ffec4277216ebc070d63d0314b07fd  maplibre-5.7/package.json\nb04ee9fa13b0e7efca6e4d46d9e09d66f0dd2fa424be9926f554c149b148122a  maplibre-6.5.0/maplibre-gl-dev.mjs\n158557602d6d212de69ab339f80dbe9411501326580ab3e6a4ed0b498c234acf  maplibre-6.5.0/maplibre-gl-dev.mjs.map\n1f357d72fa4e940f0f56ce034f1cc0c4fb522271faac23bad6007106c8d720ea  maplibre-6.5.0/maplibre-gl-shared-dev.mjs\na4be628e72ac8eceefd612a74f03e6e25752b2ce41f8c3655a29c854077054c2  maplibre-6.5.0/maplibre-gl-shared-dev.mjs.map\n430178abe3dbf494342d2fd73feff41e9d39c0779034ec091a22a7a370dadb28  maplibre-6.5.0/maplibre-gl-shared.mjs\nb6cad3037aac7076f7061d8447f5d94b42c251dca02c97d1fb23569e9263d61f  maplibre-6.5.0/maplibre-gl-shared.mjs.map\n915d91c65c7097d7305a831cfa779b7b6c6419ff664559d63fe65d672a155a95  maplibre-6.5.0/maplibre-gl-worker-dev.mjs\n322fe7dfc3e3224225a4cc3ded2f72bc23b4f5ec794b29048632d169b68c2906  maplibre-6.5.0/maplibre-gl-worker-dev.mjs.map\ne250b93dd7970d44decfdcea5b7d806b59f25a54805145a2ab989eef8094083b  maplibre-6.5.0/maplibre-gl-worker.mjs\nd76b5602594c158cf9d52694a9adbd9cd34ffa42b0223ea2ae0ec57e4c2417d2  maplibre-6.5.0/maplibre-gl-worker.mjs.map\n8e2dbbab312dc57656fbb76e9fa5308c75c9d7c7ba5808a7d55bcdb64cc813fa  maplibre-6.5.0/maplibre-gl.css\n529a802e888d6576edfabe22f9dfb8ffa9fe3cda09894ba24bd58ee3b55bf9f2  maplibre-6.5.0/maplibre-gl.d.ts\nc28aad7f75e9afb91824440161fe03ce747bd08d4a21d96f4df25e9218513265  maplibre-6.5.0/maplibre-gl.mjs\n3d7c3bfdf3f1b306b439e07c867b71641a7f1f5f0effc31d70f3b6ee357b00b2  maplibre-6.5.0/maplibre-gl.mjs.map",
-        "finished_at": "2026-09-21T09:48:45.042138Z",
+        "finished_at": "2026-09-21T10:01:48.915614Z",
         "harness_failures": []
       }
     },

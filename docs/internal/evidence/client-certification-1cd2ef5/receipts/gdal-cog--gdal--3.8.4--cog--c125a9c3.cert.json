@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "run_id": "roster-20260921T094413Z-1cd2ef5",
-  "run_date": "2026-09-21T09:45:14.841755Z",
+  "run_id": "roster-20260921T095724Z-1cd2ef5",
+  "run_date": "2026-09-21T09:58:23.734610Z",
   "server_commit": "1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
   "server_version": {
     "success": true,
@@ -9,12 +9,12 @@
       "version": "2026.1.1",
       "metadataApiVersion": "metadata.honua.io/v2alpha1",
       "metadataSchemaVersion": "2.0.0-alpha.1",
-      "serverTime": "2026-09-21T09:44:32.9047765+00:00"
+      "serverTime": "2026-09-21T09:57:43.083255+00:00"
     },
     "message": null,
-    "timestamp": "2026-09-21T09:44:32.9047811+00:00"
+    "timestamp": "2026-09-21T09:57:43.0832557+00:00"
   },
-  "producer_source_sha": "0f64f2fd946cc3c9834874bd42d8e8a0b1f7341b",
+  "producer_source_sha": "4a2f6d875d21c21f25cba7e9ca1d164b6d4d57d5",
   "image_digest": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
   "fixture_revision": "docker/cng/seed.sql@1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
   "server_config_revision": "cog-1.0",
@@ -40,9 +40,9 @@
       ],
       "notes": "failed checks positive:open the served COG tile and read the fixture's pixel gradient, metadata:COG layout, block size and overviews, crs-axis:EPSG:3857 georeferencing of the WebMercatorQuad tile",
       "operation": "dataset-read",
-      "started_at": "2026-09-21T09:45:14.841755Z",
-      "finished_at": "2026-09-21T09:45:14.916395Z",
-      "duration_ms": 75,
+      "started_at": "2026-09-21T09:58:23.734610Z",
+      "finished_at": "2026-09-21T09:58:23.807844Z",
+      "duration_ms": 73,
       "protocol_version": "COG 1.0",
       "checks": [
         {
@@ -51,7 +51,7 @@
           "outcome": "fail",
           "detail": "CheckFailed: GDAL could not open http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog: `/vsicurl?use_head=no&list_dir=no&url=http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621%3Fformat%3Dcog' not recognized as a supported file format.; requests ['http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog.aux', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog.hdr', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog.hdr', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog.xml', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog.xml']",
           "request_url": null,
-          "duration_ms": 74
+          "duration_ms": 73
         },
         {
           "facet": "metadata",
@@ -72,49 +72,11 @@
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:45:14.841755Z",
-          "2026-09-21T09:45:14.916395Z"
+          "2026-09-21T09:58:23.734610Z",
+          "2026-09-21T09:58:23.807844Z"
         ],
-        "exchanges": 46,
+        "exchanges": 8,
         "wire_lines": [
-          397,
-          398,
-          399,
-          400,
-          401,
-          402,
-          403,
-          404,
-          405,
-          406,
-          407,
-          408,
-          409,
-          410,
-          411,
-          412,
-          413,
-          414,
-          415,
-          416,
-          417,
-          418,
-          419,
-          420,
-          421,
-          422,
-          423,
-          424,
-          425,
-          426,
-          427,
-          428,
-          429,
-          430,
-          431,
-          432,
-          433,
-          434,
           435,
           436,
           437,
@@ -124,18 +86,14 @@
           441,
           442
         ],
-        "wire_lines_sha256": "6089b9c263ccfcc2c9ac02464c5cacb443dc5430ad563e6bdbd09c188919cf2f",
+        "wire_lines_sha256": "7dbeee8d7c6811ebcfce737e9653f06074915e76b74fa99298a6f1b68b7947a3",
         "statuses": {
-          "200": 42,
-          "401": 3,
-          "404": 1
+          "200": 8
         },
         "user_agents": [
           "GDAL/3.8.4"
         ],
         "credential_schemes": [
-          "ApiKey",
-          "Bearer",
           "none"
         ]
       }
@@ -150,7 +108,7 @@
   "honua_evidence": {
     "release": "2026.1",
     "candidate": {
-      "run_id": "roster-20260921T094413Z-1cd2ef5",
+      "run_id": "roster-20260921T095724Z-1cd2ef5",
       "release": "2026.1",
       "cut": "pre-cut proof on the imaged trunk nightly (operator ruling A, 2026-09-16); no release cut exists",
       "tag": "nightly-1cd2ef5",
@@ -159,7 +117,7 @@
       "platform_image_id": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
       "source_sha": "1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
       "image_created": "2026-09-20T10:16:19.064Z",
-      "producer_source_sha": "0f64f2fd946cc3c9834874bd42d8e8a0b1f7341b",
+      "producer_source_sha": "4a2f6d875d21c21f25cba7e9ca1d164b6d4d57d5",
       "target": "local-docker",
       "durable_uri_base": "https://github.com/honua-io/honua-server/blob/trunk/docs/internal/evidence/client-certification-1cd2ef5/receipts/",
       "server_version": {
@@ -168,10 +126,10 @@
           "version": "2026.1.1",
           "metadataApiVersion": "metadata.honua.io/v2alpha1",
           "metadataSchemaVersion": "2.0.0-alpha.1",
-          "serverTime": "2026-09-21T09:44:32.9047765+00:00"
+          "serverTime": "2026-09-21T09:57:43.083255+00:00"
         },
         "message": null,
-        "timestamp": "2026-09-21T09:44:32.9047811+00:00"
+        "timestamp": "2026-09-21T09:57:43.0832557+00:00"
       }
     },
     "fixture": {
@@ -190,9 +148,9 @@
       "server_config": {
         "files": {
           "docker/client-compat/compose.yml": "c85c7b55aac33f0fa2bbd281ea3c34365a724ab1e71d79034969dd813de1dcd3",
-          "certification/bounded-roster/compose.candidate.yml": "176d14b8e8a5d0f8f5e953cec5c24127a9517db25893d4827fc7c1ac21c6f96b"
+          "certification/bounded-roster/compose.candidate.yml": "feb24b9187eaab0eba251aafa7b8de1a018e9326948ddf8aea0cad0bb4c30d7f"
         },
-        "sha256": "f66d14d60c6ab9969cc2ee9600986266280bb773d27002efc894c2826c2bc635"
+        "sha256": "8a7696b9ec86c4a0f433dceeaaa7a57ba3a1240655211c43d429c51fe6a9b51c"
       },
       "auth_profile": {
         "files": {
@@ -237,7 +195,7 @@
             "compression": null,
             "overviewLevelCount": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.534618+00:00"
+            "createdAt": "2026-09-21T09:57:52.788733+00:00"
           },
           {
             "id": 2,
@@ -254,7 +212,7 @@
             "compression": null,
             "overviewLevelCount": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.555466+00:00"
+            "createdAt": "2026-09-21T09:57:52.800567+00:00"
           }
         ],
         "zarr-stores": [
@@ -272,7 +230,7 @@
             "primaryVariable": null,
             "variables": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.5647182+00:00"
+            "createdAt": "2026-09-21T09:57:52.8109169+00:00"
           },
           {
             "id": 2,
@@ -288,7 +246,7 @@
             "primaryVariable": null,
             "variables": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.5731944+00:00"
+            "createdAt": "2026-09-21T09:57:52.8214186+00:00"
           }
         ]
       }
@@ -300,13 +258,13 @@
       "lane": {
         "lane": "gdal-3.8.4",
         "image": "honua-roster/lane-gdal:3.8.4",
-        "image_id": "sha256:aa158253e8c3ee174f36f74840c9188777631b314b708d88c52d237fa5585881",
-        "base_image": "ghcr.io/osgeo/gdal:ubuntu-small-3.8.4",
-        "base_repo_digests": "[\"ghcr.io/osgeo/gdal@sha256:60d3bc2f8b09ca1a7ef2db0239699b2c03713aa02be6e525e731c0020bbb10a4\"]"
+        "image_id": "sha256:a51e6903c0cb339a24e797aefa50e80165901da667b408b0b8f13aa455c1ce06",
+        "base_image": "ghcr.io/osgeo/gdal:ubuntu-small-3.8.4@sha256:60d3bc2f8b09ca1a7ef2db0239699b2c03713aa02be6e525e731c0020bbb10a4",
+        "base_repo_digests": "[\"ghcr.io/osgeo/gdal:ubuntu-small-3.8.4@sha256:60d3bc2f8b09ca1a7ef2db0239699b2c03713aa02be6e525e731c0020bbb10a4\"]"
       },
       "lane_identity": {
         "lane": "gdal-3.8.4",
-        "started_at": "2026-09-21T09:45:09.851952Z",
+        "started_at": "2026-09-21T09:58:19.094199Z",
         "python": "3.10.12",
         "platform": "Linux-6.6.114.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
         "cells": [
@@ -339,7 +297,7 @@
           }
         ],
         "client_identity": "GDAL 3.8.4, released 2024/02/08",
-        "finished_at": "2026-09-21T09:45:14.936194Z",
+        "finished_at": "2026-09-21T09:58:23.831212Z",
         "harness_failures": []
       }
     },

@@ -9,9 +9,9 @@
   "operation": "styling.ogc-api-styles",
   "protocol_version": "OGC API - Styles 1.0",
   "protocol_profile": "core+mapbox-styles",
-  "started_at": "2026-09-21T09:46:33.314837Z",
-  "finished_at": "2026-09-21T09:46:33.829752Z",
-  "duration_ms": 515,
+  "started_at": "2026-09-21T09:59:36.211601Z",
+  "finished_at": "2026-09-21T09:59:36.697834Z",
+  "duration_ms": 486,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -28,7 +28,7 @@
       "outcome": "pass",
       "detail": "style applied; responses [(200, 'application/vnd.mapbox.style+json; charset=utf-8')]",
       "request_url": null,
-      "duration_ms": 180
+      "duration_ms": 161
     },
     {
       "facet": "negative",
@@ -36,7 +36,7 @@
       "outcome": "pass",
       "detail": "loadDefaultStyle False; statuses [404]",
       "request_url": null,
-      "duration_ms": 110
+      "duration_ms": 108
     },
     {
       "facet": "auth",
@@ -44,7 +44,7 @@
       "outcome": "pass",
       "detail": "anonymous [401]",
       "request_url": null,
-      "duration_ms": 114
+      "duration_ms": 109
     },
     {
       "facet": "media-schema",
@@ -52,7 +52,7 @@
       "outcome": "pass",
       "detail": "[(200, 'application/vnd.mapbox.style+json; charset=utf-8')]",
       "request_url": null,
-      "duration_ms": 111
+      "duration_ms": 107
     }
   ]
 }

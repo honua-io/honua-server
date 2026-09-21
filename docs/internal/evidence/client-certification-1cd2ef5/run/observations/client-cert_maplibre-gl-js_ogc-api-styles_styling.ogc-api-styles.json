@@ -9,9 +9,9 @@
   "operation": "styling.ogc-api-styles",
   "protocol_version": "OGC API - Styles 1.0",
   "protocol_profile": "core+mapbox-styles",
-  "started_at": "2026-09-21T09:47:11.207219Z",
-  "finished_at": "2026-09-21T09:47:16.292576Z",
-  "duration_ms": 5085,
+  "started_at": "2026-09-21T10:00:12.028135Z",
+  "finished_at": "2026-09-21T10:00:16.979361Z",
+  "duration_ms": 4951,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -28,7 +28,7 @@
       "outcome": "pass",
       "detail": "style layers ['layer-2000-circle']",
       "request_url": null,
-      "duration_ms": 312
+      "duration_ms": 218
     },
     {
       "facet": "negative",
@@ -36,7 +36,7 @@
       "outcome": "pass",
       "detail": "style error statuses [404]",
       "request_url": null,
-      "duration_ms": 4022
+      "duration_ms": 4023
     },
     {
       "facet": "auth",
@@ -44,7 +44,7 @@
       "outcome": "pass",
       "detail": "http://honua:5000/ogc/styles/Authenticated%20Browser%20Points: {'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401, 'api-key': 200, 'oidc-bearer': 200}",
       "request_url": null,
-      "duration_ms": 84
+      "duration_ms": 76
     },
     {
       "facet": "media-schema",
@@ -52,7 +52,7 @@
       "outcome": "pass",
       "detail": "application/vnd.mapbox.style+json; charset=utf-8",
       "request_url": null,
-      "duration_ms": 20
+      "duration_ms": 19
     }
   ]
 }

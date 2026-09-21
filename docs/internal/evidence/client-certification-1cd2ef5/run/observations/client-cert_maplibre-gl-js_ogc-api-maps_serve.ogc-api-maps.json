@@ -9,9 +9,9 @@
   "operation": "serve.ogc-api-maps",
   "protocol_version": "OGC API - Maps 1.0",
   "protocol_profile": "core+collection-map+crs",
-  "started_at": "2026-09-21T09:47:06.175978Z",
-  "finished_at": "2026-09-21T09:47:11.043719Z",
-  "duration_ms": 4868,
+  "started_at": "2026-09-21T10:00:06.945676Z",
+  "finished_at": "2026-09-21T10:00:11.820712Z",
+  "duration_ms": 4875,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -29,7 +29,7 @@
       "outcome": "pass",
       "detail": "painted 72 px around pt-alpha; {\"idle\": true, \"errors\": [], \"responses\": 10, \"status_types\": [[200, \"image/png\"], [200, \"text/javascript\"]]}",
       "request_url": null,
-      "duration_ms": 543
+      "duration_ms": 531
     },
     {
       "facet": "negative",
@@ -37,7 +37,7 @@
       "outcome": "pass",
       "detail": "responses [404]; nothing rendered; MapLibre error statuses []",
       "request_url": null,
-      "duration_ms": 400
+      "duration_ms": 374
     },
     {
       "facet": "auth",
@@ -45,7 +45,7 @@
       "outcome": "pass",
       "detail": "(painted, statuses) {'anonymous': (0, [401]), 'wrong-api-key': (0, [401]), 'expired-bearer': (0, [401]), 'api-key': (65, [200]), 'oidc-bearer': (65, [200])}",
       "request_url": null,
-      "duration_ms": 2062
+      "duration_ms": 2136
     },
     {
       "facet": "crs-axis",
@@ -53,7 +53,7 @@
       "outcome": "pass",
       "detail": "painted pixels around pt-alpha 72; around empty sea 0",
       "request_url": null,
-      "duration_ms": 898
+      "duration_ms": 879
     },
     {
       "facet": "media-schema",
@@ -61,7 +61,7 @@
       "outcome": "pass",
       "detail": "['image/png']; no MapLibre errors; {\"idle\": true, \"errors\": [], \"responses\": 9, \"status_types\": [[200, \"image/png\"]]}",
       "request_url": null,
-      "duration_ms": 394
+      "duration_ms": 395
     }
   ]
 }

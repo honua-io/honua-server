@@ -9,9 +9,9 @@
   "operation": "OGC-OP-OGC-API-FEATURES-LANDING",
   "protocol_version": "OGC API - Features 1.0",
   "protocol_profile": "core+geojson+crs",
-  "started_at": "2026-09-21T09:45:10.098780Z",
-  "finished_at": "2026-09-21T09:45:10.312725Z",
-  "duration_ms": 214,
+  "started_at": "2026-09-21T09:58:19.351718Z",
+  "finished_at": "2026-09-21T09:58:19.544023Z",
+  "duration_ms": 192,
   "status": "fail",
   "exercised_capabilities": [
     "positive",
@@ -29,7 +29,7 @@
       "outcome": "pass",
       "detail": "opened the API root as 9 layers ['0', '10', '1000', '11', '12', '2000', '2001', '2002', '3000']; layer 0 has 10 features; GDAL fetched ['http://honua:5000/ogc/features', 'http://honua:5000/ogc/features/collections', 'http://honua:5000/ogc/features/collections/0/items?limit=20', 'http://honua:5000/openapi.json']",
       "request_url": null,
-      "duration_ms": 53
+      "duration_ms": 58
     },
     {
       "facet": "negative",
@@ -45,7 +45,7 @@
       "outcome": "pass",
       "detail": "OAPIF:http://honua:5000/ogc/features/collections/2011: {'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401, 'api-key': 10, 'oidc-bearer': 10}",
       "request_url": null,
-      "duration_ms": 107
+      "duration_ms": 84
     },
     {
       "facet": "crs-axis",
@@ -53,7 +53,7 @@
       "outcome": "fail",
       "detail": "CheckFailed: layer SRS is not EPSG:4326",
       "request_url": null,
-      "duration_ms": 18
+      "duration_ms": 17
     },
     {
       "facet": "media-schema",
@@ -61,7 +61,7 @@
       "outcome": "pass",
       "detail": "field types {'name': 'String', 'description': 'String', 'status': 'String', 'count': 'Integer', 'ratio': 'Real', 'active': 'Integer', 'created_at': 'DateTime', 'event_date': 'Date', 'event_time': 'Time', 'uid': 'String', 'tags': 'StringList', 'numbers': 'IntegerList', 'eo:cloud_cover': 'Integer'}; geometry Point; http://honua:5000/ogc/features served application/json with 7 links; GDAL fetched 4 documents",
       "request_url": null,
-      "duration_ms": 30
+      "duration_ms": 28
     }
   ]
 }

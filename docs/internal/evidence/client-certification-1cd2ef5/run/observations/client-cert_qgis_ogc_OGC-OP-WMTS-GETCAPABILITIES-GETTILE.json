@@ -9,9 +9,9 @@
   "operation": "OGC-OP-WMTS-GETCAPABILITIES-GETTILE",
   "protocol_version": "1.0.0",
   "protocol_profile": "WMTS 1.0.0 RESTful+KVP",
-  "started_at": "2026-09-21T09:46:29.753085Z",
-  "finished_at": "2026-09-21T09:46:30.567829Z",
-  "duration_ms": 815,
+  "started_at": "2026-09-21T09:59:33.154884Z",
+  "finished_at": "2026-09-21T09:59:33.968968Z",
+  "duration_ms": 814,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -29,7 +29,7 @@
       "outcome": "pass",
       "detail": "painted 50 px in 15 colours from 4 tile requests",
       "request_url": null,
-      "duration_ms": 253
+      "duration_ms": 237
     },
     {
       "facet": "negative",
@@ -45,7 +45,7 @@
       "outcome": "pass",
       "detail": "(painted, statuses) {'anonymous': ('invalid', [401]), 'wrong-api-key': ('invalid', [401]), 'expired-bearer': ('invalid', [401]), 'api-key': (50, [200]), 'oidc-bearer': (50, [200])}",
       "request_url": null,
-      "duration_ms": 337
+      "duration_ms": 352
     },
     {
       "facet": "crs-axis",
@@ -53,7 +53,7 @@
       "outcome": "pass",
       "detail": "crs EPSG:3857; extent -13629958,4545577 : -13625506,4549802; painted at fixture 50, far away 0",
       "request_url": null,
-      "duration_ms": 19
+      "duration_ms": 20
     },
     {
       "facet": "media-schema",

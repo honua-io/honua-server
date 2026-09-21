@@ -9,9 +9,9 @@
   "operation": "OGC-OP-OGC-API-FEATURES-COLLECTIONS",
   "protocol_version": "OGC API - Features 1.0",
   "protocol_profile": "core+geojson+crs",
-  "started_at": "2026-09-21T09:45:10.456900Z",
-  "finished_at": "2026-09-21T09:45:10.651885Z",
-  "duration_ms": 195,
+  "started_at": "2026-09-21T09:58:19.682816Z",
+  "finished_at": "2026-09-21T09:58:19.846418Z",
+  "duration_ms": 164,
   "status": "fail",
   "exercised_capabilities": [
     "positive",
@@ -29,7 +29,7 @@
       "outcome": "pass",
       "detail": "layers equal the advertised collections ['0', '10', '1000', '11', '12', '2000', '2001', '2002', '3000']; GDAL fetched ['http://honua:5000/ogc/features/collections']",
       "request_url": null,
-      "duration_ms": 29
+      "duration_ms": 27
     },
     {
       "facet": "negative",
@@ -37,7 +37,7 @@
       "outcome": "pass",
       "detail": "OAPIF:http://honua:5000/ogc/features/collections/no-such-collection -> HTTP 404 problem document surfaced by GDAL",
       "request_url": null,
-      "duration_ms": 5
+      "duration_ms": 6
     },
     {
       "facet": "auth",
@@ -45,7 +45,7 @@
       "outcome": "pass",
       "detail": "OAPIF:http://honua:5000/ogc/features/collections/2011: {'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401, 'api-key': 10, 'oidc-bearer': 10}",
       "request_url": null,
-      "duration_ms": 116
+      "duration_ms": 84
     },
     {
       "facet": "crs-axis",
@@ -53,7 +53,7 @@
       "outcome": "fail",
       "detail": "CheckFailed: layer SRS is not EPSG:4326",
       "request_url": null,
-      "duration_ms": 18
+      "duration_ms": 19
     },
     {
       "facet": "media-schema",

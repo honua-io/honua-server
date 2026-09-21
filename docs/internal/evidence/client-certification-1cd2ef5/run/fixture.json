@@ -14,9 +14,9 @@
   "server_config": {
     "files": {
       "docker/client-compat/compose.yml": "c85c7b55aac33f0fa2bbd281ea3c34365a724ab1e71d79034969dd813de1dcd3",
-      "certification/bounded-roster/compose.candidate.yml": "176d14b8e8a5d0f8f5e953cec5c24127a9517db25893d4827fc7c1ac21c6f96b"
+      "certification/bounded-roster/compose.candidate.yml": "feb24b9187eaab0eba251aafa7b8de1a018e9326948ddf8aea0cad0bb4c30d7f"
     },
-    "sha256": "f66d14d60c6ab9969cc2ee9600986266280bb773d27002efc894c2826c2bc635"
+    "sha256": "8a7696b9ec86c4a0f433dceeaaa7a57ba3a1240655211c43d429c51fe6a9b51c"
   },
   "auth_profile": {
     "files": {
@@ -61,7 +61,7 @@
         "compression": null,
         "overviewLevelCount": null,
         "metadataScannedAt": null,
-        "createdAt": "2026-09-21T09:44:43.534618+00:00"
+        "createdAt": "2026-09-21T09:57:52.788733+00:00"
       },
       {
         "id": 2,
@@ -78,7 +78,7 @@
         "compression": null,
         "overviewLevelCount": null,
         "metadataScannedAt": null,
-        "createdAt": "2026-09-21T09:44:43.555466+00:00"
+        "createdAt": "2026-09-21T09:57:52.800567+00:00"
       }
     ],
     "zarr-stores": [
@@ -96,7 +96,7 @@
         "primaryVariable": null,
         "variables": null,
         "metadataScannedAt": null,
-        "createdAt": "2026-09-21T09:44:43.5647182+00:00"
+        "createdAt": "2026-09-21T09:57:52.8109169+00:00"
       },
       {
         "id": 2,
@@ -112,7 +112,7 @@
         "primaryVariable": null,
         "variables": null,
         "metadataScannedAt": null,
-        "createdAt": "2026-09-21T09:44:43.5731944+00:00"
+        "createdAt": "2026-09-21T09:57:52.8214186+00:00"
       }
     ]
   }

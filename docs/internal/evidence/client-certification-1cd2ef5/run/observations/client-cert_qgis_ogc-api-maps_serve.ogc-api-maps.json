@@ -9,9 +9,9 @@
   "operation": "serve.ogc-api-maps",
   "protocol_version": "OGC API - Maps 1.0",
   "protocol_profile": "core+collection-map",
-  "started_at": "2026-09-21T09:46:31.545541Z",
-  "finished_at": "2026-09-21T09:46:32.301769Z",
-  "duration_ms": 756,
+  "started_at": "2026-09-21T09:59:34.871900Z",
+  "finished_at": "2026-09-21T09:59:35.503165Z",
+  "duration_ms": 631,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -29,7 +29,7 @@
       "outcome": "pass",
       "detail": "painted 4144; fetched ['http://honua:5000/ogc/maps/collections/2000']",
       "request_url": null,
-      "duration_ms": 227
+      "duration_ms": 145
     },
     {
       "facet": "negative",
@@ -45,7 +45,7 @@
       "outcome": "pass",
       "detail": "{'anonymous': '401', 'wrong-api-key': '401', 'expired-bearer': '401', 'api-key': 'valid', 'oidc-bearer': 'valid'}",
       "request_url": null,
-      "duration_ms": 357
+      "duration_ms": 314
     },
     {
       "facet": "crs-axis",
@@ -53,7 +53,7 @@
       "outcome": "pass",
       "detail": "crs EPSG:4326; extent -122.4400,37.7600 : -122.4000,37.7900",
       "request_url": null,
-      "duration_ms": 58
+      "duration_ms": 57
     },
     {
       "facet": "media-schema",

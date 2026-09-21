@@ -1,6 +1,6 @@
 {
   "lane": "gdal-3.8.4",
-  "started_at": "2026-09-21T09:45:09.851952Z",
+  "started_at": "2026-09-21T09:58:19.094199Z",
   "python": "3.10.12",
   "platform": "Linux-6.6.114.1-microsoft-standard-WSL2-x86_64-with-glibc2.35",
   "cells": [
@@ -33,6 +33,6 @@
     }
   ],
   "client_identity": "GDAL 3.8.4, released 2024/02/08",
-  "finished_at": "2026-09-21T09:45:14.936194Z",
+  "finished_at": "2026-09-21T09:58:23.831212Z",
   "harness_failures": []
 }

@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "run_id": "roster-20260921T094413Z-1cd2ef5",
-  "run_date": "2026-09-21T09:45:21.892895Z",
+  "run_id": "roster-20260921T095724Z-1cd2ef5",
+  "run_date": "2026-09-21T09:58:30.535484Z",
   "server_commit": "1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
   "server_version": {
     "success": true,
@@ -9,12 +9,12 @@
       "version": "2026.1.1",
       "metadataApiVersion": "metadata.honua.io/v2alpha1",
       "metadataSchemaVersion": "2.0.0-alpha.1",
-      "serverTime": "2026-09-21T09:44:32.9047765+00:00"
+      "serverTime": "2026-09-21T09:57:43.083255+00:00"
     },
     "message": null,
-    "timestamp": "2026-09-21T09:44:32.9047811+00:00"
+    "timestamp": "2026-09-21T09:57:43.0832557+00:00"
   },
-  "producer_source_sha": "0f64f2fd946cc3c9834874bd42d8e8a0b1f7341b",
+  "producer_source_sha": "4a2f6d875d21c21f25cba7e9ca1d164b6d4d57d5",
   "image_digest": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
   "fixture_revision": "docker/cng/seed.sql@1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
   "server_config_revision": "server-capability-matrix@ac30266fbd153363bebdbed13130accc8ab0c94a",
@@ -40,9 +40,9 @@
       ],
       "notes": "all 3 checks passed across 3 governed facets",
       "operation": "serve.geoservices-mapserver",
-      "started_at": "2026-09-21T09:45:21.892895Z",
-      "finished_at": "2026-09-21T09:45:22.240370Z",
-      "duration_ms": 347,
+      "started_at": "2026-09-21T09:58:30.535484Z",
+      "finished_at": "2026-09-21T09:58:30.896320Z",
+      "duration_ms": 361,
       "protocol_version": "GeoServices REST 10.x",
       "checks": [
         {
@@ -51,7 +51,7 @@
           "outcome": "pass",
           "detail": "painted 42 px in 12 colours via 1 exports",
           "request_url": null,
-          "duration_ms": 270
+          "duration_ms": 277
         },
         {
           "facet": "metadata",
@@ -59,7 +59,7 @@
           "outcome": "pass",
           "detail": "crs EPSG:4326; extent -122,38 : -122,38; sublayers 0",
           "request_url": null,
-          "duration_ms": 4
+          "duration_ms": 5
         },
         {
           "facet": "media-schema",
@@ -67,13 +67,13 @@
           "outcome": "pass",
           "detail": "[('2000', 'application/json'), ('MapServer', 'application/json'), ('export', 'image/png')]",
           "request_url": null,
-          "duration_ms": 74
+          "duration_ms": 79
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:45:21.892895Z",
-          "2026-09-21T09:45:22.240370Z"
+          "2026-09-21T09:58:30.535484Z",
+          "2026-09-21T09:58:30.896320Z"
         ],
         "exchanges": 6,
         "wire_lines": [
@@ -84,7 +84,7 @@
           475,
           476
         ],
-        "wire_lines_sha256": "89662c83ce47af5b9c003822e2ff79674679cafbe177bfb4478574edf53f9caf",
+        "wire_lines_sha256": "f30a767d7eb0e09f107d19ae3e62c54e6c2daa505304a23282e85676bd2f9123",
         "statuses": {
           "200": 6
         },
@@ -106,7 +106,7 @@
   "honua_evidence": {
     "release": "2026.1",
     "candidate": {
-      "run_id": "roster-20260921T094413Z-1cd2ef5",
+      "run_id": "roster-20260921T095724Z-1cd2ef5",
       "release": "2026.1",
       "cut": "pre-cut proof on the imaged trunk nightly (operator ruling A, 2026-09-16); no release cut exists",
       "tag": "nightly-1cd2ef5",
@@ -115,7 +115,7 @@
       "platform_image_id": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
       "source_sha": "1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
       "image_created": "2026-09-20T10:16:19.064Z",
-      "producer_source_sha": "0f64f2fd946cc3c9834874bd42d8e8a0b1f7341b",
+      "producer_source_sha": "4a2f6d875d21c21f25cba7e9ca1d164b6d4d57d5",
       "target": "local-docker",
       "durable_uri_base": "https://github.com/honua-io/honua-server/blob/trunk/docs/internal/evidence/client-certification-1cd2ef5/receipts/",
       "server_version": {
@@ -124,10 +124,10 @@
           "version": "2026.1.1",
           "metadataApiVersion": "metadata.honua.io/v2alpha1",
           "metadataSchemaVersion": "2.0.0-alpha.1",
-          "serverTime": "2026-09-21T09:44:32.9047765+00:00"
+          "serverTime": "2026-09-21T09:57:43.083255+00:00"
         },
         "message": null,
-        "timestamp": "2026-09-21T09:44:32.9047811+00:00"
+        "timestamp": "2026-09-21T09:57:43.0832557+00:00"
       }
     },
     "fixture": {
@@ -146,9 +146,9 @@
       "server_config": {
         "files": {
           "docker/client-compat/compose.yml": "c85c7b55aac33f0fa2bbd281ea3c34365a724ab1e71d79034969dd813de1dcd3",
-          "certification/bounded-roster/compose.candidate.yml": "176d14b8e8a5d0f8f5e953cec5c24127a9517db25893d4827fc7c1ac21c6f96b"
+          "certification/bounded-roster/compose.candidate.yml": "feb24b9187eaab0eba251aafa7b8de1a018e9326948ddf8aea0cad0bb4c30d7f"
         },
-        "sha256": "f66d14d60c6ab9969cc2ee9600986266280bb773d27002efc894c2826c2bc635"
+        "sha256": "8a7696b9ec86c4a0f433dceeaaa7a57ba3a1240655211c43d429c51fe6a9b51c"
       },
       "auth_profile": {
         "files": {
@@ -193,7 +193,7 @@
             "compression": null,
             "overviewLevelCount": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.534618+00:00"
+            "createdAt": "2026-09-21T09:57:52.788733+00:00"
           },
           {
             "id": 2,
@@ -210,7 +210,7 @@
             "compression": null,
             "overviewLevelCount": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.555466+00:00"
+            "createdAt": "2026-09-21T09:57:52.800567+00:00"
           }
         ],
         "zarr-stores": [
@@ -228,7 +228,7 @@
             "primaryVariable": null,
             "variables": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.5647182+00:00"
+            "createdAt": "2026-09-21T09:57:52.8109169+00:00"
           },
           {
             "id": 2,
@@ -244,7 +244,7 @@
             "primaryVariable": null,
             "variables": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.5731944+00:00"
+            "createdAt": "2026-09-21T09:57:52.8214186+00:00"
           }
         ]
       }
@@ -256,13 +256,13 @@
       "lane": {
         "lane": "qgis",
         "image": "honua-roster/lane-qgis:3.44.13",
-        "image_id": "sha256:ff2efd9ac2b8f9ba9193e8d99f96872bdd8fdfe06eebfbf5347988138077a468",
-        "base_image": "qgis/qgis:3.44.13",
-        "base_repo_digests": "[\"qgis/qgis@sha256:59e160b2ea3f881be039ed49936c42e75e8f336688951f22147676db743f4e47\"]"
+        "image_id": "sha256:65a666fedae0cd2668608e0d2a6519ba40ad1c273de6298d2937627e1b48c78d",
+        "base_image": "qgis/qgis:3.44.13@sha256:59e160b2ea3f881be039ed49936c42e75e8f336688951f22147676db743f4e47",
+        "base_repo_digests": "[\"qgis/qgis:3.44.13@sha256:59e160b2ea3f881be039ed49936c42e75e8f336688951f22147676db743f4e47\"]"
       },
       "lane_identity": {
         "lane": "qgis",
-        "started_at": "2026-09-21T09:45:18.590184Z",
+        "started_at": "2026-09-21T09:58:27.362239Z",
         "python": "3.13.7",
         "platform": "Linux-6.6.114.1-microsoft-standard-WSL2-x86_64-with-glibc2.42",
         "cells": [
@@ -296,7 +296,7 @@
           }
         ],
         "client_identity": "3.44.13-Solothurn",
-        "finished_at": "2026-09-21T09:46:33.959521Z",
+        "finished_at": "2026-09-21T09:59:36.782554Z",
         "harness_failures": []
       }
     },

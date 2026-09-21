@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "run_id": "roster-20260921T094413Z-1cd2ef5",
-  "run_date": "2026-09-21T09:45:23.270492Z",
+  "run_id": "roster-20260921T095724Z-1cd2ef5",
+  "run_date": "2026-09-21T09:58:31.974576Z",
   "server_commit": "1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
   "server_version": {
     "success": true,
@@ -9,12 +9,12 @@
       "version": "2026.1.1",
       "metadataApiVersion": "metadata.honua.io/v2alpha1",
       "metadataSchemaVersion": "2.0.0-alpha.1",
-      "serverTime": "2026-09-21T09:44:32.9047765+00:00"
+      "serverTime": "2026-09-21T09:57:43.083255+00:00"
     },
     "message": null,
-    "timestamp": "2026-09-21T09:44:32.9047811+00:00"
+    "timestamp": "2026-09-21T09:57:43.0832557+00:00"
   },
-  "producer_source_sha": "0f64f2fd946cc3c9834874bd42d8e8a0b1f7341b",
+  "producer_source_sha": "4a2f6d875d21c21f25cba7e9ca1d164b6d4d57d5",
   "image_digest": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
   "fixture_revision": "docker/cng/seed.sql@1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
   "server_config_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
@@ -42,9 +42,9 @@
       ],
       "notes": "all 5 checks passed across 5 governed facets",
       "operation": "OGC-OP-OGC-API-FEATURES-COLLECTION",
-      "started_at": "2026-09-21T09:45:30.906079Z",
-      "finished_at": "2026-09-21T09:45:32.625579Z",
-      "duration_ms": 1719,
+      "started_at": "2026-09-21T09:58:40.161718Z",
+      "finished_at": "2026-09-21T09:58:41.886572Z",
+      "duration_ms": 1725,
       "protocol_version": "OGC API - Features 1.0",
       "checks": [
         {
@@ -53,7 +53,7 @@
           "outcome": "pass",
           "detail": "title 'Test Layer'; abstract 'Client compatibility certification layer'; extent -122.500,37.700 : -122.350,37.840; exchanges ['GET http://honua:5000/ogc/features -> 200 application/json', 'GET http://honua:5000/openapi.json -> 200 application/vnd.oai.openapi+json; version=3.0', 'GET http://honua:5000/ogc/features/collections/0 -> 200 application/json', 'GET http://honua:5000/ogc/features/conformance -> 200 application/json', 'GET http://honua:5000/ogc/features/collections/0/queryables -> 200 application/schema+json', 'GET http://honua:5000/ogc/features/collections/0/items?limit=10 -> 200 application/geo+json', 'GET http://honua:5000/ogc/features/collections/0/schema -> 200 application/schema+json', 'CUSTOM http://honua:5000/ogc/features/collections/0/items -> 405']",
           "request_url": null,
-          "duration_ms": 304
+          "duration_ms": 287
         },
         {
           "facet": "negative",
@@ -61,7 +61,7 @@
           "outcome": "pass",
           "detail": "layer valid=False; server answered [('GET', 404), ('GET', 404)]",
           "request_url": null,
-          "duration_ms": 134
+          "duration_ms": 125
         },
         {
           "facet": "auth",
@@ -69,7 +69,7 @@
           "outcome": "pass",
           "detail": "(features, statuses) {'anonymous': ('invalid', [401]), 'wrong-api-key': ('invalid', [401]), 'expired-bearer': ('invalid', [401]), 'api-key': (10, [200, 405]), 'oidc-bearer': (10, [200, 405])}",
           "request_url": null,
-          "duration_ms": 762
+          "duration_ms": 807
         },
         {
           "facet": "crs-axis",
@@ -77,7 +77,7 @@
           "outcome": "pass",
           "detail": "layer OGC:CRS84; alpha (-122.49, 37.71); bbox window ['delta', 'gamma']; EPSG:3857 alpha (-13635524.427268, 4538539.153413) via limit=100&crs=http://www.opengis.net/def/crs/EPSG/0/3857",
           "request_url": null,
-          "duration_ms": 271
+          "duration_ms": 294
         },
         {
           "facet": "media-schema",
@@ -85,13 +85,13 @@
           "outcome": "pass",
           "detail": "geometry Point; fields {'objectid': 4, 'name': 10, 'description': 10, 'status': 10, 'count': 4, 'ratio': 6, 'active': 1, 'created_at': 16, 'event_date': 14, 'event_time': 10, 'uid': 10, 'tags': 10, 'numbers': 10, 'eo:cloud_cover': 6}; items served application/geo+json",
           "request_url": null,
-          "duration_ms": 239
+          "duration_ms": 204
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:45:30.906079Z",
-          "2026-09-21T09:45:32.625579Z"
+          "2026-09-21T09:58:40.161718Z",
+          "2026-09-21T09:58:41.886572Z"
         ],
         "exchanges": 68,
         "wire_lines": [
@@ -164,7 +164,7 @@
           740,
           741
         ],
-        "wire_lines_sha256": "b7279762091e5340a9cbab008321d416ee9bfc57452b3dd44bdb305a4c50aadd",
+        "wire_lines_sha256": "cf7823867bcad8794a4954eddf5200d33d41af859676ede97dfeecbc00c4e187",
         "statuses": {
           "200": 48,
           "401": 6,
@@ -195,9 +195,9 @@
       ],
       "notes": "all 5 checks passed across 5 governed facets",
       "operation": "OGC-OP-OGC-API-FEATURES-COLLECTIONS",
-      "started_at": "2026-09-21T09:45:28.551072Z",
-      "finished_at": "2026-09-21T09:45:30.131256Z",
-      "duration_ms": 1580,
+      "started_at": "2026-09-21T09:58:37.658444Z",
+      "finished_at": "2026-09-21T09:58:39.395850Z",
+      "duration_ms": 1737,
       "protocol_version": "OGC API - Features 1.0",
       "checks": [
         {
@@ -206,7 +206,7 @@
           "outcome": "pass",
           "detail": "browser listed 9 collections ['Browser Lines', 'Browser Points', 'Browser Polygons', 'CNG Features', 'Portal Public Points', 'Test Layer', 'WFS-T Delete Scratch', 'WFS-T Insert Scratch', 'WFS-T Update Scratch']; exchanges ['GET http://honua:5000/ogc/features -> 200 application/json', 'GET http://honua:5000/ogc/features/collections -> 200 application/json']",
           "request_url": null,
-          "duration_ms": 233
+          "duration_ms": 241
         },
         {
           "facet": "negative",
@@ -214,7 +214,7 @@
           "outcome": "pass",
           "detail": "layer valid=False; server answered [('GET', 404), ('GET', 404)]",
           "request_url": null,
-          "duration_ms": 121
+          "duration_ms": 128
         },
         {
           "facet": "auth",
@@ -222,7 +222,7 @@
           "outcome": "pass",
           "detail": "(features, statuses) {'anonymous': ('invalid', [401]), 'wrong-api-key': ('invalid', [401]), 'expired-bearer': ('invalid', [401]), 'api-key': (10, [200, 405]), 'oidc-bearer': (10, [200, 405])}",
           "request_url": null,
-          "duration_ms": 764
+          "duration_ms": 843
         },
         {
           "facet": "crs-axis",
@@ -230,7 +230,7 @@
           "outcome": "pass",
           "detail": "layer OGC:CRS84; alpha (-122.49, 37.71); bbox window ['delta', 'gamma']; EPSG:3857 alpha (-13635524.427268, 4538539.153413) via limit=100&crs=http://www.opengis.net/def/crs/EPSG/0/3857",
           "request_url": null,
-          "duration_ms": 265
+          "duration_ms": 309
         },
         {
           "facet": "media-schema",
@@ -238,13 +238,13 @@
           "outcome": "pass",
           "detail": "geometry Point; fields {'objectid': 4, 'name': 10, 'description': 10, 'status': 10, 'count': 4, 'ratio': 6, 'active': 1, 'created_at': 16, 'event_date': 14, 'event_time': 10, 'uid': 10, 'tags': 10, 'numbers': 10, 'eo:cloud_cover': 6}; items served application/geo+json",
           "request_url": null,
-          "duration_ms": 189
+          "duration_ms": 209
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:45:28.551072Z",
-          "2026-09-21T09:45:30.131256Z"
+          "2026-09-21T09:58:37.658444Z",
+          "2026-09-21T09:58:39.395850Z"
         ],
         "exchanges": 61,
         "wire_lines": [
@@ -310,7 +310,7 @@
           672,
           673
         ],
-        "wire_lines_sha256": "a1e20aafd58a2b45e3ede5f598b048253a3aca8c59137cbbf89a98f9b5d3f9c2",
+        "wire_lines_sha256": "34ff6032868cfe90003bdd53c76b7ca4c2d9fb467336c87a89aa1b3847a943f4",
         "statuses": {
           "200": 43,
           "401": 6,
@@ -341,9 +341,9 @@
       ],
       "notes": "all 5 checks passed across 5 governed facets",
       "operation": "OGC-OP-OGC-API-FEATURES-CONFORMANCE",
-      "started_at": "2026-09-21T09:45:25.953479Z",
-      "finished_at": "2026-09-21T09:45:27.571062Z",
-      "duration_ms": 1618,
+      "started_at": "2026-09-21T09:58:35.004067Z",
+      "finished_at": "2026-09-21T09:58:36.869438Z",
+      "duration_ms": 1865,
       "protocol_version": "OGC API - Features 1.0",
       "checks": [
         {
@@ -352,7 +352,7 @@
           "outcome": "pass",
           "detail": "conformance declaration read (application/json); exchanges ['GET http://honua:5000/ogc/features -> 200 application/json', 'GET http://honua:5000/openapi.json -> 200 application/vnd.oai.openapi+json; version=3.0', 'GET http://honua:5000/ogc/features/collections/0 -> 200 application/json', 'GET http://honua:5000/ogc/features/conformance -> 200 application/json', 'GET http://honua:5000/ogc/features/collections/0/queryables -> 200 application/schema+json', 'GET http://honua:5000/ogc/features/collections/0/items?limit=10 -> 200 application/geo+json', 'GET http://honua:5000/ogc/features/collections/0/schema -> 200 application/schema+json', 'CUSTOM http://honua:5000/ogc/features/collections/0/items -> 405']",
           "request_url": null,
-          "duration_ms": 265
+          "duration_ms": 317
         },
         {
           "facet": "negative",
@@ -360,7 +360,7 @@
           "outcome": "pass",
           "detail": "layer valid=False; server answered [('GET', 404), ('GET', 404)]",
           "request_url": null,
-          "duration_ms": 120
+          "duration_ms": 130
         },
         {
           "facet": "auth",
@@ -368,7 +368,7 @@
           "outcome": "pass",
           "detail": "(features, statuses) {'anonymous': ('invalid', [401]), 'wrong-api-key': ('invalid', [401]), 'expired-bearer': ('invalid', [401]), 'api-key': (10, [200, 405]), 'oidc-bearer': (10, [200, 405])}",
           "request_url": null,
-          "duration_ms": 758
+          "duration_ms": 889
         },
         {
           "facet": "crs-axis",
@@ -376,7 +376,7 @@
           "outcome": "pass",
           "detail": "layer OGC:CRS84; alpha (-122.49, 37.71); bbox window ['delta', 'gamma']; EPSG:3857 alpha (-13635524.427268, 4538539.153413) via limit=100&crs=http://www.opengis.net/def/crs/EPSG/0/3857",
           "request_url": null,
-          "duration_ms": 277
+          "duration_ms": 306
         },
         {
           "facet": "media-schema",
@@ -384,13 +384,13 @@
           "outcome": "pass",
           "detail": "geometry Point; fields {'objectid': 4, 'name': 10, 'description': 10, 'status': 10, 'count': 4, 'ratio': 6, 'active': 1, 'created_at': 16, 'event_date': 14, 'event_time': 10, 'uid': 10, 'tags': 10, 'numbers': 10, 'eo:cloud_cover': 6}; items served application/geo+json",
           "request_url": null,
-          "duration_ms": 190
+          "duration_ms": 216
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:45:25.953479Z",
-          "2026-09-21T09:45:27.571062Z"
+          "2026-09-21T09:58:35.004067Z",
+          "2026-09-21T09:58:36.869438Z"
         ],
         "exchanges": 68,
         "wire_lines": [
@@ -463,7 +463,7 @@
           611,
           612
         ],
-        "wire_lines_sha256": "8e1fe48089b6ba84dacad8eb78b1b40b534daa6bc4b6b65e1fe0563464b1be91",
+        "wire_lines_sha256": "846f28ad6933bbd5f825977af0bf84b2cda4880635ede5775def7147bcc0e295",
         "statuses": {
           "200": 48,
           "401": 6,
@@ -494,8 +494,8 @@
       ],
       "notes": "all 5 checks passed across 5 governed facets",
       "operation": "OGC-OP-OGC-API-FEATURES-ITEM",
-      "started_at": "2026-09-21T09:45:36.190761Z",
-      "finished_at": "2026-09-21T09:45:38.126258Z",
+      "started_at": "2026-09-21T09:58:45.884376Z",
+      "finished_at": "2026-09-21T09:58:47.819619Z",
       "duration_ms": 1935,
       "protocol_version": "OGC API - Features 1.0",
       "checks": [
@@ -505,7 +505,7 @@
           "outcome": "pass",
           "detail": "created 201; read back http://honua:5000/ogc/features/collections/11/items/42 -> (-122.405, 37.775); probe removed; exchanges ['GET http://honua:5000/ogc/features -> 200 application/json', 'GET http://honua:5000/openapi.json -> 200 application/vnd.oai.openapi+json; version=3.0', 'GET http://honua:5000/ogc/features/collections/11 -> 200 application/json', 'GET http://honua:5000/ogc/features/conformance -> 200 application/json', 'GET http://honua:5000/ogc/features/collections/11/queryables -> 200 application/schema+json', 'GET http://honua:5000/ogc/features/collections/11/items?limit=10 -> 200 application/geo+json', 'GET http://honua:5000/ogc/features/collections/11/schema -> 200 application/schema+json', 'CUSTOM http://honua:5000/ogc/features/collections/11/items -> 405']",
           "request_url": null,
-          "duration_ms": 541
+          "duration_ms": 561
         },
         {
           "facet": "negative",
@@ -513,7 +513,7 @@
           "outcome": "pass",
           "detail": "layer valid=False; server answered [('GET', 404), ('GET', 404)]",
           "request_url": null,
-          "duration_ms": 135
+          "duration_ms": 128
         },
         {
           "facet": "auth",
@@ -529,7 +529,7 @@
           "outcome": "pass",
           "detail": "layer OGC:CRS84; alpha (-122.49, 37.71); bbox window ['delta', 'gamma']; EPSG:3857 alpha (-13635524.427268, 4538539.153413) via limit=100&crs=http://www.opengis.net/def/crs/EPSG/0/3857",
           "request_url": null,
-          "duration_ms": 285
+          "duration_ms": 277
         },
         {
           "facet": "media-schema",
@@ -537,13 +537,13 @@
           "outcome": "pass",
           "detail": "geometry Point; fields {'objectid': 4, 'name': 10, 'description': 10, 'status': 10, 'count': 4, 'ratio': 6, 'active': 1, 'created_at': 16, 'event_date': 14, 'event_time': 10, 'uid': 10, 'tags': 10, 'numbers': 10, 'eo:cloud_cover': 6}; items served application/geo+json",
           "request_url": null,
-          "duration_ms": 188
+          "duration_ms": 182
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:45:36.190761Z",
-          "2026-09-21T09:45:38.126258Z"
+          "2026-09-21T09:58:45.884376Z",
+          "2026-09-21T09:58:47.819619Z"
         ],
         "exchanges": 72,
         "wire_lines": [
@@ -620,7 +620,7 @@
           881,
           882
         ],
-        "wire_lines_sha256": "677068b75f2b603a002653a7ac799d0db8d8cef8a30907ef1b3af40c479ffbac",
+        "wire_lines_sha256": "f457f73d548c0829ff10a7f44688be492c72a84087f4af8d2154fc8a8a4a397a",
         "statuses": {
           "200": 50,
           "201": 1,
@@ -653,9 +653,9 @@
       ],
       "notes": "all 5 checks passed across 5 governed facets",
       "operation": "OGC-OP-OGC-API-FEATURES-ITEMS",
-      "started_at": "2026-09-21T09:45:33.601167Z",
-      "finished_at": "2026-09-21T09:45:35.325905Z",
-      "duration_ms": 1725,
+      "started_at": "2026-09-21T09:58:42.973760Z",
+      "finished_at": "2026-09-21T09:58:45.040539Z",
+      "duration_ms": 2067,
       "protocol_version": "OGC API - Features 1.0",
       "checks": [
         {
@@ -664,7 +664,7 @@
           "outcome": "pass",
           "detail": "read 10 items ['alpha', 'beta', 'delta', 'epsilon', 'eta', 'gamma', 'iota', 'lambda', 'theta', 'zeta']; exchanges ['GET http://honua:5000/ogc/features -> 200 application/json', 'GET http://honua:5000/openapi.json -> 200 application/vnd.oai.openapi+json; version=3.0', 'GET http://honua:5000/ogc/features/collections/0 -> 200 application/json', 'GET http://honua:5000/ogc/features/conformance -> 200 application/json', 'GET http://honua:5000/ogc/features/collections/0/queryables -> 200 application/schema+json', 'GET http://honua:5000/ogc/features/collections/0/items?limit=10 -> 200 application/geo+json', 'GET http://honua:5000/ogc/features/collections/0/schema -> 200 application/schema+json', 'CUSTOM http://honua:5000/ogc/features/collections/0/items -> 405']",
           "request_url": null,
-          "duration_ms": 354
+          "duration_ms": 414
         },
         {
           "facet": "negative",
@@ -672,7 +672,7 @@
           "outcome": "pass",
           "detail": "layer valid=False; server answered [('GET', 404), ('GET', 404)]",
           "request_url": null,
-          "duration_ms": 124
+          "duration_ms": 131
         },
         {
           "facet": "auth",
@@ -680,7 +680,7 @@
           "outcome": "pass",
           "detail": "(features, statuses) {'anonymous': ('invalid', [401]), 'wrong-api-key': ('invalid', [401]), 'expired-bearer': ('invalid', [401]), 'api-key': (10, [200, 405]), 'oidc-bearer': (10, [200, 405])}",
           "request_url": null,
-          "duration_ms": 774
+          "duration_ms": 963
         },
         {
           "facet": "crs-axis",
@@ -688,7 +688,7 @@
           "outcome": "pass",
           "detail": "layer OGC:CRS84; alpha (-122.49, 37.71); bbox window ['delta', 'gamma']; EPSG:3857 alpha (-13635524.427268, 4538539.153413) via limit=100&crs=http://www.opengis.net/def/crs/EPSG/0/3857",
           "request_url": null,
-          "duration_ms": 264
+          "duration_ms": 331
         },
         {
           "facet": "media-schema",
@@ -696,13 +696,13 @@
           "outcome": "pass",
           "detail": "geometry Point; fields {'objectid': 4, 'name': 10, 'description': 10, 'status': 10, 'count': 4, 'ratio': 6, 'active': 1, 'created_at': 16, 'event_date': 14, 'event_time': 10, 'uid': 10, 'tags': 10, 'numbers': 10, 'eo:cloud_cover': 6}; items served application/geo+json",
           "request_url": null,
-          "duration_ms": 199
+          "duration_ms": 217
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:45:33.601167Z",
-          "2026-09-21T09:45:35.325905Z"
+          "2026-09-21T09:58:42.973760Z",
+          "2026-09-21T09:58:45.040539Z"
         ],
         "exchanges": 69,
         "wire_lines": [
@@ -776,7 +776,7 @@
           809,
           810
         ],
-        "wire_lines_sha256": "36928d899633c5443c4b24823d07ed56dd1ca1ae0f84e103c8c8eb517c2767f6",
+        "wire_lines_sha256": "12b5257d75deac375e97b92fc7e6a5af9237c2fc3315496553c4737b260b50cc",
         "statuses": {
           "200": 49,
           "401": 6,
@@ -807,9 +807,9 @@
       ],
       "notes": "all 5 checks passed across 5 governed facets",
       "operation": "OGC-OP-OGC-API-FEATURES-LANDING",
-      "started_at": "2026-09-21T09:45:23.270492Z",
-      "finished_at": "2026-09-21T09:45:25.076269Z",
-      "duration_ms": 1806,
+      "started_at": "2026-09-21T09:58:31.974576Z",
+      "finished_at": "2026-09-21T09:58:34.003679Z",
+      "duration_ms": 2029,
       "protocol_version": "OGC API - Features 1.0",
       "checks": [
         {
@@ -818,7 +818,7 @@
           "outcome": "pass",
           "detail": "layer valid; landing page application/json; exchanges ['GET http://honua:5000/ogc/features -> 200 application/json', 'GET http://honua:5000/openapi.json -> 200 application/vnd.oai.openapi+json; version=3.0', 'GET http://honua:5000/ogc/features/collections/0 -> 200 application/json', 'GET http://honua:5000/ogc/features/conformance -> 200 application/json', 'GET http://honua:5000/ogc/features/collections/0/queryables -> 200 application/schema+json', 'GET http://honua:5000/ogc/features/collections/0/items?limit=10 -> 200 application/geo+json', 'GET http://honua:5000/ogc/features/collections/0/schema -> 200 application/schema+json', 'CUSTOM http://honua:5000/ogc/features/collections/0/items -> 405']",
           "request_url": null,
-          "duration_ms": 314
+          "duration_ms": 347
         },
         {
           "facet": "negative",
@@ -826,7 +826,7 @@
           "outcome": "pass",
           "detail": "layer valid=False; server answered [('GET', 404), ('GET', 404)]",
           "request_url": null,
-          "duration_ms": 138
+          "duration_ms": 131
         },
         {
           "facet": "auth",
@@ -834,7 +834,7 @@
           "outcome": "pass",
           "detail": "(features, statuses) {'anonymous': ('invalid', [401]), 'wrong-api-key': ('invalid', [401]), 'expired-bearer': ('invalid', [401]), 'api-key': (10, [200, 405]), 'oidc-bearer': (10, [200, 405])}",
           "request_url": null,
-          "duration_ms": 860
+          "duration_ms": 921
         },
         {
           "facet": "crs-axis",
@@ -842,7 +842,7 @@
           "outcome": "pass",
           "detail": "layer OGC:CRS84; alpha (-122.49, 37.71); bbox window ['delta', 'gamma']; EPSG:3857 alpha (-13635524.427268, 4538539.153413) via limit=100&crs=http://www.opengis.net/def/crs/EPSG/0/3857",
           "request_url": null,
-          "duration_ms": 299
+          "duration_ms": 386
         },
         {
           "facet": "media-schema",
@@ -850,13 +850,13 @@
           "outcome": "pass",
           "detail": "geometry Point; fields {'objectid': 4, 'name': 10, 'description': 10, 'status': 10, 'count': 4, 'ratio': 6, 'active': 1, 'created_at': 16, 'event_date': 14, 'event_time': 10, 'uid': 10, 'tags': 10, 'numbers': 10, 'eo:cloud_cover': 6}; items served application/geo+json",
           "request_url": null,
-          "duration_ms": 187
+          "duration_ms": 234
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:45:23.270492Z",
-          "2026-09-21T09:45:25.076269Z"
+          "2026-09-21T09:58:31.974576Z",
+          "2026-09-21T09:58:34.003679Z"
         ],
         "exchanges": 68,
         "wire_lines": [
@@ -929,7 +929,7 @@
           543,
           544
         ],
-        "wire_lines_sha256": "52333a862632cd138a297349ef2ef838fef500fcd777d9633f23904518ac2bd1",
+        "wire_lines_sha256": "f3e276f9fea958421dd3272d7c4afb17d7f7da3861cca3c24b7939bd04ebe18e",
         "statuses": {
           "200": 48,
           "401": 6,
@@ -960,9 +960,9 @@
       ],
       "notes": "all 5 checks passed across 5 governed facets",
       "operation": "OGC-OP-OGC-API-FEATURES-QUERYABLES",
-      "started_at": "2026-09-21T09:45:38.914376Z",
-      "finished_at": "2026-09-21T09:45:40.574491Z",
-      "duration_ms": 1660,
+      "started_at": "2026-09-21T09:58:48.517547Z",
+      "finished_at": "2026-09-21T09:58:50.202516Z",
+      "duration_ms": 1685,
       "protocol_version": "OGC API - Features 1.0",
       "checks": [
         {
@@ -971,7 +971,7 @@
           "outcome": "pass",
           "detail": "filter ['alpha', 'epsilon', 'eta', 'gamma', 'iota']; queryables application/schema+json; exchanges ['GET http://honua:5000/ogc/features -> 200 application/json', 'GET http://honua:5000/openapi.json -> 200 application/vnd.oai.openapi+json; version=3.0', 'GET http://honua:5000/ogc/features/collections/0 -> 200 application/json', 'GET http://honua:5000/ogc/features/conformance -> 200 application/json', 'GET http://honua:5000/ogc/features/collections/0/queryables -> 200 application/schema+json', 'GET http://honua:5000/ogc/features/collections/0/items?limit=10 -> 200 application/geo+json', 'GET http://honua:5000/ogc/features/collections/0/schema -> 200 application/schema+json', 'CUSTOM http://honua:5000/ogc/features/collections/0/items -> 405']",
           "request_url": null,
-          "duration_ms": 320
+          "duration_ms": 334
         },
         {
           "facet": "negative",
@@ -979,7 +979,7 @@
           "outcome": "pass",
           "detail": "layer valid=False; server answered [('GET', 404), ('GET', 404)]",
           "request_url": null,
-          "duration_ms": 120
+          "duration_ms": 124
         },
         {
           "facet": "auth",
@@ -987,7 +987,7 @@
           "outcome": "pass",
           "detail": "(features, statuses) {'anonymous': ('invalid', [401]), 'wrong-api-key': ('invalid', [401]), 'expired-bearer': ('invalid', [401]), 'api-key': (10, [200, 405]), 'oidc-bearer': (10, [200, 405])}",
           "request_url": null,
-          "duration_ms": 769
+          "duration_ms": 765
         },
         {
           "facet": "crs-axis",
@@ -1003,13 +1003,13 @@
           "outcome": "pass",
           "detail": "geometry Point; fields {'objectid': 4, 'name': 10, 'description': 10, 'status': 10, 'count': 4, 'ratio': 6, 'active': 1, 'created_at': 16, 'event_date': 14, 'event_time': 10, 'uid': 10, 'tags': 10, 'numbers': 10, 'eo:cloud_cover': 6}; items served application/geo+json",
           "request_url": null,
-          "duration_ms": 187
+          "duration_ms": 196
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:45:38.914376Z",
-          "2026-09-21T09:45:40.574491Z"
+          "2026-09-21T09:58:48.517547Z",
+          "2026-09-21T09:58:50.202516Z"
         ],
         "exchanges": 69,
         "wire_lines": [
@@ -1083,7 +1083,7 @@
           950,
           951
         ],
-        "wire_lines_sha256": "1c3bdb3a756e18be5787af86724c6ba6bfd5b30a501335924ba787073bc94dd4",
+        "wire_lines_sha256": "b7f9617e4fcac7256fa2ebedd9bbc63bd4b6ed4b7a1b1e58ac63a8c99a4e8204",
         "statuses": {
           "200": 49,
           "401": 6,
@@ -1114,9 +1114,9 @@
       ],
       "notes": "all 5 checks passed across 5 governed facets",
       "operation": "OGC-OP-OGC-API-FEATURES-TRANSACTIONS",
-      "started_at": "2026-09-21T09:45:41.468564Z",
-      "finished_at": "2026-09-21T09:45:44.200297Z",
-      "duration_ms": 2732,
+      "started_at": "2026-09-21T09:58:50.877645Z",
+      "finished_at": "2026-09-21T09:58:53.155261Z",
+      "duration_ms": 2278,
       "protocol_version": "OGC API - Features 1.0",
       "checks": [
         {
@@ -1125,7 +1125,7 @@
           "outcome": "pass",
           "detail": "update -> insert -> delete/restore on scratch collection 11: after ['roster-insert', 'roster-update'], restored ['owslib-update-before']; write exchanges [('CUSTOM', 200), ('POST', 201), ('CUSTOM', 200), ('CUSTOM', 204)]; exchanges ['GET http://honua:5000/ogc/features -> 200 application/json', 'GET http://honua:5000/openapi.json -> 200 application/vnd.oai.openapi+json; version=3.0', 'GET http://honua:5000/ogc/features/collections/11 -> 200 application/json', 'GET http://honua:5000/ogc/features/conformance -> 200 application/json', 'GET http://honua:5000/ogc/features/collections/11/queryables -> 200 application/schema+json', 'GET http://honua:5000/ogc/features/collections/11/items?limit=10 -> 200 application/geo+json', 'GET http://honua:5000/ogc/features/collections/11/schema -> 200 application/schema+json', 'CUSTOM http://honua:5000/ogc/features/collections/11/items -> 405']",
           "request_url": null,
-          "duration_ms": 876
+          "duration_ms": 720
         },
         {
           "facet": "negative",
@@ -1133,7 +1133,7 @@
           "outcome": "pass",
           "detail": "layer valid=False; server answered [('GET', 404), ('GET', 404)]",
           "request_url": null,
-          "duration_ms": 158
+          "duration_ms": 144
         },
         {
           "facet": "auth",
@@ -1141,7 +1141,7 @@
           "outcome": "pass",
           "detail": "(features, statuses) {'anonymous': ('invalid', [401]), 'wrong-api-key': ('invalid', [401]), 'expired-bearer': ('invalid', [401]), 'api-key': (10, [200, 405]), 'oidc-bearer': (10, [200, 405])}",
           "request_url": null,
-          "duration_ms": 1037
+          "duration_ms": 856
         },
         {
           "facet": "crs-axis",
@@ -1149,7 +1149,7 @@
           "outcome": "pass",
           "detail": "layer OGC:CRS84; alpha (-122.49, 37.71); bbox window ['delta', 'gamma']; EPSG:3857 alpha (-13635524.427268, 4538539.153413) via limit=100&crs=http://www.opengis.net/def/crs/EPSG/0/3857",
           "request_url": null,
-          "duration_ms": 444
+          "duration_ms": 309
         },
         {
           "facet": "media-schema",
@@ -1157,13 +1157,13 @@
           "outcome": "pass",
           "detail": "geometry Point; fields {'objectid': 4, 'name': 10, 'description': 10, 'status': 10, 'count': 4, 'ratio': 6, 'active': 1, 'created_at': 16, 'event_date': 14, 'event_time': 10, 'uid': 10, 'tags': 10, 'numbers': 10, 'eo:cloud_cover': 6}; items served application/geo+json",
           "request_url": null,
-          "duration_ms": 209
+          "duration_ms": 239
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:45:41.468564Z",
-          "2026-09-21T09:45:44.200297Z"
+          "2026-09-21T09:58:50.877645Z",
+          "2026-09-21T09:58:53.155261Z"
         ],
         "exchanges": 78,
         "wire_lines": [
@@ -1246,7 +1246,7 @@
           1028,
           1029
         ],
-        "wire_lines_sha256": "112adecec2e06e9e8ad1775da98c7986f4a75ae9735eebe501617560dccc8eb3",
+        "wire_lines_sha256": "04bf4f8e5f7f3fcc2d3032e9d27ebcdfdd80f0dc87146a9fa1d37772303b6b8d",
         "statuses": {
           "200": 56,
           "201": 1,
@@ -1279,9 +1279,9 @@
       ],
       "notes": "all 5 checks passed across 5 governed facets",
       "operation": "OGC-OP-OGC-API-TILES-LANDING-TILESETS",
-      "started_at": "2026-09-21T09:45:48.819167Z",
-      "finished_at": "2026-09-21T09:46:13.139179Z",
-      "duration_ms": 24339,
+      "started_at": "2026-09-21T09:58:57.977956Z",
+      "finished_at": "2026-09-21T09:59:20.212696Z",
+      "duration_ms": 22235,
       "protocol_version": "OGC API - Tiles 1.0",
       "checks": [
         {
@@ -1290,7 +1290,7 @@
           "outcome": "pass",
           "detail": "2 tilesets (['WebMercatorQuad', 'WorldCRS84Quad']); provider exposed 19 zoom levels matching 19 tileMatrixSetLimits of WebMercatorQuad",
           "request_url": null,
-          "duration_ms": 23679
+          "duration_ms": 21631
         },
         {
           "facet": "negative",
@@ -1298,7 +1298,7 @@
           "outcome": "pass",
           "detail": "tile statuses [404]",
           "request_url": null,
-          "duration_ms": 139
+          "duration_ms": 106
         },
         {
           "facet": "auth",
@@ -1306,7 +1306,7 @@
           "outcome": "pass",
           "detail": "(painted, statuses) {'anonymous': (0, [401]), 'wrong-api-key': (0, [401]), 'expired-bearer': (0, [401]), 'api-key': (171, [200, 204]), 'oidc-bearer': (171, [200, 204])}",
           "request_url": null,
-          "duration_ms": 426
+          "duration_ms": 411
         },
         {
           "facet": "crs-axis",
@@ -1314,7 +1314,7 @@
           "outcome": "pass",
           "detail": "painted at fixture 48, far away 0",
           "request_url": null,
-          "duration_ms": 33
+          "duration_ms": 26
         },
         {
           "facet": "media-schema",
@@ -1322,13 +1322,13 @@
           "outcome": "pass",
           "detail": "tile responses [(200, 'application/vnd.mapbox-vector-tile'), (204, None)]",
           "request_url": null,
-          "duration_ms": 62
+          "duration_ms": 60
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:45:48.819167Z",
-          "2026-09-21T09:46:13.139179Z"
+          "2026-09-21T09:58:57.977956Z",
+          "2026-09-21T09:59:20.212696Z"
         ],
         "exchanges": 1734,
         "wire_lines": [
@@ -3067,7 +3067,7 @@
           2878,
           2879
         ],
-        "wire_lines_sha256": "7f2768572b71b2a1f77c3f3a2d6efcd9dc9b1d1c8cb707ac04b2f6f836805d3e",
+        "wire_lines_sha256": "d20fdfbec57f9f5146efeb965a0e1d03b80c706691466d9141af48b32e76eae8",
         "statuses": {
           "200": 37,
           "204": 1684,
@@ -3098,9 +3098,9 @@
       ],
       "notes": "all 5 checks passed across 5 governed facets",
       "operation": "OGC-OP-OGC-API-TILES-TILE",
-      "started_at": "2026-09-21T09:46:14.368295Z",
-      "finished_at": "2026-09-21T09:46:15.248113Z",
-      "duration_ms": 880,
+      "started_at": "2026-09-21T09:59:20.860917Z",
+      "finished_at": "2026-09-21T09:59:21.533530Z",
+      "duration_ms": 673,
       "protocol_version": "OGC API - Tiles 1.0",
       "checks": [
         {
@@ -3109,7 +3109,7 @@
           "outcome": "pass",
           "detail": "painted 48 px from 1 tiles",
           "request_url": null,
-          "duration_ms": 159
+          "duration_ms": 152
         },
         {
           "facet": "negative",
@@ -3117,7 +3117,7 @@
           "outcome": "pass",
           "detail": "tile statuses [404]",
           "request_url": null,
-          "duration_ms": 62
+          "duration_ms": 61
         },
         {
           "facet": "auth",
@@ -3125,7 +3125,7 @@
           "outcome": "pass",
           "detail": "(painted, statuses) {'anonymous': (0, [401]), 'wrong-api-key': (0, [401]), 'expired-bearer': (0, [401]), 'api-key': (171, [200, 204]), 'oidc-bearer': (171, [200, 204])}",
           "request_url": null,
-          "duration_ms": 580
+          "duration_ms": 363
         },
         {
           "facet": "crs-axis",
@@ -3133,7 +3133,7 @@
           "outcome": "pass",
           "detail": "painted at fixture 48, far away 0",
           "request_url": null,
-          "duration_ms": 19
+          "duration_ms": 25
         },
         {
           "facet": "media-schema",
@@ -3141,13 +3141,13 @@
           "outcome": "pass",
           "detail": "tile responses [(200, 'application/vnd.mapbox-vector-tile'), (204, None)]",
           "request_url": null,
-          "duration_ms": 60
+          "duration_ms": 71
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:46:14.368295Z",
-          "2026-09-21T09:46:15.248113Z"
+          "2026-09-21T09:59:20.860917Z",
+          "2026-09-21T09:59:21.533530Z"
         ],
         "exchanges": 25,
         "wire_lines": [
@@ -3177,7 +3177,7 @@
           2903,
           2904
         ],
-        "wire_lines_sha256": "39b23642a884bb8406d5230b429f98ce4b713b924e764bf4adbf964afe0e0a81",
+        "wire_lines_sha256": "adcf98b3fd702f3f56f203eea8f93b4814f74c96b6514c659d9e725ec3bf6f11",
         "statuses": {
           "200": 9,
           "204": 3,
@@ -3208,9 +3208,9 @@
       ],
       "notes": "all 5 checks passed across 5 governed facets",
       "operation": "OGC-OP-WFS-2-0",
-      "started_at": "2026-09-21T09:46:17.926029Z",
-      "finished_at": "2026-09-21T09:46:24.259087Z",
-      "duration_ms": 6345,
+      "started_at": "2026-09-21T09:59:23.949294Z",
+      "finished_at": "2026-09-21T09:59:28.571877Z",
+      "duration_ms": 4623,
       "protocol_version": "2.0.0",
       "checks": [
         {
@@ -3219,7 +3219,7 @@
           "outcome": "pass",
           "detail": "['alpha', 'beta', 'delta', 'epsilon', 'eta', 'gamma', 'iota', 'lambda', 'theta', 'zeta']; requests ['DescribeFeatureType', 'GetCapabilities', 'GetFeature']",
           "request_url": null,
-          "duration_ms": 159
+          "duration_ms": 133
         },
         {
           "facet": "negative",
@@ -3235,7 +3235,7 @@
           "outcome": "pass",
           "detail": "(features, statuses) {'anonymous': ['invalid', [200]], 'wrong-api-key': ['invalid', [200]], 'expired-bearer': ['invalid', [200]], 'api-key': [10, [200]], 'oidc-bearer': [10, [200]]}",
           "request_url": null,
-          "duration_ms": 5893
+          "duration_ms": 4250
         },
         {
           "facet": "crs-axis",
@@ -3243,7 +3243,7 @@
           "outcome": "pass",
           "detail": "alpha (-122.49, 37.71); window ['delta', 'gamma']; []",
           "request_url": null,
-          "duration_ms": 169
+          "duration_ms": 145
         },
         {
           "facet": "media-schema",
@@ -3251,13 +3251,13 @@
           "outcome": "pass",
           "detail": "fields {'name': 'xsd:string', 'objectid': 'xsd:int', 'description': 'xsd:string', 'status': 'xsd:string', 'count': 'xsd:int', 'ratio': 'xsd:double', 'active': 'xsd:boolean', 'created_at': 'xsd:dateTime', 'event_date': 'xsd:date', 'event_time': 'xsd:time', 'uid': 'xsd:string', 'tags': 'xsd:string', 'numbers': 'xsd:string', 'eo_x003A_cloud_cover': 'xsd:double'}; responses [('GetFeature', 'application/gml+xml; version=3.2; charset=utf-8'), ('GetFeature', 'application/gml+xml; version=3.2; charset=utf-8')]",
           "request_url": null,
-          "duration_ms": 120
+          "duration_ms": 92
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:46:17.926029Z",
-          "2026-09-21T09:46:24.259087Z"
+          "2026-09-21T09:59:23.949294Z",
+          "2026-09-21T09:59:28.571877Z"
         ],
         "exchanges": 19,
         "wire_lines": [
@@ -3281,7 +3281,7 @@
           2946,
           2947
         ],
-        "wire_lines_sha256": "f7ab78f263e0580db3a6f307abad3266edb835dfbcd11bcb6b6a48622ab366e9",
+        "wire_lines_sha256": "e3483ec951fc927b3ff6738e2b72e30669227ed48d5622eb25e5f34279f88f39",
         "statuses": {
           "200": 19
         },
@@ -3309,9 +3309,9 @@
       ],
       "notes": "all 5 checks passed across 5 governed facets",
       "operation": "OGC-OP-WMS-GETCAPABILITIES-GETMAP-GETFEATUREINF",
-      "started_at": "2026-09-21T09:46:26.629131Z",
-      "finished_at": "2026-09-21T09:46:27.713661Z",
-      "duration_ms": 1085,
+      "started_at": "2026-09-21T09:59:30.204296Z",
+      "finished_at": "2026-09-21T09:59:31.219020Z",
+      "duration_ms": 1015,
       "protocol_version": "1.3.0",
       "checks": [
         {
@@ -3320,7 +3320,7 @@
           "outcome": "pass",
           "detail": "painted 43 px in 10 colours via 1 GetMap; identify {0: 'Layer=Browser Points\\nname=pt-alpha\\nobjectid=13'}",
           "request_url": null,
-          "duration_ms": 289
+          "duration_ms": 253
         },
         {
           "facet": "negative",
@@ -3328,7 +3328,7 @@
           "outcome": "pass",
           "detail": "outcome invalid; GetMap responses []",
           "request_url": null,
-          "duration_ms": 107
+          "duration_ms": 109
         },
         {
           "facet": "auth",
@@ -3336,7 +3336,7 @@
           "outcome": "pass",
           "detail": "(painted, statuses) {'anonymous': ('invalid', [401]), 'wrong-api-key': ('invalid', [401]), 'expired-bearer': ('invalid', [200]), 'api-key': (43, [200]), 'oidc-bearer': (43, [200])}",
           "request_url": null,
-          "duration_ms": 352
+          "duration_ms": 331
         },
         {
           "facet": "crs-axis",
@@ -3344,7 +3344,7 @@
           "outcome": "pass",
           "detail": "(pixels, footprint) EPSG:4326 (176, (101, 83, 120, 100)), CRS:84 (215, (101, 83, 121, 101)); BBOX parameters ['37.75999999999999801%2C-122.4399999999999977%2C37.78999999999999915%2C-122.4000000000000057', '-122.4399999999999977%2C37.75999999999999801%2C-122.4000000000000057%2C37.78999999999999915']",
           "request_url": null,
-          "duration_ms": 164
+          "duration_ms": 155
         },
         {
           "facet": "media-schema",
@@ -3352,13 +3352,13 @@
           "outcome": "pass",
           "detail": "capabilities text/xml; charset=utf-8; GetMap ['image/png']",
           "request_url": null,
-          "duration_ms": 171
+          "duration_ms": 166
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:46:26.629131Z",
-          "2026-09-21T09:46:27.713661Z"
+          "2026-09-21T09:59:30.204296Z",
+          "2026-09-21T09:59:31.219020Z"
         ],
         "exchanges": 16,
         "wire_lines": [
@@ -3379,7 +3379,7 @@
           2968,
           2969
         ],
-        "wire_lines_sha256": "b3866fa90b5297db23bbd84d8547da578492f6b05547f64322d66b1d8e28cac5",
+        "wire_lines_sha256": "588f42d86816df2876b39103ab395ef5679b07e15784f9945b0187d2d600b764",
         "statuses": {
           "200": 14,
           "401": 2
@@ -3408,9 +3408,9 @@
       ],
       "notes": "all 5 checks passed across 5 governed facets",
       "operation": "OGC-OP-WMTS-GETCAPABILITIES-GETTILE",
-      "started_at": "2026-09-21T09:46:29.753085Z",
-      "finished_at": "2026-09-21T09:46:30.567829Z",
-      "duration_ms": 815,
+      "started_at": "2026-09-21T09:59:33.154884Z",
+      "finished_at": "2026-09-21T09:59:33.968968Z",
+      "duration_ms": 814,
       "protocol_version": "1.0.0",
       "checks": [
         {
@@ -3419,7 +3419,7 @@
           "outcome": "pass",
           "detail": "painted 50 px in 15 colours from 4 tile requests",
           "request_url": null,
-          "duration_ms": 253
+          "duration_ms": 237
         },
         {
           "facet": "negative",
@@ -3435,7 +3435,7 @@
           "outcome": "pass",
           "detail": "(painted, statuses) {'anonymous': ('invalid', [401]), 'wrong-api-key': ('invalid', [401]), 'expired-bearer': ('invalid', [401]), 'api-key': (50, [200]), 'oidc-bearer': (50, [200])}",
           "request_url": null,
-          "duration_ms": 337
+          "duration_ms": 352
         },
         {
           "facet": "crs-axis",
@@ -3443,7 +3443,7 @@
           "outcome": "pass",
           "detail": "crs EPSG:3857; extent -13629958,4545577 : -13625506,4549802; painted at fixture 50, far away 0",
           "request_url": null,
-          "duration_ms": 19
+          "duration_ms": 20
         },
         {
           "facet": "media-schema",
@@ -3456,8 +3456,8 @@
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:46:29.753085Z",
-          "2026-09-21T09:46:30.567829Z"
+          "2026-09-21T09:59:33.154884Z",
+          "2026-09-21T09:59:33.968968Z"
         ],
         "exchanges": 22,
         "wire_lines": [
@@ -3484,7 +3484,7 @@
           2994,
           2995
         ],
-        "wire_lines_sha256": "6f173d5e8b92f27664f432760185867de6e383cbd8f75247697abd418a22240b",
+        "wire_lines_sha256": "bf631494d5a60f8145c845ab08925e194e55615d81a27b0861fb342ff387ed29",
         "statuses": {
           "200": 19,
           "401": 3
@@ -3509,7 +3509,7 @@
   "honua_evidence": {
     "release": "2026.1",
     "candidate": {
-      "run_id": "roster-20260921T094413Z-1cd2ef5",
+      "run_id": "roster-20260921T095724Z-1cd2ef5",
       "release": "2026.1",
       "cut": "pre-cut proof on the imaged trunk nightly (operator ruling A, 2026-09-16); no release cut exists",
       "tag": "nightly-1cd2ef5",
@@ -3518,7 +3518,7 @@
       "platform_image_id": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
       "source_sha": "1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
       "image_created": "2026-09-20T10:16:19.064Z",
-      "producer_source_sha": "0f64f2fd946cc3c9834874bd42d8e8a0b1f7341b",
+      "producer_source_sha": "4a2f6d875d21c21f25cba7e9ca1d164b6d4d57d5",
       "target": "local-docker",
       "durable_uri_base": "https://github.com/honua-io/honua-server/blob/trunk/docs/internal/evidence/client-certification-1cd2ef5/receipts/",
       "server_version": {
@@ -3527,10 +3527,10 @@
           "version": "2026.1.1",
           "metadataApiVersion": "metadata.honua.io/v2alpha1",
           "metadataSchemaVersion": "2.0.0-alpha.1",
-          "serverTime": "2026-09-21T09:44:32.9047765+00:00"
+          "serverTime": "2026-09-21T09:57:43.083255+00:00"
         },
         "message": null,
-        "timestamp": "2026-09-21T09:44:32.9047811+00:00"
+        "timestamp": "2026-09-21T09:57:43.0832557+00:00"
       }
     },
     "fixture": {
@@ -3549,9 +3549,9 @@
       "server_config": {
         "files": {
           "docker/client-compat/compose.yml": "c85c7b55aac33f0fa2bbd281ea3c34365a724ab1e71d79034969dd813de1dcd3",
-          "certification/bounded-roster/compose.candidate.yml": "176d14b8e8a5d0f8f5e953cec5c24127a9517db25893d4827fc7c1ac21c6f96b"
+          "certification/bounded-roster/compose.candidate.yml": "feb24b9187eaab0eba251aafa7b8de1a018e9326948ddf8aea0cad0bb4c30d7f"
         },
-        "sha256": "f66d14d60c6ab9969cc2ee9600986266280bb773d27002efc894c2826c2bc635"
+        "sha256": "8a7696b9ec86c4a0f433dceeaaa7a57ba3a1240655211c43d429c51fe6a9b51c"
       },
       "auth_profile": {
         "files": {
@@ -3596,7 +3596,7 @@
             "compression": null,
             "overviewLevelCount": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.534618+00:00"
+            "createdAt": "2026-09-21T09:57:52.788733+00:00"
           },
           {
             "id": 2,
@@ -3613,7 +3613,7 @@
             "compression": null,
             "overviewLevelCount": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.555466+00:00"
+            "createdAt": "2026-09-21T09:57:52.800567+00:00"
           }
         ],
         "zarr-stores": [
@@ -3631,7 +3631,7 @@
             "primaryVariable": null,
             "variables": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.5647182+00:00"
+            "createdAt": "2026-09-21T09:57:52.8109169+00:00"
           },
           {
             "id": 2,
@@ -3647,7 +3647,7 @@
             "primaryVariable": null,
             "variables": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.5731944+00:00"
+            "createdAt": "2026-09-21T09:57:52.8214186+00:00"
           }
         ]
       }
@@ -3659,13 +3659,13 @@
       "lane": {
         "lane": "qgis",
         "image": "honua-roster/lane-qgis:3.44.13",
-        "image_id": "sha256:ff2efd9ac2b8f9ba9193e8d99f96872bdd8fdfe06eebfbf5347988138077a468",
-        "base_image": "qgis/qgis:3.44.13",
-        "base_repo_digests": "[\"qgis/qgis@sha256:59e160b2ea3f881be039ed49936c42e75e8f336688951f22147676db743f4e47\"]"
+        "image_id": "sha256:65a666fedae0cd2668608e0d2a6519ba40ad1c273de6298d2937627e1b48c78d",
+        "base_image": "qgis/qgis:3.44.13@sha256:59e160b2ea3f881be039ed49936c42e75e8f336688951f22147676db743f4e47",
+        "base_repo_digests": "[\"qgis/qgis:3.44.13@sha256:59e160b2ea3f881be039ed49936c42e75e8f336688951f22147676db743f4e47\"]"
       },
       "lane_identity": {
         "lane": "qgis",
-        "started_at": "2026-09-21T09:45:18.590184Z",
+        "started_at": "2026-09-21T09:58:27.362239Z",
         "python": "3.13.7",
         "platform": "Linux-6.6.114.1-microsoft-standard-WSL2-x86_64-with-glibc2.42",
         "cells": [
@@ -3699,7 +3699,7 @@
           }
         ],
         "client_identity": "3.44.13-Solothurn",
-        "finished_at": "2026-09-21T09:46:33.959521Z",
+        "finished_at": "2026-09-21T09:59:36.782554Z",
         "harness_failures": []
       }
     },

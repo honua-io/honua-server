@@ -9,9 +9,9 @@
   "operation": "process.ogc-api-processes",
   "protocol_version": "OGC API - Processes 1.0",
   "protocol_profile": "core+ogc-process-description+json",
-  "started_at": "2026-09-21T09:44:53.395638Z",
-  "finished_at": "2026-09-21T09:45:05.565616Z",
-  "duration_ms": 12170,
+  "started_at": "2026-09-21T09:58:00.760556Z",
+  "finished_at": "2026-09-21T09:58:14.818486Z",
+  "duration_ms": 14058,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -29,7 +29,7 @@
       "outcome": "pass",
       "detail": "83 processes listed; geometry.buffer described with inputs ['distance', 'geodesic', 'srid', 'wkb']; sync execution returned a 33-vertex polygon whose every vertex lies 0.01 deg from the input point",
       "request_url": null,
-      "duration_ms": 1866
+      "duration_ms": 3832
     },
     {
       "facet": "auth",
@@ -37,7 +37,7 @@
       "outcome": "pass",
       "detail": "outcomes {'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401, 'oidc-bearer-without-grant': 403, 'api-key': 'executed'}",
       "request_url": null,
-      "duration_ms": 5425
+      "duration_ms": 4881
     },
     {
       "facet": "negative",
@@ -45,7 +45,7 @@
       "outcome": "pass",
       "detail": "unknown process -> 404 'No such process'; missing input -> 400 'Invalid analysis plan'",
       "request_url": null,
-      "duration_ms": 18
+      "duration_ms": 16
     },
     {
       "facet": "boundary",
@@ -53,7 +53,7 @@
       "outcome": "pass",
       "detail": "edge inputs {'distance=0': 400, 'distance<0': 400, 'geodesic=true': 400}",
       "request_url": null,
-      "duration_ms": 24
+      "duration_ms": 20
     },
     {
       "facet": "media-schema",
@@ -61,7 +61,7 @@
       "outcome": "pass",
       "detail": "process list application/json; description inputs all carry a JSON schema; execution result application/json",
       "request_url": null,
-      "duration_ms": 4836
+      "duration_ms": 5309
     }
   ]
 }

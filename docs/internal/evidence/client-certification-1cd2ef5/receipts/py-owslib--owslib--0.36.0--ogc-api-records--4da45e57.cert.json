@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "run_id": "roster-20260921T094413Z-1cd2ef5",
-  "run_date": "2026-09-21T09:45:07.340767Z",
+  "run_id": "roster-20260921T095724Z-1cd2ef5",
+  "run_date": "2026-09-21T09:58:16.733065Z",
   "server_commit": "1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
   "server_version": {
     "success": true,
@@ -9,12 +9,12 @@
       "version": "2026.1.1",
       "metadataApiVersion": "metadata.honua.io/v2alpha1",
       "metadataSchemaVersion": "2.0.0-alpha.1",
-      "serverTime": "2026-09-21T09:44:32.9047765+00:00"
+      "serverTime": "2026-09-21T09:57:43.083255+00:00"
     },
     "message": null,
-    "timestamp": "2026-09-21T09:44:32.9047811+00:00"
+    "timestamp": "2026-09-21T09:57:43.0832557+00:00"
   },
-  "producer_source_sha": "0f64f2fd946cc3c9834874bd42d8e8a0b1f7341b",
+  "producer_source_sha": "4a2f6d875d21c21f25cba7e9ca1d164b6d4d57d5",
   "image_digest": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
   "fixture_revision": "docker/cng/seed.sql@1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
   "server_config_revision": "canonical-client-assignments@2026-08-21.1",
@@ -43,9 +43,9 @@
       ],
       "notes": "all 6 checks passed across 6 governed facets",
       "operation": "serve.ogc-api-records",
-      "started_at": "2026-09-21T09:45:07.340767Z",
-      "finished_at": "2026-09-21T09:45:07.565557Z",
-      "duration_ms": 225,
+      "started_at": "2026-09-21T09:58:16.733065Z",
+      "finished_at": "2026-09-21T09:58:16.947446Z",
+      "duration_ms": 214,
       "protocol_version": "OGC API - Records 1.0",
       "checks": [
         {
@@ -54,7 +54,7 @@
           "outcome": "pass",
           "detail": "collections ['honua-catalog']; record service:browser_compat titled 'browser_compat'",
           "request_url": null,
-          "duration_ms": 41
+          "duration_ms": 32
         },
         {
           "facet": "pagination",
@@ -62,7 +62,7 @@
           "outcome": "pass",
           "detail": "19 records over 7 pages of 3; numberMatched 19; no duplicates",
           "request_url": null,
-          "duration_ms": 87
+          "duration_ms": 63
         },
         {
           "facet": "limit",
@@ -70,7 +70,7 @@
           "outcome": "pass",
           "detail": "page sizes {1: 1, 2: 2, 5: 5}; limit=0 -> 400 application/problem+json",
           "request_url": null,
-          "duration_ms": 34
+          "duration_ms": 29
         },
         {
           "facet": "negative",
@@ -78,7 +78,7 @@
           "outcome": "pass",
           "detail": "{'unknown-record': 404, 'unknown-collection': 404}",
           "request_url": null,
-          "duration_ms": 14
+          "duration_ms": 19
         },
         {
           "facet": "auth",
@@ -86,7 +86,7 @@
           "outcome": "pass",
           "detail": "anonymous 19 records, api-key 31, oidc-bearer 31, wrong key 19; the protected records appear only with a valid credential",
           "request_url": null,
-          "duration_ms": 39
+          "duration_ms": 60
         },
         {
           "facet": "media-schema",
@@ -99,34 +99,11 @@
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:45:07.340767Z",
-          "2026-09-21T09:45:07.565557Z"
+          "2026-09-21T09:58:16.733065Z",
+          "2026-09-21T09:58:16.947446Z"
         ],
-        "exchanges": 73,
+        "exchanges": 31,
         "wire_lines": [
-          46,
-          47,
-          48,
-          49,
-          50,
-          51,
-          52,
-          53,
-          54,
-          55,
-          56,
-          57,
-          58,
-          59,
-          60,
-          61,
-          62,
-          63,
-          64,
-          65,
-          66,
-          67,
-          68,
           69,
           70,
           71,
@@ -157,34 +134,13 @@
           96,
           97,
           98,
-          99,
-          100,
-          101,
-          102,
-          103,
-          104,
-          105,
-          106,
-          107,
-          108,
-          109,
-          110,
-          111,
-          112,
-          113,
-          114,
-          115,
-          116,
-          117,
-          118
+          99
         ],
-        "wire_lines_sha256": "deda3e3c595b85c48586920c1f3eef68e578cc7f10a4796b18ac0713113b3963",
+        "wire_lines_sha256": "d1c8bd0351947f4c5d0a894f4fefaa0f27f6c24cd60d67ed6b8c76858034907d",
         "statuses": {
-          "200": 60,
-          "400": 3,
-          "401": 5,
-          "404": 4,
-          "500": 1
+          "200": 28,
+          "400": 1,
+          "404": 2
         },
         "user_agents": [
           "OWSLib 0.36.0 (https://owslib.readthedocs.io)",
@@ -207,7 +163,7 @@
   "honua_evidence": {
     "release": "2026.1",
     "candidate": {
-      "run_id": "roster-20260921T094413Z-1cd2ef5",
+      "run_id": "roster-20260921T095724Z-1cd2ef5",
       "release": "2026.1",
       "cut": "pre-cut proof on the imaged trunk nightly (operator ruling A, 2026-09-16); no release cut exists",
       "tag": "nightly-1cd2ef5",
@@ -216,7 +172,7 @@
       "platform_image_id": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
       "source_sha": "1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
       "image_created": "2026-09-20T10:16:19.064Z",
-      "producer_source_sha": "0f64f2fd946cc3c9834874bd42d8e8a0b1f7341b",
+      "producer_source_sha": "4a2f6d875d21c21f25cba7e9ca1d164b6d4d57d5",
       "target": "local-docker",
       "durable_uri_base": "https://github.com/honua-io/honua-server/blob/trunk/docs/internal/evidence/client-certification-1cd2ef5/receipts/",
       "server_version": {
@@ -225,10 +181,10 @@
           "version": "2026.1.1",
           "metadataApiVersion": "metadata.honua.io/v2alpha1",
           "metadataSchemaVersion": "2.0.0-alpha.1",
-          "serverTime": "2026-09-21T09:44:32.9047765+00:00"
+          "serverTime": "2026-09-21T09:57:43.083255+00:00"
         },
         "message": null,
-        "timestamp": "2026-09-21T09:44:32.9047811+00:00"
+        "timestamp": "2026-09-21T09:57:43.0832557+00:00"
       }
     },
     "fixture": {
@@ -247,9 +203,9 @@
       "server_config": {
         "files": {
           "docker/client-compat/compose.yml": "c85c7b55aac33f0fa2bbd281ea3c34365a724ab1e71d79034969dd813de1dcd3",
-          "certification/bounded-roster/compose.candidate.yml": "176d14b8e8a5d0f8f5e953cec5c24127a9517db25893d4827fc7c1ac21c6f96b"
+          "certification/bounded-roster/compose.candidate.yml": "feb24b9187eaab0eba251aafa7b8de1a018e9326948ddf8aea0cad0bb4c30d7f"
         },
-        "sha256": "f66d14d60c6ab9969cc2ee9600986266280bb773d27002efc894c2826c2bc635"
+        "sha256": "8a7696b9ec86c4a0f433dceeaaa7a57ba3a1240655211c43d429c51fe6a9b51c"
       },
       "auth_profile": {
         "files": {
@@ -294,7 +250,7 @@
             "compression": null,
             "overviewLevelCount": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.534618+00:00"
+            "createdAt": "2026-09-21T09:57:52.788733+00:00"
           },
           {
             "id": 2,
@@ -311,7 +267,7 @@
             "compression": null,
             "overviewLevelCount": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.555466+00:00"
+            "createdAt": "2026-09-21T09:57:52.800567+00:00"
           }
         ],
         "zarr-stores": [
@@ -329,7 +285,7 @@
             "primaryVariable": null,
             "variables": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.5647182+00:00"
+            "createdAt": "2026-09-21T09:57:52.8109169+00:00"
           },
           {
             "id": 2,
@@ -345,7 +301,7 @@
             "primaryVariable": null,
             "variables": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.5731944+00:00"
+            "createdAt": "2026-09-21T09:57:52.8214186+00:00"
           }
         ]
       }
@@ -357,13 +313,13 @@
       "lane": {
         "lane": "python",
         "image": "honua-roster/lane-python:local",
-        "image_id": "sha256:5151a8fa86b1327759936b37a6644046bea2d3aff5fa15254313902c12706992",
-        "base_image": "python:3.12-slim-bookworm",
-        "base_repo_digests": "[\"python@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254\"]"
+        "image_id": "sha256:ecfa9c9852124f63d92c3e0e880bac1e9e5089b6e8c433c2a9cbab144b98d041",
+        "base_image": "python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254",
+        "base_repo_digests": "[\"python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254\"]"
       },
       "lane_identity": {
         "lane": "python",
-        "started_at": "2026-09-21T09:44:50.929739Z",
+        "started_at": "2026-09-21T09:57:59.085381Z",
         "python": "3.12.14",
         "platform": "Linux-6.6.114.1-microsoft-standard-WSL2-x86_64-with-glibc2.36",
         "cells": [
@@ -428,7 +384,7 @@
           "urllib3==2.8.0"
         ],
         "client_identity": "attrs==26.1.0\ncertifi==2026.7.22\ncharset-normalizer==3.5.1\nidna==3.20\njsonschema==4.26.0\njsonschema-specifications==2025.9.1\nlxml==6.1.2\nowslib==0.36.0\npillow==12.3.0\npystac==1.15.2\npystac-client==0.9.0\npystac-core==1.15.2\npystac-ext-classification==2.0.1\npystac-ext-datacube==2.2.1\npystac-ext-eo==1.1.1\npystac-ext-file==2.1.1\npystac-ext-grid==1.1.1\npystac-ext-item-assets==1.0.1\npystac-ext-label==1.0.2\npystac-ext-mgrs==1.0.1\npystac-ext-mlm==1.4.1\npystac-ext-pointcloud==1.0.1\npystac-ext-projection==2.0.1\npystac-ext-raster==1.1.1\npystac-ext-render==2.0.0\npystac-ext-sar==1.0.1\npystac-ext-sat==1.0.1\npystac-ext-scientific==1.0.1\npystac-ext-storage==2.0.1\npystac-ext-table==1.2.1\npystac-ext-timestamps==1.1.1\npystac-ext-version==1.2.1\npystac-ext-view==1.0.1\npystac-ext-xarray-assets==1.0.1\npython-dateutil==2.9.0.post0\nPyYAML==6.0.3\nreferencing==0.37.0\nrequests==2.34.2\nrpds-py==2026.6.3\nsix==1.17.0\ntyping_extensions==4.16.0\nurllib3==2.8.0",
-        "finished_at": "2026-09-21T09:45:08.493850Z",
+        "finished_at": "2026-09-21T09:58:17.903789Z",
         "harness_failures": []
       }
     },

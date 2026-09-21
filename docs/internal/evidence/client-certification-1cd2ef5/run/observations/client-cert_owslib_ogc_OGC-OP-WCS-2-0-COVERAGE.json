@@ -9,9 +9,9 @@
   "operation": "OGC-OP-WCS-2-0-COVERAGE",
   "protocol_version": "2.0.1",
   "protocol_profile": "WCS 2.0.1 core GET-KVP",
-  "started_at": "2026-09-21T09:45:05.996792Z",
-  "finished_at": "2026-09-21T09:45:06.192548Z",
-  "duration_ms": 196,
+  "started_at": "2026-09-21T09:58:15.261275Z",
+  "finished_at": "2026-09-21T09:58:15.475349Z",
+  "duration_ms": 214,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -29,7 +29,7 @@
       "outcome": "pass",
       "detail": "coverage coverage_2000 grid (64, 64); GeoTIFF decoded (64, 64) mode L constant 180",
       "request_url": null,
-      "duration_ms": 71
+      "duration_ms": 82
     },
     {
       "facet": "negative",
@@ -37,7 +37,7 @@
       "outcome": "pass",
       "detail": "OWS exception codes {'unknown-coverage': 'HTTP 404 NoSuchCoverage', 'unsupported-format': 'InvalidParameterValue'}",
       "request_url": null,
-      "duration_ms": 17
+      "duration_ms": 18
     },
     {
       "facet": "auth",
@@ -45,7 +45,7 @@
       "outcome": "pass",
       "detail": "anonymous GetCapabilities HTTP 401; client outcomes {'anonymous': 'HTTPError', 'wrong-api-key': 'HTTPError', 'expired-bearer': 'HTTPError', 'api-key': 'parsed', 'oidc-bearer': 'parsed'}",
       "request_url": null,
-      "duration_ms": 38
+      "duration_ms": 43
     },
     {
       "facet": "crs-axis",
@@ -61,7 +61,7 @@
       "outcome": "pass",
       "detail": "advertised ['image/tiff', 'image/png', 'image/jpeg']; decoded {'image/tiff': 'TIFF (64, 64)', 'image/png': 'PNG (64, 64)', 'image/jpeg': 'JPEG (64, 64)'}",
       "request_url": null,
-      "duration_ms": 39
+      "duration_ms": 41
     }
   ]
 }

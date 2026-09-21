@@ -9,9 +9,9 @@
   "operation": "feature-read",
   "protocol_version": "GeoParquet 1.1",
   "protocol_profile": "FeatureServer query f=parquet",
-  "started_at": "2026-09-21T09:45:16.743825Z",
-  "finished_at": "2026-09-21T09:45:16.860942Z",
-  "duration_ms": 117,
+  "started_at": "2026-09-21T09:58:25.581962Z",
+  "finished_at": "2026-09-21T09:58:25.663713Z",
+  "duration_ms": 82,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -27,7 +27,7 @@
       "outcome": "pass",
       "detail": "six SQL-fixture points and scalar attributes: {'Harbor City': (-122.4194, 37.7749), 'Baytown': (-122.2711, 37.8044), 'Meridian Marker': (0.0, 51.4779), 'Equator Station': (-75.0, 0.0), 'Dateline Post': (179.5, 0.5), 'Polar Outpost': (0.0, 86.0)}",
       "request_url": null,
-      "duration_ms": 77
+      "duration_ms": 54
     },
     {
       "facet": "metadata",
@@ -35,7 +35,7 @@
       "outcome": "pass",
       "detail": "{\"version\":\"1.1.0\",\"primary_column\":\"geometry\",\"columns\":{\"geometry\":{\"encoding\":\"WKB\",\"geometry_types\":[\"Point\"],\"covering\":{\"bbox\":{\"xmin\":[\"bbox\",\"xmin\"],\"ymin\":[\"bbox\",\"ymin\"],\"xmax\":[\"bbox\",\"xmax\"],\"ymax\":[\"bbox\",\"ymax\"]}}}}}",
       "request_url": null,
-      "duration_ms": 21
+      "duration_ms": 15
     },
     {
       "facet": "media-schema",
@@ -43,7 +43,7 @@
       "outcome": "pass",
       "detail": "{'objectid': 'Integer64', 'name': 'String', 'category': 'String', 'population': 'Integer', 'ratio': 'Real', 'active': 'Integer', 'observed_at': 'DateTime'}",
       "request_url": null,
-      "duration_ms": 18
+      "duration_ms": 13
     }
   ]
 }

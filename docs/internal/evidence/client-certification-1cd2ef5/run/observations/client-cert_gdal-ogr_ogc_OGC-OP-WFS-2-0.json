@@ -9,9 +9,9 @@
   "operation": "OGC-OP-WFS-2-0",
   "protocol_version": "2.0.0",
   "protocol_profile": "WFS 2.0 simple",
-  "started_at": "2026-09-21T09:45:13.017545Z",
-  "finished_at": "2026-09-21T09:45:13.242855Z",
-  "duration_ms": 225,
+  "started_at": "2026-09-21T09:58:21.874317Z",
+  "finished_at": "2026-09-21T09:58:22.110285Z",
+  "duration_ms": 236,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -29,7 +29,7 @@
       "outcome": "pass",
       "detail": "10 features ['alpha', 'beta', 'delta', 'epsilon', 'eta', 'gamma', 'iota', 'lambda', 'theta', 'zeta']; requests ['http://honua:5000/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=DescribeFeatureType&TYPENAME=honua:test_layer,honua:wfs_t_insert_scratch,honua:wfs_t_update_scratch,honua:wfs_t_delete_scratch,honua:cng_features,honua:browser_points,honua:browser_lines,honua:browser_polygons,honua:portal_public_points', 'http://honua:5000/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetCapabilities', 'http://honua:5000/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=honua:test_layer&STARTINDEX=0&COUNT=100']",
       "request_url": null,
-      "duration_ms": 41
+      "duration_ms": 45
     },
     {
       "facet": "negative",
@@ -37,7 +37,7 @@
       "outcome": "pass",
       "detail": "typed open -> None; layer lookup -> absent",
       "request_url": null,
-      "duration_ms": 12
+      "duration_ms": 15
     },
     {
       "facet": "auth",
@@ -45,7 +45,7 @@
       "outcome": "pass",
       "detail": "{'anonymous': 'hidden', 'wrong-api-key': 'hidden', 'expired-bearer': 'hidden', 'api-key': 10, 'oidc-bearer': 10}",
       "request_url": null,
-      "duration_ms": 92
+      "duration_ms": 95
     },
     {
       "facet": "crs-axis",
@@ -61,7 +61,7 @@
       "outcome": "pass",
       "detail": "fields {'gml_id': 'String', 'objectid': 'Integer', 'name': 'String', 'description': 'String', 'status': 'String', 'count': 'Integer', 'ratio': 'Real', 'active': 'Integer', 'created_at': 'DateTime', 'event_date': 'Date', 'event_time': 'Time', 'uid': 'String', 'tags': 'String', 'numbers': 'String', 'eo_x003A_cloud_cover': 'Real'}; geometry Point",
       "request_url": null,
-      "duration_ms": 12
+      "duration_ms": 13
     }
   ]
 }

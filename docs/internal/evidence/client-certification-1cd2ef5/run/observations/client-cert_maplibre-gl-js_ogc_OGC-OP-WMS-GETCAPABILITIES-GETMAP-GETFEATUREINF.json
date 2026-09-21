@@ -9,9 +9,9 @@
   "operation": "OGC-OP-WMS-GETCAPABILITIES-GETMAP-GETFEATUREINF",
   "protocol_version": "1.3.0",
   "protocol_profile": "WMS 1.3.0 queryable",
-  "started_at": "2026-09-21T09:46:35.859171Z",
-  "finished_at": "2026-09-21T09:46:42.112910Z",
-  "duration_ms": 6254,
+  "started_at": "2026-09-21T09:59:38.168428Z",
+  "finished_at": "2026-09-21T09:59:43.313844Z",
+  "duration_ms": 5146,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -29,7 +29,7 @@
       "outcome": "pass",
       "detail": "capabilities layers ['Browser Points', 'default', 'Browser Lines', 'default']; painted 65 px around pt-alpha; GetFeatureInfo at pt-alpha returned pt-alpha",
       "request_url": null,
-      "duration_ms": 940
+      "duration_ms": 607
     },
     {
       "facet": "negative",
@@ -37,7 +37,7 @@
       "outcome": "pass",
       "detail": "responses [400]; nothing rendered; MapLibre error statuses [400]",
       "request_url": null,
-      "duration_ms": 527
+      "duration_ms": 407
     },
     {
       "facet": "auth",
@@ -45,7 +45,7 @@
       "outcome": "pass",
       "detail": "(drawn at pt-alpha, statuses) {'anonymous': (0, [(401, 'text/xml')]), 'wrong-api-key': (0, [(401, 'text/xml')]), 'expired-bearer': (0, [(200, 'application/xml')]), 'api-key': (65, [(200, 'image/png')]), 'oidc-bearer': (65, [(200, 'image/png')])}",
       "request_url": null,
-      "duration_ms": 2299
+      "duration_ms": 2138
     },
     {
       "facet": "crs-axis",
@@ -53,7 +53,7 @@
       "outcome": "pass",
       "detail": "painted pixels around pt-alpha 65; around empty sea 0",
       "request_url": null,
-      "duration_ms": 1001
+      "duration_ms": 916
     },
     {
       "facet": "media-schema",
@@ -61,7 +61,7 @@
       "outcome": "pass",
       "detail": "['image/png']; no MapLibre errors; {\"idle\": true, \"errors\": [], \"responses\": 9, \"status_types\": [[200, \"image/png\"]]}",
       "request_url": null,
-      "duration_ms": 419
+      "duration_ms": 384
     }
   ]
 }

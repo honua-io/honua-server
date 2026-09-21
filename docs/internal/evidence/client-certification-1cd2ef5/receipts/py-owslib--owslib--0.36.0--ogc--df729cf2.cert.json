@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "run_id": "roster-20260921T094413Z-1cd2ef5",
-  "run_date": "2026-09-21T09:45:05.996792Z",
+  "run_id": "roster-20260921T095724Z-1cd2ef5",
+  "run_date": "2026-09-21T09:58:15.261275Z",
   "server_commit": "1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
   "server_version": {
     "success": true,
@@ -9,12 +9,12 @@
       "version": "2026.1.1",
       "metadataApiVersion": "metadata.honua.io/v2alpha1",
       "metadataSchemaVersion": "2.0.0-alpha.1",
-      "serverTime": "2026-09-21T09:44:32.9047765+00:00"
+      "serverTime": "2026-09-21T09:57:43.083255+00:00"
     },
     "message": null,
-    "timestamp": "2026-09-21T09:44:32.9047811+00:00"
+    "timestamp": "2026-09-21T09:57:43.0832557+00:00"
   },
-  "producer_source_sha": "0f64f2fd946cc3c9834874bd42d8e8a0b1f7341b",
+  "producer_source_sha": "4a2f6d875d21c21f25cba7e9ca1d164b6d4d57d5",
   "image_digest": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
   "fixture_revision": "docker/cng/seed.sql@1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
   "server_config_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
@@ -42,9 +42,9 @@
       ],
       "notes": "all 5 checks passed across 5 governed facets",
       "operation": "OGC-OP-WCS-2-0-COVERAGE",
-      "started_at": "2026-09-21T09:45:05.996792Z",
-      "finished_at": "2026-09-21T09:45:06.192548Z",
-      "duration_ms": 196,
+      "started_at": "2026-09-21T09:58:15.261275Z",
+      "finished_at": "2026-09-21T09:58:15.475349Z",
+      "duration_ms": 214,
       "protocol_version": "2.0.1",
       "checks": [
         {
@@ -53,7 +53,7 @@
           "outcome": "pass",
           "detail": "coverage coverage_2000 grid (64, 64); GeoTIFF decoded (64, 64) mode L constant 180",
           "request_url": null,
-          "duration_ms": 71
+          "duration_ms": 82
         },
         {
           "facet": "negative",
@@ -61,7 +61,7 @@
           "outcome": "pass",
           "detail": "OWS exception codes {'unknown-coverage': 'HTTP 404 NoSuchCoverage', 'unsupported-format': 'InvalidParameterValue'}",
           "request_url": null,
-          "duration_ms": 17
+          "duration_ms": 18
         },
         {
           "facet": "auth",
@@ -69,7 +69,7 @@
           "outcome": "pass",
           "detail": "anonymous GetCapabilities HTTP 401; client outcomes {'anonymous': 'HTTPError', 'wrong-api-key': 'HTTPError', 'expired-bearer': 'HTTPError', 'api-key': 'parsed', 'oidc-bearer': 'parsed'}",
           "request_url": null,
-          "duration_ms": 38
+          "duration_ms": 43
         },
         {
           "facet": "crs-axis",
@@ -85,15 +85,15 @@
           "outcome": "pass",
           "detail": "advertised ['image/tiff', 'image/png', 'image/jpeg']; decoded {'image/tiff': 'TIFF (64, 64)', 'image/png': 'PNG (64, 64)', 'image/jpeg': 'JPEG (64, 64)'}",
           "request_url": null,
-          "duration_ms": 39
+          "duration_ms": 41
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:45:05.996792Z",
-          "2026-09-21T09:45:06.192548Z"
+          "2026-09-21T09:58:15.261275Z",
+          "2026-09-21T09:58:15.475349Z"
         ],
-        "exchanges": 43,
+        "exchanges": 20,
         "wire_lines": [
           26,
           27,
@@ -114,38 +114,14 @@
           42,
           43,
           44,
-          45,
-          46,
-          47,
-          48,
-          49,
-          50,
-          51,
-          52,
-          53,
-          54,
-          55,
-          56,
-          57,
-          58,
-          59,
-          60,
-          61,
-          62,
-          63,
-          64,
-          65,
-          66,
-          67,
-          68
+          45
         ],
-        "wire_lines_sha256": "5b80f3766b8ae8bb11bb6186a1771a65a0b79a8abff50a1fffdedc0d20499abc",
+        "wire_lines_sha256": "2182b507e1143a1da25f69985ea54435b31be153399ef86ef6f987227b8e176a",
         "statuses": {
-          "200": 30,
-          "400": 2,
-          "401": 8,
-          "404": 2,
-          "500": 1
+          "200": 14,
+          "400": 1,
+          "401": 4,
+          "404": 1
         },
         "user_agents": [
           "python-requests/2.34.2"
@@ -167,7 +143,7 @@
   "honua_evidence": {
     "release": "2026.1",
     "candidate": {
-      "run_id": "roster-20260921T094413Z-1cd2ef5",
+      "run_id": "roster-20260921T095724Z-1cd2ef5",
       "release": "2026.1",
       "cut": "pre-cut proof on the imaged trunk nightly (operator ruling A, 2026-09-16); no release cut exists",
       "tag": "nightly-1cd2ef5",
@@ -176,7 +152,7 @@
       "platform_image_id": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
       "source_sha": "1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
       "image_created": "2026-09-20T10:16:19.064Z",
-      "producer_source_sha": "0f64f2fd946cc3c9834874bd42d8e8a0b1f7341b",
+      "producer_source_sha": "4a2f6d875d21c21f25cba7e9ca1d164b6d4d57d5",
       "target": "local-docker",
       "durable_uri_base": "https://github.com/honua-io/honua-server/blob/trunk/docs/internal/evidence/client-certification-1cd2ef5/receipts/",
       "server_version": {
@@ -185,10 +161,10 @@
           "version": "2026.1.1",
           "metadataApiVersion": "metadata.honua.io/v2alpha1",
           "metadataSchemaVersion": "2.0.0-alpha.1",
-          "serverTime": "2026-09-21T09:44:32.9047765+00:00"
+          "serverTime": "2026-09-21T09:57:43.083255+00:00"
         },
         "message": null,
-        "timestamp": "2026-09-21T09:44:32.9047811+00:00"
+        "timestamp": "2026-09-21T09:57:43.0832557+00:00"
       }
     },
     "fixture": {
@@ -207,9 +183,9 @@
       "server_config": {
         "files": {
           "docker/client-compat/compose.yml": "c85c7b55aac33f0fa2bbd281ea3c34365a724ab1e71d79034969dd813de1dcd3",
-          "certification/bounded-roster/compose.candidate.yml": "176d14b8e8a5d0f8f5e953cec5c24127a9517db25893d4827fc7c1ac21c6f96b"
+          "certification/bounded-roster/compose.candidate.yml": "feb24b9187eaab0eba251aafa7b8de1a018e9326948ddf8aea0cad0bb4c30d7f"
         },
-        "sha256": "f66d14d60c6ab9969cc2ee9600986266280bb773d27002efc894c2826c2bc635"
+        "sha256": "8a7696b9ec86c4a0f433dceeaaa7a57ba3a1240655211c43d429c51fe6a9b51c"
       },
       "auth_profile": {
         "files": {
@@ -254,7 +230,7 @@
             "compression": null,
             "overviewLevelCount": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.534618+00:00"
+            "createdAt": "2026-09-21T09:57:52.788733+00:00"
           },
           {
             "id": 2,
@@ -271,7 +247,7 @@
             "compression": null,
             "overviewLevelCount": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.555466+00:00"
+            "createdAt": "2026-09-21T09:57:52.800567+00:00"
           }
         ],
         "zarr-stores": [
@@ -289,7 +265,7 @@
             "primaryVariable": null,
             "variables": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.5647182+00:00"
+            "createdAt": "2026-09-21T09:57:52.8109169+00:00"
           },
           {
             "id": 2,
@@ -305,7 +281,7 @@
             "primaryVariable": null,
             "variables": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.5731944+00:00"
+            "createdAt": "2026-09-21T09:57:52.8214186+00:00"
           }
         ]
       }
@@ -317,13 +293,13 @@
       "lane": {
         "lane": "python",
         "image": "honua-roster/lane-python:local",
-        "image_id": "sha256:5151a8fa86b1327759936b37a6644046bea2d3aff5fa15254313902c12706992",
-        "base_image": "python:3.12-slim-bookworm",
-        "base_repo_digests": "[\"python@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254\"]"
+        "image_id": "sha256:ecfa9c9852124f63d92c3e0e880bac1e9e5089b6e8c433c2a9cbab144b98d041",
+        "base_image": "python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254",
+        "base_repo_digests": "[\"python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254\"]"
       },
       "lane_identity": {
         "lane": "python",
-        "started_at": "2026-09-21T09:44:50.929739Z",
+        "started_at": "2026-09-21T09:57:59.085381Z",
         "python": "3.12.14",
         "platform": "Linux-6.6.114.1-microsoft-standard-WSL2-x86_64-with-glibc2.36",
         "cells": [
@@ -388,7 +364,7 @@
           "urllib3==2.8.0"
         ],
         "client_identity": "attrs==26.1.0\ncertifi==2026.7.22\ncharset-normalizer==3.5.1\nidna==3.20\njsonschema==4.26.0\njsonschema-specifications==2025.9.1\nlxml==6.1.2\nowslib==0.36.0\npillow==12.3.0\npystac==1.15.2\npystac-client==0.9.0\npystac-core==1.15.2\npystac-ext-classification==2.0.1\npystac-ext-datacube==2.2.1\npystac-ext-eo==1.1.1\npystac-ext-file==2.1.1\npystac-ext-grid==1.1.1\npystac-ext-item-assets==1.0.1\npystac-ext-label==1.0.2\npystac-ext-mgrs==1.0.1\npystac-ext-mlm==1.4.1\npystac-ext-pointcloud==1.0.1\npystac-ext-projection==2.0.1\npystac-ext-raster==1.1.1\npystac-ext-render==2.0.0\npystac-ext-sar==1.0.1\npystac-ext-sat==1.0.1\npystac-ext-scientific==1.0.1\npystac-ext-storage==2.0.1\npystac-ext-table==1.2.1\npystac-ext-timestamps==1.1.1\npystac-ext-version==1.2.1\npystac-ext-view==1.0.1\npystac-ext-xarray-assets==1.0.1\npython-dateutil==2.9.0.post0\nPyYAML==6.0.3\nreferencing==0.37.0\nrequests==2.34.2\nrpds-py==2026.6.3\nsix==1.17.0\ntyping_extensions==4.16.0\nurllib3==2.8.0",
-        "finished_at": "2026-09-21T09:45:08.493850Z",
+        "finished_at": "2026-09-21T09:58:17.903789Z",
         "harness_failures": []
       }
     },

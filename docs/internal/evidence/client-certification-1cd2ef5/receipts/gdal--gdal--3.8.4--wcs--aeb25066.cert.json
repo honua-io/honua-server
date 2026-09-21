@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "run_id": "roster-20260921T094413Z-1cd2ef5",
-  "run_date": "2026-09-21T09:45:14.313333Z",
+  "run_id": "roster-20260921T095724Z-1cd2ef5",
+  "run_date": "2026-09-21T09:58:23.174897Z",
   "server_commit": "1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
   "server_version": {
     "success": true,
@@ -9,12 +9,12 @@
       "version": "2026.1.1",
       "metadataApiVersion": "metadata.honua.io/v2alpha1",
       "metadataSchemaVersion": "2.0.0-alpha.1",
-      "serverTime": "2026-09-21T09:44:32.9047765+00:00"
+      "serverTime": "2026-09-21T09:57:43.083255+00:00"
     },
     "message": null,
-    "timestamp": "2026-09-21T09:44:32.9047811+00:00"
+    "timestamp": "2026-09-21T09:57:43.0832557+00:00"
   },
-  "producer_source_sha": "0f64f2fd946cc3c9834874bd42d8e8a0b1f7341b",
+  "producer_source_sha": "4a2f6d875d21c21f25cba7e9ca1d164b6d4d57d5",
   "image_digest": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
   "fixture_revision": "docker/cng/seed.sql@1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
   "server_config_revision": "canonical-client-assignments@2026-08-21.1",
@@ -43,9 +43,9 @@
       ],
       "notes": "all 6 checks passed across 6 governed facets",
       "operation": "serve.wcs",
-      "started_at": "2026-09-21T09:45:14.313333Z",
-      "finished_at": "2026-09-21T09:45:14.508987Z",
-      "duration_ms": 196,
+      "started_at": "2026-09-21T09:58:23.174897Z",
+      "finished_at": "2026-09-21T09:58:23.385352Z",
+      "duration_ms": 210,
       "protocol_version": "2.0.1",
       "checks": [
         {
@@ -54,7 +54,7 @@
           "outcome": "pass",
           "detail": "(64, 64) min/max (180.0, 180.0); requests ['http://honua:5000/ogc/wcs/svc-browser-compat-image?SERVICE=WCS&REQUEST=DescribeCoverage&VERSION=2.0.1&COVERAGEID=coverage_2000', 'http://honua:5000/ogc/wcs/svc-browser-compat-image?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=coverage_2000&SUBSET=x%28-122.45,-122.38000000000001%29&SUBSET=y%2837.729999999999997,37.799999999999997%29&Format=image/tiff', 'http://honua:5000/ogc/wcs/svc-browser-compat-image?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=coverage_2000&SUBSET=x%28-122.45,-122.4478125%29&SUBSET=y%2837.797812499999999,37.799999999999997%29&Format=image/tiff', 'http://honua:5000/ogc/wcs/svc-browser-compat-image?version=2.0.1&SERVICE=WCS&REQUEST=GetCapabilities']",
           "request_url": null,
-          "duration_ms": 38
+          "duration_ms": 50
         },
         {
           "facet": "negative",
@@ -62,7 +62,7 @@
           "outcome": "pass",
           "detail": "GDAL: NoSuchCoverage: Coverage 'coverage_999999' was not found.\nMay be caused by: HTTP error code : 404",
           "request_url": null,
-          "duration_ms": 13
+          "duration_ms": 15
         },
         {
           "facet": "auth",
@@ -70,7 +70,7 @@
           "outcome": "pass",
           "detail": "{'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401, 'api-key': 'opened', 'oidc-bearer': 'opened'} (authenticated principals pass the access policy; the protected mirror offers no coverage for GDAL to open)",
           "request_url": null,
-          "duration_ms": 46
+          "duration_ms": 41
         },
         {
           "facet": "crs-axis",
@@ -78,7 +78,7 @@
           "outcome": "pass",
           "detail": "EPSG:4326 geotransform (-122.45, 0.00109375, 0.0, 37.8, 0.0, -0.00109375); subset request x%28-122.44125,-122.42375%29&SUBSET=y%2837.77375,37.791249999999998%29&Format=image/tiff",
           "request_url": null,
-          "duration_ms": 32
+          "duration_ms": 36
         },
         {
           "facet": "media-schema",
@@ -86,7 +86,7 @@
           "outcome": "pass",
           "detail": "band type Byte; GetCoverage Format=image/tiff requests 2",
           "request_url": null,
-          "duration_ms": 35
+          "duration_ms": 34
         },
         {
           "facet": "boundary",
@@ -94,54 +94,16 @@
           "outcome": "pass",
           "detail": "bottom-right 4x4 {180}, top-right pixel {180}; requests 4",
           "request_url": null,
-          "duration_ms": 32
+          "duration_ms": 34
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:45:14.313333Z",
-          "2026-09-21T09:45:14.508987Z"
+          "2026-09-21T09:58:23.174897Z",
+          "2026-09-21T09:58:23.385352Z"
         ],
-        "exchanges": 75,
+        "exchanges": 23,
         "wire_lines": [
-          368,
-          369,
-          370,
-          371,
-          372,
-          373,
-          374,
-          375,
-          376,
-          377,
-          378,
-          379,
-          380,
-          381,
-          382,
-          383,
-          384,
-          385,
-          386,
-          387,
-          388,
-          389,
-          390,
-          391,
-          392,
-          393,
-          394,
-          395,
-          396,
-          397,
-          398,
-          399,
-          400,
-          401,
-          402,
-          403,
-          404,
-          405,
           406,
           407,
           408,
@@ -164,27 +126,13 @@
           425,
           426,
           427,
-          428,
-          429,
-          430,
-          431,
-          432,
-          433,
-          434,
-          435,
-          436,
-          437,
-          438,
-          439,
-          440,
-          441,
-          442
+          428
         ],
-        "wire_lines_sha256": "c48dcd22e821f8f9dc1306972ecdd9f08647e164f0e7acee45f2c55501f06f29",
+        "wire_lines_sha256": "c22a3c417e9aa7d131520f201de73d5a79923a6cc68f340b286a26345fb64f15",
         "statuses": {
-          "200": 67,
-          "401": 6,
-          "404": 2
+          "200": 19,
+          "401": 3,
+          "404": 1
         },
         "user_agents": [
           "GDAL/3.8.4"
@@ -206,7 +154,7 @@
   "honua_evidence": {
     "release": "2026.1",
     "candidate": {
-      "run_id": "roster-20260921T094413Z-1cd2ef5",
+      "run_id": "roster-20260921T095724Z-1cd2ef5",
       "release": "2026.1",
       "cut": "pre-cut proof on the imaged trunk nightly (operator ruling A, 2026-09-16); no release cut exists",
       "tag": "nightly-1cd2ef5",
@@ -215,7 +163,7 @@
       "platform_image_id": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
       "source_sha": "1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
       "image_created": "2026-09-20T10:16:19.064Z",
-      "producer_source_sha": "0f64f2fd946cc3c9834874bd42d8e8a0b1f7341b",
+      "producer_source_sha": "4a2f6d875d21c21f25cba7e9ca1d164b6d4d57d5",
       "target": "local-docker",
       "durable_uri_base": "https://github.com/honua-io/honua-server/blob/trunk/docs/internal/evidence/client-certification-1cd2ef5/receipts/",
       "server_version": {
@@ -224,10 +172,10 @@
           "version": "2026.1.1",
           "metadataApiVersion": "metadata.honua.io/v2alpha1",
           "metadataSchemaVersion": "2.0.0-alpha.1",
-          "serverTime": "2026-09-21T09:44:32.9047765+00:00"
+          "serverTime": "2026-09-21T09:57:43.083255+00:00"
         },
         "message": null,
-        "timestamp": "2026-09-21T09:44:32.9047811+00:00"
+        "timestamp": "2026-09-21T09:57:43.0832557+00:00"
       }
     },
     "fixture": {
@@ -246,9 +194,9 @@
       "server_config": {
         "files": {
           "docker/client-compat/compose.yml": "c85c7b55aac33f0fa2bbd281ea3c34365a724ab1e71d79034969dd813de1dcd3",
-          "certification/bounded-roster/compose.candidate.yml": "176d14b8e8a5d0f8f5e953cec5c24127a9517db25893d4827fc7c1ac21c6f96b"
+          "certification/bounded-roster/compose.candidate.yml": "feb24b9187eaab0eba251aafa7b8de1a018e9326948ddf8aea0cad0bb4c30d7f"
         },
-        "sha256": "f66d14d60c6ab9969cc2ee9600986266280bb773d27002efc894c2826c2bc635"
+        "sha256": "8a7696b9ec86c4a0f433dceeaaa7a57ba3a1240655211c43d429c51fe6a9b51c"
       },
       "auth_profile": {
         "files": {
@@ -293,7 +241,7 @@
             "compression": null,
             "overviewLevelCount": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.534618+00:00"
+            "createdAt": "2026-09-21T09:57:52.788733+00:00"
           },
           {
             "id": 2,
@@ -310,7 +258,7 @@
             "compression": null,
             "overviewLevelCount": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.555466+00:00"
+            "createdAt": "2026-09-21T09:57:52.800567+00:00"
           }
         ],
         "zarr-stores": [
@@ -328,7 +276,7 @@
             "primaryVariable": null,
             "variables": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.5647182+00:00"
+            "createdAt": "2026-09-21T09:57:52.8109169+00:00"
           },
           {
             "id": 2,
@@ -344,7 +292,7 @@
             "primaryVariable": null,
             "variables": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.5731944+00:00"
+            "createdAt": "2026-09-21T09:57:52.8214186+00:00"
           }
         ]
       }
@@ -357,16 +305,16 @@
         "gdal 3.8.4": {
           "lane": "gdal-3.8.4",
           "image": "honua-roster/lane-gdal:3.8.4",
-          "image_id": "sha256:aa158253e8c3ee174f36f74840c9188777631b314b708d88c52d237fa5585881",
-          "base_image": "ghcr.io/osgeo/gdal:ubuntu-small-3.8.4",
-          "base_repo_digests": "[\"ghcr.io/osgeo/gdal@sha256:60d3bc2f8b09ca1a7ef2db0239699b2c03713aa02be6e525e731c0020bbb10a4\"]"
+          "image_id": "sha256:a51e6903c0cb339a24e797aefa50e80165901da667b408b0b8f13aa455c1ce06",
+          "base_image": "ghcr.io/osgeo/gdal:ubuntu-small-3.8.4@sha256:60d3bc2f8b09ca1a7ef2db0239699b2c03713aa02be6e525e731c0020bbb10a4",
+          "base_repo_digests": "[\"ghcr.io/osgeo/gdal:ubuntu-small-3.8.4@sha256:60d3bc2f8b09ca1a7ef2db0239699b2c03713aa02be6e525e731c0020bbb10a4\"]"
         },
         "gdal 3.13.3": {
           "lane": "gdal-3.13.3",
           "image": "honua-roster/lane-gdal:3.13.3",
-          "image_id": "sha256:cfd743f3efe7458b5137fb9a9e13de4f5c2530794241a086374da876e76bab71",
-          "base_image": "ghcr.io/osgeo/gdal:ubuntu-full-3.13.3",
-          "base_repo_digests": ""
+          "image_id": "sha256:f6ae824ed74a9f52614553574a07a32c21d6968ac794226cab73adbbdd3c5ee7",
+          "base_image": "ghcr.io/osgeo/gdal:ubuntu-full-3.13.3@sha256:2dd0f81ef927ff4c3d4dbe4f73c029dc86d4073974c0564f8e196f6e1412e2e0",
+          "base_repo_digests": "[\"ghcr.io/osgeo/gdal:ubuntu-full-3.13.3@sha256:2dd0f81ef927ff4c3d4dbe4f73c029dc86d4073974c0564f8e196f6e1412e2e0\"]"
         }
       },
       "lane_identity": null

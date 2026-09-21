@@ -9,9 +9,9 @@
   "operation": "serve.wcs",
   "protocol_version": "2.0.1",
   "protocol_profile": "WCS 2.0.1 core GET-KVP",
-  "started_at": "2026-09-21T09:45:14.313333Z",
-  "finished_at": "2026-09-21T09:45:14.508987Z",
-  "duration_ms": 196,
+  "started_at": "2026-09-21T09:58:23.174897Z",
+  "finished_at": "2026-09-21T09:58:23.385352Z",
+  "duration_ms": 210,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -30,7 +30,7 @@
       "outcome": "pass",
       "detail": "(64, 64) min/max (180.0, 180.0); requests ['http://honua:5000/ogc/wcs/svc-browser-compat-image?SERVICE=WCS&REQUEST=DescribeCoverage&VERSION=2.0.1&COVERAGEID=coverage_2000', 'http://honua:5000/ogc/wcs/svc-browser-compat-image?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=coverage_2000&SUBSET=x%28-122.45,-122.38000000000001%29&SUBSET=y%2837.729999999999997,37.799999999999997%29&Format=image/tiff', 'http://honua:5000/ogc/wcs/svc-browser-compat-image?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=coverage_2000&SUBSET=x%28-122.45,-122.4478125%29&SUBSET=y%2837.797812499999999,37.799999999999997%29&Format=image/tiff', 'http://honua:5000/ogc/wcs/svc-browser-compat-image?version=2.0.1&SERVICE=WCS&REQUEST=GetCapabilities']",
       "request_url": null,
-      "duration_ms": 38
+      "duration_ms": 50
     },
     {
       "facet": "negative",
@@ -38,7 +38,7 @@
       "outcome": "pass",
       "detail": "GDAL: NoSuchCoverage: Coverage 'coverage_999999' was not found.\nMay be caused by: HTTP error code : 404",
       "request_url": null,
-      "duration_ms": 13
+      "duration_ms": 15
     },
     {
       "facet": "auth",
@@ -46,7 +46,7 @@
       "outcome": "pass",
       "detail": "{'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401, 'api-key': 'opened', 'oidc-bearer': 'opened'} (authenticated principals pass the access policy; the protected mirror offers no coverage for GDAL to open)",
       "request_url": null,
-      "duration_ms": 46
+      "duration_ms": 41
     },
     {
       "facet": "crs-axis",
@@ -54,7 +54,7 @@
       "outcome": "pass",
       "detail": "EPSG:4326 geotransform (-122.45, 0.00109375, 0.0, 37.8, 0.0, -0.00109375); subset request x%28-122.44125,-122.42375%29&SUBSET=y%2837.77375,37.791249999999998%29&Format=image/tiff",
       "request_url": null,
-      "duration_ms": 32
+      "duration_ms": 36
     },
     {
       "facet": "media-schema",
@@ -62,7 +62,7 @@
       "outcome": "pass",
       "detail": "band type Byte; GetCoverage Format=image/tiff requests 2",
       "request_url": null,
-      "duration_ms": 35
+      "duration_ms": 34
     },
     {
       "facet": "boundary",
@@ -70,7 +70,7 @@
       "outcome": "pass",
       "detail": "bottom-right 4x4 {180}, top-right pixel {180}; requests 4",
       "request_url": null,
-      "duration_ms": 32
+      "duration_ms": 34
     }
   ]
 }

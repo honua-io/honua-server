@@ -9,9 +9,9 @@
   "operation": "serve.geoservices-featureserver",
   "protocol_version": "GeoServices REST 10.x",
   "protocol_profile": "FeatureServer query",
-  "started_at": "2026-09-21T09:45:20.585714Z",
-  "finished_at": "2026-09-21T09:45:20.880714Z",
-  "duration_ms": 295,
+  "started_at": "2026-09-21T09:58:29.501198Z",
+  "finished_at": "2026-09-21T09:58:29.762338Z",
+  "duration_ms": 261,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -27,7 +27,7 @@
       "outcome": "pass",
       "detail": "['alpha', 'beta', 'delta', 'epsilon', 'eta', 'gamma', 'iota', 'lambda', 'theta', 'zeta']; 2 query requests",
       "request_url": null,
-      "duration_ms": 214
+      "duration_ms": 171
     },
     {
       "facet": "metadata",
@@ -35,7 +35,7 @@
       "outcome": "pass",
       "detail": "fields {'objectid': 'esriFieldTypeOID', 'name': 'esriFieldTypeString', 'description': 'esriFieldTypeString', 'status': 'esriFieldTypeString', 'count': 'esriFieldTypeInteger', 'ratio': 'esriFieldTypeDouble', 'active': 'esriFieldTypeSmallInteger', 'created_at': 'esriFieldTypeDate', 'event_date': 'esriFieldTypeDate', 'event_time': 'esriFieldTypeString', 'uid': 'esriFieldTypeGUID', 'tags': 'esriFieldTypeString', 'numbers': 'esriFieldTypeString', 'eo:cloud_cover': 'esriFieldTypeDouble'}; crs EPSG:4326; extent -122.500,37.700 : -122.350,37.840",
       "request_url": null,
-      "duration_ms": 9
+      "duration_ms": 10
     },
     {
       "facet": "media-schema",
@@ -43,7 +43,7 @@
       "outcome": "pass",
       "detail": "counts [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; content types ['application/json']",
       "request_url": null,
-      "duration_ms": 72
+      "duration_ms": 79
     }
   ]
 }

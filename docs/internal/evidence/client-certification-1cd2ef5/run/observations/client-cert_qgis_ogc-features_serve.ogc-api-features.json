@@ -9,9 +9,9 @@
   "operation": "serve.ogc-api-features",
   "protocol_version": "OGC API - Features 1.0",
   "protocol_profile": "core+geojson",
-  "started_at": "2026-09-21T09:45:47.703095Z",
-  "finished_at": "2026-09-21T09:45:48.139809Z",
-  "duration_ms": 437,
+  "started_at": "2026-09-21T09:58:56.830346Z",
+  "finished_at": "2026-09-21T09:58:57.266448Z",
+  "duration_ms": 436,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -27,7 +27,7 @@
       "outcome": "pass",
       "detail": "['alpha', 'beta', 'delta', 'epsilon', 'eta', 'gamma', 'iota', 'lambda', 'theta', 'zeta']; ['GET http://honua:5000/ogc/features -> 200 application/json', 'GET http://honua:5000/openapi.json -> 200 application/vnd.oai.openapi+json; version=3.0', 'GET http://honua:5000/ogc/features/collections/0 -> 200 application/json', 'GET http://honua:5000/ogc/features/conformance -> 200 application/json', 'GET http://honua:5000/ogc/features/collections/0/queryables -> 200 application/schema+json', 'GET http://honua:5000/ogc/features/collections/0/items?limit=10 -> 200 application/geo+json']",
       "request_url": null,
-      "duration_ms": 216
+      "duration_ms": 215
     },
     {
       "facet": "metadata",
@@ -35,7 +35,7 @@
       "outcome": "pass",
       "detail": "title 'Test Layer'; temporal Mon Jan 1 12:00:00 2024 GMT..Wed Jan 10 12:00:00 2024 GMT",
       "request_url": null,
-      "duration_ms": 28
+      "duration_ms": 29
     },
     {
       "facet": "media-schema",

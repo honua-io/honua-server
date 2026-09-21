@@ -1,6 +1,6 @@
 {
   "lane": "python",
-  "started_at": "2026-09-21T09:44:50.929739Z",
+  "started_at": "2026-09-21T09:57:59.085381Z",
   "python": "3.12.14",
   "platform": "Linux-6.6.114.1-microsoft-standard-WSL2-x86_64-with-glibc2.36",
   "cells": [
@@ -65,6 +65,6 @@
     "urllib3==2.8.0"
   ],
   "client_identity": "attrs==26.1.0\ncertifi==2026.7.22\ncharset-normalizer==3.5.1\nidna==3.20\njsonschema==4.26.0\njsonschema-specifications==2025.9.1\nlxml==6.1.2\nowslib==0.36.0\npillow==12.3.0\npystac==1.15.2\npystac-client==0.9.0\npystac-core==1.15.2\npystac-ext-classification==2.0.1\npystac-ext-datacube==2.2.1\npystac-ext-eo==1.1.1\npystac-ext-file==2.1.1\npystac-ext-grid==1.1.1\npystac-ext-item-assets==1.0.1\npystac-ext-label==1.0.2\npystac-ext-mgrs==1.0.1\npystac-ext-mlm==1.4.1\npystac-ext-pointcloud==1.0.1\npystac-ext-projection==2.0.1\npystac-ext-raster==1.1.1\npystac-ext-render==2.0.0\npystac-ext-sar==1.0.1\npystac-ext-sat==1.0.1\npystac-ext-scientific==1.0.1\npystac-ext-storage==2.0.1\npystac-ext-table==1.2.1\npystac-ext-timestamps==1.1.1\npystac-ext-version==1.2.1\npystac-ext-view==1.0.1\npystac-ext-xarray-assets==1.0.1\npython-dateutil==2.9.0.post0\nPyYAML==6.0.3\nreferencing==0.37.0\nrequests==2.34.2\nrpds-py==2026.6.3\nsix==1.17.0\ntyping_extensions==4.16.0\nurllib3==2.8.0",
-  "finished_at": "2026-09-21T09:45:08.493850Z",
+  "finished_at": "2026-09-21T09:58:17.903789Z",
   "harness_failures": []
 }

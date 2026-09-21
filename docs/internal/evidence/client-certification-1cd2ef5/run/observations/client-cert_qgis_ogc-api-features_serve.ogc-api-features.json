@@ -9,9 +9,9 @@
   "operation": "serve.ogc-api-features",
   "protocol_version": "OGC API - Features 1.0",
   "protocol_profile": "core+geojson+crs+paging",
-  "started_at": "2026-09-21T09:45:44.940623Z",
-  "finished_at": "2026-09-21T09:45:47.017980Z",
-  "duration_ms": 2077,
+  "started_at": "2026-09-21T09:58:53.898024Z",
+  "finished_at": "2026-09-21T09:58:56.145561Z",
+  "duration_ms": 2248,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -31,7 +31,7 @@
       "outcome": "pass",
       "detail": "['alpha', 'beta', 'delta', 'epsilon', 'eta', 'gamma', 'iota', 'lambda', 'theta', 'zeta']; ['GET http://honua:5000/ogc/features -> 200 application/json', 'GET http://honua:5000/openapi.json -> 200 application/vnd.oai.openapi+json; version=3.0', 'GET http://honua:5000/ogc/features/collections/0 -> 200 application/json', 'GET http://honua:5000/ogc/features/conformance -> 200 application/json', 'GET http://honua:5000/ogc/features/collections/0/queryables -> 200 application/schema+json', 'GET http://honua:5000/ogc/features/collections/0/items?limit=10 -> 200 application/geo+json']",
       "request_url": null,
-      "duration_ms": 222
+      "duration_ms": 230
     },
     {
       "facet": "pagination",
@@ -39,7 +39,7 @@
       "outcome": "pass",
       "detail": "10 features over pages ['http://honua:5000/ogc/features/collections/0/items?limit=10', 'http://honua:5000/ogc/features/collections/0/items?limit=3', 'http://honua:5000/ogc/features/collections/0/items?limit=3&offset=3&f=geojson', 'http://honua:5000/ogc/features/collections/0/items?limit=3&offset=6&f=geojson', 'http://honua:5000/ogc/features/collections/0/items?limit=3&offset=9&f=geojson']",
       "request_url": null,
-      "duration_ms": 232
+      "duration_ms": 326
     },
     {
       "facet": "limit",
@@ -47,7 +47,7 @@
       "outcome": "pass",
       "detail": "limit requests ['http://honua:5000/ogc/features/collections/0/items?limit=4', 'http://honua:5000/ogc/features/collections/0/items?limit=4&offset=4&f=geojson', 'http://honua:5000/ogc/features/collections/0/items?limit=4&offset=8&f=geojson']",
       "request_url": null,
-      "duration_ms": 278
+      "duration_ms": 307
     },
     {
       "facet": "negative",
@@ -55,7 +55,7 @@
       "outcome": "pass",
       "detail": "layer valid=False; server answered [('GET', 404), ('GET', 404)]",
       "request_url": null,
-      "duration_ms": 124
+      "duration_ms": 123
     },
     {
       "facet": "auth",
@@ -63,7 +63,7 @@
       "outcome": "pass",
       "detail": "(features, statuses) {'anonymous': ('invalid', [401]), 'wrong-api-key': ('invalid', [401]), 'expired-bearer': ('invalid', [401]), 'api-key': (10, [200, 405]), 'oidc-bearer': (10, [200, 405])}",
       "request_url": null,
-      "duration_ms": 769
+      "duration_ms": 785
     },
     {
       "facet": "crs-axis",
@@ -71,7 +71,7 @@
       "outcome": "pass",
       "detail": "layer OGC:CRS84; alpha (-122.49, 37.71); bbox window ['delta', 'gamma']; EPSG:3857 alpha (-13635524.427268, 4538539.153413) via limit=100&crs=http://www.opengis.net/def/crs/EPSG/0/3857",
       "request_url": null,
-      "duration_ms": 253
+      "duration_ms": 272
     },
     {
       "facet": "media-schema",
@@ -79,7 +79,7 @@
       "outcome": "pass",
       "detail": "geometry Point; fields {'objectid': 4, 'name': 10, 'description': 10, 'status': 10, 'count': 4, 'ratio': 6, 'active': 1, 'created_at': 16, 'event_date': 14, 'event_time': 10, 'uid': 10, 'tags': 10, 'numbers': 10, 'eo:cloud_cover': 6}; items served application/geo+json",
       "request_url": null,
-      "duration_ms": 191
+      "duration_ms": 197
     }
   ]
 }

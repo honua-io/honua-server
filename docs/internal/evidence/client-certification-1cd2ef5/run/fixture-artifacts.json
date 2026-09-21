@@ -59,7 +59,7 @@
         "compression": null,
         "overviewLevelCount": null,
         "metadataScannedAt": null,
-        "createdAt": "2026-09-21T09:44:43.534618+00:00"
+        "createdAt": "2026-09-21T09:57:52.788733+00:00"
       },
       {
         "id": 2,
@@ -76,7 +76,7 @@
         "compression": null,
         "overviewLevelCount": null,
         "metadataScannedAt": null,
-        "createdAt": "2026-09-21T09:44:43.555466+00:00"
+        "createdAt": "2026-09-21T09:57:52.800567+00:00"
       }
     ],
     "zarr-stores": [
@@ -94,7 +94,7 @@
         "primaryVariable": null,
         "variables": null,
         "metadataScannedAt": null,
-        "createdAt": "2026-09-21T09:44:43.5647182+00:00"
+        "createdAt": "2026-09-21T09:57:52.8109169+00:00"
       },
       {
         "id": 2,
@@ -110,28 +110,28 @@
         "primaryVariable": null,
         "variables": null,
         "metadataScannedAt": null,
-        "createdAt": "2026-09-21T09:44:43.5731944+00:00"
+        "createdAt": "2026-09-21T09:57:52.8214186+00:00"
       }
     ]
   },
   "scans": [
     {
       "status": 200,
-      "body": "{\"id\":1,\"layerId\":5000,\"name\":\"roster cog 5000\",\"description\":null,\"provider\":\"AwsS3\",\"bucket\":\"roster-fixtures\",\"objectKey\":\"cog/roster-3857.tif\",\"width\":512,\"height\":512,\"bandCount\":1,\"srid\":3857,\"compression\":\"DEFLATE\",\"overviewLevelCount\":2,\"metadataScannedAt\":\"2026-09-21T09:44:43.615773+00:00\",\"createdAt\":\"2026-09-21T09:44:43.534618+00:00\"}",
+      "body": "{\"id\":1,\"layerId\":5000,\"name\":\"roster cog 5000\",\"description\":null,\"provider\":\"AwsS3\",\"bucket\":\"roster-fixtures\",\"objectKey\":\"cog/roster-3857.tif\",\"width\":512,\"height\":512,\"bandCount\":1,\"srid\":3857,\"compression\":\"DEFLATE\",\"overviewLevelCount\":2,\"metadataScannedAt\":\"2026-09-21T09:57:52.87731+00:00\",\"createdAt\":\"2026-09-21T09:57:52.788733+00:00\"}",
       "path": "/api/v1/admin/cloud-rasters/1/refresh",
-      "elapsed_s": 0.0
+      "elapsed_s": 0.1
     },
     {
       "status": 200,
-      "body": "{\"id\":2,\"layerId\":5001,\"name\":\"roster cog 5001\",\"description\":null,\"provider\":\"AwsS3\",\"bucket\":\"roster-fixtures\",\"objectKey\":\"cog/roster-3857.tif\",\"width\":512,\"height\":512,\"bandCount\":1,\"srid\":3857,\"compression\":\"DEFLATE\",\"overviewLevelCount\":2,\"metadataScannedAt\":\"2026-09-21T09:44:43.650418+00:00\",\"createdAt\":\"2026-09-21T09:44:43.555466+00:00\"}",
+      "body": "{\"id\":2,\"layerId\":5001,\"name\":\"roster cog 5001\",\"description\":null,\"provider\":\"AwsS3\",\"bucket\":\"roster-fixtures\",\"objectKey\":\"cog/roster-3857.tif\",\"width\":512,\"height\":512,\"bandCount\":1,\"srid\":3857,\"compression\":\"DEFLATE\",\"overviewLevelCount\":2,\"metadataScannedAt\":\"2026-09-21T09:57:52.926632+00:00\",\"createdAt\":\"2026-09-21T09:57:52.800567+00:00\"}",
       "path": "/api/v1/admin/cloud-rasters/2/refresh",
-      "elapsed_s": 0.0
+      "elapsed_s": 0.1
     },
     {
       "status": 200,
       "body": "{\"id\":1,\"layerId\":5200,\"name\":\"roster zarr 5200\",\"description\":null,\"provider\":\"AwsS3\",\"bucket\":\"roster-fixtures\",\"rootPath\":\"zarr/roster-sst.zarr\",\"zarrFormat\":2,\"srid\":0,\"variableCount\":4,\"primaryVariable\":\"latitude\",\"variables\":[{\"name\":\"latitude\",\"shape\":[4],\"chunks\":[4],\"dataType\":\"\\u003Cf8\",\"compressor\":null,\"dimensionNames\":[\"latitude\"]},{\"name\":\"longitude\",\"shape\":[4],\"chunks\":[4],\"dataTyp",
       "path": "/api/v1/admin/zarr-stores/1/refresh",
-      "elapsed_s": 0.1
+      "elapsed_s": 0.2
     },
     {
       "status": 200,

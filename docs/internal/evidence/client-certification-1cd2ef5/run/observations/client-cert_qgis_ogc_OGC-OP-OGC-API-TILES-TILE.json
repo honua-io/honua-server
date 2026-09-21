@@ -9,9 +9,9 @@
   "operation": "OGC-OP-OGC-API-TILES-TILE",
   "protocol_version": "OGC API - Tiles 1.0",
   "protocol_profile": "core+mvt",
-  "started_at": "2026-09-21T09:46:14.368295Z",
-  "finished_at": "2026-09-21T09:46:15.248113Z",
-  "duration_ms": 880,
+  "started_at": "2026-09-21T09:59:20.860917Z",
+  "finished_at": "2026-09-21T09:59:21.533530Z",
+  "duration_ms": 673,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -29,7 +29,7 @@
       "outcome": "pass",
       "detail": "painted 48 px from 1 tiles",
       "request_url": null,
-      "duration_ms": 159
+      "duration_ms": 152
     },
     {
       "facet": "negative",
@@ -37,7 +37,7 @@
       "outcome": "pass",
       "detail": "tile statuses [404]",
       "request_url": null,
-      "duration_ms": 62
+      "duration_ms": 61
     },
     {
       "facet": "auth",
@@ -45,7 +45,7 @@
       "outcome": "pass",
       "detail": "(painted, statuses) {'anonymous': (0, [401]), 'wrong-api-key': (0, [401]), 'expired-bearer': (0, [401]), 'api-key': (171, [200, 204]), 'oidc-bearer': (171, [200, 204])}",
       "request_url": null,
-      "duration_ms": 580
+      "duration_ms": 363
     },
     {
       "facet": "crs-axis",
@@ -53,7 +53,7 @@
       "outcome": "pass",
       "detail": "painted at fixture 48, far away 0",
       "request_url": null,
-      "duration_ms": 19
+      "duration_ms": 25
     },
     {
       "facet": "media-schema",
@@ -61,7 +61,7 @@
       "outcome": "pass",
       "detail": "tile responses [(200, 'application/vnd.mapbox-vector-tile'), (204, None)]",
       "request_url": null,
-      "duration_ms": 60
+      "duration_ms": 71
     }
   ]
 }

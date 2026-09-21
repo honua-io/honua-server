@@ -9,9 +9,9 @@
   "operation": "serve.ogc-api-tiles",
   "protocol_version": "OGC API - Tiles 1.0",
   "protocol_profile": "core+mvt",
-  "started_at": "2026-09-21T09:47:01.853345Z",
-  "finished_at": "2026-09-21T09:47:06.061477Z",
-  "duration_ms": 4208,
+  "started_at": "2026-09-21T10:00:02.579123Z",
+  "finished_at": "2026-09-21T10:00:06.829737Z",
+  "duration_ms": 4251,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -29,7 +29,7 @@
       "outcome": "pass",
       "detail": "queryRenderedFeatures at pt-alpha -> ['pt-alpha']; {\"idle\": true, \"errors\": [], \"responses\": 5, \"status_types\": [[200, \"application/vnd.mapbox-vector-tile\"], [200, \"text/javascript\"], [204, \"\"]]}",
       "request_url": null,
-      "duration_ms": 481
+      "duration_ms": 406
     },
     {
       "facet": "negative",
@@ -37,7 +37,7 @@
       "outcome": "pass",
       "detail": "responses [404]; nothing rendered; MapLibre error statuses []",
       "request_url": null,
-      "duration_ms": 338
+      "duration_ms": 329
     },
     {
       "facet": "auth",
@@ -45,7 +45,7 @@
       "outcome": "pass",
       "detail": "(drawn at pt-alpha, statuses) {'anonymous': (0, [(401, 'application/problem+json')]), 'wrong-api-key': (0, [(401, 'application/problem+json')]), 'expired-bearer': (0, [(401, 'application/problem+json')]), 'api-key': (1, [(200, 'application/vnd.mapbox-vector-tile'), (204, '')]), 'oidc-bearer': (1, [(200, 'application/vnd.mapbox-vector-tile'), (204, '')])}",
       "request_url": null,
-      "duration_ms": 1752
+      "duration_ms": 1748
     },
     {
       "facet": "crs-axis",
@@ -53,7 +53,7 @@
       "outcome": "pass",
       "detail": "features at pt-alpha's projected pixel ['pt-alpha']; at empty sea []",
       "request_url": null,
-      "duration_ms": 699
+      "duration_ms": 684
     },
     {
       "facet": "media-schema",
@@ -61,7 +61,7 @@
       "outcome": "pass",
       "detail": "['application/vnd.mapbox-vector-tile']; no MapLibre errors; {\"idle\": true, \"errors\": [], \"responses\": 4, \"status_types\": [[200, \"application/vnd.mapbox-vector-tile\"], [204, \"\"]]}",
       "request_url": null,
-      "duration_ms": 348
+      "duration_ms": 350
     }
   ]
 }

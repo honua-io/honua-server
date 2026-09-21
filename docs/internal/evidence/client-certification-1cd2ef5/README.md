@@ -10,7 +10,7 @@ work against the immutable server image. The remaining failing cells block that 
 - Server: `1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9`.
 - Image: `ghcr.io/honua-io/honua-server@sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76`.
 - Tag: `nightly-1cd2ef5`; publication run [35504430543](https://github.com/honua-io/honua-server/actions/runs/35504430543).
-- Producer: `0f64f2fd94` (full SHA in `run/candidate.json`).
+- Producer: `4a2f6d875d` (full SHA in `run/candidate.json`).
 - Release denominator: `2026-09-16-complete.13`, frozen from honua-release commit
   `7165e7f67937318a0c53a7292df7730961cf13c2`.
 - Target: one isolated local Docker stack; all clients use the same image and seeded fixture.
@@ -57,7 +57,8 @@ relaxed. WFS retains its original typed-schema assertions.
 The supplemental CRS probe uses the same GDAL client image and exact candidate, through
 the candidate network directly. Its independent expected features come from the SQL seed;
 it is diagnostic evidence, not an extra passing receipt. The raw raster responses are
-also supplemental diagnostics. No licensed Esri runner is required by these 52 cells;
+also supplemental diagnostics, captured during the earlier replay of the same image and
+fixture; they are not counted as client receipts. No licensed Esri runner is required by these 52 cells;
 ArcGIS certification remains delegated to honua-esri-compat.
 
 ## Acceptance disposition
@@ -79,8 +80,17 @@ because the candidate has failing required cells, not because a candidate is una
 
 ## Local validation
 
-- 108 mirror/verifier tests and 14 bounded-harness tests passed.
+- 108 mirror/verifier tests and 18 bounded-harness tests passed.
 - `scripts/ci/pre-pr-check.sh --fast` passed: warnings-as-errors build, 68 AI tests,
   310 architecture tests, and repository checks. The fast mode excludes server integration
   shards by design; those are not claimed as local evidence.
 - No C# project changed; no solution-wide formatting was run.
+
+## Evidence-integrity review
+
+The final replay uses exact request-start/response-completion windows with no timing
+slack. Regression tests reject traffic even one microsecond outside a cell and reject
+responses completed after it. The GeoParquet join contains six anonymous HTTP 200
+exchanges, below its eight-request budget; no adjacent COG/Zarr traffic is attributed.
+Every client base is pinned in its build input and recorded as a registry digest. Missing,
+mutable, or malformed base references stop evidence publication.

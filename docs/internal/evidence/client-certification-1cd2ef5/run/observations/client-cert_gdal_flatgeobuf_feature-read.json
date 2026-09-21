@@ -9,9 +9,9 @@
   "operation": "feature-read",
   "protocol_version": "FlatGeobuf 3",
   "protocol_profile": "FeatureServer query f=fgb",
-  "started_at": "2026-09-21T09:45:14.650982Z",
-  "finished_at": "2026-09-21T09:45:14.707419Z",
-  "duration_ms": 56,
+  "started_at": "2026-09-21T09:58:23.544950Z",
+  "finished_at": "2026-09-21T09:58:23.594671Z",
+  "duration_ms": 50,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -27,7 +27,7 @@
       "outcome": "pass",
       "detail": "6 features with verified buffers: ['Baytown', 'Dateline Post', 'Equator Station', 'Harbor City', 'Meridian Marker', 'Polar Outpost']",
       "request_url": null,
-      "duration_ms": 30
+      "duration_ms": 27
     },
     {
       "facet": "metadata",
@@ -35,7 +35,7 @@
       "outcome": "pass",
       "detail": "count 6; geometry Point; extent (-122.4194, 179.5, 0.0, 86.0); fields {'objectid': ('Integer64', 'None'), 'name': ('String', 'None'), 'category': ('String', 'None'), 'population': ('Integer', 'None'), 'ratio': ('Real', 'None'), 'active': ('Integer', 'Boolean'), 'observed_at': ('DateTime', 'None')}",
       "request_url": null,
-      "duration_ms": 14
+      "duration_ms": 12
     },
     {
       "facet": "crs-axis",
@@ -43,7 +43,7 @@
       "outcome": "pass",
       "detail": "EPSG:4326, data axis mapping [2, 1]; Harbor City POINT (-122.4194 37.7749); Dateline Post x=179.5 stays in range",
       "request_url": null,
-      "duration_ms": 13
+      "duration_ms": 11
     }
   ]
 }

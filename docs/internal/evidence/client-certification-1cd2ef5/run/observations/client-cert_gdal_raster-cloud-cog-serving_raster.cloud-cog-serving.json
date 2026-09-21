@@ -9,9 +9,9 @@
   "operation": "raster.cloud-cog-serving",
   "protocol_version": "GeoServices ImageServer tile + COG 1.0",
   "protocol_profile": "registered cloud COG, WebMercatorQuad tiles",
-  "started_at": "2026-09-21T09:45:17.041892Z",
-  "finished_at": "2026-09-21T09:45:17.134704Z",
-  "duration_ms": 93,
+  "started_at": "2026-09-21T09:58:25.841117Z",
+  "finished_at": "2026-09-21T09:58:25.897028Z",
+  "duration_ms": 56,
   "status": "fail",
   "exercised_capabilities": [
     "positive",
@@ -31,7 +31,7 @@
       "outcome": "fail",
       "detail": "CheckFailed: http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png was not served: `/vsicurl?use_head=no&list_dir=no&url=http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621%3Fformat%3Dpng' not recognized as being in a supported file format.; the registered S3 COG was never read (requests ['http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png.aux', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png.hdr', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png.hdr', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png.xml'])",
       "request_url": null,
-      "duration_ms": 92
+      "duration_ms": 56
     },
     {
       "facet": "negative",

@@ -9,9 +9,9 @@
   "operation": "serve.ogc-api-records",
   "protocol_version": "OGC API - Records 1.0",
   "protocol_profile": "core+geojson",
-  "started_at": "2026-09-21T09:45:07.340767Z",
-  "finished_at": "2026-09-21T09:45:07.565557Z",
-  "duration_ms": 225,
+  "started_at": "2026-09-21T09:58:16.733065Z",
+  "finished_at": "2026-09-21T09:58:16.947446Z",
+  "duration_ms": 214,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -30,7 +30,7 @@
       "outcome": "pass",
       "detail": "collections ['honua-catalog']; record service:browser_compat titled 'browser_compat'",
       "request_url": null,
-      "duration_ms": 41
+      "duration_ms": 32
     },
     {
       "facet": "pagination",
@@ -38,7 +38,7 @@
       "outcome": "pass",
       "detail": "19 records over 7 pages of 3; numberMatched 19; no duplicates",
       "request_url": null,
-      "duration_ms": 87
+      "duration_ms": 63
     },
     {
       "facet": "limit",
@@ -46,7 +46,7 @@
       "outcome": "pass",
       "detail": "page sizes {1: 1, 2: 2, 5: 5}; limit=0 -> 400 application/problem+json",
       "request_url": null,
-      "duration_ms": 34
+      "duration_ms": 29
     },
     {
       "facet": "negative",
@@ -54,7 +54,7 @@
       "outcome": "pass",
       "detail": "{'unknown-record': 404, 'unknown-collection': 404}",
       "request_url": null,
-      "duration_ms": 14
+      "duration_ms": 19
     },
     {
       "facet": "auth",
@@ -62,7 +62,7 @@
       "outcome": "pass",
       "detail": "anonymous 19 records, api-key 31, oidc-bearer 31, wrong key 19; the protected records appear only with a valid credential",
       "request_url": null,
-      "duration_ms": 39
+      "duration_ms": 60
     },
     {
       "facet": "media-schema",

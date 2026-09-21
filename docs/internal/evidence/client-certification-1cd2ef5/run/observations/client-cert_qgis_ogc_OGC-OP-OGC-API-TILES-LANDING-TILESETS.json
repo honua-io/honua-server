@@ -9,9 +9,9 @@
   "operation": "OGC-OP-OGC-API-TILES-LANDING-TILESETS",
   "protocol_version": "OGC API - Tiles 1.0",
   "protocol_profile": "core+tilesets-list",
-  "started_at": "2026-09-21T09:45:48.819167Z",
-  "finished_at": "2026-09-21T09:46:13.139179Z",
-  "duration_ms": 24339,
+  "started_at": "2026-09-21T09:58:57.977956Z",
+  "finished_at": "2026-09-21T09:59:20.212696Z",
+  "duration_ms": 22235,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -29,7 +29,7 @@
       "outcome": "pass",
       "detail": "2 tilesets (['WebMercatorQuad', 'WorldCRS84Quad']); provider exposed 19 zoom levels matching 19 tileMatrixSetLimits of WebMercatorQuad",
       "request_url": null,
-      "duration_ms": 23679
+      "duration_ms": 21631
     },
     {
       "facet": "negative",
@@ -37,7 +37,7 @@
       "outcome": "pass",
       "detail": "tile statuses [404]",
       "request_url": null,
-      "duration_ms": 139
+      "duration_ms": 106
     },
     {
       "facet": "auth",
@@ -45,7 +45,7 @@
       "outcome": "pass",
       "detail": "(painted, statuses) {'anonymous': (0, [401]), 'wrong-api-key': (0, [401]), 'expired-bearer': (0, [401]), 'api-key': (171, [200, 204]), 'oidc-bearer': (171, [200, 204])}",
       "request_url": null,
-      "duration_ms": 426
+      "duration_ms": 411
     },
     {
       "facet": "crs-axis",
@@ -53,7 +53,7 @@
       "outcome": "pass",
       "detail": "painted at fixture 48, far away 0",
       "request_url": null,
-      "duration_ms": 33
+      "duration_ms": 26
     },
     {
       "facet": "media-schema",
@@ -61,7 +61,7 @@
       "outcome": "pass",
       "detail": "tile responses [(200, 'application/vnd.mapbox-vector-tile'), (204, None)]",
       "request_url": null,
-      "duration_ms": 62
+      "duration_ms": 60
     }
   ]
 }

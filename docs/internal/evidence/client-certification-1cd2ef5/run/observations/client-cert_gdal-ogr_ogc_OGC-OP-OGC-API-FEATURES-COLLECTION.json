@@ -9,9 +9,9 @@
   "operation": "OGC-OP-OGC-API-FEATURES-COLLECTION",
   "protocol_version": "OGC API - Features 1.0",
   "protocol_profile": "core+geojson+crs",
-  "started_at": "2026-09-21T09:45:10.801749Z",
-  "finished_at": "2026-09-21T09:45:11.041140Z",
-  "duration_ms": 239,
+  "started_at": "2026-09-21T09:58:19.988999Z",
+  "finished_at": "2026-09-21T09:58:20.160311Z",
+  "duration_ms": 171,
   "status": "fail",
   "exercised_capabilities": [
     "positive",
@@ -29,7 +29,7 @@
       "outcome": "pass",
       "detail": "collection metadata {'DESCRIPTION': 'Client compatibility certification layer', 'TEMPORAL_INTERVAL_MAX': '2024-01-10T12:00:00Z', 'TEMPORAL_INTERVAL_MIN': '2024-01-01T12:00:00Z', 'TITLE': 'Test Layer'}; extent (-122.5, -122.35, 37.7, 37.84); GDAL fetched ['http://honua:5000/ogc/features/collections/0']",
       "request_url": null,
-      "duration_ms": 23
+      "duration_ms": 20
     },
     {
       "facet": "negative",
@@ -37,7 +37,7 @@
       "outcome": "pass",
       "detail": "OAPIF:http://honua:5000/ogc/features/collections/no-such-collection -> HTTP 404 problem document surfaced by GDAL",
       "request_url": null,
-      "duration_ms": 7
+      "duration_ms": 6
     },
     {
       "facet": "auth",
@@ -45,7 +45,7 @@
       "outcome": "pass",
       "detail": "OAPIF:http://honua:5000/ogc/features/collections/2011: {'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401, 'api-key': 10, 'oidc-bearer': 10}",
       "request_url": null,
-      "duration_ms": 129
+      "duration_ms": 97
     },
     {
       "facet": "crs-axis",
@@ -53,7 +53,7 @@
       "outcome": "fail",
       "detail": "CheckFailed: layer SRS is not EPSG:4326",
       "request_url": null,
-      "duration_ms": 28
+      "duration_ms": 17
     },
     {
       "facet": "media-schema",
@@ -61,7 +61,7 @@
       "outcome": "pass",
       "detail": "field types {'name': 'String', 'description': 'String', 'status': 'String', 'count': 'Integer', 'ratio': 'Real', 'active': 'Integer', 'created_at': 'DateTime', 'event_date': 'Date', 'event_time': 'Time', 'uid': 'String', 'tags': 'StringList', 'numbers': 'IntegerList', 'eo:cloud_cover': 'Integer'}; geometry Point; http://honua:5000/ogc/features/collections/0 served application/json with 15 links; GDAL fetched 4 documents",
       "request_url": null,
-      "duration_ms": 51
+      "duration_ms": 30
     }
   ]
 }

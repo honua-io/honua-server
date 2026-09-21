@@ -9,9 +9,9 @@
   "operation": "raster.terrain-rgb",
   "protocol_version": "TileJSON 3.0 + Terrain-RGB",
   "protocol_profile": "raster-dem mapbox encoding",
-  "started_at": "2026-09-21T09:47:16.405529Z",
-  "finished_at": "2026-09-21T09:48:45.012607Z",
-  "duration_ms": 88694,
+  "started_at": "2026-09-21T10:00:17.083581Z",
+  "finished_at": "2026-09-21T10:01:48.889874Z",
+  "duration_ms": 91849,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -30,7 +30,7 @@
       "outcome": "pass",
       "detail": "MapLibre 6.5.0: elevation at [-122.42, 37.76] = 291.9 m (fixture 289 m)",
       "request_url": null,
-      "duration_ms": 13686
+      "duration_ms": 13355
     },
     {
       "facet": "negative",
@@ -38,7 +38,7 @@
       "outcome": "pass",
       "detail": "responses [404]; MapLibre errors [404]",
       "request_url": null,
-      "duration_ms": 5834
+      "duration_ms": 5828
     },
     {
       "facet": "auth",
@@ -46,7 +46,7 @@
       "outcome": "pass",
       "detail": "(elevation, statuses) {'anonymous': (0, [401]), 'wrong-api-key': (0, [401]), 'expired-bearer': (0, [401]), 'api-key': (291.9057777777198, [200]), 'oidc-bearer': (291.9057777777198, [200])}",
       "request_url": null,
-      "duration_ms": 50397
+      "duration_ms": 53753
     },
     {
       "facet": "boundary",
@@ -54,7 +54,7 @@
       "outcome": "pass",
       "detail": "elevation west of the DEM -10000; 20 tiles all 200",
       "request_url": null,
-      "duration_ms": 6562
+      "duration_ms": 6654
     },
     {
       "facet": "crs-axis",
@@ -62,7 +62,7 @@
       "outcome": "pass",
       "detail": "measured {'inside': 291.9057777777198, 'north': 195.76286964520295, 'east': 340.0000000000018}; fixture {'inside': 289, 'north': 193, 'east': 337}",
       "request_url": null,
-      "duration_ms": 5848
+      "duration_ms": 5847
     },
     {
       "facet": "media-schema",
@@ -70,7 +70,7 @@
       "outcome": "pass",
       "detail": "TileJSON 3.0.0 format terrain-rgb encoding {'type': 'mapbox-terrain-rgb', 'formula': 'elevationMeters = -10000 + ((R * 256 * 256 + G * 256 + B) * 0.1)', 'units': 'meters', 'tileSize': 256}; response types ['application/json', 'image/png']",
       "request_url": null,
-      "duration_ms": 5843
+      "duration_ms": 5869
     }
   ]
 }

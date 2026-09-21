@@ -9,9 +9,9 @@
   "operation": "OGC-OP-OGC-API-FEATURES-ITEMS",
   "protocol_version": "OGC API - Features 1.0",
   "protocol_profile": "core+geojson+crs",
-  "started_at": "2026-09-21T09:45:33.601167Z",
-  "finished_at": "2026-09-21T09:45:35.325905Z",
-  "duration_ms": 1725,
+  "started_at": "2026-09-21T09:58:42.973760Z",
+  "finished_at": "2026-09-21T09:58:45.040539Z",
+  "duration_ms": 2067,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -29,7 +29,7 @@
       "outcome": "pass",
       "detail": "read 10 items ['alpha', 'beta', 'delta', 'epsilon', 'eta', 'gamma', 'iota', 'lambda', 'theta', 'zeta']; exchanges ['GET http://honua:5000/ogc/features -> 200 application/json', 'GET http://honua:5000/openapi.json -> 200 application/vnd.oai.openapi+json; version=3.0', 'GET http://honua:5000/ogc/features/collections/0 -> 200 application/json', 'GET http://honua:5000/ogc/features/conformance -> 200 application/json', 'GET http://honua:5000/ogc/features/collections/0/queryables -> 200 application/schema+json', 'GET http://honua:5000/ogc/features/collections/0/items?limit=10 -> 200 application/geo+json', 'GET http://honua:5000/ogc/features/collections/0/schema -> 200 application/schema+json', 'CUSTOM http://honua:5000/ogc/features/collections/0/items -> 405']",
       "request_url": null,
-      "duration_ms": 354
+      "duration_ms": 414
     },
     {
       "facet": "negative",
@@ -37,7 +37,7 @@
       "outcome": "pass",
       "detail": "layer valid=False; server answered [('GET', 404), ('GET', 404)]",
       "request_url": null,
-      "duration_ms": 124
+      "duration_ms": 131
     },
     {
       "facet": "auth",
@@ -45,7 +45,7 @@
       "outcome": "pass",
       "detail": "(features, statuses) {'anonymous': ('invalid', [401]), 'wrong-api-key': ('invalid', [401]), 'expired-bearer': ('invalid', [401]), 'api-key': (10, [200, 405]), 'oidc-bearer': (10, [200, 405])}",
       "request_url": null,
-      "duration_ms": 774
+      "duration_ms": 963
     },
     {
       "facet": "crs-axis",
@@ -53,7 +53,7 @@
       "outcome": "pass",
       "detail": "layer OGC:CRS84; alpha (-122.49, 37.71); bbox window ['delta', 'gamma']; EPSG:3857 alpha (-13635524.427268, 4538539.153413) via limit=100&crs=http://www.opengis.net/def/crs/EPSG/0/3857",
       "request_url": null,
-      "duration_ms": 264
+      "duration_ms": 331
     },
     {
       "facet": "media-schema",
@@ -61,7 +61,7 @@
       "outcome": "pass",
       "detail": "geometry Point; fields {'objectid': 4, 'name': 10, 'description': 10, 'status': 10, 'count': 4, 'ratio': 6, 'active': 1, 'created_at': 16, 'event_date': 14, 'event_time': 10, 'uid': 10, 'tags': 10, 'numbers': 10, 'eo:cloud_cover': 6}; items served application/geo+json",
       "request_url": null,
-      "duration_ms": 199
+      "duration_ms": 217
     }
   ]
 }

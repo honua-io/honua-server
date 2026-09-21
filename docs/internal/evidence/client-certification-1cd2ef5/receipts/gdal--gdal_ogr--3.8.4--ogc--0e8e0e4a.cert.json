@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "run_id": "roster-20260921T094413Z-1cd2ef5",
-  "run_date": "2026-09-21T09:45:10.098780Z",
+  "run_id": "roster-20260921T095724Z-1cd2ef5",
+  "run_date": "2026-09-21T09:58:19.351718Z",
   "server_commit": "1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
   "server_version": {
     "success": true,
@@ -9,12 +9,12 @@
       "version": "2026.1.1",
       "metadataApiVersion": "metadata.honua.io/v2alpha1",
       "metadataSchemaVersion": "2.0.0-alpha.1",
-      "serverTime": "2026-09-21T09:44:32.9047765+00:00"
+      "serverTime": "2026-09-21T09:57:43.083255+00:00"
     },
     "message": null,
-    "timestamp": "2026-09-21T09:44:32.9047811+00:00"
+    "timestamp": "2026-09-21T09:57:43.0832557+00:00"
   },
-  "producer_source_sha": "0f64f2fd946cc3c9834874bd42d8e8a0b1f7341b",
+  "producer_source_sha": "4a2f6d875d21c21f25cba7e9ca1d164b6d4d57d5",
   "image_digest": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
   "fixture_revision": "docker/cng/seed.sql@1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
   "server_config_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
@@ -42,9 +42,9 @@
       ],
       "notes": "failed checks crs-axis:EPSG:4326 lat/lon bbox and EPSG:3857 output agree with the lon/lat fixture",
       "operation": "OGC-OP-OGC-API-FEATURES-COLLECTION",
-      "started_at": "2026-09-21T09:45:10.801749Z",
-      "finished_at": "2026-09-21T09:45:11.041140Z",
-      "duration_ms": 239,
+      "started_at": "2026-09-21T09:58:19.988999Z",
+      "finished_at": "2026-09-21T09:58:20.160311Z",
+      "duration_ms": 171,
       "protocol_version": "OGC API - Features 1.0",
       "checks": [
         {
@@ -53,7 +53,7 @@
           "outcome": "pass",
           "detail": "collection metadata {'DESCRIPTION': 'Client compatibility certification layer', 'TEMPORAL_INTERVAL_MAX': '2024-01-10T12:00:00Z', 'TEMPORAL_INTERVAL_MIN': '2024-01-01T12:00:00Z', 'TITLE': 'Test Layer'}; extent (-122.5, -122.35, 37.7, 37.84); GDAL fetched ['http://honua:5000/ogc/features/collections/0']",
           "request_url": null,
-          "duration_ms": 23
+          "duration_ms": 20
         },
         {
           "facet": "negative",
@@ -61,7 +61,7 @@
           "outcome": "pass",
           "detail": "OAPIF:http://honua:5000/ogc/features/collections/no-such-collection -> HTTP 404 problem document surfaced by GDAL",
           "request_url": null,
-          "duration_ms": 7
+          "duration_ms": 6
         },
         {
           "facet": "auth",
@@ -69,7 +69,7 @@
           "outcome": "pass",
           "detail": "OAPIF:http://honua:5000/ogc/features/collections/2011: {'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401, 'api-key': 10, 'oidc-bearer': 10}",
           "request_url": null,
-          "duration_ms": 129
+          "duration_ms": 97
         },
         {
           "facet": "crs-axis",
@@ -77,7 +77,7 @@
           "outcome": "fail",
           "detail": "CheckFailed: layer SRS is not EPSG:4326",
           "request_url": null,
-          "duration_ms": 28
+          "duration_ms": 17
         },
         {
           "facet": "media-schema",
@@ -85,67 +85,16 @@
           "outcome": "pass",
           "detail": "field types {'name': 'String', 'description': 'String', 'status': 'String', 'count': 'Integer', 'ratio': 'Real', 'active': 'Integer', 'created_at': 'DateTime', 'event_date': 'Date', 'event_time': 'Time', 'uid': 'String', 'tags': 'StringList', 'numbers': 'IntegerList', 'eo:cloud_cover': 'Integer'}; geometry Point; http://honua:5000/ogc/features/collections/0 served application/json with 15 links; GDAL fetched 4 documents",
           "request_url": null,
-          "duration_ms": 51
+          "duration_ms": 30
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:45:10.801749Z",
-          "2026-09-21T09:45:11.041140Z"
+          "2026-09-21T09:58:19.988999Z",
+          "2026-09-21T09:58:20.160311Z"
         ],
-        "exchanges": 111,
+        "exchanges": 23,
         "wire_lines": [
-          137,
-          138,
-          139,
-          140,
-          141,
-          142,
-          143,
-          144,
-          145,
-          146,
-          147,
-          148,
-          149,
-          150,
-          151,
-          152,
-          153,
-          154,
-          155,
-          156,
-          157,
-          158,
-          159,
-          160,
-          161,
-          162,
-          163,
-          164,
-          165,
-          166,
-          167,
-          168,
-          169,
-          170,
-          171,
-          172,
-          173,
-          174,
-          175,
-          176,
-          177,
-          178,
-          179,
-          180,
-          181,
-          182,
-          183,
-          184,
-          185,
-          186,
-          187,
           188,
           189,
           190,
@@ -168,50 +117,13 @@
           207,
           208,
           209,
-          210,
-          211,
-          212,
-          213,
-          214,
-          215,
-          216,
-          217,
-          218,
-          219,
-          220,
-          221,
-          222,
-          223,
-          224,
-          225,
-          226,
-          227,
-          228,
-          229,
-          230,
-          231,
-          232,
-          233,
-          234,
-          235,
-          236,
-          237,
-          238,
-          239,
-          240,
-          241,
-          242,
-          243,
-          244,
-          245,
-          246,
-          247
+          210
         ],
-        "wire_lines_sha256": "efed046d2ebb74ea94d311b9d06639db567767e09802ded27dfc8a42bcdcaede",
+        "wire_lines_sha256": "5dbf9267b8eb99d1b7c1e38aa6c49d08c3023970ac01b7efafb75fa6629be196",
         "statuses": {
-          "200": 90,
-          "401": 15,
-          "404": 6
+          "200": 19,
+          "401": 3,
+          "404": 1
         },
         "user_agents": [
           "GDAL/3.8.4"
@@ -237,9 +149,9 @@
       ],
       "notes": "failed checks crs-axis:EPSG:4326 lat/lon bbox and EPSG:3857 output agree with the lon/lat fixture",
       "operation": "OGC-OP-OGC-API-FEATURES-COLLECTIONS",
-      "started_at": "2026-09-21T09:45:10.456900Z",
-      "finished_at": "2026-09-21T09:45:10.651885Z",
-      "duration_ms": 195,
+      "started_at": "2026-09-21T09:58:19.682816Z",
+      "finished_at": "2026-09-21T09:58:19.846418Z",
+      "duration_ms": 164,
       "protocol_version": "OGC API - Features 1.0",
       "checks": [
         {
@@ -248,7 +160,116 @@
           "outcome": "pass",
           "detail": "layers equal the advertised collections ['0', '10', '1000', '11', '12', '2000', '2001', '2002', '3000']; GDAL fetched ['http://honua:5000/ogc/features/collections']",
           "request_url": null,
-          "duration_ms": 29
+          "duration_ms": 27
+        },
+        {
+          "facet": "negative",
+          "name": "an unknown collection is a 404 problem",
+          "outcome": "pass",
+          "detail": "OAPIF:http://honua:5000/ogc/features/collections/no-such-collection -> HTTP 404 problem document surfaced by GDAL",
+          "request_url": null,
+          "duration_ms": 6
+        },
+        {
+          "facet": "auth",
+          "name": "protected collection is challenged, then admitted for API key and OIDC bearer",
+          "outcome": "pass",
+          "detail": "OAPIF:http://honua:5000/ogc/features/collections/2011: {'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401, 'api-key': 10, 'oidc-bearer': 10}",
+          "request_url": null,
+          "duration_ms": 84
+        },
+        {
+          "facet": "crs-axis",
+          "name": "EPSG:4326 lat/lon bbox and EPSG:3857 output agree with the lon/lat fixture",
+          "outcome": "fail",
+          "detail": "CheckFailed: layer SRS is not EPSG:4326",
+          "request_url": null,
+          "duration_ms": 19
+        },
+        {
+          "facet": "media-schema",
+          "name": "GeoJSON items decode to the typed fixture schema",
+          "outcome": "pass",
+          "detail": "field types {'name': 'String', 'description': 'String', 'status': 'String', 'count': 'Integer', 'ratio': 'Real', 'active': 'Integer', 'created_at': 'DateTime', 'event_date': 'Date', 'event_time': 'Time', 'uid': 'String', 'tags': 'StringList', 'numbers': 'IntegerList', 'eo:cloud_cover': 'Integer'}; geometry Point; http://honua:5000/ogc/features/collections served application/json with 3 links; GDAL fetched 4 documents",
+          "request_url": null,
+          "duration_ms": 26
+        }
+      ],
+      "wire": {
+        "window": [
+          "2026-09-21T09:58:19.682816Z",
+          "2026-09-21T09:58:19.846418Z"
+        ],
+        "exchanges": 25,
+        "wire_lines": [
+          163,
+          164,
+          165,
+          166,
+          167,
+          168,
+          169,
+          170,
+          171,
+          172,
+          173,
+          174,
+          175,
+          176,
+          177,
+          178,
+          179,
+          180,
+          181,
+          182,
+          183,
+          184,
+          185,
+          186,
+          187
+        ],
+        "wire_lines_sha256": "95186ac401424b5a84db99e221ea6f7dcbe0176243823e61b82155ccd614614a",
+        "statuses": {
+          "200": 21,
+          "401": 3,
+          "404": 1
+        },
+        "user_agents": [
+          "GDAL/3.8.4"
+        ],
+        "credential_schemes": [
+          "ApiKey",
+          "Bearer",
+          "none"
+        ]
+      }
+    },
+    {
+      "test_case_id": "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-ITEM",
+      "status": "fail",
+      "performed_by": "GDAL/OGR",
+      "request_url": "http://honua:5000/ogc/features/collections/0/items/3",
+      "exercised_capabilities": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "notes": "failed checks crs-axis:EPSG:4326 lat/lon bbox and EPSG:3857 output agree with the lon/lat fixture",
+      "operation": "OGC-OP-OGC-API-FEATURES-ITEM",
+      "started_at": "2026-09-21T09:58:20.631277Z",
+      "finished_at": "2026-09-21T09:58:20.816739Z",
+      "duration_ms": 185,
+      "protocol_version": "OGC API - Features 1.0",
+      "checks": [
+        {
+          "facet": "positive",
+          "name": "fetch one item by id",
+          "outcome": "pass",
+          "detail": "GetFeature(3) fetched http://honua:5000/ogc/features/collections/0/items/3 -> ('gamma', 'active', (-122.46, 37.73)); GetFeature(999999) -> 404; GDAL fetched ['http://honua:5000/ogc/features', 'http://honua:5000/ogc/features/collections/0', 'http://honua:5000/ogc/features/collections/0/items/3', 'http://honua:5000/ogc/features/collections/0/items/999999', 'http://honua:5000/ogc/features/collections/0/items?limit=20', 'http://honua:5000/openapi.json']",
+          "request_url": null,
+          "duration_ms": 55
         },
         {
           "facet": "negative",
@@ -264,7 +285,7 @@
           "outcome": "pass",
           "detail": "OAPIF:http://honua:5000/ogc/features/collections/2011: {'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401, 'api-key': 10, 'oidc-bearer': 10}",
           "request_url": null,
-          "duration_ms": 116
+          "duration_ms": 78
         },
         {
           "facet": "crs-axis",
@@ -272,23 +293,246 @@
           "outcome": "fail",
           "detail": "CheckFailed: layer SRS is not EPSG:4326",
           "request_url": null,
-          "duration_ms": 18
+          "duration_ms": 15
         },
         {
           "facet": "media-schema",
           "name": "GeoJSON items decode to the typed fixture schema",
           "outcome": "pass",
-          "detail": "field types {'name': 'String', 'description': 'String', 'status': 'String', 'count': 'Integer', 'ratio': 'Real', 'active': 'Integer', 'created_at': 'DateTime', 'event_date': 'Date', 'event_time': 'Time', 'uid': 'String', 'tags': 'StringList', 'numbers': 'IntegerList', 'eo:cloud_cover': 'Integer'}; geometry Point; http://honua:5000/ogc/features/collections served application/json with 3 links; GDAL fetched 4 documents",
+          "detail": "field types {'name': 'String', 'description': 'String', 'status': 'String', 'count': 'Integer', 'ratio': 'Real', 'active': 'Integer', 'created_at': 'DateTime', 'event_date': 'Date', 'event_time': 'Time', 'uid': 'String', 'tags': 'StringList', 'numbers': 'IntegerList', 'eo:cloud_cover': 'Integer'}; geometry Point; http://honua:5000/ogc/features/collections/0/items/3 served application/geo+json with 6 links; GDAL fetched 4 documents",
           "request_url": null,
-          "duration_ms": 26
+          "duration_ms": 31
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:45:10.456900Z",
-          "2026-09-21T09:45:10.651885Z"
+          "2026-09-21T09:58:20.631277Z",
+          "2026-09-21T09:58:20.816739Z"
         ],
-        "exchanges": 87,
+        "exchanges": 28,
+        "wire_lines": [
+          238,
+          239,
+          240,
+          241,
+          242,
+          243,
+          244,
+          245,
+          246,
+          247,
+          248,
+          249,
+          250,
+          251,
+          252,
+          253,
+          254,
+          255,
+          256,
+          257,
+          258,
+          259,
+          260,
+          261,
+          262,
+          263,
+          264,
+          265
+        ],
+        "wire_lines_sha256": "32ebf187c36496864ae9b8146a0b2c0641f3de1861dc37c4f77d35daea8c7385",
+        "statuses": {
+          "200": 23,
+          "401": 3,
+          "404": 2
+        },
+        "user_agents": [
+          "GDAL/3.8.4"
+        ],
+        "credential_schemes": [
+          "ApiKey",
+          "Bearer",
+          "none"
+        ]
+      }
+    },
+    {
+      "test_case_id": "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-ITEMS",
+      "status": "fail",
+      "performed_by": "GDAL/OGR",
+      "request_url": "http://honua:5000/ogc/features/collections/0/items?limit=20",
+      "exercised_capabilities": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "notes": "failed checks crs-axis:EPSG:4326 lat/lon bbox and EPSG:3857 output agree with the lon/lat fixture",
+      "operation": "OGC-OP-OGC-API-FEATURES-ITEMS",
+      "started_at": "2026-09-21T09:58:20.300949Z",
+      "finished_at": "2026-09-21T09:58:20.493876Z",
+      "duration_ms": 193,
+      "protocol_version": "OGC API - Features 1.0",
+      "checks": [
+        {
+          "facet": "positive",
+          "name": "read every item",
+          "outcome": "pass",
+          "detail": "read all 10 fixture features with names, status and geometry; GDAL fetched ['http://honua:5000/ogc/features', 'http://honua:5000/ogc/features/collections/0', 'http://honua:5000/ogc/features/collections/0/items?limit=1000&crs=http://www.opengis.net/def/crs/OGC/1.3/CRS84', 'http://honua:5000/ogc/features/collections/0/items?limit=20', 'http://honua:5000/openapi.json']",
+          "request_url": null,
+          "duration_ms": 45
+        },
+        {
+          "facet": "negative",
+          "name": "items of an unknown collection are a 404 problem",
+          "outcome": "pass",
+          "detail": "OAPIF:http://honua:5000/ogc/features/collections/no-such-collection -> HTTP 404 problem document surfaced by GDAL",
+          "request_url": null,
+          "duration_ms": 5
+        },
+        {
+          "facet": "auth",
+          "name": "protected collection is challenged, then admitted for API key and OIDC bearer",
+          "outcome": "pass",
+          "detail": "OAPIF:http://honua:5000/ogc/features/collections/2011: {'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401, 'api-key': 10, 'oidc-bearer': 10}",
+          "request_url": null,
+          "duration_ms": 79
+        },
+        {
+          "facet": "crs-axis",
+          "name": "EPSG:4326 lat/lon bbox and EPSG:3857 output agree with the lon/lat fixture",
+          "outcome": "fail",
+          "detail": "CheckFailed: layer SRS is not EPSG:4326",
+          "request_url": null,
+          "duration_ms": 16
+        },
+        {
+          "facet": "media-schema",
+          "name": "GeoJSON items decode to the typed fixture schema",
+          "outcome": "pass",
+          "detail": "field types {'name': 'String', 'description': 'String', 'status': 'String', 'count': 'Integer', 'ratio': 'Real', 'active': 'Integer', 'created_at': 'DateTime', 'event_date': 'Date', 'event_time': 'Time', 'uid': 'String', 'tags': 'StringList', 'numbers': 'IntegerList', 'eo:cloud_cover': 'Integer'}; geometry Point; http://honua:5000/ogc/features/collections/0/items served application/geo+json with 6 links; GDAL fetched 4 documents",
+          "request_url": null,
+          "duration_ms": 48
+        }
+      ],
+      "wire": {
+        "window": [
+          "2026-09-21T09:58:20.300949Z",
+          "2026-09-21T09:58:20.493876Z"
+        ],
+        "exchanges": 27,
+        "wire_lines": [
+          211,
+          212,
+          213,
+          214,
+          215,
+          216,
+          217,
+          218,
+          219,
+          220,
+          221,
+          222,
+          223,
+          224,
+          225,
+          226,
+          227,
+          228,
+          229,
+          230,
+          231,
+          232,
+          233,
+          234,
+          235,
+          236,
+          237
+        ],
+        "wire_lines_sha256": "b40554a8efac2cd8f40e8dc54058bc76c45fea05743a77e0b6008a6d9fe24a94",
+        "statuses": {
+          "200": 23,
+          "401": 3,
+          "404": 1
+        },
+        "user_agents": [
+          "GDAL/3.8.4"
+        ],
+        "credential_schemes": [
+          "ApiKey",
+          "Bearer",
+          "none"
+        ]
+      }
+    },
+    {
+      "test_case_id": "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-LANDING",
+      "status": "fail",
+      "performed_by": "GDAL/OGR",
+      "request_url": "http://honua:5000/ogc/features",
+      "exercised_capabilities": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "notes": "failed checks crs-axis:EPSG:4326 lat/lon bbox and EPSG:3857 output agree with the lon/lat fixture",
+      "operation": "OGC-OP-OGC-API-FEATURES-LANDING",
+      "started_at": "2026-09-21T09:58:19.351718Z",
+      "finished_at": "2026-09-21T09:58:19.544023Z",
+      "duration_ms": 192,
+      "protocol_version": "OGC API - Features 1.0",
+      "checks": [
+        {
+          "facet": "positive",
+          "name": "open the API and resolve its landing page",
+          "outcome": "pass",
+          "detail": "opened the API root as 9 layers ['0', '10', '1000', '11', '12', '2000', '2001', '2002', '3000']; layer 0 has 10 features; GDAL fetched ['http://honua:5000/ogc/features', 'http://honua:5000/ogc/features/collections', 'http://honua:5000/ogc/features/collections/0/items?limit=20', 'http://honua:5000/openapi.json']",
+          "request_url": null,
+          "duration_ms": 58
+        },
+        {
+          "facet": "negative",
+          "name": "an unknown API root is refused with 404",
+          "outcome": "pass",
+          "detail": "OAPIF:http://honua:5000/ogc/features/no-such-api -> HTTP 404",
+          "request_url": null,
+          "duration_ms": 5
+        },
+        {
+          "facet": "auth",
+          "name": "protected collection is challenged, then admitted for API key and OIDC bearer",
+          "outcome": "pass",
+          "detail": "OAPIF:http://honua:5000/ogc/features/collections/2011: {'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401, 'api-key': 10, 'oidc-bearer': 10}",
+          "request_url": null,
+          "duration_ms": 84
+        },
+        {
+          "facet": "crs-axis",
+          "name": "EPSG:4326 lat/lon bbox and EPSG:3857 output agree with the lon/lat fixture",
+          "outcome": "fail",
+          "detail": "CheckFailed: layer SRS is not EPSG:4326",
+          "request_url": null,
+          "duration_ms": 17
+        },
+        {
+          "facet": "media-schema",
+          "name": "GeoJSON items decode to the typed fixture schema",
+          "outcome": "pass",
+          "detail": "field types {'name': 'String', 'description': 'String', 'status': 'String', 'count': 'Integer', 'ratio': 'Real', 'active': 'Integer', 'created_at': 'DateTime', 'event_date': 'Date', 'event_time': 'Time', 'uid': 'String', 'tags': 'StringList', 'numbers': 'IntegerList', 'eo:cloud_cover': 'Integer'}; geometry Point; http://honua:5000/ogc/features served application/json with 7 links; GDAL fetched 4 documents",
+          "request_url": null,
+          "duration_ms": 28
+        }
+      ],
+      "wire": {
+        "window": [
+          "2026-09-21T09:58:19.351718Z",
+          "2026-09-21T09:58:19.544023Z"
+        ],
+        "exchanges": 26,
         "wire_lines": [
           137,
           138,
@@ -315,74 +559,13 @@
           159,
           160,
           161,
-          162,
-          163,
-          164,
-          165,
-          166,
-          167,
-          168,
-          169,
-          170,
-          171,
-          172,
-          173,
-          174,
-          175,
-          176,
-          177,
-          178,
-          179,
-          180,
-          181,
-          182,
-          183,
-          184,
-          185,
-          186,
-          187,
-          188,
-          189,
-          190,
-          191,
-          192,
-          193,
-          194,
-          195,
-          196,
-          197,
-          198,
-          199,
-          200,
-          201,
-          202,
-          203,
-          204,
-          205,
-          206,
-          207,
-          208,
-          209,
-          210,
-          211,
-          212,
-          213,
-          214,
-          215,
-          216,
-          217,
-          218,
-          219,
-          220,
-          221,
-          222,
-          223
+          162
         ],
-        "wire_lines_sha256": "89309f393071cde5004f2c8a1a4ea217e1f95206fad563ff9c95dac7cc082cad",
+        "wire_lines_sha256": "5ab158f6ab8beda6b10ca6896d3ef45bece97276d2e368b784cdf962530b35a3",
         "statuses": {
-          "200": 71,
-          "401": 12,
-          "404": 4
+          "200": 22,
+          "401": 3,
+          "404": 1
         },
         "user_agents": [
           "GDAL/3.8.4"
@@ -395,10 +578,10 @@
       }
     },
     {
-      "test_case_id": "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-ITEM",
+      "test_case_id": "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-QUERYABLES",
       "status": "fail",
       "performed_by": "GDAL/OGR",
-      "request_url": "http://honua:5000/ogc/features/collections/0/items/3",
+      "request_url": "http://honua:5000/ogc/features/collections/0/queryables",
       "exercised_capabilities": [
         "positive",
         "negative",
@@ -407,19 +590,19 @@
         "media-schema"
       ],
       "notes": "failed checks crs-axis:EPSG:4326 lat/lon bbox and EPSG:3857 output agree with the lon/lat fixture",
-      "operation": "OGC-OP-OGC-API-FEATURES-ITEM",
-      "started_at": "2026-09-21T09:45:11.665672Z",
-      "finished_at": "2026-09-21T09:45:11.905595Z",
-      "duration_ms": 240,
+      "operation": "OGC-OP-OGC-API-FEATURES-QUERYABLES",
+      "started_at": "2026-09-21T09:58:20.936901Z",
+      "finished_at": "2026-09-21T09:58:21.141986Z",
+      "duration_ms": 205,
       "protocol_version": "OGC API - Features 1.0",
       "checks": [
         {
           "facet": "positive",
-          "name": "fetch one item by id",
+          "name": "the driver uses the collection queryables for attribute filtering",
           "outcome": "pass",
-          "detail": "GetFeature(3) fetched http://honua:5000/ogc/features/collections/0/items/3 -> ('gamma', 'active', (-122.46, 37.73)); GetFeature(999999) -> 404; GDAL fetched ['http://honua:5000/ogc/features', 'http://honua:5000/ogc/features/collections/0', 'http://honua:5000/ogc/features/collections/0/items/3', 'http://honua:5000/ogc/features/collections/0/items/999999', 'http://honua:5000/ogc/features/collections/0/items?limit=20', 'http://honua:5000/openapi.json']",
+          "detail": "queryables fetched ['http://honua:5000/ogc/features/collections/0/queryables']; filter selected [1, 3, 5, 7, 9]; GDAL fetched ['http://honua:5000/ogc/features', 'http://honua:5000/ogc/features/collections/0', \"http://honua:5000/ogc/features/collections/0/items?limit=1000&crs=http://www.opengis.net/def/crs/OGC/1.3/CRS84&filter=status%20%3D%20'active'&filter-lang=cql-text\", 'http://honua:5000/ogc/features/collections/0/items?limit=20', 'http://honua:5000/ogc/features/collections/0/queryables', 'http://honua:5000/openapi.json']",
           "request_url": null,
-          "duration_ms": 97
+          "duration_ms": 60
         },
         {
           "facet": "negative",
@@ -427,7 +610,7 @@
           "outcome": "pass",
           "detail": "OAPIF:http://honua:5000/ogc/features/collections/no-such-collection -> HTTP 404 problem document surfaced by GDAL",
           "request_url": null,
-          "duration_ms": 5
+          "duration_ms": 28
         },
         {
           "facet": "auth",
@@ -435,7 +618,7 @@
           "outcome": "pass",
           "detail": "OAPIF:http://honua:5000/ogc/features/collections/2011: {'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401, 'api-key': 10, 'oidc-bearer': 10}",
           "request_url": null,
-          "duration_ms": 85
+          "duration_ms": 74
         },
         {
           "facet": "crs-axis",
@@ -449,314 +632,18 @@
           "facet": "media-schema",
           "name": "GeoJSON items decode to the typed fixture schema",
           "outcome": "pass",
-          "detail": "field types {'name': 'String', 'description': 'String', 'status': 'String', 'count': 'Integer', 'ratio': 'Real', 'active': 'Integer', 'created_at': 'DateTime', 'event_date': 'Date', 'event_time': 'Time', 'uid': 'String', 'tags': 'StringList', 'numbers': 'IntegerList', 'eo:cloud_cover': 'Integer'}; geometry Point; http://honua:5000/ogc/features/collections/0/items/3 served application/geo+json with 6 links; GDAL fetched 4 documents",
+          "detail": "field types {'name': 'String', 'description': 'String', 'status': 'String', 'count': 'Integer', 'ratio': 'Real', 'active': 'Integer', 'created_at': 'DateTime', 'event_date': 'Date', 'event_time': 'Time', 'uid': 'String', 'tags': 'StringList', 'numbers': 'IntegerList', 'eo:cloud_cover': 'Integer'}; geometry Point; http://honua:5000/ogc/features/collections/0/queryables served application/schema+json with 13 queryable properties; GDAL fetched 4 documents",
           "request_url": null,
-          "duration_ms": 35
+          "duration_ms": 26
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:45:11.665672Z",
-          "2026-09-21T09:45:11.905595Z"
+          "2026-09-21T09:58:20.936901Z",
+          "2026-09-21T09:58:21.141986Z"
         ],
-        "exchanges": 115,
+        "exchanges": 30,
         "wire_lines": [
-          197,
-          198,
-          199,
-          200,
-          201,
-          202,
-          203,
-          204,
-          205,
-          206,
-          207,
-          208,
-          209,
-          210,
-          211,
-          212,
-          213,
-          214,
-          215,
-          216,
-          217,
-          218,
-          219,
-          220,
-          221,
-          222,
-          223,
-          224,
-          225,
-          226,
-          227,
-          228,
-          229,
-          230,
-          231,
-          232,
-          233,
-          234,
-          235,
-          236,
-          237,
-          238,
-          239,
-          240,
-          241,
-          242,
-          243,
-          244,
-          245,
-          246,
-          247,
-          248,
-          249,
-          250,
-          251,
-          252,
-          253,
-          254,
-          255,
-          256,
-          257,
-          258,
-          259,
-          260,
-          261,
-          262,
-          263,
-          264,
-          265,
-          266,
-          267,
-          268,
-          269,
-          270,
-          271,
-          272,
-          273,
-          274,
-          275,
-          276,
-          277,
-          278,
-          279,
-          280,
-          281,
-          282,
-          283,
-          284,
-          285,
-          286,
-          287,
-          288,
-          289,
-          290,
-          291,
-          292,
-          293,
-          294,
-          295,
-          296,
-          297,
-          298,
-          299,
-          300,
-          301,
-          302,
-          303,
-          304,
-          305,
-          306,
-          307,
-          308,
-          309,
-          310,
-          311
-        ],
-        "wire_lines_sha256": "36b98feafc563dc07d0c89e72d5ce34935fbe40ab539ff8f190eb620732827d3",
-        "statuses": {
-          "200": 102,
-          "401": 9,
-          "404": 4
-        },
-        "user_agents": [
-          "GDAL/3.8.4"
-        ],
-        "credential_schemes": [
-          "ApiKey",
-          "Bearer",
-          "none"
-        ]
-      }
-    },
-    {
-      "test_case_id": "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-ITEMS",
-      "status": "fail",
-      "performed_by": "GDAL/OGR",
-      "request_url": "http://honua:5000/ogc/features/collections/0/items?limit=20",
-      "exercised_capabilities": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "notes": "failed checks crs-axis:EPSG:4326 lat/lon bbox and EPSG:3857 output agree with the lon/lat fixture",
-      "operation": "OGC-OP-OGC-API-FEATURES-ITEMS",
-      "started_at": "2026-09-21T09:45:11.280336Z",
-      "finished_at": "2026-09-21T09:45:11.516162Z",
-      "duration_ms": 236,
-      "protocol_version": "OGC API - Features 1.0",
-      "checks": [
-        {
-          "facet": "positive",
-          "name": "read every item",
-          "outcome": "pass",
-          "detail": "read all 10 fixture features with names, status and geometry; GDAL fetched ['http://honua:5000/ogc/features', 'http://honua:5000/ogc/features/collections/0', 'http://honua:5000/ogc/features/collections/0/items?limit=1000&crs=http://www.opengis.net/def/crs/OGC/1.3/CRS84', 'http://honua:5000/ogc/features/collections/0/items?limit=20', 'http://honua:5000/openapi.json']",
-          "request_url": null,
-          "duration_ms": 52
-        },
-        {
-          "facet": "negative",
-          "name": "items of an unknown collection are a 404 problem",
-          "outcome": "pass",
-          "detail": "OAPIF:http://honua:5000/ogc/features/collections/no-such-collection -> HTTP 404 problem document surfaced by GDAL",
-          "request_url": null,
-          "duration_ms": 6
-        },
-        {
-          "facet": "auth",
-          "name": "protected collection is challenged, then admitted for API key and OIDC bearer",
-          "outcome": "pass",
-          "detail": "OAPIF:http://honua:5000/ogc/features/collections/2011: {'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401, 'api-key': 10, 'oidc-bearer': 10}",
-          "request_url": null,
-          "duration_ms": 105
-        },
-        {
-          "facet": "crs-axis",
-          "name": "EPSG:4326 lat/lon bbox and EPSG:3857 output agree with the lon/lat fixture",
-          "outcome": "fail",
-          "detail": "CheckFailed: layer SRS is not EPSG:4326",
-          "request_url": null,
-          "duration_ms": 20
-        },
-        {
-          "facet": "media-schema",
-          "name": "GeoJSON items decode to the typed fixture schema",
-          "outcome": "pass",
-          "detail": "field types {'name': 'String', 'description': 'String', 'status': 'String', 'count': 'Integer', 'ratio': 'Real', 'active': 'Integer', 'created_at': 'DateTime', 'event_date': 'Date', 'event_time': 'Time', 'uid': 'String', 'tags': 'StringList', 'numbers': 'IntegerList', 'eo:cloud_cover': 'Integer'}; geometry Point; http://honua:5000/ogc/features/collections/0/items served application/geo+json with 6 links; GDAL fetched 4 documents",
-          "request_url": null,
-          "duration_ms": 51
-        }
-      ],
-      "wire": {
-        "window": [
-          "2026-09-21T09:45:11.280336Z",
-          "2026-09-21T09:45:11.516162Z"
-        ],
-        "exchanges": 127,
-        "wire_lines": [
-          169,
-          170,
-          171,
-          172,
-          173,
-          174,
-          175,
-          176,
-          177,
-          178,
-          179,
-          180,
-          181,
-          182,
-          183,
-          184,
-          185,
-          186,
-          187,
-          188,
-          189,
-          190,
-          191,
-          192,
-          193,
-          194,
-          195,
-          196,
-          197,
-          198,
-          199,
-          200,
-          201,
-          202,
-          203,
-          204,
-          205,
-          206,
-          207,
-          208,
-          209,
-          210,
-          211,
-          212,
-          213,
-          214,
-          215,
-          216,
-          217,
-          218,
-          219,
-          220,
-          221,
-          222,
-          223,
-          224,
-          225,
-          226,
-          227,
-          228,
-          229,
-          230,
-          231,
-          232,
-          233,
-          234,
-          235,
-          236,
-          237,
-          238,
-          239,
-          240,
-          241,
-          242,
-          243,
-          244,
-          245,
-          246,
-          247,
-          248,
-          249,
-          250,
-          251,
-          252,
-          253,
-          254,
-          255,
-          256,
-          257,
-          258,
-          259,
-          260,
-          261,
-          262,
-          263,
-          264,
-          265,
           266,
           267,
           268,
@@ -788,375 +675,11 @@
           294,
           295
         ],
-        "wire_lines_sha256": "ead12d7eff86063d3b03e4659aa1c87e79d34fb410b62db99cd30c7f8b7ba2cd",
+        "wire_lines_sha256": "ccfb131e283d7593acb7af270ed2e7c0f2ba439dfafce53e97a8d33a17fc1f81",
         "statuses": {
-          "200": 109,
-          "401": 13,
-          "404": 5
-        },
-        "user_agents": [
-          "GDAL/3.8.4"
-        ],
-        "credential_schemes": [
-          "ApiKey",
-          "Bearer",
-          "none"
-        ]
-      }
-    },
-    {
-      "test_case_id": "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-LANDING",
-      "status": "fail",
-      "performed_by": "GDAL/OGR",
-      "request_url": "http://honua:5000/ogc/features",
-      "exercised_capabilities": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "notes": "failed checks crs-axis:EPSG:4326 lat/lon bbox and EPSG:3857 output agree with the lon/lat fixture",
-      "operation": "OGC-OP-OGC-API-FEATURES-LANDING",
-      "started_at": "2026-09-21T09:45:10.098780Z",
-      "finished_at": "2026-09-21T09:45:10.312725Z",
-      "duration_ms": 214,
-      "protocol_version": "OGC API - Features 1.0",
-      "checks": [
-        {
-          "facet": "positive",
-          "name": "open the API and resolve its landing page",
-          "outcome": "pass",
-          "detail": "opened the API root as 9 layers ['0', '10', '1000', '11', '12', '2000', '2001', '2002', '3000']; layer 0 has 10 features; GDAL fetched ['http://honua:5000/ogc/features', 'http://honua:5000/ogc/features/collections', 'http://honua:5000/ogc/features/collections/0/items?limit=20', 'http://honua:5000/openapi.json']",
-          "request_url": null,
-          "duration_ms": 53
-        },
-        {
-          "facet": "negative",
-          "name": "an unknown API root is refused with 404",
-          "outcome": "pass",
-          "detail": "OAPIF:http://honua:5000/ogc/features/no-such-api -> HTTP 404",
-          "request_url": null,
-          "duration_ms": 5
-        },
-        {
-          "facet": "auth",
-          "name": "protected collection is challenged, then admitted for API key and OIDC bearer",
-          "outcome": "pass",
-          "detail": "OAPIF:http://honua:5000/ogc/features/collections/2011: {'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401, 'api-key': 10, 'oidc-bearer': 10}",
-          "request_url": null,
-          "duration_ms": 107
-        },
-        {
-          "facet": "crs-axis",
-          "name": "EPSG:4326 lat/lon bbox and EPSG:3857 output agree with the lon/lat fixture",
-          "outcome": "fail",
-          "detail": "CheckFailed: layer SRS is not EPSG:4326",
-          "request_url": null,
-          "duration_ms": 18
-        },
-        {
-          "facet": "media-schema",
-          "name": "GeoJSON items decode to the typed fixture schema",
-          "outcome": "pass",
-          "detail": "field types {'name': 'String', 'description': 'String', 'status': 'String', 'count': 'Integer', 'ratio': 'Real', 'active': 'Integer', 'created_at': 'DateTime', 'event_date': 'Date', 'event_time': 'Time', 'uid': 'String', 'tags': 'StringList', 'numbers': 'IntegerList', 'eo:cloud_cover': 'Integer'}; geometry Point; http://honua:5000/ogc/features served application/json with 7 links; GDAL fetched 4 documents",
-          "request_url": null,
-          "duration_ms": 30
-        }
-      ],
-      "wire": {
-        "window": [
-          "2026-09-21T09:45:10.098780Z",
-          "2026-09-21T09:45:10.312725Z"
-        ],
-        "exchanges": 74,
-        "wire_lines": [
-          137,
-          138,
-          139,
-          140,
-          141,
-          142,
-          143,
-          144,
-          145,
-          146,
-          147,
-          148,
-          149,
-          150,
-          151,
-          152,
-          153,
-          154,
-          155,
-          156,
-          157,
-          158,
-          159,
-          160,
-          161,
-          162,
-          163,
-          164,
-          165,
-          166,
-          167,
-          168,
-          169,
-          170,
-          171,
-          172,
-          173,
-          174,
-          175,
-          176,
-          177,
-          178,
-          179,
-          180,
-          181,
-          182,
-          183,
-          184,
-          185,
-          186,
-          187,
-          188,
-          189,
-          190,
-          191,
-          192,
-          193,
-          194,
-          195,
-          196,
-          197,
-          198,
-          199,
-          200,
-          201,
-          202,
-          203,
-          204,
-          205,
-          206,
-          207,
-          208,
-          209,
-          210
-        ],
-        "wire_lines_sha256": "9ee16a1890f1ddd9c09dcd7ae326bde34731ee2f35a71d3360f5a56a6fc0c725",
-        "statuses": {
-          "200": 62,
-          "401": 9,
-          "404": 3
-        },
-        "user_agents": [
-          "GDAL/3.8.4"
-        ],
-        "credential_schemes": [
-          "ApiKey",
-          "Bearer",
-          "none"
-        ]
-      }
-    },
-    {
-      "test_case_id": "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-QUERYABLES",
-      "status": "fail",
-      "performed_by": "GDAL/OGR",
-      "request_url": "http://honua:5000/ogc/features/collections/0/queryables",
-      "exercised_capabilities": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "notes": "failed checks crs-axis:EPSG:4326 lat/lon bbox and EPSG:3857 output agree with the lon/lat fixture",
-      "operation": "OGC-OP-OGC-API-FEATURES-QUERYABLES",
-      "started_at": "2026-09-21T09:45:12.044994Z",
-      "finished_at": "2026-09-21T09:45:12.256881Z",
-      "duration_ms": 212,
-      "protocol_version": "OGC API - Features 1.0",
-      "checks": [
-        {
-          "facet": "positive",
-          "name": "the driver uses the collection queryables for attribute filtering",
-          "outcome": "pass",
-          "detail": "queryables fetched ['http://honua:5000/ogc/features/collections/0/queryables']; filter selected [1, 3, 5, 7, 9]; GDAL fetched ['http://honua:5000/ogc/features', 'http://honua:5000/ogc/features/collections/0', \"http://honua:5000/ogc/features/collections/0/items?limit=1000&crs=http://www.opengis.net/def/crs/OGC/1.3/CRS84&filter=status%20%3D%20'active'&filter-lang=cql-text\", 'http://honua:5000/ogc/features/collections/0/items?limit=20', 'http://honua:5000/ogc/features/collections/0/queryables', 'http://honua:5000/openapi.json']",
-          "request_url": null,
-          "duration_ms": 64
-        },
-        {
-          "facet": "negative",
-          "name": "an unknown collection is a 404 problem",
-          "outcome": "pass",
-          "detail": "OAPIF:http://honua:5000/ogc/features/collections/no-such-collection -> HTTP 404 problem document surfaced by GDAL",
-          "request_url": null,
-          "duration_ms": 7
-        },
-        {
-          "facet": "auth",
-          "name": "protected collection is challenged, then admitted for API key and OIDC bearer",
-          "outcome": "pass",
-          "detail": "OAPIF:http://honua:5000/ogc/features/collections/2011: {'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401, 'api-key': 10, 'oidc-bearer': 10}",
-          "request_url": null,
-          "duration_ms": 92
-        },
-        {
-          "facet": "crs-axis",
-          "name": "EPSG:4326 lat/lon bbox and EPSG:3857 output agree with the lon/lat fixture",
-          "outcome": "fail",
-          "detail": "CheckFailed: layer SRS is not EPSG:4326",
-          "request_url": null,
-          "duration_ms": 19
-        },
-        {
-          "facet": "media-schema",
-          "name": "GeoJSON items decode to the typed fixture schema",
-          "outcome": "pass",
-          "detail": "field types {'name': 'String', 'description': 'String', 'status': 'String', 'count': 'Integer', 'ratio': 'Real', 'active': 'Integer', 'created_at': 'DateTime', 'event_date': 'Date', 'event_time': 'Time', 'uid': 'String', 'tags': 'StringList', 'numbers': 'IntegerList', 'eo:cloud_cover': 'Integer'}; geometry Point; http://honua:5000/ogc/features/collections/0/queryables served application/schema+json with 13 queryable properties; GDAL fetched 4 documents",
-          "request_url": null,
-          "duration_ms": 29
-        }
-      ],
-      "wire": {
-        "window": [
-          "2026-09-21T09:45:12.044994Z",
-          "2026-09-21T09:45:12.256881Z"
-        ],
-        "exchanges": 122,
-        "wire_lines": [
-          212,
-          213,
-          214,
-          215,
-          216,
-          217,
-          218,
-          219,
-          220,
-          221,
-          222,
-          223,
-          224,
-          225,
-          226,
-          227,
-          228,
-          229,
-          230,
-          231,
-          232,
-          233,
-          234,
-          235,
-          236,
-          237,
-          238,
-          239,
-          240,
-          241,
-          242,
-          243,
-          244,
-          245,
-          246,
-          247,
-          248,
-          249,
-          250,
-          251,
-          252,
-          253,
-          254,
-          255,
-          256,
-          257,
-          258,
-          259,
-          260,
-          261,
-          262,
-          263,
-          264,
-          265,
-          266,
-          267,
-          268,
-          269,
-          270,
-          271,
-          272,
-          273,
-          274,
-          275,
-          276,
-          277,
-          278,
-          279,
-          280,
-          281,
-          282,
-          283,
-          284,
-          285,
-          286,
-          287,
-          288,
-          289,
-          290,
-          291,
-          292,
-          293,
-          294,
-          295,
-          296,
-          297,
-          298,
-          299,
-          300,
-          301,
-          302,
-          303,
-          304,
-          305,
-          306,
-          307,
-          308,
-          309,
-          310,
-          311,
-          312,
-          313,
-          314,
-          315,
-          316,
-          317,
-          318,
-          319,
-          320,
-          321,
-          322,
-          323,
-          324,
-          325,
-          326,
-          327,
-          328,
-          329,
-          330,
-          331,
-          332,
-          333
-        ],
-        "wire_lines_sha256": "4e2e37d62fe12e2daa084cf1ca64cf784b56fc800a19322cef6cc4dc0b3fbd72",
-        "statuses": {
-          "200": 105,
-          "401": 12,
-          "404": 5
+          "200": 26,
+          "401": 3,
+          "404": 1
         },
         "user_agents": [
           "GDAL/3.8.4"
@@ -1182,9 +705,9 @@
       ],
       "notes": "all 5 checks passed across 5 governed facets",
       "operation": "OGC-OP-WFS-2-0",
-      "started_at": "2026-09-21T09:45:13.017545Z",
-      "finished_at": "2026-09-21T09:45:13.242855Z",
-      "duration_ms": 225,
+      "started_at": "2026-09-21T09:58:21.874317Z",
+      "finished_at": "2026-09-21T09:58:22.110285Z",
+      "duration_ms": 236,
       "protocol_version": "2.0.0",
       "checks": [
         {
@@ -1193,7 +716,7 @@
           "outcome": "pass",
           "detail": "10 features ['alpha', 'beta', 'delta', 'epsilon', 'eta', 'gamma', 'iota', 'lambda', 'theta', 'zeta']; requests ['http://honua:5000/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=DescribeFeatureType&TYPENAME=honua:test_layer,honua:wfs_t_insert_scratch,honua:wfs_t_update_scratch,honua:wfs_t_delete_scratch,honua:cng_features,honua:browser_points,honua:browser_lines,honua:browser_polygons,honua:portal_public_points', 'http://honua:5000/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetCapabilities', 'http://honua:5000/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=honua:test_layer&STARTINDEX=0&COUNT=100']",
           "request_url": null,
-          "duration_ms": 41
+          "duration_ms": 45
         },
         {
           "facet": "negative",
@@ -1201,7 +724,7 @@
           "outcome": "pass",
           "detail": "typed open -> None; layer lookup -> absent",
           "request_url": null,
-          "duration_ms": 12
+          "duration_ms": 15
         },
         {
           "facet": "auth",
@@ -1209,7 +732,7 @@
           "outcome": "pass",
           "detail": "{'anonymous': 'hidden', 'wrong-api-key': 'hidden', 'expired-bearer': 'hidden', 'api-key': 10, 'oidc-bearer': 10}",
           "request_url": null,
-          "duration_ms": 92
+          "duration_ms": 95
         },
         {
           "facet": "crs-axis",
@@ -1225,54 +748,16 @@
           "outcome": "pass",
           "detail": "fields {'gml_id': 'String', 'objectid': 'Integer', 'name': 'String', 'description': 'String', 'status': 'String', 'count': 'Integer', 'ratio': 'Real', 'active': 'Integer', 'created_at': 'DateTime', 'event_date': 'Date', 'event_time': 'Time', 'uid': 'String', 'tags': 'String', 'numbers': 'String', 'eo_x003A_cloud_cover': 'Real'}; geometry Point",
           "request_url": null,
-          "duration_ms": 12
+          "duration_ms": 13
         }
       ],
       "wire": {
         "window": [
-          "2026-09-21T09:45:13.017545Z",
-          "2026-09-21T09:45:13.242855Z"
+          "2026-09-21T09:58:21.874317Z",
+          "2026-09-21T09:58:22.110285Z"
         ],
-        "exchanges": 92,
+        "exchanges": 22,
         "wire_lines": [
-          296,
-          297,
-          298,
-          299,
-          300,
-          301,
-          302,
-          303,
-          304,
-          305,
-          306,
-          307,
-          308,
-          309,
-          310,
-          311,
-          312,
-          313,
-          314,
-          315,
-          316,
-          317,
-          318,
-          319,
-          320,
-          321,
-          322,
-          323,
-          324,
-          325,
-          326,
-          327,
-          328,
-          329,
-          330,
-          331,
-          332,
-          333,
           334,
           335,
           336,
@@ -1294,45 +779,11 @@
           352,
           353,
           354,
-          355,
-          356,
-          357,
-          358,
-          359,
-          360,
-          361,
-          362,
-          363,
-          364,
-          365,
-          366,
-          367,
-          368,
-          369,
-          370,
-          371,
-          372,
-          373,
-          374,
-          375,
-          376,
-          377,
-          378,
-          379,
-          380,
-          381,
-          382,
-          383,
-          384,
-          385,
-          386,
-          387
+          355
         ],
-        "wire_lines_sha256": "70df68507efddbffa0a7c5d07f53768025a81fc3b00c797ed6be8466ccf230b6",
+        "wire_lines_sha256": "451b0e2edcafbc00e09fd12010165c342bae5cae8fb0c223ede530a1bcb3268a",
         "statuses": {
-          "200": 88,
-          "401": 3,
-          "404": 1
+          "200": 22
         },
         "user_agents": [
           "GDAL/3.8.4"
@@ -1354,7 +805,7 @@
   "honua_evidence": {
     "release": "2026.1",
     "candidate": {
-      "run_id": "roster-20260921T094413Z-1cd2ef5",
+      "run_id": "roster-20260921T095724Z-1cd2ef5",
       "release": "2026.1",
       "cut": "pre-cut proof on the imaged trunk nightly (operator ruling A, 2026-09-16); no release cut exists",
       "tag": "nightly-1cd2ef5",
@@ -1363,7 +814,7 @@
       "platform_image_id": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
       "source_sha": "1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
       "image_created": "2026-09-20T10:16:19.064Z",
-      "producer_source_sha": "0f64f2fd946cc3c9834874bd42d8e8a0b1f7341b",
+      "producer_source_sha": "4a2f6d875d21c21f25cba7e9ca1d164b6d4d57d5",
       "target": "local-docker",
       "durable_uri_base": "https://github.com/honua-io/honua-server/blob/trunk/docs/internal/evidence/client-certification-1cd2ef5/receipts/",
       "server_version": {
@@ -1372,10 +823,10 @@
           "version": "2026.1.1",
           "metadataApiVersion": "metadata.honua.io/v2alpha1",
           "metadataSchemaVersion": "2.0.0-alpha.1",
-          "serverTime": "2026-09-21T09:44:32.9047765+00:00"
+          "serverTime": "2026-09-21T09:57:43.083255+00:00"
         },
         "message": null,
-        "timestamp": "2026-09-21T09:44:32.9047811+00:00"
+        "timestamp": "2026-09-21T09:57:43.0832557+00:00"
       }
     },
     "fixture": {
@@ -1394,9 +845,9 @@
       "server_config": {
         "files": {
           "docker/client-compat/compose.yml": "c85c7b55aac33f0fa2bbd281ea3c34365a724ab1e71d79034969dd813de1dcd3",
-          "certification/bounded-roster/compose.candidate.yml": "176d14b8e8a5d0f8f5e953cec5c24127a9517db25893d4827fc7c1ac21c6f96b"
+          "certification/bounded-roster/compose.candidate.yml": "feb24b9187eaab0eba251aafa7b8de1a018e9326948ddf8aea0cad0bb4c30d7f"
         },
-        "sha256": "f66d14d60c6ab9969cc2ee9600986266280bb773d27002efc894c2826c2bc635"
+        "sha256": "8a7696b9ec86c4a0f433dceeaaa7a57ba3a1240655211c43d429c51fe6a9b51c"
       },
       "auth_profile": {
         "files": {
@@ -1441,7 +892,7 @@
             "compression": null,
             "overviewLevelCount": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.534618+00:00"
+            "createdAt": "2026-09-21T09:57:52.788733+00:00"
           },
           {
             "id": 2,
@@ -1458,7 +909,7 @@
             "compression": null,
             "overviewLevelCount": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.555466+00:00"
+            "createdAt": "2026-09-21T09:57:52.800567+00:00"
           }
         ],
         "zarr-stores": [
@@ -1476,7 +927,7 @@
             "primaryVariable": null,
             "variables": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.5647182+00:00"
+            "createdAt": "2026-09-21T09:57:52.8109169+00:00"
           },
           {
             "id": 2,
@@ -1492,7 +943,7 @@
             "primaryVariable": null,
             "variables": null,
             "metadataScannedAt": null,
-            "createdAt": "2026-09-21T09:44:43.5731944+00:00"
+            "createdAt": "2026-09-21T09:57:52.8214186+00:00"
           }
         ]
       }
@@ -1505,16 +956,16 @@
         "gdal 3.8.4": {
           "lane": "gdal-3.8.4",
           "image": "honua-roster/lane-gdal:3.8.4",
-          "image_id": "sha256:aa158253e8c3ee174f36f74840c9188777631b314b708d88c52d237fa5585881",
-          "base_image": "ghcr.io/osgeo/gdal:ubuntu-small-3.8.4",
-          "base_repo_digests": "[\"ghcr.io/osgeo/gdal@sha256:60d3bc2f8b09ca1a7ef2db0239699b2c03713aa02be6e525e731c0020bbb10a4\"]"
+          "image_id": "sha256:a51e6903c0cb339a24e797aefa50e80165901da667b408b0b8f13aa455c1ce06",
+          "base_image": "ghcr.io/osgeo/gdal:ubuntu-small-3.8.4@sha256:60d3bc2f8b09ca1a7ef2db0239699b2c03713aa02be6e525e731c0020bbb10a4",
+          "base_repo_digests": "[\"ghcr.io/osgeo/gdal:ubuntu-small-3.8.4@sha256:60d3bc2f8b09ca1a7ef2db0239699b2c03713aa02be6e525e731c0020bbb10a4\"]"
         },
         "gdal 3.13.3": {
           "lane": "gdal-3.13.3",
           "image": "honua-roster/lane-gdal:3.13.3",
-          "image_id": "sha256:cfd743f3efe7458b5137fb9a9e13de4f5c2530794241a086374da876e76bab71",
-          "base_image": "ghcr.io/osgeo/gdal:ubuntu-full-3.13.3",
-          "base_repo_digests": ""
+          "image_id": "sha256:f6ae824ed74a9f52614553574a07a32c21d6968ac794226cab73adbbdd3c5ee7",
+          "base_image": "ghcr.io/osgeo/gdal:ubuntu-full-3.13.3@sha256:2dd0f81ef927ff4c3d4dbe4f73c029dc86d4073974c0564f8e196f6e1412e2e0",
+          "base_repo_digests": "[\"ghcr.io/osgeo/gdal:ubuntu-full-3.13.3@sha256:2dd0f81ef927ff4c3d4dbe4f73c029dc86d4073974c0564f8e196f6e1412e2e0\"]"
         }
       },
       "lane_identity": null

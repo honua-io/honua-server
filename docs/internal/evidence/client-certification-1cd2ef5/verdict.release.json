@@ -8,7 +8,7 @@
     "source_sha": "1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
     "image_digest": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
     "cut_at": "2026-09-20T10:16:19.064000Z",
-    "producer_source_sha": "0f64f2fd946cc3c9834874bd42d8e8a0b1f7341b"
+    "producer_source_sha": "4a2f6d875d21c21f25cba7e9ca1d164b6d4d57d5"
   },
   "summary": {
     "requiredCells": 52,

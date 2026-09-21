@@ -9,9 +9,9 @@
   "operation": "raster.multidim-coverage",
   "protocol_version": "OGC API - Coverages 1.0",
   "protocol_profile": "registered Zarr datacube",
-  "started_at": "2026-09-21T09:45:17.302326Z",
-  "finished_at": "2026-09-21T09:45:17.378722Z",
-  "duration_ms": 76,
+  "started_at": "2026-09-21T09:58:26.066124Z",
+  "finished_at": "2026-09-21T09:58:26.108403Z",
+  "duration_ms": 42,
   "status": "fail",
   "exercised_capabilities": [
     "positive",
@@ -31,15 +31,15 @@
       "outcome": "fail",
       "detail": "CheckFailed: GDAL OGCAPI could not open http://honua:5000/ogc/coverages/collections/5200: Missing bbox; requests ['http://honua:5000/ogc/coverages/collections/5200']",
       "request_url": null,
-      "duration_ms": 25
+      "duration_ms": 12
     },
     {
       "facet": "negative",
       "name": "an unknown datacube collection is a 404",
       "outcome": "pass",
-      "detail": "HTTP error code : 404, {\"type\":\"about:blank\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"Collection \\u0027999999\\u0027 not found.\",\"instance\":\"/ogc/coverages/collections/999999\",\"correlationId\":\"00-79c",
+      "detail": "HTTP error code : 404, {\"type\":\"about:blank\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"Collection \\u0027999999\\u0027 not found.\",\"instance\":\"/ogc/coverages/collections/999999\",\"correlationId\":\"00-331",
       "request_url": null,
-      "duration_ms": 26
+      "duration_ms": 5
     },
     {
       "facet": "auth",

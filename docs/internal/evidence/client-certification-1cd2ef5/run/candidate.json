@@ -1,5 +1,5 @@
 {
-  "run_id": "roster-20260921T094413Z-1cd2ef5",
+  "run_id": "roster-20260921T095724Z-1cd2ef5",
   "release": "2026.1",
   "cut": "pre-cut proof on the imaged trunk nightly (operator ruling A, 2026-09-16); no release cut exists",
   "tag": "nightly-1cd2ef5",
@@ -8,7 +8,7 @@
   "platform_image_id": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
   "source_sha": "1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
   "image_created": "2026-09-20T10:16:19.064Z",
-  "producer_source_sha": "0f64f2fd946cc3c9834874bd42d8e8a0b1f7341b",
+  "producer_source_sha": "4a2f6d875d21c21f25cba7e9ca1d164b6d4d57d5",
   "target": "local-docker",
   "durable_uri_base": "https://github.com/honua-io/honua-server/blob/trunk/docs/internal/evidence/client-certification-1cd2ef5/receipts/",
   "server_version": {
@@ -17,9 +17,9 @@
       "version": "2026.1.1",
       "metadataApiVersion": "metadata.honua.io/v2alpha1",
       "metadataSchemaVersion": "2.0.0-alpha.1",
-      "serverTime": "2026-09-21T09:44:32.9047765+00:00"
+      "serverTime": "2026-09-21T09:57:43.083255+00:00"
     },
     "message": null,
-    "timestamp": "2026-09-21T09:44:32.9047811+00:00"
+    "timestamp": "2026-09-21T09:57:43.0832557+00:00"
   }
 }

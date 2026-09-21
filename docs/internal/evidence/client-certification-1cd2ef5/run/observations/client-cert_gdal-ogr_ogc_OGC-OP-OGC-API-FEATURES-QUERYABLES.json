@@ -9,9 +9,9 @@
   "operation": "OGC-OP-OGC-API-FEATURES-QUERYABLES",
   "protocol_version": "OGC API - Features 1.0",
   "protocol_profile": "core+geojson+crs",
-  "started_at": "2026-09-21T09:45:12.044994Z",
-  "finished_at": "2026-09-21T09:45:12.256881Z",
-  "duration_ms": 212,
+  "started_at": "2026-09-21T09:58:20.936901Z",
+  "finished_at": "2026-09-21T09:58:21.141986Z",
+  "duration_ms": 205,
   "status": "fail",
   "exercised_capabilities": [
     "positive",
@@ -29,7 +29,7 @@
       "outcome": "pass",
       "detail": "queryables fetched ['http://honua:5000/ogc/features/collections/0/queryables']; filter selected [1, 3, 5, 7, 9]; GDAL fetched ['http://honua:5000/ogc/features', 'http://honua:5000/ogc/features/collections/0', \"http://honua:5000/ogc/features/collections/0/items?limit=1000&crs=http://www.opengis.net/def/crs/OGC/1.3/CRS84&filter=status%20%3D%20'active'&filter-lang=cql-text\", 'http://honua:5000/ogc/features/collections/0/items?limit=20', 'http://honua:5000/ogc/features/collections/0/queryables', 'http://honua:5000/openapi.json']",
       "request_url": null,
-      "duration_ms": 64
+      "duration_ms": 60
     },
     {
       "facet": "negative",
@@ -37,7 +37,7 @@
       "outcome": "pass",
       "detail": "OAPIF:http://honua:5000/ogc/features/collections/no-such-collection -> HTTP 404 problem document surfaced by GDAL",
       "request_url": null,
-      "duration_ms": 7
+      "duration_ms": 28
     },
     {
       "facet": "auth",
@@ -45,7 +45,7 @@
       "outcome": "pass",
       "detail": "OAPIF:http://honua:5000/ogc/features/collections/2011: {'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401, 'api-key': 10, 'oidc-bearer': 10}",
       "request_url": null,
-      "duration_ms": 92
+      "duration_ms": 74
     },
     {
       "facet": "crs-axis",
@@ -53,7 +53,7 @@
       "outcome": "fail",
       "detail": "CheckFailed: layer SRS is not EPSG:4326",
       "request_url": null,
-      "duration_ms": 19
+      "duration_ms": 17
     },
     {
       "facet": "media-schema",
@@ -61,7 +61,7 @@
       "outcome": "pass",
       "detail": "field types {'name': 'String', 'description': 'String', 'status': 'String', 'count': 'Integer', 'ratio': 'Real', 'active': 'Integer', 'created_at': 'DateTime', 'event_date': 'Date', 'event_time': 'Time', 'uid': 'String', 'tags': 'StringList', 'numbers': 'IntegerList', 'eo:cloud_cover': 'Integer'}; geometry Point; http://honua:5000/ogc/features/collections/0/queryables served application/schema+json with 13 queryable properties; GDAL fetched 4 documents",
       "request_url": null,
-      "duration_ms": 29
+      "duration_ms": 26
     }
   ]
 }

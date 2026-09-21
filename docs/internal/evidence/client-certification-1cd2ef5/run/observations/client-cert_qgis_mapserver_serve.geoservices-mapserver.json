@@ -9,9 +9,9 @@
   "operation": "serve.geoservices-mapserver",
   "protocol_version": "GeoServices REST 10.x",
   "protocol_profile": "MapServer export",
-  "started_at": "2026-09-21T09:45:21.892895Z",
-  "finished_at": "2026-09-21T09:45:22.240370Z",
-  "duration_ms": 347,
+  "started_at": "2026-09-21T09:58:30.535484Z",
+  "finished_at": "2026-09-21T09:58:30.896320Z",
+  "duration_ms": 361,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -27,7 +27,7 @@
       "outcome": "pass",
       "detail": "painted 42 px in 12 colours via 1 exports",
       "request_url": null,
-      "duration_ms": 270
+      "duration_ms": 277
     },
     {
       "facet": "metadata",
@@ -35,7 +35,7 @@
       "outcome": "pass",
       "detail": "crs EPSG:4326; extent -122,38 : -122,38; sublayers 0",
       "request_url": null,
-      "duration_ms": 4
+      "duration_ms": 5
     },
     {
       "facet": "media-schema",
@@ -43,7 +43,7 @@
       "outcome": "pass",
       "detail": "[('2000', 'application/json'), ('MapServer', 'application/json'), ('export', 'image/png')]",
       "request_url": null,
-      "duration_ms": 74
+      "duration_ms": 79
     }
   ]
 }

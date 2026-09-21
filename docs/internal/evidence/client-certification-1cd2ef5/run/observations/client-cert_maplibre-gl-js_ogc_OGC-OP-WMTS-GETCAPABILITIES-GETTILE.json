@@ -9,9 +9,9 @@
   "operation": "OGC-OP-WMTS-GETCAPABILITIES-GETTILE",
   "protocol_version": "1.0.0",
   "protocol_profile": "WMTS 1.0.0 RESTful",
-  "started_at": "2026-09-21T09:46:47.878701Z",
-  "finished_at": "2026-09-21T09:46:52.961573Z",
-  "duration_ms": 5113,
+  "started_at": "2026-09-21T09:59:48.836160Z",
+  "finished_at": "2026-09-21T09:59:53.941755Z",
+  "duration_ms": 5121,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -29,7 +29,7 @@
       "outcome": "pass",
       "detail": "template /rest/services/browser_compat/MapServer/WMTS/2000/default/WebMercatorQuad/{z}/{y}/{x}.png; painted 65 px around pt-alpha",
       "request_url": null,
-      "duration_ms": 531
+      "duration_ms": 543
     },
     {
       "facet": "negative",
@@ -37,7 +37,7 @@
       "outcome": "pass",
       "detail": "responses [400]; nothing rendered; MapLibre error statuses [400]",
       "request_url": null,
-      "duration_ms": 403
+      "duration_ms": 385
     },
     {
       "facet": "auth",
@@ -45,7 +45,7 @@
       "outcome": "pass",
       "detail": "(drawn at pt-alpha, statuses) {'anonymous': (0, [(401, 'application/xml')]), 'wrong-api-key': (0, [(401, 'application/xml')]), 'expired-bearer': (0, [(401, 'application/xml')]), 'api-key': (65, [(200, 'image/png')]), 'oidc-bearer': (65, [(200, 'image/png')])}",
       "request_url": null,
-      "duration_ms": 2200
+      "duration_ms": 2188
     },
     {
       "facet": "crs-axis",
@@ -53,7 +53,7 @@
       "outcome": "pass",
       "detail": "painted pixels around pt-alpha 65; around empty sea 0",
       "request_url": null,
-      "duration_ms": 930
+      "duration_ms": 1004
     },
     {
       "facet": "media-schema",
@@ -61,7 +61,7 @@
       "outcome": "pass",
       "detail": "['image/png']; no MapLibre errors; {\"idle\": true, \"errors\": [], \"responses\": 9, \"status_types\": [[200, \"image/png\"]]}",
       "request_url": null,
-      "duration_ms": 429
+      "duration_ms": 403
     }
   ]
 }

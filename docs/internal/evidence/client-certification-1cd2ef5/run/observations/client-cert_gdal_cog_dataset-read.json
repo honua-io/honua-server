@@ -9,9 +9,9 @@
   "operation": "dataset-read",
   "protocol_version": "COG 1.0",
   "protocol_profile": "ImageServer tile format=cog",
-  "started_at": "2026-09-21T09:45:14.841755Z",
-  "finished_at": "2026-09-21T09:45:14.916395Z",
-  "duration_ms": 75,
+  "started_at": "2026-09-21T09:58:23.734610Z",
+  "finished_at": "2026-09-21T09:58:23.807844Z",
+  "duration_ms": 73,
   "status": "fail",
   "exercised_capabilities": [
     "positive",
@@ -27,7 +27,7 @@
       "outcome": "fail",
       "detail": "CheckFailed: GDAL could not open http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog: `/vsicurl?use_head=no&list_dir=no&url=http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621%3Fformat%3Dcog' not recognized as a supported file format.; requests ['http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog.aux', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog.hdr', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog.hdr', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog.xml', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=cog.xml']",
       "request_url": null,
-      "duration_ms": 74
+      "duration_ms": 73
     },
     {
       "facet": "metadata",

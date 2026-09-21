@@ -9,9 +9,9 @@
   "operation": "OGC-OP-WCS-2-0-COVERAGE",
   "protocol_version": "2.0.1",
   "protocol_profile": "WCS 2.0.1 core GET-KVP",
-  "started_at": "2026-09-21T09:45:13.962502Z",
-  "finished_at": "2026-09-21T09:45:14.160145Z",
-  "duration_ms": 198,
+  "started_at": "2026-09-21T09:58:22.707617Z",
+  "finished_at": "2026-09-21T09:58:22.949682Z",
+  "duration_ms": 242,
   "status": "pass",
   "exercised_capabilities": [
     "positive",
@@ -29,7 +29,7 @@
       "outcome": "pass",
       "detail": "(64, 64) min/max (180.0, 180.0); requests ['http://honua:5000/ogc/wcs/svc-browser-compat-image?SERVICE=WCS&REQUEST=DescribeCoverage&VERSION=2.0.1&COVERAGEID=coverage_2000', 'http://honua:5000/ogc/wcs/svc-browser-compat-image?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=coverage_2000&SUBSET=x%28-122.45,-122.38000000000001%29&SUBSET=y%2837.729999999999997,37.799999999999997%29&Format=image/tiff', 'http://honua:5000/ogc/wcs/svc-browser-compat-image?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=coverage_2000&SUBSET=x%28-122.45,-122.4478125%29&SUBSET=y%2837.797812499999999,37.799999999999997%29&Format=image/tiff', 'http://honua:5000/ogc/wcs/svc-browser-compat-image?version=2.0.1&SERVICE=WCS&REQUEST=GetCapabilities']",
       "request_url": null,
-      "duration_ms": 85
+      "duration_ms": 91
     },
     {
       "facet": "negative",
@@ -37,7 +37,7 @@
       "outcome": "pass",
       "detail": "GDAL: NoSuchCoverage: Coverage 'coverage_999999' was not found.\nMay be caused by: HTTP error code : 404",
       "request_url": null,
-      "duration_ms": 12
+      "duration_ms": 14
     },
     {
       "facet": "auth",
@@ -45,7 +45,7 @@
       "outcome": "pass",
       "detail": "{'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401, 'api-key': 'opened', 'oidc-bearer': 'opened'} (authenticated principals pass the access policy; the protected mirror offers no coverage for GDAL to open)",
       "request_url": null,
-      "duration_ms": 39
+      "duration_ms": 53
     },
     {
       "facet": "crs-axis",
@@ -53,7 +53,7 @@
       "outcome": "pass",
       "detail": "EPSG:4326 geotransform (-122.45, 0.00109375, 0.0, 37.8, 0.0, -0.00109375); subset request x%28-122.44125,-122.42375%29&SUBSET=y%2837.77375,37.791249999999998%29&Format=image/tiff",
       "request_url": null,
-      "duration_ms": 31
+      "duration_ms": 45
     },
     {
       "facet": "media-schema",
@@ -61,7 +61,7 @@
       "outcome": "pass",
       "detail": "band type Byte; GetCoverage Format=image/tiff requests 2",
       "request_url": null,
-      "duration_ms": 30
+      "duration_ms": 39
     }
   ]
 }
