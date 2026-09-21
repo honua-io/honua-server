@@ -22,6 +22,7 @@ namespace Honua.Db.MySql.Features.FeatureStore;
 internal sealed class MySqlFeatureStore :
     IFeatureDataProvider,
     IFeatureReader,
+    IBindableFeatureDataProvider,
     IPagedFeatureReader,
     IStreamingFeatureStore
 {
@@ -32,6 +33,7 @@ internal sealed class MySqlFeatureStore :
     private readonly IMetadataV2GraphProvider? _v2Provider;
     private readonly IFilterExpressionService? _filterExpressionService;
     private readonly LayerReadSecurityResolver? _readSecurity;
+    private readonly FeatureProviderBinding? _binding;
 
     public MySqlFeatureStore(
         IFeatureQueryBuilder queryBuilder,
@@ -39,12 +41,37 @@ internal sealed class MySqlFeatureStore :
         IMetadataV2GraphProvider? v2Provider = null,
         IFilterExpressionService? filterExpressionService = null,
         LayerReadSecurityResolver? readSecurity = null)
+        : this(queryBuilder, dataAccess, v2Provider, filterExpressionService, readSecurity, binding: null)
+    {
+    }
+
+    private MySqlFeatureStore(
+        IFeatureQueryBuilder queryBuilder,
+        IFeatureDataAccess dataAccess,
+        IMetadataV2GraphProvider? v2Provider,
+        IFilterExpressionService? filterExpressionService,
+        LayerReadSecurityResolver? readSecurity,
+        FeatureProviderBinding? binding)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _v2Provider = v2Provider;
         _filterExpressionService = filterExpressionService;
         _readSecurity = readSecurity;
+        _binding = binding;
+    }
+
+    /// <inheritdoc />
+    public IFeatureReader CreateReaderForBinding(FeatureProviderBinding binding)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+        return new MySqlFeatureStore(
+            _queryBuilder,
+            _dataAccess,
+            _v2Provider,
+            _filterExpressionService,
+            _readSecurity,
+            binding);
     }
 
     /// <inheritdoc />
@@ -310,7 +337,7 @@ internal sealed class MySqlFeatureStore :
         => _readSecurity is null
             ? Task.CompletedTask
             : _readSecurity.EnsureNoUnenforcedPolicyAsync(
-                "MySQL/MariaDB", layerId, boundResource: null, rejectPermanentFilter: false, cancellationToken);
+                "MySQL/MariaDB", layerId, _binding?.Resource, rejectPermanentFilter: false, cancellationToken);
 
     /// <summary>
     /// Resolves and applies the layer's permanent (row-visibility) filter to the query, after
@@ -330,9 +357,11 @@ internal sealed class MySqlFeatureStore :
             return query;
         }
 
-        var enforcedFilter = await PermanentFilterResolver
-            .ResolveAsync(_v2Provider, _filterExpressionService, layerId, cancellationToken)
-            .ConfigureAwait(false);
+        var enforcedFilter = _binding is not null
+            ? LayerReadSecurityResolver.ResolvePermanentFilter(_binding.Resource, _filterExpressionService)
+            : await PermanentFilterResolver
+                .ResolveAsync(_v2Provider, _filterExpressionService, layerId, cancellationToken)
+                .ConfigureAwait(false);
 
         if (enforcedFilter != null)
         {

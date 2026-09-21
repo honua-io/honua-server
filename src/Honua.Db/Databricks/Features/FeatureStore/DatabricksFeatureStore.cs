@@ -25,7 +25,7 @@ namespace Honua.Db.Databricks.Features.FeatureStore;
 /// <para>Spatial-function availability (<c>ST_*</c>) depends on the Databricks runtime /
 /// DBSQL the warehouse runs; spatial-filter and extent queries are therefore best-effort.</para>
 /// </remarks>
-internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureReader
+internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureReader, IBindableFeatureDataProvider
 {
     private static readonly FeatureProviderCapabilities _capabilities = new()
     {
@@ -48,17 +48,36 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
     private readonly IDatabricksFeatureQueryBuilder _queryBuilder;
     private readonly IDatabricksFeatureDataAccess _dataAccess;
     private readonly LayerReadSecurityResolver? _readSecurity;
+    private readonly FeatureProviderBinding? _binding;
 
     public DatabricksFeatureStore(
         DatabricksLayerMappingRegistry mappings,
         IDatabricksFeatureQueryBuilder queryBuilder,
         IDatabricksFeatureDataAccess dataAccess,
         LayerReadSecurityResolver? readSecurity = null)
+        : this(mappings, queryBuilder, dataAccess, readSecurity, binding: null)
+    {
+    }
+
+    private DatabricksFeatureStore(
+        DatabricksLayerMappingRegistry mappings,
+        IDatabricksFeatureQueryBuilder queryBuilder,
+        IDatabricksFeatureDataAccess dataAccess,
+        LayerReadSecurityResolver? readSecurity,
+        FeatureProviderBinding? binding)
     {
         _mappings = mappings ?? throw new ArgumentNullException(nameof(mappings));
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _readSecurity = readSecurity;
+        _binding = binding;
+    }
+
+    /// <inheritdoc />
+    public IFeatureReader CreateReaderForBinding(FeatureProviderBinding binding)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+        return new DatabricksFeatureStore(_mappings, _queryBuilder, _dataAccess, _readSecurity, binding);
     }
 
     /// <inheritdoc />
@@ -197,7 +216,7 @@ internal sealed class DatabricksFeatureStore : IFeatureDataProvider, IFeatureRea
         if (_readSecurity is not null)
         {
             await _readSecurity
-                .EnsureNoUnenforcedPolicyAsync("Databricks", layerId, boundResource: null, rejectPermanentFilter: true, cancellationToken)
+                .EnsureNoUnenforcedPolicyAsync("Databricks", layerId, _binding?.Resource, rejectPermanentFilter: true, cancellationToken)
                 .ConfigureAwait(false);
         }
 

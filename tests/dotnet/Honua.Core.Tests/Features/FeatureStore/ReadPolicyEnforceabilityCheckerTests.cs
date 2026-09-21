@@ -112,7 +112,11 @@ public sealed class ReadPolicyEnforceabilityCheckerTests
         {
             Revision = 1,
             Environment = "test",
-            Resources = [CreateResource("res-parcels", "parcels", "binding-parcels"), CreateResource("res-roads", "roads", "binding-roads")],
+            Resources =
+            [
+                CreateResource("res-parcels", "parcels", "binding-parcels", "binding-parcels-alternative"),
+                CreateResource("res-roads", "roads", "binding-roads")
+            ],
             Connections =
             [
                 new MetadataV2Connection
@@ -124,6 +128,7 @@ public sealed class ReadPolicyEnforceabilityCheckerTests
             StorageBindings =
             [
                 CreateBinding("binding-parcels", "res-parcels", connectionId: null, storageLayerId: 1),
+                CreateBinding("binding-parcels-alternative", "res-parcels", WarehouseConnectionId, storageLayerId: 11),
                 CreateBinding("binding-roads", "res-roads", WarehouseConnectionId, storageLayerId: 2)
             ],
             Services = [service],
@@ -133,11 +138,11 @@ public sealed class ReadPolicyEnforceabilityCheckerTests
         return new MetadataV2GraphSnapshot(graph, "test", DateTimeOffset.UtcNow);
     }
 
-    private static MetadataV2Resource CreateResource(string id, string name, string bindingId) => new()
+    private static MetadataV2Resource CreateResource(string id, string name, string bindingId, params string[] alternativeBindingIds) => new()
     {
         Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
         Type = MetadataV2ResourceType.FeatureDataset,
-        StorageBindingIds = [bindingId]
+        StorageBindingIds = [bindingId, .. alternativeBindingIds]
     };
 
     private static MetadataV2StorageBinding CreateBinding(string id, string resourceId, string? connectionId, int storageLayerId) => new()

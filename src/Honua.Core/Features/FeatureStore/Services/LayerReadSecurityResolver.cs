@@ -282,6 +282,15 @@ public sealed class LayerReadSecurityResolver
     }
 
     /// <summary>
+    /// Resolves a resource's permanent filter for a provider that can translate permanent
+    /// filters but cannot apply request-scoped row or field policies.
+    /// </summary>
+    public static SqlFragment? ResolvePermanentFilter(
+        MetadataV2Resource resource,
+        IFilterExpressionService? filterExpressionService)
+        => PermanentFilterResolver.Resolve(resource, filterExpressionService);
+
+    /// <summary>
     /// Best-effort storage-layer-id to resource lookup: a missing graph provider or a layer
     /// id absent from the metadata index resolves to no resource (and therefore no policy).
     /// </summary>

@@ -25,6 +25,7 @@ namespace Honua.Db.DuckDB.Features.FeatureStore;
 internal sealed class DuckDBFeatureStore :
     IFeatureDataProvider,
     IFeatureReader,
+    IBindableFeatureDataProvider,
     IGeoJsonFeatureStore,
     IStreamingFeatureStore,
     IPagedFeatureReader
@@ -35,6 +36,7 @@ internal sealed class DuckDBFeatureStore :
     private readonly IMetadataV2GraphProvider? _v2Provider;
     private readonly IFilterExpressionService? _filterExpressionService;
     private readonly LayerReadSecurityResolver? _readSecurity;
+    private readonly FeatureProviderBinding? _binding;
 
     public DuckDBFeatureStore(
         IFeatureQueryBuilder queryBuilder,
@@ -43,6 +45,18 @@ internal sealed class DuckDBFeatureStore :
         IMetadataV2GraphProvider? v2Provider = null,
         IFilterExpressionService? filterExpressionService = null,
         LayerReadSecurityResolver? readSecurity = null)
+        : this(queryBuilder, dataAccess, cacheManager, v2Provider, filterExpressionService, readSecurity, binding: null)
+    {
+    }
+
+    private DuckDBFeatureStore(
+        IFeatureQueryBuilder queryBuilder,
+        IFeatureDataAccess dataAccess,
+        IFeatureCacheManager cacheManager,
+        IMetadataV2GraphProvider? v2Provider,
+        IFilterExpressionService? filterExpressionService,
+        LayerReadSecurityResolver? readSecurity,
+        FeatureProviderBinding? binding)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
@@ -50,6 +64,21 @@ internal sealed class DuckDBFeatureStore :
         _v2Provider = v2Provider;
         _filterExpressionService = filterExpressionService;
         _readSecurity = readSecurity;
+        _binding = binding;
+    }
+
+    /// <inheritdoc />
+    public IFeatureReader CreateReaderForBinding(FeatureProviderBinding binding)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+        return new DuckDBFeatureStore(
+            _queryBuilder,
+            _dataAccess,
+            _cacheManager,
+            _v2Provider,
+            _filterExpressionService,
+            _readSecurity,
+            binding);
     }
 
     /// <inheritdoc />
@@ -309,7 +338,7 @@ internal sealed class DuckDBFeatureStore :
         => _readSecurity is null
             ? Task.CompletedTask
             : _readSecurity.EnsureNoUnenforcedPolicyAsync(
-                "DuckDB", layerId, boundResource: null, rejectPermanentFilter: false, cancellationToken);
+                "DuckDB", layerId, _binding?.Resource, rejectPermanentFilter: false, cancellationToken);
 
     /// <summary>
     /// Resolves and applies the layer's permanent (row-visibility) filter to the query, after
@@ -329,9 +358,11 @@ internal sealed class DuckDBFeatureStore :
             return query;
         }
 
-        var enforcedFilter = await PermanentFilterResolver
-            .ResolveAsync(_v2Provider, _filterExpressionService, layerId, cancellationToken)
-            .ConfigureAwait(false);
+        var enforcedFilter = _binding is not null
+            ? LayerReadSecurityResolver.ResolvePermanentFilter(_binding.Resource, _filterExpressionService)
+            : await PermanentFilterResolver
+                .ResolveAsync(_v2Provider, _filterExpressionService, layerId, cancellationToken)
+                .ConfigureAwait(false);
 
         if (enforcedFilter != null)
         {

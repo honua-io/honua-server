@@ -86,12 +86,36 @@ public sealed class ReadPolicyEnforceabilityChecker
                 continue;
             }
 
-            var bindings = snapshot.Index.StorageBindingsByResource[resource.Metadata.Id].ToArray();
+            var bindingsById = new Dictionary<string, MetadataV2StorageBinding>(StringComparer.Ordinal);
 
-            // A resource without a storage binding is read through the default provider.
-            var candidates = bindings.Length == 0
+            // Direct resource reads use the resource's primary binding. Do not scan every
+            // alternative binding: publication routing may explicitly select only one of them.
+            if (!string.IsNullOrWhiteSpace(resource.PrimaryStorageBindingId) &&
+                snapshot.Index.StorageBindingsById.TryGetValue(resource.PrimaryStorageBindingId, out var primaryBinding))
+            {
+                bindingsById.TryAdd(primaryBinding.Metadata.Id, primaryBinding);
+            }
+
+            // Service-scoped reads use the binding selected by each targeted publication
+            // (explicit publication override, then primary, then first fallback).
+            foreach (var publication in snapshot.Index.PublicationsByResource[resource.Metadata.Id])
+            {
+                if (!IsTargetedService(snapshot, publication, service))
+                {
+                    continue;
+                }
+
+                var binding = snapshot.ResolveStorageBinding(publication);
+                if (binding is not null)
+                {
+                    bindingsById.TryAdd(binding.Metadata.Id, binding);
+                }
+            }
+
+            // A resource without a usable binding is read through the default provider.
+            var candidates = bindingsById.Count == 0
                 ? new MetadataV2StorageBinding?[] { null }
-                : bindings.Cast<MetadataV2StorageBinding?>();
+                : bindingsById.Values.Cast<MetadataV2StorageBinding?>();
 
             foreach (var binding in candidates)
             {
@@ -120,20 +144,15 @@ public sealed class ReadPolicyEnforceabilityChecker
             return false;
         }
 
-        if (service == Wildcard)
-        {
-            return true;
-        }
-
-        foreach (var publication in snapshot.Index.PublicationsByResource[resource.Metadata.Id])
-        {
-            if (snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var publishingService) &&
-                string.Equals(publishingService.Metadata.Name, service, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return service == Wildcard || snapshot.Index.PublicationsByResource[resource.Metadata.Id]
+            .Any(publication => IsTargetedService(snapshot, publication, service));
     }
+
+    private static bool IsTargetedService(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication,
+        string service)
+        => service == Wildcard ||
+           (snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var publishingService) &&
+            string.Equals(publishingService.Metadata.Name, service, StringComparison.OrdinalIgnoreCase));
 }

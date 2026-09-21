@@ -50,6 +50,65 @@ public sealed class LayerReadSecurityResolverTests
     }
 
     [Fact]
+    public async Task ApplyAsync_ResourceKeyed_UsesTheBoundResourceWhenStorageLayerIdsCollide()
+    {
+        var first = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-first", Name = "first" },
+            StorageBindingIds = ["binding-first"]
+        };
+        var second = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "res-second", Name = "second" },
+            StorageBindingIds = ["binding-second"]
+        };
+        var graph = new MetadataV2Graph
+        {
+            Revision = 1,
+            Environment = "test",
+            Resources = [first, second],
+            StorageBindings =
+            [
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-first", Name = "binding-first" },
+                    ResourceId = first.Metadata.Id,
+                    StorageType = MetadataV2StorageType.RelationalTable,
+                    Locator = "public.first",
+                    StorageLayerId = LayerId
+                },
+                new MetadataV2StorageBinding
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "binding-second", Name = "binding-second" },
+                    ResourceId = second.Metadata.Id,
+                    StorageType = MetadataV2StorageType.RelationalTable,
+                    Locator = "public.second",
+                    StorageLayerId = LayerId
+                }
+            ]
+        };
+        var rowSource = new Mock<IRowLevelSecurityFilterSource>();
+        rowSource
+            .Setup(source => source.ResolveAsync(second, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SqlFragment("tenant = @p0", ["second"]));
+        var maskSource = new Mock<IFieldMaskSource>();
+        maskSource
+            .Setup(source => source.ResolveAsync(second, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ImmutableArray.Create("secret"));
+        var resolver = new LayerReadSecurityResolver(
+            new StubGraphProvider(new MetadataV2GraphSnapshot(graph, "test", DateTimeOffset.UtcNow)),
+            filterExpressionService: null,
+            rowSource.Object,
+            maskSource.Object);
+
+        var applied = await resolver.ApplyAsync(second, new FeatureQuery(), CancellationToken.None);
+
+        applied.EnforcedSqlFilter!.Sql.Should().Be("tenant = @p0");
+        applied.EnforcedSqlFilter.Parameters.Should().Equal("second");
+        applied.EnforcedMaskedFields.Should().Equal(ImmutableArray.Create("secret"));
+    }
+
+    [Fact]
     public async Task ApplyAsync_NothingResolves_ReturnsTheQueryUnchanged()
     {
         var resolver = CreateResolver(permanentFilter: null, rowFilter: null);
