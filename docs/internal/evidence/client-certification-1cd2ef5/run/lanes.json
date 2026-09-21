@@ -1,0 +1,106 @@
+{
+  "lanes": {
+    "python": {
+      "lane": "python",
+      "image": "honua-roster/lane-python:local",
+      "image_id": "sha256:5151a8fa86b1327759936b37a6644046bea2d3aff5fa15254313902c12706992",
+      "base_image": "python:3.12-slim-bookworm",
+      "base_repo_digests": "[\"python@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254\"]"
+    },
+    "gdal-3.8.4": {
+      "lane": "gdal-3.8.4",
+      "image": "honua-roster/lane-gdal:3.8.4",
+      "image_id": "sha256:aa158253e8c3ee174f36f74840c9188777631b314b708d88c52d237fa5585881",
+      "base_image": "ghcr.io/osgeo/gdal:ubuntu-small-3.8.4",
+      "base_repo_digests": "[\"ghcr.io/osgeo/gdal@sha256:60d3bc2f8b09ca1a7ef2db0239699b2c03713aa02be6e525e731c0020bbb10a4\"]"
+    },
+    "gdal-3.13.3": {
+      "lane": "gdal-3.13.3",
+      "image": "honua-roster/lane-gdal:3.13.3",
+      "image_id": "sha256:cfd743f3efe7458b5137fb9a9e13de4f5c2530794241a086374da876e76bab71",
+      "base_image": "ghcr.io/osgeo/gdal:ubuntu-full-3.13.3",
+      "base_repo_digests": ""
+    },
+    "qgis": {
+      "lane": "qgis",
+      "image": "honua-roster/lane-qgis:3.44.13",
+      "image_id": "sha256:ff2efd9ac2b8f9ba9193e8d99f96872bdd8fdfe06eebfbf5347988138077a468",
+      "base_image": "qgis/qgis:3.44.13",
+      "base_repo_digests": "[\"qgis/qgis@sha256:59e160b2ea3f881be039ed49936c42e75e8f336688951f22147676db743f4e47\"]"
+    },
+    "maplibre": {
+      "lane": "maplibre",
+      "image": "honua-roster/lane-maplibre:local",
+      "image_id": "sha256:6693ad1c30bdf4b8236aea487902e2ac4b499be4aeaf65eb6e99395139028240",
+      "base_image": "mcr.microsoft.com/playwright:v1.59.1-noble",
+      "base_repo_digests": ""
+    }
+  },
+  "by_client_lane": {
+    "py-owslib": {
+      "lane": "python",
+      "image": "honua-roster/lane-python:local",
+      "image_id": "sha256:5151a8fa86b1327759936b37a6644046bea2d3aff5fa15254313902c12706992",
+      "base_image": "python:3.12-slim-bookworm",
+      "base_repo_digests": "[\"python@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254\"]"
+    },
+    "py-pystac": {
+      "lane": "python",
+      "image": "honua-roster/lane-python:local",
+      "image_id": "sha256:5151a8fa86b1327759936b37a6644046bea2d3aff5fa15254313902c12706992",
+      "base_image": "python:3.12-slim-bookworm",
+      "base_repo_digests": "[\"python@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254\"]"
+    },
+    "desktop-qgis": {
+      "lane": "qgis",
+      "image": "honua-roster/lane-qgis:3.44.13",
+      "image_id": "sha256:ff2efd9ac2b8f9ba9193e8d99f96872bdd8fdfe06eebfbf5347988138077a468",
+      "base_image": "qgis/qgis:3.44.13",
+      "base_repo_digests": "[\"qgis/qgis@sha256:59e160b2ea3f881be039ed49936c42e75e8f336688951f22147676db743f4e47\"]"
+    },
+    "js-maplibre": {
+      "lane": "maplibre",
+      "image": "honua-roster/lane-maplibre:local",
+      "image_id": "sha256:6693ad1c30bdf4b8236aea487902e2ac4b499be4aeaf65eb6e99395139028240",
+      "base_image": "mcr.microsoft.com/playwright:v1.59.1-noble",
+      "base_repo_digests": ""
+    },
+    "gdal-cog": {
+      "lane": "gdal-3.8.4",
+      "image": "honua-roster/lane-gdal:3.8.4",
+      "image_id": "sha256:aa158253e8c3ee174f36f74840c9188777631b314b708d88c52d237fa5585881",
+      "base_image": "ghcr.io/osgeo/gdal:ubuntu-small-3.8.4",
+      "base_repo_digests": "[\"ghcr.io/osgeo/gdal@sha256:60d3bc2f8b09ca1a7ef2db0239699b2c03713aa02be6e525e731c0020bbb10a4\"]"
+    },
+    "gdal-flatgeobuf": {
+      "lane": "gdal-3.8.4",
+      "image": "honua-roster/lane-gdal:3.8.4",
+      "image_id": "sha256:aa158253e8c3ee174f36f74840c9188777631b314b708d88c52d237fa5585881",
+      "base_image": "ghcr.io/osgeo/gdal:ubuntu-small-3.8.4",
+      "base_repo_digests": "[\"ghcr.io/osgeo/gdal@sha256:60d3bc2f8b09ca1a7ef2db0239699b2c03713aa02be6e525e731c0020bbb10a4\"]"
+    },
+    "gdal-geoparquet": {
+      "lane": "gdal-3.13.3",
+      "image": "honua-roster/lane-gdal:3.13.3",
+      "image_id": "sha256:cfd743f3efe7458b5137fb9a9e13de4f5c2530794241a086374da876e76bab71",
+      "base_image": "ghcr.io/osgeo/gdal:ubuntu-full-3.13.3",
+      "base_repo_digests": ""
+    },
+    "gdal": {
+      "gdal 3.8.4": {
+        "lane": "gdal-3.8.4",
+        "image": "honua-roster/lane-gdal:3.8.4",
+        "image_id": "sha256:aa158253e8c3ee174f36f74840c9188777631b314b708d88c52d237fa5585881",
+        "base_image": "ghcr.io/osgeo/gdal:ubuntu-small-3.8.4",
+        "base_repo_digests": "[\"ghcr.io/osgeo/gdal@sha256:60d3bc2f8b09ca1a7ef2db0239699b2c03713aa02be6e525e731c0020bbb10a4\"]"
+      },
+      "gdal 3.13.3": {
+        "lane": "gdal-3.13.3",
+        "image": "honua-roster/lane-gdal:3.13.3",
+        "image_id": "sha256:cfd743f3efe7458b5137fb9a9e13de4f5c2530794241a086374da876e76bab71",
+        "base_image": "ghcr.io/osgeo/gdal:ubuntu-full-3.13.3",
+        "base_repo_digests": ""
+      }
+    }
+  }
+}

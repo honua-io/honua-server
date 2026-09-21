@@ -1,0 +1,67 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/owslib/ogc-api-processes/process.ogc-api-processes",
+  "canonical_client": "OWSLib",
+  "client_lane": "py-owslib",
+  "client_version": "0.36.0",
+  "client_version_detail": "OWSLib==0.36.0",
+  "surface": "ogc-api-processes",
+  "operation": "process.ogc-api-processes",
+  "protocol_version": "OGC API - Processes 1.0",
+  "protocol_profile": "core+ogc-process-description+json",
+  "started_at": "2026-09-21T09:44:53.395638Z",
+  "finished_at": "2026-09-21T09:45:05.565616Z",
+  "duration_ms": 12170,
+  "status": "pass",
+  "exercised_capabilities": [
+    "positive",
+    "negative",
+    "auth",
+    "boundary",
+    "media-schema"
+  ],
+  "summary": "all 5 checks passed across 5 governed facets",
+  "primary_request_url": "http://honua:5000/ogc/processes/processes/geometry.buffer/execution",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "list, describe and synchronously execute geometry.buffer",
+      "outcome": "pass",
+      "detail": "83 processes listed; geometry.buffer described with inputs ['distance', 'geodesic', 'srid', 'wkb']; sync execution returned a 33-vertex polygon whose every vertex lies 0.01 deg from the input point",
+      "request_url": null,
+      "duration_ms": 1866
+    },
+    {
+      "facet": "auth",
+      "name": "execution is challenged, denied without an operation grant, admitted for the admin key",
+      "outcome": "pass",
+      "detail": "outcomes {'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401, 'oidc-bearer-without-grant': 403, 'api-key': 'executed'}",
+      "request_url": null,
+      "duration_ms": 5425
+    },
+    {
+      "facet": "negative",
+      "name": "unknown process and missing required input are protocol errors",
+      "outcome": "pass",
+      "detail": "unknown process -> 404 'No such process'; missing input -> 400 'Invalid analysis plan'",
+      "request_url": null,
+      "duration_ms": 18
+    },
+    {
+      "facet": "boundary",
+      "name": "edge input values are rejected as client errors, not executed",
+      "outcome": "pass",
+      "detail": "edge inputs {'distance=0': 400, 'distance<0': 400, 'geodesic=true': 400}",
+      "request_url": null,
+      "duration_ms": 24
+    },
+    {
+      "facet": "media-schema",
+      "name": "process list, description and results carry their governed media types",
+      "outcome": "pass",
+      "detail": "process list application/json; description inputs all carry a JSON schema; execution result application/json",
+      "request_url": null,
+      "duration_ms": 4836
+    }
+  ]
+}

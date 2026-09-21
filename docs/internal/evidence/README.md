@@ -12,6 +12,10 @@ Evidence lives in four trees:
 
 This file does not store evidence itself. It points at the doc that does.
 
+## Bounded external clients
+
+- [2026.1 roster on nightly-1cd2ef5](client-certification-1cd2ef5/README.md): 41 pass, 11 fail, zero skipped/missing cells; not certified.
+
 ## Standards conformance (OGC, OData, STAC)
 
 What we run, what passes, what the formal certification posture is.

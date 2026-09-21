@@ -1,0 +1,143 @@
+{
+  "bucket": "roster-fixtures",
+  "gdal": "GDAL 3.13.3 \"Iowa City\", released 2026/08/13",
+  "cog": {
+    "key": "cog/roster-3857.tif",
+    "size": [
+      512,
+      512
+    ],
+    "geotransform": [
+      -13638811.83098057,
+      38.21851414258813,
+      0.0,
+      4559315.863154193,
+      0.0,
+      -38.21851414258813
+    ],
+    "layout": {
+      "LAYOUT": "COG",
+      "COMPRESSION": "DEFLATE",
+      "INTERLEAVE": "BAND",
+      "OVERVIEW_RESAMPLING": "CUBIC"
+    },
+    "sha256": "8f3d72c953f432497cd8a144c671cf3a097f901e3825dc759b64170baddd286e"
+  },
+  "zarr": {
+    "root": "zarr/roster-sst.zarr",
+    "objects": {
+      ".zgroup": "e1e1914ae531ecb50e1ead685ef01895a5452faf5f25f35cd78f1f5de1367470",
+      "latitude/.zarray": "159b18e604ab48cea80b2f2274717e29632bdbbabb7d3d713c39d081bc461c16",
+      "latitude/.zattrs": "ced1a0fc1f56e5c8390f04b5aae829641d7e8e7a53b477bfab8f1e388097d201",
+      "latitude/0": "c017ba8ba94c8edee88c8b4a3e758466099074ced6c4cf005f00e382bc14f7fb",
+      "longitude/.zarray": "159b18e604ab48cea80b2f2274717e29632bdbbabb7d3d713c39d081bc461c16",
+      "longitude/.zattrs": "b13ff37602459a92ebcd20d30339139de1b0a6d0e3d2a62bed41b6a8166db67a",
+      "longitude/0": "35fba6c431575754b5211c738d95136ab87f210fa14febe5b6d023e0f78a87ee",
+      "sea_surface_temperature/.zarray": "0cd21d87a9be948d88c37465dbef5e0949da1842fdc97129f2dbd2754ca0bc28",
+      "sea_surface_temperature/.zattrs": "60c1b79e31d41b3196b994b7afa127706f5f30b835f67e5852890f3df687c319",
+      "sea_surface_temperature/0.0.0": "7947b3bec9208b39812217b4991d315ace7d5bb73b791c52f52e3e5a9a056dff",
+      "sea_surface_temperature/1.0.0": "3900d9c2e24335deeb469ec50daf9e4e217054262e0b220ca35ee6f8fd5e4a8a",
+      "time/.zarray": "68ee4a0f7aba395b620e50fcb23c48b02d52f5e1aa68dd9aaea1fc5db2fa840f",
+      "time/.zattrs": "8e8748818689b314fd05809fca7e594a128ac3600df72833477945d0c7902e2d",
+      "time/0": "a0271b7d6d70c4433d64ef613201fb90cc1dc160d7cbcdc3f2de5c39c7431717"
+    }
+  },
+  "registrations": {
+    "cloud-rasters": [
+      {
+        "id": 1,
+        "layerId": 5000,
+        "name": "roster cog 5000",
+        "description": null,
+        "provider": "AwsS3",
+        "bucket": "roster-fixtures",
+        "objectKey": "cog/roster-3857.tif",
+        "width": null,
+        "height": null,
+        "bandCount": null,
+        "srid": null,
+        "compression": null,
+        "overviewLevelCount": null,
+        "metadataScannedAt": null,
+        "createdAt": "2026-09-21T09:44:43.534618+00:00"
+      },
+      {
+        "id": 2,
+        "layerId": 5001,
+        "name": "roster cog 5001",
+        "description": null,
+        "provider": "AwsS3",
+        "bucket": "roster-fixtures",
+        "objectKey": "cog/roster-3857.tif",
+        "width": null,
+        "height": null,
+        "bandCount": null,
+        "srid": null,
+        "compression": null,
+        "overviewLevelCount": null,
+        "metadataScannedAt": null,
+        "createdAt": "2026-09-21T09:44:43.555466+00:00"
+      }
+    ],
+    "zarr-stores": [
+      {
+        "id": 1,
+        "layerId": 5200,
+        "name": "roster zarr 5200",
+        "description": null,
+        "provider": "AwsS3",
+        "bucket": "roster-fixtures",
+        "rootPath": "zarr/roster-sst.zarr",
+        "zarrFormat": null,
+        "srid": null,
+        "variableCount": null,
+        "primaryVariable": null,
+        "variables": null,
+        "metadataScannedAt": null,
+        "createdAt": "2026-09-21T09:44:43.5647182+00:00"
+      },
+      {
+        "id": 2,
+        "layerId": 5201,
+        "name": "roster zarr 5201",
+        "description": null,
+        "provider": "AwsS3",
+        "bucket": "roster-fixtures",
+        "rootPath": "zarr/roster-sst.zarr",
+        "zarrFormat": null,
+        "srid": null,
+        "variableCount": null,
+        "primaryVariable": null,
+        "variables": null,
+        "metadataScannedAt": null,
+        "createdAt": "2026-09-21T09:44:43.5731944+00:00"
+      }
+    ]
+  },
+  "scans": [
+    {
+      "status": 200,
+      "body": "{\"id\":1,\"layerId\":5000,\"name\":\"roster cog 5000\",\"description\":null,\"provider\":\"AwsS3\",\"bucket\":\"roster-fixtures\",\"objectKey\":\"cog/roster-3857.tif\",\"width\":512,\"height\":512,\"bandCount\":1,\"srid\":3857,\"compression\":\"DEFLATE\",\"overviewLevelCount\":2,\"metadataScannedAt\":\"2026-09-21T09:44:43.615773+00:00\",\"createdAt\":\"2026-09-21T09:44:43.534618+00:00\"}",
+      "path": "/api/v1/admin/cloud-rasters/1/refresh",
+      "elapsed_s": 0.0
+    },
+    {
+      "status": 200,
+      "body": "{\"id\":2,\"layerId\":5001,\"name\":\"roster cog 5001\",\"description\":null,\"provider\":\"AwsS3\",\"bucket\":\"roster-fixtures\",\"objectKey\":\"cog/roster-3857.tif\",\"width\":512,\"height\":512,\"bandCount\":1,\"srid\":3857,\"compression\":\"DEFLATE\",\"overviewLevelCount\":2,\"metadataScannedAt\":\"2026-09-21T09:44:43.650418+00:00\",\"createdAt\":\"2026-09-21T09:44:43.555466+00:00\"}",
+      "path": "/api/v1/admin/cloud-rasters/2/refresh",
+      "elapsed_s": 0.0
+    },
+    {
+      "status": 200,
+      "body": "{\"id\":1,\"layerId\":5200,\"name\":\"roster zarr 5200\",\"description\":null,\"provider\":\"AwsS3\",\"bucket\":\"roster-fixtures\",\"rootPath\":\"zarr/roster-sst.zarr\",\"zarrFormat\":2,\"srid\":0,\"variableCount\":4,\"primaryVariable\":\"latitude\",\"variables\":[{\"name\":\"latitude\",\"shape\":[4],\"chunks\":[4],\"dataType\":\"\\u003Cf8\",\"compressor\":null,\"dimensionNames\":[\"latitude\"]},{\"name\":\"longitude\",\"shape\":[4],\"chunks\":[4],\"dataTyp",
+      "path": "/api/v1/admin/zarr-stores/1/refresh",
+      "elapsed_s": 0.1
+    },
+    {
+      "status": 200,
+      "body": "{\"id\":2,\"layerId\":5201,\"name\":\"roster zarr 5201\",\"description\":null,\"provider\":\"AwsS3\",\"bucket\":\"roster-fixtures\",\"rootPath\":\"zarr/roster-sst.zarr\",\"zarrFormat\":2,\"srid\":0,\"variableCount\":4,\"primaryVariable\":\"latitude\",\"variables\":[{\"name\":\"latitude\",\"shape\":[4],\"chunks\":[4],\"dataType\":\"\\u003Cf8\",\"compressor\":null,\"dimensionNames\":[\"latitude\"]},{\"name\":\"longitude\",\"shape\":[4],\"chunks\":[4],\"dataTyp",
+      "path": "/api/v1/admin/zarr-stores/2/refresh",
+      "elapsed_s": 0.1
+    }
+  ]
+}

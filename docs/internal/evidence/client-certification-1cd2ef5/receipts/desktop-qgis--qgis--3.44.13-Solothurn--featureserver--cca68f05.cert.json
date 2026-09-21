@@ -1,0 +1,309 @@
+{
+  "schema_version": "1.0",
+  "run_id": "roster-20260921T094413Z-1cd2ef5",
+  "run_date": "2026-09-21T09:45:20.585714Z",
+  "server_commit": "1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
+  "server_version": {
+    "success": true,
+    "data": {
+      "version": "2026.1.1",
+      "metadataApiVersion": "metadata.honua.io/v2alpha1",
+      "metadataSchemaVersion": "2.0.0-alpha.1",
+      "serverTime": "2026-09-21T09:44:32.9047765+00:00"
+    },
+    "message": null,
+    "timestamp": "2026-09-21T09:44:32.9047811+00:00"
+  },
+  "producer_source_sha": "0f64f2fd946cc3c9834874bd42d8e8a0b1f7341b",
+  "image_digest": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
+  "fixture_revision": "docker/cng/seed.sql@1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
+  "server_config_revision": "server-capability-matrix@ac30266fbd153363bebdbed13130accc8ab0c94a",
+  "auth_policy_revision": "anonymous-public-v1",
+  "client_id": "QGIS",
+  "runner_lane": "desktop-qgis",
+  "client_version": "3.44.13-Solothurn",
+  "protocol": "featureserver",
+  "protocol_version": "GeoServices REST 10.x",
+  "protocol_profile": "FeatureServer query",
+  "environment": "local-docker",
+  "deployment_target": "local-docker",
+  "results": [
+    {
+      "test_case_id": "client-cert/qgis/featureserver/serve.geoservices-featureserver",
+      "status": "pass",
+      "performed_by": "QGIS",
+      "request_url": "http://honua:5000/rest/services/test_service/FeatureServer/0/query?f=json&where=1%3D1&returnIdsOnly=true",
+      "exercised_capabilities": [
+        "positive",
+        "metadata",
+        "media-schema"
+      ],
+      "notes": "all 3 checks passed across 3 governed facets",
+      "operation": "serve.geoservices-featureserver",
+      "started_at": "2026-09-21T09:45:20.585714Z",
+      "finished_at": "2026-09-21T09:45:20.880714Z",
+      "duration_ms": 295,
+      "protocol_version": "GeoServices REST 10.x",
+      "checks": [
+        {
+          "facet": "positive",
+          "name": "load the FeatureServer layer and read every feature",
+          "outcome": "pass",
+          "detail": "['alpha', 'beta', 'delta', 'epsilon', 'eta', 'gamma', 'iota', 'lambda', 'theta', 'zeta']; 2 query requests",
+          "request_url": null,
+          "duration_ms": 214
+        },
+        {
+          "facet": "metadata",
+          "name": "layer JSON drives fields, geometry type, CRS and extent",
+          "outcome": "pass",
+          "detail": "fields {'objectid': 'esriFieldTypeOID', 'name': 'esriFieldTypeString', 'description': 'esriFieldTypeString', 'status': 'esriFieldTypeString', 'count': 'esriFieldTypeInteger', 'ratio': 'esriFieldTypeDouble', 'active': 'esriFieldTypeSmallInteger', 'created_at': 'esriFieldTypeDate', 'event_date': 'esriFieldTypeDate', 'event_time': 'esriFieldTypeString', 'uid': 'esriFieldTypeGUID', 'tags': 'esriFieldTypeString', 'numbers': 'esriFieldTypeString', 'eo:cloud_cover': 'esriFieldTypeDouble'}; crs EPSG:4326; extent -122.500,37.700 : -122.350,37.840",
+          "request_url": null,
+          "duration_ms": 9
+        },
+        {
+          "facet": "media-schema",
+          "name": "f=json responses are JSON and decode into typed attributes",
+          "outcome": "pass",
+          "detail": "counts [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; content types ['application/json']",
+          "request_url": null,
+          "duration_ms": 72
+        }
+      ],
+      "wire": {
+        "window": [
+          "2026-09-21T09:45:20.585714Z",
+          "2026-09-21T09:45:20.880714Z"
+        ],
+        "exchanges": 9,
+        "wire_lines": [
+          462,
+          463,
+          464,
+          465,
+          466,
+          467,
+          468,
+          469,
+          470
+        ],
+        "wire_lines_sha256": "0f16320702e7d8719df797fe63bec0aa47480d51d3250ec3c0a449e1b1b62157",
+        "statuses": {
+          "200": 6,
+          "404": 3
+        },
+        "user_agents": [
+          "Mozilla/5.0 QGIS/34413/Ubuntu 25.10"
+        ],
+        "credential_schemes": [
+          "none"
+        ]
+      }
+    }
+  ],
+  "summary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0
+  },
+  "honua_evidence": {
+    "release": "2026.1",
+    "candidate": {
+      "run_id": "roster-20260921T094413Z-1cd2ef5",
+      "release": "2026.1",
+      "cut": "pre-cut proof on the imaged trunk nightly (operator ruling A, 2026-09-16); no release cut exists",
+      "tag": "nightly-1cd2ef5",
+      "image": "ghcr.io/honua-io/honua-server@sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
+      "index_digest": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
+      "platform_image_id": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
+      "source_sha": "1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
+      "image_created": "2026-09-20T10:16:19.064Z",
+      "producer_source_sha": "0f64f2fd946cc3c9834874bd42d8e8a0b1f7341b",
+      "target": "local-docker",
+      "durable_uri_base": "https://github.com/honua-io/honua-server/blob/trunk/docs/internal/evidence/client-certification-1cd2ef5/receipts/",
+      "server_version": {
+        "success": true,
+        "data": {
+          "version": "2026.1.1",
+          "metadataApiVersion": "metadata.honua.io/v2alpha1",
+          "metadataSchemaVersion": "2.0.0-alpha.1",
+          "serverTime": "2026-09-21T09:44:32.9047765+00:00"
+        },
+        "message": null,
+        "timestamp": "2026-09-21T09:44:32.9047811+00:00"
+      }
+    },
+    "fixture": {
+      "fixture": {
+        "files": {
+          "tests/seed/client-compat-v1.sql": "538537661f80fc46fb8cdc3f18c29b74cec192be15277d7bed0a046195d85757",
+          "tests/seed/browser-compat.yaml": "28f3d5a8eb38a459ccc00c1ee1d98e9b0bc35ca20a425fcaeb9775539d5a9777",
+          "tests/seed/client-compat-auth-wave1.yaml": "efe72bb4d3f0fd568d0dcdd41dbc230786e0f750959ab3ecc09a859482a4146f",
+          "tests/seed/portal-compat.yaml": "8a15f04566db39eadf7a2a784711cf8666ee298b238dbe2b665856936717c654",
+          "docker/cng/seed.sql": "83eb29ac38a3fb54914c1252b273dbb7f7f4d651a8204aafb4108d14d6d23727",
+          "certification/bounded-roster/fixture/roster-raster-fixture.sql": "e1b67029a1f991e497975657c86e075493697782ab2e042218bf052821060946",
+          "certification/bounded-roster/fixture/apply_fixture.py": "558747777cbb4f459a4b7633a06a2f03259291d40470d595197424977b0db736"
+        },
+        "sha256": "2ec1e80191a3f0aeabcf24ecca27fcd849cfb2fd0d5eb7956e90992432b3cae2"
+      },
+      "server_config": {
+        "files": {
+          "docker/client-compat/compose.yml": "c85c7b55aac33f0fa2bbd281ea3c34365a724ab1e71d79034969dd813de1dcd3",
+          "certification/bounded-roster/compose.candidate.yml": "176d14b8e8a5d0f8f5e953cec5c24127a9517db25893d4827fc7c1ac21c6f96b"
+        },
+        "sha256": "f66d14d60c6ab9969cc2ee9600986266280bb773d27002efc894c2826c2bc635"
+      },
+      "auth_profile": {
+        "files": {
+          "tests/python/shared/cert_auth.py": "1d1e9d14a20522c8534846c429352a34dded5c2f2f3bfa2e75527067d411f406",
+          "certification/bounded-roster/lib/rosterenv.py": "d7cd3b4fb07fa5a97c6cbc2fdcf3c2cbfd70ac7c5385a0aa17118713f992acd1"
+        },
+        "sha256": "7ae3e6d6a24e9cf767e8c7c467f87da85f274aba259d1ef052eeb68fc65d4958"
+      },
+      "authored_objects": {
+        "cog_sha256": "8f3d72c953f432497cd8a144c671cf3a097f901e3825dc759b64170baddd286e",
+        "zarr_objects": {
+          ".zgroup": "e1e1914ae531ecb50e1ead685ef01895a5452faf5f25f35cd78f1f5de1367470",
+          "latitude/.zarray": "159b18e604ab48cea80b2f2274717e29632bdbbabb7d3d713c39d081bc461c16",
+          "latitude/.zattrs": "ced1a0fc1f56e5c8390f04b5aae829641d7e8e7a53b477bfab8f1e388097d201",
+          "latitude/0": "c017ba8ba94c8edee88c8b4a3e758466099074ced6c4cf005f00e382bc14f7fb",
+          "longitude/.zarray": "159b18e604ab48cea80b2f2274717e29632bdbbabb7d3d713c39d081bc461c16",
+          "longitude/.zattrs": "b13ff37602459a92ebcd20d30339139de1b0a6d0e3d2a62bed41b6a8166db67a",
+          "longitude/0": "35fba6c431575754b5211c738d95136ab87f210fa14febe5b6d023e0f78a87ee",
+          "sea_surface_temperature/.zarray": "0cd21d87a9be948d88c37465dbef5e0949da1842fdc97129f2dbd2754ca0bc28",
+          "sea_surface_temperature/.zattrs": "60c1b79e31d41b3196b994b7afa127706f5f30b835f67e5852890f3df687c319",
+          "sea_surface_temperature/0.0.0": "7947b3bec9208b39812217b4991d315ace7d5bb73b791c52f52e3e5a9a056dff",
+          "sea_surface_temperature/1.0.0": "3900d9c2e24335deeb469ec50daf9e4e217054262e0b220ca35ee6f8fd5e4a8a",
+          "time/.zarray": "68ee4a0f7aba395b620e50fcb23c48b02d52f5e1aa68dd9aaea1fc5db2fa840f",
+          "time/.zattrs": "8e8748818689b314fd05809fca7e594a128ac3600df72833477945d0c7902e2d",
+          "time/0": "a0271b7d6d70c4433d64ef613201fb90cc1dc160d7cbcdc3f2de5c39c7431717"
+        }
+      },
+      "registrations": {
+        "cloud-rasters": [
+          {
+            "id": 1,
+            "layerId": 5000,
+            "name": "roster cog 5000",
+            "description": null,
+            "provider": "AwsS3",
+            "bucket": "roster-fixtures",
+            "objectKey": "cog/roster-3857.tif",
+            "width": null,
+            "height": null,
+            "bandCount": null,
+            "srid": null,
+            "compression": null,
+            "overviewLevelCount": null,
+            "metadataScannedAt": null,
+            "createdAt": "2026-09-21T09:44:43.534618+00:00"
+          },
+          {
+            "id": 2,
+            "layerId": 5001,
+            "name": "roster cog 5001",
+            "description": null,
+            "provider": "AwsS3",
+            "bucket": "roster-fixtures",
+            "objectKey": "cog/roster-3857.tif",
+            "width": null,
+            "height": null,
+            "bandCount": null,
+            "srid": null,
+            "compression": null,
+            "overviewLevelCount": null,
+            "metadataScannedAt": null,
+            "createdAt": "2026-09-21T09:44:43.555466+00:00"
+          }
+        ],
+        "zarr-stores": [
+          {
+            "id": 1,
+            "layerId": 5200,
+            "name": "roster zarr 5200",
+            "description": null,
+            "provider": "AwsS3",
+            "bucket": "roster-fixtures",
+            "rootPath": "zarr/roster-sst.zarr",
+            "zarrFormat": null,
+            "srid": null,
+            "variableCount": null,
+            "primaryVariable": null,
+            "variables": null,
+            "metadataScannedAt": null,
+            "createdAt": "2026-09-21T09:44:43.5647182+00:00"
+          },
+          {
+            "id": 2,
+            "layerId": 5201,
+            "name": "roster zarr 5201",
+            "description": null,
+            "provider": "AwsS3",
+            "bucket": "roster-fixtures",
+            "rootPath": "zarr/roster-sst.zarr",
+            "zarrFormat": null,
+            "srid": null,
+            "variableCount": null,
+            "primaryVariable": null,
+            "variables": null,
+            "metadataScannedAt": null,
+            "createdAt": "2026-09-21T09:44:43.5731944+00:00"
+          }
+        ]
+      }
+    },
+    "client": {
+      "client_version_detail": [
+        "QGIS 3.44.13-Solothurn (PyQGIS, qgis/qgis:3.44.13)"
+      ],
+      "lane": {
+        "lane": "qgis",
+        "image": "honua-roster/lane-qgis:3.44.13",
+        "image_id": "sha256:ff2efd9ac2b8f9ba9193e8d99f96872bdd8fdfe06eebfbf5347988138077a468",
+        "base_image": "qgis/qgis:3.44.13",
+        "base_repo_digests": "[\"qgis/qgis@sha256:59e160b2ea3f881be039ed49936c42e75e8f336688951f22147676db743f4e47\"]"
+      },
+      "lane_identity": {
+        "lane": "qgis",
+        "started_at": "2026-09-21T09:45:18.590184Z",
+        "python": "3.13.7",
+        "platform": "Linux-6.6.114.1-microsoft-standard-WSL2-x86_64-with-glibc2.42",
+        "cells": [
+          "qgis_cells.featureserver",
+          "qgis_cells.mapserver",
+          "qgis_cells.oapif_landing",
+          "qgis_cells.oapif_conformance",
+          "qgis_cells.oapif_collections",
+          "qgis_cells.oapif_collection",
+          "qgis_cells.oapif_items",
+          "qgis_cells.oapif_item",
+          "qgis_cells.oapif_queryables",
+          "qgis_cells.oapif_transactions",
+          "qgis_cells.oapif_service",
+          "qgis_cells.ogc_features_simple",
+          "qgis_cells.tiles_landing_tilesets",
+          "qgis_cells.tiles_tile",
+          "qgis_cells.tiles_service",
+          "qgis_cells.wfs_operation",
+          "qgis_cells.wfs_service",
+          "qgis_cells.wms_operation",
+          "qgis_cells.wms_service",
+          "qgis_cells.wmts_operation",
+          "qgis_cells.maps_service",
+          "qgis_cells.styles_service"
+        ],
+        "excluded_cells": [
+          {
+            "test_case_id": "client-cert/qgis/wmts/serve.wmts",
+            "reason": "Not required by pinned release denominator .13 (release#351/#359, PR #361)"
+          }
+        ],
+        "client_identity": "3.44.13-Solothurn",
+        "finished_at": "2026-09-21T09:46:33.959521Z",
+        "harness_failures": []
+      }
+    },
+    "durable_uri": "https://github.com/honua-io/honua-server/blob/trunk/docs/internal/evidence/client-certification-1cd2ef5/receipts/desktop-qgis--qgis--3.44.13-Solothurn--featureserver--cca68f05.cert.json"
+  }
+}

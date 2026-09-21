@@ -1,0 +1,49 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/qgis/ogc-features/serve.ogc-api-features",
+  "canonical_client": "QGIS",
+  "client_lane": "desktop-qgis",
+  "client_version": "3.44.13-Solothurn",
+  "client_version_detail": "QGIS 3.44.13-Solothurn (PyQGIS, qgis/qgis:3.44.13)",
+  "surface": "ogc-features",
+  "operation": "serve.ogc-api-features",
+  "protocol_version": "OGC API - Features 1.0",
+  "protocol_profile": "core+geojson",
+  "started_at": "2026-09-21T09:45:47.703095Z",
+  "finished_at": "2026-09-21T09:45:48.139809Z",
+  "duration_ms": 437,
+  "status": "pass",
+  "exercised_capabilities": [
+    "positive",
+    "metadata",
+    "media-schema"
+  ],
+  "summary": "all 3 checks passed across 3 governed facets",
+  "primary_request_url": "http://honua:5000/ogc/features/collections/0/items",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "load and read the collection",
+      "outcome": "pass",
+      "detail": "['alpha', 'beta', 'delta', 'epsilon', 'eta', 'gamma', 'iota', 'lambda', 'theta', 'zeta']; ['GET http://honua:5000/ogc/features -> 200 application/json', 'GET http://honua:5000/openapi.json -> 200 application/vnd.oai.openapi+json; version=3.0', 'GET http://honua:5000/ogc/features/collections/0 -> 200 application/json', 'GET http://honua:5000/ogc/features/conformance -> 200 application/json', 'GET http://honua:5000/ogc/features/collections/0/queryables -> 200 application/schema+json', 'GET http://honua:5000/ogc/features/collections/0/items?limit=10 -> 200 application/geo+json']",
+      "request_url": null,
+      "duration_ms": 216
+    },
+    {
+      "facet": "metadata",
+      "name": "collection title, abstract, extent and temporal metadata reach the layer",
+      "outcome": "pass",
+      "detail": "title 'Test Layer'; temporal Mon Jan 1 12:00:00 2024 GMT..Wed Jan 10 12:00:00 2024 GMT",
+      "request_url": null,
+      "duration_ms": 28
+    },
+    {
+      "facet": "media-schema",
+      "name": "GeoJSON items negotiate their media type and decode to typed fields",
+      "outcome": "pass",
+      "detail": "geometry Point; fields {'objectid': 4, 'name': 10, 'description': 10, 'status': 10, 'count': 4, 'ratio': 6, 'active': 1, 'created_at': 16, 'event_date': 14, 'event_time': 10, 'uid': 10, 'tags': 10, 'numbers': 10, 'eo:cloud_cover': 6}; items served application/geo+json",
+      "request_url": null,
+      "duration_ms": 189
+    }
+  ]
+}

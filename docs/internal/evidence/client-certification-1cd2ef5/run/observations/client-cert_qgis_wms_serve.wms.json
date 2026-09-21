@@ -1,0 +1,49 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/qgis/wms/serve.wms",
+  "canonical_client": "QGIS",
+  "client_lane": "desktop-qgis",
+  "client_version": "3.44.13-Solothurn",
+  "client_version_detail": "QGIS 3.44.13-Solothurn (PyQGIS, qgis/qgis:3.44.13)",
+  "surface": "wms",
+  "operation": "serve.wms",
+  "protocol_version": "1.3.0",
+  "protocol_profile": "WMS 1.3.0",
+  "started_at": "2026-09-21T09:46:28.530453Z",
+  "finished_at": "2026-09-21T09:46:28.949205Z",
+  "duration_ms": 419,
+  "status": "pass",
+  "exercised_capabilities": [
+    "positive",
+    "metadata",
+    "media-schema"
+  ],
+  "summary": "all 3 checks passed across 3 governed facets",
+  "primary_request_url": "http://honua:5000/rest/services/browser_compat/MapServer/WMS?SERVICE=WMS&REQUEST=GetCapabilities",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "GetCapabilities and GetMap render the fixture",
+      "outcome": "pass",
+      "detail": "painted 43 px in 10 colours via 1 GetMap",
+      "request_url": null,
+      "duration_ms": 245
+    },
+    {
+      "facet": "metadata",
+      "name": "capabilities layer title, CRS list and extent reach the layer",
+      "outcome": "pass",
+      "detail": "title ''; extent -122.4400,37.7600 : -122.4000,37.7900; sublayers 1",
+      "request_url": null,
+      "duration_ms": 2
+    },
+    {
+      "facet": "media-schema",
+      "name": "capabilities XML and PNG map responses carry their media types",
+      "outcome": "pass",
+      "detail": "capabilities text/xml; charset=utf-8; GetMap ['image/png']",
+      "request_url": null,
+      "duration_ms": 171
+    }
+  ]
+}

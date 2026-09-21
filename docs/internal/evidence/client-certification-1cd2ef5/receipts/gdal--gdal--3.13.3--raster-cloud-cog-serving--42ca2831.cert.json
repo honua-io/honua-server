@@ -1,0 +1,329 @@
+{
+  "schema_version": "1.0",
+  "run_id": "roster-20260921T094413Z-1cd2ef5",
+  "run_date": "2026-09-21T09:45:17.041892Z",
+  "server_commit": "1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
+  "server_version": {
+    "success": true,
+    "data": {
+      "version": "2026.1.1",
+      "metadataApiVersion": "metadata.honua.io/v2alpha1",
+      "metadataSchemaVersion": "2.0.0-alpha.1",
+      "serverTime": "2026-09-21T09:44:32.9047765+00:00"
+    },
+    "message": null,
+    "timestamp": "2026-09-21T09:44:32.9047811+00:00"
+  },
+  "producer_source_sha": "0f64f2fd946cc3c9834874bd42d8e8a0b1f7341b",
+  "image_digest": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
+  "fixture_revision": "docker/cng/seed.sql@1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
+  "server_config_revision": "canonical-client-applicability@2026-08-21.3",
+  "auth_policy_revision": "anonymous-and-protected-v1",
+  "client_id": "GDAL",
+  "runner_lane": "gdal",
+  "client_version": "3.13.3",
+  "protocol": "raster-cloud-cog-serving",
+  "protocol_version": "GeoServices ImageServer tile + COG 1.0",
+  "protocol_profile": "registered cloud COG, WebMercatorQuad tiles",
+  "environment": "local-docker",
+  "deployment_target": "local-docker",
+  "results": [
+    {
+      "test_case_id": "client-cert/gdal/raster-cloud-cog-serving/raster.cloud-cog-serving",
+      "status": "fail",
+      "performed_by": "GDAL",
+      "request_url": "http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png",
+      "exercised_capabilities": [
+        "positive",
+        "negative",
+        "auth",
+        "metadata",
+        "range-efficiency",
+        "crs-axis",
+        "media-schema"
+      ],
+      "notes": "failed checks positive:read a WebMercatorQuad tile of the registered cloud COG, negative:a tile outside the registered COG is refused or empty, auth:the protected mirror's tiles require a credential, metadata:format=cog tiles carry COG layout metadata, range-efficiency:COG tiles honour HTTP range reads, crs-axis:tiles are georeferenced in EPSG:3857, media-schema:png/tiff/cog formats carry their media types",
+      "operation": "raster.cloud-cog-serving",
+      "started_at": "2026-09-21T09:45:17.041892Z",
+      "finished_at": "2026-09-21T09:45:17.134704Z",
+      "duration_ms": 93,
+      "protocol_version": "GeoServices ImageServer tile + COG 1.0",
+      "checks": [
+        {
+          "facet": "positive",
+          "name": "read a WebMercatorQuad tile of the registered cloud COG",
+          "outcome": "fail",
+          "detail": "CheckFailed: http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png was not served: `/vsicurl?use_head=no&list_dir=no&url=http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621%3Fformat%3Dpng' not recognized as being in a supported file format.; the registered S3 COG was never read (requests ['http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png.aux', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png.hdr', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png.hdr', 'http://honua:5000/rest/services/roster_cog/ImageServer/tile/14/6333/2621?format=png.xml'])",
+          "request_url": null,
+          "duration_ms": 92
+        },
+        {
+          "facet": "negative",
+          "name": "a tile outside the registered COG is refused or empty",
+          "outcome": "fail",
+          "detail": "CheckFailed: not exercisable: the registered cloud COG was not served (see the positive check)",
+          "request_url": null,
+          "duration_ms": 0
+        },
+        {
+          "facet": "auth",
+          "name": "the protected mirror's tiles require a credential",
+          "outcome": "fail",
+          "detail": "CheckFailed: not exercisable: the registered cloud COG was not served (see the positive check)",
+          "request_url": null,
+          "duration_ms": 0
+        },
+        {
+          "facet": "metadata",
+          "name": "format=cog tiles carry COG layout metadata",
+          "outcome": "fail",
+          "detail": "CheckFailed: not exercisable: the registered cloud COG was not served (see the positive check)",
+          "request_url": null,
+          "duration_ms": 0
+        },
+        {
+          "facet": "range-efficiency",
+          "name": "COG tiles honour HTTP range reads",
+          "outcome": "fail",
+          "detail": "CheckFailed: not exercisable: the registered cloud COG was not served (see the positive check)",
+          "request_url": null,
+          "duration_ms": 0
+        },
+        {
+          "facet": "crs-axis",
+          "name": "tiles are georeferenced in EPSG:3857",
+          "outcome": "fail",
+          "detail": "CheckFailed: not exercisable: the registered cloud COG was not served (see the positive check)",
+          "request_url": null,
+          "duration_ms": 0
+        },
+        {
+          "facet": "media-schema",
+          "name": "png/tiff/cog formats carry their media types",
+          "outcome": "fail",
+          "detail": "CheckFailed: not exercisable: the registered cloud COG was not served (see the positive check)",
+          "request_url": null,
+          "duration_ms": 0
+        }
+      ],
+      "wire": {
+        "window": [
+          "2026-09-21T09:45:17.041892Z",
+          "2026-09-21T09:45:17.134704Z"
+        ],
+        "exchanges": 19,
+        "wire_lines": [
+          443,
+          444,
+          445,
+          446,
+          447,
+          448,
+          449,
+          450,
+          451,
+          452,
+          453,
+          454,
+          455,
+          456,
+          457,
+          458,
+          459,
+          460,
+          461
+        ],
+        "wire_lines_sha256": "f050d2be0eee14faf7681f93dbef09d6dd717b4054ee29781ce75e0ca3906ed4",
+        "statuses": {
+          "200": 15,
+          "401": 3,
+          "404": 1
+        },
+        "user_agents": [
+          "GDAL/3.13.3"
+        ],
+        "credential_schemes": [
+          "ApiKey",
+          "Bearer",
+          "none"
+        ]
+      }
+    }
+  ],
+  "summary": {
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
+    "skipped": 0
+  },
+  "honua_evidence": {
+    "release": "2026.1",
+    "candidate": {
+      "run_id": "roster-20260921T094413Z-1cd2ef5",
+      "release": "2026.1",
+      "cut": "pre-cut proof on the imaged trunk nightly (operator ruling A, 2026-09-16); no release cut exists",
+      "tag": "nightly-1cd2ef5",
+      "image": "ghcr.io/honua-io/honua-server@sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
+      "index_digest": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
+      "platform_image_id": "sha256:6271a044c7fe1e0a0ba122cdb69d916c8b821313dc57ae530e85173ffd2f0b76",
+      "source_sha": "1cd2ef5ea1e39571ef26b157dccdb6de796f5ed9",
+      "image_created": "2026-09-20T10:16:19.064Z",
+      "producer_source_sha": "0f64f2fd946cc3c9834874bd42d8e8a0b1f7341b",
+      "target": "local-docker",
+      "durable_uri_base": "https://github.com/honua-io/honua-server/blob/trunk/docs/internal/evidence/client-certification-1cd2ef5/receipts/",
+      "server_version": {
+        "success": true,
+        "data": {
+          "version": "2026.1.1",
+          "metadataApiVersion": "metadata.honua.io/v2alpha1",
+          "metadataSchemaVersion": "2.0.0-alpha.1",
+          "serverTime": "2026-09-21T09:44:32.9047765+00:00"
+        },
+        "message": null,
+        "timestamp": "2026-09-21T09:44:32.9047811+00:00"
+      }
+    },
+    "fixture": {
+      "fixture": {
+        "files": {
+          "tests/seed/client-compat-v1.sql": "538537661f80fc46fb8cdc3f18c29b74cec192be15277d7bed0a046195d85757",
+          "tests/seed/browser-compat.yaml": "28f3d5a8eb38a459ccc00c1ee1d98e9b0bc35ca20a425fcaeb9775539d5a9777",
+          "tests/seed/client-compat-auth-wave1.yaml": "efe72bb4d3f0fd568d0dcdd41dbc230786e0f750959ab3ecc09a859482a4146f",
+          "tests/seed/portal-compat.yaml": "8a15f04566db39eadf7a2a784711cf8666ee298b238dbe2b665856936717c654",
+          "docker/cng/seed.sql": "83eb29ac38a3fb54914c1252b273dbb7f7f4d651a8204aafb4108d14d6d23727",
+          "certification/bounded-roster/fixture/roster-raster-fixture.sql": "e1b67029a1f991e497975657c86e075493697782ab2e042218bf052821060946",
+          "certification/bounded-roster/fixture/apply_fixture.py": "558747777cbb4f459a4b7633a06a2f03259291d40470d595197424977b0db736"
+        },
+        "sha256": "2ec1e80191a3f0aeabcf24ecca27fcd849cfb2fd0d5eb7956e90992432b3cae2"
+      },
+      "server_config": {
+        "files": {
+          "docker/client-compat/compose.yml": "c85c7b55aac33f0fa2bbd281ea3c34365a724ab1e71d79034969dd813de1dcd3",
+          "certification/bounded-roster/compose.candidate.yml": "176d14b8e8a5d0f8f5e953cec5c24127a9517db25893d4827fc7c1ac21c6f96b"
+        },
+        "sha256": "f66d14d60c6ab9969cc2ee9600986266280bb773d27002efc894c2826c2bc635"
+      },
+      "auth_profile": {
+        "files": {
+          "tests/python/shared/cert_auth.py": "1d1e9d14a20522c8534846c429352a34dded5c2f2f3bfa2e75527067d411f406",
+          "certification/bounded-roster/lib/rosterenv.py": "d7cd3b4fb07fa5a97c6cbc2fdcf3c2cbfd70ac7c5385a0aa17118713f992acd1"
+        },
+        "sha256": "7ae3e6d6a24e9cf767e8c7c467f87da85f274aba259d1ef052eeb68fc65d4958"
+      },
+      "authored_objects": {
+        "cog_sha256": "8f3d72c953f432497cd8a144c671cf3a097f901e3825dc759b64170baddd286e",
+        "zarr_objects": {
+          ".zgroup": "e1e1914ae531ecb50e1ead685ef01895a5452faf5f25f35cd78f1f5de1367470",
+          "latitude/.zarray": "159b18e604ab48cea80b2f2274717e29632bdbbabb7d3d713c39d081bc461c16",
+          "latitude/.zattrs": "ced1a0fc1f56e5c8390f04b5aae829641d7e8e7a53b477bfab8f1e388097d201",
+          "latitude/0": "c017ba8ba94c8edee88c8b4a3e758466099074ced6c4cf005f00e382bc14f7fb",
+          "longitude/.zarray": "159b18e604ab48cea80b2f2274717e29632bdbbabb7d3d713c39d081bc461c16",
+          "longitude/.zattrs": "b13ff37602459a92ebcd20d30339139de1b0a6d0e3d2a62bed41b6a8166db67a",
+          "longitude/0": "35fba6c431575754b5211c738d95136ab87f210fa14febe5b6d023e0f78a87ee",
+          "sea_surface_temperature/.zarray": "0cd21d87a9be948d88c37465dbef5e0949da1842fdc97129f2dbd2754ca0bc28",
+          "sea_surface_temperature/.zattrs": "60c1b79e31d41b3196b994b7afa127706f5f30b835f67e5852890f3df687c319",
+          "sea_surface_temperature/0.0.0": "7947b3bec9208b39812217b4991d315ace7d5bb73b791c52f52e3e5a9a056dff",
+          "sea_surface_temperature/1.0.0": "3900d9c2e24335deeb469ec50daf9e4e217054262e0b220ca35ee6f8fd5e4a8a",
+          "time/.zarray": "68ee4a0f7aba395b620e50fcb23c48b02d52f5e1aa68dd9aaea1fc5db2fa840f",
+          "time/.zattrs": "8e8748818689b314fd05809fca7e594a128ac3600df72833477945d0c7902e2d",
+          "time/0": "a0271b7d6d70c4433d64ef613201fb90cc1dc160d7cbcdc3f2de5c39c7431717"
+        }
+      },
+      "registrations": {
+        "cloud-rasters": [
+          {
+            "id": 1,
+            "layerId": 5000,
+            "name": "roster cog 5000",
+            "description": null,
+            "provider": "AwsS3",
+            "bucket": "roster-fixtures",
+            "objectKey": "cog/roster-3857.tif",
+            "width": null,
+            "height": null,
+            "bandCount": null,
+            "srid": null,
+            "compression": null,
+            "overviewLevelCount": null,
+            "metadataScannedAt": null,
+            "createdAt": "2026-09-21T09:44:43.534618+00:00"
+          },
+          {
+            "id": 2,
+            "layerId": 5001,
+            "name": "roster cog 5001",
+            "description": null,
+            "provider": "AwsS3",
+            "bucket": "roster-fixtures",
+            "objectKey": "cog/roster-3857.tif",
+            "width": null,
+            "height": null,
+            "bandCount": null,
+            "srid": null,
+            "compression": null,
+            "overviewLevelCount": null,
+            "metadataScannedAt": null,
+            "createdAt": "2026-09-21T09:44:43.555466+00:00"
+          }
+        ],
+        "zarr-stores": [
+          {
+            "id": 1,
+            "layerId": 5200,
+            "name": "roster zarr 5200",
+            "description": null,
+            "provider": "AwsS3",
+            "bucket": "roster-fixtures",
+            "rootPath": "zarr/roster-sst.zarr",
+            "zarrFormat": null,
+            "srid": null,
+            "variableCount": null,
+            "primaryVariable": null,
+            "variables": null,
+            "metadataScannedAt": null,
+            "createdAt": "2026-09-21T09:44:43.5647182+00:00"
+          },
+          {
+            "id": 2,
+            "layerId": 5201,
+            "name": "roster zarr 5201",
+            "description": null,
+            "provider": "AwsS3",
+            "bucket": "roster-fixtures",
+            "rootPath": "zarr/roster-sst.zarr",
+            "zarrFormat": null,
+            "srid": null,
+            "variableCount": null,
+            "primaryVariable": null,
+            "variables": null,
+            "metadataScannedAt": null,
+            "createdAt": "2026-09-21T09:44:43.5731944+00:00"
+          }
+        ]
+      }
+    },
+    "client": {
+      "client_version_detail": [
+        "GDAL 3.13.3 \"Iowa City\", released 2026/08/13"
+      ],
+      "lane": {
+        "gdal 3.8.4": {
+          "lane": "gdal-3.8.4",
+          "image": "honua-roster/lane-gdal:3.8.4",
+          "image_id": "sha256:aa158253e8c3ee174f36f74840c9188777631b314b708d88c52d237fa5585881",
+          "base_image": "ghcr.io/osgeo/gdal:ubuntu-small-3.8.4",
+          "base_repo_digests": "[\"ghcr.io/osgeo/gdal@sha256:60d3bc2f8b09ca1a7ef2db0239699b2c03713aa02be6e525e731c0020bbb10a4\"]"
+        },
+        "gdal 3.13.3": {
+          "lane": "gdal-3.13.3",
+          "image": "honua-roster/lane-gdal:3.13.3",
+          "image_id": "sha256:cfd743f3efe7458b5137fb9a9e13de4f5c2530794241a086374da876e76bab71",
+          "base_image": "ghcr.io/osgeo/gdal:ubuntu-full-3.13.3",
+          "base_repo_digests": ""
+        }
+      },
+      "lane_identity": null
+    },
+    "durable_uri": "https://github.com/honua-io/honua-server/blob/trunk/docs/internal/evidence/client-certification-1cd2ef5/receipts/gdal--gdal--3.13.3--raster-cloud-cog-serving--42ca2831.cert.json"
+  }
+}

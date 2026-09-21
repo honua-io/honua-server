@@ -1,0 +1,32 @@
+{
+  "lane": "maplibre",
+  "started_at": "2026-09-21T09:46:35.588190Z",
+  "python": "3.12.3",
+  "platform": "Linux-6.6.114.1-microsoft-standard-WSL2-x86_64-with-glibc2.39",
+  "cells": [
+    "maplibre_cells.wms_operation",
+    "maplibre_cells.wms_service",
+    "maplibre_cells.wmts_operation",
+    "maplibre_cells.tiles_tile",
+    "maplibre_cells.tiles_landing_tilesets",
+    "maplibre_cells.tiles_service",
+    "maplibre_cells.maps_service",
+    "maplibre_cells.styles_service",
+    "maplibre_cells.terrain"
+  ],
+  "excluded_cells": [
+    {
+      "test_case_id": "client-cert/maplibre-gl-js/wmts/serve.wmts",
+      "reason": "Not required by pinned release denominator .13 (release#351/#359, PR #361)"
+    }
+  ],
+  "packages": [
+    "greenlet==3.5.6",
+    "playwright==1.59.0",
+    "pyee==13.0.1",
+    "typing_extensions==4.16.0"
+  ],
+  "client_identity": "maplibre-5.7 5.7.3\nmaplibre-6.5.0 6.5.0\nee5fc05a0677eaf69601d2c7db0d9ecd6cc27c3abc1d0733bc9ed34707cf8ef2  maplibre-5.7/LICENSE.txt\n73f83dfc6c1657c9bea85d17e14924baf9658378c2f1aa6efd640191b8b1e14b  maplibre-5.7/maplibre-gl-csp-dev.js\n3b5d6147b30552d42c67a8fab4da3f155640e9008487197beac152ea839c51c0  maplibre-5.7/maplibre-gl-csp-dev.js.map\nce34bc249893b466fea20c021ebe8b7a686ebcb5c7441c392349dfc1281ac666  maplibre-5.7/maplibre-gl-csp-worker-dev.js\n113e73d0105c224c2a91ccd2fdc57bcb838e15b27ff5817fbf414f1764f52bd3  maplibre-5.7/maplibre-gl-csp-worker-dev.js.map\n50c2677e0289262d4cbf21086c171fa273e01f634e1eef90b3e0a5bb628ffe96  maplibre-5.7/maplibre-gl-csp-worker.js\n4b9a3e395fcc2d1cce2e4ed70f3f14ee63d2fbdf43f7a1d25b69aa40e0c8a9c6  maplibre-5.7/maplibre-gl-csp-worker.js.map\n1cfc43c1efc96199b5a76b055084a86a61682a8351ee6ed13ffd2271dfc882ee  maplibre-5.7/maplibre-gl-csp.js\ncc9781cadcc6898785f352f23ae05273cb06aad052c5d6df3da64e5e19307edd  maplibre-5.7/maplibre-gl-csp.js.map\n3e40e54c4d569d5c64ebce8be11a327a38800bccf932277fde30900d25e2d0fc  maplibre-5.7/maplibre-gl-dev.js\nf8d360165e26df24e6e4a2904f4102781f5ad3804ef664428acfc92ceb9fc833  maplibre-5.7/maplibre-gl-dev.js.map\n43c1d886b5fdf0aac4e7135bd6f84b823d9f48283a648012665f9be52c01389f  maplibre-5.7/maplibre-gl.css\n36f187bf9cd4f34df910c87f97f47966d48b886a84be759cf0967bd4aa11a9c8  maplibre-5.7/maplibre-gl.d.ts\n2986bbddce2c7a944775791201fad5108ec8768fc2e3243cac607b23826e4bc0  maplibre-5.7/maplibre-gl.js\n0021328a596ce87bde0ad7fc94399a36402b3e0c2696b95344d28912b4392505  maplibre-5.7/maplibre-gl.js.map\nf482453730c8fae57ddf51950ebd8664d9ffec4277216ebc070d63d0314b07fd  maplibre-5.7/package.json\nb04ee9fa13b0e7efca6e4d46d9e09d66f0dd2fa424be9926f554c149b148122a  maplibre-6.5.0/maplibre-gl-dev.mjs\n158557602d6d212de69ab339f80dbe9411501326580ab3e6a4ed0b498c234acf  maplibre-6.5.0/maplibre-gl-dev.mjs.map\n1f357d72fa4e940f0f56ce034f1cc0c4fb522271faac23bad6007106c8d720ea  maplibre-6.5.0/maplibre-gl-shared-dev.mjs\na4be628e72ac8eceefd612a74f03e6e25752b2ce41f8c3655a29c854077054c2  maplibre-6.5.0/maplibre-gl-shared-dev.mjs.map\n430178abe3dbf494342d2fd73feff41e9d39c0779034ec091a22a7a370dadb28  maplibre-6.5.0/maplibre-gl-shared.mjs\nb6cad3037aac7076f7061d8447f5d94b42c251dca02c97d1fb23569e9263d61f  maplibre-6.5.0/maplibre-gl-shared.mjs.map\n915d91c65c7097d7305a831cfa779b7b6c6419ff664559d63fe65d672a155a95  maplibre-6.5.0/maplibre-gl-worker-dev.mjs\n322fe7dfc3e3224225a4cc3ded2f72bc23b4f5ec794b29048632d169b68c2906  maplibre-6.5.0/maplibre-gl-worker-dev.mjs.map\ne250b93dd7970d44decfdcea5b7d806b59f25a54805145a2ab989eef8094083b  maplibre-6.5.0/maplibre-gl-worker.mjs\nd76b5602594c158cf9d52694a9adbd9cd34ffa42b0223ea2ae0ec57e4c2417d2  maplibre-6.5.0/maplibre-gl-worker.mjs.map\n8e2dbbab312dc57656fbb76e9fa5308c75c9d7c7ba5808a7d55bcdb64cc813fa  maplibre-6.5.0/maplibre-gl.css\n529a802e888d6576edfabe22f9dfb8ffa9fe3cda09894ba24bd58ee3b55bf9f2  maplibre-6.5.0/maplibre-gl.d.ts\nc28aad7f75e9afb91824440161fe03ce747bd08d4a21d96f4df25e9218513265  maplibre-6.5.0/maplibre-gl.mjs\n3d7c3bfdf3f1b306b439e07c867b71641a7f1f5f0effc31d70f3b6ee357b00b2  maplibre-6.5.0/maplibre-gl.mjs.map",
+  "finished_at": "2026-09-21T09:48:45.042138Z",
+  "harness_failures": []
+}

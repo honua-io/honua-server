@@ -1,0 +1,39 @@
+{
+  "lane": "qgis",
+  "started_at": "2026-09-21T09:45:18.590184Z",
+  "python": "3.13.7",
+  "platform": "Linux-6.6.114.1-microsoft-standard-WSL2-x86_64-with-glibc2.42",
+  "cells": [
+    "qgis_cells.featureserver",
+    "qgis_cells.mapserver",
+    "qgis_cells.oapif_landing",
+    "qgis_cells.oapif_conformance",
+    "qgis_cells.oapif_collections",
+    "qgis_cells.oapif_collection",
+    "qgis_cells.oapif_items",
+    "qgis_cells.oapif_item",
+    "qgis_cells.oapif_queryables",
+    "qgis_cells.oapif_transactions",
+    "qgis_cells.oapif_service",
+    "qgis_cells.ogc_features_simple",
+    "qgis_cells.tiles_landing_tilesets",
+    "qgis_cells.tiles_tile",
+    "qgis_cells.tiles_service",
+    "qgis_cells.wfs_operation",
+    "qgis_cells.wfs_service",
+    "qgis_cells.wms_operation",
+    "qgis_cells.wms_service",
+    "qgis_cells.wmts_operation",
+    "qgis_cells.maps_service",
+    "qgis_cells.styles_service"
+  ],
+  "excluded_cells": [
+    {
+      "test_case_id": "client-cert/qgis/wmts/serve.wmts",
+      "reason": "Not required by pinned release denominator .13 (release#351/#359, PR #361)"
+    }
+  ],
+  "client_identity": "3.44.13-Solothurn",
+  "finished_at": "2026-09-21T09:46:33.959521Z",
+  "harness_failures": []
+}
