@@ -811,7 +811,11 @@ public class ImageServerIdentifyHandlerTests
         SetupSuccessfulIdentify();
         using var json = await ExecuteIdentifyJsonAsync(new IdentifyRequest
         {
-            Geometry = "10,20", Sr = "4326", ReturnCatalogItems = returnCatalogItems, ReturnGeometry = false, F = "json"
+            Geometry = "10,20",
+            Sr = "4326",
+            ReturnCatalogItems = returnCatalogItems,
+            ReturnGeometry = false,
+            F = "json"
         });
         var root = json.RootElement;
         root.GetProperty("value").GetString().Should().Be("128, 64, 32");
@@ -865,7 +869,8 @@ public class ImageServerIdentifyHandlerTests
                 hasData ? 1022 : null, "temperature", null));
         using var json = await ExecuteIdentifyJsonAsync(new IdentifyRequest
         {
-            Geometry = "10,20", Sr = "4326",
+            Geometry = "10,20",
+            Sr = "4326",
             MultidimensionalDefinition = "[{\"variableName\":\"temperature\",\"dimensionName\":\"elevation\",\"values\":[333.3333]}]"
         });
         var root = json.RootElement;
