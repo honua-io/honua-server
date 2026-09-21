@@ -537,6 +537,7 @@
         "GET /ogc/maps",
         "GET /ogc/maps/conformance",
         "GET /ogc/maps/openapi.json",
+        "GET /ogc/maps/collections/{collectionId}",
         "GET /ogc/maps/collections/{collectionId}/map/tiles",
         "GET /ogc/maps/collections/{collectionId}/map/tiles/{tileMatrixSetId}"
       ],

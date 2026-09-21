@@ -44,6 +44,10 @@ public sealed class FilterExpressionService : IFilterExpressionService
                 _ => throw new NotSupportedException($"Unsupported filter language '{language}'.")
             };
 
+            // Each parser bounds the tree it returns; repeating the iterative check at the
+            // shared seam keeps that guarantee for any language added to the switch above,
+            // so no caller can walk a parsed tree that has not been bounded.
+            FilterParserGuard.EnsureExpressionTree(expression);
             return FilterParseResult.Success(expression);
         }
         catch (ArgumentException ex)

@@ -26,7 +26,7 @@ Work through this checklist before exposing Honua to the internet; each item is 
 - [ ] `ForwardedHeaders__Enabled=true` with `ForwardedHeaders__KnownProxies__0` listing each trusted hop, and `PUBLIC_BASE_URL=https://gis.example.com` so absolute links and `Location` headers carry the public hostname.
 - [ ] PostgreSQL connection string uses `SSL Mode=VerifyFull` (or at minimum `Require`) with `Trust Server Certificate=false`.
 - [ ] `Cors__AllowedOrigins__0..n` is an explicit allowlist of your apps' origins and `Cors__AllowCredentials=false` unless cookies are truly required.
-- [ ] Rate limiting is enforced at the edge (WAF/ALB/Application Gateway) — application-level rate limiting is deferred for MVP, so the server will not throttle for you.
+- [ ] Rate limiting is enforced at the edge (WAF/ALB/Application Gateway); the application limiter (`RateLimiting__Enabled`) is off by default and only supplements it.
 - [ ] `/api/v1/admin/*`, `/metrics`, and `/monitoring/*` are additionally restricted at the edge (network allowlist or VPN); they require admin auth in-app but should not be internet-reachable.
 - [ ] A CSP for any hosted UI is rolled out at the edge, report-only first — violations land on `POST /csp-violation-report`.
 

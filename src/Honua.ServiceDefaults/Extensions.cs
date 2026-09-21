@@ -231,7 +231,8 @@ public static partial class Extensions
                 if (useXRay)
                 {
                     tracing.AddXRayTraceId();
-                    Sdk.SetDefaultTextMapPropagator(new AWSXRayPropagator());
+                    // Qualified: the Honua.Sdk.* packages (#4599) put a Honua.Sdk namespace in scope.
+                    OpenTelemetry.Sdk.SetDefaultTextMapPropagator(new AWSXRayPropagator());
                 }
 
                 var resourceBuilder = ResourceBuilder.CreateDefault()

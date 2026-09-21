@@ -57,19 +57,6 @@ internal static class PlatformDeployAuthority
     }
 
     /// <summary>
-    /// Whether the principal holds one of the configured platform (multi-tenant) administrator roles
-    /// (honua-server#4958). This is the explicitly broader role that may act outside a recovery grant's
-    /// recorded actor/tenant binding.
-    /// </summary>
-    public static bool IsPlatformAdministrator(ClaimsPrincipal principal, TenantContextOptions? options)
-    {
-        ArgumentNullException.ThrowIfNull(principal);
-        options ??= new TenantContextOptions();
-        return principal.Identity?.IsAuthenticated == true &&
-            options.MultiTenantAdminRoles.Any(role => !string.IsNullOrWhiteSpace(role) && principal.IsInRole(role));
-    }
-
-    /// <summary>
     /// The principal's tenant binding, or null when it has none (honua-server#4958). Read from the same
     /// validated sources as <see cref="IsTenantBound"/> so a recovery grant's tenant can never be
     /// asserted by a request header. Returns null when tenant resolution is disabled, which keeps a

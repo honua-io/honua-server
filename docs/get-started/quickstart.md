@@ -20,9 +20,10 @@ Everything below is pinned so a run is reproducible: server
 [honua-sdk 0.1.11](https://pypi.org/project/honua-sdk/0.1.11/).
 
 For a lasting deployment, continue to
-[production Compose](../guides/deploy/docker-compose.md). If you would rather
-install the server as a native package than run a container, see
-[Linux](linux-packages.md) or [Windows](windows-packages.md).
+[production Compose](../guides/deploy/docker-compose.md). For a locked-down
+single-host install of the same pinned image and clients, with startup and
+recovery checks scripted, see [Linux](linux-packages.md) or
+[Windows](windows-packages.md).
 
 ## 1. Create the project
 

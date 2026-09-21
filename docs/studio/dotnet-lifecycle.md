@@ -29,8 +29,7 @@ var saved = await packages.GetVersionAsync(version.ItemId, version.VersionId);
 var reopened = await packages.ReopenVersionAsync(saved.ItemId, saved.VersionId);
 ```
 
-Use the exact request/model names from the installed SDK version; this snippet
-must not be treated as a published-package receipt. Publication methods exist,
-but a pending or rejected request has no public URL, and these docs do not
-claim the blocked end-to-end approval journey is ready. Track
+Use the request and model names from the installed SDK version. Publication
+methods exist, but a pending or rejected request has no public URL; the
+governed approval journey is not yet complete. Track
 [#3304](https://github.com/honua-io/honua-server/issues/3304).

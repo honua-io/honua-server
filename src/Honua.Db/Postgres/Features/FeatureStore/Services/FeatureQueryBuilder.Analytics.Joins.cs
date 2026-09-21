@@ -90,9 +90,17 @@ internal sealed partial class FeatureQueryBuilder
                 geometryStorageType, DatabaseSchema.GeometryColumn, targetQuery.SpatialReferenceSrid);
 
             // Target CTE — filtered subset of target layer with overflow guard.
+            // The target layer's field masks (#1940) are subtracted where the attributes
+            // enter the CTE, so the "attributes" output never carries a masked value.
+            // Without masks this is the bare column.
+            var targetAttributesSource = BuildMaskedAttributesColumn(
+                ResolveMaskedFields(targetQuery), ref paramIndex, parameters);
+
             sql.Append("WITH target_src AS (SELECT ");
             sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.ObjectIdColumn}, ");
-            sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.AttributesColumn}, ");
+            sql.Append(targetAttributesSource == DatabaseSchema.AttributesColumn
+                ? $"{DatabaseSchema.AttributesColumn}, "
+                : $"{targetAttributesSource} AS {DatabaseSchema.AttributesColumn}, ");
             sql.Append(CultureInfo.InvariantCulture, $"{targetGeometryOperand} AS geom");
             sql.Append(CultureInfo.InvariantCulture, $" FROM {_tableName}");
             sql.Append(CultureInfo.InvariantCulture, $" WHERE {DatabaseSchema.LayerIdColumn} = $1");

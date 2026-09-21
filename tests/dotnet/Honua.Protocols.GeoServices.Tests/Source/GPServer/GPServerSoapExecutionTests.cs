@@ -61,6 +61,20 @@ public sealed class GPServerSoapExecutionTests
         act.Should().Throw<GeoprocessingValidationException>();
     }
 
+    [Theory]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /services/{serviceId}/GPServer")]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("<Values/><Recurse>true</Recurse>", "SubmitJob does not accept the 'Recurse' argument.")]
+    [InlineData("<Values/><Values/>", "SubmitJob accepts only one 'Values' argument.")]
+    [InlineData("<Values/><Options><Densify>false</Densify></Options>", "Options does not accept the 'Densify' argument.")]
+    public void Submission_UnrecognisedOrRepeatedArgument_NamesTheElement(string arguments, string expected)
+    {
+        var act = () => GPServerSoapExecution.ReadSubmission(Submission(arguments), TaskInfo());
+        act.Should().Throw<GeoprocessingValidationException>().WithMessage(expected);
+    }
+
     [UnitTest]
     [Operation(Operations.Query)]
     [Endpoint("POST /services/{serviceId}/GPServer")]

@@ -298,17 +298,113 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
         descriptions.Should().OnlyContain(entry => entry.SoapUrl.StartsWith(publicBaseUrl, StringComparison.Ordinal));
     }
 
+    // Captured verbatim from ArcGIS Pro 3.7.1 adding an ArcGIS Server connection (#4973):
+    // the operation is qualified, its argument is unqualified (elementFormDefault="unqualified").
+    private const string ArcGisPro371GetServiceDescriptionsEx = """
+        <?xml version="1.0" encoding="utf-8" ?>
+        <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
+                       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                       xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+                       xmlns:tns="http://www.esri.com/schemas/ArcGIS/10.8">
+          <soap:Body>
+            <tns:GetServiceDescriptionsEx>
+              <FolderName></FolderName>
+            </tns:GetServiceDescriptionsEx>
+          </soap:Body>
+        </soap:Envelope>
+        """;
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptionsEx")]
+    [Endpoint("POST /services")]
+    public async Task PostSoapCatalog_ArcGisPro371CapturedGetServiceDescriptionsEx_ReturnsServiceDescriptions()
+    {
+        using var factory = CreateFactory(CreatePublicCatalog());
+        using var client = factory.CreateClient();
+        using var baseline = await PostSoapAsync(client);
+        var expected = ReadSoapEntries(XDocument.Parse(await baseline.Content.ReadAsStringAsync()));
+        expected.Should().NotBeEmpty();
+
+        using var content = new StringContent(ArcGisPro371GetServiceDescriptionsEx, Encoding.UTF8, "text/xml");
+        using var response = await client.PostAsync("/services", content);
+
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        var document = XDocument.Parse(body);
+        document.Descendants().Should().NotContain(element => element.Name.LocalName == "Fault");
+        document.Descendants(XName.Get("GetServiceDescriptionsExResponse", ArcGisSoapNamespace)).Should().ContainSingle();
+        ReadSoapEntries(document).Should().BeEquivalentTo(expected, options => options.WithStrictOrdering());
+    }
+
+    [IntegrationTheory]
+    [InlineData("tns-operation-unqualified-FolderName", "<tns:GetServiceDescriptionsEx><FolderName></FolderName></tns:GetServiceDescriptionsEx>", null)]
+    [InlineData("tns-operation-qualified-FolderName", "<tns:GetServiceDescriptionsEx><tns:FolderName></tns:FolderName></tns:GetServiceDescriptionsEx>", null)]
+    [InlineData("default-namespace-inherited-FolderName", "<GetServiceDescriptionsEx xmlns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><FolderName></FolderName></GetServiceDescriptionsEx>", null)]
+    [InlineData("default-namespace-inherited-folderName", "<GetServiceDescriptionsEx xmlns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><folderName></folderName></GetServiceDescriptionsEx>", null)]
+    [InlineData("tns-operation-unqualified-folderName", "<tns:GetServiceDescriptionsEx><folderName /></tns:GetServiceDescriptionsEx>", null)]
+    [InlineData("tns-operation-unqualified-FOLDERNAME", "<tns:GetServiceDescriptionsEx><FOLDERNAME /></tns:GetServiceDescriptionsEx>", null)]
+    [InlineData("legacy-9.0-operation-unqualified-FolderName", "<legacy:GetServiceDescriptionsEx xmlns:legacy=\"http://www.esri.com/schemas/ArcGIS/9.0\"><FolderName /></legacy:GetServiceDescriptionsEx>", null)]
+    [InlineData("tns-operation-no-arguments", "<tns:GetServiceDescriptionsEx />", null)]
+    [InlineData("default-namespace-folderName-and-Recurse", "<GetServiceDescriptionsEx xmlns=\"http://www.esri.com/schemas/ArcGIS/10.8\"><folderName /><Recurse>true</Recurse></GetServiceDescriptionsEx>", "GetServiceDescriptionsEx does not accept the 'Recurse' argument; its only argument is FolderName.")]
+    [InlineData("tns-operation-unqualified-Recurse", "<tns:GetServiceDescriptionsEx><Recurse>true</Recurse></tns:GetServiceDescriptionsEx>", "GetServiceDescriptionsEx does not accept the 'Recurse' argument; its only argument is FolderName.")]
+    [InlineData("tns-operation-two-FolderName", "<tns:GetServiceDescriptionsEx><FolderName /><tns:FolderName /></tns:GetServiceDescriptionsEx>", "GetServiceDescriptionsEx accepts at most one FolderName argument.")]
+    [Operation(Operations.GetMetadata)]
+    [InterfaceOperation(TestProtocols.GeoservicesCatalog, "GetServiceDescriptionsEx")]
+    [Endpoint("POST /services")]
+    public async Task PostSoapCatalog_GetServiceDescriptionsEx_BindsArgumentsByLocalName(
+        string form,
+        string operation,
+        string? expectedFault)
+    {
+        using var factory = CreateFactory(CreatePublicCatalog());
+        using var client = factory.CreateClient();
+        var request = $"""
+            <?xml version="1.0" encoding="utf-8" ?>
+            <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="{ArcGisSoapNamespace}">
+              <soap:Body>{operation}</soap:Body>
+            </soap:Envelope>
+            """;
+        using var content = new StringContent(request, Encoding.UTF8, "text/xml");
+
+        using var response = await client.PostAsync("/services", content);
+
+        var body = await response.Content.ReadAsStringAsync();
+        var document = XDocument.Parse(body);
+        if (expectedFault is null)
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.OK, $"{form}: {body}");
+            ReadSoapEntries(document).Should().NotBeEmpty(form);
+        }
+        else
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"{form}: {body}");
+            document.Descendants("faultstring").Should().ContainSingle(form).Which.Value.Should().Be(expectedFault, form);
+        }
+    }
+
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /services")]
-    public async Task GetSoapCatalog_WithoutWsdlFlag_ReturnsNotFound()
+    public async Task GetSoapCatalog_SiteRootAndWsdlForms_ReturnTheSameCatalogContract()
     {
         using var factory = CreateFactory(new RbacTestLayerCatalog());
         using var client = factory.CreateClient();
 
-        using var response = await client.GetAsync("/services");
+        using var wsdlResponse = await client.GetAsync("/services?wsdl");
+        using var siteRootResponse = await client.GetAsync("/services");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var wsdlBody = await wsdlResponse.Content.ReadAsStringAsync();
+        var siteRootBody = await siteRootResponse.Content.ReadAsStringAsync();
+        wsdlResponse.StatusCode.Should().Be(HttpStatusCode.OK, wsdlBody);
+        siteRootResponse.StatusCode.Should().Be(HttpStatusCode.OK, siteRootBody);
+        siteRootResponse.Content.Headers.ContentType?.MediaType.Should().Be("text/xml");
+        siteRootBody.Should().Be(wsdlBody);
+        var definitions = XDocument.Parse(siteRootBody).Root!;
+        definitions.Name.Should().Be(XName.Get("definitions", "http://schemas.xmlsoap.org/wsdl/"));
+        definitions.Descendants(XName.Get("operation", "http://schemas.xmlsoap.org/wsdl/"))
+            .Select(operation => operation.Attribute("name")?.Value)
+            .Should().Contain(["GetMessageVersion", "GetFolders", "GetServiceDescriptionsEx"]);
     }
 
     private static async Task AssertCatalogParityAsync(HttpClient client, string[] expectedNames)
@@ -496,6 +592,16 @@ public sealed class GeoservicesSoapCatalogDiscoveryTests
 
     private static string ChildValue(XElement parent, string localName)
         => parent.Elements().Single(element => element.Name.LocalName == localName).Value;
+
+    private static RbacTestLayerCatalog CreatePublicCatalog()
+    {
+        var publicPolicy = ServiceRbacTestFixture.CreateServiceMetadata(allowAnonymous: true);
+        return new RbacTestLayerCatalog(
+            alphaServiceMetadata: publicPolicy,
+            betaServiceMetadata: publicPolicy,
+            alphaLayerMetadata: publicPolicy,
+            betaLayerMetadata: publicPolicy);
+    }
 
     private static WebApplicationFactory<Program> CreateFactory(RbacTestLayerCatalog catalog)
         => ServiceRbacTestFixture.CreateFactory(

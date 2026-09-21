@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
 using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
@@ -341,6 +342,7 @@ internal static class DeployControlEndpoints
         CancellationToken cancellationToken)
     {
         var query = request.Query;
+        var redactRecoveryGrantIdentity = ShouldRedactRecoveryGrantIdentity(request.HttpContext);
 
         WorkflowOperationKind? kind = null;
         var rawKind = QueryFilterParsers.GetString(query, "kind");
@@ -399,7 +401,7 @@ internal static class DeployControlEndpoints
 
             var response = new DeployOperationListResponse
             {
-                Items = result.Items.Select(MapOperationResponse).ToArray(),
+                Items = result.Items.Select(item => MapOperationResponse(item, redactRecoveryGrantIdentity)).ToArray(),
                 Page = result.Page,
                 PageSize = result.PageSize,
                 TotalCount = result.TotalCount,
@@ -462,7 +464,9 @@ internal static class DeployControlEndpoints
                 operation = await deployWorkflowService.GetAsync(operationId, context.RequestAborted).ConfigureAwait(false) ?? operation;
             }
 
-            return Results.Json(MapOperationResponse(operation), DeployControlJsonContext.Default.DeployOperationResponse);
+            return Results.Json(
+                MapOperationResponse(operation, ShouldRedactRecoveryGrantIdentity(context)),
+                DeployControlJsonContext.Default.DeployOperationResponse);
         }
         catch (InvalidOperationException)
         {
@@ -631,7 +635,6 @@ internal static class DeployControlEndpoints
                 request,
                 ResolveRequestedBy(context),
                 PlatformDeployAuthority.ResolveTenantId(context.User, tenantOptions),
-                PlatformDeployAuthority.IsPlatformAdministrator(context.User, tenantOptions),
                 DateTimeOffset.UtcNow);
             if (fenceRefusal != null)
             {
@@ -983,6 +986,23 @@ internal static class DeployControlEndpoints
         };
 
     internal static DeployOperationResponse MapOperationResponse(WorkflowOperationRecord operation)
+        => MapOperationResponse(operation, redactRecoveryGrantIdentity: false);
+
+    /// <summary>
+    /// Whether a reader may see a recovery grant's sealed identity (<c>grantId</c>, <c>actor</c>,
+    /// <c>tenantId</c>). A principal without platform deploy authority can actuate no compensation, so it
+    /// has no use for those terms, and publishing them told a tenant-bound reader another tenant's grant
+    /// and the principal it is sealed to (honua-server#4987).
+    /// </summary>
+    internal static bool ShouldRedactRecoveryGrantIdentity(ClaimsPrincipal principal, TenantContextOptions? tenantOptions)
+        => !PlatformDeployAuthority.IsAuthorized(principal, tenantOptions);
+
+    private static bool ShouldRedactRecoveryGrantIdentity(HttpContext context)
+        => ShouldRedactRecoveryGrantIdentity(
+            context.User,
+            context.RequestServices.GetService<IOptions<TenantContextOptions>>()?.Value);
+
+    internal static DeployOperationResponse MapOperationResponse(WorkflowOperationRecord operation, bool redactRecoveryGrantIdentity)
         => new()
         {
             OperationId = operation.OperationId,
@@ -1003,10 +1023,12 @@ internal static class DeployControlEndpoints
             CreatedAt = operation.CreatedAt,
             UpdatedAt = operation.UpdatedAt,
             CompletedAt = operation.CompletedAt,
-            Protection = operation.Deploy?.Protection == null ? null : MapProtectionResponse(operation.Deploy.Protection)
+            Protection = operation.Deploy?.Protection == null
+                ? null
+                : MapProtectionResponse(operation.Deploy.Protection, redactRecoveryGrantIdentity)
         };
 
-    private static DeployProtectionResponse MapProtectionResponse(DeployProtectionState protection)
+    private static DeployProtectionResponse MapProtectionResponse(DeployProtectionState protection, bool redactRecoveryGrantIdentity)
         => new()
         {
             PreviousRevision = protection.PreviousRevision,
@@ -1016,9 +1038,9 @@ internal static class DeployControlEndpoints
             RecoveryDeadline = protection.RecoveryDeadline,
             PolicyDigest = protection.PolicyDigest,
             ApprovalScope = protection.ApprovalScope,
-            GrantId = protection.GrantId,
-            Actor = protection.Actor,
-            TenantId = protection.TenantId,
+            GrantId = redactRecoveryGrantIdentity ? null : protection.GrantId,
+            Actor = redactRecoveryGrantIdentity ? null : protection.Actor,
+            TenantId = redactRecoveryGrantIdentity ? null : protection.TenantId,
             PermittedCompensation = protection.PermittedCompensation,
             Phase = protection.Phase switch
             {

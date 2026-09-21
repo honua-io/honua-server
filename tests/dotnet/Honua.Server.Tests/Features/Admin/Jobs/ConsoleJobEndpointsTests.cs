@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -12,6 +13,8 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.ControlPlane;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -317,6 +320,85 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         {
             await gatedFixture.DisposeAsync();
         }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs")]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}")]
+    [Endpoint("POST /api/v1/admin/jobs/{jobId}/cancel")]
+    public async Task ListAndGetJob_ScopedAdminReadKeys_HonourReadGrantWithoutWideningExecute()
+    {
+        // Regression for #4981: admin:read (with or without admin:approve) must read
+        // durable jobs like every other admin GET, while cancel/retry (Execute) stays
+        // denied for a read-only scoped key. The shared class fixture runs with
+        // dev-auth bypass, which would authenticate any X-API-Key as full admin and
+        // never exercise a scoped key's real role/grants, so this stands up a
+        // dedicated gated fixture (HONUA_DEV_AUTH=false) with its own seeded job.
+        const string AdminPassword = "console-jobs-admin-bootstrap-key";
+        var jobStore = new InMemoryJobStore();
+        var now = DateTimeOffset.UtcNow;
+        jobStore.Set(CreateJob("job-scoped-read", ExecutionJobStatus.Succeeded, now.AddMinutes(-5), "corr-scoped-read") with
+        {
+            CompletedAt = now.AddMinutes(-3),
+            CurrentPhase = "Completed"
+        });
+
+        var gatedFixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            })
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IExecutionJobStore>();
+                services.AddSingleton<IExecutionJobStore>(jobStore);
+            });
+        await gatedFixture.InitializeAsync();
+        try
+        {
+            using var adminClient = gatedFixture.CreateClient(
+                client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+
+            var readKey = await CreateApiKeyAsync(adminClient, "console-jobs-read-only", ["admin:read"]);
+            var readApproveKey = await CreateApiKeyAsync(
+                adminClient, "console-jobs-read-approve", ["admin:read", "admin:approve"]);
+            var nonAdminKey = await CreateApiKeyAsync(adminClient, "console-jobs-write-only", ["write:parcels"]);
+
+            using var readClient = gatedFixture.CreateClient(
+                client => client.DefaultRequestHeaders.Add("X-API-Key", readKey.Key));
+            using var readApproveClient = gatedFixture.CreateClient(
+                client => client.DefaultRequestHeaders.Add("X-API-Key", readApproveKey.Key));
+            using var nonAdminClient = gatedFixture.CreateClient(
+                client => client.DefaultRequestHeaders.Add("X-API-Key", nonAdminKey.Key));
+
+            (await readClient.GetAsync("/api/v1/admin/jobs")).StatusCode.Should().Be(HttpStatusCode.OK);
+            (await readClient.GetAsync("/api/v1/admin/jobs/job-scoped-read")).StatusCode.Should().Be(HttpStatusCode.OK);
+
+            (await readApproveClient.GetAsync("/api/v1/admin/jobs")).StatusCode.Should().Be(HttpStatusCode.OK);
+            (await readApproveClient.GetAsync("/api/v1/admin/jobs/job-scoped-read")).StatusCode
+                .Should().Be(HttpStatusCode.OK);
+
+            (await nonAdminClient.GetAsync("/api/v1/admin/jobs")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+            var cancel = await readClient.PostAsync("/api/v1/admin/jobs/job-scoped-read/cancel", null);
+            cancel.StatusCode.Should().Be(HttpStatusCode.Forbidden, "a read-only scoped key must not execute job control actions");
+        }
+        finally
+        {
+            await gatedFixture.DisposeAsync();
+        }
+    }
+
+    private static async Task<AdminApiKeySecretResponse> CreateApiKeyAsync(
+        HttpClient client, string name, IReadOnlyList<string> permissions)
+    {
+        var response = await client.PostAsJsonAsync(
+            "/api/v1/admin/api-keys",
+            new CreateAdminApiKeyRequest { Name = name, Permissions = permissions });
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var result = await response.Content.ReadFromJsonAsync<ApiResponse<AdminApiKeySecretResponse>>();
+        return result!.Data!;
     }
 
     [IntegrationTest]

@@ -19,6 +19,7 @@ using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Identity.Abstractions;
 using Honua.Geoprocessing.CustomCode;
 using Honua.Geoprocessing.Execution;
@@ -611,6 +612,20 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             inheritsSubmitterSecurityContext,
             cancellationToken).ConfigureAwait(false);
 
+        // Protocol metadata lands on the same durable parameter bag the operator's workload
+        // definition, the server's own stamps and the compute backends use. Refuse request
+        // metadata in those namespaces here, in the shared path and before the approval lane can
+        // persist it, so no adapter can carry such a key into the job spec (SEC-8). Server-owned
+        // keys are stamped further down, after this check.
+        if (GeoprocessingReservedParameterPolicy.FindReservedKey(protocolMetadata, inheritsSubmitterSecurityContext)
+            is { } reservedKey)
+        {
+            var displayKey = LogValueRedactor.SanitizeForLog(reservedKey);
+            GeoprocessingServiceLog.ReservedMetadataKeyRejected(_logger, displayKey);
+            throw new GeoprocessingValidationException(
+                $"Job metadata key '{displayKey}' uses a parameter namespace reserved for the server and the workload definition.");
+        }
+
         // A custom-code job is param-driven (the user code runs in the Batch
         // container, not against the built-in process catalog), so it carries no
         // catalog process to validate; the customcode.* parameters are validated by
@@ -751,6 +766,9 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         var specParams = protocolMetadata != null
             ? new Dictionary<string, string>(protocolMetadata)
             : new Dictionary<string, string>();
+        // Remember which entries came from request metadata: every key added to the bag from
+        // here on is server-stamped, and the workload merge in BuildSpec treats the two differently.
+        var requestMetadataKeys = new HashSet<string>(specParams.Keys, StringComparer.Ordinal);
 
         // Phase 0/1 auth spine: pin the submitter's owner snapshot when the job
         // declares a custom-code resource scope. The declared scope is validated to
@@ -786,7 +804,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // Workflow-package and analysis-content runs forward caller parameters into protocol
         // metadata, so honouring admission.partitionKey/workspace.id/tenant.id from it let a caller
         // pick a fresh partition per request and escape its tenant's concurrency and cost limits.
-        // The admission keys are stamped server-side below; caller copies never reach the spec.
+        // The admission keys are stamped server-side below; caller copies never reach the spec
+        // (the reserved-namespace check above refuses them; the removal is kept as a backstop).
         var partitionKey = string.IsNullOrWhiteSpace(resolvedSecurityContext.TenantId)
             ? null
             : resolvedSecurityContext.TenantId;
@@ -852,7 +871,8 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
             var requiredRuntimeProfile = isCustomCode
                 ? CustomCodeJobContract.RuntimeProfile
                 : ResolveRequiredRuntimeProfile(plan, processCatalog);
-            var spec = BuildSpec(plan, specParams, workload, requiredRuntimeProfile, resourceProfile);
+            var spec = BuildSpec(
+                plan, specParams, requestMetadataKeys, workload, requiredRuntimeProfile, resourceProfile);
 
             jobRecord = new ExecutionJobRecord
             {
@@ -1601,6 +1621,7 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
     private static ExecutionJobSpec BuildSpec(
         AnalysisPlan plan,
         Dictionary<string, string> specParams,
+        HashSet<string> requestMetadataKeys,
         ExecutionJobDefinition? workload,
         string? requiredRuntimeProfile,
         GpResourceProfile resourceProfile)
@@ -1621,13 +1642,24 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         GeoprocessingSpecBuilder.ProjectPlanParameters(plan, specParams);
 
         // Project the per-job resource profile onto the batch.* params BEFORE merging the workload
-        // defaults: set-if-absent semantics make explicit request params win over the per-job
-        // profile, and the per-job profile win over the workload's baseline sizing.
+        // defaults: the profile already folds in any explicit gp.resource.* request values, and
+        // set-if-absent semantics below make it win over the workload's baseline sizing.
         resourceProfile.ProjectOnto(specParams);
 
         foreach (var kv in workload.Parameters)
         {
-            specParams.TryAdd(kv.Key, kv.Value);
+            if (requestMetadataKeys.Contains(kv.Key))
+            {
+                // The workload definition is authoritative for the parameters it declares: a
+                // request metadata entry of the same name never replaces the operator's value.
+                specParams[kv.Key] = kv.Value;
+            }
+            else
+            {
+                // Server-stamped entries (plan projection, per-job sizing, admission, custom-code
+                // injection) keep their precedence over the workload's baseline.
+                specParams.TryAdd(kv.Key, kv.Value);
+            }
         }
 
         return new ExecutionJobSpec

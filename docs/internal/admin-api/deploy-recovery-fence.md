@@ -1,6 +1,7 @@
 # Deploy rollback: the recovery fence
 
-*Internal admin-API contract. Implemented by honua-server#4958; consumed by honua-devops#191.*
+*Internal admin-API contract. Implemented by honua-server#4958, bound to the sealed principal by
+honua-server#4987; consumed by honua-devops#191.*
 
 ## What this is
 
@@ -24,17 +25,25 @@ carries, in addition to the pre-existing revision/deadline/digest fields:
 | field | meaning |
 | --- | --- |
 | `grantId` | Stable identity of this activation's recovery grant. Derived from the operation, target, prior+candidate revision pair, policy digest and exposure instant, so re-activating the same revisions mints a *different* grant. |
-| `actor` | Principal that requested the protected activation. The only principal the grant authorizes. |
-| `tenantId` | That principal's tenant binding, read from the validated identity. Absent on a single-tenant installation. |
+| `actor` | Principal that requested the protected activation. The only principal the grant authorizes — no role, platform or otherwise, widens it. |
+| `tenantId` | That principal's tenant binding, read from the validated identity. Absent on a single-tenant installation, or when the requesting principal had no tenant binding. |
 | `permittedCompensation` | The single compensation this window preauthorizes. Today always `restore-previous-revision`. |
 
 A client reads these from `GET /api/v1/admin/deploy/operations/{operationId}` and quotes them back. It
 never invents them.
 
+`grantId`, `actor` and `tenantId` are published only to readers that hold platform deploy authority
+(`PlatformDeployAuthority`: an untenanted principal, a single-tenant installation, or a tenant-bound
+principal with a `MultiTenancy:MultiTenantAdminRoles` role). A tenant-bound reader without that role can
+actuate no compensation, so the REST reads and the MCP deploy-operations tool return those three fields
+empty for it; every other protection field is unchanged.
+
 ## The fence body
 
-Every property below is optional. **A body that supplies none of them behaves exactly as it did before
-#4958**, which is what keeps existing callers and single-tenant installations working. A body that
+Every property below is optional. **A body that supplies none of them is still bound to the sealed
+principal** (see *Identity binding is not opt-in*): the sealed actor and tenant may send an unfenced
+rollback exactly as before #4958, which is what keeps existing callers and single-tenant installations
+working, and nobody else may. A body that
 supplies any of them is asserting a grant, and every supplied term is enforced — an unsatisfied term is a
 refusal, never a no-op.
 
@@ -49,16 +58,18 @@ POST /api/v1/admin/deploy/operations/{operationId}/rollback
   "expectedProtectionPhase": "observing",           // must equal protection.phase
   "grantId": "grant-...",                           // must equal protection.grantId
   "policyDigest": "A1B2...",                        // must equal protection.policyDigest
-  "actor": "ops-agent",                             // must equal the authenticated principal
-  "tenantId": "tenant-a",                           // must equal the caller's validated tenant
+  "actor": "ops-agent",                             // must equal the authenticated principal AND protection.actor
+  "tenantId": "tenant-a",                           // must equal the caller's validated tenant AND protection.tenantId
   "notAfter": "2026-09-16T06:10:00Z",               // refused once the server clock is past it
   "compensation": "restore-previous-revision"       // must equal protection.permittedCompensation
 }
 ```
 
 `actor` and `tenantId` are **cross-checks, not assertions**. They are compared against the validated
-identity; the request body can never *establish* either one. Declaring `"actor": "someone-else"` is a
-refusal, not an impersonation.
+identity *and* against the sealed grant; the request body can never *establish* either one. Declaring
+`"actor": "someone-else"` is a refusal, not an impersonation, and so is quoting another principal's
+`grantId`, revisions and digest under your own actor and tenant: the terms match the grant, the identity
+does not.
 
 Any property not listed above is refused. The request type disallows unmapped members, so a client that
 sends `expectedCurrentRevision` (a plausible-looking name this server does not implement) is told so
@@ -73,8 +84,8 @@ status transition, no caller-supplied reason durably recorded.
 | --- | --- | --- |
 | `recovery_fence_unknown_property` | 400 | the body carried a property this server does not implement, or could not be read |
 | `recovery_fence_protection_phase_unrecognized` | 400 | `expectedProtectionPhase` is not one of `observing`/`protected`/`recovering`/`expired`/`unavailable` |
-| `recovery_fence_actor_mismatch` | 403 | the caller is not `protection.actor`, or the declared `actor` is not the caller |
-| `recovery_fence_tenant_mismatch` | 403 | the caller's tenant is not `protection.tenantId`, or the declared `tenantId` is not the caller's |
+| `recovery_fence_actor_mismatch` | 403 | the caller is not `protection.actor`, or the declared `actor` is not the caller or not `protection.actor` |
+| `recovery_fence_tenant_mismatch` | 403 | the caller's tenant binding is not `protection.tenantId` (including a tenant-bound caller against a grant sealed without one), or the declared `tenantId` is not the caller's or not `protection.tenantId` |
 | `recovery_fence_compensation_not_permitted` | 403 | `compensation` is not `protection.permittedCompensation` |
 | `recovery_fence_target_mismatch` | 409 | `targetId` is not the operation's target |
 | `recovery_fence_protection_window_absent` | 409 | grant terms were declared but the operation has no protection window |
@@ -90,10 +101,20 @@ client formatting artifact, not a different grant.
 
 ## Identity binding is not opt-in
 
-The actor and tenant checks against the *sealed* pair run whether or not the caller supplied a fence.
-Once an activation has recorded an actor, only that actor — or a principal holding one of the configured
-platform-administrator roles (`MultiTenancy:MultiTenantAdminRoles`) — may actuate its compensation. A
-foreign principal cannot escape the binding by staying silent.
+The actor and tenant checks against the *sealed* pair run whether or not the caller supplied a fence, and
+they run for every caller. Once an activation has recorded an actor, only that actor, bound to the recorded
+tenant, may actuate its compensation. A foreign principal cannot escape the binding by staying silent.
+
+A platform-administrator role (`MultiTenancy:MultiTenantAdminRoles`) is **not** an exemption. Before
+#4987 it was, and because `PlatformDeployAuthority` requires that role of every tenant-bound principal that
+reaches the deploy surface, the exemption swallowed the binding: another tenant's platform administrator
+was admitted against a sealed grant, both with a complete fence declaring its own identity and with no
+fence at all. There is no break-glass override on this endpoint. When the sealed principal is unavailable,
+the protection window's own server-owned recovery (the reconciler's telemetry-driven rollback) still runs,
+and a new protected deploy by the operator seals a new grant to them.
+
+The tenant binding is compared in both directions: a grant sealed without a tenant is not actuatable by a
+tenant-bound caller that happens to share the actor name.
 
 On a single-tenant installation (`MultiTenancy:Enabled=false`) no tenant is ever resolved or recorded, so
 the fence there is purely actor-bound and no rollback is ever refused for a tenant reason.
