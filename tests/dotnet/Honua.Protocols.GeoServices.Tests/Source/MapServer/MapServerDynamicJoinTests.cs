@@ -77,9 +77,8 @@ public sealed class MapServerDynamicJoinTests
         using var document = JsonDocument.Parse(content);
         var results = document.RootElement.GetProperty("results");
         results.GetArrayLength().Should().BeGreaterThan(0, content);
-        foreach (var result in results.EnumerateArray())
+        foreach (var attributes in results.EnumerateArray().Select(result => result.GetProperty("attributes")))
         {
-            var attributes = result.GetProperty("attributes");
             attributes.GetProperty("right_parcels.day").GetString().Should().Be("2024-02-29");
             attributes.GetProperty("right_parcels.timestamp").GetInt64().Should().Be(epoch);
             attributes.GetProperty("right_parcels.nullable_day").ValueKind.Should().Be(JsonValueKind.Null);
