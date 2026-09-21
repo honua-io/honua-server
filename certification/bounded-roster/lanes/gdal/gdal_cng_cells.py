@@ -10,6 +10,8 @@ serves both GDAL lane images.
 """
 from __future__ import annotations
 
+import json
+
 from osgeo import gdal, ogr
 
 import gdalkit
@@ -93,6 +95,61 @@ def flatgeobuf() -> None:
         expect(code == "4326", code)
         expect(harbor_xy == (-122.4194, 37.7749), harbor_wkt)
         c.detail = f"EPSG:{code}, data axis mapping {mapping}; Harbor City {harbor_wkt}; Dateline Post x=179.5 stays in range"
+    cell.write()
+
+
+def geoparquet() -> None:
+    """Compare decoded features and GeoParquet metadata with the SQL fixture."""
+    cell = Cell("client-cert/gdal/geoparquet/feature-read", client_version_detail=CLIENT_DETAIL,
+                protocol_version="GeoParquet 1.1", protocol_profile="FeatureServer query f=parquet")
+    target = url("/rest/services/cng/FeatureServer/1000/query?where=1%3D1&outFields=*&f=parquet")
+    cell.primary_request_url = target
+    expected_attributes = {
+        "Harbor City": ("city", 1000000, 0.91, True),
+        "Baytown": ("city", 430000, 0.42, True),
+        "Meridian Marker": ("reference", 0, 0.0, False),
+        "Equator Station": ("reference", 0, 0.5, True),
+        "Dateline Post": ("reference", 0, 0.75, False),
+        "Polar Outpost": ("reference", 0, 0.1, True),
+    }
+    for facet in ("positive", "metadata", "media-schema"):
+        with cell.check(facet, "decode GeoParquet using the GDAL Parquet driver") as check:
+            with gdalkit.session(None, **TIMEOUT):
+                dataset = gdal.OpenEx(_vsicurl(target), gdal.OF_VECTOR, allowed_drivers=["Parquet"])
+                expect(dataset is not None, "Parquet driver could not open the response")
+                layer = dataset.GetLayer(0)
+                if facet == "positive":
+                    actual = {}
+                    for feature in layer:
+                        geometry = feature.GetGeometryRef()
+                        name = feature.GetField("name")
+                        expect(geometry is not None and geometry.GetGeometryName() == "POINT", name)
+                        expect(geometry.GetCoordinateDimension() == 2, name)
+                        actual[name] = (round(geometry.GetX(), 6), round(geometry.GetY(), 6))
+                        attrs = tuple(feature.GetField(k) for k in ("category", "population", "ratio", "active"))
+                        expect(attrs == expected_attributes[name], f"{name}: {attrs}")
+                    expect(actual == CNG_FEATURES and layer.GetFeatureCount() == 6, str(actual))
+                    check.detail = f"six SQL-fixture points and scalar attributes: {actual}"
+                elif facet == "metadata":
+                    raw = layer.GetMetadataItem("geo", "_PARQUET_METADATA_")
+                    expect(raw is not None, "missing GeoParquet geo metadata")
+                    geo = json.loads(raw)
+                    expect(geo["version"] == "1.1.0" and geo["primary_column"] == "geometry", str(geo))
+                    column = geo["columns"]["geometry"]
+                    expect(column["encoding"] == "WKB", str(column))
+                    expect(column["bbox"] == [-122.4194, 0.0, 179.5, 86.0], str(column))
+                    expect(layer.GetSpatialRef().GetAuthorityCode(None) == "4326", str(column))
+                    check.detail = raw
+                else:
+                    fields = layer.GetLayerDefn()
+                    types = {fields.GetFieldDefn(i).GetName(): fields.GetFieldDefn(i).GetTypeName()
+                             for i in range(fields.GetFieldCount())}
+                    expect(types.get("name") == "String" and types.get("population", "").startswith("Integer")
+                           and types.get("ratio") == "Real" and types.get("observed_at") == "DateTime", str(types))
+                    expect(layer.GetGeomType() == ogr.wkbPoint, str(layer.GetGeomType()))
+                    check.detail = str(types)
+                layer = None
+                dataset = None
     cell.write()
 
 
@@ -246,4 +303,4 @@ def multidim() -> None:
 if VERSION.startswith("3.8."):
     CELLS = (flatgeobuf, cog_dataset_read)
 else:
-    CELLS = (cog_serving, multidim)
+    CELLS = (geoparquet, cog_serving, multidim)

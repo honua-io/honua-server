@@ -89,7 +89,7 @@ services:
       context: ${ROSTER_HOME:?set ROSTER_HOME}
       dockerfile: lanes/gdal/Dockerfile
       args:
-        GDAL_IMAGE: ghcr.io/osgeo/gdal:ubuntu-small-3.13.3
+        GDAL_IMAGE: ghcr.io/osgeo/gdal:ubuntu-full-3.13.3
     image: honua-roster/lane-gdal:3.13.3
     environment: *lane-env
     volumes: *lane-volumes

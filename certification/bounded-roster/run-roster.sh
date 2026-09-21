@@ -176,13 +176,13 @@ fixture = {"fixture": digest_set(seeds), "server_config": digest_set(config), "a
 lanes = {"lanes": {}, "by_client_lane": {}}
 for lane, image, base in (("python", "honua-roster/lane-python:local", "python:3.12-slim-bookworm"),
                           ("gdal-3.8.4", "honua-roster/lane-gdal:3.8.4", "ghcr.io/osgeo/gdal:ubuntu-small-3.8.4"),
-                          ("gdal-3.13.3", "honua-roster/lane-gdal:3.13.3", "ghcr.io/osgeo/gdal:ubuntu-small-3.13.3"),
+                          ("gdal-3.13.3", "honua-roster/lane-gdal:3.13.3", "ghcr.io/osgeo/gdal:ubuntu-full-3.13.3"),
                           ("qgis", "honua-roster/lane-qgis:3.44.13", "qgis/qgis:3.44.13"),
                           ("maplibre", "honua-roster/lane-maplibre:local", "mcr.microsoft.com/playwright:v1.59.1-noble")):
     lanes["lanes"][lane] = {"lane": lane, "image": image, "image_id": inspect(image, "{{.Id}}"),
                             "base_image": base, "base_repo_digests": inspect(base, "{{json .RepoDigests}}")}
 for client_lane, lane in (("py-owslib", "python"), ("py-pystac", "python"), ("desktop-qgis", "qgis"), ("js-maplibre", "maplibre"),
-                          ("gdal-cog", "gdal-3.8.4"), ("gdal-flatgeobuf", "gdal-3.8.4"), ("gdal-geoparquet", None)):
+                          ("gdal-cog", "gdal-3.8.4"), ("gdal-flatgeobuf", "gdal-3.8.4"), ("gdal-geoparquet", "gdal-3.13.3")):
     lanes["by_client_lane"][client_lane] = lanes["lanes"].get(lane)
 lanes["by_client_lane"]["gdal"] = {"gdal 3.8.4": lanes["lanes"]["gdal-3.8.4"], "gdal 3.13.3": lanes["lanes"]["gdal-3.13.3"]}
 (run / "candidate.json").write_text(json.dumps(candidate, indent=2) + "\n")
