@@ -31,17 +31,20 @@ internal sealed class MySqlFeatureStore :
     private readonly IFeatureDataAccess _dataAccess;
     private readonly IMetadataV2GraphProvider? _v2Provider;
     private readonly IFilterExpressionService? _filterExpressionService;
+    private readonly LayerReadSecurityResolver? _readSecurity;
 
     public MySqlFeatureStore(
         IFeatureQueryBuilder queryBuilder,
         IFeatureDataAccess dataAccess,
         IMetadataV2GraphProvider? v2Provider = null,
-        IFilterExpressionService? filterExpressionService = null)
+        IFilterExpressionService? filterExpressionService = null,
+        LayerReadSecurityResolver? readSecurity = null)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _v2Provider = v2Provider;
         _filterExpressionService = filterExpressionService;
+        _readSecurity = readSecurity;
     }
 
     /// <inheritdoc />
@@ -235,6 +238,10 @@ internal sealed class MySqlFeatureStore :
         // ORDER BY when LIMIT or OFFSET is set without a caller-supplied OrderBy — every
         // page query below has Limit set, so each emitted SELECT is deterministically
         // ordered without the store doing any extra bookkeeping.
+        // Stamp the layer's permanent filter once so every page query carries it, and refuse
+        // the stream when a policy applies that this provider cannot enforce.
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+
         var effectiveBatchSize = batchSize > 0 ? batchSize : DefaultStreamingPageSize;
         var requestedLimit = query.Limit;
         var startOffset = query.Offset ?? 0;
@@ -296,14 +303,28 @@ internal sealed class MySqlFeatureStore :
             "Streaming GML features is not supported by the MySQL/MariaDB provider in this slice.");
 
     /// <summary>
-    /// Resolves and applies the layer's permanent (row-visibility) filter to the query.
-    /// Idempotent: queries already carrying an enforced filter are returned unchanged.
+    /// Refuses the read when a row-level security or field-mask policy applies to the request:
+    /// this provider translates the layer's permanent filter but applies neither of those.
+    /// </summary>
+    private Task EnsureRowAndFieldPolicyEnforceableAsync(int layerId, CancellationToken cancellationToken)
+        => _readSecurity is null
+            ? Task.CompletedTask
+            : _readSecurity.EnsureNoUnenforcedPolicyAsync(
+                "MySQL/MariaDB", layerId, boundResource: null, rejectPermanentFilter: false, cancellationToken);
+
+    /// <summary>
+    /// Resolves and applies the layer's permanent (row-visibility) filter to the query, after
+    /// refusing the read when a row-level security or field-mask policy applies that this
+    /// provider cannot enforce. The permanent filter step is idempotent: queries already
+    /// carrying an enforced filter are returned unchanged.
     /// </summary>
     private async Task<FeatureQuery> ApplyPermanentFilterAsync(
         int layerId,
         FeatureQuery query,
         CancellationToken cancellationToken)
     {
+        await EnsureRowAndFieldPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
+
         if (query.EnforcedSqlFilter != null)
         {
             return query;

@@ -121,29 +121,14 @@ public sealed class FeatureProviderQueryRouter
             var resolvedStorageLayerId = storageBinding.StorageLayerId ?? storageLayerId;
             var storageMapping = FeatureStorageMapping.FromMetadata(resource, storageBinding);
 
-            DataConnection? connection = null;
-            var providerName = _defaultProviderName;
-
-            var v2Connection = snapshot.ResolveConnection(storageBinding);
-            if (v2Connection != null)
+            var (connection, providerName, missingConnectionId) = await ResolveProviderNameAsync(
+                snapshot,
+                storageBinding,
+                cancellationToken).ConfigureAwait(false);
+            if (providerName is null)
             {
-                connection = await _connectionRegistry
-                    .GetConnectionAsync(v2Connection.Metadata.Id, cancellationToken)
-                    .ConfigureAwait(false);
-
-                if (connection != null)
-                {
-                    providerName = connection.NormalizedProvider;
-                }
-                else if (!string.IsNullOrWhiteSpace(v2Connection.Provider))
-                {
-                    providerName = DataProviderNames.Normalize(v2Connection.Provider!);
-                }
-                else
-                {
-                    throw new InvalidOperationException(
-                        $"Connection '{v2Connection.Metadata.Id}' for publication '{publication.Metadata.Id}' on service '{service.Metadata.Id}' was not found.");
-                }
+                throw new InvalidOperationException(
+                    $"Connection '{missingConnectionId}' for publication '{publication.Metadata.Id}' on service '{service.Metadata.Id}' was not found.");
             }
 
             if (!_providerRegistry.TryGetProvider(providerName, out var provider))
@@ -172,6 +157,63 @@ public sealed class FeatureProviderQueryRouter
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Resolves the provider that serves reads of <paramref name="storageBinding"/>, using the
+    /// same connection-to-provider rules as <see cref="ResolveBindingAsync"/>. A binding without
+    /// a connection (or a <see langword="null"/> binding) is served by the default provider.
+    /// </summary>
+    /// <param name="snapshot">Current metadata V2 graph snapshot.</param>
+    /// <param name="storageBinding">Storage binding to resolve, or <see langword="null"/> for
+    /// the default provider.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The serving provider, or <see langword="null"/> when the binding's connection
+    /// or provider cannot be resolved (reads of such a binding are refused by the router).</returns>
+    public async Task<IFeatureDataProvider?> TryResolveProviderAsync(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2StorageBinding? storageBinding,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        var providerName = _defaultProviderName;
+        if (storageBinding is not null)
+        {
+            var resolved = await ResolveProviderNameAsync(snapshot, storageBinding, cancellationToken).ConfigureAwait(false);
+            if (resolved.ProviderName is null)
+            {
+                return null;
+            }
+
+            providerName = resolved.ProviderName;
+        }
+
+        return _providerRegistry.TryGetProvider(providerName, out var provider) ? provider : null;
+    }
+
+    private async Task<(DataConnection? Connection, string? ProviderName, string? MissingConnectionId)> ResolveProviderNameAsync(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2StorageBinding storageBinding,
+        CancellationToken cancellationToken)
+    {
+        var v2Connection = snapshot.ResolveConnection(storageBinding);
+        if (v2Connection == null)
+        {
+            return (null, _defaultProviderName, null);
+        }
+
+        var connection = await _connectionRegistry
+            .GetConnectionAsync(v2Connection.Metadata.Id, cancellationToken)
+            .ConfigureAwait(false);
+        if (connection != null)
+        {
+            return (connection, connection.NormalizedProvider, null);
+        }
+
+        return string.IsNullOrWhiteSpace(v2Connection.Provider)
+            ? (null, null, v2Connection.Metadata.Id)
+            : (null, DataProviderNames.Normalize(v2Connection.Provider!), null);
     }
 
     private static void EnsureOperationSupported(

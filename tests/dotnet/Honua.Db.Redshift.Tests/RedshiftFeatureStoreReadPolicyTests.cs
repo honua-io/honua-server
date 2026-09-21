@@ -1,177 +1,28 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Data.Common;
 using System.Globalization;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
-using Honua.Snowflake.Features.FeatureStore;
-using Honua.Snowflake.Features.FeatureStore.Services;
+using Honua.Db.Redshift.Features.FeatureStore;
+using Honua.Db.Redshift.Features.FeatureStore.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Npgsql;
 
-namespace Honua.Snowflake.Tests;
+namespace Honua.Db.Redshift.Tests;
 
 /// <summary>
-/// Verifies that the Snowflake provider plugs into the shared Metadata v2 provider seam:
-/// it is discoverable by canonical name and aliases, advertises read-only capabilities,
-/// and resolves through <see cref="FeatureProviderQueryRouter"/> for source-backed publications
-/// whose connection selects the Snowflake engine. These tests run in normal CI; no live warehouse.
+/// Verifies read-policy parity for the Redshift provider: a bound reader refuses a read when a
+/// permanent filter, row-level security predicate or field mask applies to the layer (the
+/// provider applies none of them), and reads exactly as before when nothing resolves.
 /// </summary>
-public class SnowflakeProviderResolutionTests
+public class RedshiftFeatureStoreReadPolicyTests
 {
     private const int LayerId = 1;
-
-    [Theory]
-    [InlineData("snowflake")]
-    [InlineData("snowflakedb")]
-    [InlineData("Snowflake")]
-    public void Registry_ResolvesProviderByCanonicalNameAndAliases(string providerName)
-    {
-        var provider = CreateStore();
-        var registry = new FeatureDataProviderRegistry([provider]);
-
-        Assert.True(registry.TryGetProvider(providerName, out var resolved));
-        Assert.Same(provider, resolved);
-    }
-
-    [Fact]
-    public void Capabilities_AreReadOnlyWithNativeOutputsDisabled()
-    {
-        var provider = CreateStore();
-
-        var caps = provider.Capabilities;
-
-        Assert.Equal(DataProviderNames.Snowflake, provider.ProviderName);
-        Assert.True(caps.SupportsQuery);
-        Assert.True(caps.SupportsCount);
-        Assert.True(caps.SupportsExtent);
-        Assert.False(caps.SupportsStatistics);
-        Assert.Equal(FeatureProviderEditCapabilities.ReadOnly, caps.Edits);
-        Assert.False(caps.Outputs.SupportsStreamingGeoJson);
-        Assert.False(caps.Outputs.SupportsNativeMvt);
-        Assert.False(caps.Outputs.SupportsNativeFlatGeobuf);
-        Assert.False(caps.Outputs.SupportsNativeGeobuf);
-        Assert.False(caps.Outputs.SupportsNativeGml);
-        Assert.Null(provider.Writer);
-    }
-
-    [Fact]
-    public async Task QueryStatistics_OnSnowflakeProvider_Throws()
-    {
-        var provider = CreateStore();
-        await Assert.ThrowsAsync<NotSupportedException>(
-            () => provider.Reader.QueryStatisticsAsync(LayerId, new FeatureQuery()));
-    }
-
-    [Fact]
-    public async Task QueryTopFeatures_OnSnowflakeProvider_Throws()
-    {
-        var provider = CreateStore();
-        await Assert.ThrowsAsync<NotSupportedException>(
-            () => provider.Reader.QueryTopFeaturesAsync(LayerId, new FeatureQuery()));
-    }
-
-    [Fact]
-    public async Task GetTemporalExtent_OnSnowflakeProvider_Throws()
-    {
-        var provider = CreateStore();
-        await Assert.ThrowsAsync<NotSupportedException>(
-            () => provider.Reader.GetTemporalExtentAsync(LayerId, "ts", TemporalPropertyType.DateTime));
-    }
-
-    [Fact]
-    public async Task DefaultReader_WithoutMetadataV2Binding_ThrowsClearError()
-    {
-        var provider = CreateStore();
-
-        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
-            () => provider.Reader.CountAsync(LayerId, new FeatureQuery()));
-
-        Assert.Contains("Metadata v2 provider binding", exception.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task FlatGeobuf_ReturnsNull_FallsBackToFormatter()
-    {
-        var provider = CreateStore();
-
-        var payload = await provider.Reader.QueryFlatGeobufAsync(LayerId, new FeatureQuery());
-
-        Assert.Null(payload);
-    }
-
-    [Fact]
-    public async Task CreateReaderForBinding_WithDataConnection_PassesItToConnectionFactory()
-    {
-        var connectionId = Guid.NewGuid();
-        var dataConnection = new DataConnection
-        {
-            ConnectionId = connectionId,
-            Provider = DataProviderNames.Snowflake,
-            Name = "secure",
-            Host = "xy12345.us-east-1",
-            DatabaseName = "ANALYTICS",
-            Username = "reader"
-        };
-
-        var factory = new RecordingConnectionFactory();
-        var provider = CreateStore(factory);
-        var reader = ((IBindableFeatureDataProvider)provider)
-            .CreateReaderForBinding(CreateBinding(provider, dataConnection));
-
-        Assert.NotSame(provider, reader);
-
-        await Assert.ThrowsAsync<RecordingConnectionFactory.SentinelException>(
-            () => reader.CountAsync(LayerId, new FeatureQuery()));
-
-        Assert.NotNull(factory.LastDataConnection);
-        Assert.Equal(connectionId, factory.LastDataConnection!.ConnectionId);
-    }
-
-    [Fact]
-    public async Task QueryRouter_RoutesSnowflakeConnection_ThroughBindableSeam()
-    {
-        var connectionId = Guid.NewGuid();
-        var dataConnection = new DataConnection
-        {
-            ConnectionId = connectionId,
-            Provider = DataProviderNames.Snowflake,
-            Name = "secure",
-            Host = "xy12345.us-east-1",
-            DatabaseName = "ANALYTICS",
-            Username = "reader"
-        };
-
-        var factory = new RecordingConnectionFactory();
-        var provider = CreateStore(factory);
-        var providerRegistry = new FeatureDataProviderRegistry([provider]);
-        var router = new FeatureProviderQueryRouter(
-            new FakeSecureConnectionRegistry(dataConnection),
-            providerRegistry,
-            DataProviderNames.Snowflake);
-        var (snapshot, service, resource, publication) = CreateSnapshot(connectionId);
-
-        var reader = await router.ResolveReaderAsync(
-            snapshot,
-            service,
-            resource,
-            publication,
-            LayerId,
-            FeatureProviderReadOperation.Count);
-
-        Assert.NotSame(provider, reader);
-
-        await Assert.ThrowsAsync<RecordingConnectionFactory.SentinelException>(
-            () => reader.CountAsync(LayerId, new FeatureQuery()));
-
-        Assert.NotNull(factory.LastDataConnection);
-        Assert.Equal(connectionId, factory.LastDataConnection!.ConnectionId);
-    }
 
     public static TheoryData<string> ReadOperations => new() { "get", "query", "ids", "count", "extent", "estimates" };
 
@@ -190,7 +41,7 @@ public class SnowflakeProviderResolutionTests
         var exception = await Assert.ThrowsAsync<NotSupportedException>(() => InvokeReadAsync(reader, operation));
 
         Assert.Contains("row-level security", exception.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Snowflake", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Redshift", exception.Message, StringComparison.Ordinal);
         Assert.False(factory.WasCalled);
     }
 
@@ -209,7 +60,7 @@ public class SnowflakeProviderResolutionTests
         var exception = await Assert.ThrowsAsync<NotSupportedException>(() => InvokeReadAsync(reader, operation));
 
         Assert.Contains("field-mask", exception.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Snowflake", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Redshift", exception.Message, StringComparison.Ordinal);
         Assert.False(factory.WasCalled);
     }
 
@@ -228,7 +79,7 @@ public class SnowflakeProviderResolutionTests
         var exception = await Assert.ThrowsAsync<NotSupportedException>(() => InvokeReadAsync(reader, operation));
 
         Assert.Contains("permanent", exception.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("Snowflake", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("Redshift", exception.Message, StringComparison.Ordinal);
         Assert.False(factory.WasCalled);
     }
 
@@ -252,7 +103,7 @@ public class SnowflakeProviderResolutionTests
     }
 
     private static IFeatureReader CreateBoundReader(
-        ISnowflakeConnectionFactory factory,
+        IRedshiftConnectionFactory factory,
         LayerReadSecurityResolver readSecurity,
         string? permanentFilterExpression = null)
     {
@@ -287,7 +138,7 @@ public class SnowflakeProviderResolutionTests
         _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null)
     };
 
-    private static FeatureProviderBinding CreateBinding(SnowflakeFeatureStore provider, DataConnection? connection)
+    private static FeatureProviderBinding CreateBinding(RedshiftFeatureStore provider, DataConnection? connection)
     {
         var (snapshot, service, resource, publication) = CreateSnapshot(connection?.ConnectionId ?? Guid.NewGuid());
         var storageBinding = snapshot.ResolveStorageBinding(publication)
@@ -305,7 +156,7 @@ public class SnowflakeProviderResolutionTests
     }
 
     private static (MetadataV2GraphSnapshot Snapshot, MetadataV2Service Service, MetadataV2Resource Resource, MetadataV2Publication Publication)
-        CreateSnapshot(Guid connectionId, string providerAlias = DataProviderNames.Snowflake)
+        CreateSnapshot(Guid connectionId, string providerAlias = DataProviderNames.Redshift)
     {
         var service = new MetadataV2Service
         {
@@ -348,7 +199,7 @@ public class SnowflakeProviderResolutionTests
             ResourceId = resource.Metadata.Id,
             ConnectionId = connectionId.ToString(),
             StorageType = MetadataV2StorageType.RelationalTable,
-            Locator = "ANALYTICS.PUBLIC.PARCELS",
+            Locator = "public.parcels",
             StorageLayerId = LayerId
         };
         var metadataConnection = new MetadataV2Connection
@@ -378,17 +229,16 @@ public class SnowflakeProviderResolutionTests
         return (new MetadataV2GraphSnapshot(graph, "test", DateTimeOffset.UtcNow), service, resource, publication);
     }
 
-    private static SnowflakeFeatureStore CreateStore(
-        ISnowflakeConnectionFactory? factory = null,
-        LayerReadSecurityResolver? readSecurity = null)
+    private static RedshiftFeatureStore CreateStore(
+        IRedshiftConnectionFactory factory,
+        LayerReadSecurityResolver? readSecurity)
     {
-        var connectionFactory = factory ?? new ThrowingConnectionFactory();
-        var dataAccess = new SnowflakeFeatureDataAccess(
-            connectionFactory,
-            Options.Create(new SnowflakeOptions()),
-            NullLogger<SnowflakeFeatureDataAccess>.Instance);
+        var dataAccess = new RedshiftFeatureDataAccess(
+            factory,
+            Options.Create(new RedshiftOptions()),
+            NullLogger<RedshiftFeatureDataAccess>.Instance);
 
-        return new SnowflakeFeatureStore(dataAccess, readSecurity);
+        return new RedshiftFeatureStore(dataAccess, readSecurity);
     }
 
     private sealed class StubRowFilterSource(Honua.Core.Queries.Filters.SqlFragment? fragment) :
@@ -416,69 +266,18 @@ public class SnowflakeProviderResolutionTests
         }
     }
 
-    private sealed class ThrowingConnectionFactory : ISnowflakeConnectionFactory
+    private sealed class RecordingConnectionFactory : IRedshiftConnectionFactory
     {
-        public Task<DbConnection> OpenAsync(DataConnection? dataConnection, CancellationToken cancellationToken)
-            => throw new InvalidOperationException("Connection access not expected in resolution tests.");
-    }
-
-    private sealed class RecordingConnectionFactory : ISnowflakeConnectionFactory
-    {
-        public DataConnection? LastDataConnection { get; private set; }
-
         public bool WasCalled { get; private set; }
 
-        public Task<DbConnection> OpenAsync(DataConnection? dataConnection, CancellationToken cancellationToken)
+        public Task<NpgsqlConnection> OpenAsync(DataConnection? dataConnection, CancellationToken cancellationToken)
         {
             WasCalled = true;
-            LastDataConnection = dataConnection;
             throw new SentinelException();
         }
 
         public sealed class SentinelException : Exception
         {
         }
-    }
-
-    private sealed class FakeSecureConnectionRegistry(DataConnection connection) : ISecureConnectionRegistry
-    {
-        public Task<DataConnection?> GetConnectionAsync(Guid connectionId, CancellationToken cancellationToken = default)
-            => Task.FromResult<DataConnection?>(connection.ConnectionId == connectionId ? connection : null);
-
-        public Task<DataConnection?> GetConnectionAsync(string connectionId)
-            => Guid.TryParse(connectionId, out var id)
-                ? GetConnectionAsync(id)
-                : Task.FromResult<DataConnection?>(null);
-
-        public Task<DataConnection?> GetConnectionAsync(string connectionId, CancellationToken cancellationToken)
-            => GetConnectionAsync(connectionId);
-
-        public Task<DataConnection?> GetConnectionByNameAsync(string connectionName, CancellationToken cancellationToken = default)
-            => Task.FromResult<DataConnection?>(null);
-
-        public Task<DataConnection> CreateConnectionAsync(DataConnection conn, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
-
-        public Task RegisterConnectionAsync(DataConnection conn) => throw new NotSupportedException();
-
-        public Task<IEnumerable<DataConnection>> GetAllConnectionsAsync()
-            => Task.FromResult<IEnumerable<DataConnection>>([connection]);
-
-        public Task<bool> RemoveConnectionAsync(string connectionId) => Task.FromResult(false);
-
-        public Task<bool> DeleteConnectionAsync(Guid connectionId, CancellationToken cancellationToken = default)
-            => Task.FromResult(false);
-
-        public Task<Dictionary<string, ConnectionHealthStatus>> TestAllConnectionsAsync()
-            => Task.FromResult(new Dictionary<string, ConnectionHealthStatus>());
-
-        public Task UpdateHealthStatusAsync(string connectionId, bool isHealthy, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-
-        public Task<IEnumerable<DataConnection>> GetActiveConnectionsAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult<IEnumerable<DataConnection>>([connection]);
-
-        public Task<DataConnection> UpdateConnectionAsync(DataConnection conn, CancellationToken cancellationToken = default)
-            => throw new NotSupportedException();
     }
 }
