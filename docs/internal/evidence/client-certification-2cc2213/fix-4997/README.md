@@ -148,5 +148,25 @@ normal seed and run `python /regressions/wcs_subset_utm_client.py` in the same
 pinned client image to reproduce both assertions.
 
 The additional endpoint tests exercise that disjoint UTM polygon and a shared
-transform service returning its documented failure sentinel. These regressions
-must fail against the initial implementation before validating the correction.
+transform service returning its documented failure sentinel. `endpoint-review-before.json` records both regressions failing against the
+initial implementation: the fake export returns HTTP 200 for the disjoint
+polygon, and the unavailable transform is mislabeled HTTP 404. Neither case
+was skipped.
+
+The corrected protocol and server builds passed with zero warnings/errors.
+The final server was republished in Debug with trimming enabled and AOT
+explicitly disabled. Both changed projects were formatted again with the
+20-minute timeout and explicit `--include` paths; the test invocation included
+`Wcs20EndpointsTests.cs` and `Wcs20SubsetTransformFailureTests.cs`. Formatting
+made no further source changes.
+
+The corrected published image passes the real-client replays:
+
+- `utm-after.json`: the disjoint polygon now returns HTTP 404
+  `InvalidSubsetting`; the valid geographic subset retains all 16 independently
+  computed values, nodata, Float32 type, native CRS, and geotransform.
+- `owslib-final.json`: all seven original outside checks return HTTP 404, and
+  all three independent pixel/metadata checks still pass.
+- `roster-final/`: the unchanged governed OWSLib `serve.wcs` cell passes all six
+  facets. `final-identities.json` binds these results to the rebuilt source,
+  published image, assembly hashes, UTM fixture, and independent oracle.
