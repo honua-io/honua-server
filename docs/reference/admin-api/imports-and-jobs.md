@@ -58,7 +58,7 @@ Run `POST /api/v1/admin/import/scan` with `{"sourceKind":"geoservices","sourceUr
 | GET | `/api/v1/admin/import/geoserver/jobs/{jobId}` | Get GeoServer import job status |
 | POST | `/api/v1/admin/import/geoserver/jobs/{jobId}/cancel` | Cancel a GeoServer import job |
 
-Queued jobs persist request state before a worker runs, so credentials must use secret references (for example `"passwordSecretReference": "env:GEOSERVER_PASSWORD"`); plaintext passwords are rejected.
+Queued jobs persist request state before a worker runs, so credentials must use secret references (for example `"passwordSecretReference": "env:GEOSERVER_PASSWORD"`); plaintext passwords are rejected. Secret references are refused unless the operator has permitted them under `Security__RequestSecretReferences__*` ([References supplied in a request](../../guides/deploy/configuration.md#references-supplied-in-a-request)); nothing is permitted by default.
 
 ## GeoServices (ArcGIS) migration import
 
@@ -70,7 +70,7 @@ Queued jobs persist request state before a worker runs, so credentials must use 
 | GET | `/api/v1/admin/import/geoservices/jobs/{jobId}` | Get GeoServices import job status |
 | POST | `/api/v1/admin/import/geoservices/jobs/{jobId}/cancel` | Cancel a GeoServices import job |
 
-Authenticated sources send credentials in the request `credentials` object, never in the URL. Queued jobs must use `accessTokenSecretReference` or `passwordSecretReference`; plaintext token/password values are accepted only by the synchronous discover and scan endpoints.
+Authenticated sources send credentials in the request `credentials` object, never in the URL. Queued jobs must use `accessTokenSecretReference` or `passwordSecretReference`; plaintext token/password values are accepted only by the synchronous discover and scan endpoints. The same operator allowlist applies to these references.
 
 Run `POST /api/v1/admin/import/geoservices/discover` with `{"serviceUrl":"https://example.com/arcgis/rest/services/Parcels/FeatureServer"}`.
 

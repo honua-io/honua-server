@@ -18,6 +18,7 @@ Work through this checklist before exposing Honua to the internet; each item is 
 - [ ] OIDC client secrets and database credentials are injected from your secret manager, never committed; rotate on a schedule.
 - [ ] `Security__ConnectionEncryption__MasterKey` (secure connection registry cipher key) comes from a secret store; rotating it requires a redeploy.
 - [ ] Registered data-source connections reference secrets by provider reference (`provider` + `ref`, e.g. `env` or `azure-key-vault`) in metadata connection secrets instead of inlining credentials; validate with `GET /api/v1/admin/configuration/secrets/validate`.
+- [ ] `Security__RequestSecretReferences__*` lists only the secrets that imports, workflow source steps and registered connections are meant to name. Secret references that arrive in a request (`accessTokenSecretReference`, `passwordSecretReference`, `honuaApiKeySecretReference`, workflow `tokenSecretReference`/`passwordSecretReference`, and a connection's `secretReference`) are refused unless they match an entry, and nothing is permitted when the section is empty. Keep the entries narrow: a dedicated variable prefix such as `HONUA_IMPORT_` or a dedicated secret path such as `aws:secretsmanager:honua/imports/` — never the variables or secrets that hold the server's own credentials ([Secret references](../deploy/configuration.md#secret-references)).
 - [ ] `HONUA_DEV_AUTH` is **unset** — in production it blocks startup, and the only valid use is the in-process `Test` environment.
 
 ### Transport and edge
