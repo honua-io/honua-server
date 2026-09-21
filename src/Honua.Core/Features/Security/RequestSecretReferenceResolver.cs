@@ -77,6 +77,14 @@ public sealed partial class RequestSecretReferenceResolver : IRequestSecretRefer
         {
             value = await _inner.ResolveSecretAsync(parsed.Canonical, cancellationToken).ConfigureAwait(false);
         }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            // Secret providers can use cancellation to report their own timeout even when the
+            // caller's request is still active. Preserve the client-safe resolution contract for
+            // those failures, while the filter below lets caller cancellation propagate.
+            LogResolutionFailed(_logger, parsed.Provider, ex);
+            throw new RequestSecretReferenceException();
+        }
         catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
         {
             // The provider failure stays in the operator log; the caller only sees the
