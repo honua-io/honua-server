@@ -18,8 +18,15 @@ is bound to the artifact the release train certifies rather than to a local buil
 
 Take `components.honua-server.digest` from `platform-manifest.yaml` in `honua-io/honua-release`:
 
+The stack boots the Production startup policy, which refuses every credential literal this
+repository ships, so the harness credentials are supplied per replay rather than defaulted:
+
 ```bash
 export HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:<digest>
+export STUDIO_RECEIPT_ADMIN_PASSWORD="$(openssl rand -base64 24)"
+export STUDIO_RECEIPT_SIGNING_KEY="$(openssl rand -base64 32)"
+export STUDIO_RECEIPT_MASTER_KEY="$(openssl rand -hex 24)"
+export STUDIO_RECEIPT_SALT="$(openssl rand -base64 24)"
 docker compose -f docker/studio-dashboard-receipt/compose.yml -p studio-receipt up -d
 ```
 
@@ -28,8 +35,8 @@ Wait for the server to report healthy, then run the driver:
 ```bash
 python scripts/studio/dashboard_lifecycle_receipt.py \
   --base-url http://localhost:18080 \
-  --admin-key 'StudioReceiptAdmin123!' \
-  --jwt-key 'studio-dashboard-receipt-signing-key-2026-1' \
+  --admin-key "$STUDIO_RECEIPT_ADMIN_PASSWORD" \
+  --jwt-key "$STUDIO_RECEIPT_SIGNING_KEY" \
   --jwt-issuer 'https://studio-receipt.honua.test' \
   --jwt-audience 'honua-studio-receipt' \
   --psql 'docker exec studio-receipt-postgres psql -U honua -d honua' \

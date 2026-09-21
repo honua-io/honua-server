@@ -48,7 +48,9 @@ jobs:
       # block. They mirror the workflow-level constants above.
       ASPNETCORE_URLS: "http://localhost:5000"
       ASPNETCORE_ENVIRONMENT: Production
-      HONUA_ADMIN_PASSWORD: "Load-Soak-Admin-Pass1!"
+      # Per-run, not a repository literal: production startup validation refuses every
+      # credential literal this repository ships, and a checked-in value is a public one.
+      HONUA_ADMIN_PASSWORD: "Load-Soak-${{ github.run_id }}-${{ github.run_attempt }}-Aa1!"
       PUBLIC_BASE_URL: "http://localhost:5000"
       HostValidation__AllowedHosts__0: "localhost"
       # The soak harness deliberately floods the server from a single host, so the
@@ -59,7 +61,7 @@ jobs:
       # so the load/soak run measures the server, not the throttle.
       RateLimiting__Enabled: "false"
       Security__DisableHttpsRedirection: "true"
-      Security__ConnectionEncryption__MasterKey: "test-master-key-32-chars-long-000000"
+      Security__ConnectionEncryption__MasterKey: "load-soak-master-key-${{ github.run_id }}-${{ github.run_attempt }}-padding0000"
       # Production startup requires the canonical operation policy to be active
       # and fail closed for unmatched operations. The load topology has no
       # approval operator, so deny is the honest safe default.
@@ -251,7 +253,7 @@ jobs:
 
       - name: Republish the served catalogue and confirm it is served
         env:
-          HONUA_API_KEY: "Load-Soak-Admin-Pass1!"
+          HONUA_API_KEY: ${{ env.HONUA_ADMIN_PASSWORD }}
         run: |
           set -euo pipefail
           # The server compiles its served metadata-v2 snapshot at startup, so a catalogue seeded
@@ -273,7 +275,7 @@ jobs:
 
       - name: Run load/soak tests
         env:
-          HONUA_API_KEY: "Load-Soak-Admin-Pass1!"
+          HONUA_API_KEY: ${{ env.HONUA_ADMIN_PASSWORD }}
         run: |
           PROFILE="${{ github.event.inputs.profile || 'nightly' }}"
           DURATION="${{ github.event.inputs.duration || '' }}"

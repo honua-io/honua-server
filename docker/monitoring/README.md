@@ -9,27 +9,61 @@ Use this monitoring bundle when you want
 external Prometheus storage, Grafana dashboards, or alert-rule experiments beyond
 the built-in Console view.
 
-## Quick start (one command)
+## Quick start
 
 With a Honua server already running (for example the root `docker compose up -d`,
-listening on `:8080`), bring up the curated observability stack:
+listening on `:8080`):
+
+**1. Mint a read-only scrape key.** `/metrics` is served under the `Admin`
+authorization policy, and a scrape is a `GET` — a safe method — so an API key with
+the read-only `admin:read` grant is the narrowest credential that can read it. With a
+full-admin credential, `POST /api/v1/admin/api-keys` with
+`{"name":"prometheus-scrape","permissions":["admin:read"]}` (see
+[Authenticate clients](../../docs/guides/secure/authentication.md#2-create-scoped-api-keys-for-automation)),
+and write the returned `data.key` — shown once — into a file only you can read:
 
 ```bash
+umask 077
+printf '%s' "$HONUA_SCRAPE_KEY" > ./honua-scrape-key
+```
+
+Do not reuse `HONUA_ADMIN_PASSWORD` as the scrape credential: it carries full admin
+write authority and a scrape only needs to read. Create the file before starting the
+stack — Docker creates a *directory* at a bind-mount source that does not exist yet, and
+Prometheus then fails to read the header.
+
+**2. Start the stack.** Both variables are required — the bundle refuses to start
+without them, rather than falling back to a shipped default:
+
+```bash
+export HONUA_MONITORING_GRAFANA_PASSWORD='<a password you choose>'
+export HONUA_METRICS_SCRAPE_KEY_FILE="$PWD/honua-scrape-key"
 docker compose -f docker/monitoring/compose.yml up -d
 ```
 
 Then open:
 
-- **Grafana** — http://localhost:3000 (default `admin` / `admin`). The Prometheus
-  datasource and three curated dashboards are provisioned automatically.
-- **Prometheus** — http://localhost:9090.
+- **Grafana** — http://127.0.0.1:3000 (user `admin`, the password you exported). The
+  Prometheus datasource and three curated dashboards are provisioned automatically.
+- **Prometheus** — http://127.0.0.1:9090.
 
-The stack scrapes the server's `/metrics` endpoint. That endpoint requires admin
-authorization; the API-key auth handler also accepts HTTP Basic credentials, so
-Prometheus authenticates via `basic_auth` using the admin password as the Basic
-password. Edit `prometheus/prometheus.yml` to change the scrape target and password
-(the default matches the root compose `HONUA_ADMIN_PASSWORD` of
-`quickstart-admin-password` and target `host.docker.internal:8080`).
+Prometheus reads the key from the mounted file at scrape time and sends it in the
+`X-API-Key` header; nothing in `prometheus/prometheus.yml` holds a credential. Edit
+that file to change the scrape target (the default is `host.docker.internal:8080`).
+
+**Reaching the server.** `host.docker.internal` resolves to the Docker host's bridge
+gateway, so the default target only works when the server publishes on an interface that
+gateway can reach. The repository-root quickstart publishes on loopback only, so either
+start it with `HONUA_BIND_ADDRESS=0.0.0.0` behind your own network controls, or put the
+bundle on the server's compose network and scrape the service name (`honua:8080`)
+instead — the latter keeps every published port on loopback.
+
+Published ports bind to loopback by default, matching the repository-root compose
+file. Widen that only deliberately, behind your own network controls:
+
+```bash
+HONUA_BIND_ADDRESS=0.0.0.0 docker compose -f docker/monitoring/compose.yml up -d
+```
 
 Override host ports without editing the file:
 
@@ -37,6 +71,10 @@ Override host ports without editing the file:
 HONUA_MONITORING_GRAFANA_PORT=3001 HONUA_MONITORING_PROMETHEUS_PORT=9091 \
   docker compose -f docker/monitoring/compose.yml up -d
 ```
+
+Prometheus runs without `--web.enable-lifecycle`: the admin lifecycle routes
+(`/-/reload`, `/-/quit`) are unauthenticated when enabled, so the bundle keeps them
+off and reloads by restarting the container instead.
 
 ## Curated dashboards
 
