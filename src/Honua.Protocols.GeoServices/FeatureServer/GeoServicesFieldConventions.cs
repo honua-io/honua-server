@@ -135,41 +135,119 @@ internal static class GeoServicesFieldConventions
     }
 
     /// <summary>
-    /// The set of attribute field names an Esri-REST surface must serialize as
-    /// <c>esriFieldTypeDate</c> (epoch-millisecond integers), derived from the layer schema.
+    /// Temporal field types used to distinguish timestamp epochs from calendar dates.
     /// </summary>
-    internal static HashSet<string> ResolveDateFieldNames(MetadataV2Resource resource)
+    internal static Dictionary<string, MetadataV2FieldType> ResolveTemporalFieldTypes(MetadataV2Resource resource)
         => resource.SchemaFields
             .Where(static field => field.Type is MetadataV2FieldType.DateTime or MetadataV2FieldType.Date)
-            .Select(static field => field.Name)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .ToDictionary(static field => field.Name, static field => field.Type, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// In-place coerces every <c>esriFieldTypeDate</c> attribute to an epoch-millisecond (UTC)
-    /// integer, regardless of stored CLR shape (ISO-8601 string from seeds, epoch-ms long from
-    /// applyEdits, DateTime/DateTimeOffset/DateOnly, numeric string, or JsonElement). This is the
-    /// single shared coercion the MapServer identify, FeatureServer query, and extractChanges
-    /// paths use so a date field serializes uniformly across rows. Unconvertible values are left
-    /// unchanged.
+    /// Normalizes a declared temporal value to its GeoServices wire representation.
+    /// Calendar dates retain their calendar day without time-zone conversion.
     /// </summary>
-    internal static void CoerceDateAttributes(
-        IDictionary<string, object?> attributes,
-        IReadOnlyCollection<string> dateFieldNames)
+    internal static bool TryConvertTemporalValue(object value, MetadataV2FieldType fieldType, out object? converted)
     {
-        if (dateFieldNames.Count == 0)
+        converted = null;
+        if (fieldType == MetadataV2FieldType.DateTime && TryConvertToEpochMilliseconds(value, out var epoch))
         {
-            return;
+            converted = epoch;
+            return true;
+        }
+        if (fieldType == MetadataV2FieldType.Date && TryConvertCalendarDate(value, out var date))
+        {
+            converted = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            return true;
+        }
+        return false;
+    }
+
+    internal static object? NormalizeFieldDefault(MetadataV2Field field)
+    {
+        if (field.DefaultValue is not { } value || value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return null;
         }
 
-        using var fieldNames = dateFieldNames.GetEnumerator();
-        while (fieldNames.MoveNext())
+        if (TryConvertTemporalValue(value, field.Type, out var converted))
         {
-            var fieldName = fieldNames.Current;
-            if (attributes.TryGetValue(fieldName, out var dateValue) &&
+            return converted;
+        }
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.Number => value.TryGetInt64(out var integer) ? integer :
+                value.TryGetDouble(out var number) ? number : value.GetDecimal(),
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            _ => value.Clone()
+        };
+    }
+
+    private static bool TryConvertCalendarDate(object value, out DateOnly date)
+    {
+        switch (value)
+        {
+            case DateOnly calendar:
+                date = calendar;
+                return true;
+            case DateTime timestamp:
+                date = DateOnly.FromDateTime(timestamp);
+                return true;
+            case DateTimeOffset timestamp:
+                date = DateOnly.FromDateTime(timestamp.DateTime);
+                return true;
+            case JsonElement element when element.ValueKind == JsonValueKind.String:
+                return TryConvertCalendarDate(element.GetString()!, out date);
+            case JsonElement element when element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out var epoch):
+                return TryConvertCalendarDate(epoch, out date);
+            case string text:
+                if (DateOnly.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out date))
+                    return true;
+                // Existing canonical Date values may have crossed a DateTime/JSON
+                // cache boundary. Retain the represented calendar day, not the UTC day.
+                if (DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsedTimestamp))
+                {
+                    date = DateOnly.FromDateTime(parsedTimestamp.DateTime);
+                    return true;
+                }
+                break;
+            case int epoch:
+                return TryConvertCalendarDate((long)epoch, out date);
+            case long epoch:
+                // Compatibility for stored values written under the former epoch
+                // representation of canonical Date fields.
+                try
+                {
+                    date = DateOnly.FromDateTime(DateTimeOffset.FromUnixTimeMilliseconds(epoch).UtcDateTime);
+                    return true;
+                }
+                catch (ArgumentOutOfRangeException)
+                {
+                    break;
+                }
+        }
+        date = default;
+        return false;
+    }
+
+    /// <summary>
+    /// Coerces temporal attributes consistently across query, identify, related records
+    /// and replication. Timestamps use epoch milliseconds; calendar dates use ISO dates.
+    /// Null and unconvertible values are left unchanged.
+    /// </summary>
+    internal static void CoerceTemporalAttributes(
+        IDictionary<string, object?> attributes,
+        IReadOnlyDictionary<string, MetadataV2FieldType> temporalFieldTypes)
+    {
+        foreach (var field in temporalFieldTypes)
+        {
+            if (attributes.TryGetValue(field.Key, out var dateValue) &&
                 dateValue is not null &&
-                TryConvertToEpochMilliseconds(dateValue, out var epochMilliseconds))
+                TryConvertTemporalValue(dateValue, field.Value, out var converted))
             {
-                attributes[fieldName] = epochMilliseconds;
+                attributes[field.Key] = converted;
             }
         }
     }

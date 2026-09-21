@@ -2591,9 +2591,9 @@ internal static partial class FeatureServerEndpoints
         var attributes = feature.Attributes
             .Where(kvp => !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
             .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
-        GeoServicesFieldConventions.CoerceDateAttributes(
+        GeoServicesFieldConventions.CoerceTemporalAttributes(
             attributes,
-            GeoServicesFieldConventions.ResolveDateFieldNames(resource));
+            GeoServicesFieldConventions.ResolveTemporalFieldTypes(resource));
 
         return new GeoServicesFeature
         {
