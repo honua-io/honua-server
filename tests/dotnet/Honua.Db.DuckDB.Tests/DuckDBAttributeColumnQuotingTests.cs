@@ -124,8 +124,9 @@ public sealed class DuckDBAttributeColumnQuotingTests : IAsyncLifetime
         var feature = await store.GetAsync(LayerId, 1);
 
         Assert.NotNull(feature);
-        Assert.Equal("Parcel 1", feature!.Value.Attributes["name"]);
-        Assert.DoesNotContain(UnsupportedColumnName, feature.Value.Attributes.Keys, StringComparer.Ordinal);
+        var attributes = feature!.Value.Attributes;
+        Assert.Equal("Parcel 1", attributes["name"]);
+        Assert.DoesNotContain(UnsupportedColumnName, attributes.Keys, StringComparer.Ordinal);
     }
 
     [Fact]
