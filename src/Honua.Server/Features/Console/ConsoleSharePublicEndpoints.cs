@@ -47,7 +47,12 @@ internal static class ConsoleSharePublicEndpoints
             .WithApiVersionSet()
             .HasApiVersion(1, 0)
             .WithTags("Console")
-            .AllowAnonymous();
+            .AllowAnonymous()
+            // NoCache is required (SEC-20), matching the open-data sibling: the share
+            // token is the bearer of authorization and its tier, expiry and revocation
+            // are mutable, so a stored 200 would keep a revoked or downgraded link
+            // resolving for the cache TTL. Every request must re-resolve the token.
+            .CacheOutput(static policy => policy.NoCache());
 
         group.MapGet("/link/{token}", HandleResolvePublicLink)
             .WithDisplayName("Resolve Console Public-Link Token")
