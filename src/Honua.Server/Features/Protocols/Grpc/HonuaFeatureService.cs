@@ -7,6 +7,7 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
@@ -35,6 +36,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         new(MinOffset: 0, MinLimit: 1, OffsetParameterName: "resultOffset", LimitParameterName: "resultRecordCount");
 
     private readonly IResourceValidator _resourceValidator;
+    private readonly IMetadataV2GraphProvider _metadataGraph;
     private readonly IFeatureReader _featureReader;
     private readonly IFeatureWriter _featureWriter;
     private readonly IStreamingFeatureStore _streamingFeatureStore;
@@ -48,6 +50,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
     public HonuaFeatureService(
         IResourceValidator resourceValidator,
+        IMetadataV2GraphProvider metadataGraph,
         IFeatureReader featureReader,
         IFeatureWriter featureWriter,
         IStreamingFeatureStore streamingFeatureStore,
@@ -60,6 +63,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         GrpcApplyEditsIdempotencyStore idempotencyStore)
         : this(
             resourceValidator,
+            metadataGraph,
             featureReader,
             featureWriter,
             streamingFeatureStore,
@@ -76,6 +80,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     [ActivatorUtilitiesConstructor]
     public HonuaFeatureService(
         IResourceValidator resourceValidator,
+        IMetadataV2GraphProvider metadataGraph,
         IFeatureReader featureReader,
         IFeatureWriter featureWriter,
         IStreamingFeatureStore streamingFeatureStore,
@@ -88,6 +93,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         GrpcApplyEditsIdempotencyStore idempotencyStore)
     {
         _resourceValidator = resourceValidator;
+        _metadataGraph = metadataGraph;
         _featureReader = featureReader;
         _featureWriter = featureWriter;
         _streamingFeatureStore = streamingFeatureStore;
@@ -124,7 +130,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         if (request.ReturnCountOnly)
         {
             response.Count = await _featureReader.CountAsync(
-                request.LayerId, query, context.CancellationToken).ConfigureAwait(false);
+                layer.StorageLayerId, query, context.CancellationToken).ConfigureAwait(false);
             return response;
         }
 
@@ -132,7 +138,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         if (request.ReturnIdsOnly)
         {
             var objectIds = await _featureReader.QueryObjectIdsAsync(
-                request.LayerId, query, context.CancellationToken).ConfigureAwait(false);
+                layer.StorageLayerId, query, context.CancellationToken).ConfigureAwait(false);
             response.ObjectIds.AddRange(objectIds);
             return response;
         }
@@ -141,7 +147,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         if (request.ReturnExtentOnly)
         {
             var extent = await _featureReader.GetExtentAsync(
-                request.LayerId, query, context.CancellationToken).ConfigureAwait(false);
+                layer.StorageLayerId, query, context.CancellationToken).ConfigureAwait(false);
             if (extent.HasValue)
             {
                 response.Extent = GrpcConversionHelpers.ToProtoExtent(extent.Value, queryContext.ResponseSpatialReference);
@@ -156,7 +162,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         }
 
         var result = await _featureReader.QueryAsync(
-            request.LayerId, query, context.CancellationToken).ConfigureAwait(false);
+            layer.StorageLayerId, query, context.CancellationToken).ConfigureAwait(false);
 
         foreach (var feature in result.Items)
         {
@@ -189,7 +195,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         var batch = new List<Proto.Feature>(_streamBatchSize);
 
         await using var enumerator = _streamingFeatureStore
-            .StreamFeaturesAsync(request.LayerId, query, context.CancellationToken)
+            .StreamFeaturesAsync(layer.StorageLayerId, query, context.CancellationToken)
             .GetAsyncEnumerator(context.CancellationToken);
 
         var hasCurrent = await enumerator.MoveNextAsync().ConfigureAwait(false);
@@ -292,7 +298,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         // hides from them by supplying its objectid (#2071). Adds carry no objectid and are
         // not pre-read. Mirrors the GeoServices/OData/WFS-T not-found guards (#2066).
         await EnsureEditTargetsVisibleAsync(
-            request.LayerId, editBatch, context.CancellationToken).ConfigureAwait(false);
+            layer.StorageLayerId, editBatch, context.CancellationToken).ConfigureAwait(false);
 
         var grpcHttpContext = context.GetHttpContext()
             ?? throw new InvalidOperationException("HttpContext is required for gRPC outbox dispatch.");
@@ -320,7 +326,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         using var outboxScope = Honua.Core.Features.Infrastructure.Events.Outbox.FeatureMutationOutboxScope.BeginIfNotNull(outboxScopeData);
 
         var result = await _featureWriter.ApplyEditsAsync(
-            request.LayerId,
+            layer.StorageLayerId,
             editBatch,
             context.CancellationToken).ConfigureAwait(false);
 
@@ -356,7 +362,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     /// with no RLS predicate (#2071). Adds carry no objectid and are not pre-read.
     /// </summary>
     private async Task EnsureEditTargetsVisibleAsync(
-        int layerId,
+        int storageLayerId,
         FeatureEditBatch editBatch,
         CancellationToken cancellationToken)
     {
@@ -387,7 +393,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         foreach (var objectId in targets)
         {
             var existing = await _featureReader
-                .GetAsync(layerId, objectId, cancellationToken)
+                .GetAsync(storageLayerId, objectId, cancellationToken)
                 .ConfigureAwait(false);
             if (existing is null)
             {
@@ -525,13 +531,28 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             throw new RpcException(new Status(StatusCode.NotFound, "Grpc is not enabled for this service."));
         }
 
-        return CreateLayerContext(service, triple.Publication, triple.Resource);
+        // The request addresses the layer by its service-local index; the feature
+        // reader/writer boundary is keyed on the storage-layer handle. Translate once
+        // here, through the shared resolver, and carry the result on the context so
+        // every read, edit and stream call below uses the storage handle of the
+        // publication this request actually resolved and authorized.
+        var snapshot = await _metadataGraph.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var storageLayerId = snapshot.ResolveStorageLayerId(triple.Publication, triple.Resource);
+        if (!storageLayerId.HasValue)
+        {
+            throw new RpcException(new Status(
+                StatusCode.NotFound,
+                $"Layer {layerId} is not bound to feature storage."));
+        }
+
+        return CreateLayerContext(service, triple.Publication, triple.Resource, storageLayerId.Value);
     }
 
     private static GrpcLayerContext CreateLayerContext(
         MetadataV2Service service,
         MetadataV2Publication publication,
-        MetadataV2Resource resource)
+        MetadataV2Resource resource,
+        int storageLayerId)
     {
         var spatialReference = ToSpatialReference(resource);
         var geometryType = resource.ReadGeometryType();
@@ -544,6 +565,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
             service,
             publication,
             resource,
+            storageLayerId,
             spatialReference,
             geometryType,
             attributeFields,
@@ -847,6 +869,7 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         MetadataV2Service Service,
         MetadataV2Publication Publication,
         MetadataV2Resource Resource,
+        int StorageLayerId,
         SpatialReference SpatialReference,
         MetadataV2GeometryType GeometryType,
         IReadOnlyList<MetadataV2Field> AttributeFields,

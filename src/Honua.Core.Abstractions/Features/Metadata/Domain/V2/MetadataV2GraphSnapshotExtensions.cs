@@ -161,6 +161,58 @@ public static class MetadataV2GraphSnapshotExtensions
     }
 
     /// <summary>
+    /// Resolves the integer storage-layer handle a protocol adapter must hand to
+    /// <c>IFeatureReader</c> / <c>IFeatureWriter</c> for a publication it has already
+    /// authorized. This is the single entry point for that translation: every adapter
+    /// resolves it in one order — the publication's storage binding, then the canonical
+    /// resource's primary binding, then the service-local
+    /// <see cref="MetadataV2Publication.LayerIndex"/> as the last resort for graphs that
+    /// carry no binding handle at all.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The order matters. <see cref="MetadataV2Publication.LayerIndex"/> is a
+    /// <em>service-local, protocol-facing</em> index and storage layer ids are global, so
+    /// the two values only coincide for publications whose identifier was assigned from the
+    /// storage id (what the admin publish path produces). Manifest-authored,
+    /// release-authored and imported graphs legitimately diverge (#4065), and when they do,
+    /// preferring <c>LayerIndex</c> makes the adapter read or write whichever resource
+    /// happens to own that number as its storage handle — a different resource than the one
+    /// the request resolved, validated and authorized.
+    /// </para>
+    /// <para>
+    /// This mirrors the order <c>FeatureProviderQueryRouter.ResolveBindingAsync</c> uses for
+    /// binding-scoped provider resolution (<c>IBindableFeatureDataProvider</c>, #5061), so
+    /// the handle and the provider that receives it are resolved from the same binding.
+    /// </para>
+    /// </remarks>
+    /// <param name="snapshot">Current metadata graph snapshot.</param>
+    /// <param name="publication">The authorized publication being served.</param>
+    /// <param name="resource">The publication's canonical resource. Pass <see langword="null"/>
+    /// to have it resolved from the graph.</param>
+    /// <returns>The storage-layer handle, or <see langword="null"/> when the publication is
+    /// not bound to integer-keyed feature storage. Callers fail the request closed rather
+    /// than substituting another id.</returns>
+    public static int? ResolveStorageLayerId(
+        this MetadataV2GraphSnapshot snapshot,
+        MetadataV2Publication publication,
+        MetadataV2Resource? resource)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(publication);
+
+        var fromBinding = snapshot.ResolveStorageLayerId(publication);
+        if (fromBinding.HasValue)
+        {
+            return fromBinding;
+        }
+
+        var canonical = resource ?? snapshot.ResolveResource(publication);
+        var fromResource = canonical is null ? null : snapshot.ResolveStorageLayerId(canonical);
+        return fromResource ?? publication.LayerIndex;
+    }
+
+    /// <summary>
     /// Resolves the integer storage-layer handle for a resource via its primary
     /// storage binding. Use when you have a resource but not a specific publication.
     /// </summary>

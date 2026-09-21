@@ -367,4 +367,177 @@ public sealed class MetadataV2GraphSnapshotTests
             ],
         };
     }
+
+    // ---- Aliased-publication storage handle resolution (SEC-4) -----------
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ResolveStorageLayerId_AliasedPublication_PrefersTheBoundStorageHandleOverTheLayerIndex()
+    {
+        var snapshot = AliasedSnapshot();
+        var publication = snapshot.Index.PublicationsById["pub.parcels.aliased"];
+        var resource = snapshot.Index.ResourcesById["resource.parcels"];
+
+        publication.LayerIndex.Should().Be(
+            AliasedCollidingStorageLayerId,
+            "the fixture's whole point is a service-local index that names another resource's storage handle");
+
+        snapshot.ResolveStorageLayerId(publication, resource)
+            .Should().Be(AliasedParcelsStorageLayerId);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ResolveStorageLayerId_AliasedPublication_DoesNotResolveToTheCollidingResource()
+    {
+        var snapshot = AliasedSnapshot();
+        var parcels = snapshot.Index.PublicationsById["pub.parcels.aliased"];
+        var permits = snapshot.Index.PublicationsById["pub.permits"];
+
+        var parcelsHandle = snapshot.ResolveStorageLayerId(parcels, snapshot.ResolveResource(parcels));
+        var permitsHandle = snapshot.ResolveStorageLayerId(permits, snapshot.ResolveResource(permits));
+
+        parcelsHandle.Should().NotBe(permitsHandle);
+        permitsHandle.Should().Be(AliasedCollidingStorageLayerId);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ResolveStorageLayerId_ResolvesTheResourceWhenTheCallerDoesNotSupplyIt()
+    {
+        var snapshot = AliasedSnapshot();
+        var publication = snapshot.Index.PublicationsById["pub.parcels.aliased"];
+
+        snapshot.ResolveStorageLayerId(publication, resource: null)
+            .Should().Be(AliasedParcelsStorageLayerId);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public void ResolveStorageLayerId_BindinglessPublication_FallsBackToTheLayerIndex()
+    {
+        // The last resort stays: graphs that carry no storage handle at all are still
+        // addressable by their service-local index.
+        var snapshot = AliasedSnapshot();
+        var publication = snapshot.Index.PublicationsById["pub.documents"];
+
+        snapshot.ResolveStorageLayerId(publication, snapshot.ResolveResource(publication))
+            .Should().Be(77);
+    }
+
+    private const int AliasedParcelsStorageLayerId = 7;
+    private const int AliasedCollidingStorageLayerId = 3;
+
+    /// <summary>
+    /// Graph in which <c>resource.parcels</c> is published with the service-local index
+    /// <see cref="AliasedCollidingStorageLayerId"/> while its storage binding carries
+    /// <see cref="AliasedParcelsStorageLayerId"/>, and a second resource,
+    /// <c>resource.permits</c>, owns <see cref="AliasedCollidingStorageLayerId"/> as its
+    /// storage handle. Reading the index as a storage handle therefore lands on the other
+    /// resource. Manifest-authored, release-authored and imported graphs produce this shape
+    /// (#4065); the admin publish path does not.
+    /// </summary>
+    internal static MetadataV2GraphSnapshot AliasedSnapshot()
+        => new(AliasedGraph(), "\"aliased\"", DateTimeOffset.UtcNow);
+
+    private static MetadataV2Graph AliasedGraph()
+    {
+        return new MetadataV2Graph
+        {
+            Revision = 1,
+            Environment = "test",
+            GeneratedAt = DateTimeOffset.Parse("2026-09-21T00:00:00Z", System.Globalization.CultureInfo.InvariantCulture),
+            Connections =
+            [
+                new MetadataV2Connection
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "conn.postgres", Name = "postgres" },
+                    Type = MetadataV2ConnectionType.Managed,
+                    Provider = "postgres",
+                }
+            ],
+            Resources =
+            [
+                FeatureResource("resource.parcels", "parcels", "storage.parcels"),
+                FeatureResource("resource.permits", "permits", "storage.permits"),
+                new MetadataV2Resource
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "resource.documents", Name = "documents" },
+                    Type = MetadataV2ResourceType.Document,
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+                    StorageBindingIds = [],
+                    SchemaFields = [],
+                },
+            ],
+            StorageBindings =
+            [
+                Binding("storage.parcels", "resource.parcels", "public.parcels", AliasedParcelsStorageLayerId),
+                Binding("storage.permits", "resource.permits", "public.permits", AliasedCollidingStorageLayerId),
+            ],
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "service.features", Name = "Features" },
+                    Protocols = [ServiceProtocols.OgcFeatures],
+                    Route = "/ogc/features",
+                    Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+                }
+            ],
+            Publications =
+            [
+                Publication("pub.parcels.aliased", "resource.parcels", "storage.parcels", AliasedCollidingStorageLayerId),
+                Publication("pub.permits", "resource.permits", "storage.permits", 9),
+                Publication("pub.documents", "resource.documents", storageBindingId: null, layerIndex: 77),
+            ],
+        };
+    }
+
+    private static MetadataV2Resource FeatureResource(string id, string name, string storageBindingId)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+            StorageBindingIds = [storageBindingId],
+            PrimaryStorageBindingId = storageBindingId,
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer, SemanticRoles = ["id.primary"] },
+                new MetadataV2Field { Name = "shape", Type = MetadataV2FieldType.Geometry, SemanticRoles = ["geometry.primary"] },
+            ],
+        };
+
+    private static MetadataV2StorageBinding Binding(string id, string resourceId, string locator, int storageLayerId)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+            ResourceId = resourceId,
+            ConnectionId = "conn.postgres",
+            StorageType = MetadataV2StorageType.RelationalTable,
+            Locator = locator,
+            StorageLayerId = storageLayerId,
+        };
+
+    private static MetadataV2Publication Publication(
+        string id,
+        string resourceId,
+        string? storageBindingId,
+        int layerIndex)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
+            Status = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active },
+            ResourceId = resourceId,
+            ServiceId = "service.features",
+            StorageBindingId = storageBindingId,
+            PublicationType = MetadataV2PublicationType.OgcCollection,
+            IsPrimary = true,
+            Identifier = new MetadataV2PublicationIdentifier
+            {
+                Value = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                IsNumeric = true,
+            },
+        };
 }

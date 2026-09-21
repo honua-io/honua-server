@@ -257,7 +257,7 @@ public sealed class FeatureLockEnforcingFeatureWriter : IFeatureWriter
         var names = new List<string>();
         foreach (var publication in snapshot.Graph.Publications)
         {
-            if ((publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication)) != layerId)
+            if (snapshot.ResolveStorageLayerId(publication, resource: null) != layerId)
             {
                 continue;
             }

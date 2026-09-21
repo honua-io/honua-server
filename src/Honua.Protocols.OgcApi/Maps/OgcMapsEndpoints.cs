@@ -420,9 +420,7 @@ public static partial class OgcMapsEndpoints
 
         var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var layerId = validation.Publication.LayerIndex
-            ?? snapshot.ResolveStorageLayerId(validation.Publication)
-            ?? snapshot.ResolveStorageLayerId(validation.Resource);
+        var layerId = snapshot.ResolveStorageLayerId(validation.Publication, validation.Resource);
         return layerId.HasValue
             ? new MapsCollectionResolution(validation.Publication, validation.Resource, layerId, null)
             : new MapsCollectionResolution(

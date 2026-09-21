@@ -2271,9 +2271,7 @@ internal static partial class FeatureServerEndpoints
                 .Select(publication =>
                 {
                     var resource = snapshot.ResolveResource(publication);
-                    var storageLayerId = publication.LayerIndex
-                        ?? snapshot.ResolveStorageLayerId(publication)
-                        ?? (resource is not null ? snapshot.ResolveStorageLayerId(resource) : null);
+                    var storageLayerId = snapshot.ResolveStorageLayerId(publication, resource);
                     // publicLayerId falls back to storageLayerId, so once storageLayerId is
                     // known non-null, publicLayerId is guaranteed non-null too — no separate
                     // null check needed for it (a prior `publicLayerId is not null` check here

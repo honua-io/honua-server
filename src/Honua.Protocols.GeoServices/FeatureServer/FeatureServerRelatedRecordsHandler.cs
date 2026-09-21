@@ -404,7 +404,5 @@ internal sealed class FeatureServerRelatedRecordsHandler(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Publication publication,
         MetadataV2Resource resource)
-        => snapshot.ResolveStorageLayerId(publication)
-           ?? snapshot.ResolveStorageLayerId(resource)
-           ?? publication.LayerIndex;
+        => snapshot.ResolveStorageLayerId(publication, resource);
 }

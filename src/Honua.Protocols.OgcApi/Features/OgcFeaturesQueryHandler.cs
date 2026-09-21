@@ -110,9 +110,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             // graph carries no explicit storage binding for the publication, fall back to
             // the service-local layer index. This is what test fixtures and the Postgres
             // seed currently produce.
-            var storageLayerId = publication.LayerIndex
-                ?? snapshot.ResolveStorageLayerId(publication)
-                ?? snapshot.ResolveStorageLayerId(resource);
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication, resource);
             if (storageLayerId is not { } layerId)
             {
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' has no storage binding.");
@@ -612,9 +610,7 @@ internal sealed partial class OgcFeaturesQueryHandler(
             // graph carries no explicit storage binding for the publication, fall back to
             // the service-local layer index. This is what test fixtures and the Postgres
             // seed currently produce.
-            var storageLayerId = publication.LayerIndex
-                ?? snapshot.ResolveStorageLayerId(publication)
-                ?? snapshot.ResolveStorageLayerId(resource);
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication, resource);
             if (storageLayerId is not { } layerId)
             {
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' has no storage binding.");
