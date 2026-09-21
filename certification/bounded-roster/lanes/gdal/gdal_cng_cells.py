@@ -12,11 +12,16 @@ from __future__ import annotations
 
 import json
 
-from osgeo import gdal, ogr
-
 import gdalkit
 from cellkit import Cell, expect
-from rosterenv import EXPIRED_BEARER, WRONG_API_KEY, api_key_headers, bearer_headers, url
+from osgeo import gdal, ogr
+from rosterenv import (
+    EXPIRED_BEARER,
+    WRONG_API_KEY,
+    api_key_headers,
+    bearer_headers,
+    url,
+)
 
 VERSION = gdal.__version__
 CLIENT_DETAIL = gdal.VersionInfo("--version")
@@ -113,43 +118,45 @@ def geoparquet() -> None:
         "Polar Outpost": ("reference", 0, 0.1, True),
     }
     for facet in ("positive", "metadata", "media-schema"):
-        with cell.check(facet, "decode GeoParquet using the GDAL Parquet driver") as check:
-            with gdalkit.session(None, **TIMEOUT):
-                dataset = gdal.OpenEx(_vsicurl(target), gdal.OF_VECTOR, allowed_drivers=["Parquet"])
-                expect(dataset is not None, "Parquet driver could not open the response")
-                layer = dataset.GetLayer(0)
-                if facet == "positive":
-                    actual = {}
-                    for feature in layer:
-                        geometry = feature.GetGeometryRef()
-                        name = feature.GetField("name")
-                        expect(geometry is not None and geometry.GetGeometryName() == "POINT", name)
-                        expect(geometry.GetCoordinateDimension() == 2, name)
-                        actual[name] = (round(geometry.GetX(), 6), round(geometry.GetY(), 6))
-                        attrs = tuple(feature.GetField(k) for k in ("category", "population", "ratio", "active"))
-                        expect(attrs == expected_attributes[name], f"{name}: {attrs}")
-                    expect(actual == CNG_FEATURES and layer.GetFeatureCount() == 6, str(actual))
-                    check.detail = f"six SQL-fixture points and scalar attributes: {actual}"
-                elif facet == "metadata":
-                    raw = layer.GetMetadataItem("geo", "_PARQUET_METADATA_")
-                    expect(raw is not None, "missing GeoParquet geo metadata")
-                    geo = json.loads(raw)
-                    expect(geo["version"] == "1.1.0" and geo["primary_column"] == "geometry", str(geo))
-                    column = geo["columns"]["geometry"]
-                    expect(column["encoding"] == "WKB", str(column))
-                    expect(column["bbox"] == [-122.4194, 0.0, 179.5, 86.0], str(column))
-                    expect(layer.GetSpatialRef().GetAuthorityCode(None) == "4326", str(column))
-                    check.detail = raw
-                else:
-                    fields = layer.GetLayerDefn()
-                    types = {fields.GetFieldDefn(i).GetName(): fields.GetFieldDefn(i).GetTypeName()
-                             for i in range(fields.GetFieldCount())}
-                    expect(types.get("name") == "String" and types.get("population", "").startswith("Integer")
-                           and types.get("ratio") == "Real" and types.get("observed_at") == "DateTime", str(types))
-                    expect(layer.GetGeomType() == ogr.wkbPoint, str(layer.GetGeomType()))
-                    check.detail = str(types)
-                layer = None
-                dataset = None
+        with cell.check(facet, "decode GeoParquet using the GDAL Parquet driver") as check, gdalkit.session(None, **TIMEOUT):
+            dataset = gdal.OpenEx(_vsicurl(target), gdal.OF_VECTOR, allowed_drivers=["Parquet"])
+            expect(dataset is not None, "Parquet driver could not open the response")
+            layer = dataset.GetLayer(0)
+            if facet == "positive":
+                actual = {}
+                for feature in layer:
+                    geometry = feature.GetGeometryRef()
+                    name = feature.GetField("name")
+                    expect(geometry is not None and geometry.GetGeometryName() == "POINT", name)
+                    expect(geometry.GetCoordinateDimension() == 2, name)
+                    actual[name] = (round(geometry.GetX(), 6), round(geometry.GetY(), 6))
+                    attrs = tuple(feature.GetField(k) for k in ("category", "population", "ratio", "active"))
+                    expect(attrs == expected_attributes[name], f"{name}: {attrs}")
+                expect(actual == CNG_FEATURES and layer.GetFeatureCount() == 6, str(actual))
+                check.detail = f"six SQL-fixture points and scalar attributes: {actual}"
+            elif facet == "metadata":
+                raw = layer.GetMetadataItem("geo", "_PARQUET_METADATA_")
+                expect(raw is not None, "missing GeoParquet geo metadata")
+                geo = json.loads(raw)
+                expect(geo["version"] == "1.1.0" and geo["primary_column"] == "geometry", str(geo))
+                column = geo["columns"]["geometry"]
+                expect(column["encoding"] == "WKB", str(column))
+                covering = column["covering"]["bbox"]
+                expect(covering == {key: ["bbox", key] for key in ("xmin", "ymin", "xmax", "ymax")}, str(column))
+                extent = layer.GetExtent()
+                expect(extent == (-122.4194, 179.5, 0.0, 86.0), str(extent))
+                expect(layer.GetSpatialRef().GetAuthorityCode(None) == "4326", str(column))
+                check.detail = raw
+            else:
+                fields = layer.GetLayerDefn()
+                types = {fields.GetFieldDefn(i).GetName(): fields.GetFieldDefn(i).GetTypeName()
+                         for i in range(fields.GetFieldCount())}
+                expect(types.get("name") == "String" and types.get("population", "").startswith("Integer")
+                       and types.get("ratio") == "Real" and types.get("observed_at") == "DateTime", str(types))
+                expect(layer.GetGeomType() == ogr.wkbPoint, str(layer.GetGeomType()))
+                check.detail = str(types)
+            layer = None
+            dataset = None
     cell.write()
 
 
