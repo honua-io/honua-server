@@ -215,6 +215,54 @@ internal sealed class ImageServerExportHandler
             if (selectedRasters.Length == 0)
             {
                 ImageServerLog.NoRastersFound(_logger, layerId);
+
+                // Esri answers an exportImage whose extent holds no data with an empty image, not
+                // an error, and tiling clients depend on that: QGIS's arcgismapserver provider
+                // splits the canvas into a grid of adjacent extents and treats a JSON body as a
+                // failed tile, so every tile past the layer's footprint failed. Only a framed
+                // request (bbox plus output size) has a canvas to draw; anything else, and a layer
+                // holding no raster at all, still reports not-found.
+                if (exportQuery is { CoverClipExtent: true, ClipRegion.Inverted: false, OutputWidth: > 0, OutputHeight: > 0 })
+                {
+                    var emptyResult = await _exportBackend.ExportEmptyExtentAsync(
+                        storageLayerId,
+                        exportQuery,
+                        cancellationToken).ConfigureAwait(false);
+
+                    if (emptyResult.Data is { Length: > 0 })
+                    {
+                        if (WantsInlineImageResponse(request.F))
+                        {
+                            ImageServerLog.ExportImageCompleted(_logger, layerId, emptyResult.Data.Length);
+                            scope.SetSuccess(1);
+                            return Results.File(emptyResult.Data, emptyResult.ContentType);
+                        }
+
+                        var emptyImageUrl = await _temporaryFileService.StoreTemporaryFileAsync(
+                            emptyResult.Data,
+                            emptyResult.ContentType,
+                            TimeSpan.FromHours(1),
+                            principal: context.User,
+                            cancellationToken: cancellationToken);
+
+                        var emptyResponse = new ExportImageResponse
+                        {
+                            Href = emptyImageUrl,
+                            Width = emptyResult.Width,
+                            Height = emptyResult.Height,
+                            Extent = BuildExtent(
+                                emptyResult.Extent,
+                                request.Bbox,
+                                bboxSrid: SpatialReferenceHelpers.TryParseSrid(request.BboxSr),
+                                emptyResult.Srid),
+                        };
+
+                        ImageServerLog.ExportImageCompleted(_logger, layerId, emptyResult.Data.Length);
+                        scope.SetSuccess(1);
+                        return Results.Json(emptyResponse, ImageServerJsonContext.Default.ExportImageResponse);
+                    }
+                }
+
                 return StandardErrorHelpers.CreateNotFound(context, "No rasters found for layer.");
             }
 
