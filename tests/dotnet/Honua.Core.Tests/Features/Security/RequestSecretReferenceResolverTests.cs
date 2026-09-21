@@ -151,6 +151,31 @@ public sealed class RequestSecretReferenceResolverTests
     }
 
     [UnitTest]
+    public async Task ResolveAsync_WhenProviderTimesOutWithoutCallerCancellation_UsesClientSafeFailure()
+    {
+        var resolver = Create(
+            new RequestSecretReferenceOptions { AllowedEnvironmentVariables = ["IMPORT_TOKEN"] },
+            new RecordingSecretResolver { Failure = new TaskCanceledException("provider timeout") });
+
+        await FluentActions.Awaiting(() => resolver.ResolveAsync("env:IMPORT_TOKEN"))
+            .Should().ThrowAsync<RequestSecretReferenceException>()
+            .WithMessage(RequestSecretReferenceException.ClientSafeMessage);
+    }
+
+    [UnitTest]
+    public async Task ResolveAsync_WhenCallerCancels_PropagatesCancellation()
+    {
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+        var resolver = Create(
+            new RequestSecretReferenceOptions { AllowedEnvironmentVariables = ["IMPORT_TOKEN"] },
+            new RecordingSecretResolver { Failure = new OperationCanceledException() });
+
+        await FluentActions.Awaiting(() => resolver.ResolveAsync("env:IMPORT_TOKEN", cancellation.Token))
+            .Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [UnitTest]
     public void Validate_ReportsEntriesThatCanNeverMatch()
     {
         var options = new RequestSecretReferenceOptions
