@@ -364,7 +364,7 @@ def _wfs_metadata_media(cell: Cell) -> None:
     with cell.check("media-schema", "GML GetFeature responses decode against DescribeFeatureType types") as c:
         with qgiskit.recording() as recorder:
             layer = _wfs("honua:test_layer")
-            fields = {field.name(): field.type() for field in layer.fields()}
+            fields = {field.name(): field.typeName() for field in layer.fields()}
             list(layer.getFeatures())
         responses = [(item.url.split("REQUEST=")[1].split("&")[0], item.content_type) for item in recorder.exchanges
                      if "REQUEST=" in item.url]
@@ -410,7 +410,7 @@ def _wfs_metadata_media_only_media(cell: Cell) -> None:
     with cell.check("media-schema", "GML GetFeature responses decode against DescribeFeatureType types") as c:
         with qgiskit.recording() as recorder:
             layer = _wfs("honua:test_layer")
-            fields = {field.name(): field.type() for field in layer.fields()}
+            fields = {field.name(): field.typeName() for field in layer.fields()}
             list(layer.getFeatures())
         responses = [(item.url.split("REQUEST=")[1].split("&")[0], item.content_type) for item in recorder.exchanges
                      if "REQUEST=" in item.url]
@@ -809,7 +809,7 @@ def featureserver() -> None:
         c.detail = f"{names}; {len(recorder.matching('/query'))} query requests"
     with cell.check("metadata", "layer JSON drives fields, geometry type, CRS and extent") as c:
         layer = QgsVectorLayer(f"url='{FEATURESERVER}/0'", "fs", "arcgisfeatureserver")
-        fields = {field.name(): field.type() for field in layer.fields()}
+        fields = {field.name(): field.typeName() for field in layer.fields()}
         expect(QgsWkbTypes.displayString(layer.wkbType()) == "Point" and layer.crs().authid() == "EPSG:4326", (layer.wkbType(), layer.crs().authid()))
         expect({"name", "status", "count"} <= set(fields), fields)
         c.detail = f"fields {fields}; crs {layer.crs().authid()}; extent {layer.extent().toString(3)}"
