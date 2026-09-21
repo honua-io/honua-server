@@ -1,0 +1,22 @@
+{
+  "observed_at": "2026-09-21T01:01:24.443240+00:00",
+  "pr": "https://github.com/honua-io/honua-server/pull/5060",
+  "head": "5cc4a642dd2bc93f9a78a2f6759806bf2d207d64",
+  "base": "trunk",
+  "draft": false,
+  "state": "OPEN",
+  "required_checks": [
+    {
+      "name": "PR Gate",
+      "state": "SUCCESS",
+      "url": "https://github.com/honua-io/honua-server/actions/runs/35548073656/job/106181251468"
+    },
+    {
+      "name": "Review Gate",
+      "state": "SUCCESS",
+      "url": "https://github.com/honua-io/honua-server/pull/5060"
+    }
+  ],
+  "unresolved_review_threads": 0,
+  "report_only_affected_shard": "still running; explicitly excluded from required.needs by pr-gate.yml"
+}
