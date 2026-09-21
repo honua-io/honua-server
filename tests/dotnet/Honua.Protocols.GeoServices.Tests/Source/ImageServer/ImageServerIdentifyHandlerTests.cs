@@ -738,6 +738,148 @@ public class ImageServerIdentifyHandlerTests
         }
     }
 
+    [Theory]
+    [InlineData("{x: -122.498828, y: 37.838906}", null)]
+    [InlineData("{x: -122.498828, y: 37.838906}", "4326")]
+    [InlineData("{y:37.838906,x:-122.498828}", "4326")]
+    [InlineData("{ x : -1.22498828e2 , y : 3.7838906e1 }", "4326")]
+    [InlineData("{\"x\":-122.498828,\"y\":37.838906}", "4326")]
+    [InlineData("-122.498828,37.838906", "4326")]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_NativePointLiteralMatchesStrictJson(string geometry, string? sr)
+    {
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs([CreateTestRasterInfo()]);
+        _rasterStore.IdentifyAsync(1, 100, Arg.Any<double>(), Arg.Any<double>(), Arg.Any<int?>(), Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>())
+            .Returns(new PixelValueResult
+            {
+                X = -122.498828,
+                Y = 37.838906,
+                Srid = 4326,
+                HasData = true,
+                BandValues = new Dictionary<int, object?> { [1] = 10.0 }
+            });
+
+        using var expected = await ExecuteIdentifyJsonAsync(
+            CreateRequest("{\"x\":-122.498828,\"y\":37.838906}", sr));
+        using var actual = await ExecuteIdentifyJsonAsync(CreateRequest(geometry, sr));
+        actual.RootElement.GetRawText().Should().Be(expected.RootElement.GetRawText());
+        actual.RootElement.GetProperty("value").GetString().Should().Be("10");
+        await _rasterStore.Received(2).IdentifyAsync(1, 100, -122.498828, 37.838906,
+            sr is null ? null : 4326, Arg.Any<RasterIdentifyRendering?>(), Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData("{x:NaN,y:37.838906}")]
+    [InlineData("{x:Infinity,y:37.838906}")]
+    [InlineData("{x:1e999,y:37.838906}")]
+    [InlineData("{x:-122.498828,x:0,y:37.838906}")]
+    [InlineData("{x:-122.498828}")]
+    [InlineData("{x:-122.498828,y:37.838906,unknown:1}")]
+    [InlineData("{x:-122.498828,y:37.838906};anything()")]
+    [InlineData("{x:(-122.498828),y:37.838906}")]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_NativePointLiteralRejectsInvalidInput(string geometry)
+    {
+        var context = CreateImageServerContext();
+        var result = await _handler.IdentifyAsync(context, 1, CreateRequest(geometry));
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
+        await _rasterStore.DidNotReceiveWithAnyArgs().QueryRastersAsync(default, default!, default);
+        await _rasterStore.DidNotReceiveWithAnyArgs().IdentifyAsync(default, default, default, default, default, default, default);
+    }
+
+    [Theory]
+    [InlineData("esriGeometryEnvelope")]
+    [InlineData("esriGeometryPolygon")]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_PointLiteralDoesNotRelaxNonPointGeometry(string geometryType)
+    {
+        var context = CreateImageServerContext();
+        var result = await _handler.IdentifyAsync(context, 1,
+            CreateRequest("{x:-122.498828,y:37.838906}", geometryType: geometryType));
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
+        await _rasterStore.DidNotReceiveWithAnyArgs().QueryRastersAsync(default, default!, default);
+    }
+
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_AdditiveResultsPreserveStandardPixelAndCatalog(bool returnCatalogItems)
+    {
+        SetupSuccessfulIdentify();
+        using var json = await ExecuteIdentifyJsonAsync(new IdentifyRequest
+        {
+            Geometry = "10,20", Sr = "4326", ReturnCatalogItems = returnCatalogItems, ReturnGeometry = false, F = "json"
+        });
+        var root = json.RootElement;
+        root.GetProperty("value").GetString().Should().Be("128, 64, 32");
+        root.GetProperty("objectId").GetInt64().Should().Be(100);
+        root.GetProperty("properties").GetProperty("Band_1").GetDouble().Should().Be(128);
+        root.TryGetProperty("catalogItems", out var catalog).Should().Be(returnCatalogItems);
+        if (returnCatalogItems)
+        {
+            catalog.GetArrayLength().Should().Be(1);
+            catalog[0].GetProperty("id").GetInt64().Should().Be(100);
+            catalog[0].TryGetProperty("footprint", out _).Should().BeFalse();
+        }
+
+        var results = root.GetProperty("results");
+        results.GetArrayLength().Should().Be(1);
+        var feature = results[0];
+        feature.GetProperty("geometryType").GetString().Should().Be("esriGeometryPoint");
+        feature.GetProperty("geometry").GetRawText().Should().Be(root.GetProperty("location").GetRawText());
+        feature.GetProperty("layerName").GetString().Should().Be(root.GetProperty("name").GetString());
+        feature.GetProperty("displayFieldName").GetString().Should().Be("Pixel Value");
+        feature.GetProperty("attributes").GetProperty("Pixel Value").GetString().Should().Be("128, 64, 32");
+        feature.GetProperty("attributes").GetProperty("Band_1").GetDouble().Should().Be(128);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_AdditiveNoDataIsExplicitWithoutInventedRasterIdentity()
+    {
+        _rasterStore.QueryRastersAsync(default, default, default).ReturnsForAnyArgs(Array.Empty<RasterInfo>());
+        using var json = await ExecuteIdentifyJsonAsync(CreateRequest("10,20"));
+        var root = json.RootElement;
+        root.GetProperty("value").GetString().Should().Be("NoData");
+        root.TryGetProperty("objectId", out _).Should().BeFalse();
+        var feature = root.GetProperty("results")[0];
+        feature.GetProperty("attributes").GetProperty("Pixel Value").GetString().Should().Be("NoData");
+        feature.GetProperty("attributes").GetProperty("HasData").GetBoolean().Should().BeFalse();
+        feature.GetProperty("geometry").GetRawText().Should().Be(root.GetProperty("location").GetRawText());
+        feature.GetProperty("geometry").TryGetProperty("spatialReference", out _).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_AdditiveMultidimensionalResultPreservesCanonicalSlice(bool hasData)
+    {
+        _zarrPointSliceReader.ReadAsync(
+                1, 10, 20, 4326, Arg.Any<IReadOnlyList<ZarrPointSliceSelection>>(), Arg.Any<CancellationToken>())
+            .Returns(new ZarrPointSliceReadResult(
+                hasData ? ZarrPointSliceReadStatus.Success : ZarrPointSliceReadStatus.OutsideCoverage,
+                hasData ? 1022 : null, "temperature", null));
+        using var json = await ExecuteIdentifyJsonAsync(new IdentifyRequest
+        {
+            Geometry = "10,20", Sr = "4326",
+            MultidimensionalDefinition = "[{\"variableName\":\"temperature\",\"dimensionName\":\"elevation\",\"values\":[333.3333]}]"
+        });
+        var root = json.RootElement;
+        var expectedValue = hasData ? "1022" : "NoData";
+        root.GetProperty("value").GetString().Should().Be(expectedValue);
+        root.GetProperty("properties").GetProperty("HasData").GetBoolean().Should().Be(hasData);
+        root.GetProperty("properties").TryGetProperty("Pixel Value", out _).Should().BeFalse();
+        var feature = root.GetProperty("results")[0];
+        feature.GetProperty("attributes").GetProperty("Pixel Value").GetString().Should().Be(expectedValue);
+        feature.GetProperty("attributes").GetProperty("Variable").GetString().Should().Be("temperature");
+        feature.GetProperty("geometry").GetRawText().Should().Be(root.GetProperty("location").GetRawText());
+        await _rasterStore.DidNotReceiveWithAnyArgs().IdentifyAsync(default, default, default, default);
+    }
+
     private async Task<JsonDocument> ExecuteIdentifyJsonAsync(IdentifyRequest request)
     {
         var context = CreateImageServerContext();
