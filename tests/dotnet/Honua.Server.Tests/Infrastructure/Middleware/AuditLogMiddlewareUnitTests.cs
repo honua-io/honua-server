@@ -250,6 +250,68 @@ public sealed class AuditLogMiddlewareUnitTests
         _audit.Events.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task AuditedRoute_WhenPipelineThrows_RecordsFailureAndRethrows()
+    {
+        var context = BuildContext(
+            method: "DELETE",
+            routePattern: "/api/v{version:apiVersion}/admin/roles/{id}",
+            authenticated: true);
+        var fault = new InvalidOperationException("operation failed");
+
+        var thrown = await InvokeThrowingAsync(context, fault);
+
+        thrown.Should().BeSameAs(fault, "the global exception handler must still shape the response");
+        var evt = _audit.Events.Should().ContainSingle().Subject;
+        evt.EventType.Should().Be(AuditEventType.AdminAction);
+        evt.Action.Should().Be("admin.delete");
+        evt.Outcome.Should().Be(AuditOutcome.Failure);
+        using var details = JsonDocument.Parse(evt.Details);
+        details.RootElement.GetProperty("status").GetInt32().Should().Be(StatusCodes.Status500InternalServerError);
+    }
+
+    [Fact]
+    public async Task UnauditedRoute_WhenPipelineThrows_RecordsNothingAndRethrows()
+    {
+        var context = BuildContext(
+            method: "GET",
+            routePattern: "/healthz/live",
+            authenticated: false);
+        var fault = new InvalidOperationException("operation failed");
+
+        var thrown = await InvokeThrowingAsync(context, fault);
+
+        thrown.Should().BeSameAs(fault);
+        _audit.Events.Should().BeEmpty(
+            "routes outside the coverage matrix must not let unauthenticated traffic drive audit volume");
+    }
+
+    [Fact]
+    public async Task AuditedRoute_WhenCallerDisconnects_RecordsNothing()
+    {
+        var context = BuildContext(
+            method: "DELETE",
+            routePattern: "/api/v{version:apiVersion}/admin/roles/{id}",
+            authenticated: true);
+        using var aborted = new CancellationTokenSource();
+        context.RequestAborted = aborted.Token;
+        await aborted.CancelAsync();
+
+        var thrown = await InvokeThrowingAsync(context, new OperationCanceledException(aborted.Token));
+
+        thrown.Should().BeOfType<OperationCanceledException>();
+        _audit.Events.Should().BeEmpty("a caller that hung up is not an operation failure");
+    }
+
+    private static async Task<Exception> InvokeThrowingAsync(HttpContext context, Exception fault)
+    {
+        var middleware = new AuditLogMiddleware(
+            next: _ => Task.FromException(fault),
+            actionResolver: new DefaultAuditActionResolver());
+
+        return await Assert.ThrowsAnyAsync<Exception>(() => middleware.InvokeAsync(context));
+    }
+
     private async Task InvokeAsync(HttpContext context, int finalStatus)
     {
         var middleware = new AuditLogMiddleware(

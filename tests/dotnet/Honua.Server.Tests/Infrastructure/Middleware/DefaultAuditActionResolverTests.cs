@@ -65,6 +65,21 @@ public sealed class DefaultAuditActionResolverTests
     }
 
     [Theory]
+    [InlineData("POST")]
+    [InlineData("GET")]
+    public void Resolve_PortalTokenIssuance_ReturnsAuthenticationDescriptor(string method)
+    {
+        var descriptor = _resolver.Resolve(method, "/sharing/rest/generateToken");
+
+        descriptor.Should().NotBeNull();
+        descriptor!.EventType.Should().Be(AuditEventType.Authentication);
+        descriptor.Action.Should().Be("auth.token.issue");
+        descriptor.ResourceType.Should().Be("session");
+        descriptor.AuditOnSuccess.Should().BeTrue(
+            "issuing a portal token is recorded on success as well as on failure");
+    }
+
+    [Theory]
     [InlineData("GET", "/rest/services/{serviceId}/FeatureServer/{layerId:int}/query")]
     [InlineData("POST", "/ogc/features/collections/{collectionId}/items")]
     [InlineData("GET", "/healthz/live")]
