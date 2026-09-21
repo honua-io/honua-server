@@ -76,7 +76,7 @@ services:
       context: ${ROSTER_HOME:?set ROSTER_HOME}
       dockerfile: lanes/gdal/Dockerfile
       args:
-        GDAL_IMAGE: ghcr.io/osgeo/gdal:ubuntu-small-3.8.4
+        GDAL_IMAGE: ghcr.io/osgeo/gdal:ubuntu-small-3.8.4@sha256:60d3bc2f8b09ca1a7ef2db0239699b2c03713aa02be6e525e731c0020bbb10a4
     image: honua-roster/lane-gdal:3.8.4
     environment: *lane-env
     volumes: *lane-volumes
@@ -89,7 +89,7 @@ services:
       context: ${ROSTER_HOME:?set ROSTER_HOME}
       dockerfile: lanes/gdal/Dockerfile
       args:
-        GDAL_IMAGE: ghcr.io/osgeo/gdal:ubuntu-full-3.13.3
+        GDAL_IMAGE: ghcr.io/osgeo/gdal:ubuntu-full-3.13.3@sha256:2dd0f81ef927ff4c3d4dbe4f73c029dc86d4073974c0564f8e196f6e1412e2e0
     image: honua-roster/lane-gdal:3.13.3
     environment: *lane-env
     volumes: *lane-volumes
