@@ -377,7 +377,7 @@ internal sealed class Wcs20Handler
         }
 
         if (sliceBounds is { } bounds &&
-            await ValidateSpatialSubsetAsync(context.Request.Query, coverage.Coverage.Value.Raster, bounds, cancellationToken)
+            await ValidateSpatialSubsetAsync(context.Request.Query, coverage.Coverage.Value.Raster, bounds, query.ClipRegion, cancellationToken)
                 .ConfigureAwait(false) is { } spatialError)
         {
             Wcs20Log.ValidationFailed(_logger, Wcs20Utilities.Operations.GetCoverage, spatialError.Detail);
@@ -428,6 +428,7 @@ internal sealed class Wcs20Handler
         IQueryCollection query,
         RasterInfo raster,
         RasterExtent bounds,
+        RasterClipRegion? clipRegion,
         CancellationToken cancellationToken)
     {
         if (!TryResolveExtent(raster, out var extent) || (extent.Srid ?? raster.Srid) is not { } nativeSrid)
@@ -436,23 +437,29 @@ internal sealed class Wcs20Handler
         }
 
         var subsetSrid = bounds.Srid ?? nativeSrid;
-        var nativeBounds = subsetSrid == nativeSrid
-            ? (MinX: bounds.XMin, MinY: bounds.YMin, MaxX: bounds.XMax, MaxY: bounds.YMax)
-            : await _coverageBackend.TransformExtentAsync(bounds, subsetSrid, nativeSrid, cancellationToken)
+        bool intersects;
+        if (subsetSrid == nativeSrid)
+        {
+            intersects = bounds.XMax > extent.XMin && bounds.XMin < extent.XMax &&
+                bounds.YMax > extent.YMin && bounds.YMin < extent.YMax;
+        }
+        else
+        {
+            var clip = clipRegion ?? throw new InvalidOperationException("Spatial subset has no clip polygon.");
+            var nativePolygon = await _coverageBackend.TransformClipRegionAsync(clip, nativeSrid, cancellationToken)
                 .ConfigureAwait(false);
+            var coveragePolygon = new GeometryFactory().ToGeometry(
+                new Envelope(extent.XMin, extent.XMax, extent.YMin, extent.YMax));
+            // Interior/interior overlap excludes a merely touching edge or point.
+            intersects = nativePolygon.Relate(coveragePolygon, "T********");
+        }
 
-        // A disjoint or merely touching window has no coverage to export. Letting
-        // it reach ST_Clip/ST_AsGDALRaster can turn invalid subsetting into a 500.
         // Partial overlap remains valid: the canonical raster backend clips it.
-        if (!nativeBounds.HasValue ||
-            nativeBounds.Value.MaxX <= extent.XMin || nativeBounds.Value.MinX >= extent.XMax ||
-            nativeBounds.Value.MaxY <= extent.YMin || nativeBounds.Value.MinY >= extent.YMax)
+        if (!intersects)
         {
             return new WcsParameterError(
                 Wcs20Utilities.ExceptionCodes.InvalidSubsetting,
-                nativeBounds.HasValue
-                    ? "Spatial subset does not intersect the coverage extent."
-                    : "Spatial subset could not be transformed to the coverage CRS.",
+                "Spatial subset does not intersect the coverage extent.",
                 string.IsNullOrWhiteSpace(GetQueryValue(query, Wcs20Utilities.Parameters.BBox))
                     ? Wcs20Utilities.Parameters.Subset
                     : Wcs20Utilities.Parameters.BBox);

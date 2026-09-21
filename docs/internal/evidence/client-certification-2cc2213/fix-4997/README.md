@@ -6,8 +6,8 @@ An entirely outside subset is an OWS `InvalidSubsetting` client error, not HTTP
 500 `NoApplicableCode`. This addresses the existing must-fix-before-cut item.
 
 The handler validates the spatial window before raster export. It compares
-bounds in the coverage's native CRS using the shared coordinate transform
-service, rejects disjoint and edge-touching windows with HTTP 404 and an OWS
+the actual clip polygon in the coverage's native CRS using the shared
+coordinate transform service, rejects disjoint and edge-touching windows with HTTP 404 and an OWS
 `InvalidSubsetting` report, and leaves intersecting windows to the canonical
 raster backend. Both `SUBSET` and the accepted `BBOX` alias carry the correct
 error locator. Ordinary raster failures retain their existing error mapping.
@@ -109,7 +109,7 @@ cases. No acceptance criterion is released.
 
 ## Focused .NET result
 
-The final focused run passed **24/24**, with zero failures or skipped tests:
+The initial focused run passed **24/24**, with zero failures or skipped tests:
 eight new outside-window endpoint cases, two new valid cross-CRS cases,
 eight request-CRS unit cases, the two existing Zarr trim cases, and four
 existing plain/subset/malformed/reversed-bound endpoint cases.
@@ -123,3 +123,30 @@ The pre-PR script's dry run selected the WFS/WCS/WPS shard. The local checks
 above replace its solution-targeted formatting step with the operator-required
 changed-project-only invocations. The PR's normal required gates remain the
 admission checks for its exact head.
+
+## Cross-CRS review regressions
+
+The review identified two cases beyond the original boundary replay: failure
+of the shared coordinate transform must remain a server error, and a projected
+rectangle's enclosing envelope can overlap a raster that its polygon misses.
+The guard now transforms the actual clip polygon's vertices through the shared
+batch transform service, matching the raster backend's ST_Transform input.
+It requires interior/interior intersection; edge or point contact is empty.
+An unavailable or non-finite transform raises the existing sanitized HTTP 500
+`NoApplicableCode`, instead of incorrectly blaming the request.
+
+`wcs-subset-utm-fixture.sql` authors a second 4x4 Float32 gradient, with the same
+pixel formula and nodata, in EPSG:32610: upper-left `(587850,4095500)`, pixel
+size `(25,-25)`. The geographic subset `Long(-122,-121),Lat(37,38)` has an
+intersecting projected envelope but a disjoint polygon. The independent
+Rasterio/PROJ oracle transforms its four corners and evaluates the west edge
+at both raster Y limits: every fixture coordinate lies at least 1025 metres
+west of that edge. `utm-before.json` reproduces HTTP 500 against the initial
+fix, while its valid geographic control already returns the exact 4x4 values,
+Float32 type, nodata, native CRS, and transform. Apply the UTM SQL after the
+normal seed and run `python /regressions/wcs_subset_utm_client.py` in the same
+pinned client image to reproduce both assertions.
+
+The additional endpoint tests exercise that disjoint UTM polygon and a shared
+transform service returning its documented failure sentinel. These regressions
+must fail against the initial implementation before validating the correction.
