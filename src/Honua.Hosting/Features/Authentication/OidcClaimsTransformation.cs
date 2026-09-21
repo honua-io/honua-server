@@ -69,7 +69,9 @@ internal sealed class OidcClaimsTransformation(
     /// provenance that an issuer or custom mapping must not populate.
     /// </summary>
     internal static bool IsReservedProvenanceClaimType(string? claimType)
-        => claimType is not null && ReservedProvenanceClaimTypes.Contains(claimType);
+        => claimType is not null
+           && (ReservedProvenanceClaimTypes.Contains(claimType)
+               || CanonicalSecurityActor.IsFrameworkAuthorityClaimType(claimType));
 
     /// <summary>
     /// Transforms claims from OIDC providers to normalized application claims.
@@ -88,6 +90,16 @@ internal sealed class OidcClaimsTransformation(
         // durable capture can consume them. A safely re-entered transformation
         // preserves only claims carrying in-memory framework provenance.
         RemoveUntrustedFrameworkClaims(principal);
+
+        // The admin permission grammar, the credential-kind discriminator, the API-key
+        // identity and the rate-limit tier are minted by this process's own authentication
+        // handlers and read as authoritative by shared authorization. Every handler that
+        // mints them stamps in-memory framework provenance, so dropping the unstamped
+        // copies here leaves an externally issued identity with exactly the authority its
+        // roles confer. This runs BEFORE the auth_type branch below, so an issuer cannot
+        // choose the transformation path either. Configured role mapping is unaffected:
+        // it targets role claim types, which are not in this set.
+        CanonicalSecurityActor.RemoveUnstampedAuthorityClaims(principal);
 
         // These markers are framework-owned authorization provenance, not issuer claims. An
         // OIDC provider must not be able to choose the fallback roles restored after the live
@@ -253,11 +265,13 @@ internal sealed class OidcClaimsTransformation(
                 .Select(role => new Claim(RolesWithoutClaimsMappingClaimType, role)));
         }
 
-        // Add auth_type claim if not present
+        // Add auth_type claim if not present. The value is derived from the scheme ASP.NET
+        // selected, never from the token, so it is stamped as framework-owned and survives
+        // a re-entered transformation.
         if (!identity.HasClaim(c => c.Type == "auth_type"))
         {
             var scheme = identity.AuthenticationType ?? "oidc";
-            transformedClaims.Add(new Claim("auth_type", scheme));
+            transformedClaims.Add(CanonicalSecurityActor.CreateStampedClaim("auth_type", scheme));
         }
 
         // Apply custom mappings (Enterprise identity.claims-mapping only, #2997)

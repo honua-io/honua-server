@@ -1,9 +1,11 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
 using FluentAssertions;
 using Honua.Core.Exceptions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Caching.Distributed;
@@ -15,7 +17,9 @@ namespace Honua.Server.Tests.Infrastructure.Authentication;
 
 /// <summary>
 /// Unit tests for <see cref="AdminAuthSessionStore"/> covering session lifecycle
-/// and the BH-028 distributed-cache exception fallback regression.
+/// and the BH-028 distributed-cache exception fallback regression, plus the
+/// <see cref="AdminAuthClaimsProjector"/> that decides which validated claims reach
+/// an admin session and the principal projected back out of one.
 /// </summary>
 [SecurityTest]
 [Protocol(TestProtocols.Admin)]
@@ -258,6 +262,112 @@ public sealed class AdminAuthSessionStoreTests
         var store = CreateStore();
         var session = await store.GetPendingSessionAsync("unknown-session-id", CancellationToken.None);
         session.Should().BeNull();
+    }
+
+    // ─── Session claim projection (SEC-10) ──────────────────────────────────────
+
+    [UnitTest]
+    public void TryProjectValidatedClaims_DropsAuthorityClaimsFromTheValidatedToken()
+    {
+        // A session record stores only (type, value) pairs, so anything that lands here is
+        // indistinguishable later from a claim this process minted. The framework authority
+        // claim types must therefore never be copied out of a provider's ID token.
+        var sourceClaims = new[]
+        {
+            new Claim(ClaimTypes.NameIdentifier, "user-123"),
+            new Claim("roles", "viewer"),
+            new Claim("permission", "admin"),
+            new Claim("auth_type", "admin"),
+            new Claim("api_key_id", "11111111-1111-1111-1111-111111111111"),
+            new Claim("api_key_name", "bootstrap"),
+            new Claim("plan", "enterprise"),
+            new Claim("honua_plan", "enterprise"),
+            new Claim("portal_token_binding", "Referer"),
+        };
+
+        AdminAuthClaimsProjector.TryProjectValidatedClaims(sourceClaims, out var sessionClaims)
+            .Should().BeTrue();
+
+        sessionClaims.Should().NotContain(claim => claim.Type == "permission");
+        sessionClaims.Should().NotContain(claim => claim.Type == "api_key_id");
+        sessionClaims.Should().NotContain(claim => claim.Type == "api_key_name");
+        sessionClaims.Should().NotContain(claim => claim.Type == "plan");
+        sessionClaims.Should().NotContain(claim => claim.Type == "honua_plan");
+        sessionClaims.Should().NotContain(claim => claim.Type == "portal_token_binding");
+
+        // The projector chooses auth_type, not the token.
+        sessionClaims.Should().ContainSingle(claim => claim.Type == "auth_type")
+            .Which.Value.Should().Be("oidc");
+
+        // Role normalization — the operator's supported grant path — is untouched.
+        sessionClaims.Should().Contain(claim => claim.Type == ClaimTypes.Role && claim.Value == "viewer");
+    }
+
+    [UnitTest]
+    public void TryProjectValidatedClaims_HonoursTheCallerSuppliedAuthType()
+    {
+        // The SAML login path projects into the same session shape and stays
+        // distinguishable from an OIDC session.
+        var sourceClaims = new[] { new Claim(ClaimTypes.NameIdentifier, "user-123") };
+
+        AdminAuthClaimsProjector.TryProjectValidatedClaims(sourceClaims, out var sessionClaims, "saml")
+            .Should().BeTrue();
+
+        sessionClaims.Should().ContainSingle(claim => claim.Type == "auth_type")
+            .Which.Value.Should().Be("saml");
+    }
+
+    [UnitTest]
+    public void CreatePrincipal_NormalizesAuthorityClaimsFromAnOlderSessionRecord()
+    {
+        // A record written before the ingress sanitization existed can still hold an
+        // issuer-supplied grant. Projecting it must not resurrect that authority.
+        var sessionClaims = new[]
+        {
+            new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = "user-123" },
+            new AdminAuthSessionClaim { Type = "permission", Value = "admin" },
+            new AdminAuthSessionClaim { Type = "auth_type", Value = "admin" },
+        };
+
+        var principal = AdminAuthClaimsProjector.CreatePrincipal(sessionClaims, "AdminSession");
+
+        principal.FindFirst("permission").Should().BeNull();
+        AdminApiKeyPermission.IsFullAdminPrincipal(principal).Should().BeFalse();
+
+        var authType = principal.FindFirst("auth_type");
+        authType.Should().NotBeNull();
+        authType!.Value.Should().Be("oidc");
+        // Stamped so the shared claims transformation keeps it.
+        CanonicalSecurityActor.IsFrameworkOwnedClaim(authType).Should().BeTrue();
+    }
+
+    [UnitTest]
+    public void CreatePrincipal_SamlSession_KeepsItsRecordedAuthType()
+    {
+        AdminAuthClaimsProjector.TryProjectValidatedClaims(
+                [new Claim(ClaimTypes.NameIdentifier, "user-123")], out var sessionClaims, "saml")
+            .Should().BeTrue();
+
+        var principal = AdminAuthClaimsProjector.CreatePrincipal(sessionClaims, "AdminSession");
+
+        principal.Claims.Where(claim => claim.Type == "auth_type").Should().ContainSingle()
+            .Which.Value.Should().Be("saml");
+    }
+
+    [UnitTest]
+    public void CreatePrincipal_OperatorBearer_KeepsItsOwnAuthType()
+    {
+        var sessionClaims = new[]
+        {
+            new AdminAuthSessionClaim { Type = ClaimTypes.NameIdentifier, Value = "user-123" },
+            new AdminAuthSessionClaim { Type = "roles", Value = "admin" },
+        };
+
+        var principal = AdminAuthClaimsProjector.CreatePrincipal(
+            sessionClaims, "OperatorBearer", "operator-bearer");
+
+        principal.FindFirst("auth_type")!.Value.Should().Be("operator-bearer");
+        principal.IsInRole("admin").Should().BeTrue();
     }
 
     // ────────────────────────────────────────────────────────────────────────────

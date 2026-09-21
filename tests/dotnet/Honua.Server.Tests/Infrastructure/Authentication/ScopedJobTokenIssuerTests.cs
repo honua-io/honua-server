@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Caching.Distributed;
@@ -61,6 +62,29 @@ public sealed class ScopedJobTokenIssuerTests
         // Service-wide write was reachable, so the service-scoped editor role and
         // both read+write permission grants are projected.
         validation.Principal.IsInRole("data-editor:parcels").Should().BeTrue();
+        PermissionsOf(validation.Principal).Should().Contain(["read:parcels", "write:parcels"]);
+    }
+
+    [UnitTest]
+    public async Task ValidateAsync_ProjectedAuthorityClaims_SurviveFrameworkClaimSanitization()
+    {
+        var issuer = CreateIssuer();
+        var issuance = await issuer.IssueAsync(
+            new ScopedJobTokenRequest(
+                PrincipalId: "alice",
+                TenantId: "tenant-A",
+                Roles: ["data-editor:parcels"],
+                Grants: [],
+                JobId: "gp-job-stamp",
+                ResourceScope: [new JobResourceScopeEntry("parcels", null, JobResourceAccess.Write)],
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30)),
+            CancellationToken.None);
+        var validation = await issuer.ValidateAsync(issuance.Token, "gp-job-stamp", CancellationToken.None);
+        validation.Should().NotBeNull();
+
+        CanonicalSecurityActor.RemoveUnstampedAuthorityClaims(validation!.Principal);
+
+        validation.Principal.FindFirstValue("auth_type").Should().NotBeNullOrEmpty();
         PermissionsOf(validation.Principal).Should().Contain(["read:parcels", "write:parcels"]);
     }
 

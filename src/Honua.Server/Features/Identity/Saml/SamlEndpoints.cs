@@ -148,7 +148,6 @@ internal static partial class SamlEndpoints
         {
             new(ClaimTypes.NameIdentifier, subject.NameId),
             new(ClaimTypes.Name, string.IsNullOrWhiteSpace(subject.DisplayName) ? subject.NameId : subject.DisplayName!),
-            new("auth_type", "saml"),
         };
 
         if (!string.IsNullOrWhiteSpace(subject.Email))
@@ -161,7 +160,9 @@ internal static partial class SamlEndpoints
             claims.Add(new Claim(ClaimTypes.Role, role));
         }
 
-        if (!AdminAuthClaimsProjector.TryProjectValidatedClaims(claims, out var sessionClaims))
+        // The projector stamps the auth_type itself so an assertion attribute cannot choose
+        // it; "saml" keeps this session distinguishable from an OIDC one.
+        if (!AdminAuthClaimsProjector.TryProjectValidatedClaims(claims, out var sessionClaims, "saml"))
         {
             return Results.Problem(
                 title: "SAML assertion rejected",

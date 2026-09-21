@@ -12,6 +12,7 @@ using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
+using Honua.Infrastructure.Security;
 using Honua.Server.Tests;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -1556,11 +1557,12 @@ public class OidcAuthenticationTests
         var logger = new TestLogger<OidcClaimsTransformation>();
         var transformation = new OidcClaimsTransformation(oidcOptions, logger, EnterpriseEntitledServices());
 
+        // The API-key handler marks the auth_type it mints as framework-owned (SEC-10).
         var claims = new List<Claim>
         {
             new(ClaimTypes.Name, "admin"),
             new(ClaimTypes.Role, "admin"),
-            new("auth_type", "admin")
+            CanonicalSecurityActor.CreateStampedClaim("auth_type", "admin")
         };
         var identity = new ClaimsIdentity(claims, "ApiKey");
         var principal = new ClaimsPrincipal(identity);
