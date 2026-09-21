@@ -245,6 +245,13 @@ public sealed class MapServerDynamicJoinTests
         {
             builder.ConfigureTestServices(services =>
             {
+                if (temporalFields)
+                {
+                    // Keep seeded temporal values visible to the HTTP request's scope.
+                    services.RemoveAll<TestFeatureStore>();
+                    services.AddSingleton<TestFeatureStore>();
+                }
+
                 services.RemoveAll<IMetadataV2GraphProvider>();
                 services.RemoveAll<IMetadataV2GraphStore>();
                 services.AddSingleton(_ => BuildJoinGraphProvider(rightLayerAnonymous, temporalFields));
