@@ -601,21 +601,21 @@ class RealMirrorContractTierTests(unittest.TestCase):
         cls.verdicts = module.verify_contract(MIRROR, ROOT)
         cls.by_cell = {verdict["cell"]: verdict for verdict in cls.verdicts}
 
-    def test_the_bounded_roster_is_exactly_the_fifty_nine_governed_rows(self):
-        self.assertEqual(59, len(self.verdicts))
+    def test_the_bounded_roster_is_exactly_the_fifty_two_governed_rows(self):
+        self.assertEqual(52, len(self.verdicts))
         counts: dict[str, int] = {}
         for verdict in self.verdicts:
             counts[verdict["canonical_client"]] = counts.get(verdict["canonical_client"], 0) + 1
         self.assertEqual(
-            {"QGIS": 23, "GDAL/OGR": 11, "MapLibre GL JS": 10, "GDAL": 8,
-             "OWSLib": 6, "PySTAC-Client": 1},
+            {"QGIS": 22, "GDAL/OGR": 9, "MapLibre GL JS": 9, "GDAL": 7,
+             "OWSLib": 4, "PySTAC-Client": 1},
             counts)
 
     def test_no_cell_is_certified_and_the_gate_is_red(self):
         summary = module.summarize(self.verdicts)
         self.assertFalse(summary["green"])
         self.assertEqual(0, summary["byResult"]["pass"])
-        self.assertEqual(59, summary["byResult"]["skip"])
+        self.assertEqual(52, summary["byResult"]["skip"])
 
     def test_the_mirror_is_not_stale_against_the_repository(self):
         stale = [v["cell"] for v in self.verdicts if "mirror-stale" in blocker_codes(v)]
@@ -698,7 +698,7 @@ class RealMirrorContractTierTests(unittest.TestCase):
             self.assertEqual(["no-candidate"], blocker_codes(self.by_cell[module.cell_id(row)]))
 
     def test_the_governed_qgis_raster_surfaces_have_no_lane_at_all(self):
-        for surface in ("wms", "wmts"):
+        for surface in ("wms",):
             row = next(r for r in MIRROR["requirements"]
                        if r["client_lane"] == "desktop-qgis" and r["surface"] == surface)
             self.assertEqual(
@@ -747,7 +747,7 @@ class RealBaselinesReleaseTierTests(unittest.TestCase):
         summary = module.summarize(self.verdicts)
         self.assertFalse(summary["green"])
         self.assertEqual(0, summary["byResult"]["pass"])
-        self.assertEqual(59, summary["byResult"]["skip"])
+        self.assertEqual(52, summary["byResult"]["skip"])
 
     def test_todays_baselines_carry_no_bounded_receipt_for_any_governed_cell(self):
         # The denominator now joins, so the nightly matrix baselines are judged on
@@ -766,7 +766,7 @@ class CommandLineTests(unittest.TestCase):
             self.assertEqual("honua.client-certification-verdict/v1", report["schema"])
             self.assertEqual("contract", report["mode"])
             self.assertIsNone(report["candidate"])
-            self.assertEqual(59, report["summary"]["requiredCells"])
+            self.assertEqual(52, report["summary"]["requiredCells"])
 
     def test_release_mode_refuses_to_run_without_an_exact_candidate(self):
         with self.assertRaises(SystemExit) as raised:

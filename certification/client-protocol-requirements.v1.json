@@ -165,6 +165,60 @@
       "commit": "d5a09d13c4ad541c05702e598c3679c0f42db7af"
     }
   },
+  "excludedRequirements": [
+    {
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-CONFORMANCE",
+      "maturity": "supported",
+      "canonical_client": "GDAL/OGR",
+      "client_lane": "gdal",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": false,
+      "addressability_reason": "The GDAL/OGR OAPIF driver never requests /conformance: GDAL 3.8.4 and 3.13.3 (the newest release) read only the landing page, the service-desc, /collections and items, even when the landing page links conformance and an attribute filter is set, so GDAL/OGR does not exercise this operation on any server.",
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null
+    },
+    {
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-TRANSACTIONS",
+      "maturity": "supported",
+      "canonical_client": "GDAL/OGR",
+      "client_lane": "gdal",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": false,
+      "addressability_reason": "The GDAL/OGR OAPIF driver is read-only: in GDAL 3.8.4 and 3.13.3 (the newest release) update-mode open fails, SequentialWrite/RandomWrite/DeleteFeature capabilities are false and CreateFeature returns Unsupported operation even against a server that declares create-replace-delete, so GDAL/OGR does not exercise this operation on any server.",
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null
+    }
+  ],
   "requirements": [
     {
       "capability_key": "serve.ogc",
@@ -661,47 +715,6 @@
     {
       "capability_key": "serve.ogc",
       "surface": "ogc",
-      "operation": "OGC-OP-OGC-API-FEATURES-CONFORMANCE",
-      "maturity": "supported",
-      "canonical_client": "GDAL/OGR",
-      "client_lane": "gdal",
-      "client_version": "3.8.4",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": false,
-      "addressability_reason": "The GDAL/OGR OAPIF driver never requests /conformance: GDAL 3.8.4 and 3.13.3 (the newest release) read only the landing page, the service-desc, /collections and items, even when the landing page links conformance and an attribute filter is set, so GDAL/OGR does not exercise this operation on any server.",
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc",
-      "surface": "ogc",
       "operation": "OGC-OP-OGC-API-FEATURES-ITEM",
       "maturity": "supported",
       "canonical_client": "GDAL/OGR",
@@ -880,47 +893,6 @@
           ],
           "reasonCode": null,
           "reason": null
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc",
-      "surface": "ogc",
-      "operation": "OGC-OP-OGC-API-FEATURES-TRANSACTIONS",
-      "maturity": "supported",
-      "canonical_client": "GDAL/OGR",
-      "client_lane": "gdal",
-      "client_version": "3.8.4",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": false,
-      "addressability_reason": "The GDAL/OGR OAPIF driver is read-only: in GDAL 3.8.4 and 3.13.3 (the newest release) update-mode open fails, SequentialWrite/RandomWrite/DeleteFeature capabilities are false and CreateFeature returns Unsupported operation even against a server that declares create-replace-delete, so GDAL/OGR does not exercise this operation on any server.",
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
         }
       }
     },
