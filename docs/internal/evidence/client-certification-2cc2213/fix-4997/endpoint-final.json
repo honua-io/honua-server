@@ -1,0 +1,130 @@
+{
+  "runtime_source_commit": "46a12d9e3b3253efec31a84055bea6c1467483b3",
+  "reviewable_pr_head": "5cc4a642dd2bc93f9a78a2f6759806bf2d207d64",
+  "protocol_assembly_sha256": "ba8b584c7b53c6102fc96273d0ab2d0421744b3fe51f89c50efb6a854ebfe3f3",
+  "filter": "FullyQualifiedName~Wcs_GetCoverage_OutsideExtent|FullyQualifiedName~Wcs_GetCoverage_IntersectingNonNativeSubset|FullyQualifiedName~Wcs20RequestCrsValidationTests|FullyQualifiedName~Wcs20ZarrTrimEndpointsTests|FullyQualifiedName~Wcs_GetCoverage_WithSubsetFormatAndOutputCrs|FullyQualifiedName~Wcs_GetCoverage_PlainRequest|FullyQualifiedName~Wcs_GetCoverage_MalformedSubset|FullyQualifiedName~Wcs_GetCoverage_ReversedSubsetBounds|FullyQualifiedName~Wcs_GetCoverage_DisjointTransformedPolygon|FullyQualifiedName~Wcs_GetCoverage_UnavailableSubsetTransform",
+  "counters": {
+    "total": "26",
+    "executed": "26",
+    "passed": "26",
+    "failed": "0",
+    "error": "0",
+    "timeout": "0",
+    "aborted": "0",
+    "inconclusive": "0",
+    "passedButRunAborted": "0",
+    "notRunnable": "0",
+    "notExecuted": "0",
+    "disconnected": "0",
+    "warning": "0",
+    "completed": "0",
+    "inProgress": "0",
+    "pending": "0"
+  },
+  "results": [
+    {
+      "name": "TryResolveRequestCrs WithMalformedOutputCrs RejectsWithInvalidParameterValue",
+      "outcome": "Passed"
+    },
+    {
+      "name": "Wcs GetCoverage OutsideExtent ReturnsInvalidSubsettingWithoutExport(subset: \"SUBSET=Lat(36,37)\", locator: \"SUBSET\")",
+      "outcome": "Passed"
+    },
+    {
+      "name": "TryResolveRequestCrs WithNoCrsParameters AcceptsNativeDefault",
+      "outcome": "Passed"
+    },
+    {
+      "name": "Wcs GetCoverage PlainRequest ReturnsRasterWithoutScalingOrSubset",
+      "outcome": "Passed"
+    },
+    {
+      "name": "Wcs GetCoverage IntersectingNonNativeSubset TransformsBeforeExtentCheck(nativeSrid: 4326, minimum: 0, maximum: 1, subset: \"SUBSETTINGCRS=EPSG:3857&SUBSET=x(1000,2000)&SUBSET\"\u00b7\u00b7\u00b7)",
+      "outcome": "Passed"
+    },
+    {
+      "name": "Wcs GetCoverage OutsideExtent ReturnsInvalidSubsettingWithoutExport(subset: \"SUBSETTINGCRS=EPSG:3857&SUBSET=x(0,1000)&SUBSET=y(\"\u00b7\u00b7\u00b7, locator: \"SUBSET\")",
+      "outcome": "Passed"
+    },
+    {
+      "name": "TryResolveRequestCrs WithUnsupportedOutputCrs RejectsWithOutputCrsNotSupported",
+      "outcome": "Passed"
+    },
+    {
+      "name": "Wcs GetCoverage OutsideExtent ReturnsInvalidSubsettingWithoutExport(subset: \"BBOXCRS=EPSG:3857&BBOX=0,0,1000,1000\", locator: \"BBOX\")",
+      "outcome": "Passed"
+    },
+    {
+      "name": "Wcs GetCoverage OutsideExtent ReturnsInvalidSubsettingWithoutExport(subset: \"SUBSET=Long(-122.35,-122.3)\", locator: \"SUBSET\")",
+      "outcome": "Passed"
+    },
+    {
+      "name": "TryResolveRequestCrs WithNativeSridOutsideSupportedSet AcceptsNativeDefault",
+      "outcome": "Passed"
+    },
+    {
+      "name": "Wcs GetCoverage DisjointTransformedPolygon ReturnsInvalidSubsettingWithoutExport",
+      "outcome": "Passed"
+    },
+    {
+      "name": "Wcs GetCoverage IntersectingNonNativeSubset TransformsBeforeExtentCheck(nativeSrid: 3857, minimum: 1000, maximum: 2000, subset: \"SUBSETTINGCRS=EPSG:4326&SUBSET=Long(0.01,0.015)&SU\"\u00b7\u00b7\u00b7)",
+      "outcome": "Passed"
+    },
+    {
+      "name": "TryResolveRequestCrs WithUnsupportedBboxCrs RejectsWithBboxCrsLocator",
+      "outcome": "Passed"
+    },
+    {
+      "name": "Wcs GetCoverage OutsideExtent ReturnsInvalidSubsettingWithoutExport(subset: \"BBOX=-100,10,-99.9,10.1\", locator: \"BBOX\")",
+      "outcome": "Passed"
+    },
+    {
+      "name": "Wcs GetCoverage OutsideExtent ReturnsInvalidSubsettingWithoutExport(subset: \"SUBSET=Lat(38,39)\", locator: \"SUBSET\")",
+      "outcome": "Passed"
+    },
+    {
+      "name": "Wcs GetCoverage UnavailableSubsetTransform PreservesServerError",
+      "outcome": "Passed"
+    },
+    {
+      "name": "TryResolveRequestCrs WithSupportedSubsettingCrs Accepts",
+      "outcome": "Passed"
+    },
+    {
+      "name": "TryResolveRequestCrs WithSupportedOutputCrs Accepts",
+      "outcome": "Passed"
+    },
+    {
+      "name": "Wcs GetCoverage OutsideExtent ReturnsInvalidSubsettingWithoutExport(subset: \"SUBSET=Long(-123,-122.6)\", locator: \"SUBSET\")",
+      "outcome": "Passed"
+    },
+    {
+      "name": "Wcs GetCoverage MalformedSubset ReturnsInvalidSubsettingException",
+      "outcome": "Passed"
+    },
+    {
+      "name": "TryResolveRequestCrs WithUnsupportedSubsettingCrs RejectsWithSubsettingCrsNotSupported",
+      "outcome": "Passed"
+    },
+    {
+      "name": "Wcs GetCoverage OutsideExtent ReturnsInvalidSubsettingWithoutExport(subset: \"SUBSET=Long(-100,-99.9)&SUBSET=Lat(10,10.1)\", locator: \"SUBSET\")",
+      "outcome": "Passed"
+    },
+    {
+      "name": "Wcs GetCoverage WithSubsetFormatAndOutputCrs ReturnsRasterBytes",
+      "outcome": "Passed"
+    },
+    {
+      "name": "Wcs GetCoverage ReversedSubsetBounds ReturnsInvalidSubsettingException",
+      "outcome": "Passed"
+    },
+    {
+      "name": "Wcs GetCoverage AdvertisedExtentZarrTrim RoundTripsToPng",
+      "outcome": "Passed"
+    },
+    {
+      "name": "Wcs GetCoverage OverExtentZarrTrim ClampsToCoverageAndReturnsPng",
+      "outcome": "Passed"
+    }
+  ]
+}
