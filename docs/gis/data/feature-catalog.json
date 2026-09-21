@@ -11708,6 +11708,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests.Identify_WithInaccessibleRightLayer_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests.Identify_WithInnerJoinAndNoMatch_DropsUnmatchedLeftFeatures",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests.Identify_WithJoinKeyContainingInjection_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests.Identify_WithJoinedCalendarDate_NormalizesQualifiedValuesAndDefaults",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests.Identify_WithLeftOuterJoin_ReturnsQualifiedJoinedAttributes",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerIdentifyEndpointTests.MapServer_Identify_NonPointGeometryWithinTolerance_ReturnsResults",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerIdentifyEndpointTests.MapServer_Identify_PointLiteralMatchesQuotedJson",
