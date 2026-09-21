@@ -20,14 +20,15 @@ Nothing below applies to those; they do not use Compose.
 **Start from the [quickstart](../../get-started/quickstart.md).** It gives you
 the `compose.yaml`, the `.env` and a published layer in about ten minutes, on any
 machine that runs Docker; everything here assumes that project directory and adds
-to it. To install the server as a native package instead of a container, see
-[Linux](../../get-started/linux-packages.md) or
+to it. For a locked-down single-host install with startup and recovery checks scripted,
+see [Linux](../../get-started/linux-packages.md) or
 [Windows](../../get-started/windows-packages.md).
 
 Commands are `bash`, with a collapsed PowerShell equivalent wherever the two
 differ. `dc` is shorthand throughout:
 
 ```bash
+Install="$PWD"                      # the quickstart project directory
 dc() { docker compose --env-file .env -f compose.yaml "$@"; }
 ```
 
@@ -111,11 +112,11 @@ proxy and deployment host.
 ## Redis is optional; PostGIS is not
 
 PostGIS owns the catalog, layer metadata and feature data and is required.
+
 ### Redis is configured but not entitled
 
 Redis is included with persistent storage, but installing Redis does not grant
-paid features. Community can complete the small synchronous import above.
-Durable jobs, workflows, queued imports, proposals and shared coordination need
+paid features. Durable jobs, workflows, queued imports, proposals and shared coordination need
 both Redis configuration and the applicable `caching.redis` licence entitlement.
 Without the dependency those operations return a typed `dependency-unavailable`
 receipt; without the entitlement the receipt is `license-required`.
@@ -147,16 +148,19 @@ Take the backup:
 ```bash
 Backup="$Install/backup-$(date +%Y%m%d-%H%M%S)"
 mkdir -m 700 "$Backup"
-cp .env compose.yaml journey.py published-layer.json installed-packages.txt "$Backup/"
+cp .env compose.yaml "$Backup/"
+cp quickstart.py journey.py published-layer.json installed-packages.txt "$Backup/" 2>/dev/null || true
 dc stop honua
 dc exec -T postgres pg_dump -U honua -d honua -Fc -f /tmp/honua-backup.dump
 dc cp postgres:/tmp/honua-backup.dump "$Backup/database.dump"
 dc run --rm --no-deps --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER --entrypoint tar -v "$Backup:/backup" honua -czf /backup/storage.tar.gz -C /var/lib/honua/storage .
 sha256sum "$Backup/database.dump" "$Backup/storage.tar.gz"
 dc start honua
-wait_honua_ready
-"$Python" journey.py --verify-only
+dc up -d --wait --wait-timeout 180
 ```
+
+Then read a known layer back (the quickstart's `honua query`, or `journey.py --verify-only`
+on a Linux or Windows package install).
 
 <details>
 <summary>PowerShell</summary>
@@ -164,7 +168,8 @@ wait_honua_ready
 ```powershell
 $Backup = Join-Path $Install ('backup-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
 New-Item -ItemType Directory -Path $Backup | Out-Null
-Copy-Item -LiteralPath .env, compose.yaml, journey.py, published-layer.json, installed-packages.txt -Destination $Backup
+Copy-Item -LiteralPath .env, compose.yaml -Destination $Backup
+Copy-Item -LiteralPath quickstart.py, journey.py, published-layer.json, installed-packages.txt -Destination $Backup -ErrorAction SilentlyContinue
 if (Test-Path -LiteralPath edge.yaml) { Copy-Item -LiteralPath edge.yaml -Destination $Backup }
 dc stop honua
 try {
@@ -173,9 +178,7 @@ try {
     dc run --rm --no-deps --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER --entrypoint tar -v "${Backup}:/backup" honua -czf /backup/storage.tar.gz -C /var/lib/honua/storage .
     Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $Backup 'database.dump'), (Join-Path $Backup 'storage.tar.gz') | Format-Table
 } finally { dc start honua }
-Wait-HonuaReady
-& $Python journey.py --verify-only
-if ($LASTEXITCODE -ne 0) { throw 'Post-backup readback failed' }
+dc up -d --wait --wait-timeout 180
 ```
 
 </details>
@@ -209,9 +212,10 @@ dc exec -T postgres dropdb -U honua --force --if-exists honua
 dc exec -T postgres pg_restore -U honua -d postgres --create --exit-on-error /tmp/honua-restore.dump
 dc run --rm --no-deps --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER --entrypoint sh -v "$Backup:/backup:ro" honua -c 'tar -tzf /backup/storage.tar.gz >/dev/null && find /var/lib/honua/storage -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar -xzf /backup/storage.tar.gz -C /var/lib/honua/storage'
 dc start honua
-wait_honua_ready
-"$Python" journey.py --verify-only
+dc up -d --wait --wait-timeout 180
 ```
+
+Then read a known layer back before readmitting traffic.
 
 <details>
 <summary>PowerShell</summary>
@@ -226,9 +230,7 @@ dc exec -T postgres dropdb -U honua --force --if-exists honua
 dc exec -T postgres pg_restore -U honua -d postgres --create --exit-on-error /tmp/honua-restore.dump
 dc run --rm --no-deps --user 0 --cap-add DAC_OVERRIDE --cap-add CHOWN --cap-add FOWNER --entrypoint sh -v "${Backup}:/backup:ro" honua -c 'tar -tzf /backup/storage.tar.gz >/dev/null && find /var/lib/honua/storage -mindepth 1 -maxdepth 1 -exec rm -rf -- {} + && tar -xzf /backup/storage.tar.gz -C /var/lib/honua/storage'
 dc start honua
-Wait-HonuaReady
-& $Python journey.py --verify-only
-if ($LASTEXITCODE -ne 0) { throw 'Restored data readback failed; keep this installation out of service' }
+dc up -d --wait --wait-timeout 180
 ```
 
 </details>
@@ -241,7 +243,7 @@ Compose upgrade has downtime. Review migration preflight through the published
 admin client or the [API explorer](../../reference/openapi-and-explorer.md), then
 follow [upgrade and rollback](upgrade-and-rollback.md). Keep the Gate migration
 policy; a contract migration needs its specific approval nonce. Never skip
-migrations or erase volumes to bypass a failure. N-1 candidate qualification remains a separate release step.
+migrations or erase volumes to bypass a failure.
 
 ## Diagnostics and scoped teardown
 

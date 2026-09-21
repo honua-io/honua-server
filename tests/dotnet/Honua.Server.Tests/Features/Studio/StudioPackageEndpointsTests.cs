@@ -10,6 +10,7 @@ using FluentAssertions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.Publishing.Content.Abstractions;
 using Honua.Core.Features.Publishing.Content.Services;
 using Honua.Core.Features.Studio.Abstractions;
@@ -17,6 +18,7 @@ using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Studio.Services;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
+using Honua.Server.Features.Studio.Export;
 using Honua.Server.Features.Studio.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -1712,6 +1714,47 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
+    public async Task ExportDeliverable_NoRenderableTypeface_ReturnsServiceUnavailableWithMachineReadableCode()
+    {
+        // honua-server#4908: when the composer cannot render (no font on the host resolves
+        // glyphs), the export must fail loudly with a non-200 status and a machine-readable
+        // reason -- never a 200 over a blank artifact. Route the whole export surface through a
+        // fake exporter on a dedicated fixture so the assertion does not depend on this test
+        // host's installed fonts.
+        await using var unavailableFixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            })
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IStudioPackageStore>();
+                services.AddSingleton<IStudioPackageStore, InMemoryStudioPackageStore>();
+                services.RemoveAll<IContentPublicationStore>();
+                services.AddSingleton<IContentPublicationStore, InMemoryContentPublicationStore>();
+                services.RemoveAll<IStudioDeliverableExporter>();
+                services.AddScoped<IStudioDeliverableExporter, RenderUnavailableStudioDeliverableExporter>();
+            });
+        await unavailableFixture.InitializeAsync();
+        var unavailableClient = unavailableFixture.CreateAdminClient();
+
+        var itemId = await CreateContentItemAsync(StudioPackageFamily.Map, "honua_map_package.v1", unavailableClient);
+
+        var response = await unavailableClient.PostAsync($"/api/v1/studio/map/{itemId:D}/export?format=png", EmptyJson());
+
+        response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+        var problem = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
+        problem.GetProperty("code").GetString().Should().Be(RenderUnavailableStudioDeliverableExporter.ReasonCode);
+
+        // The failure must not affect the rest of the server (liveness/readiness unaffected).
+        var healthResponse = await unavailableClient.GetAsync("/healthz/live");
+        healthResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/{kind}/{id}/export")]
     public async Task ExportDeliverable_WithoutAdmin_ReturnsUnauthorized()
     {
         using var unauthenticatedClient = _fixture.CreateClient();
@@ -1744,8 +1787,9 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         bytes.Take(expectedMagic.Length).Should().Equal(expectedMagic);
     }
 
-    private async Task<Guid> CreateContentItemAsync(StudioPackageFamily family, string format)
+    private async Task<Guid> CreateContentItemAsync(StudioPackageFamily family, string format, HttpClient? client = null)
     {
+        client ??= _client;
         var createResponse = await PostAsync(
             "/api/v1/studio/package-drafts",
             new CreateStudioPackageDraftRequest
@@ -1754,7 +1798,8 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
                 WorkspaceId = "studio",
                 Envelope = BuildDeliverableEnvelope(family, format),
             },
-            StudioApiJsonContext.Default.CreateStudioPackageDraftRequest);
+            StudioApiJsonContext.Default.CreateStudioPackageDraftRequest,
+            client);
         createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var draft = await ReadAsync<StudioPackageDraft>(
             createResponse,
@@ -1763,7 +1808,8 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
         var saveResponse = await PostAsync(
             $"/api/v1/studio/package-drafts/{draft.DraftId:D}/content-versions",
             new SaveStudioContentVersionRequest { ChangeNote = "export fixture" },
-            StudioApiJsonContext.Default.SaveStudioContentVersionRequest);
+            StudioApiJsonContext.Default.SaveStudioContentVersionRequest,
+            client);
         saveResponse.StatusCode.Should().Be(HttpStatusCode.Created);
         var version = await ReadAsync<StudioContentVersion>(
             saveResponse,
@@ -1833,8 +1879,170 @@ public sealed class StudioPackageEndpointsTests : IAsyncLifetime
     private static readonly byte[] PngMagic = [0x89, 0x50, 0x4E, 0x47];
     private static readonly byte[] PdfMagic = [0x25, 0x50, 0x44, 0x46]; // %PDF
 
-    private async Task<HttpResponseMessage> PostAsync<T>(string path, T body, JsonTypeInfo<T> typeInfo)
-        => await _client.PostAsync(path, JsonContent(body, typeInfo));
+    // honua-server#4907: an approved publication reported activeUrl = its intent route
+    // ("/maps/<key>"), which nothing served (404). activeUrl must now be followable: it resolves
+    // to the item's Active (published-pointer) version, so a republish and a rollback both move
+    // what it serves and a superseded version is never returned.
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests")]
+    [Endpoint("GET /api/v1/operations/handles/{handleId}")]
+    [Endpoint("GET /api/v1/studio/published/{*route}")]
+    [Endpoint("POST /api/v1/studio/content-items/{itemId}/rollback-requests")]
+    public async Task PublishedRoute_FollowActiveUrlAfterPublication_ServesActiveVersionThroughRepublishAndRollback()
+    {
+        var routeKey = $"maps/parcels-{Guid.NewGuid():N}";
+        var route = "/" + routeKey;
+        var first = await SaveNewItemVersionAsync($"published-route-{Guid.NewGuid():N}", "1=1");
+
+        var activeUrl = await PublishAndReadActiveUrlAsync(first, route, "public");
+        activeUrl.Should().Be($"/api/v1/studio/published/{routeKey}");
+
+        using var anonymous = _fixture.CreateClient();
+        var published = await ReadPublishedAsync(anonymous, activeUrl);
+        published.Route.Should().Be(route);
+        published.Visibility.Should().Be("public");
+        published.ItemId.Should().Be(first.ItemId);
+        published.VersionId.Should().Be(first.VersionId);
+        published.ContentHash.Should().Be(first.ContentHash);
+        published.Envelope.Body!.Value.GetProperty("where").GetString().Should().Be("1=1");
+        (await ReadPublishedAsync(_client, activeUrl)).VersionId.Should().Be(first.VersionId);
+
+        var second = await SaveNextVersionAsync(first, "POPULATION > 1000");
+        (await PublishAndReadActiveUrlAsync(second, route, "public")).Should().Be(activeUrl);
+        var republished = await ReadPublishedAsync(anonymous, activeUrl);
+        republished.VersionId.Should().Be(second.VersionId);
+        republished.Envelope.Body!.Value.GetProperty("where").GetString().Should().Be("POPULATION > 1000");
+
+        var rollbackResponse = await PostAsync(
+            $"/api/v1/studio/content-items/{first.ItemId:D}/rollback-requests",
+            new CreateStudioRollbackRequest
+            {
+                TargetVersionId = first.VersionId,
+                Target = StudioRollbackPointer.Published,
+                Reason = "restore first version",
+            },
+            StudioApiJsonContext.Default.CreateStudioRollbackRequest);
+        rollbackResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var rolledBack = await ReadPublishedAsync(anonymous, activeUrl);
+        rolledBack.VersionId.Should().Be(first.VersionId, "the superseded version must not be served after rollback");
+        rolledBack.ContentHash.Should().Be(first.ContentHash);
+
+        var unpublished = await anonymous.GetAsync(StudioPublishedRoutes.BuildActiveUrl($"/maps/never-{Guid.NewGuid():N}"));
+        unpublished.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests")]
+    [Endpoint("GET /api/v1/operations/handles/{handleId}")]
+    [Endpoint("GET /api/v1/studio/published/{*route}")]
+    public async Task PublishedRoute_PersonalVisibility_RequiresAuthorizedReader_AndRepublishedRouteRetiresOldUrl()
+    {
+        var version = await SaveNewItemVersionAsync($"personal-route-{Guid.NewGuid():N}", "1=1");
+        var personalRouteKey = $"maps/personal-{Guid.NewGuid():N}";
+        var originalUrl = await PublishAndReadActiveUrlAsync(version, "/" + personalRouteKey, "personal");
+        originalUrl.Should().Be($"/api/v1/studio/published/{personalRouteKey}");
+
+        using var anonymous = _fixture.CreateClient();
+        var anonymousRead = await anonymous.GetAsync(originalUrl);
+        anonymousRead.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        anonymousRead.Headers.CacheControl!.NoStore.Should().BeTrue();
+        (await ReadPublishedAsync(_client, originalUrl)).VersionId.Should().Be(version.VersionId);
+
+        var movedUrl = await PublishAndReadActiveUrlAsync(version, $"/maps/moved-{Guid.NewGuid():N}", "public");
+        (await _client.GetAsync(originalUrl)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await ReadPublishedAsync(anonymous, movedUrl)).VersionId.Should().Be(version.VersionId);
+    }
+
+    private async Task<StudioContentVersion> SaveNewItemVersionAsync(string packageKey, string where)
+    {
+        var createResponse = await PostAsync(
+            "/api/v1/studio/package-drafts",
+            new CreateStudioPackageDraftRequest
+            {
+                PackageKey = packageKey,
+                WorkspaceId = "studio",
+                Envelope = BuildEnvelope(where),
+            },
+            StudioApiJsonContext.Default.CreateStudioPackageDraftRequest);
+        createResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var draft = await ReadAsync<StudioPackageDraft>(
+            createResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+        return await SaveDraftAsync(draft.DraftId);
+    }
+
+    private async Task<StudioContentVersion> SaveNextVersionAsync(StudioContentVersion basis, string where)
+    {
+        var reopenResponse = await _client.PostAsync(
+            $"/api/v1/studio/content-items/{basis.ItemId:D}/versions/{basis.VersionId:D}/reopen",
+            EmptyJson());
+        reopenResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var reopened = await ReadAsync<StudioPackageDraft>(
+            reopenResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPackageDraft);
+        var updateResponse = await PutAsync(
+            $"/api/v1/studio/package-drafts/{reopened.DraftId:D}",
+            new UpdateStudioPackageDraftRequest
+            {
+                PackageKey = reopened.PackageKey,
+                WorkspaceId = reopened.WorkspaceId,
+                OwnerId = reopened.OwnerId,
+                Envelope = BuildEnvelope(where),
+                Generation = reopened.Generation,
+            },
+            StudioApiJsonContext.Default.UpdateStudioPackageDraftRequest);
+        updateResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        return await SaveDraftAsync(reopened.DraftId);
+    }
+
+    private async Task<StudioContentVersion> SaveDraftAsync(Guid draftId)
+    {
+        var saveResponse = await PostAsync(
+            $"/api/v1/studio/package-drafts/{draftId:D}/content-versions",
+            new SaveStudioContentVersionRequest { ChangeNote = "published-route save" },
+            StudioApiJsonContext.Default.SaveStudioContentVersionRequest);
+        saveResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        return await ReadAsync<StudioContentVersion>(
+            saveResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioContentVersion);
+    }
+
+    private async Task<string> PublishAndReadActiveUrlAsync(StudioContentVersion version, string route, string visibility)
+    {
+        var publishResponse = await PostAsync(
+            $"/api/v1/studio/content-items/{version.ItemId:D}/versions/{version.VersionId:D}/publish-requests",
+            new CreateStudioPublicationRequest
+            {
+                Intent = new StudioPublicationIntent { Route = route, Visibility = visibility },
+            },
+            StudioApiJsonContext.Default.CreateStudioPublicationRequest);
+        publishResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var publication = await ReadAsync<StudioPublicationRequest>(
+            publishResponse,
+            StudioApiJsonContext.Default.ApiResponseStudioPublicationRequest);
+        publication.Status.Should().Be(StudioPublicationRequestStatus.Accepted);
+        var operationInstanceId = publishResponse.Headers.GetValues("X-Honua-Operation-Instance-Id").Single();
+
+        var handleResponse = await _client.GetAsync($"/api/v1/operations/handles/{operationInstanceId}");
+        handleResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var handle = JsonDocument.Parse(await handleResponse.Content.ReadAsStringAsync());
+        var resourceIds = handle.RootElement.GetProperty("data").GetProperty("resourceIds");
+        resourceIds.GetProperty("publicationId").GetString().Should().Be(publication.RequestId.ToString("D"));
+        resourceIds.GetProperty("route").GetString().Should().Be(route);
+        return resourceIds.GetProperty("activeUrl").GetString()!;
+    }
+
+    private static async Task<StudioPublishedArtifact> ReadPublishedAsync(HttpClient client, string activeUrl)
+    {
+        var response = await client.GetAsync(activeUrl);
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"activeUrl {activeUrl} must resolve");
+        return await ReadAsync<StudioPublishedArtifact>(
+            response,
+            StudioApiJsonContext.Default.ApiResponseStudioPublishedArtifact);
+    }
+
+    private async Task<HttpResponseMessage> PostAsync<T>(string path, T body, JsonTypeInfo<T> typeInfo, HttpClient? client = null)
+        => await (client ?? _client).PostAsync(path, JsonContent(body, typeInfo));
 
     private async Task<HttpResponseMessage> PutAsync<T>(string path, T body, JsonTypeInfo<T> typeInfo)
         => await _client.PutAsync(path, JsonContent(body, typeInfo));
@@ -1926,11 +2134,14 @@ file sealed class UnresolvableCallerStudioAuthorizationService : IStudioAuthoriz
 
     public string? ResolveCallerId(ClaimsPrincipal principal) => null;
 
+    public TenantScopeFilter? CreateTenantScopeFilter(ClaimsPrincipal principal) => null;
+
     public Task<StudioAuthorizationDecision> AuthorizeAsync(
         ClaimsPrincipal principal,
         string? callerId,
         StudioAuthorizationOperation operation,
         string? resourceOwnerId,
+        string? resourceTenantId,
         bool isPubliclyReadable = false,
         string? resourceId = null,
         CancellationToken cancellationToken = default)
@@ -1994,4 +2205,25 @@ file sealed class FakeGrantingRoleStore : IRoleStore
     public Task<IReadOnlyList<PermissionGrant>> SetPermissionsAsync(
         Guid roleId, IReadOnlyList<PermissionGrant> permissions, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Not used by the tests exercising this fake.");
+}
+
+/// <summary>
+/// Fake <see cref="IStudioDeliverableExporter"/> that always reports the render-unavailable
+/// outcome (honua-server#4908), so the endpoint's HTTP mapping can be proven without depending
+/// on whether this test host happens to have a font that resolves glyphs.
+/// </summary>
+file sealed class RenderUnavailableStudioDeliverableExporter : IStudioDeliverableExporter
+{
+    public const string ReasonCode = "studio_deliverable/no_renderable_typeface";
+
+    public Task<StudioDeliverableExportResult> ExportAsync(
+        StudioPackageFamily kind,
+        Guid itemId,
+        StudioDeliverableFormat format,
+        Guid? versionId = null,
+        bool store = false,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult(StudioDeliverableExportResult.CreateRenderUnavailable(
+            "No rendering typeface with glyphs is available on this host.",
+            ReasonCode));
 }

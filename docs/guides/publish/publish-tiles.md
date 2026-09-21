@@ -104,4 +104,4 @@ More help: [troubleshooting](../deploy/troubleshooting.md).
 
 - [Style maps](../style/style-maps.md) — styles consume the same MVT endpoints.
 - [Publish layers](publish-layers.md) — publish more layers to tile.
-- [Operations](../deploy/backup-and-restore.md) — job orchestration and monitoring.
+- [Monitor Honua Server](../deploy/monitoring.md) — job history and the Operate views.

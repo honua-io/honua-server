@@ -6,6 +6,7 @@ using System.Net;
 using Amazon.Runtime;
 using Amazon.S3;
 using Amazon.S3.Model;
+using Honua.Cloud.Aws.Features;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Internal;
@@ -593,18 +594,11 @@ internal sealed class AwsS3FileStorage : CloudFileStorageBase
         return cleanedCount;
     }
 
-    private static AmazonS3Client CreateClient(AwsS3Options options)
+    // Shared with the COG / Zarr range reader so both S3 clients resolve region and endpoint alike.
+    internal static AmazonS3Client CreateClient(AwsS3Options options)
     {
-        var config = new AmazonS3Config
-        {
-            RegionEndpoint = Amazon.RegionEndpoint.GetBySystemName(options.Region),
-            ForcePathStyle = options.ForcePathStyle
-        };
-
-        if (!string.IsNullOrWhiteSpace(options.ServiceUrl))
-        {
-            config.ServiceURL = options.ServiceUrl;
-        }
+        var config = new AmazonS3Config { ForcePathStyle = options.ForcePathStyle };
+        AwsClientEndpoint.Apply(config, options.Region, options.ServiceUrl);
 
         if (!string.IsNullOrWhiteSpace(options.AccessKeyId) && !string.IsNullOrWhiteSpace(options.SecretAccessKey))
         {

@@ -383,15 +383,21 @@ internal static class GPServerEsriInputTranslation
             return false;
         }
 
-        var srid = geometry.SpatialReference?.Wkid
+        // Esri's Web Mercator aliases (102100/102113/900913) are normalized before they are embedded in the
+        // EWKB, not only on the reported spatial reference (#4033). The executors read the embedded SRID:
+        // geometry.project checks it against fromSrid and raster.clip writes it as the cutline EPSG code,
+        // so an un-normalized 102100 rejected a 3857 projection and named a CRS EPSG does not define.
+        var srid = (geometry.SpatialReference?.Wkid
             ?? geometry.SpatialReference?.LatestWkid
-            ?? parentSpatialReference;
+            ?? parentSpatialReference) is { } declared
+            ? SpatialReferenceExtensions.NormalizeWebMercatorSrid(declared)
+            : (int?)null;
 
         try
         {
             var wkb = GeoServicesGeometryConverter.ConvertGeoServicesGeometryToWkb(geometry, srid);
             wkbBase64 = Convert.ToBase64String(wkb);
-            spatialReference = srid is { } value ? SpatialReferenceExtensions.NormalizeWebMercatorSrid(value) : null;
+            spatialReference = srid;
             return true;
         }
         catch (ArgumentException)

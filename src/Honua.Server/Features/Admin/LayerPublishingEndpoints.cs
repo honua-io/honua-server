@@ -177,6 +177,12 @@ internal static class LayerPublishingEndpoints
             return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {governanceError}"));
         }
 
+        if (!TryParseStorageMode(request.StorageMode, out var storageMode))
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                "Validation failed: storageMode must be 'source' or 'managed'."));
+        }
+
         try
         {
             var connectionId = await ResolveConnectionIdAsync(id, context).ConfigureAwait(false);
@@ -208,7 +214,9 @@ internal static class LayerPublishingEndpoints
                 ServiceName = request.ServiceName,
                 ConnectionId = connectionId,
                 Enabled = request.Enabled,
-                SourceGovernance = sourceGovernance
+                SourceGovernance = sourceGovernance,
+                StorageMode = storageMode,
+                Capabilities = request.Capabilities
             };
 
             var result = await publishingService.PublishLayerAsync(
@@ -262,6 +270,25 @@ internal static class LayerPublishingEndpoints
         {
             return TypedResults.Forbid();
         }
+    }
+
+    private static bool TryParseStorageMode(string? value, out LayerStorageMode storageMode)
+    {
+        var normalized = value?.Trim();
+        if (string.IsNullOrEmpty(normalized) || normalized.Equals("source", StringComparison.OrdinalIgnoreCase))
+        {
+            storageMode = LayerStorageMode.Source;
+            return true;
+        }
+
+        if (normalized.Equals("managed", StringComparison.OrdinalIgnoreCase))
+        {
+            storageMode = LayerStorageMode.Managed;
+            return true;
+        }
+
+        storageMode = LayerStorageMode.Source;
+        return false;
     }
 
     private static async Task<IResult>

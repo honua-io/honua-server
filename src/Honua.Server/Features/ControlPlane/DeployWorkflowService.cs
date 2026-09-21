@@ -43,6 +43,7 @@ internal sealed partial class DeployWorkflowService
     private readonly IOperatorApprovalEvaluator _approvalEvaluator;
     private readonly ILogger<DeployWorkflowService> _logger;
     private readonly IOptionsMonitor<ControlPlaneOptions>? _controlPlaneOptions;
+    private readonly IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? _tenantOptions;
 
     public DeployWorkflowService(
         IDeployTargetRegistry targetRegistry,
@@ -50,9 +51,11 @@ internal sealed partial class DeployWorkflowService
         IEnumerable<IDeployBackend> backends,
         IOperatorApprovalEvaluator approvalEvaluator,
         ILogger<DeployWorkflowService> logger,
-        IOptionsMonitor<ControlPlaneOptions>? controlPlaneOptions = null)
+        IOptionsMonitor<ControlPlaneOptions>? controlPlaneOptions = null,
+        IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? tenantOptions = null)
     {
         _controlPlaneOptions = controlPlaneOptions;
+        _tenantOptions = tenantOptions;
         _targetRegistry = targetRegistry;
         _workflowStore = workflowStores.FirstOrDefault();
         _backends = backends.ToDictionary(
@@ -307,6 +310,9 @@ internal sealed partial class DeployWorkflowService
             Audit = new OperationAuditInfo
             {
                 RequestedBy = requestedBy,
+                // honua-server#4958: the tenant binding is captured from the validated identity here,
+                // so the protection window sealed at activation can bind recovery to the same pair.
+                TenantId = Honua.Server.Features.Admin.PlatformDeployAuthority.ResolveTenantId(principal, _tenantOptions?.Value),
                 Reason = reason,
                 IdempotencyKey = idempotencyKey,
                 CorrelationId = correlationId,

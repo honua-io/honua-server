@@ -1334,8 +1334,19 @@ jobs:
       # turns trunk red. Making this a genuine pre-merge signal would require
       # per-PR shard execution, which #2865 deliberately removed.
       #
-      # continue-on-error keeps it non-required: the coordinator decides whether
-      # to make it blocking after a week of data.
+      # CONTRACT (#4790): advisory, not a gate. `--advisory` makes the guard emit
+      # HONUA_SHARD_OVER_MAX_UTILIZATION as a ::warning:: and exit 0, so the
+      # step's annotation, exit code and conclusion all say the same thing. The
+      # only hard capacity band is the shard runner's own
+      # HONUA_SHARD_CAPACITY_EXHAUSTED at 100% of the test budget, which the
+      # merge train classifies as terminal. Below it sit two warning bands:
+      # HONUA_SHARD_LOW_HEADROOM at 80% (run-server-test-shard.sh) and this
+      # guard at 85%. The job summary table is the per-run report; the
+      # multi-run trend is the re-basing audit in
+      # docs/internal/ci/shard-timeout-budgets.md. A guard that failed here would
+      # red trunk on a passing shard whenever a runner was slow, which is a
+      # flake, not a signal. continue-on-error remains only so a crash in the
+      # audit itself cannot fail a shard whose tests passed.
       - name: Report shard headroom (advisory)
         if: ${{ always() }}
         continue-on-error: true
@@ -1356,10 +1367,10 @@ jobs:
             echo
             printf '%s\n' "${table}"
           } >> "${GITHUB_STEP_SUMMARY}"
-          # Advisory: the annotation is the signal, the exit code stays 0 via
-          # continue-on-error above.
+          # Advisory: the ::warning:: annotation is the signal and --advisory
+          # exits 0, so the step never reports a failure it does not mean.
           python3 scripts/ci/audit-shard-headroom.py \
-            --timings-dir tests/TestResults --max-utilization 0.85 >/dev/null
+            --timings-dir tests/TestResults --max-utilization 0.85 --advisory >/dev/null
 
       - name: Upload Operator Eval Report
         if: ${{ always() && matrix.upload_operator_eval_report }}

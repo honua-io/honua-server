@@ -284,7 +284,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
         var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
         {
-            ["bandIds"] = "1,3",
+            ["bandIds"] = "0,2",
         };
 
         var context = CreateImageServerContext();
@@ -307,7 +307,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
         var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
         {
-            ["bandIds"] = "[2,4]",
+            ["bandIds"] = "[1,3]",
         };
 
         var context = CreateImageServerContext();
@@ -328,7 +328,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
     {
         // Regression: GetStatisticsAsync streams cached rows in DB-ascending band order,
         // while GetHistogramsAsync preserves caller-supplied order. When the caller asks
-        // for bandIds=3,1 the parallel statistics/histograms arrays would silently
+        // for bands 3,1 (bandIds=2,0) the parallel statistics/histograms arrays would silently
         // misalign — the handler must reorder both to a single canonical order so that
         // statistics[i] and histograms[i] always describe the same band.
         _rasterStore.QueryRastersAsync(default, default, default)
@@ -383,7 +383,7 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
         var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
         {
-            ["bandIds"] = "3,1",
+            ["bandIds"] = "2,0",
         };
 
         var context = CreateImageServerContext();
@@ -447,17 +447,64 @@ public class ImageServerStatisticsHistogramsHandlerTests
 
     [UnitTest]
     [Operation(Operations.Query)]
-    public async Task ComputeAsync_BandIdsNonPositive_ReturnsBadRequest()
+    public async Task ComputeAsync_BandIdsZero_AddressesFirstBandLikeExportImage()
+    {
+        // #4068: bandIds is 0-based on exportImage, so bandIds=0 must address the first
+        // band here too (raster-store band 1), not be rejected.
+        SetupSuccessfulCompute();
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["bandIds"] = "0",
+        };
+
+        var context = CreateImageServerContext();
+        var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
+
+        result.Should().BeOfType<JsonHttpResult<ComputeStatisticsHistogramsResponse>>();
+        await _rasterStore.Received(1).GetStatisticsAsync(
+            1,
+            100,
+            Arg.Is<int[]>(b => b != null && b.Length == 1 && b[0] == 1),
+            Arg.Any<RasterIdentifyRendering?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task ComputeAsync_BandIdsNegative_ReturnsBadRequest()
     {
 
         var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
         {
-            ["bandIds"] = "0,1",
+            ["bandIds"] = "-1,0",
         };
 
         var context = CreateImageServerContext();
         var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
         await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    public async Task ComputeAsync_BandIdsIntMaxValue_ReturnsBadRequestWithoutWrappingToNegativeBand()
+    {
+        // 2147483647 is a valid Int32 but has no 1-based store band: the 0-based shift would wrap
+        // to int.MinValue and reach the raster store as a negative band.
+        foreach (var bandIds in new[] { "2147483647", "[2147483647]", "0,2147483647" })
+        {
+            var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["bandIds"] = bandIds,
+            };
+
+            var context = CreateImageServerContext();
+            var result = await _handler.ComputeAsync(context, 1, values, CancellationToken.None);
+            await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status400BadRequest);
+        }
+
+        await _rasterStore.DidNotReceiveWithAnyArgs().GetStatisticsAsync(
+            default, default, default, default, default);
     }
 
     [UnitTest]

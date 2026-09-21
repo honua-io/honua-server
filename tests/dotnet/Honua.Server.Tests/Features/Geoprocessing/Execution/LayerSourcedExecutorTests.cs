@@ -71,6 +71,8 @@ public sealed class LayerSourcedExecutorTests
             status.Should().Be(ExecutionJobStatus.Failed);
             uri.Should().BeNull();
             _lastErrorForAssertions.Should().Contain("MaxTopologyWork=99").And.Contain("stopped before computation");
+            // A retry repeats the same admission refusal after backoff; the outcome is terminal (#4629).
+            _lastRetryableForAssertions.Should().BeFalse();
         }
     }
 
@@ -95,6 +97,7 @@ public sealed class LayerSourcedExecutorTests
         {
             uri.Should().BeNull();
             _lastErrorForAssertions.Should().Contain("MaxLayerVertices=1").And.Contain("while streaming");
+            _lastRetryableForAssertions.Should().BeFalse();
         }
     }
 
@@ -110,6 +113,8 @@ public sealed class LayerSourcedExecutorTests
         uri.Should().BeNull();
         source.Disposed.Should().BeTrue();
         _lastErrorForAssertions.Should().Contain("MaxLayerExecutionSeconds=1").And.Contain("resubmit");
+        // Each retry would spend another full deadline of worker time on the same input (#4629).
+        _lastRetryableForAssertions.Should().BeFalse();
     }
 
     [Theory]
@@ -221,6 +226,34 @@ public sealed class LayerSourcedExecutorTests
             {
                 Disposed = true;
             }
+        }
+    }
+
+    [UnitTest]
+    public async Task Dissolve_TransientSourceReadFailure_KeepsRetryBudget()
+    {
+        // Only deterministic refusals are terminal; a storage fault may succeed on the next attempt (#4629).
+        var (status, uri, _) = await RunAsync(
+            new LayerDissolveExecutor(ScopeFactory(new FailingLayerSource()), Options(),
+                NullLogger<LayerDissolveExecutor>.Instance),
+            LayerDissolveExecutor.HandledProcessId, ("layerId", "9"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        uri.Should().BeNull();
+        _lastErrorForAssertions.Should().Contain("failed reading the source layer: IOException");
+        _lastRetryableForAssertions.Should().BeTrue();
+    }
+
+    private sealed class FailingLayerSource : IDagFeatureSource
+    {
+        public string SourceId => HonuaLayerSourceId;
+
+        public async IAsyncEnumerable<DagSourceFeature> ReadAsync(
+            DagSourceRequest request, [EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            yield return PointFeature(1, 2);
+            await Task.Yield();
+            throw new IOException("connection reset");
         }
     }
 
@@ -1546,12 +1579,14 @@ public sealed class LayerSourcedExecutorTests
         _allRequestsForAssertions.Clear();
         var result = await executor.ExecuteAsync(record, context, CancellationToken.None);
         _lastErrorForAssertions = result.ErrorMessage;
+        _lastRetryableForAssertions = result.IsRetryable;
         return (result.Status, publishedUri, _lastRequestForAssertions);
     }
 
     private static DagSourceRequest? _lastRequestForAssertions;
     private static readonly List<DagSourceRequest> _allRequestsForAssertions = [];
     private static string? _lastErrorForAssertions;
+    private static bool _lastRetryableForAssertions;
 
     private static List<IFeature> ReadFeatures(string dataUri)
     {

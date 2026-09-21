@@ -143,6 +143,36 @@ public sealed partial class GPServerSoapEndpointsTests
     }
 
     [IntegrationTheory]
+    [InlineData("unqualified", "<ToolName>Buffer</ToolName>", null)]
+    [InlineData("qualified", "<ToolName>Buffer</ToolName>", null)]
+    [InlineData("default-namespace", "<ToolName>Buffer</ToolName>", null)]
+    [InlineData("unqualified", "<Recurse>true</Recurse>", "GetToolInfo does not accept the 'Recurse' argument; its only argument is ToolName.")]
+    [InlineData("qualified", "<ToolName>Buffer</ToolName><Recurse>true</Recurse>", "GetToolInfo does not accept the 'Recurse' argument; its only argument is ToolName.")]
+    [InlineData("default-namespace", "<toolName>Buffer</toolName>", "GetToolInfo does not accept the 'toolName' argument; its only argument is ToolName.")]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /services/{serviceId}/GPServer")]
+    [InterfaceOperation(TestProtocols.GPServer, "GetToolInfo")]
+    public async Task GetToolInfo_ArgumentNamespaceForms_BindByLocalName(string form, string arguments, string? expectedFault)
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory();
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        using var response = await PostOperationAsync(client, SoapOperationForm("GetToolInfo", arguments, form));
+        var text = await response.Content.ReadAsStringAsync();
+        var document = XDocument.Parse(text);
+        if (expectedFault is null)
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.OK, text);
+            document.Descendants(XName.Get("GetToolInfoResponse", ArcGis)).Single()
+                .Element("Result")!.Element("Name")!.Value.Should().Be("Buffer");
+        }
+        else
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, text);
+            document.Descendants("faultstring").Single().Value.Should().Be(expectedFault);
+        }
+    }
+
+    [IntegrationTheory]
     [InlineData(null, HttpStatusCode.Unauthorized)]
     [InlineData("other-role", HttpStatusCode.Forbidden)]
     [InlineData("gp-reader", HttpStatusCode.OK)]
@@ -200,6 +230,30 @@ public sealed partial class GPServerSoapEndpointsTests
         response.StatusCode.Should().Be(expected, text);
         XDocument.Parse(text).Descendants(XName.Get("Fault", Soap11)).Should().ContainSingle();
         text.Should().NotContain("file://").And.NotContain("must-not-be-read").And.NotContain("StackTrace");
+    }
+
+    /// <summary>
+    /// Renders one operation in the three document/literal argument forms: ArcPy/Pro's
+    /// unqualified arguments, arguments qualified with the operation prefix, and a
+    /// default-namespace operation whose whole argument tree inherits the namespace.
+    /// </summary>
+    private static string SoapOperationForm(string operation, string arguments, string form) => form switch
+    {
+        "unqualified" => $"<tns:{operation}>{arguments}</tns:{operation}>",
+        "qualified" => $"<tns:{operation}>{System.Text.RegularExpressions.Regex.Replace(arguments, "<(/?)([A-Za-z])", "<$1tns:$2")}</tns:{operation}>",
+        "default-namespace" => $"<{operation} xmlns=\"{ArcGis}\">{arguments}</{operation}>",
+        _ => throw new ArgumentOutOfRangeException(nameof(form), form, null)
+    };
+
+    private static async Task<HttpResponseMessage> PostOperationAsync(HttpClient client, string operationXml)
+    {
+        var xml = $"""
+            <?xml version="1.0" encoding="utf-8" ?><soap:Envelope xmlns:soap="{Soap11}" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:tns="{ArcGis}"><soap:Body>{operationXml}</soap:Body></soap:Envelope>
+            """;
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/services/alpha/GPServer");
+        request.Headers.Add("SOAPAction", "\"\"");
+        request.Content = new StringContent(xml, Encoding.UTF8, "text/xml");
+        return await client.SendAsync(request);
     }
 
     private static async Task<HttpResponseMessage> PostAsync(HttpClient client, string operation, string arguments = "",

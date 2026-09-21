@@ -3,4 +3,22 @@
   <PropertyGroup Condition="'$(IsTestProject)' == 'true' or '$(MSBuildProjectName)' == 'Honua.TestKit'">
     <NoWarn>$(NoWarn);CS1591;CA1041;CA1707;CA1816;CA1822;CA1869;CA1310;xUnit2021;xUnit1041;CS4014;CS0618;CS0612;CS1061;IDE0051;IDE0052;IDE0005</NoWarn>
   </PropertyGroup>
+
+  <!-- Honua.Sdk.GeoServices (#4599) brings Microsoft.Extensions.Telemetry.Abstractions in transitively (via
+       Microsoft.Extensions.Http.Resilience). Its buildTransitive props swap the Microsoft.Extensions.Logging
+       [LoggerMessage] generator for its own Microsoft.Gen.Logging generator. This repository keeps the
+       Microsoft.Extensions.Logging generator, so the Telemetry generators are removed rather than letting both
+       implement every logging partial method (CS0757). -->
+  <PropertyGroup>
+    <DisableMicrosoftExtensionsLoggingSourceGenerator>false</DisableMicrosoftExtensionsLoggingSourceGenerator>
+  </PropertyGroup>
+
+  <Target Name="HonuaRemoveTelemetryAbstractionsGenerators" AfterTargets="ResolveReferences">
+    <ItemGroup>
+      <_HonuaTelemetryAbstractionsAnalyzer
+        Include="@(Analyzer)"
+        Condition="'%(Analyzer.NuGetPackageId)' == 'Microsoft.Extensions.Telemetry.Abstractions'" />
+      <Analyzer Remove="@(_HonuaTelemetryAbstractionsAnalyzer)" />
+    </ItemGroup>
+  </Target>
 </Project>

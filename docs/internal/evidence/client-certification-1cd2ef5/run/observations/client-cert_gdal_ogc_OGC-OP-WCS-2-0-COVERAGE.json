@@ -1,0 +1,67 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/gdal/ogc/OGC-OP-WCS-2-0-COVERAGE",
+  "canonical_client": "GDAL",
+  "client_lane": "gdal",
+  "client_version": "3.8.4",
+  "client_version_detail": "GDAL 3.8.4, released 2024/02/08",
+  "surface": "ogc",
+  "operation": "OGC-OP-WCS-2-0-COVERAGE",
+  "protocol_version": "2.0.1",
+  "protocol_profile": "WCS 2.0.1 core GET-KVP",
+  "started_at": "2026-09-21T09:58:22.707617Z",
+  "finished_at": "2026-09-21T09:58:22.949682Z",
+  "duration_ms": 242,
+  "status": "pass",
+  "exercised_capabilities": [
+    "positive",
+    "negative",
+    "auth",
+    "crs-axis",
+    "media-schema"
+  ],
+  "summary": "all 5 checks passed across 5 governed facets",
+  "primary_request_url": "http://honua:5000/ogc/wcs/svc-browser-compat-image?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=coverage_2000",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "open coverage_2000 and read every pixel",
+      "outcome": "pass",
+      "detail": "(64, 64) min/max (180.0, 180.0); requests ['http://honua:5000/ogc/wcs/svc-browser-compat-image?SERVICE=WCS&REQUEST=DescribeCoverage&VERSION=2.0.1&COVERAGEID=coverage_2000', 'http://honua:5000/ogc/wcs/svc-browser-compat-image?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=coverage_2000&SUBSET=x%28-122.45,-122.38000000000001%29&SUBSET=y%2837.729999999999997,37.799999999999997%29&Format=image/tiff', 'http://honua:5000/ogc/wcs/svc-browser-compat-image?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=coverage_2000&SUBSET=x%28-122.45,-122.4478125%29&SUBSET=y%2837.797812499999999,37.799999999999997%29&Format=image/tiff', 'http://honua:5000/ogc/wcs/svc-browser-compat-image?version=2.0.1&SERVICE=WCS&REQUEST=GetCapabilities']",
+      "request_url": null,
+      "duration_ms": 91
+    },
+    {
+      "facet": "negative",
+      "name": "an unknown coverage fails to open with the server's exception",
+      "outcome": "pass",
+      "detail": "GDAL: NoSuchCoverage: Coverage 'coverage_999999' was not found.\nMay be caused by: HTTP error code : 404",
+      "request_url": null,
+      "duration_ms": 14
+    },
+    {
+      "facet": "auth",
+      "name": "protected coverage service challenges without a valid credential",
+      "outcome": "pass",
+      "detail": "{'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401, 'api-key': 'opened', 'oidc-bearer': 'opened'} (authenticated principals pass the access policy; the protected mirror offers no coverage for GDAL to open)",
+      "request_url": null,
+      "duration_ms": 53
+    },
+    {
+      "facet": "crs-axis",
+      "name": "EPSG:4326 georeferencing and lon/lat SUBSET axes",
+      "outcome": "pass",
+      "detail": "EPSG:4326 geotransform (-122.45, 0.00109375, 0.0, 37.8, 0.0, -0.00109375); subset request x%28-122.44125,-122.42375%29&SUBSET=y%2837.77375,37.791249999999998%29&Format=image/tiff",
+      "request_url": null,
+      "duration_ms": 45
+    },
+    {
+      "facet": "media-schema",
+      "name": "GeoTIFF GetCoverage payloads decode with the described band type",
+      "outcome": "pass",
+      "detail": "band type Byte; GetCoverage Format=image/tiff requests 2",
+      "request_url": null,
+      "duration_ms": 39
+    }
+  ]
+}

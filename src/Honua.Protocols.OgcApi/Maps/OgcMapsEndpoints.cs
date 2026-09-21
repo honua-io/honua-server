@@ -63,6 +63,17 @@ public static partial class OgcMapsEndpoints
             .Produces(StatusCodes.Status404NotFound)
             .CacheOutput("OgcMapsOpenApi");
 
+        // Collection description - map clients read it before requesting the map
+        group.MapGet("/collections/{collectionId}", GetCollection)
+            .WithDisplayName("Get Maps Collection")
+            .WithName("GetMapsCollection")
+            .WithSummary("Describe a collection that serves maps")
+            .WithDescription("Returns the collection description with its extent and map links, for every collection that serves a map")
+            .Produces<CollectionInfo>(StatusCodes.Status200OK, MediaTypes.Json)
+            .Produces<string>(StatusCodes.Status200OK, MediaTypes.Html)
+            .Produces(401)
+            .Produces(404);
+
         // Collection maps - single collection rendering
         group.MapGet("/collections/{collectionId}/map", GetCollectionMap)
             .WithDisplayName("Get Collection Map")
@@ -218,13 +229,15 @@ public static partial class OgcMapsEndpoints
         CancellationToken cancellationToken = default)
     {
         cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var layerId = await ResolveCollectionLayerIdAsync(context, collectionId, cancellationToken);
-        if (!layerId.HasValue)
+        var resolution = await ResolveCollectionAsync(context, collectionId, cancellationToken);
+        if (resolution.Error is not null)
         {
-            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+            return resolution.Error;
         }
 
-        return await handler.RenderCollectionMapAsync(layerId.Value, request, context: context, cancellationToken);
+        var layerId = resolution.LayerId!.Value;
+
+        return await handler.RenderCollectionMapAsync(layerId, request, context: context, cancellationToken);
     }
 
     /// <summary>
@@ -262,10 +275,10 @@ public static partial class OgcMapsEndpoints
             var invalidCollections = new List<string>();
             foreach (var token in collectionTokens)
             {
-                var layerId = await ResolveCollectionLayerIdAsync(context, token, cancellationToken);
-                if (layerId.HasValue)
+                var resolution = await ResolveCollectionAsync(context, token, cancellationToken);
+                if (resolution.Error is null)
                 {
-                    collectionIds.Add(layerId.Value);
+                    collectionIds.Add(resolution.LayerId!.Value);
                 }
                 else
                 {
@@ -307,13 +320,15 @@ public static partial class OgcMapsEndpoints
         CancellationToken cancellationToken = default)
     {
         cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var layerId = await ResolveCollectionLayerIdAsync(context, collectionId, cancellationToken);
-        if (!layerId.HasValue)
+        var resolution = await ResolveCollectionAsync(context, collectionId, cancellationToken);
+        if (resolution.Error is not null)
         {
-            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+            return resolution.Error;
         }
 
-        return await handler.RenderStyledMapAsync(layerId.Value, styleId, request, context: context, cancellationToken);
+        var layerId = resolution.LayerId!.Value;
+
+        return await handler.RenderStyledMapAsync(layerId, styleId, request, context: context, cancellationToken);
     }
 
     /// <summary>
@@ -326,13 +341,15 @@ public static partial class OgcMapsEndpoints
         CancellationToken cancellationToken = default)
     {
         cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var layerId = await ResolveCollectionLayerIdAsync(context, collectionId, cancellationToken);
-        if (!layerId.HasValue)
+        var resolution = await ResolveCollectionAsync(context, collectionId, cancellationToken);
+        if (resolution.Error is not null)
         {
-            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+            return resolution.Error;
         }
 
-        return await handler.GetMapTileSetsAsync(layerId.Value, context: context, cancellationToken);
+        var layerId = resolution.LayerId!.Value;
+
+        return await handler.GetMapTileSetsAsync(layerId, context: context, cancellationToken);
     }
 
     private static async Task<IResult> GetCollectionMapTileSet(
@@ -343,16 +360,29 @@ public static partial class OgcMapsEndpoints
         CancellationToken cancellationToken = default)
     {
         cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
-        var layerId = await ResolveCollectionLayerIdAsync(context, collectionId, cancellationToken);
-        if (!layerId.HasValue)
+        var resolution = await ResolveCollectionAsync(context, collectionId, cancellationToken);
+        if (resolution.Error is not null)
         {
-            return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' not found.");
+            return resolution.Error;
         }
 
-        return await handler.GetMapTileSetAsync(layerId.Value, tileMatrixSetId, context: context, cancellationToken);
+        var layerId = resolution.LayerId!.Value;
+
+        return await handler.GetMapTileSetAsync(layerId, tileMatrixSetId, context: context, cancellationToken);
     }
 
-    private static async Task<int?> ResolveCollectionLayerIdAsync(
+    /// <summary>
+    /// Outcome of resolving a Maps collection: the validated publication and its storage layer
+    /// id, or the response to return instead (the access-policy refusal for a protected
+    /// collection, otherwise 404).
+    /// </summary>
+    private readonly record struct MapsCollectionResolution(
+        MetadataV2Publication? Publication,
+        MetadataV2Resource? Resource,
+        int? LayerId,
+        IResult? Error);
+
+    private static async Task<MapsCollectionResolution> ResolveCollectionAsync(
         HttpContext context,
         string value,
         CancellationToken cancellationToken)
@@ -371,17 +401,39 @@ public static partial class OgcMapsEndpoints
             value,
             requiredProtocol: ServiceProtocols.OgcApiMaps,
             cancellationToken: cancellationToken).ConfigureAwait(false);
+        // A protected collection answers with the access-policy refusal (401/403), as the
+        // Features and Tiles collection routes do, so an anonymous client learns it must
+        // authenticate instead of concluding the collection does not exist (#4991).
+        if (!validation.IsValid && validation.ErrorResult is { } accessError && IsAccessRefusal(accessError))
+        {
+            return new MapsCollectionResolution(null, null, null, accessError);
+        }
+
         if (!validation.IsValid || validation.Publication is null || validation.Resource is null)
         {
-            return null;
+            return new MapsCollectionResolution(
+                null,
+                null,
+                null,
+                StandardErrorHelpers.CreateNotFound(context, $"Collection '{value}' not found."));
         }
 
         var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        return validation.Publication.LayerIndex
+        var layerId = validation.Publication.LayerIndex
             ?? snapshot.ResolveStorageLayerId(validation.Publication)
             ?? snapshot.ResolveStorageLayerId(validation.Resource);
+        return layerId.HasValue
+            ? new MapsCollectionResolution(validation.Publication, validation.Resource, layerId, null)
+            : new MapsCollectionResolution(
+                null,
+                null,
+                null,
+                StandardErrorHelpers.CreateNotFound(context, $"Collection '{value}' not found."));
     }
+
+    private static bool IsAccessRefusal(IResult result)
+        => result is IStatusCodeHttpResult { StatusCode: StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden };
 
     private static bool HasEmptyCommaSeparatedToken(string value)
         => value.Split(',', StringSplitOptions.None).Any(token => token.Trim().Length == 0);

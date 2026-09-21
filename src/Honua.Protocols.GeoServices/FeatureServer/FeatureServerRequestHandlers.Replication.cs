@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -174,10 +175,13 @@ internal static partial class FeatureServerEndpoints
         var service = serviceValidationResult.Service!;
         var snapshot = serviceValidationResult.Snapshot!;
         var serviceLayers = ResolveServiceReplicaLayersV2(service, snapshot);
-        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+        var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
             context,
             serviceLayers.Select(layer => layer.Resource),
-            service);
+            service,
+            AuthorizationOperation.Query,
+            cancellationToken).ConfigureAwait(false);
+        var accessError = access.RequireAny(serviceLayers.Select(layer => layer.Resource));
         if (accessError != null)
         {
             return accessError;
@@ -190,7 +194,7 @@ internal static partial class FeatureServerEndpoints
         }
 
         var accessibleLayerIds = serviceLayers
-            .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
+            .Where(layer => access.IsAccessible(layer.Resource))
             .Select(layer => layer.PublicLayerId)
             .ToHashSet();
 
@@ -265,7 +269,8 @@ internal static partial class FeatureServerEndpoints
         }
 
         var replica = ToReplicaState(replicaRecord);
-        if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, AccessScope.Read, out var replicaLayers, out var replicaLayerError))
+        var replicaAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Read, cancellationToken).ConfigureAwait(false);
+        if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, replicaAccess, out var replicaLayers, out var replicaLayerError))
         {
             return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
                 context,
@@ -302,10 +307,7 @@ internal static partial class FeatureServerEndpoints
             LayerServerGens = layerServerGens,
             CreationDate = replicaRecord.CreatedAt.ToUnixTimeMilliseconds(),
             LastSyncDate = replicaRecord.LastSyncTime.ToUnixTimeMilliseconds(),
-            Layers = replicaLayers.Select(layer => new ReplicaInfoLayer
-            {
-                Id = layer.PublicLayerId
-            }).ToArray()
+            Layers = BuildReplicaInfoLayers(replicaLayers, DeserializeReplicaScope(replicaRecord.ScopeDefinition))
         };
 
         return Results.Json(response, FeatureServerJsonContext.Default.ReplicaInfoResponse, contentType: "application/json");
@@ -385,36 +387,16 @@ internal static partial class FeatureServerEndpoints
         }
 
         var layersParam = GetValueString(values, "layers");
-        var syncModel = GetValueString(values, "syncModel") ?? "perReplica";
 
-        // honua-server#4405: `returnAttachments` was accepted and silently ignored — a
-        // client asking for an attachment-carrying replica got one without attachments and
-        // no indication of it. Attachment replication is not implemented for 2026.1, so the
-        // request is rejected rather than quietly downgraded.
-        if (!TryParseBoolValue(values, "returnAttachments", false, out var returnAttachments, out var returnAttachmentsError))
-        {
-            return StandardErrorHelpers.CreateBadRequest(
-                context,
-                "Invalid returnAttachments parameter",
-                [returnAttachmentsError ?? "returnAttachments must be a boolean value."]);
-        }
-
-        if (returnAttachments)
-        {
-            return StandardErrorHelpers.CreateBadRequest(
-                context,
-                "returnAttachments is not supported",
-                ["This server does not replicate attachments. Omit returnAttachments or pass returnAttachments=false, and synchronize attachments through the FeatureServer attachment endpoints."]);
-        }
-
+        var replicaAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Write, cancellationToken).ConfigureAwait(false);
         if (!TryResolveReplicaLayerIdsV2(
                 context,
                 service,
                 snapshot,
+                replicaAccess,
                 layersParam,
                 out var layerIds,
-                out var layerError,
-                AccessScope.Write))
+                out var layerError))
         {
             return layerError ?? StandardErrorHelpers.CreateBadRequest(
                 context,
@@ -434,34 +416,155 @@ internal static partial class FeatureServerEndpoints
             return createRbacError;
         }
 
-        var replicaId = Guid.NewGuid().ToString("N");
+        // The response carries the replica data (#4018), so write access alone is not enough: every
+        // selected layer also needs Query access, the gate extractChanges applies. A write-only credential
+        // must not bulk-read a layer it may not query.
+        var queryAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Read, cancellationToken).ConfigureAwait(false);
+        foreach (var layer in createLayers)
+        {
+            var queryAccessError = queryAccess.RequireAccess(layer.Resource);
+            if (queryAccessError is not null)
+            {
+                return queryAccessError;
+            }
+        }
+
+        // Every createReplica parameter is honored or rejected; none is silently dropped (#4018).
+        // syncModel is validated instead of stored verbatim: an arbitrary value used to be persisted and
+        // made the replica info resource omit both replicaServerGen and layerServerGens.
+        if (!TryNormalizeReplicaSyncModel(GetValueString(values, "syncModel"), out var syncModel))
+        {
+            return StandardErrorHelpers.CreateBadRequest(
+                context,
+                "Invalid syncModel parameter",
+                ["syncModel must be perReplica, perLayer or none."]);
+        }
+
+        var transportError = ValidateReplicaTransportParameters(context, values);
+        if (transportError is not null)
+        {
+            return transportError;
+        }
+
+        var replicaOptionsError = ValidateReplicaOptions(context, values);
+        if (replicaOptionsError is not null)
+        {
+            return replicaOptionsError;
+        }
+
+        var (scope, scopeError) = await TryParseReplicaScopeAsync(
+            context, values, createLayers, acceptReplicaSpatialReference: true, cancellationToken);
+        if (scopeError is not null)
+        {
+            return scopeError;
+        }
+
         var now = DateTimeOffset.UtcNow;
 
-        var record = new ReplicaState(
-            replicaId,
-            replicaName,
-            serviceId,
-            syncModel,
-            layerIds,
-            now,
-            ResolveReplicaOwner(context));
-        var registered = await replicaStore.RegisterAtCurrentGenerationAsync(
-            record,
-            cancellationToken: cancellationToken);
-        var currentGen = registered.LastSyncGeneration;
+        // syncModel=none is an Esri snapshot: the scoped data is returned and nothing is registered.
+        // Otherwise the replica is registered first, at the committed generation its data is read
+        // through, so the data and the replica cursor describe the same point in the change log.
+        ReplicaState? registered = null;
+        long dataGeneration;
+        if (syncModel == ReplicaSyncModelNone)
+        {
+            dataGeneration = await context.RequestServices.GetRequiredService<IChangeTracker>()
+                .GetCurrentGenerationAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            var record = new ReplicaState(
+                Guid.NewGuid().ToString("N"),
+                replicaName,
+                serviceId,
+                syncModel,
+                layerIds,
+                now,
+                ResolveReplicaOwner(context))
+            {
+                ScopeDefinition = SerializeReplicaScope(scope)
+            };
+            registered = await replicaStore.RegisterAtCurrentGenerationAsync(
+                record,
+                cancellationToken: cancellationToken);
+            dataGeneration = registered.LastSyncGeneration;
+        }
+
+        // The replica data is the scoped change log from generation 0 through the registered generation
+        // (every current row as an add), bounded per layer by Limits:Replica:MaxChangesPerLayer. A larger
+        // scope is not rejected: the replica cursor is set to the generation the data reached and the
+        // remainder arrives through synchronizeReplica downloads (#4019).
+        ReplicaDelivery? delivery;
+        IResult? deliveryError;
+        try
+        {
+            (delivery, deliveryError) = await AssembleReplicaDeliveryAsync(
+                context,
+                recipientReplicaId: null,
+                sinceGeneration: 0,
+                dataGeneration,
+                createLayers,
+                scope,
+                ReplicaChangeSelection.All,
+                returnIdsOnly: false,
+                cancellationToken);
+        }
+        catch (Exception) when (registered is not null)
+        {
+            // The registration is committed but this request fails before returning its replica ID, so
+            // the caller could never unregister it: remove it instead of leaving an orphan.
+            await replicaStore.RemoveAsync(registered.ReplicaId, CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
+
+        if (deliveryError is not null || delivery!.ExceededTransferLimit && registered is null)
+        {
+            if (registered is not null)
+            {
+                await replicaStore.RemoveAsync(registered.ReplicaId, CancellationToken.None).ConfigureAwait(false);
+            }
+
+            return deliveryError ?? StandardErrorHelpers.CreateBadRequest(
+                context,
+                $"The replica scope holds more than {context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Replica.MaxChangesPerLayer} changes in a layer.",
+                ["A syncModel=none snapshot cannot be continued. Register the replica (syncModel=perReplica or perLayer) and continue with synchronizeReplica downloads, narrow it with geometry or layerQueries, or raise Limits:Replica:MaxChangesPerLayer."]);
+        }
+
+        var data = delivery;
+        if (registered is not null && data.ThroughGeneration != registered.LastSyncGeneration)
+        {
+            var windowed = registered with { LastSyncGeneration = data.ThroughGeneration };
+            var cursorRecorded = await replicaStore.TrySetSyncStateAsync(
+                windowed,
+                registered.LastSyncGeneration,
+                registered.UploadBaseGeneration,
+                cancellationToken: cancellationToken);
+            if (!cursorRecorded)
+            {
+                return StandardErrorHelpers.CreateConflict(
+                    context,
+                    $"Replica '{registered.ReplicaId}' was synchronized by a concurrent request before its initial data was recorded. Synchronize it from generation 0.");
+            }
+        }
 
         var response = new CreateReplicaResponse
         {
-            ReplicaId = replicaId,
+            ReplicaId = registered?.ReplicaId,
             ReplicaName = replicaName,
             SyncModel = syncModel,
-            ServerGen = currentGen,
-            Layers = layerIds.Select(id => new ReplicaLayerInfo
+            ServerGen = data.ThroughGeneration,
+            Layers = [.. data.Layers.Select(layer => new ReplicaLayerInfo
             {
-                Id = id,
-                ServerGen = currentGen
-            }).ToArray(),
-            CreationDate = now.ToUnixTimeMilliseconds()
+                Id = layer.Changes.Id,
+                ServerGen = data.ThroughGeneration,
+                Features = layer.Changes.AddFeatures ?? []
+            })],
+            CreationDate = now.ToUnixTimeMilliseconds(),
+            TransportType = ReplicaEmbeddedTransportType,
+            ResponseType = "esriReplicaResponseTypeData",
+            LayerServerGens = BuildLayerServerGens(layerIds, data.ThroughGeneration),
+            ExceededTransferLimit = data.ExceededTransferLimit ? true : null
         };
 
         return Results.Json(response, FeatureServerJsonContext.Default.CreateReplicaResponse, contentType: "application/json");
@@ -537,7 +640,9 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
-        if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, AccessScope.Read, out var replicaLayers, out var replicaLayerError))
+        var replicaAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Read, cancellationToken).ConfigureAwait(false);
+
+        if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, replicaAccess, out var replicaLayers, out var replicaLayerError))
         {
             return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
                 context,
@@ -550,217 +655,84 @@ internal static partial class FeatureServerEndpoints
             return syncCapabilityError;
         }
 
+        var transportError = ValidateReplicaTransportParameters(context, values);
+        if (transportError is not null)
+        {
+            return transportError;
+        }
+
+        if (!TryParseExtractChangeOptions(context, values, out var selection, out var returnIdsOnly, out var optionsError))
+        {
+            return optionsError!;
+        }
+
+        if (!TryParseLayerServerGens(values, out var layerServerGens, out var layerServerGensError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Invalid layerServerGens parameter", [layerServerGensError!]);
+        }
+
         var changeTracker = context.RequestServices.GetRequiredService<IChangeTracker>();
         var currentGen = await changeTracker.GetCurrentGenerationAsync(cancellationToken);
 
-        // Assemble the per-layer delta since the replica's last-sync generation. The same
-        // change-tracking delta-assembly serves the synchronizeReplica(download) path so both
-        // directions deliver identical changes (the download bug, #1775, was that the download
-        // path never assembled this delta).
-        var (layerChanges, deltaError) = await BuildReplicaLayerChangesAsync(
+        // The replica's recorded cursor is the default lower bound. serverGens / layerServerGens override
+        // it so a client can page a large backlog by generation window (#4017, #4019); the change feed
+        // excludes the replica's own uploads either way, and the replica's stored scope always applies.
+        if (!TryResolveExtractWindow(
+                values,
+                layerServerGens,
+                [.. replicaLayers.Select(static layer => layer.PublicLayerId)],
+                replica.LastSyncGeneration,
+                currentGen,
+                out var sinceByLayer,
+                out var throughGeneration,
+                out var windowError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Invalid serverGen parameter", [windowError!]);
+        }
+
+        var (extract, extractError) = await DeliverExtractWindowAsync(
             context,
             replicaId,
-            replica.LastSyncGeneration,
             replicaLayers,
-            changeTracker,
+            sinceByLayer,
+            throughGeneration,
+            DeserializeReplicaScope(replica.ScopeDefinition),
+            selection,
+            returnIdsOnly,
             cancellationToken);
-        if (deltaError is not null)
+        if (extractError is not null)
         {
-            return deltaError;
+            return extractError;
         }
 
-        var minGen = replica.LastSyncGeneration;
-        var maxGen = currentGen;
-
-        var response = new ExtractChangesResponse
-        {
-            Success = true,
-            ReplicaId = replicaId,
-            LayerChanges = layerChanges!,
-            ServerGen = currentGen,
-            MinServerGen = minGen,
-            MaxServerGen = maxGen
-        };
-
-        return Results.Json(response, FeatureServerJsonContext.Default.ExtractChangesResponse, contentType: "application/json");
+        return Results.Json(
+            CreateExtractChangesResponse(replicaId, extract!, returnIdsOnly),
+            FeatureServerJsonContext.Default.ExtractChangesResponse,
+            contentType: "application/json");
     }
 
     /// <summary>
-    /// Assembles the per-layer server-to-client change delta for a replica since
-    /// <paramref name="sinceGeneration"/>, reusing the change-tracking engine that backs
-    /// <c>extractChanges</c>. Returns the per-layer adds/updates/deletes (with the actual inserted and
-    /// updated feature payloads), or a bad-request <see cref="IResult"/> when a layer's change set exceeds
-    /// the configured per-layer record limit. A <paramref name="sinceGeneration"/> of 0 means pre-migration
-    /// or first sync and falls back to "all current features as adds" for backward compatibility. This is
-    /// the shared download-assembly path consumed by both <c>extractChanges</c> and the
-    /// <c>synchronizeReplica</c> download direction (#1775).
-    /// </summary>
-    private static async Task<(LayerChanges[]? LayerChanges, IResult? Error)> BuildReplicaLayerChangesAsync(
-        HttpContext context,
-        string replicaId,
-        long sinceGeneration,
-        ReplicaLayerV2[] replicaLayers,
-        IChangeTracker changeTracker,
-        CancellationToken cancellationToken,
-        long? maxGeneration = null)
-    {
-        var layerChanges = new List<LayerChanges>(replicaLayers.Length);
-
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var queryLimits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Query;
-
-        // Query real incremental deltas from the change log. For sinceGeneration == 0 (a first sync,
-        // or data that predates migration 012) this returns the baseline Insert rows seeded by
-        // migration 059 for every pre-migration feature plus any subsequent edits, so the first
-        // gen-0 sync delivers a one-time snapshot-as-adds and every later sync is a pure delta from
-        // the recorded server generation (#1876). The all-features fallback below is only taken for a
-        // layer that has features but NO change-log coverage at all — a backend whose change tracker
-        // is a no-op (DuckDB/MySql/SQL Server) or a layer the trigger never observed — so those
-        // backends still receive a full snapshot on first sync.
-        var changes = await changeTracker.GetChangesSinceAsync(
-            sinceGeneration,
-            replicaLayers.Select(layer => layer.StorageLayerId).Distinct().ToArray(),
-            objectIds: null,
-            excludeOriginReplicaId: replicaId,
-            cancellationToken);
-
-        // Optional upper bound on the delta. Currently always null (callers pass null) — the full
-        // delta from sinceGeneration to the current generation is delivered, including any edits the
-        // uploading client just applied. Clients reconcile their own edits using the objectIds
-        // returned in the upload response (BH5-015). The parameter is kept for backward compatibility
-        // with any future caller that needs a bounded window (e.g. a selective replay path).
-        if (maxGeneration is { } upperBound)
-        {
-            changes = changes.Where(c => c.Generation <= upperBound).ToList();
-        }
-
-        // Group collapsed changes by layer
-        var changesByLayer = changes
-            .GroupBy(c => c.LayerId)
-            .ToDictionary(g => g.Key, g => g.ToList());
-
-        foreach (var layer in replicaLayers)
-        {
-            if (changesByLayer.TryGetValue(layer.StorageLayerId, out var layerChangeList))
-            {
-                // Collect objectIds by operation type
-                var (insertIds, updateIds, deleteIds) = await FilterChangesForReadAsync(
-                    context,
-                    layer,
-                    layerChangeList,
-                    featureReader,
-                    cancellationToken);
-
-                if (insertIds.Length > queryLimits.MaxRecordCount ||
-                    updateIds.Length > queryLimits.MaxRecordCount ||
-                    deleteIds.Length > queryLimits.MaxRecordCount)
-                {
-                    return (null, StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        $"Replica '{replicaId}' extract exceeds the configured per-layer change limit.",
-                        [$"Layer {layer.PublicLayerId} exceeded {queryLimits.MaxRecordCount} adds, updates, or deletes in a single extract."]));
-                }
-
-                // Query actual features for inserts and updates
-                GeoServicesFeature[]? addFeatures = null;
-                if (insertIds.Length > 0)
-                {
-                    var query = new FeatureQuery { ObjectIds = ImmutableArray.Create(insertIds) };
-                    var result = await featureReader.QueryAsync(layer.StorageLayerId, query, cancellationToken);
-                    addFeatures = result.Items
-                        .Select(f => ConvertFeatureToGeoServices(f, layer.Resource))
-                        .ToArray();
-                }
-
-                GeoServicesFeature[]? updateFeatures = null;
-                if (updateIds.Length > 0)
-                {
-                    var query = new FeatureQuery { ObjectIds = ImmutableArray.Create(updateIds) };
-                    var result = await featureReader.QueryAsync(layer.StorageLayerId, query, cancellationToken);
-                    updateFeatures = result.Items
-                        .Select(f => ConvertFeatureToGeoServices(f, layer.Resource))
-                        .ToArray();
-                }
-
-                layerChanges.Add(new LayerChanges
-                {
-                    Id = layer.PublicLayerId,
-                    Adds = insertIds.Length,
-                    Updates = updateIds.Length,
-                    Deletes = deleteIds.Length,
-                    AddFeatures = addFeatures,
-                    UpdateFeatures = updateFeatures,
-                    DeleteIds = deleteIds.Length > 0 ? deleteIds : null
-                });
-            }
-            else if (sinceGeneration == 0 &&
-                (await changeTracker.GetChangesSinceAsync(0, [layer.StorageLayerId], cancellationToken)).Count == 0)
-            {
-                // First sync (gen 0) for a layer the change log does not cover: fall back to a full
-                // snapshot delivered as adds. After migration 059 a Postgres layer with rows always
-                // has baseline coverage and takes the change-log branch above; this fallback is the
-                // first-sync snapshot for no-op-change-tracker backends and for a genuinely empty log.
-                var (snapshotChanges, snapshotError) = await BuildLayerSnapshotAddsAsync(
-                    context, replicaId, layer, featureReader, queryLimits, cancellationToken);
-                if (snapshotError is not null)
-                {
-                    return (null, snapshotError);
-                }
-
-                layerChanges.Add(snapshotChanges!);
-            }
-            else
-            {
-                layerChanges.Add(new LayerChanges
-                {
-                    Id = layer.PublicLayerId,
-                    Adds = 0,
-                    Updates = 0,
-                    Deletes = 0
-                });
-            }
-        }
-
-        return (layerChanges.ToArray(), null);
-    }
-
-    /// <summary>
-    /// Builds a full-snapshot <see cref="LayerChanges"/> (every current feature reported as an add) for
-    /// a layer that has no change-log coverage on a first (generation 0) sync. This is the first-sync
-    /// baseline path for change-tracking backends whose tracker is a no-op (DuckDB / MySql / SQL Server)
-    /// and for a genuinely empty change log; Postgres layers with rows are covered by the baseline rows
-    /// migration 059 seeds and resolve through the incremental change-log path instead (#1876). Returns a
-    /// bad-request <see cref="IResult"/> when the snapshot exceeds the configured per-layer record limit.
+    /// Reduces one layer's collapsed changes to the rows the caller may read and the replica scope
+    /// covers. The change log holds server history, not the caller's row-visibility view, so current ids
+    /// are re-queried through the shared reader seam (in pages of <paramref name="pageSize"/>) with the
+    /// scope's where clause and geometry applied, keeping counts and payloads in agreement.
     /// </summary>
     private static async Task<(long[] InsertIds, long[] UpdateIds, long[] DeleteIds)> FilterChangesForReadAsync(
         HttpContext context,
         ReplicaLayerV2 layer,
         IReadOnlyList<FeatureChange> changes,
         IFeatureReader featureReader,
+        ReplicaLayerScope layerScope,
+        int pageSize,
         CancellationToken cancellationToken)
     {
-        // The change log contains server history, not the caller's row-visibility view.
-        // Re-query current IDs through the shared reader seam so counts and payloads agree.
         var candidateIds = changes
             .Where(change => change.Operation is FeatureChangeOperation.Insert or FeatureChangeOperation.Update)
             .Select(change => change.ObjectId)
             .Distinct()
             .ToArray();
-        var visibleSet = new HashSet<long>();
-        var visibleIds = candidateIds;
-        if (visibleIds.Length > 0)
-        {
-            var visible = await featureReader.QueryObjectIdsAsync(
-                    layer.StorageLayerId,
-                    new FeatureQuery
-                    {
-                        ObjectIds = ImmutableArray.Create(visibleIds),
-                        ExcludeAttributes = true
-                    },
-                    cancellationToken)
-                .ConfigureAwait(false);
-            visibleSet = visible.ToHashSet();
-        }
+        var visibleSet = await QueryReadableReplicaIdsAsync(featureReader, layer, layerScope, candidateIds, pageSize, cancellationToken)
+            .ConfigureAwait(false);
 
         var rlsSource = context.RequestServices.GetService<IRowLevelSecurityFilterSource>();
         var hasVisibilityPolicy = !string.IsNullOrWhiteSpace(layer.Resource.PermanentFilter?.Expression) ||
@@ -770,52 +742,80 @@ internal static partial class FeatureServerEndpoints
         // re-authorized. Suppressing delete IDs is the only fail-closed behavior until
         // the change log carries a pre-delete row snapshot.
 
-        return ReplicaSecurity.FilterChangeIds(changes, visibleSet, hasVisibilityPolicy);
-    }
-
-    private static async Task<(LayerChanges? Changes, IResult? Error)> BuildLayerSnapshotAddsAsync(
-        HttpContext context,
-        string replicaId,
-        ReplicaLayerV2 layer,
-        IFeatureReader featureReader,
-        Honua.Core.Configuration.QueryLimits queryLimits,
-        CancellationToken cancellationToken)
-    {
-        var result = await featureReader.QueryAsync(
-            layer.StorageLayerId,
-            new FeatureQuery { Limit = queryLimits.MaxRecordCount + 1 },
-            cancellationToken);
-        if (result.HasMoreResults || result.Items.Length > queryLimits.MaxRecordCount)
+        var filtered = ReplicaSecurity.FilterChangeIds(changes, visibleSet, hasVisibilityPolicy);
+        if (layerScope.SqlFilter is null && layerScope.SpatialFilter is null)
         {
-            return (null, StandardErrorHelpers.CreateBadRequest(
-                context,
-                $"Replica '{replicaId}' initial extract exceeds the configured per-layer record limit.",
-                [$"Layer {layer.PublicLayerId} returned more than {queryLimits.MaxRecordCount} features."]));
+            return filtered;
         }
 
-        var addFeatures = result.Items
-            .Select(f => ConvertFeatureToGeoServices(f, layer.Resource))
+        // An update that moved a row out of the replica scope leaves the client holding a row the scope no
+        // longer covers, so it is delivered as a delete, like a deleted row. Only rows the caller can still
+        // read qualify, so nothing is disclosed that the caller's own query would not show. The change log
+        // keeps no pre-change state, so an update to a row that was never in scope is reported the same
+        // way (a no-op delete for the client), and a row updated into the scope arrives as an update.
+        var outOfScopeUpdateIds = changes
+            .Where(change => change.Operation == FeatureChangeOperation.Update && !visibleSet.Contains(change.ObjectId))
+            .Select(change => change.ObjectId)
+            .Distinct()
             .ToArray();
-
-        return (new LayerChanges
+        if (outOfScopeUpdateIds.Length == 0)
         {
-            Id = layer.PublicLayerId,
-            Adds = addFeatures.Length,
-            Updates = 0,
-            Deletes = 0,
-            AddFeatures = addFeatures,
-            UpdateFeatures = null,
-            DeleteIds = null
-        }, null);
+            return filtered;
+        }
+
+        var readable = await QueryReadableReplicaIdsAsync(
+                featureReader,
+                layer,
+                layerScope with { SqlFilter = null, SpatialFilter = null },
+                outOfScopeUpdateIds,
+                pageSize,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return readable.Count == 0
+            ? filtered
+            : (filtered.InsertIds, filtered.UpdateIds, [.. filtered.DeleteIds, .. outOfScopeUpdateIds.Where(readable.Contains)]);
     }
 
     /// <summary>
-    /// Serves the no-replicaID <c>extractChanges</c> flow: the serverGen-based change
-    /// tracking the ArcGIS SDK <c>FeatureLayerCollection.extract_changes()</c> uses. The
-    /// caller passes the generation to extract from (<c>serverGen</c> / <c>serverGens</c>)
-    /// and optionally a <c>layers</c> filter, and receives changes since that generation
-    /// without registering a replica. Only available on sync/change-tracking-enabled
-    /// services. <c>returnIdsOnly=true</c> omits the per-feature attribute payload.
+    /// Returns which of <paramref name="objectIds"/> currently exist inside <paramref name="layerScope"/>
+    /// and the caller's row visibility, queried through the shared reader in pages of <paramref name="pageSize"/>.
+    /// </summary>
+    private static async Task<HashSet<long>> QueryReadableReplicaIdsAsync(
+        IFeatureReader featureReader,
+        ReplicaLayerV2 layer,
+        ReplicaLayerScope layerScope,
+        long[] objectIds,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        var readable = new HashSet<long>();
+        foreach (var page in objectIds.Chunk(pageSize))
+        {
+            var visible = await featureReader.QueryObjectIdsAsync(
+                    layer.StorageLayerId,
+                    CreateReplicaFeatureQuery(layer, layerScope) with
+                    {
+                        ObjectIds = ImmutableArray.Create(page),
+                        Limit = page.Length,
+                        OutputSrid = null,
+                        ExcludeAttributes = true
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+            readable.UnionWith(visible);
+        }
+
+        return readable;
+    }
+
+    /// <summary>
+    /// Serves the no-replicaID <c>extractChanges</c> flow: the change tracking the ArcGIS API for Python
+    /// <c>FeatureLayerCollection.extract_changes()</c> uses. The window comes from <c>layerServerGens</c>
+    /// (per layer) or <c>serverGen</c>/<c>serverGens</c> (<c>[min, max]</c>), the data scope from
+    /// <c>geometry</c>/<c>layerQueries</c>, and the change categories from
+    /// <c>returnInserts</c>/<c>returnUpdates</c>/<c>returnDeletes</c>. The response carries the Esri
+    /// <c>edits</c>/<c>layerServerGens</c> envelope beside the legacy Honua <c>layerChanges</c> (#4017).
+    /// Only available on sync/change-tracking-enabled services.
     /// </summary>
     private static async Task<IResult> HandleExtractChangesWithoutReplicaAsync(
         string serviceId,
@@ -826,15 +826,22 @@ internal static partial class FeatureServerEndpoints
         System.Diagnostics.Activity? activity,
         CancellationToken cancellationToken)
     {
-        // The serverGen-based change-tracking flow is served on the same change-tracking
-        // backend the replica flow uses. Layer access is enforced before the service-local
-        // Sync capability response so unauthorized callers cannot learn service settings.
+        // Layer access is enforced before the service-local Sync capability response so unauthorized
+        // callers cannot learn service settings.
+        if (!TryParseLayerServerGens(values, out var layerServerGens, out var layerServerGensError))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Invalid layerServerGens parameter", [layerServerGensError!]);
+        }
 
-        // Resolve the layers to extract from: the optional layers filter, otherwise all
-        // accessible service layers. This reuses the same access-checked resolution the
-        // replica flow uses for the layers parameter.
+        // Esri clients may name the layers only through layerServerGens.
         var layersParam = GetValueString(values, "layers");
-        if (!TryResolveReplicaLayerIdsV2(context, service, snapshot, layersParam, out var requestedLayerIds, out var layerError))
+        if (string.IsNullOrWhiteSpace(layersParam) && layerServerGens is not null)
+        {
+            layersParam = string.Join(',', layerServerGens.Keys.Order());
+        }
+
+        var replicaAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Read, cancellationToken).ConfigureAwait(false);
+        if (!TryResolveReplicaLayerIdsV2(context, service, snapshot, replicaAccess, layersParam, out var requestedLayerIds, out var layerError))
         {
             return layerError ?? StandardErrorHelpers.CreateBadRequest(context,
                 "Unable to resolve layers for extractChanges.");
@@ -858,188 +865,66 @@ internal static partial class FeatureServerEndpoints
             return syncCapabilityError;
         }
 
-        if (!TryParseBoolValue(values, "returnIdsOnly", false, out var returnIdsOnly, out var returnIdsOnlyError))
+        var transportError = ValidateReplicaTransportParameters(context, values);
+        if (transportError is not null)
         {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "Invalid returnIdsOnly parameter",
-                [returnIdsOnlyError ?? "returnIdsOnly must be a boolean value."]);
+            return transportError;
+        }
+
+        if (!TryParseExtractChangeOptions(context, values, out var selection, out var returnIdsOnly, out var optionsError))
+        {
+            return optionsError!;
+        }
+
+        var (scope, scopeError) = await TryParseReplicaScopeAsync(
+            context, values, extractLayers, acceptReplicaSpatialReference: false, cancellationToken);
+        if (scopeError is not null)
+        {
+            return scopeError;
         }
 
         var changeTracker = context.RequestServices.GetRequiredService<IChangeTracker>();
         var currentGen = await changeTracker.GetCurrentGenerationAsync(cancellationToken);
 
-        // Resolve the "since" generation from serverGen / serverGens. When omitted we
-        // extract from the beginning (generation 0), matching a first full extract.
-        if (!TryResolveExtractSinceGeneration(values, currentGen, out var sinceGeneration, out var sinceError))
+        // Without a generation the extract starts at 0, a first full extract.
+        if (!TryResolveExtractWindow(
+                values,
+                layerServerGens,
+                [.. extractLayers.Select(static layer => layer.PublicLayerId)],
+                defaultSinceGeneration: 0,
+                currentGen,
+                out var sinceByLayer,
+                out var throughGeneration,
+                out var windowError))
         {
-            return StandardErrorHelpers.CreateBadRequest(context,
-                "Invalid serverGen parameter",
-                [sinceError ?? "serverGen must be a non-negative integer."]);
+            return StandardErrorHelpers.CreateBadRequest(context, "Invalid serverGen parameter", [windowError!]);
         }
 
-        activity?.SetTag("honua.extractChanges.sinceGen", sinceGeneration);
+        activity?.SetTag("honua.extractChanges.sinceGen", sinceByLayer.Values.DefaultIfEmpty(0).Min());
+        activity?.SetTag("honua.extractChanges.throughGen", throughGeneration);
         activity?.SetTag("honua.extractChanges.returnIdsOnly", returnIdsOnly);
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-        var queryLimits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Query;
-
-        var changes = await changeTracker.GetChangesSinceAsync(
-            sinceGeneration,
-            extractLayers.Select(layer => layer.StorageLayerId).Distinct().ToArray(),
+        var (extract, extractError) = await DeliverExtractWindowAsync(
+            context,
+            replicaId: null,
+            extractLayers,
+            sinceByLayer,
+            throughGeneration,
+            scope,
+            selection,
+            returnIdsOnly,
             cancellationToken);
-
-        var changesByLayer = changes
-            .GroupBy(c => c.LayerId)
-            .ToDictionary(g => g.Key, g => g.ToList());
-
-        var layerChanges = new List<LayerChanges>(extractLayers.Length);
-        foreach (var layer in extractLayers)
+        if (extractError is not null)
         {
-            if (!changesByLayer.TryGetValue(layer.StorageLayerId, out var layerChangeList))
-            {
-                layerChanges.Add(new LayerChanges
-                {
-                    Id = layer.PublicLayerId,
-                    Adds = 0,
-                    Updates = 0,
-                    Deletes = 0
-                });
-                continue;
-            }
-
-            var (insertIds, updateIds, deleteIds) = await FilterChangesForReadAsync(
-                context,
-                layer,
-                layerChangeList,
-                featureReader,
-                cancellationToken);
-
-            if (insertIds.Length > queryLimits.MaxRecordCount ||
-                updateIds.Length > queryLimits.MaxRecordCount ||
-                deleteIds.Length > queryLimits.MaxRecordCount)
-            {
-                return StandardErrorHelpers.CreateBadRequest(
-                    context,
-                    "extractChanges exceeds the configured per-layer change limit.",
-                    [$"Layer {layer.PublicLayerId} exceeded {queryLimits.MaxRecordCount} adds, updates, or deletes in a single extract."]);
-            }
-
-            // returnIdsOnly omits the per-feature attribute payload; only the counts and
-            // delete ids are reported (matching the SDK ids-only change-tracking flow).
-            GeoServicesFeature[]? addFeatures = null;
-            GeoServicesFeature[]? updateFeatures = null;
-            if (!returnIdsOnly)
-            {
-                if (insertIds.Length > 0)
-                {
-                    var result = await featureReader.QueryAsync(
-                        layer.StorageLayerId,
-                        new FeatureQuery { ObjectIds = ImmutableArray.Create(insertIds) },
-                        cancellationToken);
-                    addFeatures = result.Items.Select(f => ConvertFeatureToGeoServices(f, layer.Resource)).ToArray();
-                }
-
-                if (updateIds.Length > 0)
-                {
-                    var result = await featureReader.QueryAsync(
-                        layer.StorageLayerId,
-                        new FeatureQuery { ObjectIds = ImmutableArray.Create(updateIds) },
-                        cancellationToken);
-                    updateFeatures = result.Items.Select(f => ConvertFeatureToGeoServices(f, layer.Resource)).ToArray();
-                }
-            }
-
-            layerChanges.Add(new LayerChanges
-            {
-                Id = layer.PublicLayerId,
-                Adds = insertIds.Length,
-                Updates = updateIds.Length,
-                Deletes = deleteIds.Length,
-                AddFeatures = addFeatures,
-                UpdateFeatures = updateFeatures,
-                DeleteIds = deleteIds.Length > 0 ? deleteIds : null
-            });
+            return extractError;
         }
 
-        // No replica: ReplicaId is left null (omitted) and the change window is reported
-        // through serverGen/minServerGen/maxServerGen for the serverGen-based flow.
-        var response = new ExtractChangesResponse
-        {
-            Success = true,
-            ReplicaId = null,
-            LayerChanges = layerChanges.ToArray(),
-            ServerGen = currentGen,
-            MinServerGen = sinceGeneration,
-            MaxServerGen = currentGen
-        };
-
-        return Results.Json(response, FeatureServerJsonContext.Default.ExtractChangesResponse, contentType: "application/json");
-    }
-
-    /// <summary>
-    /// Resolves the "extract since" generation from the Esri <c>serverGen</c> /
-    /// <c>serverGens</c> parameters. Accepts a single integer, or a JSON array of
-    /// integers (in which case the minimum is used as the inclusive lower bound). When
-    /// omitted, returns 0 (full extract). The resolved value is clamped to the current
-    /// generation.
-    /// </summary>
-    private static bool TryResolveExtractSinceGeneration(
-        IReadOnlyDictionary<string, Microsoft.Extensions.Primitives.StringValues> values,
-        long currentGen,
-        out long sinceGeneration,
-        out string? error)
-    {
-        sinceGeneration = 0;
-        error = null;
-
-        var raw = GetValueString(values, "serverGen") ?? GetValueString(values, "serverGens");
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return true;
-        }
-
-        var trimmed = raw.Trim();
-        if (long.TryParse(trimmed, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var single))
-        {
-            if (single < 0)
-            {
-                error = "serverGen must be a non-negative integer.";
-                return false;
-            }
-
-            sinceGeneration = Math.Min(single, currentGen);
-            return true;
-        }
-
-        if (trimmed.StartsWith('[') && trimmed.EndsWith(']'))
-        {
-            try
-            {
-                var parsed = System.Text.Json.JsonSerializer.Deserialize(trimmed, FeatureServerJsonContext.Default.Int64Array);
-                if (parsed is { Length: > 0 })
-                {
-                    if (parsed.Any(g => g < 0))
-                    {
-                        error = "serverGens values must be non-negative integers.";
-                        return false;
-                    }
-
-                    sinceGeneration = Math.Min(parsed.Min(), currentGen);
-                    return true;
-                }
-
-                // Empty array → full extract.
-                return true;
-            }
-            catch (System.Text.Json.JsonException)
-            {
-                error = "serverGens must be an integer or a JSON array of integers.";
-                return false;
-            }
-        }
-
-        error = "serverGen must be an integer or a JSON array of integers.";
-        return false;
+        // No replica: replicaID is omitted and the window is reported through serverGen/minServerGen/
+        // maxServerGen and layerServerGens.
+        return Results.Json(
+            CreateExtractChangesResponse(null, extract!, returnIdsOnly),
+            FeatureServerJsonContext.Default.ExtractChangesResponse,
+            contentType: "application/json");
     }
 
     private static async Task<IResult> HandleSynchronizeReplica(
@@ -1129,7 +1014,9 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
-        if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, AccessScope.Write, out var replicaLayers, out var replicaLayerError))
+        var replicaAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Write, cancellationToken).ConfigureAwait(false);
+
+        if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, replicaAccess, out var replicaLayers, out var replicaLayerError))
         {
             return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
                 context,
@@ -1153,6 +1040,21 @@ internal static partial class FeatureServerEndpoints
         var isUploadDirection = !string.Equals(syncDirection, "download", StringComparison.OrdinalIgnoreCase);
         var isDownloadDirection = string.Equals(syncDirection, "download", StringComparison.OrdinalIgnoreCase)
             || string.Equals(syncDirection, "bidirectional", StringComparison.OrdinalIgnoreCase);
+
+        // A download returns feature data, so it needs Query access on every replica layer, as extractChanges
+        // and createReplica do; write access alone must not read the layers (#4018).
+        if (isDownloadDirection)
+        {
+            var queryAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Read, cancellationToken).ConfigureAwait(false);
+            foreach (var layer in replicaLayers)
+            {
+                var queryAccessError = queryAccess.RequireAccess(layer.Resource);
+                if (queryAccessError is not null)
+                {
+                    return queryAccessError;
+                }
+            }
+        }
 
         // Esri sync protocol: the client echoes the server generation it actually
         // received (replicaServerGen, from the preceding extractChanges serverGen).
@@ -1179,8 +1081,12 @@ internal static partial class FeatureServerEndpoints
 
         // Esri sync parameter: rollbackOnFailure=true applies each layer's uploaded edits atomically so
         // a single failing row rolls back that layer's whole batch, leaving the server state unchanged
-        // (#2136). Defaults to false (best-effort per-row), matching the prior synchronize behavior.
-        if (!TryParseBoolValue(values, "rollbackOnFailure", false, out var rollbackOnFailure, out var rollbackError))
+        // (#2136). Defaults to true, the Esri Synchronize Replica default (#4031): a client that omits
+        // the parameter must never get a partially applied upload. Best-effort per-row apply is opt-in
+        // with an explicit rollbackOnFailure=false.
+        var rollbackOnFailureSupplied = TryGetValue(values, "rollbackOnFailure", out var rollbackOnFailureRaw)
+            && !StringValues.IsNullOrEmpty(rollbackOnFailureRaw);
+        if (!TryParseBoolValue(values, "rollbackOnFailure", true, out var rollbackOnFailure, out var rollbackError))
         {
             return StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid rollbackOnFailure parameter",
@@ -1257,7 +1163,7 @@ internal static partial class FeatureServerEndpoints
                 }
 
                 uploadStore = context.RequestServices.GetRequiredService<IReplicaUploadIdempotencyStore>();
-                uploadFingerprint = ComputeReplicaUploadFingerprint(syncDirection, rollbackOnFailure, lastWriteWins, editsJson!);
+                uploadFingerprint = ComputeReplicaUploadFingerprint(syncDirection, rollbackOnFailure, rollbackOnFailureSupplied, lastWriteWins, editsJson!);
                 keylessUpload = explicitUploadKey is null;
                 // The replica's stored service id, not the route value: service lookup is case-insensitive,
                 // so path casing must not fork the key.
@@ -1500,6 +1406,8 @@ internal static partial class FeatureServerEndpoints
         // changes already known to this replica without skipping other clients' intervening changes.
         LayerChanges[]? downloadEdits = null;
         ReplicaInfoLayerServerGeneration[]? downloadLayerServerGens = null;
+        var downloadThroughGen = currentGen;
+        var downloadExceededTransferLimit = false;
         if (isDownloadDirection)
         {
             // The download lower bound is the generation the client already holds (replicaServerGen,
@@ -1514,38 +1422,38 @@ internal static partial class FeatureServerEndpoints
             var downloadSinceGen = acknowledgedServerGen is { } acknowledged
                 ? Math.Min(acknowledged, currentGen)
                 : replica.LastSyncGeneration;
-            long? downloadMaxGen = null;
 
-            var (assembledEdits, deltaError) = await BuildReplicaLayerChangesAsync(
+            // A backlog larger than Limits:Replica:MaxChangesPerLayer is delivered in consecutive
+            // generation windows: the cursor advances to the generation this delivery reached and the
+            // response sets exceededTransferLimit, so a busy replica always makes progress instead of
+            // failing every download (#4019).
+            var (delivery, deltaError) = await AssembleReplicaDeliveryAsync(
                 context,
                 replicaId,
                 downloadSinceGen,
+                currentGen,
                 replicaLayers,
-                changeTracker,
-                cancellationToken,
-                downloadMaxGen);
+                DeserializeReplicaScope(replica.ScopeDefinition),
+                ReplicaChangeSelection.All,
+                returnIdsOnly: false,
+                cancellationToken);
             if (deltaError is not null)
             {
                 return deltaError;
             }
 
-            downloadEdits = assembledEdits;
-            downloadLayerServerGens = replicaLayers
-                .Select(layer => layer.PublicLayerId)
-                .Distinct()
-                .Select(id => new ReplicaInfoLayerServerGeneration
-                {
-                    Id = id,
-                    ServerGen = currentGen,
-                    ServerSibGen = currentGen
-                })
-                .ToArray();
+            downloadEdits = delivery!.LegacyLayerChanges;
+            downloadThroughGen = delivery.ThroughGeneration;
+            downloadExceededTransferLimit = delivery.ExceededTransferLimit;
+            downloadLayerServerGens = BuildLayerServerGens(
+                replicaLayers.Select(static layer => layer.PublicLayerId),
+                delivery.ThroughGeneration);
         }
 
         var updated = replica with
         {
             LastSyncTime = DateTimeOffset.UtcNow,
-            LastSyncGeneration = isDownloadDirection ? currentGen : replica.LastSyncGeneration,
+            LastSyncGeneration = isDownloadDirection ? downloadThroughGen : replica.LastSyncGeneration,
             // A replayed upload applied nothing, so it keeps the upload cursor its fingerprint record is keyed to.
             UploadBaseGeneration = didUpload && !uploadReplayed ? currentGen : replica.UploadBaseGeneration
         };
@@ -1578,7 +1486,8 @@ internal static partial class FeatureServerEndpoints
             AppliedUpdates = appliedUpdates,
             AppliedDeletes = appliedDeletes,
             EditResults = addEditResults,
-            Conflicts = conflicts
+            Conflicts = conflicts,
+            ExceededTransferLimit = downloadExceededTransferLimit ? true : null
         };
 
         return Results.Json(response, FeatureServerJsonContext.Default.SynchronizeReplicaResponse, contentType: "application/json");
@@ -1626,15 +1535,22 @@ internal static partial class FeatureServerEndpoints
     /// rollback and conflict-handling modes, and the raw edits payload a retry re-sends byte for byte
     /// (#4026). A reused key whose fingerprint differs is a different upload, not a retry.
     /// </summary>
-    private static string ComputeReplicaUploadFingerprint(
+    /// <remarks>
+    /// An upload that omits <c>rollbackOnFailure</c> keeps the "best-effort" token it hashed to before the
+    /// default became true (#4031). A retry that spans that change must still find the record its first
+    /// attempt wrote inside the dedupe window; a new token would turn a keyless retry into a fresh upload
+    /// that applies its adds again. The cost is that an omitted value and an explicit false fingerprint alike.
+    /// </remarks>
+    internal static string ComputeReplicaUploadFingerprint(
         string syncDirection,
         bool rollbackOnFailure,
+        bool rollbackOnFailureSupplied,
         bool lastWriteWins,
         string editsJson)
     {
         var material = string.Concat(
             syncDirection.Trim().ToLowerInvariant(), "\n",
-            rollbackOnFailure ? "rollback" : "best-effort", "\n",
+            rollbackOnFailure && rollbackOnFailureSupplied ? "rollback" : "best-effort", "\n",
             lastWriteWins ? "lastWriteWins" : "manualReview", "\n",
             editsJson);
         return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(material)));
@@ -2281,7 +2197,9 @@ internal static partial class FeatureServerEndpoints
                 $"Replica '{replicaId}' not found for service '{serviceId}'.");
         }
 
-        if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, AccessScope.Write, out var replicaLayers, out var replicaLayerError))
+        var replicaAccess = await ResolveReplicaLayerAccessAsync(context, service, snapshot, AccessScope.Write, cancellationToken).ConfigureAwait(false);
+
+        if (!TryResolveReplicaLayersV2(context, service, snapshot, replica, replicaAccess, out var replicaLayers, out var replicaLayerError))
         {
             return replicaLayerError ?? StandardErrorHelpers.CreateNotFound(
                 context,
@@ -2383,14 +2301,38 @@ internal static partial class FeatureServerEndpoints
         ];
     }
 
+    private static readonly AuthorizationOperation[] _replicaReadOperations = [AuthorizationOperation.Query];
+
+    private static readonly AuthorizationOperation[] _replicaWriteOperations =
+        [AuthorizationOperation.Update, AuthorizationOperation.Insert, AuthorizationOperation.Delete];
+
+    /// <summary>
+    /// Resolves the canonical per-operation access decisions (#4783) for every replica-eligible layer
+    /// of the service, so the synchronous replica layer resolution applies permission grants as well
+    /// as the coarse access policy. A write scope admits any mutating grant (update, insert or
+    /// delete), matching the replica write gates that run around this resolution.
+    /// </summary>
+    private static Task<ResourceAccessSet> ResolveReplicaLayerAccessAsync(
+        HttpContext context,
+        MetadataV2Service service,
+        MetadataV2GraphSnapshot snapshot,
+        AccessScope scope,
+        CancellationToken cancellationToken)
+        => AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
+            context,
+            ResolveServiceReplicaLayersV2(service, snapshot).Select(layer => layer.Resource),
+            service,
+            scope == AccessScope.Write ? _replicaWriteOperations : _replicaReadOperations,
+            cancellationToken);
+
     private static bool TryResolveReplicaLayerIdsV2(
         HttpContext context,
         MetadataV2Service service,
         MetadataV2GraphSnapshot snapshot,
+        ResourceAccessSet access,
         string? layersParam,
         out int[] layerIds,
-        out IResult? error,
-        AccessScope scope = AccessScope.Read)
+        out IResult? error)
     {
         layerIds = [];
         error = null;
@@ -2399,17 +2341,13 @@ internal static partial class FeatureServerEndpoints
         {
             var serviceLayers = ResolveServiceReplicaLayersV2(service, snapshot);
             var accessibleLayers = serviceLayers
-                .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service, scope))
+                .Where(layer => access.IsAccessible(layer.Resource))
                 .Select(layer => layer.PublicLayerId)
                 .ToArray();
 
             if (accessibleLayers.Length == 0)
             {
-                error = AccessPolicyHelpers.RequireAnyResourceAccess(
-                            context,
-                            serviceLayers.Select(layer => layer.Resource),
-                            service,
-                            scope)
+                error = access.RequireAny(serviceLayers.Select(layer => layer.Resource))
                         ?? StandardErrorHelpers.CreateForbidden(context, AccessPolicyHelpers.AccessForbiddenMessage);
                 return false;
             }
@@ -2453,7 +2391,7 @@ internal static partial class FeatureServerEndpoints
                 return false;
             }
 
-            var accessError = AccessPolicyHelpers.RequireResourceAccess(context, layer.Resource, service, scope);
+            var accessError = access.RequireAccess(layer.Resource);
             if (accessError != null)
             {
                 error = accessError;
@@ -2480,7 +2418,7 @@ internal static partial class FeatureServerEndpoints
         MetadataV2Service service,
         MetadataV2GraphSnapshot snapshot,
         ReplicaState replica,
-        AccessScope scope,
+        ResourceAccessSet access,
         out ReplicaLayerV2[] layers,
         out IResult? error)
     {
@@ -2501,7 +2439,7 @@ internal static partial class FeatureServerEndpoints
                 return false;
             }
 
-            var accessError = AccessPolicyHelpers.RequireResourceAccess(context, layer.Resource, service, scope);
+            var accessError = access.RequireAccess(layer.Resource);
             if (accessError != null)
             {
                 error = accessError;
@@ -2559,7 +2497,8 @@ internal static partial class FeatureServerEndpoints
     {
         LastSyncTime = record.LastSyncTime,
         LastSyncGeneration = record.LastSyncGeneration,
-        UploadBaseGeneration = record.UploadBaseGeneration
+        UploadBaseGeneration = record.UploadBaseGeneration,
+        ScopeDefinition = record.ScopeDefinition
     };
 
     private static string ResolveReplicaOwner(HttpContext context)
@@ -2639,7 +2578,15 @@ internal static partial class FeatureServerEndpoints
     /// (JSONB stores dates as ISO strings from seeds or epoch-ms longs from applyEdits) via the
     /// shared GeoServices date convention, matching the query/identify serialization.
     /// </summary>
-    private static GeoServicesFeature ConvertFeatureToGeoServices(Feature feature, MetadataV2Resource resource)
+    /// <remarks>
+    /// Z and M are always kept and the geometry carries the layer's spatial reference (#4027). A
+    /// replica download is not display output: the client stores these geometries offline and uploads
+    /// them back as updates, so flattening a 3D or measured feature here would write the 2D geometry
+    /// back to the server. This matches <see cref="CaptureStateEnvelope"/>. A replica created with
+    /// <c>replicaSR</c> passes that SRID as <paramref name="deliverySrid"/> so the label matches the
+    /// reprojected coordinates (#4018).
+    /// </remarks>
+    private static GeoServicesFeature ConvertFeatureToGeoServices(Feature feature, MetadataV2Resource resource, int? deliverySrid = null)
     {
         var attributes = feature.Attributes
             .Where(kvp => !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
@@ -2652,7 +2599,35 @@ internal static partial class FeatureServerEndpoints
         {
             Attributes = attributes,
             Geometry = GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
-                feature.Geometry, null, null, false, false)
+                feature.Geometry,
+                srid: deliverySrid ?? ResolveReplicaLayerSrid(resource),
+                geometryLimits: null,
+                includeZ: true,
+                includeM: true)
         };
     }
+
+    /// <summary>
+    /// Read query for replica feature payloads (#4027). Z and M are requested from storage because a
+    /// provider's plain WKB read strips them before the converter runs, and coordinates are reprojected
+    /// to the layer's advertised spatial reference so they match the label on the download: a
+    /// storage-mapped resource otherwise returns them in its storage CRS.
+    /// </summary>
+    internal static FeatureQuery ReplicaGeometryQuery(FeatureQuery query, MetadataV2Resource resource)
+        => query with
+        {
+            IncludeZ = true,
+            IncludeM = true,
+            OutputSrid = resource.HasGeometry() ? resource.ReadSrid() : null
+        };
+
+    /// <summary>
+    /// The spatial reference replica features are delivered in: the layer's advertised SRID, falling back
+    /// to WGS 84 exactly as the query path does (#4027). An attribute-only table has none.
+    /// </summary>
+    internal static int? ResolveReplicaLayerSrid(MetadataV2Resource resource)
+        => resource.HasGeometry() ? resource.ReadSrid() ?? SpatialReference.WGS84.Wkid : null;
+
+    internal static GeoServicesSpatialReference? CreateReplicaLayerSpatialReference(MetadataV2Resource resource)
+        => GeoServicesGeometryConverter.CreateSpatialReference(ResolveReplicaLayerSrid(resource));
 }

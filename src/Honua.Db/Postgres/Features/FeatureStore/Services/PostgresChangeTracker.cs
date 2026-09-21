@@ -55,15 +55,20 @@ internal sealed class PostgresChangeTracker : IChangeTracker
         int[] layerIds,
         IReadOnlySet<long>? objectIds,
         CancellationToken cancellationToken = default)
-        => GetChangesCoreAsync(sinceGeneration, layerIds, objectIds, null, cancellationToken);
+        => GetChangesCoreAsync(sinceGeneration, throughGeneration: null, layerIds, objectIds, null, cancellationToken);
 
     public Task<IReadOnlyList<FeatureChange>> GetChangesSinceAsync(
         long sinceGeneration, int[] layerIds, IReadOnlySet<long>? objectIds,
         string excludeOriginReplicaId, CancellationToken cancellationToken = default)
-        => GetChangesCoreAsync(sinceGeneration, layerIds, objectIds, excludeOriginReplicaId, cancellationToken);
+        => GetChangesCoreAsync(sinceGeneration, throughGeneration: null, layerIds, objectIds, excludeOriginReplicaId, cancellationToken);
+
+    public Task<IReadOnlyList<FeatureChange>> GetChangesInWindowAsync(
+        long sinceGeneration, long throughGeneration, int[] layerIds,
+        string? excludeOriginReplicaId, CancellationToken cancellationToken = default)
+        => GetChangesCoreAsync(sinceGeneration, throughGeneration, layerIds, objectIds: null, excludeOriginReplicaId, cancellationToken);
 
     private async Task<IReadOnlyList<FeatureChange>> GetChangesCoreAsync(
-        long sinceGeneration, int[] layerIds, IReadOnlySet<long>? objectIds,
+        long sinceGeneration, long? throughGeneration, int[] layerIds, IReadOnlySet<long>? objectIds,
         string? excludeOriginReplicaId, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(layerIds);
@@ -87,6 +92,7 @@ internal sealed class PostgresChangeTracker : IChangeTracker
                 SELECT DISTINCT layer_id, objectid
                 FROM honua.feature_changes
                 WHERE generation > $1
+                  AND ($5::bigint IS NULL OR generation <= $5)
                   AND layer_id = ANY($2)
                   AND ($3::bigint[] IS NULL OR objectid = ANY($3) OR public_objectid = ANY($3))
             ),
@@ -107,6 +113,7 @@ internal sealed class PostgresChangeTracker : IChangeTracker
                     ON matched_objects.layer_id = changes.layer_id
                    AND matched_objects.objectid = changes.objectid
                 WHERE changes.generation > $1
+                  AND ($5::bigint IS NULL OR changes.generation <= $5)
                   AND ($4::text IS NULL OR changes.origin_replica_id IS DISTINCT FROM $4)
             )
             SELECT change_id, max_gen AS generation, layer_id, objectid, public_objectid,
@@ -139,6 +146,9 @@ internal sealed class PostgresChangeTracker : IChangeTracker
             NpgsqlDbType = NpgsqlDbType.Array | NpgsqlDbType.Bigint
         });
         command.Parameters.Add(new NpgsqlParameter { Value = (object?)excludeOriginReplicaId ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Text });
+        // Bounding both CTEs collapses each object's history over the window only, so a later
+        // window reports what happened after this bound rather than a collapse of the whole log.
+        command.Parameters.Add(new NpgsqlParameter { Value = (object?)throughGeneration ?? DBNull.Value, NpgsqlDbType = NpgsqlDbType.Bigint });
 
         var changes = new List<FeatureChange>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);

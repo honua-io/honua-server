@@ -1,0 +1,214 @@
+{
+  "at": "2026-09-15T08:37:18.402448+00:00",
+  "source": "548b7a5263da5a3f2381eb43f232687cdf92b0bf",
+  "image": "sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1",
+  "tls_verified": true,
+  "service": "desktop_ui_features",
+  "evidence_kind": "verified-https-soap-requests",
+  "desktop_ui_exercised": false,
+  "checks": [
+    {
+      "case": "authorized-submit-status-result",
+      "expected": {
+        "job_status": "esriJobSucceeded",
+        "area": 12,
+        "type": "MeasureResult",
+        "processId": "geometry.area",
+        "inputSrid": 3857,
+        "inputGeometryType": "Polygon"
+      },
+      "actual": {
+        "job_status": "esriJobSucceeded",
+        "result_status": 200,
+        "area": 12,
+        "type": "MeasureResult",
+        "processId": "geometry.area",
+        "inputSrid": 3857,
+        "inputGeometryType": "Polygon"
+      },
+      "passed": true
+    },
+    {
+      "case": "anonymous-SubmitJob",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "leaked_markers": [],
+      "passed": true
+    },
+    {
+      "case": "anonymous-Execute",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "leaked_markers": [],
+      "passed": true
+    },
+    {
+      "case": "anonymous-GetJobStatus",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "leaked_markers": [],
+      "passed": true
+    },
+    {
+      "case": "anonymous-GetJobMessages",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "leaked_markers": [],
+      "passed": true
+    },
+    {
+      "case": "anonymous-GetJobToolName",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "leaked_markers": [],
+      "passed": true
+    },
+    {
+      "case": "anonymous-GetJobResult",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "leaked_markers": [],
+      "passed": true
+    },
+    {
+      "case": "anonymous-CancelJob",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "leaked_markers": [],
+      "passed": true
+    },
+    {
+      "case": "invalid-api-key-SubmitJob",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "leaked_markers": [],
+      "passed": true
+    },
+    {
+      "case": "invalid-api-key-Execute",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "leaked_markers": [],
+      "passed": true
+    },
+    {
+      "case": "invalid-api-key-GetJobStatus",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "leaked_markers": [],
+      "passed": true
+    },
+    {
+      "case": "invalid-api-key-GetJobMessages",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "leaked_markers": [],
+      "passed": true
+    },
+    {
+      "case": "invalid-api-key-GetJobToolName",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "leaked_markers": [],
+      "passed": true
+    },
+    {
+      "case": "invalid-api-key-GetJobResult",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "leaked_markers": [],
+      "passed": true
+    },
+    {
+      "case": "invalid-api-key-CancelJob",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "leaked_markers": [],
+      "passed": true
+    },
+    {
+      "case": "invalid-bearer-SubmitJob",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "leaked_markers": [],
+      "passed": true
+    },
+    {
+      "case": "invalid-bearer-Execute",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "leaked_markers": [],
+      "passed": true
+    },
+    {
+      "case": "invalid-bearer-GetJobStatus",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "leaked_markers": [],
+      "passed": true
+    },
+    {
+      "case": "invalid-bearer-GetJobMessages",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "leaked_markers": [],
+      "passed": true
+    },
+    {
+      "case": "invalid-bearer-GetJobToolName",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "leaked_markers": [],
+      "passed": true
+    },
+    {
+      "case": "invalid-bearer-GetJobResult",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "leaked_markers": [],
+      "passed": true
+    },
+    {
+      "case": "invalid-bearer-CancelJob",
+      "expected_status": 401,
+      "actual_status": 401,
+      "soap_fault": true,
+      "leaked_markers": [],
+      "passed": true
+    },
+    {
+      "case": "authorized-status-after-denied-cancels",
+      "expected": "esriJobSucceeded",
+      "actual": "esriJobSucceeded",
+      "passed": true
+    },
+    {
+      "case": "authorized-invalid-parameters",
+      "expected_status": 400,
+      "actual_status": 400,
+      "soap_fault": true,
+      "passed": true
+    }
+  ],
+  "passed": true
+}

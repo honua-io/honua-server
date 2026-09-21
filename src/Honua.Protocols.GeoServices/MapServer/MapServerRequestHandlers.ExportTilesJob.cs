@@ -5,6 +5,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Linq;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -280,10 +281,13 @@ internal static partial class MapServerEndpoints
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var publishedLayers = ResolveMapServerMetadataLayers(snapshot, service);
 
-        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+        var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
             context,
             publishedLayers.Select(static layer => layer.Resource),
-            service);
+            service,
+            AuthorizationOperation.Export,
+            cancellationToken).ConfigureAwait(false);
+        var accessError = access.RequireAny(publishedLayers.Select(static layer => layer.Resource));
         if (accessError is not null)
         {
             return (null, accessError);
@@ -296,7 +300,7 @@ internal static partial class MapServerEndpoints
         // HttpContext and cannot re-check access).
         var renderSelection = ResolveRenderLayers(
             publishedLayers,
-            service,
+            access,
             GetValue(values, "layers"),
             Array.Empty<DynamicLayerDefinition>(),
             context);

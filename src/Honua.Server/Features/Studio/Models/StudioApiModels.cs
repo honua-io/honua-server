@@ -308,3 +308,54 @@ public sealed class StudioDeliverableExportResponse
     [JsonPropertyName("artifactUrl")]
     public string? ArtifactUrl { get; init; }
 }
+
+/// <summary>
+/// Response body for a Studio published route (honua-server#4907): the Active version named by
+/// the content item's published pointer, resolved from the governed publication route.
+/// </summary>
+public sealed class StudioPublishedArtifact
+{
+    /// <summary>Governed publication route the artifact was resolved from.</summary>
+    [JsonPropertyName("route")]
+    public required string Route { get; init; }
+
+    /// <summary>Publication visibility (personal, team, organization, or public).</summary>
+    [JsonPropertyName("visibility")]
+    public string? Visibility { get; init; }
+
+    /// <summary>Accepted publication request that governs the route.</summary>
+    [JsonPropertyName("publicationId")]
+    public required Guid PublicationId { get; init; }
+
+    /// <summary>Content item identifier.</summary>
+    [JsonPropertyName("itemId")]
+    public required Guid ItemId { get; init; }
+
+    /// <summary>Active version identifier (the item's published pointer).</summary>
+    [JsonPropertyName("versionId")]
+    public required Guid VersionId { get; init; }
+
+    /// <summary>Active version number.</summary>
+    [JsonPropertyName("versionNumber")]
+    public required int VersionNumber { get; init; }
+
+    /// <summary>Package key of the content item.</summary>
+    [JsonPropertyName("packageKey")]
+    public required string PackageKey { get; init; }
+
+    /// <summary>Package family.</summary>
+    [JsonPropertyName("family")]
+    public required StudioPackageFamily Family { get; init; }
+
+    /// <summary>Content hash of the Active version.</summary>
+    [JsonPropertyName("contentHash")]
+    public required string ContentHash { get; init; }
+
+    /// <summary>When the governing publication request was accepted.</summary>
+    [JsonPropertyName("publishedAt")]
+    public required DateTimeOffset PublishedAt { get; init; }
+
+    /// <summary>The Active version's sealed package envelope.</summary>
+    [JsonPropertyName("envelope")]
+    public required StudioPackageEnvelope Envelope { get; init; }
+}

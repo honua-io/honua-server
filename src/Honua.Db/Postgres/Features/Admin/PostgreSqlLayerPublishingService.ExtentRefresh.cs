@@ -25,16 +25,23 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string table,
         string geometryColumn,
         int sourceSrid,
+        int? managedLayerId,
         CancellationToken cancellationToken)
     {
         var qualifiedTable = $"{QuoteIdentifier(schema)}.{QuoteIdentifier(table)}";
         var quotedGeometryColumn = QuoteIdentifier(geometryColumn);
         var normalizedSourceSrid = sourceSrid > 0 ? sourceSrid : CatalogExtentSrid;
+
+        // A managed-store layer shares the features table with every other managed layer;
+        // its extent covers only its own rows (honua-server#4859).
+        var layerPredicate = managedLayerId.HasValue
+            ? $" AND {QuoteIdentifier(ManagedLayerDiscriminatorColumn)} = @managedLayerId"
+            : string.Empty;
         var sql = $"""
             WITH source_geometries AS (
                 SELECT {quotedGeometryColumn}::geometry AS geom
                 FROM {qualifiedTable}
-                WHERE {quotedGeometryColumn} IS NOT NULL
+                WHERE {quotedGeometryColumn} IS NOT NULL{layerPredicate}
             ),
             catalog_geometries AS (
                 SELECT
@@ -59,6 +66,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@sourceSrid", normalizedSourceSrid);
         command.Parameters.AddWithValue("@catalogSrid", CatalogExtentSrid);
+        if (managedLayerId.HasValue)
+        {
+            command.Parameters.AddWithValue("@managedLayerId", managedLayerId.Value);
+        }
+
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken) || reader.IsDBNull(0))
         {
@@ -97,6 +109,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 metadata.Table,
                 metadata.GeometryColumn,
                 metadata.SourceSrid,
+                metadata.IsManagedStore ? metadata.LayerId : null,
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -183,7 +196,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 table_schema,
                 table_name,
                 geometry_column,
-                COALESCE(NULLIF(storage_srid, 0), NULLIF(srid, 0), @catalogSrid) AS source_srid
+                COALESCE(NULLIF(storage_srid, 0), NULLIF(srid, 0), @catalogSrid) AS source_srid,
+                COALESCE(storage_options ->> 'managedStore', 'false') = 'true' AS managed_store
             FROM honua.layers
             WHERE layer_id = @layerId;
             """;
@@ -208,6 +222,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             reader.GetString(2),
             reader.GetString(3),
             reader.GetString(4),
-            reader.GetInt32(5));
+            reader.GetInt32(5),
+            reader.GetBoolean(6));
     }
 }

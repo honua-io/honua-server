@@ -1,0 +1,104 @@
+INFO: Open of `/data/cng.parquet'
+      using driver `Parquet' successful.
+
+Layer name: cng
+Geometry: Point
+Feature Count: 6
+Extent: (-122.419400, -0.000000) - (179.500000, 86.000000)
+Layer SRS WKT:
+GEOGCRS["WGS 84",
+    ENSEMBLE["World Geodetic System 1984 ensemble",
+        MEMBER["World Geodetic System 1984 (Transit)"],
+        MEMBER["World Geodetic System 1984 (G730)"],
+        MEMBER["World Geodetic System 1984 (G873)"],
+        MEMBER["World Geodetic System 1984 (G1150)"],
+        MEMBER["World Geodetic System 1984 (G1674)"],
+        MEMBER["World Geodetic System 1984 (G1762)"],
+        MEMBER["World Geodetic System 1984 (G2139)"],
+        MEMBER["World Geodetic System 1984 (G2296)"],
+        ELLIPSOID["WGS 84",6378137,298.257223563,
+            LENGTHUNIT["metre",1]],
+        ENSEMBLEACCURACY[2.0]],
+    PRIMEM["Greenwich",0,
+        ANGLEUNIT["degree",0.0174532925199433]],
+    CS[ellipsoidal,2],
+        AXIS["geodetic latitude (Lat)",north,
+            ORDER[1],
+            ANGLEUNIT["degree",0.0174532925199433]],
+        AXIS["geodetic longitude (Lon)",east,
+            ORDER[2],
+            ANGLEUNIT["degree",0.0174532925199433]],
+    USAGE[
+        SCOPE["Horizontal component of 3D system."],
+        AREA["World."],
+        BBOX[-90,-180,90,180]],
+    ID["EPSG",4326]]
+Data axis to CRS axis mapping: 2,1
+Geometry Column = geometry
+objectid: Integer64 (0.0) NOT NULL
+name: String (0.0)
+category: String (0.0)
+population: Integer (0.0)
+ratio: Real (0.0)
+active: Integer(Boolean) (0.0)
+observed_at: DateTime (UTC)
+OGRFeature(cng):0
+  objectid (Integer64) = 1
+  name (String) = Harbor City
+  category (String) = city
+  population (Integer) = 1000000
+  ratio (Real) = 0.91
+  active (Integer(Boolean)) = 1
+  observed_at (DateTime) = 2026/01/02 03:04:05+00
+  POINT (-122.4194 37.7749)
+
+OGRFeature(cng):1
+  objectid (Integer64) = 2
+  name (String) = Baytown
+  category (String) = city
+  population (Integer) = 430000
+  ratio (Real) = 0.42
+  active (Integer(Boolean)) = 1
+  observed_at (DateTime) = 2026/02/11 12:00:00+00
+  POINT (-122.2711 37.8044)
+
+OGRFeature(cng):2
+  objectid (Integer64) = 3
+  name (String) = Meridian Marker
+  category (String) = reference
+  population (Integer) = 0
+  ratio (Real) = 0
+  active (Integer(Boolean)) = 0
+  observed_at (DateTime) = 2026/03/21 00:00:00+00
+  POINT (0.0 51.4779)
+
+OGRFeature(cng):3
+  objectid (Integer64) = 4
+  name (String) = Equator Station
+  category (String) = reference
+  population (Integer) = 0
+  ratio (Real) = 0.5
+  active (Integer(Boolean)) = 1
+  observed_at (DateTime) = 2026/04/01 06:30:00+00
+  POINT (-75 0)
+
+OGRFeature(cng):4
+  objectid (Integer64) = 5
+  name (String) = Dateline Post
+  category (String) = reference
+  population (Integer) = 0
+  ratio (Real) = 0.75
+  active (Integer(Boolean)) = 0
+  observed_at (DateTime) = 2026/05/09 18:45:00+00
+  POINT (179.5 0.5)
+
+OGRFeature(cng):5
+  objectid (Integer64) = 6
+  name (String) = Polar Outpost
+  category (String) = reference
+  population (Integer) = 0
+  ratio (Real) = 0.1
+  active (Integer(Boolean)) = 1
+  observed_at (DateTime) = 2026/06/15 09:15:00+00
+  POINT (0 86)
+

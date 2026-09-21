@@ -20,7 +20,7 @@ export HONUA_API_KEY=your-admin-api-key
 export GEOSERVER_URL=https://geoserver.example.com/geoserver/rest
 ```
 
-The CLI resolves `env:HONUA_API_KEY` locally for Honua authentication. The GeoServer password reference is interpreted by Honua, so its environment must contain the referenced variable.
+The CLI resolves `env:HONUA_API_KEY` locally for Honua authentication. The GeoServer password reference is interpreted by Honua, so its environment must contain the referenced variable and the operator must permit it under `Security__RequestSecretReferences__*` ([References supplied in a request](../deploy/configuration.md#references-supplied-in-a-request)); nothing is permitted by default.
 
 ## 1. Assess with a read-only catalog scan
 
@@ -121,7 +121,7 @@ The runtime-neutral `honua-migrate reconcile compare` command requires a durable
 
 ## Troubleshoot
 
-- **A secret reference is rejected** — local Honua authentication requires `env:VARIABLE_NAME`; the GeoServer reference must also use supported server-side secret-reference syntax.
+- **A secret reference is rejected** — local Honua authentication requires `env:VARIABLE_NAME`; the GeoServer reference must be a whole `provider:identifier` value that the Honua operator has permitted under `Security__RequestSecretReferences__*`.
 - **The dry run does not complete** — inspect the existing job with `status` or bounded `resume`; do not start another plan until its outcome is understood.
 - **Apply refuses the plan** — the plan must contain completed dry-run evidence and an intact canonical digest.
 - **Apply reports `manual-review` for a layer** — copy the backing table into target PostGIS, then create and review a new dry-run plan.

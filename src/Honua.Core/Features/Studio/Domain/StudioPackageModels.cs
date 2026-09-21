@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Honua.Core.Features.MultiTenancy;
 
 namespace Honua.Core.Features.Studio.Domain;
 
@@ -313,6 +314,14 @@ public sealed record StudioPackageDraft
     public string? OwnerId { get; init; }
 
     /// <summary>
+    /// Tenant that owns this record (honua-server#4905). Stamped from the request's resolved
+    /// tenant when the record is created and never rewritten. Server-side isolation key, not
+    /// part of the wire contract, so it is deliberately excluded from serialization.
+    /// </summary>
+    [JsonIgnore]
+    public string? TenantId { get; init; }
+
+    /// <summary>
     /// Owner observed during the authorization preflight when attaching this
     /// draft to an existing item. Persistence uses this internal concurrency
     /// fence to permit an explicitly authorized mixed-owner draft while
@@ -381,6 +390,14 @@ public sealed record StudioContentVersion
     /// <summary>Owner principal identifier captured when the version was created.</summary>
     [JsonPropertyName("ownerId")]
     public string? OwnerId { get; init; }
+
+    /// <summary>
+    /// Tenant that owns this record (honua-server#4905). Stamped from the request's resolved
+    /// tenant when the record is created and never rewritten. Server-side isolation key, not
+    /// part of the wire contract, so it is deliberately excluded from serialization.
+    /// </summary>
+    [JsonIgnore]
+    public string? TenantId { get; init; }
 
     /// <summary>Version identifier.</summary>
     [JsonPropertyName("versionId")]
@@ -476,6 +493,14 @@ public sealed record StudioContentItemPointers
     /// <summary>Owner principal identifier (honua-server#3001). See <see cref="StudioContentItemQuery.OwnerId"/>.</summary>
     [JsonPropertyName("ownerId")]
     public string? OwnerId { get; init; }
+
+    /// <summary>
+    /// Tenant that owns this record (honua-server#4905). Stamped from the request's resolved
+    /// tenant when the record is created and never rewritten. Server-side isolation key, not
+    /// part of the wire contract, so it is deliberately excluded from serialization.
+    /// </summary>
+    [JsonIgnore]
+    public string? TenantId { get; init; }
 }
 
 /// <summary>
@@ -605,6 +630,14 @@ public sealed record StudioContentItemQuery
     /// </summary>
     public string? OwnerId { get; init; }
 
+    /// <summary>
+    /// Tenant scoping applied by the caller (honua-server#4905), or <see langword="null"/> to
+    /// enumerate every tenant. The endpoint layer forces this from the request's resolved
+    /// tenant for tenant-scoped principals regardless of any client-supplied value; it is
+    /// never read from the query string.
+    /// </summary>
+    public TenantScopeFilter? Tenant { get; init; }
+
     /// <summary>Restrict results to one or more derived lifecycle states.</summary>
     public IReadOnlyList<StudioContentItemState>? States { get; init; }
 
@@ -701,6 +734,14 @@ public sealed record StudioPackageDraftQuery
 
     /// <summary>Restrict results to a specific owner principal (<c>studio_package_drafts.owner_id</c>).</summary>
     public string? OwnerId { get; init; }
+
+    /// <summary>
+    /// Tenant scoping applied by the caller (honua-server#4905), or <see langword="null"/> to
+    /// enumerate every tenant. The endpoint layer forces this from the request's resolved
+    /// tenant for tenant-scoped principals regardless of any client-supplied value; it is
+    /// never read from the query string.
+    /// </summary>
+    public TenantScopeFilter? Tenant { get; init; }
 
     /// <summary>Optional case-insensitive substring match against the package key.</summary>
     public string? SearchTerm { get; init; }

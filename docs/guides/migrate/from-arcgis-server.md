@@ -122,6 +122,28 @@ counts can match while the schema is wrong.
 A job routed to review keeps its `needs-review` status, `fidelityVerdict` and `fidelityDifferences`
 when it finishes, so the evidence is still there when you come back to it.
 
+#### Replacements, retries and live sources
+
+- **Replacing a table keeps the old one until the end.** A job with `overwriteExisting` loads into a
+  staging table and swaps it in only after the last page, so the existing table stays readable
+  during the transfer. If records fail to load, or the job is cancelled or its worker stops, the
+  existing table is left unchanged and the staging table is discarded.
+- **One writer per table.** A second job aimed at a table that another import is writing fails
+  immediately and changes nothing. Retry it after the first job finishes.
+- **No silent overwrite.** A job without `overwriteExisting` fails when the table already exists.
+  That includes a job restarted after its data was committed; the existing table holds the result of
+  that earlier run.
+- **Source reads are not a snapshot.** The import counts the source, with its `whereClause`
+  applied, before the first page and after the last one (object-ID window imports compare the
+  object-ID sets). A difference is the blocking `fidelity.source.changed-during-transfer`; a count
+  that could not be read is `fidelity.source.snapshot-unverified`. Edits that change attribute
+  values without adding or removing records are not detected, so import from a quiescent source
+  when you need a point-in-time copy.
+- **Filtered imports are reconciled against the filtered source**, not the layer's total count.
+- **Batch layers keep one job identity.** Each layer of a batch run gets a job ID derived from the
+  run and its position, so advancing a batch again never queues a second import of a layer that is
+  already queued or running.
+
 #### Service imports
 
 A batch migration run imports a whole footprint of layers and applies the manifest relationships
@@ -138,6 +160,47 @@ every layer is `full-fidelity` and every requested relationship reached the targ
 
 A run with a blocking difference and no failed or cancelled layer reports `needs-review` rather than
 `succeeded`, even when every layer imported cleanly.
+
+Every layer in a batch run is published into its target service. When a layer's records import but its
+publish does not complete, that layer's job carries the blocking `fidelity.publish.not-completed` and is
+routed to review, so the service reports `fidelity.service.layer-incomplete` for it. A nonspatial table
+is the common case today: its rows import, but a table without a geometry column cannot yet be
+published.
+
+#### Account for every construct before apply
+
+Pass the service's scan manifest as `manifestBody` when you start a batch run. Before any layer is
+queued, the run accounts for every construct the scan discovered against the layers you selected, using
+the versioned construct matrix (`matrixVersion`, currently `2026.1`). The matrix covers the service
+type, every queryable layer and nonspatial table, identities, geometry and CRS, fields and domains,
+subtypes, relationships, attachments, renderers and label classes, time metadata, and published edit
+behavior. Each construct names the check that verifies it after apply.
+
+The run returns the result as `constructAccounting` as soon as it starts. Each entry maps a source
+construct to its target table and gives its disposition:
+
+- `migrated`: the import carries the construct automatically.
+- `review`: the construct is captured for an operator to confirm.
+- `blocker`: the construct is not supported.
+- `unselected`: the scan discovered the construct, but its layer or table is not in the selection.
+- `undiscovered`: you selected a layer or table that the scan never saw.
+
+The accounting differences fold into the run's `fidelityVerdict` when it finishes:
+
+| Difference code | Severity | Cause |
+|---|---|---|
+| `fidelity.service.resource-unselected` | blocking | A layer or table the scan discovered is not in the selection. |
+| `fidelity.service.resource-undiscovered` | blocking | A selected layer or table is not in the scan manifest. |
+| `fidelity.service.type-unsupported` | blocking | The source is not a FeatureServer or MapServer. |
+| `fidelity.construct.unsupported` | blocking | A selected construct is unsupported, for example a multipatch geometry or a VBScript label class. |
+| `fidelity.construct.review-required` | unverified | A selected construct needs operator review, for example subtypes, renderers, time metadata, or a composite relationship. |
+| `fidelity.construct-accounting.not-executed` | unverified | The run had no readable scan manifest, so nothing was accounted for. |
+
+Set `requireFullFidelity` to refuse a selection that is already known to fall short. The start request
+then returns `422 Unprocessable Entity` with the `constructAccounting` that blocked it, and creates no
+run. It refuses when any blocking difference is found, or when there is no readable manifest to account
+from. Constructs that only need review do not block the start, but the run can finish no better than
+`unverified` until an operator confirms them.
 
 The runtime-neutral `honua-migrate reconcile compare` command exists for a durable `MigrationRun` plus portable source and target snapshots. The ArcGIS service adapter does not yet emit that run/snapshot bundle, so this guide does not present a command that would fail. Automated ArcGIS reconciliation remains deferred until that adapter is wired.
 
@@ -164,6 +227,7 @@ Run a pilot subset first. Move production traffic only when the latest evidence 
 
 - **The service URL is rejected** — use a credential-free HTTP(S) service root ending in `FeatureServer` or `MapServer`; layer URLs, URL userinfo, query strings, and fragments are rejected.
 - **The source needs a token** — configure the secret in the Honua environment and pass only its `env:VARIABLE_NAME` reference.
+- **The secret reference is not permitted or could not be resolved** — the Honua operator must permit the reference under `Security__RequestSecretReferences__*` ([References supplied in a request](../deploy/configuration.md#references-supplied-in-a-request)) and the variable must be set in the server environment. Nothing is permitted by default.
 - **Apply refuses to run** — verify the plan digest, ensure the output path does not already exist, and add `--yes` only after review.
 - **A job is still running** — use `resume` with a bounded `--max-wait`; it monitors the existing job without replaying the import.
 - **Counts match but a client operation fails** — check the operation in the [GeoServices parity reference](../../reference/compatibility/geoservices-parity.md).

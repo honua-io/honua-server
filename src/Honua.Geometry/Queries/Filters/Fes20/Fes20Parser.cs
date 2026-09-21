@@ -54,7 +54,23 @@ public static class Fes20Parser
         }
 
         ValidateExpressionDepth(firstChild, depth: 1);
-        return ParseExpression(firstChild, defaultSrid);
+        var expression = ParseExpression(firstChild, defaultSrid);
+        EnsureWithinGuard(() => FilterParserGuard.EnsureExpressionTree(expression));
+        return expression;
+    }
+
+    // Surfaces shared guard failures as the parser's own exception type so every
+    // rejection from this parser maps to the same response.
+    private static void EnsureWithinGuard(Action guard)
+    {
+        try
+        {
+            guard();
+        }
+        catch (ArgumentException ex)
+        {
+            throw new Fes20ParseException(ex.Message, ex);
+        }
     }
 
     /// <summary>
@@ -179,6 +195,8 @@ public static class Fes20Parser
             throw new Fes20ParseException("And element must contain at least 2 child elements");
         }
 
+        EnsureWithinGuard(() => FilterParserGuard.EnsureLogicalOperandCount(children.Length));
+
         var result = ParseExpression(children[0], defaultSrid);
         for (int i = 1; i < children.Length; i++)
         {
@@ -198,6 +216,8 @@ public static class Fes20Parser
         {
             throw new Fes20ParseException("Or element must contain at least 2 child elements");
         }
+
+        EnsureWithinGuard(() => FilterParserGuard.EnsureLogicalOperandCount(children.Length));
 
         var result = ParseExpression(children[0], defaultSrid);
         for (int i = 1; i < children.Length; i++)

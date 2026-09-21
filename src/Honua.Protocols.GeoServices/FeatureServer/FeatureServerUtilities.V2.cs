@@ -690,25 +690,24 @@ internal static partial class FeatureServerEndpoints
     }
 
     /// <summary>
-    /// Drops (publication, resource) pairs the caller is not authorised to read using the V2
-    /// access-policy resolver (resource policy composed with service policy under deny-wins).
+    /// Drops (publication, resource) pairs the caller is not authorised to access, using the
+    /// request's canonical per-operation decisions (grants, then resource policy composed with
+    /// service policy under deny-wins).
     /// </summary>
     internal static (MetadataV2Publication Publication, MetadataV2Resource Resource)[] FilterAccessibleLayersV2(
-        HttpContext context,
+        ResourceAccessSet access,
         MetadataV2GraphSnapshot snapshot,
-        MetadataV2Service service,
         IEnumerable<(MetadataV2Publication Publication, MetadataV2Resource Resource)> layers)
     {
-        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(access);
         ArgumentNullException.ThrowIfNull(snapshot);
-        ArgumentNullException.ThrowIfNull(service);
         ArgumentNullException.ThrowIfNull(layers);
 
         return
         [
             ..layers.Where(pair =>
                 snapshot.IsRoutable(pair.Publication) &&
-                AccessPolicyHelpers.IsResourceAccessible(context, pair.Resource, service))
+                access.IsAccessible(pair.Resource))
         ];
     }
 

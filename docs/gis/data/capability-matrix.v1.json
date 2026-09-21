@@ -30,10 +30,10 @@
       "category": "ControlPlane",
       "edition": "Community",
       "status": null,
-      "entryCount": 374,
-      "provingTestCount": 1216,
+      "entryCount": 375,
+      "provingTestCount": 1275,
       "maturity": {
-        "implemented": 371,
+        "implemented": 372,
         "preview": 2,
         "experimental": 1
       },
@@ -141,7 +141,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 4,
-      "provingTestCount": 118,
+      "provingTestCount": 123,
       "maturity": {
         "implemented": 4
       },
@@ -843,7 +843,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 7,
-      "provingTestCount": 144,
+      "provingTestCount": 148,
       "maturity": {
         "implemented": 7
       },
@@ -901,7 +901,7 @@
       "edition": "Pro",
       "status": "preview",
       "entryCount": 18,
-      "provingTestCount": 167,
+      "provingTestCount": 192,
       "maturity": {
         "preview": 18
       },
@@ -1179,7 +1179,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 74,
-      "provingTestCount": 231,
+      "provingTestCount": 238,
       "maturity": {
         "implemented": 74
       },
@@ -1215,7 +1215,7 @@
       "edition": "Enterprise",
       "status": null,
       "entryCount": 10,
-      "provingTestCount": 42,
+      "provingTestCount": 46,
       "maturity": {
         "implemented": 10
       },
@@ -1353,7 +1353,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 15,
-      "provingTestCount": 137,
+      "provingTestCount": 149,
       "maturity": {
         "implemented": 15
       },
@@ -1675,7 +1675,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 47,
-      "provingTestCount": 440,
+      "provingTestCount": 445,
       "maturity": {
         "implemented": 47
       },
@@ -1798,7 +1798,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 142,
-      "provingTestCount": 408,
+      "provingTestCount": 419,
       "maturity": {
         "preview": 142
       },
@@ -1824,7 +1824,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 45,
-      "provingTestCount": 359,
+      "provingTestCount": 366,
       "maturity": {
         "implemented": 43,
         "preview": 2
@@ -1891,7 +1891,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 4,
-      "provingTestCount": 46,
+      "provingTestCount": 49,
       "maturity": {
         "implemented": 4
       },
@@ -1983,7 +1983,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 30,
-      "provingTestCount": 227,
+      "provingTestCount": 228,
       "maturity": {
         "implemented": 30
       },
@@ -2038,7 +2038,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 8,
-      "provingTestCount": 40,
+      "provingTestCount": 44,
       "maturity": {
         "preview": 8
       },
@@ -2056,7 +2056,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 6,
-      "provingTestCount": 42,
+      "provingTestCount": 48,
       "maturity": {
         "preview": 6
       },
@@ -2074,7 +2074,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 19,
-      "provingTestCount": 296,
+      "provingTestCount": 307,
       "maturity": {
         "implemented": 19
       },
@@ -2140,10 +2140,10 @@
       "category": "Serve",
       "edition": "Community",
       "status": null,
-      "entryCount": 10,
-      "provingTestCount": 139,
+      "entryCount": 11,
+      "provingTestCount": 142,
       "maturity": {
-        "implemented": 10
+        "implemented": 11
       },
       "noSurface": null,
       "cite": [],
@@ -2576,7 +2576,7 @@
       "edition": "Pro",
       "status": null,
       "entryCount": 5,
-      "provingTestCount": 112,
+      "provingTestCount": 113,
       "maturity": {
         "implemented": 3,
         "preview": 2
@@ -2635,7 +2635,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 8,
-      "provingTestCount": 68,
+      "provingTestCount": 70,
       "maturity": {
         "implemented": 8
       },

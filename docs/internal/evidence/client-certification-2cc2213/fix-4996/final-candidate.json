@@ -1,0 +1,22 @@
+{
+  "source_commit": "3f62ff449078656a6c155d4eb0a17b263b2dd753",
+  "production_code_commit": "ccd520ff95",
+  "image": "honua-server:ogc4996-final",
+  "image_digest": "sha256:6ed902e720d852c656c40745a7c278978897eaef5582b8f804be9175ad14844c",
+  "base_image_digest": "sha256:968179d47f9e3d7da9ce26ea9160e658b5c967a130fee7e59a3400692009b859",
+  "packaging": "Initial fixed candidate with rebuilt Honua.Protocols.OgcApi.dll/pdb/xml and updated ogc-coverages-openapi.json overlaid; these include every runtime change since d954867713.",
+  "sha256": {
+    "src/Honua.Protocols.OgcApi/bin/Debug/net10.0/Honua.Protocols.OgcApi.dll": "62a85f803608ac5af3d0fb57a637055340996d0930c54ccf16d307139e2d7fb2",
+    "src/Honua.Server/ogc-coverages-openapi.json": "1bd4f0e4980a1ac8c5e59310e645beadb4038b8b7438c76de16224822d4aefe5",
+    "certification/bounded-roster/regressions/coverage-fixture.sql": "4b59980faa879fc74e970333b837fa735917e9dab67619a35c9d7642c992908c",
+    "certification/bounded-roster/regressions/coverage_clients.py": "c8245eb8f449142a7408a6550dc474726008f0531302748b6e88cf06cc674313"
+  },
+  "pixel_proofs": {
+    "gdal": "pass",
+    "owslib": "pass"
+  },
+  "roster_cells": {
+    "gdal": "6/6 pass",
+    "owslib": "6/6 pass"
+  }
+}
