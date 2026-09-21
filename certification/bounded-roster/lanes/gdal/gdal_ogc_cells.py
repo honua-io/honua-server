@@ -7,11 +7,16 @@ the driver exercised.
 """
 from __future__ import annotations
 
-from osgeo import gdal, ogr, osr
-
 import gdalkit
 from cellkit import Cell, expect
-from rosterenv import EXPIRED_BEARER, WRONG_API_KEY, api_key_headers, bearer_headers, url
+from osgeo import gdal, ogr, osr
+from rosterenv import (
+    EXPIRED_BEARER,
+    WRONG_API_KEY,
+    api_key_headers,
+    bearer_headers,
+    url,
+)
 
 CLIENT_DETAIL = gdal.VersionInfo("--version")
 OAPIF = url("/ogc/features")
@@ -97,7 +102,7 @@ def _oapif_auth(cell: Cell, target: str) -> None:
 def _oapif_crs_axis(cell: Cell, connection: str) -> None:
     with cell.check("crs-axis", "EPSG:4326 lat/lon bbox and EPSG:3857 output agree with the lon/lat fixture") as c:
         with gdalkit.session() as record:
-            dataset = _open_vector(connection)
+            dataset = _open_vector(connection, ["PREFERRED_CRS=EPSG:4326"])
             layer = dataset.GetLayerByName("0") or dataset.GetLayer(0)
             srs = layer.GetSpatialRef()
             expect(srs is not None and srs.GetAuthorityCode(None) == "4326", "layer SRS is not EPSG:4326")

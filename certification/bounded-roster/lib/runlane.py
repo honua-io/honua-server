@@ -18,7 +18,26 @@ import subprocess
 import sys
 from pathlib import Path
 
-from cellkit import utc_now
+from cellkit import load_requirements, utc_now
+
+# Explicit release-denominator .13 retirements. Unknown/missing cells still execute
+# and fail: this is not a generic missing-requirement suppression mechanism.
+RETIRED_CELLS = {
+    "owslib_cells.coverages": "client-cert/owslib/ogc-api-coverages/serve.ogc-api-coverages",
+    "owslib_cells.edr": "client-cert/owslib/ogc-api-edr/serve.ogc-api-edr",
+    "gdal_ogc_cells.coverages_service": "client-cert/gdal/ogc-api-coverages/serve.ogc-api-coverages",
+    "gdal_ogc_cells.features_conformance": "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-CONFORMANCE",
+    "gdal_ogc_cells.features_transactions": "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-TRANSACTIONS",
+    "qgis_cells.wmts_service": "client-cert/qgis/wmts/serve.wmts",
+    "maplibre_cells.wmts_service": "client-cert/maplibre-gl-js/wmts/serve.wmts",
+}
+
+
+def retired_cell(name: str, requirements: list[dict]) -> str | None:
+    test_id = RETIRED_CELLS.get(name)
+    if test_id and not any(test_id in row.get("test_ids", []) for row in requirements):
+        return test_id
+    return None
 
 
 def main(argv: list[str]) -> int:
@@ -32,6 +51,7 @@ def main(argv: list[str]) -> int:
         "python": platform.python_version(),
         "platform": platform.platform(),
         "cells": [],
+        "excluded_cells": [],
     }
     freeze = Path("/opt/lane-freeze.txt")
     if freeze.is_file():
@@ -41,10 +61,17 @@ def main(argv: list[str]) -> int:
         identity["client_identity"] = subprocess.run(
             extra, shell=True, check=False, capture_output=True, text=True).stdout.strip()
     failures = []
+    requirements = load_requirements()
     for name in modules:
         module = importlib.import_module(name)
         for cell in module.CELLS:
-            identity["cells"].append(f"{name}.{cell.__name__}")
+            cell_name = f"{name}.{cell.__name__}"
+            excluded = retired_cell(cell_name, requirements)
+            if excluded:
+                identity["excluded_cells"].append({"test_case_id": excluded,
+                    "reason": "Not required by pinned release denominator .13 (release#351/#359, PR #361)"})
+                continue
+            identity["cells"].append(cell_name)
             completed = subprocess.run(
                 [sys.executable, "-c", f"import {name} as m; m.{cell.__name__}()"], check=False)
             if completed.returncode != 0:

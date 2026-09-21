@@ -1,6 +1,6 @@
 # Bounded 2026.1 external-client roster harness
 
-Runs the 59 governed cells of `certification/client-protocol-requirements.v1.json`
+Runs the 52 governed cells of `certification/client-protocol-requirements.v1.json`
 (QGIS, GDAL/OGR, GDAL, MapLibre GL JS, OWSLib, PySTAC-Client) against one immutable
 imaged candidate and writes `client-interop-cert-v1` receipts that
 `scripts/certification/verify-client-certification-receipts.py --mode release`
@@ -65,3 +65,8 @@ the wire log carry only credential schemes.
 | `lanes/*/` | Client images and cells |
 | `fixture/` | Raster fixture SQL and cloud object authoring |
 | `tests/` | Emitter and cell-kit rules (`python3 -m unittest discover -s certification/bounded-roster/tests`) |
+
+The mirror follows release denominator `2026-09-16-complete.13`. The two GDAL
+OAPIF operations explicitly declared non-addressable by release#359 remain in
+`excludedRequirements`; they do not become passing or missing required cells.
+GDAL 3.13.3 uses the full OSGeo image to include the Parquet driver.

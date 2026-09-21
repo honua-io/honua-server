@@ -32,7 +32,7 @@ import hashlib
 import json
 import sys
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qsl, urlparse
 
@@ -42,7 +42,6 @@ CREDENTIAL_QUERY_KEYS = frozenset({
     "id_token", "key", "password", "pwd", "refresh_token", "secret", "session",
     "sig", "signature", "token", "x-api-key",
 })
-WINDOW_SLACK = timedelta(milliseconds=750)
 
 
 def parse_time(value: str) -> datetime:
@@ -77,9 +76,12 @@ def load_wire(path: Path) -> list[dict]:
 
 
 def join_wire(observation: dict, wire: list[dict]) -> list[dict]:
-    started = parse_time(observation["started_at"]) - WINDOW_SLACK
-    finished = parse_time(observation["finished_at"]) + WINDOW_SLACK
-    return [line for line in wire if started <= line["_at"] <= finished and not line.get("roster_asset")]
+    started = parse_time(observation["started_at"])
+    finished = parse_time(observation["finished_at"])
+    return [line for line in wire
+            if started <= line["_at"] < finished
+            and parse_time(line.get("completed_at", line["at"])) <= finished
+            and not line.get("roster_asset")]
 
 
 def choose_request_url(observation: dict, exchanges: list[dict]) -> str | None:

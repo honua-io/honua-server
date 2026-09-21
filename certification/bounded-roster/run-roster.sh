@@ -146,6 +146,8 @@ log "recording candidate, fixture and lane identities"
 python3 - "$ROSTER_RUN_DIR" <<PY
 import hashlib, json, subprocess, sys
 from pathlib import Path
+sys.path.insert(0, "$ROSTER_HOME/lib")
+from image_identity import pinned_base_digests
 run = Path(sys.argv[1])
 def sha(path): return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 def inspect(image, template):
@@ -174,15 +176,15 @@ fixture = {"fixture": digest_set(seeds), "server_config": digest_set(config), "a
            "authored_objects": {"cog_sha256": artifacts["cog"]["sha256"], "zarr_objects": artifacts["zarr"]["objects"]},
            "registrations": artifacts["registrations"]}
 lanes = {"lanes": {}, "by_client_lane": {}}
-for lane, image, base in (("python", "honua-roster/lane-python:local", "python:3.12-slim-bookworm"),
-                          ("gdal-3.8.4", "honua-roster/lane-gdal:3.8.4", "ghcr.io/osgeo/gdal:ubuntu-small-3.8.4"),
-                          ("gdal-3.13.3", "honua-roster/lane-gdal:3.13.3", "ghcr.io/osgeo/gdal:ubuntu-small-3.13.3"),
-                          ("qgis", "honua-roster/lane-qgis:3.44.13", "qgis/qgis:3.44.13"),
-                          ("maplibre", "honua-roster/lane-maplibre:local", "mcr.microsoft.com/playwright:v1.59.1-noble")):
+for lane, image, base in (("python", "honua-roster/lane-python:local", "python:3.12-slim-bookworm@sha256:782412e85d0f0984994c290652577d4018aff08145c85b262bb63dc0c7522254"),
+                          ("gdal-3.8.4", "honua-roster/lane-gdal:3.8.4", "ghcr.io/osgeo/gdal:ubuntu-small-3.8.4@sha256:60d3bc2f8b09ca1a7ef2db0239699b2c03713aa02be6e525e731c0020bbb10a4"),
+                          ("gdal-3.13.3", "honua-roster/lane-gdal:3.13.3", "ghcr.io/osgeo/gdal:ubuntu-full-3.13.3@sha256:2dd0f81ef927ff4c3d4dbe4f73c029dc86d4073974c0564f8e196f6e1412e2e0"),
+                          ("qgis", "honua-roster/lane-qgis:3.44.13", "qgis/qgis:3.44.13@sha256:59e160b2ea3f881be039ed49936c42e75e8f336688951f22147676db743f4e47"),
+                          ("maplibre", "honua-roster/lane-maplibre:local", "mcr.microsoft.com/playwright:v1.59.1-noble@sha256:b0ab6f3cb99aa7803adbc14d9027ec1785fc6e433b97e134e0f8fe61683b6b53")):
     lanes["lanes"][lane] = {"lane": lane, "image": image, "image_id": inspect(image, "{{.Id}}"),
-                            "base_image": base, "base_repo_digests": inspect(base, "{{json .RepoDigests}}")}
+                            "base_image": base, "base_repo_digests": json.dumps(pinned_base_digests(base))}
 for client_lane, lane in (("py-owslib", "python"), ("py-pystac", "python"), ("desktop-qgis", "qgis"), ("js-maplibre", "maplibre"),
-                          ("gdal-cog", "gdal-3.8.4"), ("gdal-flatgeobuf", "gdal-3.8.4"), ("gdal-geoparquet", None)):
+                          ("gdal-cog", "gdal-3.8.4"), ("gdal-flatgeobuf", "gdal-3.8.4"), ("gdal-geoparquet", "gdal-3.13.3")):
     lanes["by_client_lane"][client_lane] = lanes["lanes"].get(lane)
 lanes["by_client_lane"]["gdal"] = {"gdal 3.8.4": lanes["lanes"]["gdal-3.8.4"], "gdal 3.13.3": lanes["lanes"]["gdal-3.13.3"]}
 (run / "candidate.json").write_text(json.dumps(candidate, indent=2) + "\n")

@@ -1,6 +1,6 @@
 # MapLibre GL JS client lane (js-maplibre): pinned MapLibre releases driven in the
 # Playwright Chromium build, from Python so the lane shares cellkit with the others.
-FROM mcr.microsoft.com/playwright:v1.59.1-noble
+FROM mcr.microsoft.com/playwright:v1.59.1-noble@sha256:b0ab6f3cb99aa7803adbc14d9027ec1785fc6e433b97e134e0f8fe61683b6b53
 ENV DEBIAN_FRONTEND=noninteractive PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 RUN apt-get update \
  && apt-get install -y --no-install-recommends python3-venv \

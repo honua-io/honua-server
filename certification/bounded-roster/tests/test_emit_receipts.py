@@ -93,6 +93,22 @@ class EmitterTests(unittest.TestCase):
         self.assertEqual("local-docker", envelope["deployment_target"])
         self.assertEqual(2, joins[TEST_ID]["exchanges"])
 
+    def test_adjacent_cells_cannot_lend_traffic_even_one_microsecond_away(self):
+        for timestamp in ("2026-09-16T20:59:59.999999Z", "2026-09-16T21:00:10.000001Z"):
+            with self.subTest(timestamp=timestamp):
+                receipts, joins = self.build([observation()], [
+                    wire_line(timestamp, "http://honua:5000/stac/search")])
+                _, result = self.only_result(receipts)
+                self.assertEqual("fail", result["status"])
+                self.assertEqual(0, joins[TEST_ID]["exchanges"])
+
+    def test_response_completed_after_the_cell_cannot_certify_it(self):
+        line = wire_line("2026-09-16T21:00:09Z", "http://honua:5000/stac/search")
+        line["completed_at"] = "2026-09-16T21:00:10.000001Z"
+        receipts, _ = self.build([observation()], [line])
+        _, result = self.only_result(receipts)
+        self.assertEqual("fail", result["status"])
+
     def test_a_claimed_pass_with_no_exchange_in_its_window_is_rewritten_to_fail(self):
         receipts, _ = self.build([observation()], [
             wire_line("2026-09-16T20:00:00+00:00", "http://honua:5000/stac/search")])

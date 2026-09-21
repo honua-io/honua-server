@@ -1,6 +1,8 @@
 """QGIS 3.44.13-Solothurn bounded-roster cells (lane ``desktop-qgis``)."""
 from __future__ import annotations
 
+import qgiskit
+from cellkit import Cell, expect
 from qgis.core import (
     Qgis,
     QgsFeature,
@@ -14,9 +16,7 @@ from qgis.core import (
     QgsVectorTileLayer,
     QgsWkbTypes,
 )
-
-import qgiskit
-from cellkit import Cell, expect
+from qgis.PyQt.QtCore import QVariant
 from rosterenv import url
 
 CLIENT_DETAIL = f"QGIS {Qgis.version()} (PyQGIS, qgis/qgis:3.44.13)"
@@ -117,14 +117,14 @@ def _oapif_media(cell: Cell) -> None:
     with cell.check("media-schema", "GeoJSON items negotiate their media type and decode to typed fields") as c:
         with qgiskit.recording() as recorder:
             layer = _oapif("0")
-            fields = {field.name(): field.typeName() for field in layer.fields()}
+            fields = {field.name(): field.type() for field in layer.fields()}
             geometry = QgsWkbTypes.displayString(layer.wkbType())
             list(layer.getFeatures())
         items = [item for item in recorder.matching("/collections/0/items") if item.method == "GET"]
         expect(items and all((item.content_type or "").startswith("application/geo+json") for item in items),
                [(item.url, item.content_type) for item in items])
-        expect(geometry == "Point" and fields.get("count", "").lower().startswith(("int", "integer"))
-               and "date" in fields.get("created_at", "").lower(), (geometry, fields))
+        expect(geometry == "Point" and fields.get("count") in (QVariant.Int, QVariant.LongLong)
+               and fields.get("created_at") == QVariant.DateTime, (geometry, fields))
         c.detail = f"geometry {geometry}; fields {fields}; items served {items[0].content_type}"
 
 
@@ -164,7 +164,7 @@ def oapif_conformance() -> None:
 
 def oapif_collections() -> None:
     def body(recorder):
-        from qgis.core import QgsDataItemProviderRegistry, QgsApplication  # noqa: F401
+        from qgis.core import QgsApplication, QgsDataItemProviderRegistry  # noqa: F401
         from qgis.PyQt.QtCore import QSettings
         settings = QSettings()
         settings.setValue("connections/ows/items/wfs/connections/items/roster-oapif/url", OAPIF)
@@ -661,6 +661,7 @@ def tiles_landing_tilesets() -> None:
         # handler, so the tileset documents are read back through QGIS's own
         # network stack and compared with what the provider derived from them.
         import json
+
         from qgis.core import QgsBlockingNetworkRequest
         from qgis.PyQt.QtCore import QUrl
         from qgis.PyQt.QtNetwork import QNetworkRequest as Request
@@ -705,7 +706,13 @@ def maps_service() -> None:
         header_file = None
         if label != "anonymous":
             import tempfile
-            from rosterenv import EXPIRED_BEARER, WRONG_API_KEY, api_key_headers, bearer_headers
+
+            from rosterenv import (
+                EXPIRED_BEARER,
+                WRONG_API_KEY,
+                api_key_headers,
+                bearer_headers,
+            )
             headers = {"api-key": api_key_headers(), "oidc-bearer": bearer_headers(),
                        "wrong-api-key": WRONG_API_KEY, "expired-bearer": EXPIRED_BEARER}[label]
             handle = tempfile.NamedTemporaryFile("w", delete=False, suffix=".headers")

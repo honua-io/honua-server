@@ -1,10 +1,10 @@
 {
   "schema": "honua.client-certification-requirements/v1",
-  "revision": "2026-09-16-bounded-roster.3",
+  "revision": "2026-09-21-bounded-roster",
   "boundedRosterIssue": "https://github.com/honua-io/honua-server/issues/3434",
   "requirements_source": "honua-io/honua-release/certification/protocol-certification-requirements.v1.json",
-  "requirements_source_revision": "97e34bdb284f57ecea1de577805311c78cb52941",
-  "requirements_source_denominator_revision": "2026-09-13-complete.12",
+  "requirements_source_revision": "7165e7f67937318a0c53a7292df7730961cf13c2",
+  "requirements_source_denominator_revision": "2026-09-16-complete.13",
   "receipt_schema_min": "v2",
   "boundedRosterClients": [
     "QGIS",
@@ -165,6 +165,60 @@
       "commit": "d5a09d13c4ad541c05702e598c3679c0f42db7af"
     }
   },
+  "excludedRequirements": [
+    {
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-CONFORMANCE",
+      "maturity": "supported",
+      "canonical_client": "GDAL/OGR",
+      "client_lane": "gdal",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": false,
+      "addressability_reason": "The GDAL/OGR OAPIF driver never requests /conformance: GDAL 3.8.4 and 3.13.3 (the newest release) read only the landing page, the service-desc, /collections and items, even when the landing page links conformance and an attribute filter is set, so GDAL/OGR does not exercise this operation on any server.",
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null
+    },
+    {
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-TRANSACTIONS",
+      "maturity": "supported",
+      "canonical_client": "GDAL/OGR",
+      "client_lane": "gdal",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": false,
+      "addressability_reason": "The GDAL/OGR OAPIF driver is read-only: in GDAL 3.8.4 and 3.13.3 (the newest release) update-mode open fails, SequentialWrite/RandomWrite/DeleteFeature capabilities are false and CreateFeature returns Unsupported operation even against a server that declares create-replace-delete, so GDAL/OGR does not exercise this operation on any server.",
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null
+    }
+  ],
   "requirements": [
     {
       "capability_key": "serve.ogc",
@@ -206,53 +260,6 @@
           "status": "joinable",
           "testIds": [
             "client-cert/gdal/ogc/OGC-OP-WCS-2-0-COVERAGE"
-          ],
-          "reasonCode": null,
-          "reason": null
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc-api-coverages",
-      "surface": "ogc-api-coverages",
-      "operation": "serve.ogc-api-coverages",
-      "maturity": "supported",
-      "canonical_client": "GDAL",
-      "client_lane": "gdal",
-      "client_version": "3.8.4",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "boundary",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "canonical-client-assignments@2026-08-21.1",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "test_ids": [
-        "client-cert/gdal/ogc-api-coverages/serve.ogc-api-coverages"
-      ],
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "joinable",
-          "testIds": [
-            "client-cert/gdal/ogc-api-coverages/serve.ogc-api-coverages"
           ],
           "reasonCode": null,
           "reason": null
@@ -547,7 +554,7 @@
       "maturity": "supported",
       "canonical_client": "GDAL",
       "client_lane": "gdal-geoparquet",
-      "client_version": "3.14.0",
+      "client_version": "3.13.3",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
       "licensed": false,
@@ -699,52 +706,6 @@
           "status": "joinable",
           "testIds": [
             "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-COLLECTIONS"
-          ],
-          "reasonCode": null,
-          "reason": null
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc",
-      "surface": "ogc",
-      "operation": "OGC-OP-OGC-API-FEATURES-CONFORMANCE",
-      "maturity": "supported",
-      "canonical_client": "GDAL/OGR",
-      "client_lane": "gdal",
-      "client_version": "3.8.4",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "test_ids": [
-        "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-CONFORMANCE"
-      ],
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "joinable",
-          "testIds": [
-            "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-CONFORMANCE"
           ],
           "reasonCode": null,
           "reason": null
@@ -929,52 +890,6 @@
           "status": "joinable",
           "testIds": [
             "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-QUERYABLES"
-          ],
-          "reasonCode": null,
-          "reason": null
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc",
-      "surface": "ogc",
-      "operation": "OGC-OP-OGC-API-FEATURES-TRANSACTIONS",
-      "maturity": "supported",
-      "canonical_client": "GDAL/OGR",
-      "client_lane": "gdal",
-      "client_version": "3.8.4",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "test_ids": [
-        "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-TRANSACTIONS"
-      ],
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "joinable",
-          "testIds": [
-            "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-TRANSACTIONS"
           ],
           "reasonCode": null,
           "reason": null
@@ -1538,52 +1453,6 @@
       }
     },
     {
-      "capability_key": "serve.wmts",
-      "surface": "wmts",
-      "operation": "serve.wmts",
-      "maturity": "supported",
-      "canonical_client": "MapLibre GL JS",
-      "client_lane": "js-maplibre",
-      "client_version": "5.7",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "canonical-client-assignments@2026-08-21.1",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "test_ids": [
-        "client-cert/maplibre-gl-js/wmts/serve.wmts"
-      ],
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "joinable",
-          "testIds": [
-            "client-cert/maplibre-gl-js/wmts/serve.wmts"
-          ],
-          "reasonCode": null,
-          "reason": null
-        }
-      }
-    },
-    {
       "capability_key": "serve.ogc",
       "surface": "ogc",
       "operation": "OGC-OP-WCS-2-0-COVERAGE",
@@ -1623,100 +1492,6 @@
           "status": "joinable",
           "testIds": [
             "client-cert/owslib/ogc/OGC-OP-WCS-2-0-COVERAGE"
-          ],
-          "reasonCode": null,
-          "reason": null
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc-api-coverages",
-      "surface": "ogc-api-coverages",
-      "operation": "serve.ogc-api-coverages",
-      "maturity": "supported",
-      "canonical_client": "OWSLib",
-      "client_lane": "py-owslib",
-      "client_version": "0.36.0",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "boundary",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "canonical-client-assignments@2026-08-21.1",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "test_ids": [
-        "client-cert/owslib/ogc-api-coverages/serve.ogc-api-coverages"
-      ],
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'py-owslib' is emitted, but not for the governed surface 'ogc-api-coverages'; it emits ogc-features, wfs, wms, wmts."
-        },
-        "denominatorJoin": {
-          "status": "joinable",
-          "testIds": [
-            "client-cert/owslib/ogc-api-coverages/serve.ogc-api-coverages"
-          ],
-          "reasonCode": null,
-          "reason": null
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc-api-edr",
-      "surface": "ogc-api-edr",
-      "operation": "serve.ogc-api-edr",
-      "maturity": "supported",
-      "canonical_client": "OWSLib",
-      "client_lane": "py-owslib",
-      "client_version": "0.36.0",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "boundary",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "canonical-client-assignments@2026-08-21.1",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "test_ids": [
-        "client-cert/owslib/ogc-api-edr/serve.ogc-api-edr"
-      ],
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'py-owslib' is emitted, but not for the governed surface 'ogc-api-edr'; it emits ogc-features, wfs, wms, wmts."
-        },
-        "denominatorJoin": {
-          "status": "joinable",
-          "testIds": [
-            "client-cert/owslib/ogc-api-edr/serve.ogc-api-edr"
           ],
           "reasonCode": null,
           "reason": null
@@ -2922,50 +2697,6 @@
           "status": "joinable",
           "testIds": [
             "client-cert/qgis/wms/serve.wms"
-          ],
-          "reasonCode": null,
-          "reason": null
-        }
-      }
-    },
-    {
-      "capability_key": "serve.wmts",
-      "surface": "wmts",
-      "operation": "serve.wmts",
-      "maturity": "supported",
-      "canonical_client": "QGIS",
-      "client_lane": "desktop-qgis",
-      "client_version": "3.44.13-Solothurn",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "metadata",
-        "media-schema"
-      ],
-      "contract_revision": "server-capability-matrix@ac30266fbd153363bebdbed13130accc8ab0c94a",
-      "auth_policy_revision": "anonymous-public-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "test_ids": [
-        "client-cert/qgis/wmts/serve.wmts"
-      ],
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'wmts'; it emits ogc-features, wfs."
-        },
-        "denominatorJoin": {
-          "status": "joinable",
-          "testIds": [
-            "client-cert/qgis/wmts/serve.wmts"
           ],
           "reasonCode": null,
           "reason": null
