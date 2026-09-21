@@ -968,6 +968,102 @@ public sealed class Wcs20EndpointsTests : IAsyncLifetime
         _exportQueries.Should().BeEmpty();
     }
 
+    [IntegrationTheory]
+    [InlineData("SUBSET=Long(-100,-99.9)&SUBSET=Lat(10,10.1)", "SUBSET")]
+    [InlineData("SUBSET=Long(-123,-122.6)", "SUBSET")]
+    [InlineData("SUBSET=Lat(38,39)", "SUBSET")]
+    [InlineData("SUBSET=Lat(36,37)", "SUBSET")]
+    [InlineData("SUBSET=Long(-122.35,-122.3)", "SUBSET")]
+    [InlineData("BBOX=-100,10,-99.9,10.1", "BBOX")]
+    [InlineData("SUBSETTINGCRS=EPSG:3857&SUBSET=x(0,1000)&SUBSET=y(0,1000)", "SUBSET")]
+    [InlineData("BBOXCRS=EPSG:3857&BBOX=0,0,1000,1000", "BBOX")]
+    [Operation(Operations.Query)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    public async Task Wcs_GetCoverage_OutsideExtent_ReturnsInvalidSubsettingWithoutExport(
+        string subset, string locator)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/{WebAppFixture.TestServiceId}/wcs?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=coverage_{WebAppFixture.TestLayerId}&{subset}");
+        var content = await response.Content.ReadAsStringAsync();
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, content);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/xml");
+        XNamespace ows = "http://www.opengis.net/ows/2.0";
+        var document = XDocument.Parse(content);
+        document.Root!.Name.Should().Be(ows + "ExceptionReport");
+        var exception = document.Root.Element(ows + "Exception")!;
+        exception.Attribute("exceptionCode")!.Value.Should().Be("InvalidSubsetting");
+        exception.Attribute("locator")!.Value.Should().Be(locator);
+        _exportQueries.Should().BeEmpty();
+    }
+
+    [IntegrationTheory]
+    [InlineData(4326, 0, 1, "SUBSETTINGCRS=EPSG:3857&SUBSET=x(1000,2000)&SUBSET=y(1000,2000)")]
+    [InlineData(3857, 1000, 2000, "SUBSETTINGCRS=EPSG:4326&SUBSET=Long(0.01,0.015)&SUBSET=Lat(0.01,0.015)")]
+    [Operation(Operations.Export)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    public async Task Wcs_GetCoverage_IntersectingNonNativeSubset_TransformsBeforeExtentCheck(
+        int nativeSrid, double minimum, double maximum, string subset)
+    {
+        // 1000..2000 metres is within 0..1 degrees. Conversely, 0.01..0.015
+        // degrees is about 1113..1670 metres, within the projected fixture.
+        // Comparing the untransformed numbers would reject both valid windows.
+        var raster = CreateRasterInfo() with
+        {
+            Srid = nativeSrid,
+            Extent = new RasterExtent
+            {
+                XMin = minimum,
+                YMin = minimum,
+                XMax = maximum,
+                YMax = maximum,
+                Srid = nativeSrid
+            }
+        };
+        _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(raster));
+
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/{WebAppFixture.TestServiceId}/wcs?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=coverage_{WebAppFixture.TestLayerId}&{subset}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        _exportQueries.Should().ContainSingle();
+        _exportQueries[0].ClipRegion!.Value.Srid.Should().Be(nativeSrid == 4326 ? 3857 : 4326);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [InterfaceOperation(TestProtocols.Wcs201, "GetCoverage")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    public async Task Wcs_GetCoverage_DisjointTransformedPolygon_ReturnsInvalidSubsettingWithoutExport()
+    {
+        // The transformed envelope overlaps this UTM extent, but the actual
+        // polygon is over 1 km east. The independent PROJ oracle and pixel
+        // fixture live in certification/bounded-roster/regressions.
+        var raster = CreateRasterInfo() with
+        {
+            Srid = 32610,
+            Extent = new RasterExtent
+            {
+                XMin = 587850,
+                YMin = 4095400,
+                XMax = 587950,
+                YMax = 4095500,
+                Srid = 32610
+            }
+        };
+        _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(raster));
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/{WebAppFixture.TestServiceId}/wcs?SERVICE=WCS&REQUEST=GetCoverage&VERSION=2.0.1&COVERAGEID=coverage_{WebAppFixture.TestLayerId}&SUBSETTINGCRS=EPSG:4326&SUBSET=Long(-122,-121)&SUBSET=Lat(37,38)");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, content);
+        content.Should().Contain("exceptionCode=\"InvalidSubsetting\"");
+        _exportQueries.Should().BeEmpty();
+    }
+
     private static void ConfigureRasterStore(IRasterStore rasterStore, List<RasterQuery> exportQueries)
     {
         var raster = CreateRasterInfo();

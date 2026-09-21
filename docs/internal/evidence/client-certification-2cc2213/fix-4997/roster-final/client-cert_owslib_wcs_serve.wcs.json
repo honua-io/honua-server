@@ -1,0 +1,76 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/owslib/wcs/serve.wcs",
+  "canonical_client": "OWSLib",
+  "client_lane": "py-owslib",
+  "client_version": "0.36.0",
+  "client_version_detail": "OWSLib==0.36.0",
+  "surface": "wcs",
+  "operation": "serve.wcs",
+  "protocol_version": "2.0.1",
+  "protocol_profile": "WCS 2.0.1 core GET-KVP",
+  "started_at": "2026-09-21T00:31:51.307509Z",
+  "finished_at": "2026-09-21T00:31:54.236802Z",
+  "duration_ms": 2929,
+  "status": "pass",
+  "exercised_capabilities": [
+    "positive",
+    "negative",
+    "auth",
+    "boundary",
+    "crs-axis",
+    "media-schema"
+  ],
+  "summary": "all 6 checks passed across 6 governed facets",
+  "primary_request_url": "http://honua:5000/ogc/wcs/svc-browser-compat-image?service=WCS&version=2.0.1&request=GetCapabilities",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "GetCapabilities, DescribeCoverage and GetCoverage round trip",
+      "outcome": "pass",
+      "detail": "coverage coverage_2000 grid (64, 64); GeoTIFF decoded (64, 64) mode L constant 180",
+      "request_url": null,
+      "duration_ms": 1217
+    },
+    {
+      "facet": "negative",
+      "name": "unknown coverage and unsupported format raise OWS exceptions",
+      "outcome": "pass",
+      "detail": "OWS exception codes {'unknown-coverage': 'HTTP 404 NoSuchCoverage', 'unsupported-format': 'InvalidParameterValue'}",
+      "request_url": null,
+      "duration_ms": 149
+    },
+    {
+      "facet": "auth",
+      "name": "protected coverage service challenges and admits credentials",
+      "outcome": "pass",
+      "detail": "anonymous GetCapabilities HTTP 401; client outcomes {'anonymous': 'HTTPError', 'wrong-api-key': 'HTTPError', 'expired-bearer': 'HTTPError', 'api-key': 'parsed', 'oidc-bearer': 'parsed'}",
+      "request_url": null,
+      "duration_ms": 1196
+    },
+    {
+      "facet": "crs-axis",
+      "name": "CRS84 axis labels and subset axis order are honoured",
+      "outcome": "pass",
+      "detail": "native http://www.opengis.net/def/crs/OGC/1.3/CRS84 bbox (-122.45, 37.73, -122.38000000000001, 37.8); Long/Lat and Lat/Long subsets both returned (19, 19) px for a 0.02 deg window",
+      "request_url": null,
+      "duration_ms": 134
+    },
+    {
+      "facet": "media-schema",
+      "name": "every advertised coverage format decodes as its media type",
+      "outcome": "pass",
+      "detail": "advertised ['image/tiff', 'image/png', 'image/jpeg']; decoded {'image/tiff': 'TIFF (64, 64)', 'image/png': 'PNG (64, 64)', 'image/jpeg': 'JPEG (64, 64)'}",
+      "request_url": null,
+      "duration_ms": 121
+    },
+    {
+      "facet": "boundary",
+      "name": "subsets outside, straddling and at the edge of the extent",
+      "outcome": "pass",
+      "detail": "outside extent -> HTTP 404 InvalidSubsetting; corner-straddling subset clipped to (9, 9)",
+      "request_url": null,
+      "duration_ms": 110
+    }
+  ]
+}

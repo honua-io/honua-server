@@ -1,0 +1,30 @@
+{
+  "baseline_image": {
+    "name": "honua-server:ogc4996-final",
+    "id": "sha256:6ed902e720d852c656c40745a7c278978897eaef5582b8f804be9175ad14844c",
+    "protocol_assembly_sha256": "c72890740d6bcf789dd3365ae89e29bafccfc4b53a4ebf3dfdcf0b74a4e476e3",
+    "source_reference": "3f62ff449078656a6c155d4eb0a17b263b2dd753 (fix-4996/README.md)"
+  },
+  "pixel_client": {
+    "name": "honua-ogc4996-clients:local",
+    "id": "sha256:447490232decb5fe40b362a85e45c67c821f7c5c2b964ef011827de0a9048296"
+  },
+  "roster_client": {
+    "name": "client-compat-owslib:latest",
+    "id": "sha256:4c077283c4885d15ed9841f52bfab29d4057595a725c10f650933e881c937210"
+  },
+  "fixture_sha256": "4b59980faa879fc74e970333b837fa735917e9dab67619a35c9d7642c992908c",
+  "roster_module_sha256": "33b480381d93a4a892d2d462f17ce4102ab10b99a46fdd95cd01cea96c901729",
+  "requirements_sha256": "976cf90cc70a2e6a611448b495447a56158ff274d1c498ae3acc7ce4c747adfe",
+  "runtime_source_commit": "45733503e4ad0c35cef9f795fb9502c077606842",
+  "evidence_scope": "local fix candidate, not an official release-artifact certification",
+  "fixed_image": {
+    "name": "honua-server:wcs4997-fixed",
+    "id": "sha256:e07df631fac2fb5a913931e266ac19a991937e32bdf8475c89fca38b58bcdfb2",
+    "packaging": "Entire dotnet publish output copied onto honua-server:ogc4996-final runtime image",
+    "protocol_assembly_sha256": "df4e095a49ab2d4f15bc02327a3f582b17a500cc92a156dedd00d9069457de6f",
+    "endpoint_test_protocol_assembly_sha256": "df4e095a49ab2d4f15bc02327a3f582b17a500cc92a156dedd00d9069457de6f",
+    "publish_trimmed": true,
+    "publish_aot": false
+  }
+}

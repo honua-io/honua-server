@@ -1,0 +1,17 @@
+{
+  "runtime_source_commit": "46a12d9e3b3253efec31a84055bea6c1467483b3",
+  "review_regression_source_commit": "350135094541a276386f5c54c98f3db02f6cb00b",
+  "protocol_assembly_sha256": "ba8b584c7b53c6102fc96273d0ab2d0421744b3fe51f89c50efb6a854ebfe3f3",
+  "endpoint_test_protocol_assembly_sha256": "ba8b584c7b53c6102fc96273d0ab2d0421744b3fe51f89c50efb6a854ebfe3f3",
+  "utm_fixture_sha256": "3fff0c52e014ad16a9b3ca028dc550af7df521b99274e91f0cdc78a2cc269a9e",
+  "utm_client_sha256": "d336ac584c3f7065149eec685398d222b6f85da9eb9d3c28f224c8bbe9b10c58",
+  "evidence_scope": "local review correction, not an official release-artifact certification",
+  "image": {
+    "name": "honua-server:wcs4997-final",
+    "id": "sha256:8cc2d0827eddb8896175ead891da06228af21ec8ec9c8a36a6dfab7cda609a04",
+    "packaging": "Entire dotnet publish output copied onto honua-server:ogc4996-final runtime image",
+    "publish_trimmed": true,
+    "publish_aot": false,
+    "published_protocol_assembly_sha256": "ba8b584c7b53c6102fc96273d0ab2d0421744b3fe51f89c50efb6a854ebfe3f3"
+  }
+}
