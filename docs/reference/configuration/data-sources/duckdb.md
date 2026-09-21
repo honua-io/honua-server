@@ -106,6 +106,14 @@ or CLI-based access, prefer `AccountName` plus `CredentialChain`.
 | `GeometryType` | `Point` | Geometry type: `Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Polygon`, `MultiPolygon`. |
 | `Attributes` | `null` | Optional explicit list of attribute column names to expose. When omitted, columns are discovered from the DuckDB schema at startup. |
 
+Attribute column names must be letters, digits or `_`, and may also use `:`, `.` or `-`
+after the first character — the same field-name syntax the query surfaces accept. A
+column whose name falls outside it (for example one containing a space or a quote
+character) is not exposed as an attribute: the layer still loads and serves its other
+columns, and a startup warning names the skipped column. This applies to both discovered
+and explicitly listed columns. Rename the column in the source, or project it to a
+supported name in the view or table the layer reads.
+
 `ExternalSource` settings:
 
 | Setting | Default | Description |
