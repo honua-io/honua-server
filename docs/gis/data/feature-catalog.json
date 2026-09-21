@@ -7679,12 +7679,8 @@
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_DescribeCoverage_ServiceRouteUnknownService_ReturnsServiceNotFoundException",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCapabilities_CoverageSubtype_IsBoundUnprefixedQName",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCapabilities_ServiceRoute_ReturnsAccessibleRasterCoverage",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_DisjointTransformedPolygon_ReturnsInvalidSubsettingWithoutExport",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_IntersectingNonNativeSubset_TransformsBeforeExtentCheck",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_OutsideExtent_ReturnsInvalidSubsettingWithoutExport",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_ServiceRouteUnknownService_ReturnsServiceNotFoundException",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCoverage_UnknownNamedCoverage_ReturnsNoSuchCoverageException",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20SubsetTransformFailureTests.Wcs_GetCoverage_UnavailableSubsetTransform_PreservesServerError",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20ZarrEndpointsTests.Wcs_GetCoverage_ServiceRoute_ReturnsRegisteredZarrSlicePng"
       ],
       "proof_ledger_surface": "wcs-2.0.1",

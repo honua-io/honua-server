@@ -2296,7 +2296,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 15,
+      "provingTestCount": 11,
       "maturity": {
         "implemented": 2
       },
