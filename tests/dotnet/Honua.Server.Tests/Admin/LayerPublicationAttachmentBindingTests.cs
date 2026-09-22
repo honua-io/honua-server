@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
@@ -8,6 +9,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Server.Features.Admin.Models;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -75,15 +77,14 @@ public sealed partial class LayerPublishingIntegrationTests
             excluded.RootElement.GetProperty("attachmentGroups").GetArrayLength().Should().Be(0);
             (await _client.GetByteArrayAsync($"{parentUrl}/attachments/{attachmentId}")).Should().Equal(bytes);
 
-            using var updateForm = new MultipartFormDataContent
-            {
-                { new StringContent(attachmentId.Value.ToString(CultureInfo.InvariantCulture)), "attachmentId" },
-                { new StringContent("updated-bound.pdf"), "name" }
-            };
+            var updatedBytes = "updated attachment on a live bound parent"u8.ToArray();
+            using var updateForm = AttachmentUploadForm(updatedBytes, "updated-bound.pdf");
+            updateForm.Add(new StringContent(attachmentId.Value.ToString(CultureInfo.InvariantCulture)), "attachmentId");
             using var updated = await SendAttachmentJsonAsync($"{parentUrl}/updateAttachment", updateForm);
             updated.RootElement.GetProperty("updateAttachmentResult").GetProperty("success").GetBoolean().Should().BeTrue();
             using var renamed = await ReadAttachmentJsonAsync($"{parentUrl}/attachments?f=json");
             renamed.RootElement.GetProperty("attachmentInfos")[0].GetProperty("name").GetString().Should().Be("updated-bound.pdf");
+            (await _client.GetByteArrayAsync($"{parentUrl}/attachments/{attachmentId}")).Should().Equal(updatedBytes);
             using var deleteForm = new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["attachmentIds"] = attachmentId.Value.ToString(CultureInfo.InvariantCulture)
@@ -113,27 +114,40 @@ public sealed partial class LayerPublishingIntegrationTests
     public async Task PublishedBinding_AttachmentsDoNotExposeParentRemainingOnlyInOldSnapshot()
     {
         var layerId = await PublishAttachmentBindingAsync();
+        // Seed the actual default reader's store explicitly: publication and the
+        // fixture's canonical store can have different search paths and generated IDs.
+        var staleParent = await _fixture.GetService<IFeatureWriter>().CreateAsync(layerId,
+            Feature.Create(0, null, ImmutableDictionary<string, object?>.Empty.Add("name", "Stale Parent")));
+        var parentId = staleParent.Id;
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync())
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = $"UPDATE public.{_tableName} SET id = @parentId WHERE id = 1";
+            command.Parameters.AddWithValue("parentId", parentId);
+            (await command.ExecuteNonQueryAsync()).Should().Be(1);
+        }
         var store = _fixture.GetService<IAttachmentStore>();
         await using var content = new MemoryStream("private parent attachment"u8.ToArray());
-        var attachment = await store.UploadAsync(layerId, 1, "parent.txt", "text/plain", content);
+        var attachment = await store.UploadAsync(layerId, parentId, "parent.txt", "text/plain", content);
         var layerUrl = $"/rest/services/{_serviceName}/FeatureServer/{layerId}";
-        var parentUrl = $"{layerUrl}/1";
+        var parentUrl = $"{layerUrl}/{parentId}";
         try
         {
-            // Publication materialized the original row into the legacy snapshot.
+            // Keep the explicitly seeded row in the legacy snapshot.
             // Removing it only from the bound table must revoke attachment visibility.
             await using (var connection = await _fixture.Postgres.GetConnectionAsync())
             await using (var command = connection.CreateCommand())
             {
-                command.CommandText = $"DELETE FROM public.{_tableName} WHERE id = 1";
+                command.CommandText = $"DELETE FROM public.{_tableName} WHERE id = @parentId";
+                command.Parameters.AddWithValue("parentId", parentId);
                 (await command.ExecuteNonQueryAsync()).Should().Be(1);
             }
 
-            (await _fixture.GetService<IFeatureReader>().GetAsync(layerId, 1))
+            (await _fixture.GetService<IFeatureReader>().GetAsync(layerId, parentId))
                 .Should().NotBeNull("the regression requires a stale row in the default store");
-            using var query = await ReadAttachmentJsonAsync($"{layerUrl}/query?objectIds=1&outFields=*&f=json");
+            using var query = await ReadAttachmentJsonAsync($"{layerUrl}/query?objectIds={parentId}&outFields=*&f=json");
             query.RootElement.GetProperty("features").GetArrayLength().Should().Be(0);
-            using var batch = await ReadAttachmentJsonAsync($"{layerUrl}/queryAttachments?objectIds=1&f=json");
+            using var batch = await ReadAttachmentJsonAsync($"{layerUrl}/queryAttachments?objectIds={parentId}&f=json");
             batch.RootElement.GetProperty("attachmentGroups").GetArrayLength().Should().Be(0);
             using var listed = await ReadAttachmentJsonAsync($"{parentUrl}/attachments?f=json", allowError: true);
             listed.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
@@ -155,14 +169,14 @@ public sealed partial class LayerPublishingIntegrationTests
             });
             using var deniedDelete = await SendAttachmentJsonAsync($"{parentUrl}/deleteAttachments", form, allowError: true);
             deniedDelete.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
-            var retained = await store.GetAsync(layerId, 1, attachment.Id);
+            var retained = await store.GetAsync(layerId, parentId, attachment.Id);
             retained.Should().NotBeNull();
             var retainedAttachment = retained ?? throw new InvalidOperationException("The denied deletion must retain the attachment.");
             retainedAttachment.Filename.Should().Be("parent.txt");
         }
         finally
         {
-            await store.DeleteAsync(layerId, 1, attachment.Id);
+            await store.DeleteAsync(layerId, parentId, attachment.Id);
         }
     }
 
@@ -184,11 +198,11 @@ public sealed partial class LayerPublishingIntegrationTests
         return published.LayerId;
     }
 
-    private static MultipartFormDataContent AttachmentUploadForm(byte[] bytes)
+    private static MultipartFormDataContent AttachmentUploadForm(byte[] bytes, string filename = "bound.pdf")
     {
         var file = new ByteArrayContent(bytes);
         file.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
-        return new MultipartFormDataContent { { file, "attachment", "bound.pdf" } };
+        return new MultipartFormDataContent { { file, "attachment", filename } };
     }
 
     private async Task<JsonDocument> ReadAttachmentJsonAsync(string url, bool allowError = false)
