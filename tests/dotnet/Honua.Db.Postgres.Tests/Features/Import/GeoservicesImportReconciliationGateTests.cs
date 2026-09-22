@@ -30,11 +30,13 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fixture)
 {
     [Theory]
-    [InlineData("[{\"id\":0,\"relatedTableId\":1,\"keyField\":\"Name\",\"composite\":false}]", 1)]
-    [InlineData("[{\"id\":0,\"relatedTableId\":1,\"keyField\":\"Name\",\"composite\":true}]", 1)]
-    [InlineData("[null,{}]", 2)]
+    [InlineData("[{\"id\":0,\"relatedTableId\":1,\"keyField\":\"Name\",\"composite\":false}]", 1, false)]
+    [InlineData("[{\"id\":0,\"relatedTableId\":1,\"keyField\":\"Name\",\"composite\":true}]", 1, false)]
+    [InlineData("[null,{}]", 2, false)]
+    [InlineData("[{\"id\":0,\"relatedTableId\":1,\"keyField\":\"Name\",\"composite\":false}]", 0, true)]
+    [InlineData("[{\"id\":0,\"relatedTableId\":1,\"keyField\":\"Name\",\"composite\":true}]", 0, true)]
     public async Task ImportLayerAsync_WithUnappliedRelationships_PreservesRowsButRequiresReview(
-        string relationshipsJson, int expectedOmissions)
+        string relationshipsJson, int expectedOmissions, bool deferToBatch)
     {
         var schemaName = await fixture.CreateIsolatedSchemaAsync("UnappliedRelationships");
         var reconciliation = new StubReconciliationService(MigrationReconciliationClassifications.Pass, failCount: 0);
@@ -43,16 +45,16 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
 
         try
         {
-            var result = await service.ImportLayerAsync(BuildRequest("relationship_rows", schemaName), progress);
+            var result = await service.ImportLayerAsync(BuildRequest("relationship_rows", schemaName) with { DeferRelationshipApplyToBatch = deferToBatch }, progress);
 
-            result.NeedsReview.Should().BeTrue();
-            result.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+            result.NeedsReview.Should().Be(!deferToBatch);
+            result.FidelityVerdict.Should().Be(deferToBatch ? MigrationFidelityVerdicts.FullFidelity : MigrationFidelityVerdicts.Incomplete);
             result.FidelityDifferences.Where(difference => difference.Code == MigrationFidelityDifferenceCodes.RelationshipOmitted)
                 .Should().HaveCount(expectedOmissions).And.OnlyContain(difference =>
                     difference.Severity == MigrationFidelityDifferenceSeverities.Blocking
                     && difference.Summary.Contains("reviewed relationship manifest", StringComparison.Ordinal));
-            progress.Statuses.Should().Contain(GeoservicesImportStatus.NeedsReview);
-            progress.Statuses.Should().NotContain(GeoservicesImportStatus.Completed);
+            progress.Statuses.Should().Contain(deferToBatch ? GeoservicesImportStatus.Completed : GeoservicesImportStatus.NeedsReview);
+            progress.Statuses.Should().NotContain(deferToBatch ? GeoservicesImportStatus.NeedsReview : GeoservicesImportStatus.Completed);
             await using var connection = await fixture.DataSource.OpenConnectionAsync();
             await using var command = connection.CreateCommand();
             command.CommandText = $"SELECT COUNT(*) FROM \"{schemaName}\".relationship_rows";
