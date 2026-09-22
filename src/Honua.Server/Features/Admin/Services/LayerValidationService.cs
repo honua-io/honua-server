@@ -73,11 +73,16 @@ internal sealed class LayerValidationService(
             .ConfigureAwait(false);
 
         var table = FindTable(tables, storageMapping);
+        if (table is null && !string.IsNullOrWhiteSpace(storageMapping.SchemaName))
+        {
+            table = await tableDiscoveryService.DiscoverNonSpatialTableAsync(
+                connection, storageMapping.SchemaName, storageMapping.TableName, cancellationToken).ConfigureAwait(false);
+        }
         if (table == null)
         {
             checks.Add(Error(
                 "storage-table",
-                "Mapped storage table was not found or no longer exposes a geometry column.",
+                "Mapped storage table was not found or is excluded from discovery.",
                 storageMapping.QualifiedName,
                 null));
 

@@ -106,6 +106,8 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
             var layer = request.Layers.Should().ContainSingle().Subject;
             layer.SourceFeatureCount.Should().Be(2, "the source holds 3 records, of which the filter selects 2");
             layer.FilterMirror.Should().Be(FilteredFeatureServerHandler.Filter);
+            layer.TargetContainsOnlyImportedFeatures.Should().BeTrue(
+                "the import target holds only the selected rows, so the source filter is provenance, not target SQL");
             result.FidelityDifferences.Should().NotContain(
                 d => d.Code == MigrationFidelityDifferenceCodes.SourceChangedDuringTransfer
                     || d.Code == MigrationFidelityDifferenceCodes.SourceSnapshotUnverified);

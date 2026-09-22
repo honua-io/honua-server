@@ -25,6 +25,43 @@ public sealed class PostgreSqlTableDiscoveryServiceTests
     }
 
     [Fact]
+    public async Task DiscoverNonSpatialTableAsync_PreservesExclusionsAndUnwrapsProviderConnection()
+    {
+        var schema = await _fixture.CreateIsolatedSchemaAsync("table_discovery");
+        try
+        {
+            var inner = await _fixture.DataSource.OpenConnectionAsync();
+            await using var connection = new SemaphoreReleasingConnection(inner, static () => { });
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"""
+                    CREATE TABLE "{schema}".attributes (id integer PRIMARY KEY, name text);
+                    CREATE TABLE "{schema}".__honua_wfs_stage_attributes (id integer PRIMARY KEY);
+                    """;
+                await command.ExecuteNonQueryAsync();
+            }
+            var service = new PostgreSqlTableDiscoveryService(NullLogger<PostgreSqlTableDiscoveryService>.Instance);
+            var table = await service.DiscoverNonSpatialTableAsync(connection, schema, "attributes");
+            table.Should().NotBeNull();
+            table!.GeometryColumn.Should().BeNull();
+            table.Columns.Should().Contain(column => column.Name == "id" && column.IsPrimaryKey);
+            (await service.DiscoverNonSpatialTableAsync(connection, schema, "__honua_wfs_stage_attributes")).Should().BeNull();
+            (await service.DiscoverNonSpatialTableAsync(connection, "pg_catalog", "pg_class")).Should().BeNull();
+            (await service.DiscoverNonSpatialTableAsync(connection, "information_schema", "sql_features")).Should().BeNull();
+            (await service.DiscoverNonSpatialTableAsync(connection, "honua", "layers")).Should().BeNull();
+
+            var configured = new PostgreSqlTableDiscoveryService(
+                NullLogger<PostgreSqlTableDiscoveryService>.Instance,
+                schemaConfiguration: new PostgresSchemaConfiguration(schema, "public", ["public"]));
+            (await configured.DiscoverNonSpatialTableAsync(connection, schema, "attributes")).Should().BeNull();
+        }
+        finally
+        {
+            await _fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [Fact]
     public async Task DiscoverPostGisTablesAsync_AcceptsSemaphoreReleasingConnectionWrapper()
     {
         // Regression — passing a provider-opened connection (wrapped in

@@ -2,8 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Text;
 using System.Text.RegularExpressions;
+using Honua.Core.Configuration;
 using Honua.Infrastructure.Models;
+using Honua.Infrastructure.Validation;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Infrastructure.Security;
@@ -17,6 +20,7 @@ internal sealed class InputValidationMiddleware
     private readonly RequestDelegate _next;
     private readonly ILogger<InputValidationMiddleware> _logger;
     private readonly InputValidationOptions _options;
+    private readonly GeometryLimits _geometryLimits;
 
     // Common injection patterns to detect and block
     private static readonly Regex _sqlInjectionPattern = new(
@@ -96,11 +100,13 @@ internal sealed class InputValidationMiddleware
     public InputValidationMiddleware(
         RequestDelegate next,
         ILogger<InputValidationMiddleware> logger,
-        IOptions<InputValidationOptions> options)
+        IOptions<InputValidationOptions> options,
+        IOptions<LimitsOptions> limits)
     {
         _next = next;
         _logger = logger;
         _options = options.Value;
+        _geometryLimits = limits.Value.Geometry;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -128,11 +134,40 @@ internal sealed class InputValidationMiddleware
 
         // Validate request inputs
         var validationResult = ValidateRequest(context.Request);
+        var geometryMetadata = context.GetEndpoint()?.Metadata.GetMetadata<GeometryParameterMetadata>();
+        if (validationResult.IsValid && geometryMetadata != null)
+        {
+            var body = await geometryMetadata.ReadBodyParametersAsync(context.Request, context.RequestAborted);
+            if (body.Error != null)
+            {
+                validationResult = InputValidationResult.Invalid(body.Error, isSuspicious: false);
+            }
+            else if (body.Values != null)
+            {
+                foreach (var parameter in body.Values)
+                {
+                    // The protocol parser uses the same conversions for JSON and form
+                    // values. Apply the existing form-parameter security semantics to both.
+                    validationResult = ValidateParameter(context.Request, "form", parameter.Key, parameter.Value);
+                    if (!validationResult.IsValid)
+                    {
+                        break;
+                    }
+                }
+            }
+        }
         if (!validationResult.IsValid)
         {
-            InputValidationLog.MaliciousInputDetected(_logger,
-                validationResult.ErrorMessage,
-                context.Connection.RemoteIpAddress?.ToString());
+            if (validationResult.IsSuspicious)
+            {
+                InputValidationLog.MaliciousInputDetected(_logger,
+                    validationResult.ErrorMessage,
+                    context.Connection.RemoteIpAddress?.ToString());
+            }
+            else
+            {
+                InputValidationLog.InputRejected(_logger, validationResult.ErrorMessage);
+            }
 
             await CreateSecurityErrorResponse(context, validationResult.ErrorMessage ?? "Input validation failed");
             return;
@@ -164,7 +199,8 @@ internal sealed class InputValidationMiddleware
         }
 
         // Validate form data if applicable
-        if (request.HasFormContentType && !IsMultipartFormData(request.ContentType) && request.Form != null)
+        if (request.HasFormContentType && !IsMultipartFormData(request.ContentType) && request.Form != null &&
+            !(HttpMethods.IsPost(request.Method) && request.HttpContext.GetEndpoint()?.Metadata.GetMetadata<GeometryParameterMetadata>() != null))
         {
             // Not a pure filter: returns the first invalid ValidateParameter result immediately
             // (short-circuiting the remaining parameters), so this doesn't reduce to '.Where(...)'.
@@ -245,10 +281,30 @@ internal sealed class InputValidationMiddleware
         // remaining values across several distinct checks), so this doesn't reduce to '.Where(...)'.
         foreach (var value in (values).Where(value => !string.IsNullOrEmpty(value)).Select(value => value!))
         {
-            // Length validation
-            if (value.Length > _options.MaxParameterLength)
+            var geometryMetadata = paramType is "query" or "form"
+                ? request.HttpContext.GetEndpoint()?.Metadata.GetMetadata<GeometryParameterMetadata>()
+                : null;
+            if (geometryMetadata != null && name.Equals(geometryMetadata.ParameterName, StringComparison.OrdinalIgnoreCase))
             {
-                return InputValidationResult.Invalid($"Parameter '{name}' exceeds maximum length of {_options.MaxParameterLength}");
+                // Bound allocation before protocol parsing; UTF-8 byte size, not
+                // UTF-16 character count, is the published geometry size limit.
+                if (value.Length > _geometryLimits.MaxGeometrySize ||
+                    Encoding.UTF8.GetByteCount(value) > _geometryLimits.MaxGeometrySize)
+                {
+                    return InputValidationResult.Invalid(
+                        $"Geometry parameter '{name}' exceeds {_geometryLimits.MaxGeometrySize} UTF-8 bytes (Limits:Geometry:MaxGeometrySize).",
+                        isSuspicious: false);
+                }
+                request.HttpContext.RequestAborted.ThrowIfCancellationRequested();
+                var geometryError = geometryMetadata.Validate(value, _geometryLimits.MaxVerticesPerGeometry, request.HttpContext.RequestAborted);
+                if (geometryError != null)
+                {
+                    return InputValidationResult.Invalid(geometryError, isSuspicious: false);
+                }
+            }
+            else if (value.Length > _options.MaxParameterLength)
+            {
+                return InputValidationResult.Invalid($"Parameter '{name}' exceeds maximum length of {_options.MaxParameterLength}", isSuspicious: false);
             }
 
             var sqlValidationValue = NormalizeForSqlInspection(request, paramType, name, value);
@@ -665,7 +721,9 @@ public sealed class InputValidationOptions
     public bool ValidateSuspiciousHeaders { get; set; }
 
     /// <summary>
-    /// Maximum length allowed for any parameter value. Default: 8192.
+    /// Maximum length for ordinary text parameters. Default: 8192. Geometry
+    /// parameters explicitly declared by the routed endpoint use Limits:Geometry
+    /// byte and vertex budgets instead; their security checks remain enabled.
     /// </summary>
     public int MaxParameterLength { get; set; } = 8192;
 
@@ -682,15 +740,17 @@ internal sealed class InputValidationResult
 {
     public bool IsValid { get; }
     public string? ErrorMessage { get; }
+    public bool IsSuspicious { get; }
 
-    private InputValidationResult(bool isValid, string? errorMessage = null)
+    private InputValidationResult(bool isValid, string? errorMessage = null, bool isSuspicious = false)
     {
         IsValid = isValid;
         ErrorMessage = errorMessage;
+        IsSuspicious = isSuspicious;
     }
 
     public static InputValidationResult Valid() => new(true);
-    public static InputValidationResult Invalid(string errorMessage) => new(false, errorMessage);
+    public static InputValidationResult Invalid(string errorMessage, bool isSuspicious = true) => new(false, errorMessage, isSuspicious);
 }
 
 /// <summary>

@@ -49,7 +49,8 @@ public sealed record GeoservicesServiceInfo
     public string[] Capabilities { get; init; } = [];
 
     /// <summary>
-    /// Layers available in this service.
+    /// Spatial layers and standalone tables available in this service.
+    /// Each resource retains its source <see cref="GeoservicesLayerInfo.Type"/>.
     /// </summary>
     public GeoservicesLayerInfo[] Layers { get; init; } = [];
 

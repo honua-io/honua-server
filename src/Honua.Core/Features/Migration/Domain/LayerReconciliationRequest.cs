@@ -68,6 +68,12 @@ public sealed record LayerReconciliationLayerInput
     public long? SourceFeatureCount { get; init; }
 
     /// <summary>
+    /// Whether the source resource declares geometry. Attribute-only tables do not require
+    /// geometry-validity or extent probes. Defaults to true for existing spatial callers.
+    /// </summary>
+    public bool SourceHasGeometry { get; init; } = true;
+
+    /// <summary>
     /// Source-side bounding box snapshot. <c>null</c> when the source did not advertise an
     /// extent; the extent probe will record a <c>warn</c> with a "no baseline" reason.
     /// </summary>
@@ -88,9 +94,19 @@ public sealed record LayerReconciliationLayerInput
     /// <summary>
     /// Optional secret-safe filter mirror applied at apply time (e.g. CQL or GeoServices
     /// <c>where</c>) so the count probe can be filter-mirrored. <c>null</c> means the apply
-    /// imported all features and the probe issues an unfiltered count.
+    /// imported all features and the probe issues an unfiltered count. For a dedicated
+    /// import target this is provenance only; see <see cref="TargetContainsOnlyImportedFeatures"/>.
     /// </summary>
     public string? FilterMirror { get; init; }
+
+    /// <summary>
+    /// The target is a dedicated import table that holds only the selected source population.
+    /// <see cref="FilterMirror"/> is then source provenance and is not executed against the
+    /// target: source identifiers may have been remapped on insert, and a repeated filter would
+    /// hide extra target rows. Every target row is counted, extent-probed and sampled, and any
+    /// difference from <see cref="SourceFeatureCount"/> fails the count probe.
+    /// </summary>
+    public bool TargetContainsOnlyImportedFeatures { get; init; }
 }
 
 /// <summary>

@@ -334,10 +334,17 @@ internal static partial class WmsRequestHandlers
 
         if (string.Equals(infoFormat, GmlFeatureInfoMimeType, StringComparison.OrdinalIgnoreCase))
         {
+            // The schema location names the endpoint and WMS version that answered this request
+            // (honua-server#5019). This handler serves both the MapServer mount and the OGC mount,
+            // and a fixed MapServer/1.1.1 location sent a 1.3.0 response from the OGC mount to a
+            // different endpoint and protocol version, one that is unreachable when only WMS is
+            // enabled. BaseUrlResolver already includes PathBase, so only the matched route path is
+            // appended; the version is the canonical constant for the version already validated.
             var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
+            var schemaVersion = IsWms111Version(versionValue) ? Wms111Version : Wms13Version;
             var schemaUrl =
-                $"{baseUrl}/rest/services/{Uri.EscapeDataString(serviceId)}/MapServer/WMS"
-                + $"?SERVICE=WMS&VERSION={Wms111Version}&REQUEST={WmsGmlFeatureInfoSchemaRequest}";
+                $"{baseUrl}{context.Request.Path.ToUriComponent()}"
+                + $"?SERVICE=WMS&VERSION={schemaVersion}&REQUEST={WmsGmlFeatureInfoSchemaRequest}";
             var gml = BuildWmsGmlFeatureInfo(gmlFeatures, schemaUrl);
             return Results.Content(gml, GmlFeatureInfoMimeType, Encoding.UTF8, StatusCodes.Status200OK);
         }
