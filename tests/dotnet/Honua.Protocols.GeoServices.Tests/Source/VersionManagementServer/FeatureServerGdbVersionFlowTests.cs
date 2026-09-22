@@ -34,6 +34,7 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
         _fixture.WithTestLicense(HonuaEdition.Enterprise);
         await _fixture.InitializeAsync();
         _fixture.EnableV2ServiceEditingCapabilities(ServiceId, ["Create", "Update", "Delete"]);
+        BranchVersioningPublicationFixture.ConfigureManagedPublications(_fixture, ServiceId);
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();

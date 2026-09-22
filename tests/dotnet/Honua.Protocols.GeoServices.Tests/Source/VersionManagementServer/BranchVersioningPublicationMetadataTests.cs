@@ -322,7 +322,7 @@ public sealed class BranchVersioningPublicationFixture : IAsyncLifetime
         error.GetProperty("details").EnumerateArray().Select(detail => detail.GetString()).Should().Contain(expectedDetail, body);
     }
 
-    internal static void ConfigureManagedPublications(WebAppFixture app)
+    internal static void ConfigureManagedPublications(WebAppFixture app, string serviceName = ServiceName)
     {
         var snapshot = app.GetCurrentV2GraphSnapshot();
         var service = snapshot.Index.ServicesByName[WebAppFixture.TestServiceId];
@@ -346,7 +346,7 @@ public sealed class BranchVersioningPublicationFixture : IAsyncLifetime
         {
             Revision = snapshot.Graph.Revision + 1,
             Services = snapshot.Graph.Services.Select(item => item.Metadata.Id == service.Metadata.Id
-                ? item with { Metadata = item.Metadata with { Name = ServiceName } } : item).ToArray(),
+                ? item with { Metadata = item.Metadata with { Name = serviceName } } : item).ToArray(),
             Publications = publications,
             StorageBindings = bindings
         }, schema: app.CurrentSchema);
