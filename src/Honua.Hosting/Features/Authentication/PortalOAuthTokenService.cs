@@ -197,7 +197,14 @@ internal sealed class PortalOAuthTokenService(
             roles: roles,
             clientIp: clientIp,
             grantedScope: null,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken,
+            // Same managed key, same rule as the generateToken bridge: the minted token is
+            // clamped to the key's expiry and stops when the key is revoked or rotated (SEC-9).
+            source: new PortalCredentialSource(
+                PortalCredentialSourceKind.ManagedApiKey,
+                Reference: validation.Record.Id.ToString("D"),
+                Version: PortalCredentialSourceVersion.ForManagedKey(validation.Record),
+                ExpiresAt: validation.Record.ExpiresAt)).ConfigureAwait(false);
     }
 
     private async Task<PortalOAuthTokenResult> IssueClientCredentialsAsync(
@@ -242,7 +249,8 @@ internal sealed class PortalOAuthTokenService(
         IReadOnlyList<string> roles,
         string clientIp,
         string? grantedScope,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        PortalCredentialSource? source = null)
     {
         var ttlMinutes = ResolveExpirationMinutes(requested: null);
         var expiresAt = DateTimeOffset.UtcNow.AddMinutes(ttlMinutes);
@@ -256,7 +264,8 @@ internal sealed class PortalOAuthTokenService(
                 ClientType: PortalTokenClientType.Ip,
                 BindingValue: clientIp,
                 ExpiresAt: expiresAt,
-                IsClientCredentials: true),
+                IsClientCredentials: true,
+                Source: source),
             cancellationToken).ConfigureAwait(false);
 
         var expiresInSeconds = (long)Math.Max(0, (issuance.ExpiresAt - DateTimeOffset.UtcNow).TotalSeconds);

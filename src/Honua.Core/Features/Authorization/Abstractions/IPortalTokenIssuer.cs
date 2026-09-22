@@ -131,6 +131,13 @@ public sealed record PortalTokenIntrospection(
 /// list is a known role-free fallback.
 /// </param>
 /// <param name="IsClientCredentials">Whether the token was minted for the OAuth2 client-credentials grant.</param>
+/// <param name="Source">
+/// The credential this token is derived from (SEC-9). The issuer clamps
+/// <paramref name="ExpiresAt"/> to the source's own expiry and re-checks the source on every
+/// restore, so a revoked, expired or rotated credential stops its tokens. <see langword="null"/>
+/// is recorded as <see cref="PortalCredentialSource.None"/>: an issuance flow with no
+/// separately revocable backing credential, bounded by the token's own lifetime.
+/// </param>
 public sealed record PortalTokenIssueRequest(
     string PrincipalId,
     string? DisplayName,
@@ -142,7 +149,8 @@ public sealed record PortalTokenIssueRequest(
     bool? RolesRequireClaimsMappingEntitlement = false,
     bool? TenantRequiresClaimsMappingEntitlement = false,
     IReadOnlyList<string>? RolesWithoutClaimsMapping = null,
-    bool IsClientCredentials = false);
+    bool IsClientCredentials = false,
+    PortalCredentialSource? Source = null);
 
 /// <summary>
 /// Token issuance result.

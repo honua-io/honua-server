@@ -306,7 +306,11 @@ public static class SharingRestEndpoints
                 // instead, that value never touched claims mapping.
                 TenantRequiresClaimsMappingEntitlement:
                     verified.TenantId is not null && verified.TenantRequiresClaimsMappingEntitlement,
-                RolesWithoutClaimsMapping: verified.RolesWithoutClaimsMapping),
+                RolesWithoutClaimsMapping: verified.RolesWithoutClaimsMapping,
+                // Carry the verified credential so the issuer clamps this token's lifetime to
+                // that credential's own expiry and re-checks it on every restore, instead of
+                // leaving the token valid after the credential stops being (SEC-9).
+                Source: verified.Source),
             context.RequestAborted).ConfigureAwait(false);
 
         if (logger.IsEnabled(LogLevel.Information))
