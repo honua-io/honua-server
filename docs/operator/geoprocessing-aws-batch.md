@@ -8,7 +8,7 @@ description: "By default Honua runs geoprocessing (GP) jobs on the local / Kuber
 By default Honua runs geoprocessing (GP) jobs on the **local / Kubernetes Job**
 baseline workload (`geoprocessing-local`). To run GP jobs on **AWS Batch**
 instead — using the Fargate job-definition pool provisioned by the
-[honua-iac](https://github.com/honua-io) serverless substrate — you supply the
+[honua-iac](https://github.com/honua-io/honua-iac) serverless substrate — you supply the
 substrate ARNs to the `geoprocessing-aws-batch` execution workload that already
 ships (gated off) in `appsettings.json`.
 
@@ -64,13 +64,13 @@ The four tiers differ only by ephemeral (scratch) storage:
 timeout / retry stay per-submit overrides and are unaffected by tier selection.
 
 > **Tier selection.** The runtime tier selector that maps `batch.ephemeral_gib`
-> to the right `batch.job_definition_arn.{tier}` is on `trunk` (#2181). When no
+> to the right `batch.job_definition_arn.{tier}` ships with the server. When no
 > per-tier keys are configured the backend honors the **single**
 > `batch.job_definition_arn` key for back-compat. The parameter-key contract
 > (`batch.job_queue_arn`, `batch.region`, `batch.job_definition_arn`,
 > `batch.job_definition_arn.{s,m,l,xl}`) is identical on both sides.
 
-## Per-job resource sizing (#2165)
+## Per-job resource sizing
 
 Per-job sizing is **runtime and instant** — no terraform, no agent in the job
 path. Each GP job carries a resource profile that is mapped onto the
@@ -95,6 +95,14 @@ per-job request values supplied under the `gp.resource.*` keys (for example
 profile &gt; workload baseline. The local/Kubernetes baseline does **not**
 carry these keys (they are meaningless off AWS Batch), preserving the GP Devkit
 local-runner spec parity.
+
+The `gp.resource.*` sizing keys are the only sizing input a job submission
+accepts. Every other parameter the workload definition or a compute backend
+owns — `batch.*`, `env.*`, `process.*`, `k8s.*`, `azure.*` — comes from the
+registered workload definition (or is stamped by the server) and is
+authoritative: a job submission whose protocol metadata names a key in one of
+those namespaces is refused with a validation error, and a submission-supplied
+key can never replace a value the workload definition declares.
 
 ## Health-gating a GP substrate deploy
 

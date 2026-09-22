@@ -6,7 +6,7 @@ resource: "honua://capability/ai.mcp-discovery"
 ---
 # Studio MCP tools
 
-The server publishes 17 typed Studio tools through `/mcp`.
+The server publishes 19 typed Studio tools through `/mcp`.
 This tool plane is executable independently of the browser Studio preview.
 
 | Tool | Semantics |
@@ -27,6 +27,8 @@ This tool plane is executable independently of the browser Studio preview.
 | `honua_studio_remove_interaction` | Remove an interaction binding. |
 | `honua_studio_add_control` | Add a map control. |
 | `honua_studio_remove_control` | Remove a map control. |
+| `honua_studio_save_version` | Save the draft as an immutable version; returns `versionId` and `contentHash`. |
+| `honua_studio_reopen_version` | Branch a new draft from a saved version. |
 | `honua_studio_propose_publication` | Propose an exact saved version for governed publication. |
 
 Every mutation that accepts `generation` uses optimistic concurrency. A stale

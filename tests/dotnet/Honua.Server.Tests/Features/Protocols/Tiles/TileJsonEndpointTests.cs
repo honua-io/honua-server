@@ -151,6 +151,11 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
         var styleTileTemplate = TryGetTileTemplateFromStyle(styleDoc.RootElement);
         styleTileTemplate.Should().NotBeNullOrWhiteSpace();
 
+        foreach (var template in new[] { tileTemplate!, styleTileTemplate! })
+        {
+            template.Should().Contain("{z}").And.Contain("{x}").And.Contain("{y}");
+        }
+
         NormalizeTemplate(tileTemplate!).Should().Be(NormalizeTemplate(styleTileTemplate!));
 
         var tileUri = BuildTileUri(tileTemplate!, minZoom, 0, 0);
@@ -201,14 +206,7 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
 
     private Task<HttpResponseMessage> GetStyleFromTileJsonAsync(string styleUrl)
     {
-        if (Uri.TryCreate(styleUrl, UriKind.Absolute, out var absolute))
-        {
-            return _fixture.Client.GetAsync(absolute);
-        }
-
-        var baseAddress = _fixture.Client.BaseAddress ?? new Uri("http://localhost");
-        var resolved = new Uri(baseAddress, styleUrl);
-        return _fixture.Client.GetAsync(resolved);
+        return _fixture.Client.GetAsync(ResolveRequestUri(styleUrl));
     }
 
     private static string ResolveSchemaPath(string relativePath)
@@ -295,22 +293,16 @@ public sealed class TileJsonEndpointTests : IAsyncLifetime
             .Replace("{x}", x.ToString(CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase)
             .Replace("{y}", y.ToString(CultureInfo.InvariantCulture), StringComparison.OrdinalIgnoreCase);
 
-        if (Uri.TryCreate(url, UriKind.Absolute, out var absolute))
-        {
-            return absolute;
-        }
-
-        var baseAddress = _fixture.Client.BaseAddress ?? new Uri("http://localhost");
-        return new Uri(baseAddress, url);
+        return ResolveRequestUri(url);
     }
 
-    private static string NormalizeTemplate(string template)
-    {
-        if (Uri.TryCreate(template, UriKind.Absolute, out var absolute))
-        {
-            return absolute.PathAndQuery;
-        }
+    private string NormalizeTemplate(string template) => ResolveRequestUri(template).PathAndQuery;
 
-        return template;
+    private Uri ResolveRequestUri(string url)
+    {
+        // Root-relative paths can be interpreted as file URIs on Windows.
+        // Resolve both forms against the HTTP fixture before comparing paths.
+        var baseAddress = _fixture.Client.BaseAddress ?? new Uri("http://localhost");
+        return new Uri(baseAddress, url);
     }
 }

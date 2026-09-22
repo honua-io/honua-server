@@ -253,6 +253,37 @@ def test_records_without_a_timestamp_never_win_the_latest_slot() -> None:
     assert rows["Alpha"]["latest_minutes"] == 19.0
 
 
+def test_advisory_guard_warns_and_exits_zero_over_the_line() -> None:
+    """#4790: the CI step is advisory, so its annotation and exit code must agree.
+
+    The step used to print `::error::` and exit 1 behind continue-on-error. The
+    error annotation sat beside the shard runner's real capacity error and was
+    quoted as the cause of two trunk reds on 2026-09-13.
+    """
+    cfg = config(("Alpha", 20))
+    records = [record("Alpha", 1110, started_at="2026-09-13T14:20:00Z")]  # 18.5m = 93%
+    assert run_cli(records, cfg, "--max-utilization", "0.85", "--advisory") == 0
+    advised = run_cli.stderr
+    assert "::warning::HONUA_SHARD_OVER_MAX_UTILIZATION shard='Alpha'" in advised
+    assert "::error::" not in advised
+    assert "move whole test classes out" in advised.lower()
+
+
+def test_advisory_guard_is_silent_for_a_shard_with_headroom() -> None:
+    cfg = config(("Alpha", 20))
+    records = [record("Alpha", 456, started_at="2026-09-14T21:41:44Z")]  # 7.6m = 38%
+    assert run_cli(records, cfg, "--max-utilization", "0.85", "--advisory") == 0
+    assert "HONUA_SHARD_OVER_MAX_UTILIZATION" not in run_cli.stderr
+
+
+def test_advisory_never_fails_even_with_fail_on_warn() -> None:
+    """--advisory is a report-only mode, so no other flag can turn it into a gate."""
+    cfg = config(("Alpha", 20))
+    records = [record("Alpha", 1200, started_at="2026-09-13T14:20:00Z", timed_out=True)]
+    assert run_cli(records, cfg, "--fail-on-warn", "--max-utilization", "0.85", "--advisory") == 0
+    assert run_cli(records, cfg, "--fail-on-warn", "--max-utilization", "0.85") == 1
+
+
 test_latest_utilization_reads_the_newest_run_not_the_average()
 test_latest_ignores_file_order_and_uses_the_timestamp()
 test_timed_out_latest_run_is_scored_at_the_budget_it_was_killed_at()
@@ -267,4 +298,7 @@ test_rebasing_mode_still_recommends_a_cap()
 test_recommended_cap_stays_on_the_row_in_guard_mode()
 test_markdown_table_reports_the_last_run_column()
 test_records_without_a_timestamp_never_win_the_latest_slot()
+test_advisory_guard_warns_and_exits_zero_over_the_line()
+test_advisory_guard_is_silent_for_a_shard_with_headroom()
+test_advisory_never_fails_even_with_fail_on_warn()
 print("shard-headroom-audit-guard=ok")

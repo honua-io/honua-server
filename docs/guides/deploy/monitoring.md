@@ -6,7 +6,7 @@ resource: "honua://capability/ops.observability"
 ---
 # Monitor Honua Server
 
-You'll wire up health probes, Prometheus metrics, OpenTelemetry export, and the pinned alert rules so a degraded deployment pages you before users notice. For the higher-level operate story - the loop, Console and MCP seats, autonomy ladder, rollback taxonomy, and when Grafana is optional depth - start with [Operating Honua](../operate/README.md). The profiled Console Operate service in the Docker quickstart is the first local ops view once a compatible Console image is published; Grafana and Prometheus are optional depth for teams that want an external metrics backend.
+You'll wire up health probes, Prometheus metrics, OpenTelemetry export, and the pinned alert rules so a degraded deployment pages you before users notice. For the higher-level operate story - the loop, Console and MCP seats, autonomy ladder, rollback taxonomy, and when Grafana is optional depth - start with [Operating Honua](../operate/README.md). Grafana and Prometheus are optional depth for teams that want an external metrics backend.
 
 **Prerequisites:** A running deployment and the admin password (admin endpoints authenticate with the `X-API-Key` header). A metrics backend (managed Prometheus, self-hosted Prometheus, or any OTLP-compatible stack) is needed for long-retention metrics and deep traces/logs, but the built-in operate status, ops-health, findings, and timeline surfaces do not require Grafana or Prometheus.
 
@@ -34,7 +34,7 @@ Instead of stitching the endpoints above and inventing your own "is the system h
 
 It returns a server-computed `status` (`healthy` / `degraded` / `unhealthy`) with the machine-readable `reasons` that drove it, per-domain rollups (`deploys`, `jobs`, `alerts`, `migrations`, `findings`, `telemetryBackends`) each carrying a `source` hint you can drill down to, and a `schemaVersion` + `generatedAt` so a consumer can version its parsing. The verdict rules are fixed and documented server-side: the health-check roll-up being `Unhealthy` ⇒ `unhealthy`; a `Critical` finding, a deploy parked in manual intervention, dead-lettered alerts, or an impaired dispatcher ⇒ `degraded`; otherwise `healthy`.
 
-With the quickstart `console` profile enabled, open <http://localhost:5174/operate/health> for this status plus the Console health dashboard, and <http://localhost:5174/operate/copilot> for deterministic findings and proposal entry points. Those pages read the same server-owned APIs described here.
+Honua Console's Operate views read the same server-owned APIs described here.
 
 ### Platform SLO versus the node-local retained tail
 
@@ -52,17 +52,11 @@ reservoir. Instead, `slo.nodeLocalRetainedTail` names that reservoir honestly as
 since reset, actual oldest/newest retained ages, HTTP-5xx-only success ratio, and reset behavior. A
 rolling replacement resets that diagnostic on one replica; it never changes the platform verdict.
 
-Release qualification uses `scripts/scale/check-distributed-availability.py`. Its exact denominator is
-four candidate-bound cells on two replicas: unequal traffic, more than 4,096 requests per exercised
-protocol, HTTP failures plus HTTP-2xx in-band errors, and a rolling replica replacement. Each cell must
-retain the request ledger and raw query artifact; both replicas' query results must equal the ledger's
-failed-outcome numerator divided by its all-serving-request denominator within the frozen tolerance.
-
 ### Read-only ops credential
 
 Provision an ops-reader credential so a status dashboard or copilot can read the ops posture without holding a key that could `POST /rollback`. Mint an admin API key scoped to the `ops:read` grant (distinct from `admin:read`, which can also read the broader admin surfaces):
 
-With a full-admin credential in the [API explorer](../../reference/openapi-and-explorer.md), run `POST /api/v1/admin/api-keys` with `{"name":"ops-dashboard","permissions":["ops:read"]}`.
+With a full-admin credential, `POST /api/v1/admin/api-keys` with `{"name":"ops-dashboard","permissions":["ops:read"]}` — see [Authenticate clients](../secure/authentication.md#2-create-scoped-api-keys-for-automation) for the call.
 
 The returned key authorizes the read-only ops surfaces — `GET /api/v1/operate/status`, `GET /api/v1/admin/observability/{ops-health,findings}`, and `GET /api/v1/admin/observability/alerts` — but is rejected with a `403` on every mutating ops operation (deploy rollback/promote/submit, `findings/{id}/propose`, alert `acknowledge`/`suppress`/`resolve`) and on non-ops admin surfaces such as key management. Full-admin keys and client-certificate admins are unaffected.
 
@@ -103,11 +97,7 @@ cd docs/guides/deploy/examples
 promtool test rules prometheus-alerts.test.yml
 ```
 
-For availability budgets, the [SLO metric contract](../../../observability/slo-metric-contract.json) counts in-band errors plus out-of-band logical 5xx errors. Logical error codes are independent of HTTP transport status: a GeoServices logical 500 returned over HTTP 200 must count once. Union the two selectors before aggregation so either error class remains visible when the other is absent. From the repository root, validate the published expression with `promtool` on `PATH`:
-
-```bash
-python3 observability/test_slo_metric_contract.py
-```
+For availability budgets, the [SLO metric contract](https://github.com/honua-io/honua-server/blob/trunk/observability/slo-metric-contract.json) counts in-band errors plus out-of-band logical 5xx errors. Logical error codes are independent of HTTP transport status: a GeoServices logical 500 returned over HTTP 200 must count once. Union the two selectors before aggregation so either error class remains visible when the other is absent.
 
 5. (Optional one-command Docker depth) For local or single-node deployments that also need Grafana and Prometheus, bring up the curated bundle - provisioned datasource plus the Serving, GP/Jobs, and Ops/Alerts dashboards - against a running server:
 
@@ -145,21 +135,3 @@ Expected: `Healthy` followed by a JSON health snapshot with status fields.
 - [Scale and tune performance](scaling-and-performance.md)
 - [Troubleshoot Honua Server](troubleshooting.md)
 - [Upgrade and roll back](upgrade-and-rollback.md)
-
-
-#### Distributed comparison evidence status
-
-The comparison checker consumes individual serving-request observations and independent query
-exports. It recomputes HTTP-5xx plus HTTP-2xx in-band failure counts from the retained ledger;
-request identifiers must be unique and timestamps must fall inside the candidate window. Each
-replica/protocol in the overflow cell must exceed its own 4,096-slot capacity. Replacement
-observations must bind the old/new incarnation and ordered readiness/completion timeline.
-Both queried replicas must return the same ledger numerator, denominator and ratio, with an
-exact numeric tolerance of zero. Candidate revision, image digest and the pre-frozen query hash
-are separate required checker inputs (`--expected-revision`, `--expected-image-digest`, and
-`--expected-query-sha256`). They must come from the candidate/frozen query contract, not the receipt.
-
-The checker and its synthetic regression fixtures do not provide a distributed telemetry backend,
-a soak producer, or a passing exact-candidate comparison. Those remain necessary qualification
-work. Until the actual two-replica run and its retained observations exist, platform availability
-is unavailable and these tests must not be presented as 4/4 candidate evidence.

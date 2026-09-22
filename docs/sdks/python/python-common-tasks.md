@@ -34,7 +34,9 @@ with HonuaClient("http://localhost:8080", api_key=API_KEY) as client:
 ```python
 with HonuaClient("http://localhost:8080", api_key=API_KEY) as client:
     fs = client.feature_server("parcels")
-    # query, count, and layer metadata against layer 0
+    schema = fs.schema(0)                       # fields, geometry type, object-id field
+    page = fs.query(0, where="status = 'active'", out_fields=["name", "status"])
+    everything = fs.query_all(0, where="status = 'active'", page_size=1000)
 ```
 
 The `where` and `out_fields` map onto the FeatureServer query parameters in [Query features](../../guides/query-analyze/query-features.md). With the `[geopandas]` extra installed, results can be loaded into a `GeoDataFrame`.
@@ -48,7 +50,12 @@ Honua exposes a [STAC API](../../reference/protocols/stac.md) for spatiotemporal
 ```python
 with HonuaClient("http://localhost:8080", api_key=API_KEY) as client:
     stac = client.stac()
-    # browse collections, then search items by bbox / datetime / collections
+    collections = stac.collections()
+    found = stac.search(params={"collections": "imagery",
+                               "bbox": "-122.5,37.7,-122.3,37.9",
+                               "datetime": "2025-01-01T00:00:00Z/..", "limit": 10})
+    for item in found["features"]:
+        print(item["id"])
 ```
 
 **Protocol-neutral (`source` + `Query`)** — point a source at a STAC collection:

@@ -20,7 +20,7 @@ Serve I3S metadata previews through Enterprise-gated SceneServer handlers; unlic
 | Registry entries | 8 |
 | Proving tests | 26 |
 
-The facts above come from `docs/gis/data/capability-keys.v1.json` and `capability-matrix.v1.json`, both generated from the server's own registry and test evidence. This page is a pure function of those two files — nothing in it depends on what the prose happens to say, so an unrelated documentation edit cannot stale it.
+The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
 ## Documented in
 

@@ -301,7 +301,7 @@ public sealed class GeoservicesImportCatalogReconciliationTests(PostgresFixture 
                       ]
                     }
                     """,
-                "/arcgis/rest/services/Faithful/FeatureServer/0/query?where=1=1&returnCountOnly=true&f=json" => """{"count":1}""",
+                "/arcgis/rest/services/Faithful/FeatureServer/0/query?where=1%3D1&f=json&returnCountOnly=true" => """{"count":1}""",
                 _ when pathAndQuery.Contains("resultOffset=0", StringComparison.Ordinal) => """
                     {
                       "features": [

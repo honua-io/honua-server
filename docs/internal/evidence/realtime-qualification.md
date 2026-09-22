@@ -106,6 +106,10 @@ credential resolves the default tenant, which cannot see another tenant's layer.
 layer validator answers that request `401` with a `WWW-Authenticate` challenge instead of
 `404`, while an authenticated principal of another tenant still receives `404` (server#4778).
 
+These three boundaries were qualified on the 2026.1 candidate 548b7a5 (`sha256:29974ee7…`)
+through the hosted live receipt (20/20) and a boundary replay (17/17). The evidence is in
+[`realtime-live-auth-548b7a5-2026-09-15.md`](realtime-live-auth-548b7a5-2026-09-15.md).
+
 Every `token-expiry`, `token-revocation`, `tenant-isolation`, and `tenant-scope-change` row
 must retain an `authorization` object containing the SHA-256 issuer/configuration fingerprint,
 two distinct `tenantIds`, distinct tenant-qualified layer/datastream `resourceIds`,

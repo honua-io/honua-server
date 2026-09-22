@@ -128,8 +128,53 @@ jobs:
           print("Seed dependencies ready.")
           PY
 
+      - name: Mint a throwaway key-ring certificate for this run
+        run: |
+          set -euo pipefail
+          # Since #4722 the Production startup policy composes the Redis-backed durable operation
+          # secret channel and refuses to boot unless an operator certificate encrypts the
+          # data-protection key ring (Operations:SecretChannel:KeyRingCertificatePath); without one
+          # the server exits before readiness (#4968). The requirement stays: the run supplies a
+          # certificate instead. It guards only this runner's disposable Redis, so it is generated
+          # here, used for this run, and never leaves the runner or enters the repo.
+          keyring="$RUNNER_TEMP/keyring"
+          install -d -m 0755 "$keyring"
+          SOAK_KEYRING_PASSWORD="$(openssl rand -hex 24)"
+          export SOAK_KEYRING_PASSWORD
+          echo "::add-mask::$SOAK_KEYRING_PASSWORD"
+          (
+            umask 077
+            openssl req -x509 -newkey rsa:2048 -nodes -days 2 -subj "/CN=honua-load-soak-keyring" \
+              -keyout "$keyring/keyring.key" -out "$keyring/keyring.crt" 2>/dev/null
+            openssl pkcs12 -export -in "$keyring/keyring.crt" -inkey "$keyring/keyring.key" \
+              -out "$keyring/operation-keyring.pfx" -passout env:SOAK_KEYRING_PASSWORD
+          )
+          # The PKCS#12 carries the private key the server needs; the loose PEM copy is not kept.
+          rm -f "$keyring/keyring.key" "$keyring/keyring.crt"
+          chmod 0600 "$keyring/operation-keyring.pfx"
+          # The server runs directly on this runner, not in a container, so later steps (the
+          # initial start and the post-seed restart) read these as ordinary job env rather than
+          # through a bind mount.
+          echo "Operations__SecretChannel__KeyRingCertificatePath=$keyring/operation-keyring.pfx" >> "$GITHUB_ENV"
+          echo "Operations__SecretChannel__KeyRingCertificatePassword=$SOAK_KEYRING_PASSWORD" >> "$GITHUB_ENV"
+
       - name: Build server
         run: dotnet build src/Honua.Server/Honua.Server.csproj -c Release
+
+      # PROVISION BEFORE THE SERVER STARTS (#4972), mirroring
+      # .github/actions/setup-honua-server's "Provision PostGIS extensions" step. DB_USER is
+      # "honua", and migration 001_CreateHonuaSchema.sql creates a schema also named "honua" —
+      # Postgres's default search_path ("$user", public) then resolves current_schema() to
+      # "honua" for any later connection as that role, once that schema exists. postgis_raster's
+      # own install script requires current_schema() to match the schema postgis is installed in
+      # (public), so creating it after the server has migrated fails with "PostGIS Raster must be
+      # in the same schema as PostGIS (public)". Creating it here, before the schema exists, avoids
+      # the collision entirely; IF NOT EXISTS then makes any later create a no-op regardless of
+      # search_path.
+      - name: Provision PostGIS extensions
+        run: >-
+          PGPASSWORD="$DB_PASSWORD" psql -v ON_ERROR_STOP=1 -h localhost -U "$DB_USER" -d "$DB_NAME"
+          -c "CREATE EXTENSION IF NOT EXISTS postgis; CREATE EXTENSION IF NOT EXISTS postgis_raster; CREATE EXTENSION IF NOT EXISTS unaccent;"
 
       - name: Start server
         run: |
@@ -195,13 +240,12 @@ jobs:
           if conn is None:
               raise SystemExit("Postgres did not become ready")
 
-          conn.execute("CREATE EXTENSION IF NOT EXISTS postgis;")
-          conn.execute("CREATE EXTENSION IF NOT EXISTS postgis_raster;")
-          conn.execute("CREATE EXTENSION IF NOT EXISTS unaccent;")
-          conn.commit()
-
+          # Extensions are provisioned by the "Provision PostGIS extensions" step, before the
+          # server (and its schema-named-"honua" migration) exists (#4972). Seed data is written
+          # into that same "honua" schema explicitly, rather than relying on DB_USER happening to
+          # match the schema name via Postgres's default search_path.
           runner = SeedRunner("tests/seed/server.yaml")
-          runner.apply(conn)
+          runner.apply(conn, schema="honua")
           conn.close()
           PY
 

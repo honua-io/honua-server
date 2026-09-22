@@ -81,6 +81,12 @@ internal sealed class WorkspaceCleanupService : BackgroundService
 
     internal async Task RunCleanupAsync(CancellationToken cancellationToken)
     {
+        if (!_options.EnableAutomaticCleanup)
+        {
+            WorkspaceCleanupLog.CleanupDisabled(_logger);
+            return;
+        }
+
         using var scope = _serviceScopeFactory.CreateScope();
         var lifecycleService = scope.ServiceProvider.GetRequiredService<IWorkspaceLifecycleService>();
 

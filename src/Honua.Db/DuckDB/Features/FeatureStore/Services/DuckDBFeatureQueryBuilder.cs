@@ -276,7 +276,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         var mapping = _layerRegistry.GetRequiredMapping(layerId);
         ValidateFieldName(fieldName);
 
-        var fieldExpression = $"\"{fieldName}\"";
+        var fieldExpression = DuckDBExternalSourceSql.QuoteIdentifier(fieldName);
 
         var sb = new StringBuilder();
         sb.Append(CultureInfo.InvariantCulture,
@@ -313,7 +313,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             foreach (var field in query.GroupByFields.Value)
             {
                 ValidateFieldName(field);
-                groupByColumns.Add($"\"{field}\"");
+                groupByColumns.Add(DuckDBExternalSourceSql.QuoteIdentifier(field));
             }
         }
 
@@ -377,7 +377,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             if (stat.OutStatisticFieldName.Equals(field, StringComparison.OrdinalIgnoreCase))
             {
                 ValidateFieldName(stat.OutStatisticFieldName);
-                return $"\"{stat.OutStatisticFieldName}\"";
+                return DuckDBExternalSourceSql.QuoteIdentifier(stat.OutStatisticFieldName);
             }
         }
 
@@ -388,7 +388,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
                 if (groupByField.Equals(field, StringComparison.OrdinalIgnoreCase))
                 {
                     ValidateFieldName(groupByField);
-                    return $"\"{groupByField}\"";
+                    return DuckDBExternalSourceSql.QuoteIdentifier(groupByField);
                 }
             }
         }
@@ -425,13 +425,13 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
 
         var geometryExpr = BuildGeometryWkbExpression(mapping, query);
         var columnsExpr = BuildAttributeColumnsExpression(mapping, query);
-        var partitionFields = string.Join(", ", topFilter.GroupByFields.Select(f => $"\"{f}\""));
+        var partitionFields = string.Join(", ", topFilter.GroupByFields.Select(DuckDBExternalSourceSql.QuoteIdentifier));
 
         var orderByExprs = new List<string>();
         foreach (var orderBy in topFilter.OrderByFields)
         {
             var dir = orderBy.Ascending ? "ASC" : "DESC";
-            orderByExprs.Add($"\"{orderBy.Field}\" {dir}");
+            orderByExprs.Add($"{DuckDBExternalSourceSql.QuoteIdentifier(orderBy.Field)} {dir}");
         }
 
         var orderByStr = string.Join(", ", orderByExprs);
@@ -475,7 +475,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         var paramIndex = 1;
 
         ValidateFieldName(dateBin.BinField);
-        var fieldExpr = $"\"{dateBin.BinField}\"";
+        var fieldExpr = DuckDBExternalSourceSql.QuoteIdentifier(dateBin.BinField);
 
         string binExpr;
         if (dateBin.IsCalendarBin && dateBin.CalendarUnit != null)
@@ -531,7 +531,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         var paramIndex = 1;
 
         ValidateFieldName(binDefinition.Field);
-        var fieldExpr = $"\"{binDefinition.Field}\"";
+        var fieldExpr = DuckDBExternalSourceSql.QuoteIdentifier(binDefinition.Field);
 
         if (binDefinition.Type == BinType.Date && binDefinition.DateBin is { } dateBinDef)
         {
@@ -774,7 +774,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
             columns = mapping.AttributeColumns;
         }
 
-        return string.Join(", ", columns.Select(c => $"\"{c}\""));
+        return string.Join(", ", columns.Select(DuckDBExternalSourceSql.QuoteAttribute));
     }
 
     private static void AppendWhereClause(
@@ -787,7 +787,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         if (query.TextSearch is { } search)
         {
             var searchIndex = paramIndex;
-            var predicate = FeatureTextSearchSql.Build(search, field => { EnsureFieldIsConfigured(field, mapping); ValidateFieldName(field); return "\u0022" + field + "\u0022"; }, text =>
+            var predicate = FeatureTextSearchSql.Build(search, field => { EnsureFieldIsConfigured(field, mapping); ValidateFieldName(field); return DuckDBExternalSourceSql.QuoteIdentifier(field); }, text =>
             {
                 var marker = "$" + (searchIndex++).ToString(CultureInfo.InvariantCulture);
                 parameters.Add(text);
@@ -1048,8 +1048,8 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
         {
             ValidateFieldName(stat.OnStatisticField);
             ValidateFieldName(stat.OutStatisticFieldName);
-            var fieldExpr = $"\"{stat.OnStatisticField}\"";
-            var alias = $"\"{stat.OutStatisticFieldName}\"";
+            var fieldExpr = DuckDBExternalSourceSql.QuoteIdentifier(stat.OnStatisticField);
+            var alias = DuckDBExternalSourceSql.QuoteIdentifier(stat.OutStatisticFieldName);
             var statExpr = stat.StatisticType switch
             {
                 StatisticType.Count => $"COUNT({fieldExpr})",
@@ -1214,7 +1214,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
                 EnsureFieldIsConfigured(field, mapping);
                 var notToken = nullMatch.Groups["not"].Value;
                 var notClause = string.IsNullOrWhiteSpace(notToken) ? string.Empty : "NOT ";
-                parameterizedExpressions.Add($"\"{field}\" IS {notClause}NULL");
+                parameterizedExpressions.Add($"{DuckDBExternalSourceSql.QuoteIdentifier(field)} IS {notClause}NULL");
                 continue;
             }
 
@@ -1229,7 +1229,7 @@ internal sealed partial class DuckDBFeatureQueryBuilder : IFeatureQueryBuilder
                 var valueToken = compMatch.Groups["value"].Value;
                 var value = ParseValueToken(valueToken);
 
-                parameterizedExpressions.Add($"\"{field}\" {op} ${paramIndex++}");
+                parameterizedExpressions.Add($"{DuckDBExternalSourceSql.QuoteIdentifier(field)} {op} ${paramIndex++}");
                 parameters.Add(value);
                 continue;
             }

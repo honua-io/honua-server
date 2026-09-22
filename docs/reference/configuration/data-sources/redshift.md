@@ -1,9 +1,19 @@
 ---
 type: reference
 title: "Amazon Redshift provider"
+description: "Serve native Redshift GEOMETRY and GEOGRAPHY tables as read-only feature layers over the PostgreSQL wire protocol."
 resource: "honua://capability/provider.redshift"
 ---
 # Amazon Redshift provider
+
+Honua exposes Amazon Redshift (`GEOMETRY` and `GEOGRAPHY`) tables as read-only feature layers
+through the shared `IFeatureDataProvider` seam. Redshift is the analytical-warehouse backend for
+organizations that already keep authoritative spatial data in Redshift and want to publish it
+without copying it into PostGIS.
+
+This page describes the **read/query slice**. Edits, native MVT, native
+FlatGeobuf/Geobuf/GML, statistics aggregates, and admin UI integration are deliberately out of
+scope and would land as separate slices.
 
 ## Protocol routing
 
@@ -14,22 +24,10 @@ This provider is read-only, so OData create/update/delete requests (including `$
 return `501 ProviderWriteNotSupported` instead of dispatching to the primary provider.
 
 OGC API Tiles raster (`f=png`) tile requests resolve this provider per collection the same way,
-through `FeatureProviderQueryRouter`; Honua never falls back to the primary provider for a routed
+through the provider router; Honua never falls back to the primary provider for a routed
 collection's raster tiles. Vector (MVT) tile requests instead return a `501 Not Implemented`
 problem response naming the collection and provider: native MVT generation is a per-provider
-capability that only the PostGIS provider implements today, independent of the routing fix
-delivered under [issue #2962](https://github.com/honua-io/honua-server/issues/2962).
-
-
-Honua exposes Amazon Redshift (`GEOMETRY` and `GEOGRAPHY`) tables as read-only feature layers
-through the shared `IFeatureDataProvider` seam. Redshift is the analytical-warehouse backend for
-organizations that already keep authoritative spatial data in Redshift and want to publish it
-without copying it into PostGIS.
-
-This page describes the **read/query thin slice** delivered under issue
-[#1712](https://github.com/honua-io/honua-server/issues/1712). Edits, native MVT, native
-FlatGeobuf/Geobuf/GML, statistics aggregates, and admin UI integration are deliberately out of
-scope and would land as separate slices.
+capability that only the PostGIS provider implements today.
 
 ## Wire Protocol vs. Spatial Layer
 
@@ -75,7 +73,7 @@ selected per-layer based on the layer's `DataConnection` provider name.
 
 | Setting | Default | Description |
 |---|---|---|
-| `Experimental:Features:RedshiftProvider` | `false` | **Required opt-in (PA-181).** Setting `Redshift:Enabled=true` without this throws at startup. |
+| `Experimental:Features:RedshiftProvider` | `false` | **Required opt-in.** Setting `Redshift:Enabled=true` without this throws at startup. |
 | `Redshift:Enabled` | `true` | Set to `false` to skip provider registration even if the assembly is referenced. |
 | `Redshift:ConnectionString` | _none_ | Default connection string used when a layer's secure connection is unavailable. Prefer secret-store references in production. |
 | `Redshift:CommandTimeoutSeconds` | `60` | Per-command timeout in seconds. Must be positive. |
@@ -196,32 +194,6 @@ returned page only; callers that need the absolute total should use `CountAsync`
   `7200` for prepared queries, `7201` for unsupported-operation rejections, `7202` for query
   failures). The provider does not emit raw SQL exception messages or connection strings.
 
-## Testing
-
-### Unit Tests (always run in CI)
-
-```bash
-dotnet test tests/dotnet/Honua.Db.Redshift.Tests
-```
-
-Covers the SQL translation paths (SELECT, COUNT, EXTENT, ObjectIds, paging, attribute filters,
-spatial filters, identifier validation), provider-name normalization, and the SQL dialect. No
-Redshift instance is required.
-
-### Gated Integration Tests
-
-There is no official Amazon Redshift Testcontainer image. The integration suite is doubly gated —
-it is excluded from the default PR run by the `Category=RedshiftStandIn` trait, and it additionally
-requires `HONUA_TEST_REDSHIFT=1` so a stray category filter does not start Docker. Because Redshift
-is PostgreSQL-wire-compatible and the SQL emitted for non-spatial reads, COUNT, object-id listings,
-and extent is also valid against PostGIS, the suite uses a PostGIS Testcontainer purely as a
-wire-compatible stand-in to exercise the Npgsql connection factory and data-access materialization.
-It does **not** prove Redshift-specific spatial semantics — that requires a real Redshift cluster.
-
-```bash
-HONUA_TEST_REDSHIFT=1 dotnet test tests/dotnet/Honua.Db.Redshift.Tests --filter Category=RedshiftStandIn
-```
-
 ## Limitations and Known Gaps
 
 - **Read-only.** Edits, transactions, and applyEdits are not implemented; `Writer` is `null`.
@@ -232,5 +204,5 @@ HONUA_TEST_REDSHIFT=1 dotnet test tests/dotnet/Honua.Db.Redshift.Tests --filter 
 - **No distance / KNN / temporal filters.** These throw `NotSupportedException`.
 - **WHERE grammar is intentionally narrow.** Translated `SqlFilter` fragments are rejected because
   the shared translator emits PostGIS SQL; use the canonical `Where` text for predicates.
-- **Spatial semantics are not CITE-validated against a live Redshift cluster.** The gated
-  integration suite validates only the wire/data-access path against a PostGIS stand-in.
+- **Spatial semantics are not validated against a live Redshift cluster.** Automated coverage
+  exercises the wire/data-access path against a PostgreSQL stand-in only.

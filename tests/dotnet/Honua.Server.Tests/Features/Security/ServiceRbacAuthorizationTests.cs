@@ -684,6 +684,80 @@ public sealed class FeatureServerReplicationAccessPolicyTests
 
     [IntegrationTest]
     [Protocol(TestProtocols.FeatureServer)]
+    [Operation(Operations.CreateReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    public async Task CreateReplica_WithWriteOnlyLayerRole_IsForbiddenBecauseTheResponseCarriesData()
+    {
+        // createReplica returns the replica features (#4018), so write access alone must not read a layer
+        // whose Query access is restricted to another role.
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaLayerMetadata: ServiceRbacTestFixture.CreateServiceMetadata(
+                    readRoles: ["alpha-reader"],
+                    writeRoles: ["alpha-writer"])));
+        using var writerClient = ServiceRbacTestFixture.CreateClient(factory, "alpha-writer");
+        using var readerWriterClient = ServiceRbacTestFixture.CreateClient(factory, "alpha-writer", "alpha-reader");
+
+        using (var denied = await PostCreateReplicaAsync(writerClient, "write-only"))
+        {
+            await denied.AssertGeoServicesErrorAsync(403);
+        }
+
+        using var allowed = await PostCreateReplicaAsync(readerWriterClient, "read-and-write");
+        await ServiceRbacTestFixture.AssertStatusAsync(allowed, HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await allowed.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("replicaID").GetString().Should().NotBeNullOrWhiteSpace();
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.FeatureServer)]
+    [Operation(Operations.CreateReplica, Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_DownloadWithWriteOnlyLayerRole_IsForbidden()
+    {
+        using var factory = ServiceRbacTestFixture.CreateFactory(static () =>
+            new RbacTestLayerCatalog(
+                alphaLayerMetadata: ServiceRbacTestFixture.CreateServiceMetadata(
+                    readRoles: ["alpha-reader"],
+                    writeRoles: ["alpha-writer"])));
+        using var readerWriterClient = ServiceRbacTestFixture.CreateClient(factory, "alpha-writer", "alpha-reader");
+        using var writerClient = ServiceRbacTestFixture.CreateClient(factory, "alpha-writer");
+
+        using var created = await PostCreateReplicaAsync(readerWriterClient, "download-gate");
+        await ServiceRbacTestFixture.AssertStatusAsync(created, HttpStatusCode.OK);
+        using var createdDocument = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var replicaId = createdDocument.RootElement.GetProperty("replicaID").GetString();
+
+        using var content = new StringContent(
+            JsonSerializer.Serialize(new { replicaID = replicaId, syncDirection = "download", f = "json" }),
+            Encoding.UTF8,
+            "application/json");
+        using var response = await writerClient.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/synchronizeReplica",
+            content);
+
+        await response.AssertGeoServicesErrorAsync(403);
+    }
+
+    private static async Task<HttpResponseMessage> PostCreateReplicaAsync(HttpClient client, string replicaName)
+    {
+        using var content = new StringContent(
+            JsonSerializer.Serialize(new
+            {
+                replicaName,
+                layers = ServiceRbacTestFixture.AlphaLayerId.ToString(CultureInfo.InvariantCulture),
+                f = "json"
+            }),
+            Encoding.UTF8,
+            "application/json");
+        return await client.PostAsync(
+            $"/rest/services/{ServiceRbacTestFixture.AlphaService}/FeatureServer/createReplica",
+            content);
+    }
+
+    [IntegrationTest]
+    [Protocol(TestProtocols.FeatureServer)]
     [Operation(Operations.ExtractChanges)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]

@@ -19,8 +19,9 @@ Honua is developed as a family of repositories around this server. This page map
 | [honua-sdk-python](https://github.com/honua-io/honua-sdk-python) | Python SDK for the control plane and data APIs |
 | [honua-mobile](https://github.com/honua-io/honua-mobile) | **Experimental** reusable .NET MAUI SDK and map/control foundation for offline field workflows (Apache-2.0) |
 | [honua-collect](https://github.com/honua-io/honua-collect) | **Experimental** full end-user field-collection app built on `honua-mobile` (ELv2) |
+| [honua-studio](https://github.com/honua-io/honua-studio) | Browser Studio (preview): the `<honua-studio-app>` element and the agent-driven map, app, and dashboard composer - see [Honua Studio](../studio/README.md) |
 | [honua-helm](https://github.com/honua-io/honua-helm) | Helm chart for Kubernetes deployment |
-| honua-iac | Terraform modules, environments, and validation CI |
+| [honua-iac](https://github.com/honua-io/honua-iac) | Terraform modules, deployment presets, and operator contracts for AWS and Azure |
 | [geospatial-grpc](https://github.com/honua-io/geospatial-grpc) | Open gRPC protocol definitions (`geospatial.v1`) for feature services, spatial types, and forms — the canonical `.proto` source the server consumes |
 | [geospatial-mcp](https://github.com/honua-io/geospatial-mcp) | Open geospatial MCP standard for analyst, map, and app-builder agent workflows |
 
@@ -35,8 +36,8 @@ The JavaScript/TypeScript, Python, and .NET admin SDKs are generated from the sa
 - Match release channels: `stable` server with `stable` SDKs, `beta` with `beta`, `preview` with `preview`. Do not mix pre-release SDKs into a production server line.
 - For a runtime handshake, SDK clients use `GET /api/v1/admin/capabilities` rather than inferring features from version numbers — see the [admin API overview](../reference/admin-api/overview.md).
 
-Current SDK package lines are pre-release (alpha); pin exact versions and validate against your target server before broad rollout.
+The Python and JavaScript SDK lines are still 0.x; pin exact versions and validate against your target server before broad rollout.
 
 ## Deployment tooling
 
-[honua-helm](https://github.com/honua-io/honua-helm) and the Terraform modules (honua-iac) package the server for Kubernetes and for AWS/Azure infrastructure respectively. They are infrastructure surfaces around the same container image documented in [Architecture](architecture.md); start with the [deployment guides](../guides/deploy/docker-compose.md).
+[honua-helm](https://github.com/honua-io/honua-helm) and [honua-iac](https://github.com/honua-io/honua-iac) package the server for Kubernetes and for AWS/Azure infrastructure respectively. They are infrastructure surfaces around the same container image documented in [Architecture](architecture.md); start with the [deployment guides](../guides/deploy/docker-compose.md).

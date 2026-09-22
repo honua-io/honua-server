@@ -23,6 +23,8 @@ using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
+using Honua.Sdk.Abstractions.Features;
+using Honua.Sdk.GeoServices.FeatureServer.Models;
 
 namespace Honua.Core.Features.Migration.Services;
 
@@ -79,13 +81,14 @@ internal sealed partial class ArcGisRestClient
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
         Log.DiscoveringService(_logger, normalizedUrl);
 
-        var serviceResponse = await GetJsonAsync(
+        var serviceResponse = await ExecuteSourceRequestAsync(
+            normalizedUrl,
             $"{normalizedUrl}?f=json",
-            ArcGisJsonContext.Default.ArcGisServiceResponse,
-            maxRetries,
             timeoutSeconds,
+            maxRetries,
             credentials,
-            cancellationToken);
+            static (client, serviceId, ct) => client.GetServiceInfoAsync(serviceId, ct),
+            cancellationToken).ConfigureAwait(false);
 
         var layers = new List<GeoservicesLayerInfo>();
 
@@ -120,12 +123,12 @@ internal sealed partial class ArcGisRestClient
         {
             ServiceUrl = normalizedUrl,
             ServiceName = serviceResponse.ServiceDescription ?? ExtractServiceName(normalizedUrl),
-            Description = serviceResponse.Description,
-            SpatialReferenceWkid = serviceResponse.SpatialReference?.Wkid,
-            MaxRecordCount = serviceResponse.MaxRecordCount,
+            Description = GetAdditionalString(serviceResponse.AdditionalProperties, "description"),
+            SpatialReferenceWkid = AdvertisedOrNull(serviceResponse.SpatialReference?.Wkid),
+            MaxRecordCount = AdvertisedOrNull(serviceResponse.MaxRecordCount),
             Capabilities = ParseCapabilities(serviceResponse.Capabilities),
             Layers = layers.ToArray(),
-            Version = FormatVersion(serviceResponse.CurrentVersion),
+            Version = FormatVersion(GetAdditionalElement(serviceResponse.AdditionalProperties, "currentVersion")),
             SupportedQueryFormats = ParseQueryFormats(serviceResponse.SupportedQueryFormats)
         };
     }
@@ -144,6 +147,9 @@ internal sealed partial class ArcGisRestClient
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
         var layerUrl = $"{normalizedUrl}/{layerId}?f=json";
 
+        // Layer metadata stays on the in-repo reader until honua-sdk-dotnet#381 ships: the published
+        // FeatureServerField.Nullable collapses an omitted "nullable" to false, and this import
+        // (and the publish/reconciliation path behind it) treats an omitted flag as nullable.
         var layerResponse = await GetJsonAsync(
             layerUrl,
             ArcGisJsonContext.Default.ArcGisLayerResponse,
@@ -156,15 +162,15 @@ internal sealed partial class ArcGisRestClient
         int? featureCount = null;
         try
         {
-            var countUrl = $"{normalizedUrl}/{layerId}/query?where=1=1&returnCountOnly=true&f=json";
-            var countResponse = await GetJsonAsync(
-                countUrl,
-                ArcGisJsonContext.Default.ArcGisCountResponse,
-                maxRetries,
+            var count = await QueryFeatureCountAsync(
+                normalizedUrl,
+                layerId,
+                whereClause: null,
                 timeoutSeconds,
-                credentials,
-                cancellationToken);
-            featureCount = countResponse.Count;
+                maxRetries,
+                cancellationToken,
+                credentials).ConfigureAwait(false);
+            featureCount = checked((int)count);
         }
         // Best-effort enrichment only: a failed count query still surfaces the rest of the
         // layer metadata. Cancellation must propagate rather than be swallowed as a
@@ -230,16 +236,17 @@ internal sealed partial class ArcGisRestClient
         GeoservicesCredentialDescriptor? credentials = null)
     {
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
-        var url = $"{normalizedUrl}/{layerId}/query?f=json&where={Uri.EscapeDataString(whereClause ?? "1=1")}&returnIdsOnly=true";
-        var response = await GetJsonAsync(
-            url,
-            ArcGisJsonContext.Default.ArcGisObjectIdsResponse,
-            maxRetries,
+        var query = new FeatureServerQueryParams { Where = whereClause ?? "1=1" };
+        var objectIds = await ExecuteSourceRequestAsync(
+            normalizedUrl,
+            $"{normalizedUrl}/{layerId}/query",
             timeoutSeconds,
+            maxRetries,
             credentials,
-            cancellationToken);
+            (client, serviceId, ct) => client.QueryIdsAsync(serviceId, layerId, query, ct),
+            cancellationToken).ConfigureAwait(false);
 
-        return response.ObjectIds ?? [];
+        return [.. objectIds];
     }
 
     /// <summary>
@@ -257,17 +264,19 @@ internal sealed partial class ArcGisRestClient
         GeoservicesCredentialDescriptor? credentials = null)
     {
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
-        var where = string.IsNullOrWhiteSpace(whereClause) ? "1=1" : Uri.EscapeDataString(whereClause);
-        var url = $"{normalizedUrl}/{layerId}/query?where={where}&returnCountOnly=true&f=json";
-        var response = await GetJsonAsync(
-            url,
-            ArcGisJsonContext.Default.ArcGisCountResponse,
-            maxRetries,
-            timeoutSeconds,
-            credentials,
-            cancellationToken);
+        var query = new FeatureServerQueryParams
+        {
+            Where = string.IsNullOrWhiteSpace(whereClause) ? "1=1" : whereClause
+        };
 
-        return response.Count;
+        return await ExecuteSourceRequestAsync(
+            normalizedUrl,
+            $"{normalizedUrl}/{layerId}/query",
+            timeoutSeconds,
+            maxRetries,
+            credentials,
+            (client, serviceId, ct) => client.QueryCountAsync(serviceId, layerId, query, ct),
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -298,18 +307,36 @@ internal sealed partial class ArcGisRestClient
         }
 
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
-        var objectIdCsv = string.Join(
-            ",",
-            objectIds.Select(id => id.ToString(System.Globalization.CultureInfo.InvariantCulture)));
-        var queryUrl = $"{normalizedUrl}/{layerId}/queryAttachments?objectIds={Uri.EscapeDataString(objectIdCsv)}&returnUrl=false&f=json";
-
-        return await GetJsonAsync(
-            queryUrl,
-            ArcGisJsonContext.Default.ArcGisAttachmentQueryResponse,
-            maxRetries,
+        var objectIdList = objectIds as IReadOnlyList<long> ?? [.. objectIds];
+        var response = await ExecuteSourceRequestAsync(
+            normalizedUrl,
+            $"{normalizedUrl}/{layerId}/queryAttachments",
             timeoutSeconds,
+            maxRetries,
             credentials,
-            cancellationToken);
+            (client, serviceId, ct) => client.QueryAttachmentsAsync(serviceId, layerId, objectIdList, ct),
+            cancellationToken).ConfigureAwait(false);
+
+        return new ArcGisAttachmentQueryResponse
+        {
+            AttachmentGroups = response.AttachmentGroups
+                .Select(static group => new ArcGisAttachmentGroup
+                {
+                    ParentObjectId = group.ParentObjectId,
+                    ParentGlobalId = group.ParentGlobalId,
+                    AttachmentInfos = group.AttachmentInfos
+                        .Select(static info => new ArcGisAttachmentInfo
+                        {
+                            Id = info.Id ?? 0,
+                            Name = info.Name,
+                            ContentType = info.ContentType,
+                            Size = info.Size ?? 0,
+                            Keywords = info.Keywords
+                        })
+                        .ToArray()
+                })
+                .ToArray()
+        };
     }
 
     /// <summary>
@@ -327,39 +354,39 @@ internal sealed partial class ArcGisRestClient
         GeoservicesCredentialDescriptor? credentials = null)
     {
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
-        var url = $"{normalizedUrl}/{layerId}/{featureObjectId}/attachments/{attachmentId}";
+        var request = new FeatureAttachmentDownloadRequest
+        {
+            Source = new FeatureSource { LayerId = layerId },
+            ObjectId = featureObjectId,
+            AttachmentId = attachmentId
+        };
 
-        await EnsureSafeOutboundUriAsync(url, cancellationToken).ConfigureAwait(false);
-
-        var options = BuildHttpOptions(maxRetries);
-        var policy = CreateHttpPolicy(options, maxRetries, cancellationToken);
-        var response = await policy.ExecuteAsync(
-            async ct =>
-            {
-                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                timeoutCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
-                using var request = CreateGetRequest(url, credentials);
-                return await _httpClient.SendAsync(
-                    request,
-                    HttpCompletionOption.ResponseHeadersRead,
-                    timeoutCts.Token).ConfigureAwait(false);
-            },
-            cancellationToken).ConfigureAwait(false);
-
+        // The attachment stream outlives this call, so the per-call source client is handed to the
+        // download wrapper instead of being disposed here.
+        var sourceHttpClient = CreateSourceHttpClient(credentials);
         try
         {
-            ThrowIfAuthenticationFailure(response, url, credentials);
-            response.EnsureSuccessStatusCode();
+            var content = await ExecuteSourceRequestAsync(
+                sourceHttpClient,
+                normalizedUrl,
+                $"{normalizedUrl}/{layerId}/{featureObjectId}/attachments/{attachmentId}",
+                timeoutSeconds,
+                maxRetries,
+                credentials,
+                (client, serviceId, ct) => client.DownloadAttachmentAsync(
+                    request with { Source = request.Source with { ServiceId = serviceId } },
+                    ct),
+                cancellationToken).ConfigureAwait(false);
 
-            var contentType = response.Content.Headers.ContentType?.MediaType
-                ?? "application/octet-stream";
-            var contentLength = response.Content.Headers.ContentLength;
-            var content = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-            return new ArcGisAttachmentDownload(content, contentType, contentLength, response);
+            return new ArcGisAttachmentDownload(
+                content.Content,
+                content.Info.ContentType ?? "application/octet-stream",
+                content.Info.Size,
+                sourceHttpClient);
         }
         catch
         {
-            response.Dispose();
+            sourceHttpClient.Dispose();
             throw;
         }
     }
@@ -382,70 +409,52 @@ internal sealed partial class ArcGisRestClient
         IReadOnlyCollection<long>? objectIds = null)
     {
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
-        var queryUrl = BuildQueryUrl(normalizedUrl, layerId, offset, batchSize, whereClause, outFields, outSrid, objectIds);
+
+        // An empty objectIds window selects nothing. Sending it would drop the objectIds filter and
+        // page the whole layer instead.
+        if (objectIds is { Count: 0 })
+        {
+            return new ArcGisQueryResult { Features = [] };
+        }
+
+        var query = new FeatureServerQueryParams
+        {
+            Where = whereClause ?? "1=1",
+            OutFields = outFields != null ? string.Join(",", outFields) : "*",
+            ReturnGeometry = true,
+            // Esri omits elevation and measures unless explicitly requested,
+            // even when the layer advertises them. Preserve both on every page.
+            ReturnZ = true,
+            ReturnM = true,
+            ObjectIds = objectIds is null ? null : objectIds as IReadOnlyList<long> ?? [.. objectIds],
+            ResultOffset = objectIds is null ? offset : null,
+            ResultRecordCount = objectIds is null ? batchSize : null,
+            OutSR = outSrid
+        };
 
         Log.QueryingFeatures(_logger, layerId, offset, batchSize);
 
-        var response = await GetJsonAsync(
-            queryUrl,
-            ArcGisJsonContext.Default.ArcGisFeatureResponse,
-            maxRetries,
+        var response = await ExecuteSourceRequestAsync(
+            normalizedUrl,
+            $"{normalizedUrl}/{layerId}/query",
             timeoutSeconds,
+            maxRetries,
             credentials,
-            cancellationToken);
-
-        if (response.Error != null)
-        {
-            throw CreateArcGisResponseException(response.Error, queryUrl, credentials);
-        }
+            (client, serviceId, ct) => client.QueryAsync(serviceId, layerId, query, ct),
+            cancellationToken).ConfigureAwait(false);
 
         return new ArcGisQueryResult
         {
-            Features = response.Features ?? [],
+            Features = response.Features is { Count: > 0 } features
+                ? features.Select(static feature => new ArcGisFeature
+                {
+                    Attributes = feature.Attributes,
+                    Geometry = feature.Geometry
+                }).ToArray()
+                : [],
             ExceededTransferLimit = response.ExceededTransferLimit,
-            SpatialReferenceWkid = response.SpatialReference?.Wkid
+            SpatialReferenceWkid = AdvertisedOrNull(response.SpatialReference?.Wkid)
         };
-    }
-
-    private static string BuildQueryUrl(
-        string serviceUrl,
-        int layerId,
-        int offset,
-        int batchSize,
-        string? whereClause,
-        string[]? outFields,
-        int? outSrid,
-        IReadOnlyCollection<long>? objectIds)
-    {
-        var query = new List<string>
-        {
-            "f=json",
-            $"where={Uri.EscapeDataString(whereClause ?? "1=1")}",
-            $"outFields={Uri.EscapeDataString(outFields != null ? string.Join(",", outFields) : "*")}",
-            "returnGeometry=true",
-            // Esri omits elevation and measures unless explicitly requested,
-            // even when the layer advertises them. Preserve both on every page.
-            "returnZ=true",
-            "returnM=true"
-        };
-
-        if (objectIds is null)
-        {
-            query.Add($"resultOffset={offset}");
-            query.Add($"resultRecordCount={batchSize}");
-        }
-
-        if (objectIds is not null)
-        {
-            query.Add($"objectIds={Uri.EscapeDataString(string.Join(',', objectIds))}");
-        }
-
-        if (outSrid.HasValue)
-        {
-            query.Add($"outSR={outSrid.Value}");
-        }
-
-        return $"{serviceUrl}/{layerId}/query?{string.Join("&", query)}";
     }
 
     private async Task<T> GetJsonAsync<T>(
@@ -1009,48 +1018,6 @@ internal interface IArcGisErrorResponse
     ArcGisError? Error { get; }
 }
 
-internal sealed record ArcGisServiceResponse : IArcGisErrorResponse
-{
-    [JsonPropertyName("serviceDescription")]
-    public string? ServiceDescription { get; init; }
-
-    [JsonPropertyName("description")]
-    public string? Description { get; init; }
-
-    [JsonPropertyName("currentVersion")]
-    public JsonElement? CurrentVersion { get; init; }
-
-    [JsonPropertyName("maxRecordCount")]
-    public int? MaxRecordCount { get; init; }
-
-    [JsonPropertyName("capabilities")]
-    public string? Capabilities { get; init; }
-
-    [JsonPropertyName("supportedQueryFormats")]
-    public string? SupportedQueryFormats { get; init; }
-
-    [JsonPropertyName("spatialReference")]
-    public ArcGisSpatialReference? SpatialReference { get; init; }
-
-    [JsonPropertyName("layers")]
-    public ArcGisLayerRef[]? Layers { get; init; }
-
-    [JsonPropertyName("tables")]
-    public ArcGisLayerRef[]? Tables { get; init; }
-
-    [JsonPropertyName("error")]
-    public ArcGisError? Error { get; init; }
-}
-
-internal sealed record ArcGisLayerRef
-{
-    [JsonPropertyName("id")]
-    public int Id { get; init; }
-
-    [JsonPropertyName("name")]
-    public string? Name { get; init; }
-}
-
 internal sealed record ArcGisLayerResponse : IArcGisErrorResponse
 {
     [JsonPropertyName("id")]
@@ -1177,39 +1144,6 @@ internal sealed record ArcGisField
     public JsonElement? Domain { get; init; }
 }
 
-internal sealed record ArcGisCountResponse : IArcGisErrorResponse
-{
-    [JsonPropertyName("count")]
-    public int Count { get; init; }
-
-    [JsonPropertyName("error")]
-    public ArcGisError? Error { get; init; }
-}
-
-internal sealed record ArcGisObjectIdsResponse : IArcGisErrorResponse
-{
-    [JsonPropertyName("objectIds")]
-    public long[]? ObjectIds { get; init; }
-
-    [JsonPropertyName("error")]
-    public ArcGisError? Error { get; init; }
-}
-
-internal sealed record ArcGisFeatureResponse : IArcGisErrorResponse
-{
-    [JsonPropertyName("features")]
-    public ArcGisFeature[]? Features { get; init; }
-
-    [JsonPropertyName("exceededTransferLimit")]
-    public bool ExceededTransferLimit { get; init; }
-
-    [JsonPropertyName("spatialReference")]
-    public ArcGisSpatialReference? SpatialReference { get; init; }
-
-    [JsonPropertyName("error")]
-    public ArcGisError? Error { get; init; }
-}
-
 internal sealed record ArcGisFeature
 {
     [JsonPropertyName("attributes")]
@@ -1271,23 +1205,23 @@ internal sealed record ArcGisAttachmentInfo
 
 /// <summary>
 /// Wraps a single ArcGIS attachment download: the binary content stream plus the
-/// underlying <see cref="HttpResponseMessage"/> whose lifetime the caller controls.
+/// per-download source client whose lifetime the caller controls.
 /// </summary>
 internal sealed class ArcGisAttachmentDownload : IAsyncDisposable, IDisposable
 {
-    private readonly HttpResponseMessage _response;
+    private readonly IDisposable _owner;
     private bool _disposed;
 
     public ArcGisAttachmentDownload(
         Stream content,
         string contentType,
         long? contentLength,
-        HttpResponseMessage response)
+        IDisposable owner)
     {
         Content = content ?? throw new ArgumentNullException(nameof(content));
         ContentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType;
         ContentLength = contentLength;
-        _response = response ?? throw new ArgumentNullException(nameof(response));
+        _owner = owner ?? throw new ArgumentNullException(nameof(owner));
     }
 
     public Stream Content { get; }
@@ -1303,7 +1237,7 @@ internal sealed class ArcGisAttachmentDownload : IAsyncDisposable, IDisposable
 
         _disposed = true;
         Content.Dispose();
-        _response.Dispose();
+        _owner.Dispose();
     }
 
     public async ValueTask DisposeAsync()
@@ -1315,19 +1249,14 @@ internal sealed class ArcGisAttachmentDownload : IAsyncDisposable, IDisposable
 
         _disposed = true;
         await Content.DisposeAsync().ConfigureAwait(false);
-        _response.Dispose();
+        _owner.Dispose();
     }
 }
 
 /// <summary>
 /// JSON serialization context for ArcGIS REST API responses.
 /// </summary>
-[JsonSerializable(typeof(ArcGisServiceResponse))]
 [JsonSerializable(typeof(ArcGisLayerResponse))]
-[JsonSerializable(typeof(ArcGisCountResponse))]
-[JsonSerializable(typeof(ArcGisObjectIdsResponse))]
-[JsonSerializable(typeof(ArcGisFeatureResponse))]
-[JsonSerializable(typeof(ArcGisAttachmentQueryResponse))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 internal sealed partial class ArcGisJsonContext : JsonSerializerContext
 {

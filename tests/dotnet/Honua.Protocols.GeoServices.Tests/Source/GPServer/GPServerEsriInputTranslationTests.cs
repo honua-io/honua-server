@@ -151,6 +151,27 @@ public sealed class GPServerEsriInputTranslationTests
         result.CapabilityMessage.Should().Contain("geometry");
     }
 
+    [UnitTest]
+    public void Translate_EsriWebMercatorAlias_EmbedsTheNormalizedSridInTheEwkb()
+    {
+        // #4033: the executors read the SRID embedded in the EWKB, so Esri's 102100 alias must be
+        // normalized there too, not only on the reported InputSpatialReference.
+        var inputs = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["wkb"] = """{"x":-13152560.0,"y":4002406.0,"spatialReference":{"wkid":102100,"latestWkid":3857}}"""
+        };
+
+        var result = GPServerEsriInputTranslation.Translate(inputs, featureCollectionParameters: null, includeDerivedSrid: false);
+
+        result.CapabilityMessage.Should().BeNull();
+        result.InputSpatialReference.Should().Be(3857);
+        result.Inputs.Should().NotContainKey("srid", "the caller's process declares no srid parameter");
+        var point = (Point)DecodeWkb(result.Inputs["wkb"]);
+        point.SRID.Should().Be(3857);
+        point.X.Should().Be(-13152560.0);
+        point.Y.Should().Be(4002406.0);
+    }
+
     private static Geometry DecodeWkb(string base64)
     {
         var reader = new WKBReader { HandleSRID = true };

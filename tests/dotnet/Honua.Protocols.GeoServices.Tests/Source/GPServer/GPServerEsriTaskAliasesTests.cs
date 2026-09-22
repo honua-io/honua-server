@@ -105,48 +105,68 @@ public sealed class GPServerEsriTaskAliasesTests
         aliases.Should().OnlyHaveUniqueItems("two internal processes must never publish the same Esri alias");
     }
 
-    // Process IDs known (as of this test's authoring) to carry an Esri alias, kept in
-    // sync manually with GPServerEsriTaskAliases. Used to assert catalog membership and
-    // alias uniqueness without hard-coding the alias dictionary's private contents.
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer")]
+    public void EveryAliasedProcess_IsPublishedOnTheTaskListExactlyOnce()
+    {
+        // #4781: the alias contract, the parity alias claim that counts it, and the
+        // published task list must agree. GPServer publishes only job-callable processes
+        // (#4409), so an alias mapped onto a protocol-only or workflow-only process — as
+        // DeleteFeatures/CalculateField once were — promises a task that is never
+        // discoverable, describable or submittable. Iterate the REAL contract rather than
+        // a hand-maintained copy so a future alias for an unpublished process fails here.
+        var catalog = new BuiltInProcessCatalog();
+        var published = GPServerEndpoints.BuildPublishedTaskNames(catalog).ToArray();
+
+        foreach (var (processId, alias) in GPServerEsriTaskAliases.Contract)
+        {
+            var definition = catalog.GetProcess(processId);
+            definition.Should().NotBeNull(
+                "GPServerEsriTaskAliases maps '{0}' but it is not in BuiltInProcessCatalog", processId);
+            GPServerExecutionPolicy.IsJobCallable(definition!).Should().BeTrue(
+                "alias '{0}' maps process '{1}', which GPServer only publishes when it declares the job entry point",
+                alias, processId);
+            published.Count(name => string.Equals(name, alias, StringComparison.OrdinalIgnoreCase))
+                .Should().Be(1, "alias '{0}' for process '{1}' must be published exactly once", alias, processId);
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer")]
+    public void ProtocolOnlyDataManagementProcesses_CarryNoAlias()
+    {
+        // Regression for #4781. Both processes mutate a caller-owned layer through the
+        // owning synchronous FeatureServer edit endpoint and register no job executor, so
+        // GPServer must neither publish them nor claim an alias for them.
+        var catalog = new BuiltInProcessCatalog();
+
+        foreach (var processId in new[] { "data-management.delete-features", "data-management.calculate-field" })
+        {
+            catalog.GetProcess(processId).Should().NotBeNull("the process stays in the canonical catalog");
+            GPServerExecutionPolicy.IsJobCallable(catalog.GetProcess(processId)!).Should().BeFalse();
+            GPServerEsriTaskAliases.GetAlias(processId).Should().BeNull();
+        }
+
+        GPServerEsriTaskAliases.TryResolveProcessId("DeleteFeatures", out _).Should().BeFalse();
+        GPServerEsriTaskAliases.TryResolveProcessId("CalculateField", out _).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer")]
+    public void AliasContract_MatchesThePublishedParityAliasClaim()
+    {
+        // The GeoServices parity claim (docs/gis/data/geoservices-parity-judgment.json:
+        // "37 unambiguous aliases ... are published alongside canonical process IDs")
+        // counts this contract. Changing one without the other is the drift #4781 filed:
+        // update the judgement source and rerun scripts/generate-geoservices-parity.sh.
+        GPServerEsriTaskAliases.Contract.Should().HaveCount(37);
+    }
+
+    // Process IDs that carry an Esri alias, read from the real contract so this file can
+    // never claim an alias set the adapter does not actually publish (#4781).
     private static readonly string[] KnownAliasedProcessIds =
-    [
-        "geometry.buffer",
-        "geometry.snap",
-        "overlay.clip",
-        "overlay.intersect",
-        "overlay.union",
-        "overlay.erase",
-        "overlay.merge",
-        "overlay.split",
-        "proximity.near",
-        "proximity.near-table",
-        "proximity.euclidean-distance",
-        "proximity.euclidean-allocation",
-        "statistics.summarize",
-        "statistics.frequency",
-        "surface.slope",
-        "surface.aspect",
-        "surface.hillshade",
-        "surface.contour",
-        "surface.viewshed",
-        "raster.reproject",
-        "raster.statistics",
-        "raster.zonal-statistics",
-        "raster.resample",
-        "raster.interpolate-idw",
-        "raster.interpolate-kriging",
-        "raster.mosaic",
-        "raster.reclassify",
-        "conversion.feature-project",
-        "conversion.polygonize",
-        "conversion.rasterize",
-        "data-management.copy-features",
-        "data-management.append",
-        "data-management.delete-features",
-        "data-management.calculate-field",
-        "generalization.dissolve",
-        "analytics.spatial-join-managed",
-        "analytics.hotspot-managed",
-        "enrichment.enrich",
-    ];
+        [.. GPServerEsriTaskAliases.Contract.Keys];
 }

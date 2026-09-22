@@ -85,6 +85,9 @@ internal static class WebAppFixturePostgresWiringMixin
             ["FileStorage:LocalStorage:BasePath"] = attachmentsPath,
             ["Security:ConnectionEncryption:MasterKey"] = TestEncryptionMasterKey,
             ["Security:ConnectionEncryption:Salt"] = TestEncryptionSalt,
+            // Request-supplied secret references are refused unless an operator permits them;
+            // integration tests name variables under this prefix.
+            ["Security:RequestSecretReferences:AllowedEnvironmentVariablePrefixes:0"] = "HONUA_TEST_",
             // The ops-health rollup sampler (#2553) is a hosted background service that would
             // otherwise boot in EVERY integration-test host and add constant background
             // Postgres sampling/flush/downsample/prune load across the whole parallel

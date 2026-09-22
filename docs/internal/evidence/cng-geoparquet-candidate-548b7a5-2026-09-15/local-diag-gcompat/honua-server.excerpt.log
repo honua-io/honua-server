@@ -1,0 +1,2 @@
+honua-server-1  |       Request starting "HTTP/1.1" "GET" "http"://"localhost:18767""""/rest/services/cng/FeatureServer/1000/query""[REDACTED]" - null null
+honua-server-1  |       Query "query_parquet" executed: "cng"/FeatureServer/1000 in 21.9868 ms

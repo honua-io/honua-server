@@ -71,34 +71,40 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
             }
         }
 
-        var candidates = new List<(string StyleId, MetadataV2Resource Resource, int StorageLayerId)>();
+        // Phase 1: a storage-bound collection projects to one OGC style. A feature collection
+        // always publishes one — its stored MapLibre style, or the layer default it renders with
+        // until the first PUT — because OGC API Features advertises rel=stylesheet for it;
+        // listing only stored styles left every advertised link on an unstyled collection 404
+        // (#4993). Other resource types (rasters, tables) have no meaningful vector default and
+        // project only when a MapLibre style is genuinely stored.
+        var storedOnlyCandidates = new List<(string StyleId, MetadataV2Resource Resource, int StorageLayerId)>();
         foreach (var resource in snapshot.Graph.Resources)
         {
             var styleId = resource.Metadata.Name;
-            if (string.IsNullOrWhiteSpace(styleId) || !seen.Add(styleId))
-            {
-                continue;
-            }
-
             var storageLayerId = snapshot.ResolveStorageLayerId(resource);
-            if (!storageLayerId.HasValue)
+            if (string.IsNullOrWhiteSpace(styleId) || !storageLayerId.HasValue || !seen.Add(styleId))
             {
                 continue;
             }
 
-            candidates.Add((styleId, resource, storageLayerId.Value));
+            if (PublishesLayerDefault(resource))
+            {
+                summaries.Add(new OgcStyleSummary(styleId, ResolveTitle(resource)));
+            }
+            else
+            {
+                storedOnlyCandidates.Add((styleId, resource, storageLayerId.Value));
+            }
         }
 
-        // Phase 1: a collection projects to an OGC style only when it has a
-        // genuinely stored MapLibre style. Read the canonical store directly so the
-        // in-memory default style synthesized for unstyled layers does not appear.
-        // Fetch with bounded fan-out rather than one store round trip per resource
-        // in sequence, so listing latency does not grow linearly with catalog size.
-        // (A batch lookup on ILayerStyleCatalog would collapse this to one query.)
+        // Read the canonical store directly so the in-memory default style synthesized for
+        // unstyled layers does not appear. Fetch with bounded fan-out rather than one store
+        // round trip per resource in sequence, so listing latency does not grow linearly with
+        // catalog size. (A batch lookup on ILayerStyleCatalog would collapse this to one query.)
         const int lookupFanOut = 16;
-        for (var offset = 0; offset < candidates.Count; offset += lookupFanOut)
+        for (var offset = 0; offset < storedOnlyCandidates.Count; offset += lookupFanOut)
         {
-            var batch = candidates.GetRange(offset, Math.Min(lookupFanOut, candidates.Count - offset));
+            var batch = storedOnlyCandidates.GetRange(offset, Math.Min(lookupFanOut, storedOnlyCandidates.Count - offset));
             var stored = await Task.WhenAll(
                 batch.Select(candidate => _styleCatalog.GetLayerStyleAsync(candidate.StorageLayerId, cancellationToken)))
                 .ConfigureAwait(false);
@@ -134,10 +140,24 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
     }
 
     /// <inheritdoc />
-    public async Task<OgcStylesheet?> GetStylesheetAsync(
+    public Task<OgcStylesheet?> GetStylesheetAsync(
         string styleId,
         OgcStyleEncoding encoding,
         CancellationToken cancellationToken = default)
+        => ResolveStylesheetAsync(styleId, encoding, includeLayerDefault: false, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<OgcStylesheet?> GetPublishedStylesheetAsync(
+        string styleId,
+        OgcStyleEncoding encoding,
+        CancellationToken cancellationToken = default)
+        => ResolveStylesheetAsync(styleId, encoding, includeLayerDefault: true, cancellationToken);
+
+    private async Task<OgcStylesheet?> ResolveStylesheetAsync(
+        string styleId,
+        OgcStyleEncoding encoding,
+        bool includeLayerDefault,
+        CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(styleId);
 
@@ -150,13 +170,16 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         }
 
         var stored = await _styleCatalog.GetLayerStyleAsync(storageLayerId.Value, cancellationToken).ConfigureAwait(false);
-        if (stored is null || string.IsNullOrWhiteSpace(stored.MapLibreStyleJson))
+        if (stored is not null && !string.IsNullOrWhiteSpace(stored.MapLibreStyleJson))
         {
-            return await GetCatalogStylesheetAsync(styleId, encoding, cancellationToken).ConfigureAwait(false);
+            return await ProjectLayerStylesheetAsync(resource, storageLayerId.Value, stored.MapLibreStyleJson, encoding, cancellationToken)
+                .ConfigureAwait(false);
         }
 
-        return await ProjectLayerStylesheetAsync(resource, storageLayerId.Value, stored, encoding, cancellationToken)
-            .ConfigureAwait(false);
+        var catalogStylesheet = await GetCatalogStylesheetAsync(styleId, encoding, cancellationToken).ConfigureAwait(false);
+        return catalogStylesheet is null && includeLayerDefault && PublishesLayerDefault(resource)
+            ? ProjectLayerDefaultStylesheet(resource, storageLayerId.Value, encoding)
+            : catalogStylesheet;
     }
 
     /// <inheritdoc />
@@ -191,7 +214,7 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
                 .ConfigureAwait(false);
             return stored is null || string.IsNullOrWhiteSpace(stored.MapLibreStyleJson)
                 ? null
-                : await ProjectLayerStylesheetAsync(resource, storageLayerId.Value, stored, encoding, cancellationToken)
+                : await ProjectLayerStylesheetAsync(resource, storageLayerId.Value, stored.MapLibreStyleJson, encoding, cancellationToken)
                     .ConfigureAwait(false);
         }
 
@@ -208,12 +231,10 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
     private async Task<OgcStylesheet?> ProjectLayerStylesheetAsync(
         MetadataV2Resource resource,
         int storageLayerId,
-        LayerStyleDefinition stored,
+        string mapLibreJson,
         OgcStyleEncoding encoding,
         CancellationToken cancellationToken)
     {
-
-        var mapLibreJson = stored.MapLibreStyleJson!;
         if (encoding == OgcStyleEncoding.MapboxStyle)
         {
             return new OgcStylesheet(mapLibreJson, OgcStyleMediaTypes.MapboxStyle, OgcStyleEncoding.MapboxStyle);
@@ -239,6 +260,39 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
 
         var sld = DeriveSld(mapLibreJson, resource, storageLayerId, encoding);
         return sld;
+    }
+
+    /// <summary>
+    /// Whether a storage-bound resource publishes its layer default as an OGC style when no
+    /// MapLibre style is stored. Only feature collections do: they are what OGC API Features
+    /// advertises <c>rel=stylesheet</c> for, and the vector default is meaningless for rasters
+    /// and tables.
+    /// </summary>
+    internal static bool PublishesLayerDefault(MetadataV2Resource resource)
+        => resource.Type == MetadataV2ResourceType.FeatureDataset;
+
+    // The default a feature collection renders with before its first PUT, built exactly
+    // as LayerStyleService builds it for the per-layer style routes. Computed in memory only:
+    // persisting it would stamp a style revision on a read path.
+    private static OgcStylesheet ProjectLayerDefaultStylesheet(
+        MetadataV2Resource resource,
+        int storageLayerId,
+        OgcStyleEncoding encoding)
+    {
+        var layer = StyleLayerDescriptor.FromResource(resource, storageLayerId);
+        var mapLibreJson = StyleJsonUtilities.Serialize(StyleDefaults.BuildDefaultMapLibreStyle(layer));
+        return encoding switch
+        {
+            OgcStyleEncoding.MapboxStyle => new OgcStylesheet(
+                mapLibreJson,
+                OgcStyleMediaTypes.MapboxStyle,
+                OgcStyleEncoding.MapboxStyle),
+            OgcStyleEncoding.EsriDrawingInfo => new OgcStylesheet(
+                MapLibreToGeoServicesConverter.Convert(mapLibreJson, layer),
+                OgcStyleMediaTypes.EsriDrawingInfo,
+                OgcStyleEncoding.EsriDrawingInfo),
+            _ => DeriveSld(mapLibreJson, resource, storageLayerId, encoding),
+        };
     }
 
     private async Task<OgcStylesheet?> GetCatalogStylesheetAsync(
@@ -295,7 +349,18 @@ internal sealed class OgcStyleProjection : IOgcStyleProjection
         var stored = await _styleCatalog.GetLayerStyleAsync(storageLayerId.Value, cancellationToken).ConfigureAwait(false);
         if (stored is null || string.IsNullOrWhiteSpace(stored.MapLibreStyleJson))
         {
-            return await GetCatalogStyleMetadataAsync(styleId, cancellationToken).ConfigureAwait(false);
+            // An unstyled feature collection still publishes its layer default (see
+            // ListStylesAsync); it has no revision until the first PUT.
+            var catalogMetadata = await GetCatalogStyleMetadataAsync(styleId, cancellationToken).ConfigureAwait(false);
+            return catalogMetadata is not null || !PublishesLayerDefault(resource)
+                ? catalogMetadata
+                : new OgcStyleMetadata(
+                    styleId,
+                    ResolveTitle(resource),
+                    resource.Metadata.Description,
+                    resource.Metadata.Keywords,
+                    resource.Metadata.License,
+                    Version: null);
         }
 
         var version = stored.StyleVersion > 0

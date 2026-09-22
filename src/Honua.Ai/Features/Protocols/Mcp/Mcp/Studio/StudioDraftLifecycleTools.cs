@@ -113,6 +113,7 @@ internal sealed class CreateStudioDraftTool : StudioDraftToolBase, IMcpTool
             principal,
             StudioAuthorizationOperation.CreateDraft,
             existingPointers is null ? actorId : existingPointers.OwnerId,
+            existingPointers is null ? RequestTenantId(httpContext) : existingPointers.TenantId,
             existingPointers is null ? null : argument.ItemId?.ToString("D"),
             existingPointers is null ? "studio-package-draft" : "studio-content-item",
             OperatorOperation.Create,

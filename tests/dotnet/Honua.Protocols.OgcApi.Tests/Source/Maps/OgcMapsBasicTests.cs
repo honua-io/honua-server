@@ -2,12 +2,19 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Helpers;
+using Microsoft.AspNetCore.Hosting;
 using Npgsql;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps;
@@ -201,6 +208,122 @@ public class OgcMapsBasicTests : IAsyncLifetime
             .ToArray();
 
         conformanceClasses.Should().Contain(c => c != null && c.Contains("ogcapi-maps"));
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}")]
+    [Operation(Operations.Metadata)]
+    public async Task GetCollection_MapServingCollection_ReturnsDescriptionWhoseMapLinksRender()
+    {
+        // #4991: GDAL's OGCAPI driver (QGIS's OGC API - Maps provider) reads the collection
+        // resource before it requests /map, so a collection that renders must also describe
+        // itself. GDAL takes the map URL only from the http:// relation with a media type; for any
+        // other link it keeps whichever comes last, so without it QGIS requested the
+        // rel=alternate HTML link as the map.
+        var response = await _fixture.Client.GetAsync($"/ogc/maps/collections/{TestLayerId}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var root = json.RootElement;
+        root.GetProperty("id").GetString().Should().NotBeNullOrWhiteSpace();
+
+        var links = root.GetProperty("links").EnumerateArray().ToArray();
+        var mapLinks = links
+            .Where(link => link.GetProperty("rel").GetString() is "https://www.opengis.net/def/rel/ogc/1.0/map" or "[ogc-rel:map]" or "http://www.opengis.net/def/rel/ogc/1.0/map")
+            .ToArray();
+        mapLinks.Select(link => link.GetProperty("rel").GetString()).Should().BeEquivalentTo(
+            ["https://www.opengis.net/def/rel/ogc/1.0/map", "[ogc-rel:map]", "http://www.opengis.net/def/rel/ogc/1.0/map"]);
+        links.Should().Contain(link =>
+            link.GetProperty("rel").GetString() == "self"
+            && link.GetProperty("href").GetString()!.EndsWith($"/ogc/maps/collections/{root.GetProperty("id").GetString()}", StringComparison.Ordinal));
+
+        foreach (var mapLink in mapLinks)
+        {
+            mapLink.GetProperty("type").GetString().Should().Be("image/png");
+            var mapPath = new Uri(mapLink.GetProperty("href").GetString()!).AbsolutePath;
+            mapPath.Should().EndWith("/map");
+
+            // The advertised link must resolve: follow it the way GDAL does, with a bbox window.
+            var map = await _fixture.Client.GetAsync($"{mapPath}?bbox=-180,-90,180,90&width=64&height=64");
+            map.StatusCode.Should().Be(HttpStatusCode.OK, $"the advertised map link {mapPath} must render");
+            map.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        }
+
+        // GDAL georeferences the map from extent.spatial.bbox; it must be the resource extent.
+        var resource = _fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[TestLayerId];
+        var bbox = resource.ReadBbox();
+        if (bbox is null)
+        {
+            root.TryGetProperty("extent", out _).Should().BeFalse("a resource without an extent advertises none");
+        }
+        else
+        {
+            var advertised = root.GetProperty("extent").GetProperty("spatial").GetProperty("bbox")[0]
+                .EnumerateArray().Select(value => value.GetDouble()).ToArray();
+            advertised.Should().HaveCount(4);
+            advertised[0].Should().BeLessThanOrEqualTo(advertised[2]);
+            advertised[1].Should().BeLessThanOrEqualTo(advertised[3]);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}")]
+    [Operation(Operations.Metadata)]
+    public async Task GetCollection_NonExistentCollection_ReturnsNotFound()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/maps/collections/99999");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps/collections/{collectionId}")]
+    [Operation(Operations.Metadata)]
+    public async Task GetCollection_ProtectedCollection_RefusesAnonymousWith401AndAdmitsEntitledCaller()
+    {
+        // #4991: a protected collection answers anonymous callers with 401, on the collection
+        // resource and on its map, instead of the 404 that told clients it did not exist.
+        const string entitledRole = "maps-reader";
+        const string referer = "https://ogcapi-maps-collection-proof.example/";
+        await using var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>
+        {
+            // Displace the development-authentication bypass, which makes every caller an admin.
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        });
+        await fixture.InitializeAsync();
+        fixture.UpdateV2ResourceMetadata(
+            TestLayerId,
+            accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = [entitledRole] });
+
+        var token = (await fixture.GetService<IPortalTokenIssuer>().IssueAsync(
+            new PortalTokenIssueRequest(
+                "maps-analyst",
+                "maps-analyst",
+                TenantId: null,
+                Roles: [entitledRole],
+                PortalTokenClientType.Referer,
+                referer,
+                DateTimeOffset.UtcNow.AddMinutes(30)),
+            CancellationToken.None)).Token;
+
+        var collectionPath = $"/ogc/maps/collections/{TestLayerId}";
+        var mapPath = $"{collectionPath}/map?bbox=-180,-90,180,90&width=64&height=64";
+        foreach (var path in new[] { collectionPath, mapPath })
+        {
+            using var anonymousClient = fixture.CreateClient();
+            using var anonymous = await anonymousClient.GetAsync(path);
+            anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized, $"anonymous {path}");
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, path);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            request.Headers.Referrer = new Uri(referer);
+            using var entitledClient = fixture.CreateClient();
+            using var entitled = await entitledClient.SendAsync(request);
+            entitled.StatusCode.Should().Be(HttpStatusCode.OK, $"entitled {path}: {await entitled.Content.ReadAsStringAsync()}");
+        }
     }
 
     [IntegrationTest]

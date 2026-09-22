@@ -219,7 +219,10 @@ docker exec -i "$POSTGRES_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d honu
 echo -e "${GREEN}WCS CITE database seeded${NC}"
 
 echo -e "${YELLOW}Starting Honua Server and CITE TeamEngine...${NC}"
-$COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d honua-server cite-engine
+if ! $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" up -d honua-server cite-engine; then
+    $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" logs honua-server postgres >&2 || true
+    exit 1
+fi
 
 if ! wait_for_service_health honua-server "$HONUA_HEALTHCHECK_TIMEOUT" "Honua Server"; then
     $COMPOSE_CMD -f "$CITE_COMPOSE_FILE" logs honua-server || true
