@@ -268,6 +268,50 @@ internal sealed partial class LicenseCapacityMeter : BackgroundService, ILicense
         // listening. RegisterInstanceAsync already falls back to local metering on Redis
         // failures (see UpsertHeartbeatAsync); a genuine capacity-band refusal is surfaced
         // here instead of aborting host startup.
+        var initialRegistrationCompleted = false;
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            try
+            {
+                if (!initialRegistrationCompleted)
+                {
+                    await RegisterSelfAsync(stoppingToken).ConfigureAwait(false);
+                    initialRegistrationCompleted = true;
+                }
+                else
+                {
+                    await RefreshSelfAsync(stoppingToken).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            // Intentional catch-all (honua-server#4815): this loop is a background heartbeat, and
+            // BackgroundServiceExceptionBehavior.StopHost turns any exception escaping ExecuteAsync
+            // into a stop of the whole serving process. A heartbeat that fails for a reason the
+            // Redis boundaries did not anticipate degrades to a metering gap (enforcement is
+            // suspended, exactly as for a Redis outage) and is retried on the next interval.
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                MarkMeteringGap(ex);
+                LicenseCapacityMeterLog.HeartbeatCycleFailed(_logger, ex.GetType().Name);
+            }
+
+            try
+            {
+                var delay = NormalizePositive(_options.Value.HeartbeatInterval, TimeSpan.FromSeconds(15));
+                await Task.Delay(delay, stoppingToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+        }
+    }
+
+    private async Task RegisterSelfAsync(CancellationToken stoppingToken)
+    {
         var registration = await RegisterInstanceAsync(BuildLocalRequest(isRefresh: false), stoppingToken)
             .ConfigureAwait(false);
         if (!registration.IsAccepted)
@@ -280,21 +324,18 @@ internal sealed partial class LicenseCapacityMeter : BackgroundService, ILicense
         }
 
         await RecordSampleAsync(registration.State, stoppingToken).ConfigureAwait(false);
+    }
 
-        while (!stoppingToken.IsCancellationRequested)
+    private async Task RefreshSelfAsync(CancellationToken stoppingToken)
+    {
+        var refresh = await RegisterInstanceAsync(BuildLocalRequest(isRefresh: true), stoppingToken)
+            .ConfigureAwait(false);
+        if (!refresh.IsAccepted)
         {
-            var delay = NormalizePositive(_options.Value.HeartbeatInterval, TimeSpan.FromSeconds(15));
-            await Task.Delay(delay, stoppingToken).ConfigureAwait(false);
-
-            var refresh = await RegisterInstanceAsync(BuildLocalRequest(isRefresh: true), stoppingToken)
-                .ConfigureAwait(false);
-            if (!refresh.IsAccepted)
-            {
-                LicenseCapacityMeterLog.RefreshRefused(_logger, refresh.Reason);
-            }
-
-            await RecordSampleAsync(refresh.State, stoppingToken).ConfigureAwait(false);
+            LicenseCapacityMeterLog.RefreshRefused(_logger, refresh.Reason);
         }
+
+        await RecordSampleAsync(refresh.State, stoppingToken).ConfigureAwait(false);
     }
 
     private async Task<bool> UpsertHeartbeatAsync(
@@ -957,8 +998,18 @@ internal sealed partial class LicenseCapacityMeter : BackgroundService, ILicense
     private static TimeSpan NormalizePositive(TimeSpan value, TimeSpan fallback)
         => value > TimeSpan.Zero ? value : fallback;
 
+    /// <summary>
+    /// Classifies a failure raised inside one of this meter's Redis boundaries as a coordinated-meter
+    /// outage. Besides the StackExchange.Redis exception family, a connection torn down under a pending
+    /// command (for example during a timeout window) surfaces from the client's socket pipe as
+    /// <see cref="InvalidOperationException"/> ("Reading is not allowed after reader was completed"),
+    /// <see cref="ObjectDisposedException"/> or <see cref="IOException"/> (honua-server#4815). The guarded
+    /// blocks contain only Redis I/O and non-throwing payload parsing, so these can only come from the
+    /// connection and must fail open to local metering like any other Redis error.
+    /// </summary>
     private static bool IsRedisException(Exception ex)
-        => ex is RedisException or RedisConnectionException or RedisTimeoutException or RedisServerException;
+        => ex is RedisException or RedisConnectionException or RedisTimeoutException or RedisServerException
+            or InvalidOperationException or ObjectDisposedException or IOException;
 
     private void MarkMeteringGap(Exception exception)
     {
