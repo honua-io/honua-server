@@ -852,8 +852,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
         OpsFindingsStoreCollection workflowCollection,
         CancellationToken cancellationToken)
     {
-        var stuck = new List<WorkflowOperationRecord>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
+        var collected = new List<WorkflowOperationRecord>();
         for (var page = 1; page <= ManualInterventionMaxPages; page++)
         {
             var query = new WorkflowOperationQuery
@@ -873,24 +872,25 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
                 return null;
             }
 
-            foreach (var operation in read.Value?.Items ?? [])
-            {
-                if (operation is { Kind: WorkflowOperationKind.Deploy, Status: WorkflowOperationStatus.ManualInterventionRequired }
-                    && seen.Add(operation.OperationId))
-                {
-                    stuck.Add(operation);
-                }
-            }
+            // A store that ignores the query filters must not widen the rule's scope, and paging over a
+            // set that moves under the reader can repeat an operation.
+            collected.AddRange((read.Value?.Items ?? []).Where(IsStuckDeploy));
 
             if (read.Value is not { HasMore: true })
             {
-                return stuck;
+                return Deduplicate(collected);
             }
         }
 
         workflowCollection.ExpectUncollected($"{ManualInterventionComponentId}:beyond-page-{ManualInterventionMaxPages}");
-        return stuck;
+        return Deduplicate(collected);
     }
+
+    private static bool IsStuckDeploy(WorkflowOperationRecord operation)
+        => operation is { Kind: WorkflowOperationKind.Deploy, Status: WorkflowOperationStatus.ManualInterventionRequired };
+
+    private static List<WorkflowOperationRecord> Deduplicate(IEnumerable<WorkflowOperationRecord> operations)
+        => operations.DistinctBy(operation => operation.OperationId, StringComparer.Ordinal).ToList();
 
     private static bool IsLaterDeployOfTarget(WorkflowOperationRecord candidate, WorkflowOperationRecord stuck, string targetId)
         => candidate.Kind == WorkflowOperationKind.Deploy
