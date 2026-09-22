@@ -133,7 +133,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.AttachmentQueryResponse);
 
         result.Should().NotBeNull();
-        result!.AttachmentGroups.Should().HaveCount(2);
+        result!.AttachmentGroups.Should().ContainSingle("nonexistent parents are not visible");
         result.AttachmentInfos.Should().BeNull();
 
         var seededGroup = result.AttachmentGroups.Single(group => group.ParentObjectId == TestFeatureId);
@@ -147,8 +147,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         urlResponse.BeSuccessful();
         (await urlResponse.Content.ReadAsByteArrayAsync()).Should().Equal(AttachmentTestData.SeededTextFileBytes.ToArray());
 
-        var emptyGroup = result.AttachmentGroups.Single(group => group.ParentObjectId == 999);
-        emptyGroup.AttachmentInfos.Should().BeEmpty();
+        result.AttachmentGroups.Should().NotContain(group => group.ParentObjectId == 999);
     }
 
     [IntegrationTest]

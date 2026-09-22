@@ -281,15 +281,15 @@ internal static partial class AttachmentEndpoints
         // and the federated ArcGIS reader's 2000-ID limit, with room for filter values.
         const int parentBatchSize = 500;
         var allowed = new HashSet<long>();
-        foreach (var batch in featureIds.Chunk(parentBatchSize))
+        var queries = featureIds.Chunk(parentBatchSize).Select(batch => new FeatureQuery
         {
-            var query = new FeatureQuery
-            {
-                ObjectIds = ImmutableArray.CreateRange(batch),
-                // Each provider translates the already validated canonical WHERE itself.
-                Where = string.IsNullOrWhiteSpace(validatedDefinitionExpression) ? null : validatedDefinitionExpression,
-                ExcludeAttributes = true
-            };
+            ObjectIds = ImmutableArray.CreateRange(batch),
+            // Each provider translates the already validated canonical WHERE itself.
+            Where = string.IsNullOrWhiteSpace(validatedDefinitionExpression) ? null : validatedDefinitionExpression,
+            ExcludeAttributes = true
+        });
+        foreach (var query in queries)
+        {
             var matches = await reader.QueryObjectIdsAsync(layerId, query, cancellationToken).ConfigureAwait(false);
             allowed.UnionWith(matches);
         }
