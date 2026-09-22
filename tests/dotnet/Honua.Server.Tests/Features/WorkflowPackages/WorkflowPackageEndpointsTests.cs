@@ -377,7 +377,9 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
                     // Attempt to spoof reserved provenance; the server must ignore these.
                     ["workflow.packageId"] = "spoofed-package",
                     ["workflow.packageHash"] = "spoofed-hash",
-                    ["analysis.region"] = "pacific"
+                    ["analysis.region"] = "pacific",
+                    // A run parameter named like a workload-owned key is only a run annotation.
+                    ["env.SAMPLE_SETTING"] = "request-value"
                 }
             },
             JsonOptions);
@@ -391,13 +393,17 @@ public sealed class WorkflowPackageEndpointsTests : IAsyncLifetime
         var provenance = runData.GetProperty("provenance");
         provenance.GetProperty("workflow.packageId").GetString().Should().Be(packageId);
         provenance.GetProperty("workflow.packageHash").GetString().Should().Be(version.PackageHash);
-        provenance.GetProperty("analysis.region").GetString().Should().Be("pacific");
+        provenance.GetProperty("workflow.parameter.analysis.region").GetString().Should().Be("pacific");
+        provenance.TryGetProperty("analysis.region", out _).Should().BeFalse();
 
         var job = await _jobStore.GetAsync(jobId!);
         job.Should().NotBeNull();
         job!.Spec.Parameters.Should().Contain("workflow.packageId", packageId);
         job.Spec.Parameters.Should().Contain("workflow.packageHash", version.PackageHash);
-        job.Spec.Parameters.Should().Contain("analysis.region", "pacific");
+        job.Spec.Parameters.Should().Contain("workflow.parameter.analysis.region", "pacific");
+        job.Spec.Parameters.Should().Contain("workflow.parameter.env.SAMPLE_SETTING", "request-value");
+        job.Spec.Parameters.Should().NotContainKey("analysis.region");
+        job.Spec.Parameters.Should().NotContainKey("env.SAMPLE_SETTING");
     }
 
     [IntegrationTest]

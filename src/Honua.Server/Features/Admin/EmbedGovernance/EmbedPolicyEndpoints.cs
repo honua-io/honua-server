@@ -41,7 +41,14 @@ internal static partial class EmbedPolicyEndpoints
             // must be permitted from any origin; the per-embed-key origin allow-list is the
             // authoritative gate enforced inside the handlers. Without this dedicated policy
             // the global ProductionCors rejects the preflight before the handler runs (#1191).
-            .RequireCors(CorsConfiguration.EmbedPolicy);
+            .RequireCors(CorsConfiguration.EmbedPolicy)
+            // NoCache is required (SEC-20): the policy response is a function of the
+            // embed key in X-Honua-Embed-Key (or ?key=) and of the request Origin, not
+            // of the request URL, and every request must re-run the origin check, the
+            // rate accounting and the key revocation check inside the handler. The
+            // shared output cache keys on URL + tenant + license only, so the response
+            // must not be stored.
+            .CacheOutput(static policy => policy.NoCache());
 
         group.MapGet("/policy", HandlePolicy)
             .WithDisplayName("Fetch Embed Policy")

@@ -500,6 +500,234 @@ internal sealed class PostgresRasterStore : IRasterStore
         return builder.ToString();
     }
 
+    // ----- Empty clip-extent export (Esri exportImage no-data contract) ------
+    // A populated export frames the raster onto the clip envelope (#4060). When the layer holds
+    // no raster reaching that envelope there is nothing to frame, and ST_Clip's empty SRID-0
+    // result cannot be warped onto the frame grid at all, so the canvas is built on its own here
+    // and the band layout is copied from any raster of the layer. The result is encoded by the
+    // same GDAL driver and creation options a populated export of this layer would use, so a
+    // client tiling across the layer edge gets images of one shape on both sides of it.
+
+    /// <inheritdoc />
+    public async Task<RasterResult> ExportEmptyExtentAsync(
+        int layerId,
+        RasterQuery query,
+        CancellationToken cancellationToken = default)
+    {
+        if (query.ClipRegion is not { Inverted: false } clip)
+        {
+            throw new ArgumentException(
+                "An empty-extent export requires a non-inverted clip region.", nameof(query));
+        }
+
+        if (query.OutputWidth is not > 0 || query.OutputHeight is not > 0)
+        {
+            throw new ArgumentException(
+                "An empty-extent export requires positive output dimensions.", nameof(query));
+        }
+
+        var formatName = query.OutputFormat.ToGdalDriverName();
+        if (!_allowedOutputFormats.Contains(formatName))
+        {
+            throw new ArgumentException($"Unsupported GDAL driver name: {formatName}");
+        }
+
+        // COG creation options are resolved from a concrete source raster's overviews; an empty
+        // canvas has none, so it is written with the plain GeoTIFF driver COG already falls back to.
+        var effectiveFormat = formatName == "COG" ? "GTiff" : formatName;
+        var creationOptionsClause = BuildCreationOptionsClause(BuildExportCreationOptions(query, effectiveFormat));
+
+        // Find one source raster to provide the layer's output layout. The source expression below
+        // deliberately mirrors the populated export pipeline: selection and rendering functions
+        // can change both the band count and the pixel type before the empty canvas is assembled.
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var referenceCommand = connection.CreateCommand();
+        referenceCommand.CommandText = $"""
+            SELECT id
+            FROM {_rasterDataTable}
+            WHERE layer_id = @layerId AND raster IS NOT NULL
+            LIMIT 1
+            """;
+        AddParameter(referenceCommand, "@layerId", layerId);
+        var referenceIdValue = await referenceCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        if (referenceIdValue is null || referenceIdValue == DBNull.Value)
+        {
+            // The layer holds no raster at all, so there is no band layout to copy and no empty
+            // image to describe. The caller reports not-found rather than inventing a shape.
+            return new RasterResult
+            {
+                Data = Array.Empty<byte>(),
+                ContentType = query.OutputFormat.ToContentType(),
+                Width = 0,
+                Height = 0
+            };
+        }
+
+        var referenceRasterId = Convert.ToInt64(referenceIdValue, CultureInfo.InvariantCulture);
+        var sourceExpr = "raster";
+        var sourceParams = new List<(string Name, object Value)>();
+        if (query.Bands is { Length: > 0 } bands)
+        {
+            if (bands.Any(static band => band <= 0))
+            {
+                throw new ArgumentException("Raster band numbers must be positive.", nameof(query));
+            }
+
+            sourceExpr = "ST_Band(raster, @bands)";
+            sourceParams.Add(("@bands", bands));
+        }
+
+        if (query.BandArithmetic is { } bandArithmetic)
+        {
+            sourceExpr = BuildBandArithmeticExpression(sourceExpr, bandArithmetic);
+        }
+
+        if (query.Terrain is { } terrain)
+        {
+            sourceExpr = BuildTerrainExpression(sourceExpr, terrain);
+        }
+
+        if (query.Stretch is { } stretch && CanResolveStretchBounds(stretch, query.BandArithmetic))
+        {
+            var stretchBounds = await ResolveStretchBoundsAsync(
+                stretch, layerId, referenceRasterId, query.Bands, cancellationToken).ConfigureAwait(false);
+            if (stretchBounds is { Count: > 0 })
+            {
+                sourceExpr = BuildStretchedRasterExpression(sourceExpr, stretchBounds);
+            }
+        }
+
+        if (query.Colormap is { Entries.Count: > 0 } colormap)
+        {
+            sourceExpr = BuildColormapExpression(sourceExpr, colormap);
+        }
+
+        // Mirror the populated frame's SRID resolution: an explicit output SRID wins, otherwise the
+        // clip geometry's SRID, otherwise the transformed reference raster's own SRID.
+        var clipSridIsKnown = clip.Srid is > 0;
+        var geometryExpr = clipSridIsKnown
+            ? "ST_GeomFromWKB(@clipGeom, @clipSrid)"
+            : "ST_GeomFromWKB(@clipGeom, ST_SRID(s.rast))";
+        var sourceSridExpr = clipSridIsKnown ? "@clipSrid" : "ST_SRID(s.rast)";
+        var targetSridExpr = query.OutputSrid is > 0 ? "@outputSrid" : sourceSridExpr;
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH reference AS (
+                SELECT raster
+                FROM {_rasterDataTable}
+                WHERE layer_id = @layerId AND id = @referenceRasterId AND raster IS NOT NULL
+            ),
+            source AS (
+                SELECT {sourceExpr} AS rast
+                FROM reference
+            ),
+            frame_bounds AS (
+                SELECT ST_Envelope(ST_Transform({geometryExpr}, {targetSridExpr})) AS geom,
+                       {targetSridExpr} AS srid
+                FROM source s
+            ),
+            frame_grid AS (
+                SELECT ST_MakeEmptyRaster(
+                    @outputWidth, @outputHeight,
+                    ST_XMin(b.geom), ST_YMax(b.geom),
+                    (ST_XMax(b.geom) - ST_XMin(b.geom)) / @outputWidth::double precision,
+                    -((ST_YMax(b.geom) - ST_YMin(b.geom)) / @outputHeight::double precision),
+                    0.0, 0.0, b.srid) AS rast
+                FROM frame_bounds b
+            ),
+            transformed AS (
+                SELECT ST_AddBand(g.rast, ARRAY(
+                           SELECT ROW(NULL, m.pixeltype, COALESCE(m.nodatavalue, 0), COALESCE(m.nodatavalue, 0))::addbandarg
+                           FROM generate_series(1, ST_NumBands(s.rast)) AS n,
+                                LATERAL ST_BandMetaData(s.rast, n) AS m
+                           ORDER BY n)) AS rast
+                FROM frame_grid g, source s
+            )
+            SELECT ST_AsGDALRaster(rast, '{effectiveFormat}'{creationOptionsClause}) AS data,
+                   ST_Width(rast) AS width,
+                   ST_Height(rast) AS height,
+                   ST_SRID(rast) AS srid,
+                   ST_NumBands(rast) AS band_count,
+                   ST_BandPixelType(rast, 1) AS pixel_type,
+                   ST_XMin(ST_Envelope(rast)) AS xmin,
+                   ST_YMin(ST_Envelope(rast)) AS ymin,
+                   ST_XMax(ST_Envelope(rast)) AS xmax,
+                   ST_YMax(ST_Envelope(rast)) AS ymax
+            FROM transformed
+            """;
+        AddParameter(command, "@layerId", layerId);
+        AddParameter(command, "@referenceRasterId", referenceRasterId);
+        AddParameter(command, "@clipGeom", clip.Geometry);
+        if (clipSridIsKnown)
+        {
+            AddParameter(command, "@clipSrid", clip.Srid!.Value);
+        }
+
+        AddParameter(command, "@outputWidth", query.OutputWidth!.Value);
+        AddParameter(command, "@outputHeight", query.OutputHeight!.Value);
+        if (query.OutputSrid is > 0)
+        {
+            AddParameter(command, "@outputSrid", query.OutputSrid.Value);
+        }
+
+        foreach (var (name, value) in sourceParams)
+        {
+            AddParameter(command, name, value);
+        }
+
+        await using var reader = await ExecuteRasterExportReaderAsync(command, cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return new RasterResult
+            {
+                Data = Array.Empty<byte>(),
+                ContentType = query.OutputFormat.ToContentType(),
+                Width = 0,
+                Height = 0
+            };
+        }
+
+        var dataOrd = reader.GetOrdinal("data");
+        var widthOrd = reader.GetOrdinal("width");
+        var heightOrd = reader.GetOrdinal("height");
+        var sridOrd = reader.GetOrdinal("srid");
+        var bandCountOrd = reader.GetOrdinal("band_count");
+        var pixelTypeOrd = reader.GetOrdinal("pixel_type");
+        var xminOrd = reader.GetOrdinal("xmin");
+        var yminOrd = reader.GetOrdinal("ymin");
+        var xmaxOrd = reader.GetOrdinal("xmax");
+        var ymaxOrd = reader.GetOrdinal("ymax");
+
+        var data = reader.IsDBNull(dataOrd) ? Array.Empty<byte>() : (byte[])reader[dataOrd];
+        var width = reader.GetInt32(widthOrd);
+        var height = reader.GetInt32(heightOrd);
+        var srid = reader.GetInt32(sridOrd);
+        var bandCount = reader.GetInt32(bandCountOrd);
+        var pixelType = reader.IsDBNull(pixelTypeOrd) ? null : reader.GetString(pixelTypeOrd);
+        // Trunk's export path encodes every supported format through ST_AsGDALRaster, so the
+        // canvas needs no post-encode reshaping.
+
+        return new RasterResult
+        {
+            Data = data,
+            ContentType = query.OutputFormat.ToContentType(),
+            Width = width,
+            Height = height,
+            Srid = srid,
+            BandCount = bandCount,
+            PixelType = pixelType,
+            Extent = new RasterExtent
+            {
+                XMin = reader.GetDouble(xminOrd),
+                YMin = reader.GetDouble(yminOrd),
+                XMax = reader.GetDouble(xmaxOrd),
+                YMax = reader.GetDouble(ymaxOrd),
+                Srid = srid
+            }
+        };
+    }
+
     /// <inheritdoc />
     public async Task<RasterResult> ExportImageAsync(int layerId, long rasterId, RasterQuery query, CancellationToken cancellationToken = default)
     {

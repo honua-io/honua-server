@@ -47,24 +47,30 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     private readonly FeatureProviderBinding? _binding;
     private readonly DataConnection? _boundConnection;
     private readonly IMetadataV2GraphProvider? _v2Provider;
+    private readonly LayerReadSecurityResolver? _readSecurity;
 
     public SqlServerFeatureStore(SqlServerFeatureDataAccess dataAccess)
-        : this(dataAccess, v2Provider: null, binding: null)
+        : this(dataAccess, v2Provider: null, readSecurity: null, binding: null)
     {
     }
 
-    public SqlServerFeatureStore(SqlServerFeatureDataAccess dataAccess, IMetadataV2GraphProvider? v2Provider)
-        : this(dataAccess, v2Provider, binding: null)
+    public SqlServerFeatureStore(
+        SqlServerFeatureDataAccess dataAccess,
+        IMetadataV2GraphProvider? v2Provider,
+        LayerReadSecurityResolver? readSecurity = null)
+        : this(dataAccess, v2Provider, readSecurity, binding: null)
     {
     }
 
     private SqlServerFeatureStore(
         SqlServerFeatureDataAccess dataAccess,
         IMetadataV2GraphProvider? v2Provider,
+        LayerReadSecurityResolver? readSecurity,
         FeatureProviderBinding? binding)
     {
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _v2Provider = v2Provider;
+        _readSecurity = readSecurity;
         _binding = binding;
         _boundConnection = binding?.Connection;
     }
@@ -86,13 +92,13 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     {
         ArgumentNullException.ThrowIfNull(binding);
 
-        return new SqlServerFeatureStore(_dataAccess, _v2Provider, binding);
+        return new SqlServerFeatureStore(_dataAccess, _v2Provider, _readSecurity, binding);
     }
 
     /// <inheritdoc />
     public async Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
     {
-        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
+        await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         var query = new FeatureQuery
         {
@@ -108,7 +114,7 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     /// <inheritdoc />
     public async Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
-        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
+        await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, attributeColumns) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
 
         // Probe one extra row when a Limit is requested so HasMoreResults is reported correctly
@@ -145,7 +151,7 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     /// <inheritdoc />
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
-        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
+        await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         var sql = SqlServerFeatureQueryBuilder.BuildObjectIdsQuery(mapping, query);
         return await _dataAccess.ExecuteObjectIdsAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
@@ -154,7 +160,7 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     /// <inheritdoc />
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
-        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
+        await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         var sql = SqlServerFeatureQueryBuilder.BuildCountQuery(mapping, query);
         return await _dataAccess.ExecuteCountAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
@@ -163,7 +169,7 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     /// <inheritdoc />
     public async Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
-        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
+        await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
         var sql = SqlServerFeatureQueryBuilder.BuildExtentQuery(mapping, query);
         return await _dataAccess.ExecuteExtentAsync(mapping, sql, _boundConnection, cancellationToken).ConfigureAwait(false);
@@ -182,7 +188,7 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     /// <inheritdoc />
     public async Task<EstimateResult> GetEstimatesAsync(int layerId, CancellationToken cancellationToken = default)
     {
-        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
+        await EnsureReadPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var (mapping, _) = await ResolveLayerAsync(layerId, cancellationToken).ConfigureAwait(false);
 
         var emptyQuery = new FeatureQuery();
@@ -216,6 +222,21 @@ internal sealed class SqlServerFeatureStore : IFeatureDataProvider, IFeatureRead
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
         int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryH3Async), layerId);
+
+    /// <summary>
+    /// Refuses the read when the layer carries a read policy this provider cannot enforce: a
+    /// permanent filter, or a row-level security / field-mask policy that applies to the request.
+    /// </summary>
+    private async Task EnsureReadPolicyEnforceableAsync(int layerId, CancellationToken cancellationToken)
+    {
+        await EnsureNoPermanentFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
+        if (_readSecurity is not null)
+        {
+            await _readSecurity
+                .EnsureNoUnenforcedPolicyAsync("SQL Server", layerId, _binding?.Resource, rejectPermanentFilter: false, cancellationToken)
+                .ConfigureAwait(false);
+        }
+    }
 
     /// <summary>
     /// Throws <see cref="NotSupportedException"/> when the layer has a permanent filter configured,

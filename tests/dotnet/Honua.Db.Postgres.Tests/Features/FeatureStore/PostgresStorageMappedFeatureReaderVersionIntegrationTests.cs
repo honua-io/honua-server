@@ -116,8 +116,9 @@ public sealed class PostgresStorageMappedFeatureReaderVersionIntegrationTests(Po
         var reader = CreateReader();
         var extent = await reader.GetExtentAsync(1, Branch);
         extent.Should().NotBeNull();
-        extent!.Value.MinX.Should().Be(3);
-        extent.Value.MaxX.Should().Be(10);
+        var actualExtent = extent ?? throw new InvalidOperationException("The branch query must return an extent.");
+        actualExtent.MinX.Should().Be(3);
+        actualExtent.MaxX.Should().Be(10);
         var statistics = await reader.QueryStatisticsAsync(1, Branch with
         {
             GroupByFields = ["tenant"],

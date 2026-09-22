@@ -1,10 +1,10 @@
 {
   "schema": "honua.client-certification-requirements/v1",
-  "revision": "2026-09-07-bounded-roster.2",
+  "revision": "2026-09-21-bounded-roster",
   "boundedRosterIssue": "https://github.com/honua-io/honua-server/issues/3434",
   "requirements_source": "honua-io/honua-release/certification/protocol-certification-requirements.v1.json",
-  "requirements_source_revision": "4e229cfd2bfb83aa64416fbe5bf51b04f1cd1e52",
-  "requirements_source_denominator_revision": "2026-08-29-complete.11",
+  "requirements_source_revision": "7165e7f67937318a0c53a7292df7730961cf13c2",
+  "requirements_source_denominator_revision": "2026-09-16-complete.13",
   "receipt_schema_min": "v2",
   "boundedRosterClients": [
     "QGIS",
@@ -165,7 +165,250 @@
       "commit": "d5a09d13c4ad541c05702e598c3679c0f42db7af"
     }
   },
+  "excludedRequirements": [
+    {
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-CONFORMANCE",
+      "maturity": "supported",
+      "canonical_client": "GDAL/OGR",
+      "client_lane": "gdal",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": false,
+      "addressability_reason": "The GDAL/OGR OAPIF driver never requests /conformance: GDAL 3.8.4 and 3.13.3 (the newest release) read only the landing page, the service-desc, /collections and items, even when the landing page links conformance and an attribute filter is set, so GDAL/OGR does not exercise this operation on any server.",
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null
+    },
+    {
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-TRANSACTIONS",
+      "maturity": "supported",
+      "canonical_client": "GDAL/OGR",
+      "client_lane": "gdal",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": false,
+      "addressability_reason": "The GDAL/OGR OAPIF driver is read-only: in GDAL 3.8.4 and 3.13.3 (the newest release) update-mode open fails, SequentialWrite/RandomWrite/DeleteFeature capabilities are false and CreateFeature returns Unsupported operation even against a server that declares create-replace-delete, so GDAL/OGR does not exercise this operation on any server.",
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null
+    }
+  ],
   "requirements": [
+    {
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-WCS-2-0-COVERAGE",
+      "maturity": "supported",
+      "canonical_client": "GDAL",
+      "client_lane": "gdal",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": true,
+      "addressability_reason": null,
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null,
+      "test_ids": [
+        "client-cert/gdal/ogc/OGC-OP-WCS-2-0-COVERAGE"
+      ],
+      "receiptBinding": {
+        "status": "absent",
+        "producerBinding": {
+          "status": "absent",
+          "producer": null,
+          "reasonCode": "lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+        },
+        "denominatorJoin": {
+          "status": "joinable",
+          "testIds": [
+            "client-cert/gdal/ogc/OGC-OP-WCS-2-0-COVERAGE"
+          ],
+          "reasonCode": null,
+          "reason": null
+        }
+      }
+    },
+    {
+      "capability_key": "raster.cloud-cog-serving",
+      "surface": "raster-cloud-cog-serving",
+      "operation": "raster.cloud-cog-serving",
+      "maturity": "supported",
+      "canonical_client": "GDAL",
+      "client_lane": "gdal",
+      "client_version": "3.13.3",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": true,
+      "addressability_reason": null,
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "metadata",
+        "range-efficiency",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "canonical-client-applicability@2026-08-21.3",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null,
+      "test_ids": [
+        "client-cert/gdal/raster-cloud-cog-serving/raster.cloud-cog-serving"
+      ],
+      "receiptBinding": {
+        "status": "absent",
+        "producerBinding": {
+          "status": "absent",
+          "producer": null,
+          "reasonCode": "lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+        },
+        "denominatorJoin": {
+          "status": "joinable",
+          "testIds": [
+            "client-cert/gdal/raster-cloud-cog-serving/raster.cloud-cog-serving"
+          ],
+          "reasonCode": null,
+          "reason": null
+        }
+      }
+    },
+    {
+      "capability_key": "raster.multidim-coverage",
+      "surface": "raster-multidim-coverage",
+      "operation": "raster.multidim-coverage",
+      "maturity": "supported",
+      "canonical_client": "GDAL",
+      "client_lane": "gdal",
+      "client_version": "3.13.3",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": true,
+      "addressability_reason": null,
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "metadata",
+        "boundary",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "canonical-client-applicability@2026-08-21.3",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null,
+      "test_ids": [
+        "client-cert/gdal/raster-multidim-coverage/raster.multidim-coverage"
+      ],
+      "receiptBinding": {
+        "status": "absent",
+        "producerBinding": {
+          "status": "absent",
+          "producer": null,
+          "reasonCode": "lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+        },
+        "denominatorJoin": {
+          "status": "joinable",
+          "testIds": [
+            "client-cert/gdal/raster-multidim-coverage/raster.multidim-coverage"
+          ],
+          "reasonCode": null,
+          "reason": null
+        }
+      }
+    },
+    {
+      "capability_key": "serve.wcs",
+      "surface": "wcs",
+      "operation": "serve.wcs",
+      "maturity": "supported",
+      "canonical_client": "GDAL",
+      "client_lane": "gdal",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": true,
+      "addressability_reason": null,
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "boundary",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "canonical-client-assignments@2026-08-21.1",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null,
+      "test_ids": [
+        "client-cert/gdal/wcs/serve.wcs"
+      ],
+      "receiptBinding": {
+        "status": "absent",
+        "producerBinding": {
+          "status": "absent",
+          "producer": null,
+          "reasonCode": "lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+        },
+        "denominatorJoin": {
+          "status": "joinable",
+          "testIds": [
+            "client-cert/gdal/wcs/serve.wcs"
+          ],
+          "reasonCode": null,
+          "reason": null
+        }
+      }
+    },
     {
       "capability_key": "format.cog",
       "surface": "cog",
@@ -214,6 +457,9 @@
         }
       },
       "entitlement_policy_revision": null,
+      "test_ids": [
+        "client-cert/gdal/cog/dataset-read"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
@@ -223,10 +469,12 @@
           "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-cog'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/gdal/cog/dataset-read"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -278,6 +526,9 @@
         }
       },
       "entitlement_policy_revision": null,
+      "test_ids": [
+        "client-cert/gdal/flatgeobuf/feature-read"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
@@ -287,10 +538,12 @@
           "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-flatgeobuf'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/gdal/flatgeobuf/feature-read"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -301,7 +554,7 @@
       "maturity": "supported",
       "canonical_client": "GDAL",
       "client_lane": "gdal-geoparquet",
-      "client_version": "3.14.0",
+      "client_version": "3.13.3",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
       "licensed": false,
@@ -346,6 +599,9 @@
         }
       },
       "entitlement_policy_revision": null,
+      "test_ids": [
+        "client-cert/gdal/geoparquet/feature-read"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
@@ -355,221 +611,12 @@
           "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-geoparquet'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc",
-      "surface": "ogc",
-      "operation": "OGC-OP-WCS-2-0-COVERAGE",
-      "maturity": "supported",
-      "canonical_client": "GDAL",
-      "client_lane": "gdal-ogc",
-      "client_version": "3.8.4",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc-api-coverages",
-      "surface": "ogc-api-coverages",
-      "operation": "serve.ogc-api-coverages",
-      "maturity": "supported",
-      "canonical_client": "GDAL",
-      "client_lane": "gdal-ogc-api-coverages",
-      "client_version": "3.8.4",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "boundary",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "canonical-client-assignments@2026-08-21.1",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-ogc-api-coverages'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "raster.cloud-cog-serving",
-      "surface": "raster-cloud-cog-serving",
-      "operation": "raster.cloud-cog-serving",
-      "maturity": "supported",
-      "canonical_client": "GDAL",
-      "client_lane": "gdal-raster-cloud-cog-serving",
-      "client_version": "3.13.3",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "metadata",
-        "range-efficiency",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "canonical-client-applicability@2026-08-21.3",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-raster-cloud-cog-serving'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "raster.multidim-coverage",
-      "surface": "raster-multidim-coverage",
-      "operation": "raster.multidim-coverage",
-      "maturity": "supported",
-      "canonical_client": "GDAL",
-      "client_lane": "gdal-raster-multidim-coverage",
-      "client_version": "3.13.3",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "metadata",
-        "boundary",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "canonical-client-applicability@2026-08-21.3",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-raster-multidim-coverage'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.wcs",
-      "surface": "wcs",
-      "operation": "serve.wcs",
-      "maturity": "supported",
-      "canonical_client": "GDAL",
-      "client_lane": "gdal-wcs",
-      "client_version": "3.8.4",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "boundary",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "canonical-client-assignments@2026-08-21.1",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-wcs'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/gdal/geoparquet/feature-read"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -579,7 +626,7 @@
       "operation": "OGC-OP-OGC-API-FEATURES-COLLECTION",
       "maturity": "supported",
       "canonical_client": "GDAL/OGR",
-      "client_lane": "gdal-ogc",
+      "client_lane": "gdal",
       "client_version": "3.8.4",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
@@ -598,19 +645,24 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-COLLECTION"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-COLLECTION"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -620,7 +672,7 @@
       "operation": "OGC-OP-OGC-API-FEATURES-COLLECTIONS",
       "maturity": "supported",
       "canonical_client": "GDAL/OGR",
-      "client_lane": "gdal-ogc",
+      "client_lane": "gdal",
       "client_version": "3.8.4",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
@@ -639,60 +691,24 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc",
-      "surface": "ogc",
-      "operation": "OGC-OP-OGC-API-FEATURES-CONFORMANCE",
-      "maturity": "supported",
-      "canonical_client": "GDAL/OGR",
-      "client_lane": "gdal-ogc",
-      "client_version": "3.8.4",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
+      "test_ids": [
+        "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-COLLECTIONS"
       ],
-      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-COLLECTIONS"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -702,7 +718,7 @@
       "operation": "OGC-OP-OGC-API-FEATURES-ITEM",
       "maturity": "supported",
       "canonical_client": "GDAL/OGR",
-      "client_lane": "gdal-ogc",
+      "client_lane": "gdal",
       "client_version": "3.8.4",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
@@ -721,19 +737,24 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-ITEM"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-ITEM"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -743,7 +764,7 @@
       "operation": "OGC-OP-OGC-API-FEATURES-ITEMS",
       "maturity": "supported",
       "canonical_client": "GDAL/OGR",
-      "client_lane": "gdal-ogc",
+      "client_lane": "gdal",
       "client_version": "3.8.4",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
@@ -762,19 +783,24 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-ITEMS"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-ITEMS"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -784,7 +810,7 @@
       "operation": "OGC-OP-OGC-API-FEATURES-LANDING",
       "maturity": "supported",
       "canonical_client": "GDAL/OGR",
-      "client_lane": "gdal-ogc",
+      "client_lane": "gdal",
       "client_version": "3.8.4",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
@@ -803,19 +829,24 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-LANDING"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-LANDING"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -825,7 +856,7 @@
       "operation": "OGC-OP-OGC-API-FEATURES-QUERYABLES",
       "maturity": "supported",
       "canonical_client": "GDAL/OGR",
-      "client_lane": "gdal-ogc",
+      "client_lane": "gdal",
       "client_version": "3.8.4",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
@@ -844,60 +875,24 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc",
-      "surface": "ogc",
-      "operation": "OGC-OP-OGC-API-FEATURES-TRANSACTIONS",
-      "maturity": "supported",
-      "canonical_client": "GDAL/OGR",
-      "client_lane": "gdal-ogc",
-      "client_version": "3.8.4",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
+      "test_ids": [
+        "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-QUERYABLES"
       ],
-      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/gdal-ogr/ogc/OGC-OP-OGC-API-FEATURES-QUERYABLES"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -907,7 +902,7 @@
       "operation": "OGC-OP-WFS-2-0",
       "maturity": "supported",
       "canonical_client": "GDAL/OGR",
-      "client_lane": "gdal-ogc",
+      "client_lane": "gdal",
       "client_version": "3.8.4",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
@@ -926,19 +921,24 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/gdal-ogr/ogc/OGC-OP-WFS-2-0"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/gdal-ogr/ogc/OGC-OP-WFS-2-0"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -948,7 +948,7 @@
       "operation": "serve.ogc-api-features",
       "maturity": "supported",
       "canonical_client": "GDAL/OGR",
-      "client_lane": "gdal-ogc-api-features",
+      "client_lane": "gdal",
       "client_version": "3.8.4",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
@@ -969,19 +969,24 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/gdal-ogr/ogc-api-features/serve.ogc-api-features"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-ogc-api-features'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/gdal-ogr/ogc-api-features/serve.ogc-api-features"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -991,7 +996,7 @@
       "operation": "serve.wfs",
       "maturity": "supported",
       "canonical_client": "GDAL/OGR",
-      "client_lane": "gdal-wfs",
+      "client_lane": "gdal",
       "client_version": "3.8.4",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
@@ -1012,19 +1017,24 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/gdal-ogr/wfs/serve.wfs"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-wfs'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/gdal-ogr/wfs/serve.wfs"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -1034,7 +1044,7 @@
       "operation": "OGC-OP-OGC-API-TILES-LANDING-TILESETS",
       "maturity": "supported",
       "canonical_client": "MapLibre GL JS",
-      "client_lane": "maplibre-ogc",
+      "client_lane": "js-maplibre",
       "client_version": "5.7",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
@@ -1053,19 +1063,24 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/maplibre-gl-js/ogc/OGC-OP-OGC-API-TILES-LANDING-TILESETS"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'maplibre-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/maplibre-gl-js/ogc/OGC-OP-OGC-API-TILES-LANDING-TILESETS"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -1075,7 +1090,7 @@
       "operation": "OGC-OP-OGC-API-TILES-TILE",
       "maturity": "supported",
       "canonical_client": "MapLibre GL JS",
-      "client_lane": "maplibre-ogc",
+      "client_lane": "js-maplibre",
       "client_version": "5.7",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
@@ -1094,19 +1109,24 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/maplibre-gl-js/ogc/OGC-OP-OGC-API-TILES-TILE"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'maplibre-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/maplibre-gl-js/ogc/OGC-OP-OGC-API-TILES-TILE"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -1116,7 +1136,7 @@
       "operation": "OGC-OP-WMS-GETCAPABILITIES-GETMAP-GETFEATUREINF",
       "maturity": "supported",
       "canonical_client": "MapLibre GL JS",
-      "client_lane": "maplibre-ogc",
+      "client_lane": "js-maplibre",
       "client_version": "5.7",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
@@ -1135,19 +1155,24 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/maplibre-gl-js/ogc/OGC-OP-WMS-GETCAPABILITIES-GETMAP-GETFEATUREINF"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'maplibre-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/maplibre-gl-js/ogc/OGC-OP-WMS-GETCAPABILITIES-GETMAP-GETFEATUREINF"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -1157,7 +1182,7 @@
       "operation": "OGC-OP-WMTS-GETCAPABILITIES-GETTILE",
       "maturity": "supported",
       "canonical_client": "MapLibre GL JS",
-      "client_lane": "maplibre-ogc",
+      "client_lane": "js-maplibre",
       "client_version": "5.7",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
@@ -1176,19 +1201,24 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/maplibre-gl-js/ogc/OGC-OP-WMTS-GETCAPABILITIES-GETTILE"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'maplibre-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/maplibre-gl-js/ogc/OGC-OP-WMTS-GETCAPABILITIES-GETTILE"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -1198,7 +1228,7 @@
       "operation": "serve.ogc-api-maps",
       "maturity": "supported",
       "canonical_client": "MapLibre GL JS",
-      "client_lane": "maplibre-ogc-api-maps",
+      "client_lane": "js-maplibre",
       "client_version": "5.7",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
@@ -1217,19 +1247,24 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/maplibre-gl-js/ogc-api-maps/serve.ogc-api-maps"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'maplibre-ogc-api-maps'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/maplibre-gl-js/ogc-api-maps/serve.ogc-api-maps"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -1239,7 +1274,7 @@
       "operation": "styling.ogc-api-styles",
       "maturity": "supported",
       "canonical_client": "MapLibre GL JS",
-      "client_lane": "maplibre-ogc-api-styles",
+      "client_lane": "js-maplibre",
       "client_version": "5.7",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
@@ -1257,19 +1292,24 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/maplibre-gl-js/ogc-api-styles/styling.ogc-api-styles"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'maplibre-ogc-api-styles'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/maplibre-gl-js/ogc-api-styles/styling.ogc-api-styles"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -1279,7 +1319,7 @@
       "operation": "serve.ogc-api-tiles",
       "maturity": "supported",
       "canonical_client": "MapLibre GL JS",
-      "client_lane": "maplibre-ogc-api-tiles",
+      "client_lane": "js-maplibre",
       "client_version": "5.7",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
@@ -1298,19 +1338,24 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/maplibre-gl-js/ogc-api-tiles/serve.ogc-api-tiles"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'maplibre-ogc-api-tiles'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/maplibre-gl-js/ogc-api-tiles/serve.ogc-api-tiles"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -1320,7 +1365,7 @@
       "operation": "raster.terrain-rgb",
       "maturity": "supported",
       "canonical_client": "MapLibre GL JS",
-      "client_lane": "maplibre-raster-terrain-rgb",
+      "client_lane": "js-maplibre",
       "client_version": "6.5.0",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
@@ -1340,19 +1385,24 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/maplibre-gl-js/raster-terrain-rgb/raster.terrain-rgb"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'maplibre-raster-terrain-rgb'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/maplibre-gl-js/raster-terrain-rgb/raster.terrain-rgb"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -1362,7 +1412,7 @@
       "operation": "serve.wms",
       "maturity": "supported",
       "canonical_client": "MapLibre GL JS",
-      "client_lane": "maplibre-wms",
+      "client_lane": "js-maplibre",
       "client_version": "5.7",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
@@ -1381,60 +1431,24 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'maplibre-wms'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.wmts",
-      "surface": "wmts",
-      "operation": "serve.wmts",
-      "maturity": "supported",
-      "canonical_client": "MapLibre GL JS",
-      "client_lane": "maplibre-wmts",
-      "client_version": "5.7",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
+      "test_ids": [
+        "client-cert/maplibre-gl-js/wms/serve.wms"
       ],
-      "contract_revision": "canonical-client-assignments@2026-08-21.1",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
           "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'maplibre-wmts'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/maplibre-gl-js/wms/serve.wms"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -1444,7 +1458,7 @@
       "operation": "OGC-OP-WCS-2-0-COVERAGE",
       "maturity": "supported",
       "canonical_client": "OWSLib",
-      "client_lane": "owslib-ogc",
+      "client_lane": "py-owslib",
       "client_version": "0.36.0",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
@@ -1463,103 +1477,24 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'owslib-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc-api-coverages",
-      "surface": "ogc-api-coverages",
-      "operation": "serve.ogc-api-coverages",
-      "maturity": "supported",
-      "canonical_client": "OWSLib",
-      "client_lane": "owslib-ogc-api-coverages",
-      "client_version": "0.36.0",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "boundary",
-        "crs-axis",
-        "media-schema"
+      "test_ids": [
+        "client-cert/owslib/ogc/OGC-OP-WCS-2-0-COVERAGE"
       ],
-      "contract_revision": "canonical-client-assignments@2026-08-21.1",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'owslib-ogc-api-coverages'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'py-owslib' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs, wms, wmts."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc-api-edr",
-      "surface": "ogc-api-edr",
-      "operation": "serve.ogc-api-edr",
-      "maturity": "supported",
-      "canonical_client": "OWSLib",
-      "client_lane": "owslib-ogc-api-edr",
-      "client_version": "0.36.0",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "boundary",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "canonical-client-assignments@2026-08-21.1",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'owslib-ogc-api-edr'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/owslib/ogc/OGC-OP-WCS-2-0-COVERAGE"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -1569,7 +1504,7 @@
       "operation": "process.ogc-api-processes",
       "maturity": "supported",
       "canonical_client": "OWSLib",
-      "client_lane": "owslib-ogc-api-processes",
+      "client_lane": "py-owslib",
       "client_version": "0.36.0",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
@@ -1588,19 +1523,24 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/owslib/ogc-api-processes/process.ogc-api-processes"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'owslib-ogc-api-processes'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'py-owslib' is emitted, but not for the governed surface 'ogc-api-processes'; it emits ogc-features, wfs, wms, wmts."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/owslib/ogc-api-processes/process.ogc-api-processes"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -1610,7 +1550,7 @@
       "operation": "serve.ogc-api-records",
       "maturity": "supported",
       "canonical_client": "OWSLib",
-      "client_lane": "owslib-ogc-api-records",
+      "client_lane": "py-owslib",
       "client_version": "0.36.0",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
@@ -1630,19 +1570,24 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/owslib/ogc-api-records/serve.ogc-api-records"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'owslib-ogc-api-records'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'py-owslib' is emitted, but not for the governed surface 'ogc-api-records'; it emits ogc-features, wfs, wms, wmts."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/owslib/ogc-api-records/serve.ogc-api-records"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -1652,7 +1597,7 @@
       "operation": "serve.wcs",
       "maturity": "supported",
       "canonical_client": "OWSLib",
-      "client_lane": "owslib-wcs",
+      "client_lane": "py-owslib",
       "client_version": "0.36.0",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
@@ -1672,19 +1617,24 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/owslib/wcs/serve.wcs"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'owslib-wcs'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'py-owslib' is emitted, but not for the governed surface 'wcs'; it emits ogc-features, wfs, wms, wmts."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/owslib/wcs/serve.wcs"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -1694,8 +1644,8 @@
       "operation": "serve.stac",
       "maturity": "supported",
       "canonical_client": "PySTAC-Client",
-      "client_lane": "pystac-client-stac",
-      "client_version": "0.9.0",
+      "client_lane": "py-pystac",
+      "client_version": "pystac=1.15.2;pystac-client=0.9.0",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
       "licensed": false,
@@ -1714,19 +1664,29 @@
       "auth_policy_revision": "anonymous-and-protected-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/pystac-client/stac/serve.stac"
+      ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'pystac-client-stac'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "status": "present",
+          "producer": {
+            "envelopeClientLane": "py-pystac",
+            "envelopeProtocol": "stac",
+            "envelopeClientVersion": "pystac=1.15.2;pystac-client=0.9.0",
+            "baseline": "tests/baselines/client-compat/pystac/py-pystac-stac.cert.json"
+          },
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/pystac-client/stac/serve.stac"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -1736,8 +1696,8 @@
       "operation": "serve.geoservices-featureserver",
       "maturity": "supported",
       "canonical_client": "QGIS",
-      "client_lane": "ci-desktop",
-      "client_version": "3.40",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
       "licensed": false,
@@ -1753,19 +1713,24 @@
       "auth_policy_revision": "anonymous-public-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/qgis/featureserver/serve.geoservices-featureserver"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'ci-desktop'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'featureserver'; it emits ogc-features, wfs."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/qgis/featureserver/serve.geoservices-featureserver"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -1775,8 +1740,8 @@
       "operation": "serve.geoservices-mapserver",
       "maturity": "supported",
       "canonical_client": "QGIS",
-      "client_lane": "ci-desktop",
-      "client_version": "3.40",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
       "licensed": false,
@@ -1792,19 +1757,807 @@
       "auth_policy_revision": "anonymous-public-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/qgis/mapserver/serve.geoservices-mapserver"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
           "status": "absent",
           "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'ci-desktop'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'mapserver'; it emits ogc-features, wfs."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/qgis/mapserver/serve.geoservices-mapserver"
+          ],
+          "reasonCode": null,
+          "reason": null
+        }
+      }
+    },
+    {
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-COLLECTION",
+      "maturity": "supported",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": true,
+      "addressability_reason": null,
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null,
+      "test_ids": [
+        "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-COLLECTION"
+      ],
+      "receiptBinding": {
+        "status": "absent",
+        "producerBinding": {
+          "status": "absent",
+          "producer": null,
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+        },
+        "denominatorJoin": {
+          "status": "joinable",
+          "testIds": [
+            "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-COLLECTION"
+          ],
+          "reasonCode": null,
+          "reason": null
+        }
+      }
+    },
+    {
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-COLLECTIONS",
+      "maturity": "supported",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": true,
+      "addressability_reason": null,
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null,
+      "test_ids": [
+        "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-COLLECTIONS"
+      ],
+      "receiptBinding": {
+        "status": "absent",
+        "producerBinding": {
+          "status": "absent",
+          "producer": null,
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+        },
+        "denominatorJoin": {
+          "status": "joinable",
+          "testIds": [
+            "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-COLLECTIONS"
+          ],
+          "reasonCode": null,
+          "reason": null
+        }
+      }
+    },
+    {
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-CONFORMANCE",
+      "maturity": "supported",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": true,
+      "addressability_reason": null,
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null,
+      "test_ids": [
+        "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-CONFORMANCE"
+      ],
+      "receiptBinding": {
+        "status": "absent",
+        "producerBinding": {
+          "status": "absent",
+          "producer": null,
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+        },
+        "denominatorJoin": {
+          "status": "joinable",
+          "testIds": [
+            "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-CONFORMANCE"
+          ],
+          "reasonCode": null,
+          "reason": null
+        }
+      }
+    },
+    {
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-ITEM",
+      "maturity": "supported",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": true,
+      "addressability_reason": null,
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null,
+      "test_ids": [
+        "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-ITEM"
+      ],
+      "receiptBinding": {
+        "status": "absent",
+        "producerBinding": {
+          "status": "absent",
+          "producer": null,
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+        },
+        "denominatorJoin": {
+          "status": "joinable",
+          "testIds": [
+            "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-ITEM"
+          ],
+          "reasonCode": null,
+          "reason": null
+        }
+      }
+    },
+    {
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-ITEMS",
+      "maturity": "supported",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": true,
+      "addressability_reason": null,
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null,
+      "test_ids": [
+        "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-ITEMS"
+      ],
+      "receiptBinding": {
+        "status": "absent",
+        "producerBinding": {
+          "status": "absent",
+          "producer": null,
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+        },
+        "denominatorJoin": {
+          "status": "joinable",
+          "testIds": [
+            "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-ITEMS"
+          ],
+          "reasonCode": null,
+          "reason": null
+        }
+      }
+    },
+    {
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-LANDING",
+      "maturity": "supported",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": true,
+      "addressability_reason": null,
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null,
+      "test_ids": [
+        "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-LANDING"
+      ],
+      "receiptBinding": {
+        "status": "absent",
+        "producerBinding": {
+          "status": "absent",
+          "producer": null,
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+        },
+        "denominatorJoin": {
+          "status": "joinable",
+          "testIds": [
+            "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-LANDING"
+          ],
+          "reasonCode": null,
+          "reason": null
+        }
+      }
+    },
+    {
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-QUERYABLES",
+      "maturity": "supported",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": true,
+      "addressability_reason": null,
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null,
+      "test_ids": [
+        "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-QUERYABLES"
+      ],
+      "receiptBinding": {
+        "status": "absent",
+        "producerBinding": {
+          "status": "absent",
+          "producer": null,
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+        },
+        "denominatorJoin": {
+          "status": "joinable",
+          "testIds": [
+            "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-QUERYABLES"
+          ],
+          "reasonCode": null,
+          "reason": null
+        }
+      }
+    },
+    {
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-TRANSACTIONS",
+      "maturity": "supported",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": true,
+      "addressability_reason": null,
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null,
+      "test_ids": [
+        "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-TRANSACTIONS"
+      ],
+      "receiptBinding": {
+        "status": "absent",
+        "producerBinding": {
+          "status": "absent",
+          "producer": null,
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+        },
+        "denominatorJoin": {
+          "status": "joinable",
+          "testIds": [
+            "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-TRANSACTIONS"
+          ],
+          "reasonCode": null,
+          "reason": null
+        }
+      }
+    },
+    {
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-TILES-LANDING-TILESETS",
+      "maturity": "supported",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": true,
+      "addressability_reason": null,
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null,
+      "test_ids": [
+        "client-cert/qgis/ogc/OGC-OP-OGC-API-TILES-LANDING-TILESETS"
+      ],
+      "receiptBinding": {
+        "status": "absent",
+        "producerBinding": {
+          "status": "absent",
+          "producer": null,
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+        },
+        "denominatorJoin": {
+          "status": "joinable",
+          "testIds": [
+            "client-cert/qgis/ogc/OGC-OP-OGC-API-TILES-LANDING-TILESETS"
+          ],
+          "reasonCode": null,
+          "reason": null
+        }
+      }
+    },
+    {
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-TILES-TILE",
+      "maturity": "supported",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": true,
+      "addressability_reason": null,
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null,
+      "test_ids": [
+        "client-cert/qgis/ogc/OGC-OP-OGC-API-TILES-TILE"
+      ],
+      "receiptBinding": {
+        "status": "absent",
+        "producerBinding": {
+          "status": "absent",
+          "producer": null,
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+        },
+        "denominatorJoin": {
+          "status": "joinable",
+          "testIds": [
+            "client-cert/qgis/ogc/OGC-OP-OGC-API-TILES-TILE"
+          ],
+          "reasonCode": null,
+          "reason": null
+        }
+      }
+    },
+    {
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-WFS-2-0",
+      "maturity": "supported",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": true,
+      "addressability_reason": null,
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null,
+      "test_ids": [
+        "client-cert/qgis/ogc/OGC-OP-WFS-2-0"
+      ],
+      "receiptBinding": {
+        "status": "absent",
+        "producerBinding": {
+          "status": "absent",
+          "producer": null,
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+        },
+        "denominatorJoin": {
+          "status": "joinable",
+          "testIds": [
+            "client-cert/qgis/ogc/OGC-OP-WFS-2-0"
+          ],
+          "reasonCode": null,
+          "reason": null
+        }
+      }
+    },
+    {
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-WMS-GETCAPABILITIES-GETMAP-GETFEATUREINF",
+      "maturity": "supported",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": true,
+      "addressability_reason": null,
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null,
+      "test_ids": [
+        "client-cert/qgis/ogc/OGC-OP-WMS-GETCAPABILITIES-GETMAP-GETFEATUREINF"
+      ],
+      "receiptBinding": {
+        "status": "absent",
+        "producerBinding": {
+          "status": "absent",
+          "producer": null,
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+        },
+        "denominatorJoin": {
+          "status": "joinable",
+          "testIds": [
+            "client-cert/qgis/ogc/OGC-OP-WMS-GETCAPABILITIES-GETMAP-GETFEATUREINF"
+          ],
+          "reasonCode": null,
+          "reason": null
+        }
+      }
+    },
+    {
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-WMTS-GETCAPABILITIES-GETTILE",
+      "maturity": "supported",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": true,
+      "addressability_reason": null,
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null,
+      "test_ids": [
+        "client-cert/qgis/ogc/OGC-OP-WMTS-GETCAPABILITIES-GETTILE"
+      ],
+      "receiptBinding": {
+        "status": "absent",
+        "producerBinding": {
+          "status": "absent",
+          "producer": null,
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs."
+        },
+        "denominatorJoin": {
+          "status": "joinable",
+          "testIds": [
+            "client-cert/qgis/ogc/OGC-OP-WMTS-GETCAPABILITIES-GETTILE"
+          ],
+          "reasonCode": null,
+          "reason": null
+        }
+      }
+    },
+    {
+      "capability_key": "serve.ogc-api-features",
+      "surface": "ogc-api-features",
+      "operation": "serve.ogc-api-features",
+      "maturity": "supported",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": true,
+      "addressability_reason": null,
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "pagination",
+        "limit",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "canonical-client-assignments@2026-08-21.1",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null,
+      "test_ids": [
+        "client-cert/qgis/ogc-api-features/serve.ogc-api-features"
+      ],
+      "receiptBinding": {
+        "status": "absent",
+        "producerBinding": {
+          "status": "absent",
+          "producer": null,
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc-api-features'; it emits ogc-features, wfs."
+        },
+        "denominatorJoin": {
+          "status": "joinable",
+          "testIds": [
+            "client-cert/qgis/ogc-api-features/serve.ogc-api-features"
+          ],
+          "reasonCode": null,
+          "reason": null
+        }
+      }
+    },
+    {
+      "capability_key": "serve.ogc-api-maps",
+      "surface": "ogc-api-maps",
+      "operation": "serve.ogc-api-maps",
+      "maturity": "supported",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": true,
+      "addressability_reason": null,
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "canonical-client-assignments@2026-08-21.1",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null,
+      "test_ids": [
+        "client-cert/qgis/ogc-api-maps/serve.ogc-api-maps"
+      ],
+      "receiptBinding": {
+        "status": "absent",
+        "producerBinding": {
+          "status": "absent",
+          "producer": null,
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc-api-maps'; it emits ogc-features, wfs."
+        },
+        "denominatorJoin": {
+          "status": "joinable",
+          "testIds": [
+            "client-cert/qgis/ogc-api-maps/serve.ogc-api-maps"
+          ],
+          "reasonCode": null,
+          "reason": null
+        }
+      }
+    },
+    {
+      "capability_key": "styling.ogc-api-styles",
+      "surface": "ogc-api-styles",
+      "operation": "styling.ogc-api-styles",
+      "maturity": "supported",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": true,
+      "addressability_reason": null,
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "media-schema"
+      ],
+      "contract_revision": "canonical-client-assignments@2026-08-21.1",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null,
+      "test_ids": [
+        "client-cert/qgis/ogc-api-styles/styling.ogc-api-styles"
+      ],
+      "receiptBinding": {
+        "status": "absent",
+        "producerBinding": {
+          "status": "absent",
+          "producer": null,
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc-api-styles'; it emits ogc-features, wfs."
+        },
+        "denominatorJoin": {
+          "status": "joinable",
+          "testIds": [
+            "client-cert/qgis/ogc-api-styles/styling.ogc-api-styles"
+          ],
+          "reasonCode": null,
+          "reason": null
+        }
+      }
+    },
+    {
+      "capability_key": "serve.ogc-api-tiles",
+      "surface": "ogc-api-tiles",
+      "operation": "serve.ogc-api-tiles",
+      "maturity": "supported",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "licensed": false,
+      "entitlement_policy_revision": null,
+      "addressable_by_client": true,
+      "addressability_reason": null,
+      "scenario_facets": [
+        "positive",
+        "negative",
+        "auth",
+        "crs-axis",
+        "media-schema"
+      ],
+      "contract_revision": "canonical-client-assignments@2026-08-21.1",
+      "auth_policy_revision": "anonymous-and-protected-v1",
+      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
+      "budget_expectations": null,
+      "test_ids": [
+        "client-cert/qgis/ogc-api-tiles/serve.ogc-api-tiles"
+      ],
+      "receiptBinding": {
+        "status": "absent",
+        "producerBinding": {
+          "status": "absent",
+          "producer": null,
+          "reasonCode": "surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc-api-tiles'; it emits ogc-features, wfs."
+        },
+        "denominatorJoin": {
+          "status": "joinable",
+          "testIds": [
+            "client-cert/qgis/ogc-api-tiles/serve.ogc-api-tiles"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -1815,7 +2568,7 @@
       "maturity": "supported",
       "canonical_client": "QGIS",
       "client_lane": "desktop-qgis",
-      "client_version": "3.40",
+      "client_version": "3.44.13-Solothurn",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
       "licensed": false,
@@ -1831,24 +2584,29 @@
       "auth_policy_revision": "anonymous-public-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/qgis/ogc-features/serve.ogc-api-features"
+      ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
+          "status": "present",
           "producer": {
             "envelopeClientLane": "desktop-qgis",
             "envelopeProtocol": "ogc-features",
             "envelopeClientVersion": "3.44.13-Solothurn",
             "baseline": "tests/baselines/client-compat/pyqgis/desktop-qgis-ogc-features.cert.json"
           },
-          "reasonCode": "client-version-mismatch",
-          "reason": "Lane 'desktop-qgis' emits surface 'ogc-features' at client_version '3.44.13-Solothurn', but the governed row pins '3.40'; the normalizer matches the version exactly."
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/qgis/ogc-features/serve.ogc-api-features"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -1859,7 +2617,7 @@
       "maturity": "supported",
       "canonical_client": "QGIS",
       "client_lane": "desktop-qgis",
-      "client_version": "3.40",
+      "client_version": "3.44.13-Solothurn",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
       "licensed": false,
@@ -1875,24 +2633,29 @@
       "auth_policy_revision": "anonymous-public-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/qgis/wfs/serve.wfs"
+      ],
       "receiptBinding": {
-        "status": "absent",
+        "status": "implemented",
         "producerBinding": {
-          "status": "absent",
+          "status": "present",
           "producer": {
             "envelopeClientLane": "desktop-qgis",
             "envelopeProtocol": "wfs",
             "envelopeClientVersion": "3.44.13-Solothurn",
             "baseline": "tests/baselines/client-compat/pyqgis/desktop-qgis-wfs.cert.json"
           },
-          "reasonCode": "client-version-mismatch",
-          "reason": "Lane 'desktop-qgis' emits surface 'wfs' at client_version '3.44.13-Solothurn', but the governed row pins '3.40'; the normalizer matches the version exactly."
+          "reasonCode": null,
+          "reason": null
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/qgis/wfs/serve.wfs"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     },
@@ -1903,7 +2666,7 @@
       "maturity": "supported",
       "canonical_client": "QGIS",
       "client_lane": "desktop-qgis",
-      "client_version": "3.40",
+      "client_version": "3.44.13-Solothurn",
       "deployment_target": "local-docker",
       "required_tier": "nightly",
       "licensed": false,
@@ -1919,6 +2682,9 @@
       "auth_policy_revision": "anonymous-public-v1",
       "fixture_revision": "docker/cng/seed.sql@{source_sha}",
       "budget_expectations": null,
+      "test_ids": [
+        "client-cert/qgis/wms/serve.wms"
+      ],
       "receiptBinding": {
         "status": "absent",
         "producerBinding": {
@@ -1928,747 +2694,12 @@
           "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'wms'; it emits ogc-features, wfs."
         },
         "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.wmts",
-      "surface": "wmts",
-      "operation": "serve.wmts",
-      "maturity": "supported",
-      "canonical_client": "QGIS",
-      "client_lane": "desktop-qgis",
-      "client_version": "3.40",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "metadata",
-        "media-schema"
-      ],
-      "contract_revision": "server-capability-matrix@ac30266fbd153363bebdbed13130accc8ab0c94a",
-      "auth_policy_revision": "anonymous-public-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "surface-not-emitted",
-          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'wmts'; it emits ogc-features, wfs."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc",
-      "surface": "ogc",
-      "operation": "OGC-OP-OGC-API-FEATURES-COLLECTION",
-      "maturity": "supported",
-      "canonical_client": "QGIS",
-      "client_lane": "qgis-ogc",
-      "client_version": "3.40",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'qgis-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc",
-      "surface": "ogc",
-      "operation": "OGC-OP-OGC-API-FEATURES-COLLECTIONS",
-      "maturity": "supported",
-      "canonical_client": "QGIS",
-      "client_lane": "qgis-ogc",
-      "client_version": "3.40",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'qgis-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc",
-      "surface": "ogc",
-      "operation": "OGC-OP-OGC-API-FEATURES-CONFORMANCE",
-      "maturity": "supported",
-      "canonical_client": "QGIS",
-      "client_lane": "qgis-ogc",
-      "client_version": "3.40",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'qgis-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc",
-      "surface": "ogc",
-      "operation": "OGC-OP-OGC-API-FEATURES-ITEM",
-      "maturity": "supported",
-      "canonical_client": "QGIS",
-      "client_lane": "qgis-ogc",
-      "client_version": "3.40",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'qgis-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc",
-      "surface": "ogc",
-      "operation": "OGC-OP-OGC-API-FEATURES-ITEMS",
-      "maturity": "supported",
-      "canonical_client": "QGIS",
-      "client_lane": "qgis-ogc",
-      "client_version": "3.40",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'qgis-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc",
-      "surface": "ogc",
-      "operation": "OGC-OP-OGC-API-FEATURES-LANDING",
-      "maturity": "supported",
-      "canonical_client": "QGIS",
-      "client_lane": "qgis-ogc",
-      "client_version": "3.40",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'qgis-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc",
-      "surface": "ogc",
-      "operation": "OGC-OP-OGC-API-FEATURES-QUERYABLES",
-      "maturity": "supported",
-      "canonical_client": "QGIS",
-      "client_lane": "qgis-ogc",
-      "client_version": "3.40",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'qgis-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc",
-      "surface": "ogc",
-      "operation": "OGC-OP-OGC-API-FEATURES-TRANSACTIONS",
-      "maturity": "supported",
-      "canonical_client": "QGIS",
-      "client_lane": "qgis-ogc",
-      "client_version": "3.40",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'qgis-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc",
-      "surface": "ogc",
-      "operation": "OGC-OP-OGC-API-TILES-LANDING-TILESETS",
-      "maturity": "supported",
-      "canonical_client": "QGIS",
-      "client_lane": "qgis-ogc",
-      "client_version": "3.40",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'qgis-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc",
-      "surface": "ogc",
-      "operation": "OGC-OP-OGC-API-TILES-TILE",
-      "maturity": "supported",
-      "canonical_client": "QGIS",
-      "client_lane": "qgis-ogc",
-      "client_version": "3.40",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'qgis-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc",
-      "surface": "ogc",
-      "operation": "OGC-OP-WFS-2-0",
-      "maturity": "supported",
-      "canonical_client": "QGIS",
-      "client_lane": "qgis-ogc",
-      "client_version": "3.40",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'qgis-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc",
-      "surface": "ogc",
-      "operation": "OGC-OP-WMS-GETCAPABILITIES-GETMAP-GETFEATUREINF",
-      "maturity": "supported",
-      "canonical_client": "QGIS",
-      "client_lane": "qgis-ogc",
-      "client_version": "3.40",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'qgis-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc",
-      "surface": "ogc",
-      "operation": "OGC-OP-WMTS-GETCAPABILITIES-GETTILE",
-      "maturity": "supported",
-      "canonical_client": "QGIS",
-      "client_lane": "qgis-ogc",
-      "client_version": "3.40",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "esri-ogc-matrix@ece4c3a2f68557fe8329e9932de36193d0732894",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'qgis-ogc'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc-api-features",
-      "surface": "ogc-api-features",
-      "operation": "serve.ogc-api-features",
-      "maturity": "supported",
-      "canonical_client": "QGIS",
-      "client_lane": "qgis-ogc-api-features",
-      "client_version": "3.40",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "pagination",
-        "limit",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "canonical-client-assignments@2026-08-21.1",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'qgis-ogc-api-features'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc-api-maps",
-      "surface": "ogc-api-maps",
-      "operation": "serve.ogc-api-maps",
-      "maturity": "supported",
-      "canonical_client": "QGIS",
-      "client_lane": "qgis-ogc-api-maps",
-      "client_version": "3.40",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "canonical-client-assignments@2026-08-21.1",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'qgis-ogc-api-maps'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "styling.ogc-api-styles",
-      "surface": "ogc-api-styles",
-      "operation": "styling.ogc-api-styles",
-      "maturity": "supported",
-      "canonical_client": "QGIS",
-      "client_lane": "qgis-ogc-api-styles",
-      "client_version": "3.40",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "media-schema"
-      ],
-      "contract_revision": "canonical-client-assignments@2026-08-21.1",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'qgis-ogc-api-styles'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
-        }
-      }
-    },
-    {
-      "capability_key": "serve.ogc-api-tiles",
-      "surface": "ogc-api-tiles",
-      "operation": "serve.ogc-api-tiles",
-      "maturity": "supported",
-      "canonical_client": "QGIS",
-      "client_lane": "qgis-ogc-api-tiles",
-      "client_version": "3.40",
-      "deployment_target": "local-docker",
-      "required_tier": "nightly",
-      "licensed": false,
-      "entitlement_policy_revision": null,
-      "addressable_by_client": true,
-      "addressability_reason": null,
-      "scenario_facets": [
-        "positive",
-        "negative",
-        "auth",
-        "crs-axis",
-        "media-schema"
-      ],
-      "contract_revision": "canonical-client-assignments@2026-08-21.1",
-      "auth_policy_revision": "anonymous-and-protected-v1",
-      "fixture_revision": "docker/cng/seed.sql@{source_sha}",
-      "budget_expectations": null,
-      "receiptBinding": {
-        "status": "absent",
-        "producerBinding": {
-          "status": "absent",
-          "producer": null,
-          "reasonCode": "lane-not-emitted",
-          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'qgis-ogc-api-tiles'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf."
-        },
-        "denominatorJoin": {
-          "status": "unjoinable",
-          "testIds": [],
-          "reasonCode": "denominator-has-no-test-ids",
-          "reason": "The governed row declares no test_ids. The client-interop-cert-v1 normalizer resolves a receipt result by matching test_case_id against requirement.test_ids and rejects the whole receipt when a result resolves to anything other than exactly one requirement, so no honua-server receipt can bind this cell until the denominator names its test IDs."
+          "status": "joinable",
+          "testIds": [
+            "client-cert/qgis/wms/serve.wms"
+          ],
+          "reasonCode": null,
+          "reason": null
         }
       }
     }

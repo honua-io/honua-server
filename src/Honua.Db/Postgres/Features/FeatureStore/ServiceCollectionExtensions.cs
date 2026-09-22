@@ -113,16 +113,19 @@ internal static class ServiceCollectionExtensions
         // Spatial analytics reader (clustering, spatial join, buffer aggregate, density).
         // Composes the existing query builder + data access pipeline so all observability
         // (slow-query logging, metrics, telemetry) flows through the same code path as
-        // statistics, date bins and H3 aggregation. The optional metadata/filter services
-        // let the reader enforce metadata-v2 permanent (row-visibility) filters like the
-        // main feature store does.
+        // statistics, date bins and H3 aggregation. The reader receives the same optional
+        // metadata/filter services and request-scoped RLS / field-mask sources as the main
+        // feature store, and resolves them through the same LayerReadSecurityResolver, so
+        // analytics enforce the read policy a direct query does.
         services.AddScoped<ISpatialAnalyticsReader>(provider =>
             new PostgresSpatialAnalyticsReader(
                 provider.GetRequiredService<IFeatureQueryBuilder>(),
                 provider.GetRequiredService<IFeatureDataAccess>(),
                 provider.GetRequiredService<IFeatureCacheManager>(),
                 provider.GetService<IMetadataV2GraphProvider>(),
-                provider.GetService<IFilterExpressionService>()));
+                provider.GetService<IFilterExpressionService>(),
+                provider.GetService<Honua.Core.Features.Authorization.Abstractions.IRowLevelSecurityFilterSource>(),
+                provider.GetService<Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource>()));
 
         // Feature-change transactional outbox (#692). PostgreSQL is the canonical
         // mutation-capable provider so it owns the outbox repository implementation and

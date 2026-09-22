@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1134,
+    "total": 1138,
     "byStatus": {
-      "not-executable": 1121,
+      "not-executable": 1125,
       "unvalidated": 10,
       "passed": 3
     }
@@ -6884,7 +6884,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 112,
+      "line": 120,
       "language": "json"
     },
     {
@@ -12894,6 +12894,58 @@
       "language": "plain"
     },
     {
+      "id": "2f3d6ffbf95029e3",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/client-certification-2cc2213/README.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 151,
+      "language": "plain"
+    },
+    {
+      "id": "6bb08aabc1ac2dfe",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/client-certification-2cc2213/README.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 2,
+      "line": 163,
+      "language": "plain"
+    },
+    {
+      "id": "f3c13419fefa6dcd",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/client-certification-2cc2213/fix-4996/README.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 15,
+      "language": "text"
+    },
+    {
+      "id": "9e7d1f245c1050d8",
+      "kind": "docs-fence",
+      "path": "docs/internal/evidence/client-certification-2cc2213/fixes-4994-4995/README.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 58,
+      "language": "sh"
+    },
+    {
       "id": "9dcacdc486811ea6",
       "kind": "docs-fence",
       "path": "docs/internal/evidence/cng-geoparquet-candidate-548b7a5-2026-09-15/README.md",
@@ -13306,7 +13358,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 111,
+      "line": 119,
       "language": "json"
     },
     {
@@ -13319,7 +13371,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 146,
+      "line": 154,
       "language": "bash"
     },
     {
@@ -13332,7 +13384,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 156,
+      "line": 164,
       "language": "bash"
     },
     {
@@ -13696,7 +13748,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 40,
+      "line": 54,
       "language": "ts"
     },
     {
@@ -13709,7 +13761,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 71,
+      "line": 85,
       "language": "csharp"
     },
     {
@@ -13722,7 +13774,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 29,
+      "line": 43,
       "language": "bash"
     },
     {
@@ -13735,7 +13787,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 55,
+      "line": 69,
       "language": "python"
     },
     {
@@ -13995,7 +14047,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 132,
+      "line": 138,
       "language": "json"
     },
     {

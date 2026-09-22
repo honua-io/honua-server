@@ -235,8 +235,8 @@ public sealed class BranchVersioningPublicationMetadataTests(BranchVersioningPub
         mapExtensions.Contains("VersionManagementServer").Should().Be(expected);
         var vmsUrl = $"/rest/services/{fixture.Service.Metadata.Name}/VersionManagementServer?f=json";
         using var vmsGet = await App.Client.GetAsync(vmsUrl);
-        using var vmsPost = await App.Client.PostAsync(vmsUrl,
-            new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json" }));
+        using var vmsForm = new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json" });
+        using var vmsPost = await App.Client.PostAsync(vmsUrl, vmsForm);
         if (expected)
         {
             await BranchVersioningPublicationFixture.AssertVersionManagementSuccessAsync(vmsGet, vmsPost);

@@ -1,0 +1,85 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/gdal-ogr/wfs/serve.wfs",
+  "canonical_client": "GDAL/OGR",
+  "client_lane": "gdal",
+  "client_version": "3.8.4",
+  "client_version_detail": "GDAL 3.8.4, released 2024/02/08",
+  "surface": "wfs",
+  "operation": "serve.wfs",
+  "protocol_version": "2.0.0",
+  "protocol_profile": "WFS 2.0 simple+paging",
+  "started_at": "2026-09-16T21:42:20.951901Z",
+  "finished_at": "2026-09-16T21:42:21.357158Z",
+  "duration_ms": 405,
+  "status": "pass",
+  "exercised_capabilities": [
+    "positive",
+    "negative",
+    "auth",
+    "pagination",
+    "limit",
+    "crs-axis",
+    "media-schema"
+  ],
+  "summary": "all 7 checks passed across 7 governed facets",
+  "primary_request_url": "http://honua:5000/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetCapabilities",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "GetCapabilities, DescribeFeatureType and GetFeature through the WFS driver",
+      "outcome": "pass",
+      "detail": "10 features ['alpha', 'beta', 'delta', 'epsilon', 'eta', 'gamma', 'iota', 'lambda', 'theta', 'zeta']; requests ['http://honua:5000/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=DescribeFeatureType&TYPENAME=honua:test_layer,honua:wfs_t_insert_scratch,honua:wfs_t_update_scratch,honua:wfs_t_delete_scratch,honua:cng_features,honua:browser_points,honua:browser_lines,honua:browser_polygons,honua:portal_public_points', 'http://honua:5000/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetCapabilities', 'http://honua:5000/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=honua:test_layer&STARTINDEX=0&COUNT=100']",
+      "request_url": null,
+      "duration_ms": 41
+    },
+    {
+      "facet": "negative",
+      "name": "an unknown feature type is refused with an OWS exception",
+      "outcome": "pass",
+      "detail": "typed open -> None; layer lookup -> absent",
+      "request_url": null,
+      "duration_ms": 15
+    },
+    {
+      "facet": "auth",
+      "name": "the protected feature type is advertised only to authenticated principals",
+      "outcome": "pass",
+      "detail": "{'anonymous': 'hidden', 'wrong-api-key': 'hidden', 'expired-bearer': 'hidden', 'api-key': 10, 'oidc-bearer': 10}",
+      "request_url": null,
+      "duration_ms": 126
+    },
+    {
+      "facet": "crs-axis",
+      "name": "EPSG:4326 layer extent and lat/lon BBOX filter follow the fixture",
+      "outcome": "pass",
+      "detail": "EPSG:4326 extent (-122.49, -122.37, 37.71, 37.79); bbox window -> ['delta', 'gamma']; requests ['http://honua:5000/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=honua:test_layer&STARTINDEX=0&COUNT=100&FILTER=%3CFilter%20xmlns%3D%22http:%2F%2Fwww.opengis.net%2Ffes%2F2.0%22%20xmlns:gml%3D%22http:%2F%2Fwww.opengis.net%2Fgml%2F3.2%22%3E%3CBBOX%3E%3CValueReference%3Eshape%3C%2FValueReference%3E%3Cgml:Envelope%3E%3Cgml:lowerCorner%3E37.7150000000000034%20%2D122.4699999999999989%3C%2Fgml:lowerCorner%3E%3Cgml:upperCorner%3E37.7449999999999974%20%2D122.4399999999999977%3C%2Fgml:upperCorner%3E%3C%2Fgml:Envelope%3E%3C%2FBBOX%3E%3C%2FFilter%3E']",
+      "request_url": null,
+      "duration_ms": 87
+    },
+    {
+      "facet": "media-schema",
+      "name": "DescribeFeatureType types and GML payloads decode to typed fields",
+      "outcome": "pass",
+      "detail": "fields {'gml_id': 'String', 'objectid': 'Integer', 'name': 'String', 'description': 'String', 'status': 'String', 'count': 'Integer', 'ratio': 'Real', 'active': 'Integer', 'created_at': 'DateTime', 'event_date': 'Date', 'event_time': 'Time', 'uid': 'String', 'tags': 'String', 'numbers': 'String', 'eo_x003A_cloud_cover': 'Real'}; geometry Point",
+      "request_url": null,
+      "duration_ms": 18
+    },
+    {
+      "facet": "pagination",
+      "name": "the driver pages GetFeature with STARTINDEX/COUNT",
+      "outcome": "pass",
+      "detail": "10 features over 8 STARTINDEX pages",
+      "request_url": null,
+      "duration_ms": 84
+    },
+    {
+      "facet": "limit",
+      "name": "COUNT bounds the returned features",
+      "outcome": "pass",
+      "detail": "COUNT=4 requests ['http://honua:5000/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=honua:test_layer&STARTINDEX=0&COUNT=4', 'http://honua:5000/wfs?SERVICE=WFS&VERSION=2.0.0&REQUEST=GetFeature&TYPENAMES=honua:test_layer&STARTINDEX=0&COUNT=4']",
+      "request_url": null,
+      "duration_ms": 33
+    }
+  ]
+}

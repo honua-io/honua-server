@@ -171,14 +171,15 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
     private static void AssertOpenApiContract()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Honua.sln")))
+        while (directory is not null && !File.Exists(Path.Join(directory.FullName, "Honua.sln")))
         {
             directory = directory.Parent;
         }
 
         directory.Should().NotBeNull("the published contract must be checked against the runtime response");
+        var root = directory ?? throw new InvalidOperationException("Repository root was not found.");
         using var document = JsonDocument.Parse(File.ReadAllText(
-            Path.Combine(directory!.FullName, "docs", "developer", "api-specs", "admin-api.json")));
+            Path.Join(root.FullName, "docs", "developer", "api-specs", "admin-api.json")));
         var schemas = document.RootElement.GetProperty("components").GetProperty("schemas");
         schemas.GetProperty("UpdateLayerMetadataRequest").GetProperty("properties").GetProperty("editing")
             .GetProperty("$ref").GetString().Should().Be("#/components/schemas/UpdateLayerEditingRequest");

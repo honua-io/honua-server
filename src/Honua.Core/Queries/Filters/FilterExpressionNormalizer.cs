@@ -86,9 +86,20 @@ public static class FilterExpressionNormalizer
     }
 
     private static void EnsureWithinMaxDepth(FilterExpression expression)
+        => EnsureWithinBounds(expression, maxNodes: int.MaxValue);
+
+    /// <summary>
+    /// Iteratively verifies that an expression tree stays within
+    /// <see cref="MaxExpressionDepth"/> and <paramref name="maxNodes"/>. Runs without
+    /// recursion so it is safe on trees of any shape; parsers apply it to the tree they
+    /// produced before any recursive walk may see it. Nodes are counted the way those
+    /// walks visit them: a subtree referenced from several parents counts once per reference.
+    /// </summary>
+    internal static void EnsureWithinBounds(FilterExpression expression, int maxNodes)
     {
         var stack = new Stack<(FilterExpression Expression, int Depth)>();
         stack.Push((expression, 1));
+        var visited = 0;
 
         while (stack.Count > 0)
         {
@@ -99,9 +110,20 @@ public static class FilterExpressionNormalizer
                     $"Filter expression exceeds the maximum nesting depth of {MaxExpressionDepth}.");
             }
 
+            visited++;
+
             foreach (var child in EnumerateChildren(current))
             {
                 stack.Push((child, depth + 1));
+
+                // Every queued node will be visited, so visited + queued is already a lower
+                // bound on the tree size. Checking while queuing keeps the work list itself
+                // within the cap when a single node has a very large number of children.
+                if ((long)visited + stack.Count > maxNodes)
+                {
+                    throw new ArgumentException(
+                        $"Filter expression exceeds the maximum size of {maxNodes} nodes.");
+                }
             }
         }
     }

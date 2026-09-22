@@ -227,6 +227,7 @@ Run a pilot subset first. Move production traffic only when the latest evidence 
 
 - **The service URL is rejected** — use a credential-free HTTP(S) service root ending in `FeatureServer` or `MapServer`; layer URLs, URL userinfo, query strings, and fragments are rejected.
 - **The source needs a token** — configure the secret in the Honua environment and pass only its `env:VARIABLE_NAME` reference.
+- **The secret reference is not permitted or could not be resolved** — the Honua operator must permit the reference under `Security__RequestSecretReferences__*` ([References supplied in a request](../deploy/configuration.md#references-supplied-in-a-request)) and the variable must be set in the server environment. Nothing is permitted by default.
 - **Apply refuses to run** — verify the plan digest, ensure the output path does not already exist, and add `--yes` only after review.
 - **A job is still running** — use `resume` with a bounded `--max-wait`; it monitors the existing job without replaying the import.
 - **Counts match but a client operation fails** — check the operation in the [GeoServices parity reference](../../reference/compatibility/geoservices-parity.md).

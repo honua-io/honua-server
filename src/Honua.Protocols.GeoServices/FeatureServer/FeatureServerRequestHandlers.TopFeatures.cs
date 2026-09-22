@@ -293,18 +293,24 @@ internal static partial class FeatureServerEndpoints
             return Results.Bytes(pbfPayload, pbfContentType);
         }
 
-        var responseFeatures = result.Items.Select(feature => new GeoServicesFeature
+        var dateFieldNames = GeoServicesFieldConventions.ResolveDateFieldNames(resource);
+        var responseFeatures = result.Items.Select(feature =>
         {
-            Attributes = feature.Attributes
+            var attributes = feature.Attributes
                 .Where(kvp => !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
-                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
-            Geometry = returnGeometry
-                ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
-                    feature.Geometry, null, null, false, false)
-                : null,
-            // returnGeometry=false must omit the geometry property entirely (not emit
-            // null), matching the normal query operation (#1906).
-            IncludeGeometry = returnGeometry
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+            GeoServicesFieldConventions.CoerceDateAttributes(attributes, dateFieldNames);
+            return new GeoServicesFeature
+            {
+                Attributes = attributes,
+                Geometry = returnGeometry
+                    ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
+                        feature.Geometry, null, null, false, false)
+                    : null,
+                // returnGeometry=false must omit the geometry property entirely (not emit
+                // null), matching the normal query operation (#1906).
+                IncludeGeometry = returnGeometry
+            };
         }).ToArray();
 
         var geometryType = resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;

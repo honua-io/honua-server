@@ -55,10 +55,12 @@ internal sealed class TileOutcomeOutputCachePolicy : IOutputCachePolicy
 
         // Re-assert every reason the default and Honua-specific policies refuse storage, because
         // this policy runs last and its decision is the one the middleware acts on: a response
-        // that sets a cookie, belongs to an authenticated principal, or declares itself
-        // no-store must stay out of a shared cache whatever its status code is.
+        // that sets a cookie, belongs to an authenticated principal, answers a request presenting an
+        // application-defined credential, or declares itself no-store must stay out of a shared
+        // cache whatever its status code is.
         if (!StringValues.IsNullOrEmpty(response.Headers.SetCookie)
             || httpContext.User?.Identity?.IsAuthenticated == true
+            || BypassOutputCacheOnCredentialedRequestPolicy.CarriesCredential(httpContext)
             || response.Headers[HeaderNames.CacheControl].ToString()
                 .Contains("no-store", StringComparison.OrdinalIgnoreCase))
         {

@@ -4,6 +4,8 @@
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.FeatureStore.Abstractions;
+using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Domain;
@@ -48,7 +50,12 @@ public sealed class MapServerDynamicJoinTests
     [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
     public async Task Identify_WithLeftOuterJoin_ReturnsQualifiedJoinedAttributes()
     {
-        using var factory = CreateFactory(rightLayerAnonymous: true);
+        using var store = new TestFeatureStore();
+        var feature = (await store.GetAsync(RightStorageId, 1))!.Value;
+        await store.UpdateAsync(RightStorageId, Feature.Create(feature.Id, feature.Geometry,
+            feature.Attributes.SetItem("day", "2024-01-02")
+                .SetItem("observed", "2024-01-02T01:00:00+01:00")));
+        using var factory = CreateFactory(rightLayerAnonymous: true, store);
         using var client = factory.CreateClient();
 
         var dynamicLayers = Uri.EscapeDataString(BuildJoinDynamicLayers("esriLeftOuterJoin"));
@@ -71,6 +78,8 @@ public sealed class MapServerDynamicJoinTests
         // Right attribute qualified by the right table name.
         first.TryGetProperty("right_parcels.name", out var joinedName).Should().BeTrue(content);
         joinedName.GetString().Should().NotBeNullOrEmpty();
+        first.GetProperty("right_parcels.day").GetInt64().Should().Be(1704153600000L);
+        first.GetProperty("right_parcels.observed").GetInt64().Should().Be(1704153600000L);
     }
 
     [IntegrationTest]
@@ -189,7 +198,7 @@ public sealed class MapServerDynamicJoinTests
             + $"\"leftTableKey\":\"{leftKey}\",\"rightTableKey\":\"{rightKey}\","
             + $"\"joinType\":\"{joinType}\"}}}}}}";
 
-    private static WebApplicationFactory<Program> CreateFactory(bool rightLayerAnonymous)
+    private static WebApplicationFactory<Program> CreateFactory(bool rightLayerAnonymous, TestFeatureStore? store = null)
         => new TestWebApplicationFactory().WithWebHostBuilder(builder =>
         {
             builder.ConfigureTestServices(services =>
@@ -201,6 +210,11 @@ public sealed class MapServerDynamicJoinTests
                     provider.GetRequiredService<TestMetadataV2GraphProvider>());
                 services.AddSingleton<IMetadataV2GraphStore>(provider =>
                     provider.GetRequiredService<TestMetadataV2GraphProvider>());
+
+                if (store is not null)
+                {
+                    services.AddSingleton<IFeatureReader>(store);
+                }
 
                 services.Configure<MapServerDynamicLayersOptions>(options =>
                 {
@@ -229,6 +243,8 @@ public sealed class MapServerDynamicJoinTests
 
         MetadataV2Field[] rightFields =
         [
+            new() { Name = "day", Type = MetadataV2FieldType.Date },
+            new() { Name = "observed", Type = MetadataV2FieldType.DateTime },
             new() { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false, SemanticRoles = ["id.primary"] },
             new() { Name = "id", Type = MetadataV2FieldType.String, Length = 255 },
             new() { Name = "name", Type = MetadataV2FieldType.String, Length = 255 },

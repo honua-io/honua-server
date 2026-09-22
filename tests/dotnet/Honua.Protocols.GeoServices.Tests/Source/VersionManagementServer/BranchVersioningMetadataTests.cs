@@ -127,8 +127,8 @@ public sealed class BranchVersioningMetadataTests(ITestOutputHelper output) : IA
 
         var vmsUrl = $"/rest/services/{BranchVersioningPublicationFixture.ServiceName}/VersionManagementServer?f=json";
         using var vmsGet = await fixture.Client.GetAsync(vmsUrl);
-        using var vmsPost = await fixture.Client.PostAsync(vmsUrl,
-            new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json" }));
+        using var vmsForm = new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json" });
+        using var vmsPost = await fixture.Client.PostAsync(vmsUrl, vmsForm);
         if (!experimentalEnabled)
         {
             vmsGet.StatusCode.Should().Be(HttpStatusCode.NotFound);
