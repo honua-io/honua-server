@@ -350,7 +350,8 @@ internal sealed class OgcMapsRenderingHandler
                 var (combinedExtent, transformUnavailable) = await OgcMapsResourceResolver.BuildDatasetExtentAsync(
                     entries.Select(entry => entry.Resource),
                     context?.RequestServices.GetService<ICoordinateTransformService>(),
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    snapshot).ConfigureAwait(false);
                 if (transformUnavailable)
                 {
                     return CreateBadRequestResult(

@@ -176,6 +176,53 @@ public class OgcMapsRenderingHandlerTests
         transformUnavailable.Should().BeFalse("a resource that declares no bounds is not a transform failure");
     }
 
+    [UnitTest]
+    public async Task BuildDatasetExtentAsync_CachesResourceTransformsOnlyForTheSameSnapshot()
+    {
+        var geographic = ResourceWithBounds("geographic", 4326, -10, 0, 20, 30);
+        var projected = ResourceWithBounds("projected", 27700, 100000, 10000, 200000, 20000);
+        var snapshot = new MetadataV2GraphSnapshot(
+            new MetadataV2Graph { Resources = [geographic, projected] }, "revision-one", DateTimeOffset.UnixEpoch);
+        var transform = new StubCoordinateTransformService((-5, 10, 5, 40));
+
+        var first = await OgcMapsResourceResolver.BuildDatasetExtentAsync(
+            [geographic, projected], transform, CancellationToken.None, snapshot);
+        var repeated = await OgcMapsResourceResolver.BuildDatasetExtentAsync(
+            [geographic, projected], transform, CancellationToken.None, snapshot);
+
+        repeated.Should().Be(first);
+        transform.ExtentCalls.Should().Be(1);
+
+        var changedProjected = ResourceWithBounds("projected", 27700, 300000, 10000, 400000, 20000);
+        var nextSnapshot = new MetadataV2GraphSnapshot(
+            new MetadataV2Graph { Resources = [geographic, changedProjected] }, "revision-two", DateTimeOffset.UnixEpoch);
+        await OgcMapsResourceResolver.BuildDatasetExtentAsync(
+            [geographic, changedProjected], transform, CancellationToken.None, nextSnapshot);
+
+        transform.ExtentCalls.Should().Be(2, "a changed metadata snapshot must recompute the transform");
+    }
+
+    [UnitTest]
+    public async Task BuildDatasetExtentAsync_RetriesUnavailableTransformForTheSameSnapshot()
+    {
+        var geographic = ResourceWithBounds("geographic", 4326, -10, 0, 20, 30);
+        var projected = ResourceWithBounds("projected", 27700, 100000, 10000, 200000, 20000);
+        var snapshot = new MetadataV2GraphSnapshot(
+            new MetadataV2Graph { Resources = [geographic, projected] }, "revision-one", DateTimeOffset.UnixEpoch);
+        var transform = new StubCoordinateTransformService(null);
+
+        var unavailable = await OgcMapsResourceResolver.BuildDatasetExtentAsync(
+            [geographic, projected], transform, CancellationToken.None, snapshot);
+        transform.Result = (-5, 10, 5, 40);
+        var recovered = await OgcMapsResourceResolver.BuildDatasetExtentAsync(
+            [geographic, projected], transform, CancellationToken.None, snapshot);
+
+        unavailable.TransformUnavailable.Should().BeTrue();
+        recovered.TransformUnavailable.Should().BeFalse();
+        recovered.Extent.Should().NotBeNull();
+        transform.ExtentCalls.Should().Be(2);
+    }
+
     private static MetadataV2Resource ResourceWithBounds(
         string id, int srid, double west, double south, double east, double north)
         => new()
@@ -194,6 +241,10 @@ public class OgcMapsRenderingHandlerTests
     private sealed class StubCoordinateTransformService(
         (double MinX, double MinY, double MaxX, double MaxY)? transformedExtent) : ICoordinateTransformService
     {
+        public (double MinX, double MinY, double MaxX, double MaxY)? Result { get; set; } = transformedExtent;
+
+        public int ExtentCalls { get; private set; }
+
         public ValueTask<(double MinX, double MinY, double MaxX, double MaxY)?> TransformExtentAsync(
             double minX,
             double minY,
@@ -202,7 +253,10 @@ public class OgcMapsRenderingHandlerTests
             int fromSrid,
             int toSrid,
             CancellationToken cancellationToken = default)
-            => ValueTask.FromResult(transformedExtent);
+        {
+            ExtentCalls++;
+            return ValueTask.FromResult(Result);
+        }
 
         public ValueTask<(double X, double Y)?> TransformPointAsync(
             double x,

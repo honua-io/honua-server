@@ -294,7 +294,7 @@ public static partial class OgcMapsEndpoints
         }
 
         var (datasetExtent, transformUnavailable) = await OgcMapsResourceResolver.BuildDatasetExtentAsync(
-            resources, coordinateTransformService, cancellationToken).ConfigureAwait(false);
+            resources, coordinateTransformService, cancellationToken, snapshot).ConfigureAwait(false);
 
         Extent? extent = null;
         if (datasetExtent is { } bounds)
