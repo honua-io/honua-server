@@ -30,9 +30,9 @@
         "fail": 2
       },
       "arcpy": {
-        "pass": 36,
-        "n/a-no-client": 37,
-        "blocked": 19,
+        "pass": 37,
+        "n/a-no-client": 47,
+        "blocked": 8,
         "fail": 2
       },
       "qgis-ui": {
@@ -47,8 +47,8 @@
     },
     "overall": {
       "cells": 376,
-      "closed": 247,
-      "open": 129
+      "closed": 258,
+      "open": 118
     }
   },
   "rows": [
@@ -395,12 +395,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "pass",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The WFSToFeatureClass parameter list bounds one conversion tool, not native saved layers, connections or licensed extension paths for these operations.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "arcpy 3.7.1 module probe, 2026-09-18: the only WFS entry point is arcpy.conversion.WFSToFeatureClass, and GetParameterInfo lists exactly input_WFS_server, WFS_feature_type, out_path, out_name, out_feature_class, is_complex, out_gdb, max_features, expose_metadata, swap_xy and page_size. It reads a feature type into a feature class: no transaction, no property-value projection, no stored-query parameter, so WFS-T, GetPropertyValue and ListStoredQueries have no arcpy caller."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy.conversion.WFSToFeatureClass read 'browser_points' (from namespaced 'honua:browser_points') at https://host.docker.internal:18443/wfs into a file geodatabase: 3 feature(s), fields ['OBJECTID_1', 'GmlID', 'Shape', 'objectid', 'name']. Property values are reached through those fields; arcpy issues no separate GetPropertyValue request."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -434,12 +435,13 @@
           "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/use-wfs-services.html: \"WFS with transactions is not yet supported. The layer behaves as a read-only data source.\" (fetched 2026-09-19)"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The WFSToFeatureClass parameter list bounds one conversion tool, not native saved layers, connections or licensed extension paths for these operations.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "arcpy 3.7.1 module probe, 2026-09-18: the only WFS entry point is arcpy.conversion.WFSToFeatureClass, and GetParameterInfo lists exactly input_WFS_server, WFS_feature_type, out_path, out_name, out_feature_class, is_complex, out_gdb, max_features, expose_metadata, swap_xy and page_size. It reads a feature type into a feature class: no transaction, no property-value projection, no stored-query parameter, so WFS-T, GetPropertyValue and ListStoredQueries have no arcpy caller."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. ArcGIS Pro exposes exactly one WFS entry point, arcpy.conversion.WFSToFeatureClass, which reads a feature type into a feature class. It issues no WFS-T Transaction and no ListStoredQueries request, and the executed inventory (arcpy-inventory.json) found no other arcpy name matching 'wfs'. The protocol has a read surface; this operation has none."
         },
         "qgis-ui": {
           "state": "pass",
@@ -461,12 +463,13 @@
           "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/use-wfs-services.html: \"WFS with transactions is not yet supported. The layer behaves as a read-only data source.\" (fetched 2026-09-19)"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The WFSToFeatureClass parameter list bounds one conversion tool, not native saved layers, connections or licensed extension paths for these operations.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "arcpy 3.7.1 module probe, 2026-09-18: the only WFS entry point is arcpy.conversion.WFSToFeatureClass, and GetParameterInfo lists exactly input_WFS_server, WFS_feature_type, out_path, out_name, out_feature_class, is_complex, out_gdb, max_features, expose_metadata, swap_xy and page_size. It reads a feature type into a feature class: no transaction, no property-value projection, no stored-query parameter, so WFS-T, GetPropertyValue and ListStoredQueries have no arcpy caller."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. ArcGIS Pro exposes exactly one WFS entry point, arcpy.conversion.WFSToFeatureClass, which reads a feature type into a feature class. It issues no WFS-T Transaction and no ListStoredQueries request, and the executed inventory (arcpy-inventory.json) found no other arcpy name matching 'wfs'. The protocol has a read surface; this operation has none."
         },
         "qgis-ui": {
           "state": "pass",
@@ -488,12 +491,13 @@
           "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/use-wfs-services.html: \"WFS with transactions is not yet supported. The layer behaves as a read-only data source.\" (fetched 2026-09-19)"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The WFSToFeatureClass parameter list bounds one conversion tool, not native saved layers, connections or licensed extension paths for these operations.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "arcpy 3.7.1 module probe, 2026-09-18: the only WFS entry point is arcpy.conversion.WFSToFeatureClass, and GetParameterInfo lists exactly input_WFS_server, WFS_feature_type, out_path, out_name, out_feature_class, is_complex, out_gdb, max_features, expose_metadata, swap_xy and page_size. It reads a feature type into a feature class: no transaction, no property-value projection, no stored-query parameter, so WFS-T, GetPropertyValue and ListStoredQueries have no arcpy caller."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. ArcGIS Pro exposes exactly one WFS entry point, arcpy.conversion.WFSToFeatureClass, which reads a feature type into a feature class. It issues no WFS-T Transaction and no ListStoredQueries request, and the executed inventory (arcpy-inventory.json) found no other arcpy name matching 'wfs'. The protocol has a read surface; this operation has none."
         },
         "qgis-ui": {
           "state": "pass",
@@ -514,12 +518,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The WFSToFeatureClass parameter list bounds one conversion tool, not native saved layers, connections or licensed extension paths for these operations.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "arcpy 3.7.1 module probe, 2026-09-18: the only WFS entry point is arcpy.conversion.WFSToFeatureClass, and GetParameterInfo lists exactly input_WFS_server, WFS_feature_type, out_path, out_name, out_feature_class, is_complex, out_gdb, max_features, expose_metadata, swap_xy and page_size. It reads a feature type into a feature class: no transaction, no property-value projection, no stored-query parameter, so WFS-T, GetPropertyValue and ListStoredQueries have no arcpy caller."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. ArcGIS Pro exposes exactly one WFS entry point, arcpy.conversion.WFSToFeatureClass, which reads a feature type into a feature class. It issues no WFS-T Transaction and no ListStoredQueries request, and the executed inventory (arcpy-inventory.json) found no other arcpy name matching 'wfs'. The protocol has a read surface; this operation has none."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -1393,12 +1398,13 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The citation is a harness exclusion rule, not capability evidence. ExportAttachments/AddAttachments exist and mapping objects come from factories; attachment/relationship fixtures and native mapping requests need specific review.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "honua-esri-compat arcpy_probes contract, run arcpy-client-compat-20260918-c: the operation is a REST operation with no core-arcpy surface - arcpy has no call that issues attachments, queryRelatedRecords, MapServer identify or legend; Pro's UI issues them, which is the pro-ui lane. Recorded not-applicable by the probe with that rule."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'attachment': 'attachments' is a REST operation with no core-arcpy surface (handled by the ArcGIS API for Python / raw REST, not arcpy)"
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -1421,12 +1427,13 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The citation is a harness exclusion rule, not capability evidence. ExportAttachments/AddAttachments exist and mapping objects come from factories; attachment/relationship fixtures and native mapping requests need specific review.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "honua-esri-compat arcpy_probes contract, run arcpy-client-compat-20260918-c: the operation is a REST operation with no core-arcpy surface - arcpy has no call that issues attachments, queryRelatedRecords, MapServer identify or legend; Pro's UI issues them, which is the pro-ui lane. Recorded not-applicable by the probe with that rule."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'query related': 'queryRelatedRecords' is a REST operation with no core-arcpy surface (handled by the ArcGIS API for Python / raw REST, not arcpy)"
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -1588,12 +1595,13 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904, UI-SERVICE-MAP: Explore pop-up on the MapServer layer returned UI Points (1) name ui-point-07, objectid 10, category A, value 60, matching the service; Pro issued POST MapServer/identify 200"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The citation is a harness exclusion rule, not capability evidence. ExportAttachments/AddAttachments exist and mapping objects come from factories; attachment/relationship fixtures and native mapping requests need specific review.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "honua-esri-compat arcpy_probes contract, run arcpy-client-compat-20260918-c: the operation is a REST operation with no core-arcpy surface - arcpy has no call that issues attachments, queryRelatedRecords, MapServer identify or legend; Pro's UI issues them, which is the pro-ui lane. Recorded not-applicable by the probe with that rule."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.map_server rule 'identify': MapServer 'identify' is a REST/protocol operation arcpy does not issue (Pro consumes a MapServer as a drawn map-image layer)"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1615,12 +1623,13 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904, UI-SERVICE-MAP: the Map Image Layer's sublayer UI Points resolved the server legend entry 'Default' (POST MapServer/legend 200) alongside the export render"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The citation is a harness exclusion rule, not capability evidence. ExportAttachments/AddAttachments exist and mapping objects come from factories; attachment/relationship fixtures and native mapping requests need specific review.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "honua-esri-compat arcpy_probes contract, run arcpy-client-compat-20260918-c: the operation is a REST operation with no core-arcpy surface - arcpy has no call that issues attachments, queryRelatedRecords, MapServer identify or legend; Pro's UI issues them, which is the pro-ui lane. Recorded not-applicable by the probe with that rule."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.map_server rule 'legend': MapServer 'legend' is a REST/protocol operation arcpy does not issue (Pro consumes a MapServer as a drawn map-image layer)"
         },
         "qgis-ui": {
           "state": "pass",
@@ -2287,12 +2296,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "honua-esri-compat/docs/reports/arcpy-routing-and-interop-exclusion-review-2026-09-20.md; evidence/arcpy-routing-interop-inventory-20260920/observations.json (honua-esri-compat commit f923cc3bb52b9731a75030bd4d66d7c7c80aeba9; SHA-256 860f90626eb97cc18b983ac3690e53c3d287b8a5f13255d61c0f7dac43820301): installed arcpy.na.MakeRouteAnalysisLayer and arcpy.na.Solve are distinct native GP entrypoints from the inspected nax path; primary documentation supports portal-backed input with Basic. The prior nax asynchronous-GP observation does not exclude these analysis-layer workflows. An owned layer and exact synchronous NAServer request/result still require a native probe; this is source inventory, not a native pass or proof of compiled transport.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "ArcGIS Pro 3.7 arcpy.nax reference (network data source: a network dataset, a portal, or a stand-alone routing service dictionary whose url names the web-tool GP service) and honua-esri-compat/evidence/arcpy-client-compat-20260919-p-na/certification/20260920T000204Z-desktop-arcgis-gp-naserver.cert.json: with the NAServer service and layer resources, the NetworkAnalysisUtilities tasks, portal helperServices and networkanalysis privileges all published, arcpy.nax answers 'Portal ... is not configured with the Route web tool' and, in the stand-alone form, posts to <url>/FindRoutes. arcpy.nax models every analysis on Esri's asynchronous routing web tools and never issues the NAServer solve; the synchronous NAServer layers are consumed by the Pro user interface (pro-ui lane)."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.na_server rule 'route-solve': arcpy.nax binds a routing service only through Esri's asynchronous routing web tools (FindRoutes, GenerateServiceAreas, ...) and never issues the NAServer solve: Cannot use 'https://host.docker.internal:18443/arcgis/rest/services/test_service/GPServer' for network analysis. [Authentication token required. (status code 499).] (ArcGIS Pro 3.7.1 arcpy.nax reference, network data source: a network dataset, a portal, or a stand-alone routing service dictionary whose url names the web-tool GP service)."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -2322,12 +2332,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "honua-esri-compat/docs/reports/arcpy-routing-and-interop-exclusion-review-2026-09-20.md; evidence/arcpy-routing-interop-inventory-20260920/observations.json (honua-esri-compat commit f923cc3bb52b9731a75030bd4d66d7c7c80aeba9; SHA-256 860f90626eb97cc18b983ac3690e53c3d287b8a5f13255d61c0f7dac43820301): installed arcpy.na.MakeServiceAreaAnalysisLayer and arcpy.na.Solve are distinct native GP entrypoints from the inspected nax path; primary documentation supports portal-backed input with Basic. The prior nax asynchronous-GP observation does not exclude these analysis-layer workflows. An owned layer and exact synchronous NAServer request/result still require a native probe; this is source inventory, not a native pass or proof of compiled transport.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "ArcGIS Pro 3.7 arcpy.nax reference (network data source: a network dataset, a portal, or a stand-alone routing service dictionary whose url names the web-tool GP service) and honua-esri-compat/evidence/arcpy-client-compat-20260919-p-na/certification/20260920T000204Z-desktop-arcgis-gp-naserver.cert.json: with the NAServer service and layer resources, the NetworkAnalysisUtilities tasks, portal helperServices and networkanalysis privileges all published, arcpy.nax answers 'Portal ... is not configured with the Route web tool' and, in the stand-alone form, posts to <url>/FindRoutes. arcpy.nax models every analysis on Esri's asynchronous routing web tools and never issues the NAServer solve; the synchronous NAServer layers are consumed by the Pro user interface (pro-ui lane)."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.na_server rule 'servicearea': arcpy.nax binds a routing service only through Esri's asynchronous routing web tools (FindRoutes, GenerateServiceAreas, ...) and never issues the NAServer solve: Cannot use 'https://host.docker.internal:18443/arcgis/rest/services/test_service/GPServer' for network analysis. [Authentication token required. (status code 499).] (ArcGIS Pro 3.7.1 arcpy.nax reference, network data source: a network dataset, a portal, or a stand-alone routing service dictionary whose url names the web-tool GP service)."
         },
         "qgis-ui": {
           "state": "blocked",
