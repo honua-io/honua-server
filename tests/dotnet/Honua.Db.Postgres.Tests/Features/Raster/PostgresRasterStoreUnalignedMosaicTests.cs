@@ -155,6 +155,39 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
         }
     }
 
+    [IntegrationTheory]
+    [InlineData("8BSI")]
+    [InlineData("16BSI")]
+    [InlineData("32BSI")]
+    [InlineData("32BF")]
+    [InlineData("64BF")]
+    public async Task MosaicOperations_WithOffGridValidZero_ExcludePaddingWithoutLosingZero(string pixelType)
+    {
+        var schemaName = await CreateSchemaAsync();
+        try
+        {
+            var west = await InsertConstantRasterAsync(
+                schemaName, "west", 0, 2, 1, 20, Day(1), pixelType: pixelType);
+            var shifted = await InsertConstantRasterAsync(
+                schemaName, "shifted-zero", 2.5, 2, 1, 0, Day(2), pixelType: pixelType);
+            var store = CreateStore(schemaName);
+
+            var stats = await store.GetMosaicStatisticsAsync(LayerId, [west, shifted], RasterMergeStrategy.Newest);
+
+            stats.Should().ContainSingle();
+            stats[0].MinValue.Should().Be(0, "zero is source data, not the padding marker");
+            stats[0].MaxValue.Should().Be(20);
+            stats[0].ValidPixelCount.Should().Be(8, "only the two source rasters' pixels count as data");
+            stats[0].MeanValue.Should().Be(10);
+            Band1(await store.IdentifyMosaicAsync(LayerId, [west, shifted], RasterMergeStrategy.Newest, 3.5, 1.5, 4326))
+                .Should().Be(0);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
     [IntegrationTest]
     public async Task GetMosaicStatisticsAsync_WithAlignedRasters_IsUnchangedByTheAlignmentStep()
     {
@@ -415,7 +448,8 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
         DateTimeOffset acquisition,
         double skewX = 0,
         double skewY = 0,
-        double? pixelSizeY = null)
+        double? pixelSizeY = null,
+        string pixelType = "32BF")
     {
         await using var connection = await fixture.GetConnectionAsync(schemaName);
         await using var command = connection.CreateCommand();
@@ -426,7 +460,7 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
                    ST_AddBand(
                        ST_MakeEmptyRaster(2, 2, @upperLeftX, @upperLeftY, @pixelSize, -@pixelSizeY,
                                           @skewX, @skewY, 4326),
-                       '32BF'::text,
+                       @pixelType,
                        @value,
                        NULL
                    ),
@@ -442,6 +476,7 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
         command.Parameters.AddWithValue("pixelSizeY", pixelSizeY ?? pixelSize);
         command.Parameters.AddWithValue("skewX", skewX);
         command.Parameters.AddWithValue("skewY", skewY);
+        command.Parameters.AddWithValue("pixelType", pixelType);
         command.Parameters.AddWithValue("value", value);
         command.Parameters.AddWithValue("acquisition", acquisition.UtcDateTime);
         return (long)(await command.ExecuteScalarAsync())!;
