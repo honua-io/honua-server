@@ -431,10 +431,19 @@ internal static class SharingOAuth2Endpoints
 
     private static async Task<string?> ReadUserInfoTokenAsync(HttpContext context)
     {
+        // OIDC Core 5.3.1 makes the Authorization header the PREFERRED way to present
+        // the access token and the form body an alternative, so a form-encoded POST
+        // that carries a bearer header must still be accepted. Returning early on the
+        // form values alone rejected exactly that request with invalid_request, which
+        // is the shape ArcGIS Pro and the portal-sharing matrix case both send.
         if (HttpMethods.IsPost(context.Request.Method) && context.Request.HasFormContentType)
         {
             var form = await context.Request.ReadFormAsync(context.RequestAborted).ConfigureAwait(false);
-            return ReadFirst(form["access_token"]) ?? ReadFirst(form["token"]);
+            var fromForm = ReadFirst(form["access_token"]) ?? ReadFirst(form["token"]);
+            if (!string.IsNullOrWhiteSpace(fromForm))
+            {
+                return fromForm;
+            }
         }
 
         return ReadBearerToken(context.Request.Headers["Authorization"])
