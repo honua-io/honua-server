@@ -10,6 +10,44 @@ namespace Honua.Core.Tests.Geometries;
 
 public sealed class CurveGeometryConverterTests
 {
+    [UnitTest]
+    public void Densify_ExactExpandedBudget_PreservesDefaultSampling()
+    {
+        var part = ParseCurve("""{"curvePaths":[[[0,0],{"b":[[1,1],[0,1],[1,0]]}]]}""");
+        var expected = CurveGeometryConverter.Densify(part);
+        expected.Should().HaveCount(33);
+        CurveGeometryConverter.Densify(part, 33).Should().BeEquivalentTo(expected, options => options.WithStrictOrdering());
+    }
+
+    [UnitTest]
+    public void Densify_ExpandedBudget_StopsBeforeLaterSegments()
+    {
+        var part = ParseCurve("""{"curvePaths":[[[0,0],{"b":[[1,1],[0,1],[1,0]]},{"unsupported":[]}]]}""");
+        var action = () => CurveGeometryConverter.Densify(part, 32);
+        action.Should().Throw<ArgumentException>().WithMessage("*budget*");
+    }
+
+    [Theory]
+    [InlineData("[0,1,2,3,4]")]
+    [InlineData("[0,1e999]")]
+    [InlineData("[0,\"invalid\"]")]
+    public void Densify_InvalidOrdinates_RejectsBeforeExpansion(string vertex)
+    {
+        var part = ParseCurve($"{{\"curvePaths\":[[{vertex}]]}}");
+        var action = () => CurveGeometryConverter.Densify(part, 10);
+        action.Should().Throw<ArgumentException>().WithMessage("*finite numeric ordinates*");
+    }
+
+    [UnitTest]
+    public void Densify_CancelledExpansion_DoesNotProduceGeometry()
+    {
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        var part = ParseCurve("""{"curvePaths":[[[0,0],{"b":[[1,1],[0,1],[1,0]]}]]}""");
+        var action = () => CurveGeometryConverter.Densify(part, 100, cancelled.Token);
+        action.Should().Throw<OperationCanceledException>();
+    }
+
     private static JsonElement[] ParseCurve(string json)
     {
         using var document = JsonDocument.Parse(json);
