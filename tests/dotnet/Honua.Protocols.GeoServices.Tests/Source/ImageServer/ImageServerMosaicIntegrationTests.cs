@@ -717,6 +717,79 @@ public sealed class ImageServerMosaicIntegrationTests
         }
     }
 
+    // #4792: a layer that mixes native resolutions made every union-backed ImageServer operation
+    // answer 500 (PostGIS rt_raster_from_two_rasters alignment error), starting with the service
+    // root. Fixture: "coarse" is 2x2 at 1.0 over x[0,2] y[0,2] = 20 (older); "fine" is 2x2 at 0.5
+    // over x[1,2] y[1,2] = 5 (newer). Aligned onto the finest grid, the newest-wins mosaic is 16
+    // pixels at 0.5: four of 5 and twelve of 20, so min 5, max 20, mean (4*5 + 12*20) / 16 = 16.25.
+    [IntegrationTest]
+    [Endpoint("GET /rest/services/{id}/ImageServer")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/exportImage")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/identify")]
+    [Endpoint("GET /rest/services/{id}/ImageServer/computeStatisticsHistograms")]
+    [Operation(Operations.GetServiceInfo, Operations.Export, Operations.Identify)]
+    public async Task ImageServerOperations_WithMixedResolutionMosaic_AreServedFromTheAlignedUnion()
+    {
+        var fixture = await CreateFixtureAsync(seedRasters: false);
+        try
+        {
+            await RasterIntegrationTestData.ReplaceLayerRastersAsync(
+                fixture,
+                WebAppFixture.TestLayerId,
+                new RasterSeed("coarse", 2, 2, 0, 2, 1, -1, 20,
+                    RasterIntegrationTestData.WestAcquisition, RasterIntegrationTestData.WestAcquisition),
+                new RasterSeed("fine", 2, 2, 1, 2, 0.5, -0.5, 5,
+                    RasterIntegrationTestData.OverlapAcquisition, RasterIntegrationTestData.OverlapAcquisition));
+            var root = $"/rest/services/{WebAppFixture.TestLayerId}/ImageServer";
+
+            var info = await fixture.Client.GetAsync($"{root}?f=json");
+            var infoContent = await info.Content.ReadAsStringAsync();
+            info.StatusCode.Should().Be(HttpStatusCode.OK, infoContent);
+            using (var json = JsonDocument.Parse(infoContent))
+            {
+                json.RootElement.TryGetProperty("error", out _).Should().BeFalse(infoContent);
+                var extent = json.RootElement.GetProperty("extent");
+                extent.GetProperty("xmin").GetDouble().Should().Be(0);
+                extent.GetProperty("ymin").GetDouble().Should().Be(0);
+                extent.GetProperty("xmax").GetDouble().Should().Be(2);
+                extent.GetProperty("ymax").GetDouble().Should().Be(2);
+                json.RootElement.GetProperty("pixelSizeX").GetDouble().Should().BeApproximately(0.5, 1e-12);
+                json.RootElement.GetProperty("pixelSizeY").GetDouble().Should().BeApproximately(0.5, 1e-12);
+                json.RootElement.GetProperty("minValues")[0].GetDouble().Should().Be(5);
+                json.RootElement.GetProperty("maxValues")[0].GetDouble().Should().Be(20);
+                json.RootElement.GetProperty("meanValues")[0].GetDouble().Should().BeApproximately(16.25, 1e-9);
+            }
+
+            var export = await fixture.Client.GetAsync($"{root}/exportImage?bbox=0,0,2,2&size=4,4&format=tiff&f=image");
+            export.StatusCode.Should().Be(HttpStatusCode.OK);
+            export.Content.Headers.ContentType?.MediaType.Should().Be(
+                "image/tiff", await export.Content.ReadAsStringAsync());
+
+            using (var identify = await IdentifyJsonAsync(fixture, "geometry=1.25,1.75&geometryType=esriGeometryPoint"))
+            {
+                identify.RootElement.GetProperty("properties").GetProperty("Band_1").GetDouble().Should().Be(5);
+            }
+
+            var envelope = Uri.EscapeDataString(
+                """{"xmin":0,"ymin":0,"xmax":2,"ymax":2,"spatialReference":{"wkid":4326}}""");
+            var statistics = await fixture.Client.GetAsync(
+                $"{root}/computeStatisticsHistograms?f=json&geometryType=esriGeometryEnvelope&geometry={envelope}");
+            var statisticsContent = await statistics.Content.ReadAsStringAsync();
+            statistics.StatusCode.Should().Be(HttpStatusCode.OK, statisticsContent);
+            using (var json = JsonDocument.Parse(statisticsContent))
+            {
+                json.RootElement.TryGetProperty("error", out _).Should().BeFalse(statisticsContent);
+                var band = json.RootElement.GetProperty("statistics")[0];
+                band.GetProperty("min").GetDouble().Should().Be(5);
+                band.GetProperty("max").GetDouble().Should().Be(20);
+            }
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     private static long Ms(int year, int month, int day)
         => new DateTimeOffset(year, month, day, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
 
