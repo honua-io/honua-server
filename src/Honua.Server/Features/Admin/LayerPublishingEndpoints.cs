@@ -8,6 +8,7 @@ using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
@@ -183,6 +184,16 @@ internal static class LayerPublishingEndpoints
                 "Validation failed: storageMode must be 'source' or 'managed'."));
         }
 
+        // Captured source metadata is held to the import capture caps before any database work.
+        if (!LayerPublishSourceMetadataBounds.TryValidate(
+                request.FieldDomains,
+                request.Subtypes,
+                request.AttributeRules,
+                out var sourceMetadataError))
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {sourceMetadataError}"));
+        }
+
         try
         {
             var connectionId = await ResolveConnectionIdAsync(id, context).ConfigureAwait(false);
@@ -209,11 +220,17 @@ internal static class LayerPublishingEndpoints
                 Description = request.Description,
                 GeometryColumn = request.GeometryColumn,
                 GeometryType = request.GeometryType,
+                HasZ = request.HasZ,
+                HasM = request.HasM,
                 Srid = request.Srid,
                 PrimaryKey = request.PrimaryKey,
                 GlobalIdField = request.GlobalIdField,
                 SupportsAttachments = request.SupportsAttachments,
                 Fields = request.Fields ?? Array.Empty<string>(),
+                FieldDomains = request.FieldDomains
+                    ?? new Dictionary<string, MetadataV2FieldDomain>(StringComparer.OrdinalIgnoreCase),
+                Subtypes = request.Subtypes,
+                AttributeRules = request.AttributeRules,
                 ServiceName = request.ServiceName,
                 ConnectionId = connectionId,
                 Enabled = request.Enabled,

@@ -203,6 +203,11 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 "Layer name is required.");
         }
 
+        if (!LayerPublishSourceMetadataBounds.TryValidate(request, out var sourceMetadataError))
+        {
+            throw new LayerPublishingException(LayerPublishingErrorKind.Validation, sourceMetadataError!);
+        }
+
         if (!IsSafeIdentifier(schema) || !IsSafeIdentifier(table))
         {
             throw new LayerPublishingException(
