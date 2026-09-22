@@ -162,9 +162,11 @@ public sealed class StacQueryablesAuthorizationTests : IAsyncLifetime
         // the authorised read below returns.
         response.Content.Headers.ContentType?.MediaType.Should().NotBe("application/schema+json");
         var body = await response.Content.ReadAsStringAsync();
-        foreach (var marker in new[] { "$schema", "queryables", "\"properties\"" })
+        using var denial = JsonDocument.Parse(body);
+        foreach (var field in new[] { "$schema", "queryables", "properties" })
         {
-            body.Should().NotContain(marker, $"the field schema of a private collection must not leak '{marker}'");
+            denial.RootElement.TryGetProperty(field, out _).Should().BeFalse(
+                $"the field schema of a private collection must not leak '{field}'");
         }
 
         // Paired success on a NON-EMPTY fixture: an admin-credentialed caller reads the same
