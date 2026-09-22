@@ -303,10 +303,33 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         // The shared class fixture runs with dev-auth bypass (so the admin-keyed client used by
         // the other tests is always allowed), which means an anonymous call against it returns
         // 200. Admin gating (endpoints call .RequireAdminAuthorization()) is only exercised when
-        // real gating is enabled, so stand up a dedicated fixture with HONUA_DEV_AUTH=false and
-        // prove the endpoint rejects an unauthenticated caller.
+        // real gating is enabled, so stand up a dedicated fixture with HONUA_DEV_AUTH=false.
+        // The same seeded in-memory stores are registered on it, so the steps the anonymous
+        // caller is refused are real data an admin key can read back on the SAME host — which
+        // is what separates "correctly refused" from "endpoint broken for everyone".
+        const string GatedAdminPassword = "console-job-steps-admin-key";
+        _logStore.SetLogs("job-running",
+            new ExecutionLogEntry
+            {
+                Timestamp = DateTimeOffset.UtcNow.AddMinutes(-2),
+                Level = ExecutionLogLevel.Info,
+                Message = "Reproject complete",
+                Phase = "Reproject"
+            });
+
         var gatedFixture = new WebAppFixture()
-            .ConfigureWebHost(builder => builder.UseSetting("HONUA_DEV_AUTH", "false"));
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", GatedAdminPassword);
+            })
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IExecutionJobStore>();
+                services.RemoveAll<IExecutionLogStore>();
+                services.AddSingleton<IExecutionJobStore>(_jobStore);
+                services.AddSingleton<IExecutionLogStore>(_logStore);
+            });
         await gatedFixture.InitializeAsync();
         try
         {
@@ -314,7 +337,31 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
 
             var response = await anonymous.GetAsync("/api/v1/admin/jobs/job-running/steps");
 
-            response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+            // The admin policy names the ApiKey scheme, so an unauthenticated caller is
+            // challenged: exactly 401, never 403 (authenticated-but-unprivileged) and never
+            // 404 (which would leak whether the job exists).
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+            // Nothing is disclosed: no step envelope, no correlation id, no phase names.
+            var body = await response.Content.ReadAsStringAsync();
+            foreach (var marker in new[] { "\"steps\"", "corr-running", "Reproject" })
+            {
+                body.Should().NotContain(marker, $"an unauthenticated caller must not see '{marker}'");
+            }
+
+            response.Headers.Contains("X-Correlation-Id").Should().BeFalse(
+                "the denial must not echo the job's correlation id");
+
+            // The admin principal reads the same job's steps off the SAME host, so the denial
+            // above is a refusal of the caller and not an endpoint broken for everyone.
+            using var admin = gatedFixture.CreateClient(
+                client => client.DefaultRequestHeaders.Add("X-API-Key", GatedAdminPassword));
+            var adminResponse = await admin.GetAsync("/api/v1/admin/jobs/job-running/steps");
+            var adminBody = await adminResponse.Content.ReadAsStringAsync();
+            adminResponse.StatusCode.Should().Be(HttpStatusCode.OK, adminBody);
+            using var adminDoc = JsonDocument.Parse(adminBody);
+            adminDoc.RootElement.GetProperty("steps").GetArrayLength().Should().Be(1);
+            adminDoc.RootElement.GetProperty("steps")[0].GetProperty("phase").GetString().Should().Be("Reproject");
         }
         finally
         {

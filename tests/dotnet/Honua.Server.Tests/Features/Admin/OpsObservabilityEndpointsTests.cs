@@ -167,7 +167,17 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
 
         var response = await anonymous.GetAsync("/api/v1/admin/observability/ops-health");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+        // The admin policy names the ApiKey scheme, so an unauthenticated caller is challenged:
+        // exactly 401, never 403 (which would mean authenticated-but-unprivileged).
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        // Nothing is disclosed. The paired success case above reads a populated dispatch
+        // backlog off this same host, so these markers would be present on a leak.
+        var body = await response.Content.ReadAsStringAsync();
+        foreach (var marker in new[] { "alertDispatch", "channels", "pendingCount", "deadLetteredCount", "webhook" })
+        {
+            body.Should().NotContain(marker, $"an unauthenticated caller must not see '{marker}'");
+        }
     }
 
     [IntegrationTest]
@@ -257,11 +267,28 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/observability/ops-health/history")]
     public async Task GetOpsHealthHistory_WithoutAdminAuth_IsUnauthorized()
     {
+        // Persist a sample so the series an admin can read is non-empty: the denial has to
+        // withhold real data, not an empty surface.
+        await SeedRollupSampleAsync();
+
         using var anonymous = _fixture.CreateClient();
 
-        var response = await anonymous.GetAsync("/api/v1/admin/observability/ops-health/history");
+        var response = await anonymous.GetAsync("/api/v1/admin/observability/ops-health/history?window=1h&resolution=1m");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        var body = await response.Content.ReadAsStringAsync();
+        foreach (var marker in new[] { "vitals", "gpQueueTotal", "gpQueueBreakdown", "test-replica", "cacheHitRatio" })
+        {
+            body.Should().NotContain(marker, $"an unauthenticated caller must not see '{marker}'");
+        }
+
+        // The admin principal still gets the series, so this is a refusal of the caller and
+        // not an endpoint broken for everyone.
+        var adminResponse = await _client.GetAsync("/api/v1/admin/observability/ops-health/history?window=1h&resolution=1m");
+        adminResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var adminJson = JsonDocument.Parse(await adminResponse.Content.ReadAsStringAsync());
+        adminJson.RootElement.GetProperty("vitals").GetArrayLength().Should().BeGreaterThan(0);
     }
 
     [IntegrationTest]
@@ -285,7 +312,12 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
 
         var response = await anonymous.GetAsync("/api/v1/admin/observability/findings");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        // The findings envelope that the paired success case reads must not appear here.
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().NotContain("generatedAt");
+        body.Should().NotContain("\"findings\"");
     }
 
     [IntegrationTest]
@@ -309,7 +341,14 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
             "/api/v1/admin/observability/findings/does-not-exist/propose",
             content: null);
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+        // The gate runs before the lookup, so the anonymous caller gets 401 — and specifically
+        // NOT the 404 the admin principal gets for the same id (ProposeFinding_UnknownId_Returns404).
+        // A 404 here would mean the denial leaked finding existence.
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().NotContain("does-not-exist");
+        body.Should().NotContain("proposal");
     }
 
     private sealed class FixedAlertDispatchHealth(AlertDispatchBacklog backlog) : IAlertDispatchHealth
