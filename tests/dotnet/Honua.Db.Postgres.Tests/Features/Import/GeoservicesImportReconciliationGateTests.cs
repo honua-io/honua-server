@@ -48,11 +48,17 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
             var result = await service.ImportLayerAsync(BuildRequest("relationship_rows", schemaName) with { DeferRelationshipApplyToBatch = deferToBatch }, progress);
 
             result.NeedsReview.Should().Be(!deferToBatch);
-            result.FidelityVerdict.Should().Be(deferToBatch ? MigrationFidelityVerdicts.FullFidelity : MigrationFidelityVerdicts.Incomplete);
-            result.FidelityDifferences.Where(difference => difference.Code == MigrationFidelityDifferenceCodes.RelationshipOmitted)
-                .Should().HaveCount(expectedOmissions).And.OnlyContain(difference =>
+            result.FidelityVerdict.Should().Be(deferToBatch ? MigrationFidelityVerdicts.Unverified : MigrationFidelityVerdicts.Incomplete);
+            var relationshipDifferences = result.FidelityDifferences
+                .Where(difference => difference.Code == MigrationFidelityDifferenceCodes.RelationshipOmitted)
+                .ToArray();
+            relationshipDifferences.Should().HaveCount(expectedOmissions);
+            if (expectedOmissions > 0)
+            {
+                relationshipDifferences.Should().OnlyContain(difference =>
                     difference.Severity == MigrationFidelityDifferenceSeverities.Blocking
                     && difference.Summary.Contains("reviewed relationship manifest", StringComparison.Ordinal));
+            }
             progress.Statuses.Should().Contain(deferToBatch ? GeoservicesImportStatus.Completed : GeoservicesImportStatus.NeedsReview);
             progress.Statuses.Should().NotContain(deferToBatch ? GeoservicesImportStatus.NeedsReview : GeoservicesImportStatus.Completed);
             await using var connection = await fixture.DataSource.OpenConnectionAsync();
