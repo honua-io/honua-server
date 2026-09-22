@@ -53,7 +53,7 @@ jobs:
         image: postgis/postgis:16-3.4-alpine
         env:
           POSTGRES_USER: honua
-          POSTGRES_PASSWORD: honua
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
           POSTGRES_DB: honua_test
         ports:
           - 5432:5432
@@ -116,7 +116,7 @@ jobs:
           # EmulatorFixture provisions the actual emulator containers via
           # Testcontainers (single provisioning path, no docker compose
           # double-up); we only need to assert HONUA_TEST_DB_URL here.
-          HONUA_TEST_DB_URL: 'Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=honua'
+          HONUA_TEST_DB_URL: 'Host=localhost;Port=5432;Database=honua_test;Username=honua;Password=ci-${{ github.run_id }}-${{ github.run_attempt }}'
         run: |
           if [ -z "${HONUA_TEST_DB_URL:-}" ]; then
             echo "::error::missing required nightly env var: HONUA_TEST_DB_URL"

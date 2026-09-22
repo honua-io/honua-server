@@ -202,7 +202,7 @@ jobs:
         image: postgis/postgis:16-3.4
         env:
           POSTGRES_USER: honua
-          POSTGRES_PASSWORD: honua
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
           POSTGRES_DB: honua_test
           POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
         ports:
@@ -218,7 +218,7 @@ jobs:
       PGHOST: localhost
       PGPORT: '5432'
       PGUSER: honua
-      PGPASSWORD: honua
+      PGPASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v7
 
@@ -294,7 +294,7 @@ jobs:
             db="honua_flake_${i}"
             create_iteration_db "${db}"
             rc=0
-            HONUA_TEST_DB_URL="Host=localhost;Port=5432;Database=${db};Username=honua;Password=honua" \
+            HONUA_TEST_DB_URL="Host=localhost;Port=5432;Database=${db};Username=honua;Password=${PGPASSWORD}" \
             HONUA_SERVER_TEST_LOG_NAME="flake-${SHARD_SUFFIX}__iter${i}" \
               scripts/ci/run-server-test-shard.sh || rc=$?
             # Exit 2 is the runner's own USAGE error (missing required env), not
