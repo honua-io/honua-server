@@ -15,6 +15,13 @@ internal static class WorkflowPackageMetadataKeys
     public const string ProcessId = "workflow.processId";
 
     /// <summary>
+    /// Prefix under which caller-supplied run parameters are recorded in run provenance
+    /// (<c>workflow.parameter.&lt;name&gt;</c>), keeping them apart from the stamped provenance
+    /// keys and from every parameter namespace the job runtime owns.
+    /// </summary>
+    public const string RunParameterPrefix = "workflow.parameter.";
+
+    /// <summary>
     /// Server-stamped provenance keys that callers must not override on run requests.
     /// Protects traceability of jobs/runs back to the originating package version.
     /// </summary>

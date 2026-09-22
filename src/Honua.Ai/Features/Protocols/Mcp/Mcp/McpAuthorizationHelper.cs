@@ -2,8 +2,6 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Claims;
-using System.Security.Cryptography;
-using System.Text;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Infrastructure.Middleware;
@@ -94,8 +92,9 @@ internal static class McpAuthorizationHelper
     /// Resolves the immutable MCP session binding from the framework-authenticated
     /// actor, the effective tenant selected by tenant policy, and the OAuth scope
     /// ceiling. Bearer sessions additionally include a one-way fingerprint of the
-    /// exact credential validated for this request, so every token-derived authority
-    /// dimension remains part of the binding without retaining the credential.
+    /// authority-bearing claims validated for this request, so every token-derived
+    /// authority dimension remains part of the binding while a refreshed access token
+    /// carrying the same authority keeps using its session (honua-server#4909).
     /// Client-supplied issuer, subject, tenant, and scope values are never read from
     /// request headers or parameters.
     /// </summary>
@@ -116,7 +115,7 @@ internal static class McpAuthorizationHelper
             return McpSessionManager.AnonymousPrincipalKey;
         }
 
-        string? credentialFingerprint = null;
+        string? authorityFingerprint = null;
         if (CanonicalSecurityActor.IsBearerPrincipal(context.User))
         {
             if (!actor.IsDurablyRevalidatable || string.IsNullOrWhiteSpace(actor.SubjectIssuer))
@@ -126,13 +125,11 @@ internal static class McpAuthorizationHelper
                 return null;
             }
 
-            credentialFingerprint = ResolveBearerCredentialFingerprint(context);
-            if (credentialFingerprint is null)
+            authorityFingerprint = ResolveBearerAuthorityFingerprint(context);
+            if (authorityFingerprint is null)
             {
-                // The bearer handler validated the request's Authorization credential.
-                // Requiring and hashing that same credential binds the session to every
-                // authority dimension projected from it (roles, permissions, workspace
-                // scopes, and future claim-based grants) without retaining the secret.
+                // A bearer principal is only ever projected from a presented Authorization
+                // credential; without one the principal's provenance is unproven.
                 return null;
             }
         }
@@ -145,10 +142,10 @@ internal static class McpAuthorizationHelper
             actor,
             tenant,
             context.User,
-            credentialFingerprint);
+            authorityFingerprint);
     }
 
-    private static string? ResolveBearerCredentialFingerprint(HttpContext context)
+    private static string? ResolveBearerAuthorityFingerprint(HttpContext context)
     {
         var authorization = context.Request.Headers.Authorization.ToString();
         const string bearerPrefix = "Bearer ";
@@ -163,8 +160,10 @@ internal static class McpAuthorizationHelper
             return null;
         }
 
-        var digest = SHA256.HashData(Encoding.UTF8.GetBytes(credential));
-        return $"sha256:{Convert.ToHexStringLower(digest)}";
+        // Bind to what the validated credential authorizes, not to the credential bytes:
+        // an access token refreshed with identical authority must keep its session, while
+        // any change of roles, groups, permissions or other grants must not (#4909).
+        return CanonicalSecurityActor.ResolveAuthorityFingerprint(context.User);
     }
 
     /// <summary>

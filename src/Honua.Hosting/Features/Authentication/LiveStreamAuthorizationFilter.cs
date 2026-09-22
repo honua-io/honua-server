@@ -157,6 +157,11 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
                     if (guardedFeature?.Socket is { } socket)
                     {
                         await socket.EndAuthorizationAsync().ConfigureAwait(false);
+                        // Cancelling a receive that is still pending aborts the managed socket, and
+                        // Kestrel's teardown can then drop the close frame before it leaves: the
+                        // client saw 1006 instead of 1008 (honua-server#4776). Let the endpoint
+                        // observe the client's close reply first, bounded by one interval.
+                        await socket.WaitForCloseReplyAsync(monitorStop.Token).ConfigureAwait(false);
                     }
 
                     await lifetime.CancelAsync().ConfigureAwait(false);
@@ -205,10 +210,7 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
         principal.Claims
             // These are request binding projections added after authentication, not
             // issuer claims. The original request's resolved scope stays immutable.
-            .Where(claim => !CanonicalSecurityActor.IsFrameworkOwnedClaim(claim)
-                || claim.Type is not (CanonicalSecurityActor.CanonicalActorClaim
-                    or CanonicalSecurityActor.EffectiveTenantClaim or CanonicalSecurityActor.ScopeCeilingClaim
-                    or CanonicalSecurityActor.AuthenticationSchemeClaim or "honua:issuer"))
+            .Where(claim => !CanonicalSecurityActor.IsRequestBindingProjection(claim))
             .Select(claim => (claim.Type, claim.Value, claim.Issuer)).Order();
 
     private sealed class RetainedWebSocketFeature(IHttpWebSocketFeature inner) : IHttpWebSocketFeature
@@ -226,6 +228,7 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
     private sealed class RetainedWebSocket(WebSocket inner) : WebSocket
     {
         private readonly SemaphoreSlim _send = new(1, 1);
+        private readonly TaskCompletionSource _receiveEnded = new(TaskCreationOptions.RunContinuationsAsynchronously);
         private bool _authorizationEnded;
         public override WebSocketCloseStatus? CloseStatus => inner.CloseStatus;
         public override string? CloseStatusDescription => inner.CloseStatusDescription;
@@ -239,8 +242,24 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
             inner.CloseAsync(closeStatus, statusDescription, cancellationToken);
         public override Task CloseOutputAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken) =>
             inner.CloseOutputAsync(closeStatus, statusDescription, cancellationToken);
-        public override Task<WebSocketReceiveResult> ReceiveAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken) =>
-            inner.ReceiveAsync(buffer, cancellationToken);
+        public override async Task<WebSocketReceiveResult> ReceiveAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken)
+        {
+            try
+            {
+                var result = await inner.ReceiveAsync(buffer, cancellationToken).ConfigureAwait(false);
+                if (result.MessageType == WebSocketMessageType.Close)
+                {
+                    _receiveEnded.TrySetResult();
+                }
+
+                return result;
+            }
+            catch (Exception)
+            {
+                _receiveEnded.TrySetResult();
+                throw;
+            }
+        }
         public override async Task SendAsync(ArraySegment<byte> buffer, WebSocketMessageType messageType, bool endOfMessage, CancellationToken cancellationToken)
         {
             await _send.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -281,6 +300,25 @@ internal sealed class LiveStreamAuthorizationFilter : IEndpointFilter
             catch (Exception error) when (error is OperationCanceledException or WebSocketException or ObjectDisposedException)
             {
                 inner.Abort();
+            }
+        }
+
+        internal async Task WaitForCloseReplyAsync(CancellationToken cancellationToken)
+        {
+            // Only a sent close awaits a reply; a socket the client already closed or that
+            // was aborted has nothing left in flight.
+            if (inner.State != WebSocketState.CloseSent)
+            {
+                return;
+            }
+
+            try
+            {
+                await _receiveEnded.Task.WaitAsync(RevalidationInterval, cancellationToken).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                // The close frame has been sent; a client that never replies is cancelled next.
             }
         }
     }

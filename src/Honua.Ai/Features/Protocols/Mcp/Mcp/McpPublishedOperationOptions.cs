@@ -9,10 +9,25 @@ namespace Honua.Ai.Protocols.Mcp;
 /// the <c>Mcp:PublishOperations</c> configuration section.
 /// </summary>
 /// <remarks>
-/// This is off by default so no host changes its advertised <c>tools/list</c> until
-/// an operator explicitly opts in. When enabled, each descriptor in the operations
-/// catalog (except those already exposed by a hand-authored tool) is projected into
-/// a typed, cacheable, policy-governed MCP tool named <c>honua_op_{operationId}</c>.
+/// Two independent switches (honua-server#3363):
+/// <list type="bullet">
+/// <item><description>
+/// <see cref="AdminProjection"/> (default <see langword="true"/>) publishes the audited Admin
+/// projection — the operations named by every registered
+/// <see cref="Honua.Core.Features.Operations.Abstractions.IAuditedAdminMcpProjection"/>, which are
+/// the committed <c>docs/gis/data/admin-mcp-projection-manifest.json</c> rows — as
+/// <c>honua_admin_*</c> tools.
+/// </description></item>
+/// <item><description>
+/// <see cref="Enabled"/> (default <see langword="false"/>) opts in to the full operations catalog,
+/// including operation families whose MCP projection has not been audited.
+/// </description></item>
+/// </list>
+/// Under either switch the audited
+/// <see cref="Honua.Core.Features.Operations.Services.AdminMcpOperationExclusions"/> never publish,
+/// descriptors already exposed by a hand-authored tool are skipped, and every call is governed by
+/// the operation policy decision point. Published tools appear in the authenticated <c>full</c>
+/// catalog export, never in the bounded default workflow view.
 /// </remarks>
 public sealed class McpPublishedOperationOptions
 {
@@ -20,11 +35,18 @@ public sealed class McpPublishedOperationOptions
     public const string SectionName = "Mcp:PublishOperations";
 
     /// <summary>
-    /// Whether validated operation descriptors are published as MCP tools. Default
-    /// <see langword="false"/>: the operations catalog is not projected onto
-    /// <c>tools/list</c> until an operator turns this on.
+    /// Whether the full validated operations catalog is published as MCP tools. Default
+    /// <see langword="false"/>: only the audited Admin projection (<see cref="AdminProjection"/>)
+    /// publishes until an operator opts in to the full catalog.
     /// </summary>
     public bool Enabled { get; set; }
+
+    /// <summary>
+    /// Whether the audited Admin operation projection is published as <c>honua_admin_*</c> tools.
+    /// Default <see langword="true"/> (honua-server#3363); set
+    /// <c>Mcp:PublishOperations:AdminProjection=false</c> to withhold it.
+    /// </summary>
+    public bool AdminProjection { get; set; } = true;
 
     /// <summary>
     /// "Deterministic mode": when <see langword="true"/>, only descriptors whose

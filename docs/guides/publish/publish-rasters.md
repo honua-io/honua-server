@@ -56,6 +56,10 @@ Run `POST /api/v1/admin/cloud-rasters` with this body:
 
 Providers: `AwsS3` and `AzureBlob` (a matching range reader must be configured). Manage registrations with `GET /api/v1/admin/cloud-rasters?layerId=1`, `GET|DELETE /api/v1/admin/cloud-rasters/{id}`, and `POST /api/v1/admin/cloud-rasters/{id}/refresh` to re-scan metadata. ImageServer tile requests use PostGIS first and fall back to registered COGs; the fallback requires an EPSG:3857 GoogleMapsCompatible-aligned grid, serves JPEG tiles for `format=jpg` (shared JPEGTables, GDAL's default, are spliced into each tile; 8-bit chunky grayscale, RGB and YCbCr only), and encodes DEFLATE/LZW/ZSTD/uncompressed chunky unsigned 8/16-bit grayscale or RGB samples as lossless PNG with nodata transparency, and is Pro-gated (`raster.cloud-cog-serving`). Registered cloud COGs are not read by `exportImage`, `identify`, WCS, or OGC API Coverages.
 
+Cloud COG `layerId` is the service-local publication index, not the backing storage layer ID.
+It must identify one routable publication across the catalog; colliding indexes fail closed.
+COG is a 2026.1 GA target through the documented direct tile workflow.
+
 ## Verify
 
 For a registered cloud COG, use the authorized [API explorer](../../reference/openapi-and-explorer.md)
@@ -80,7 +84,7 @@ Other protocol surfaces over the imported PostGIS raster backend:
 
 ## HDF5 / NetCDF
 
-Cloud-optimized HDF5 (`.h5`, `.hdf5`) and NetCDF-4 (`.nc`, `.nc4`) sources can be registered against a layer today; metadata extraction and subset reads ship in a follow-up reader:
+Cloud-optimized HDF5 (`.h5`, `.hdf5`) and NetCDF-4 (`.nc`, `.nc4`) sources can be registered against a layer; a refresh then scans their metadata on a GDAL worker. Protocol serving of their pixels is not yet exposed:
 
 Run `POST /api/v1/admin/multidim-coverages` with this body:
 
@@ -98,7 +102,7 @@ Run `POST /api/v1/admin/multidim-coverages` with this body:
 
 - `provider` must be `AwsS3` or `AzureBlob`; local paths are rejected. `variables` empty means "all CF data variables".
 - Manage with `GET /api/v1/admin/multidim-coverages?layerId=1`, `GET|DELETE .../multidim-coverages/{id}`.
-- `POST .../multidim-coverages/{id}/refresh` currently returns `501 Not Implemented` (`HONUA-COV-HDF-READER-NOT-ENABLED`) — registrations are kept and activate when the metadata reader ships.
+- `POST .../multidim-coverages/{id}/refresh` enqueues a GDAL metadata scan job and returns `202` with a `statusUrl` to poll; it needs the job store and a worker able to claim the job, and returns `503` when the job store is not configured. Refresh and scan status are Pro (`raster.multidim-coverage`).
 - Keep objects in a hot storage class (`STANDARD`); archive tiers time out on range reads.
 
 ## Troubleshoot
@@ -117,7 +121,3 @@ More help: [troubleshooting](../deploy/troubleshooting.md).
 - [Publish terrain and elevation](publish-terrain-and-elevation.md) — serve a DEM as Terrain-RGB tiles and elevation queries.
 - [Publish tiles](publish-tiles.md) — tile cache operations.
 - [Publish layers](publish-layers.md) — vector layer publishing.
-
-Cloud COG `layerId` is the service-local publication index, not the backing storage layer ID.
-It must identify one routable publication across the catalog; colliding indexes fail closed.
-COG is a 2026.1 GA target through the documented direct tile workflow.

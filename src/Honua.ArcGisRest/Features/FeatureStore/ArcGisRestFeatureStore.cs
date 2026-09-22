@@ -83,14 +83,23 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
     private readonly IArcGisRestFeatureClient _client;
     private readonly ILogger<ArcGisRestFeatureStore> _logger;
     private readonly FeatureProviderBinding? _binding;
+    private readonly LayerReadSecurityResolver? _readSecurity;
 
-    public ArcGisRestFeatureStore(IArcGisRestFeatureClient client, ILogger<ArcGisRestFeatureStore> logger)
-        : this(client, logger, binding: null)
+    public ArcGisRestFeatureStore(
+        IArcGisRestFeatureClient client,
+        ILogger<ArcGisRestFeatureStore> logger,
+        LayerReadSecurityResolver? readSecurity = null)
+        : this(client, logger, readSecurity, binding: null)
     {
     }
 
-    private ArcGisRestFeatureStore(IArcGisRestFeatureClient client, ILogger<ArcGisRestFeatureStore> logger, FeatureProviderBinding? binding)
+    private ArcGisRestFeatureStore(
+        IArcGisRestFeatureClient client,
+        ILogger<ArcGisRestFeatureStore> logger,
+        LayerReadSecurityResolver? readSecurity,
+        FeatureProviderBinding? binding)
     {
+        _readSecurity = readSecurity;
         _client = client ?? throw new ArgumentNullException(nameof(client));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _binding = binding;
@@ -112,7 +121,7 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
     public IFeatureReader CreateReaderForBinding(FeatureProviderBinding binding)
     {
         ArgumentNullException.ThrowIfNull(binding);
-        return new ArcGisRestFeatureStore(_client, _logger, binding);
+        return new ArcGisRestFeatureStore(_client, _logger, _readSecurity, binding);
     }
 
     /// <inheritdoc />
@@ -130,7 +139,7 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
     /// <inheritdoc />
     public async Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
-        var context = ResolveBinding(layerId);
+        var context = await ResolveBindingAsync(layerId, cancellationToken).ConfigureAwait(false);
         var authHeader = ArcGisRestQueryParameters.BuildAuthorizationHeader(context.ServiceLocation.Token);
 
         // One span for the whole federated query, not one per page: the loop below can
@@ -257,7 +266,7 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
     /// <inheritdoc />
     public async Task<ImmutableArray<long>> QueryObjectIdsAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
-        var context = ResolveBinding(layerId);
+        var context = await ResolveBindingAsync(layerId, cancellationToken).ConfigureAwait(false);
         var authHeader = ArcGisRestQueryParameters.BuildAuthorizationHeader(context.ServiceLocation.Token);
 
         // Determine the total matching count first so paging does not depend on comparing
@@ -320,7 +329,7 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
     /// <inheritdoc />
     public async Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
     {
-        var context = ResolveBinding(layerId);
+        var context = await ResolveBindingAsync(layerId, cancellationToken).ConfigureAwait(false);
         var authHeader = ArcGisRestQueryParameters.BuildAuthorizationHeader(context.ServiceLocation.Token);
         var url = ArcGisRestQueryParameters.BuildCountUrl(
             context.ServiceLocation.ServiceUrl,
@@ -335,7 +344,7 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
     /// <inheritdoc />
     public async Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
     {
-        var context = ResolveBinding(layerId);
+        var context = await ResolveBindingAsync(layerId, cancellationToken).ConfigureAwait(false);
         var effectiveQuery = query ?? new FeatureQuery();
         var authHeader = ArcGisRestQueryParameters.BuildAuthorizationHeader(context.ServiceLocation.Token);
         var url = ArcGisRestQueryParameters.BuildExtentUrl(
@@ -398,6 +407,24 @@ internal sealed class ArcGisRestFeatureStore : IFeatureDataProvider, IFeatureRea
     public Task<ImmutableArray<IReadOnlyDictionary<string, object?>>> QueryH3Async(
         int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryH3Async), layerId);
+
+    /// <summary>
+    /// Resolves the binding for a read. Every read path resolves its layer here, so this is the
+    /// single seam that refuses a read whose layer carries a read policy this provider cannot
+    /// enforce (permanent filter, row-level security predicate or field masks).
+    /// </summary>
+    private async Task<ResolvedBinding> ResolveBindingAsync(int layerId, CancellationToken cancellationToken)
+    {
+        var resolved = ResolveBinding(layerId);
+        if (_readSecurity is not null)
+        {
+            await _readSecurity
+                .EnsureNoUnenforcedPolicyAsync("ArcGIS REST", layerId, resolved.Resource, rejectPermanentFilter: true, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return resolved;
+    }
 
     private ResolvedBinding ResolveBinding(int layerId)
     {

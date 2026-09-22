@@ -3877,6 +3877,7 @@ internal static class ImageServerEndpoints
             context,
             authorizationOperation,
             cancellationToken).ConfigureAwait(false);
+        ImageServerV2Lookups.RecordRouteBinding(context, resolution, authorizationOperation);
         return (
             resolution.LayerId,
             resolution.PublicationId,
@@ -3904,12 +3905,22 @@ internal static class ImageServerEndpoints
         Honua.Core.Features.Authorization.Domain.AuthorizationOperation authorizationOperation =
             Honua.Core.Features.Authorization.Domain.AuthorizationOperation.Query)
     {
+        // A service-scoped route has already resolved and authorized its own publication for
+        // this storage layer; re-validating by storage id alone could bind (and authorize) a
+        // different publication that shares the layer (#4065).
+        if (ImageServerV2Lookups.TryGetRouteBinding(context, layerId, authorizationOperation, out var routeResolution))
+        {
+            return routeResolution;
+        }
+
         var resolver = context.RequestServices.GetRequiredService<IImageServerLayerResolver>();
-        return await resolver.ValidateLayerAsync(
+        var resolution = await resolver.ValidateLayerAsync(
             layerId,
             context,
             authorizationOperation,
             cancellationToken).ConfigureAwait(false);
+        ImageServerV2Lookups.RecordRouteBinding(context, resolution, authorizationOperation);
+        return resolution;
     }
 
     private static bool IsSupportedJsonResponseFormat(string? format)

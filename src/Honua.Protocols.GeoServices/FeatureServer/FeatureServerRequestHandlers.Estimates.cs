@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
@@ -65,7 +66,8 @@ internal static partial class FeatureServerEndpoints
         var service = validationResult.Service!;
         var publication = validationResult.Publication!;
         var resource = validationResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, AuthorizationOperation.Query, service, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return accessError;
@@ -154,16 +156,19 @@ internal static partial class FeatureServerEndpoints
                 [selectionError ?? "Invalid layer selection."]);
         }
 
-        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+        var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
             context,
             selectedLayers.Select(pair => pair.Resource),
-            service);
+            service,
+            AuthorizationOperation.Query,
+            cancellationToken).ConfigureAwait(false);
+        var accessError = access.RequireAny(selectedLayers.Select(pair => pair.Resource));
         if (accessError != null)
         {
             return accessError;
         }
 
-        var accessibleLayers = FilterAccessibleLayersV2(context, snapshot, service, selectedLayers);
+        var accessibleLayers = FilterAccessibleLayersV2(access, snapshot, selectedLayers);
         var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var layerEstimates = new List<ServiceLayerEstimateInfo>(accessibleLayers.Length);
 

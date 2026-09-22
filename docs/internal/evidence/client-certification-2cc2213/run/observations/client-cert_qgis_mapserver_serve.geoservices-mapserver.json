@@ -1,0 +1,49 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/qgis/mapserver/serve.geoservices-mapserver",
+  "canonical_client": "QGIS",
+  "client_lane": "desktop-qgis",
+  "client_version": "3.44.13-Solothurn",
+  "client_version_detail": "QGIS 3.44.13-Solothurn (PyQGIS, qgis/qgis:3.44.13)",
+  "surface": "mapserver",
+  "operation": "serve.geoservices-mapserver",
+  "protocol_version": "GeoServices REST 10.x",
+  "protocol_profile": "MapServer export",
+  "started_at": "2026-09-16T21:46:45.102257Z",
+  "finished_at": "2026-09-16T21:46:45.487308Z",
+  "duration_ms": 385,
+  "status": "pass",
+  "exercised_capabilities": [
+    "positive",
+    "metadata",
+    "media-schema"
+  ],
+  "summary": "all 3 checks passed across 3 governed facets",
+  "primary_request_url": "http://honua:5000/rest/services/browser_compat/MapServer/export",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "load the MapServer layer and render an export",
+      "outcome": "pass",
+      "detail": "painted 42 px in 12 colours via 1 exports",
+      "request_url": null,
+      "duration_ms": 298
+    },
+    {
+      "facet": "metadata",
+      "name": "service and layer JSON drive CRS, extent and layer list",
+      "outcome": "pass",
+      "detail": "crs EPSG:4326; extent -122,38 : -122,38; sublayers 0",
+      "request_url": null,
+      "duration_ms": 5
+    },
+    {
+      "facet": "media-schema",
+      "name": "service JSON and PNG32 exports carry their media types",
+      "outcome": "pass",
+      "detail": "[('2000', 'application/json'), ('MapServer', 'application/json'), ('export', 'image/png')]",
+      "request_url": null,
+      "duration_ms": 81
+    }
+  ]
+}

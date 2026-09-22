@@ -1,12 +1,12 @@
 ---
 type: guide
 title: "Capability deployment profiles"
-description: "Generate configuration from the same capability keys used by the evidence catalog and the ?caps= website view:"
+description: "Generate a Compose or Helm configuration that enables exactly the capability keys you select, and read what the selection implies for edition and pricing band."
 ---
 # Capability deployment profiles
 
-Generate configuration from the same capability keys used by the evidence catalog and the
-`?caps=` website view:
+Generate configuration from the same capability keys the capability catalog uses. From a
+checkout of honua-server:
 
 ```bash
 python scripts/deployment/generate-capability-profile.py \

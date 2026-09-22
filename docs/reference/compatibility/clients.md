@@ -6,34 +6,29 @@ description: "This page lists the clients Honua Server is tested against, the pr
 # Supported clients and known limitations
 
 This page lists the clients Honua Server is tested against, the protocol each one
-uses, and the honest list of current gaps. Tested versions come from the pinned
-[client template version matrix](../../gis/CLIENT_TEMPLATE_VERSION_MATRIX.md) and the
-[cross-client certification matrix](../../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md);
-rows without checked-in evidence are marked accordingly rather than claimed.
+uses, and the honest list of current gaps. Tested versions come from the certification evidence the project keeps with the
+server; rows without checked-in evidence are marked accordingly rather than claimed.
 
 ## Client × protocol matrix
 
 | Client | Protocols | Tested version | Evidence and guides |
 |---|---|---|---|
-| ArcGIS Pro | GeoServices REST FeatureServer, MapServer | 3.4.0 (2026-04-02 evidence) | [Connect ArcGIS Pro](../../guides/connect/arcgis-pro.md); [version matrix](../../gis/CLIENT_TEMPLATE_VERSION_MATRIX.md) |
-| QGIS | OGC API Features, WFS 2.0, WMS, WMTS | 3.40.0 (manual smoke) + nightly automated PyQGIS runs | [Connect QGIS](../../guides/connect/qgis.md); [version matrix](../../gis/CLIENT_TEMPLATE_VERSION_MATRIX.md) |
-| MapLibre GL JS | Vector tiles (MVT), TileJSON, auto-generated styles | 4.7.1 baseline; re-certified per CI run at the installed version | [Version matrix](../../gis/CLIENT_TEMPLATE_VERSION_MATRIX.md); [publish tiles](../../guides/publish/publish-tiles.md) |
-| Esri Leaflet | FeatureServer, MapServer | 3.0.19 (lockfile-resolved, automated Playwright suite) | [Certification matrix](../../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md#esri-leaflet-browser-sub-lane) |
-| CesiumJS | WMS, WMTS, OGC API Tiles, OGC API Maps (imagery providers), hosted 3D Tiles | Automated Playwright suite; version not pinned in the evidence matrix | [Certification matrix](../../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md); [publish 3D scenes](../../guides/publish/publish-3d-scenes.md) |
-| Power BI Desktop | OData v4 | 2.142.1053.0 (2026-04-02 evidence) | [Connect Excel and Power BI](../../guides/connect/excel-power-bi.md); [version matrix](../../gis/CLIENT_TEMPLATE_VERSION_MATRIX.md) |
-| Excel | OData v4 | 2402 (Build 17328.20174) (2026-04-02 evidence) | [Connect Excel and Power BI](../../guides/connect/excel-power-bi.md); [version matrix](../../gis/CLIENT_TEMPLATE_VERSION_MATRIX.md) |
+| ArcGIS Pro | GeoServices REST FeatureServer, MapServer | 3.4.0 (2026-04-02 evidence) | [Connect ArcGIS Pro](../../guides/connect/arcgis-pro.md) |
+| QGIS | OGC API Features, WFS 2.0, WMS, WMTS | 3.40.0 (manual smoke) + nightly automated PyQGIS runs | [Connect QGIS](../../guides/connect/qgis.md) |
+| MapLibre GL JS | Vector tiles (MVT), TileJSON, auto-generated styles | 4.7.1 baseline; re-certified per CI run at the installed version | [Publish tiles](../../guides/publish/publish-tiles.md) |
+| Esri Leaflet | FeatureServer, MapServer | 3.0.19 (lockfile-resolved, automated Playwright suite) | Automated browser suite |
+| CesiumJS | WMS, WMTS, OGC API Tiles, OGC API Maps (imagery providers), hosted 3D Tiles | Automated Playwright suite; version not pinned in the evidence matrix | [Publish 3D scenes](../../guides/publish/publish-3d-scenes.md) |
+| Power BI Desktop | OData v4 | 2.142.1053.0 (2026-04-02 evidence) | [Connect Excel and Power BI](../../guides/connect/excel-power-bi.md) |
+| Excel | OData v4 | 2402 (Build 17328.20174) (2026-04-02 evidence) | [Connect Excel and Power BI](../../guides/connect/excel-power-bi.md) |
 | Tableau | OData v4 | Not verified — no checked-in certification evidence; the OData v4 surface Tableau consumes is the same one certified for Power BI/Excel | [OData v4 coverage](../protocols/odata.md) |
 | GeoPandas / Python | OGC API Features, FeatureServer (incl. GeoParquet/GeoArrow query export), STAC | Automated pytest suite (server-side validation); client version not pinned | [Integration patterns](../integration-patterns.md) |
 | GDAL/OGR (`ogrinfo`/`ogr2ogr`) | OGC API Features, WFS 2.0 | GDAL 3.4+ | [Migrating from GeoServer](../../guides/migrate/from-geoserver.md) |
 | gRPC SDKs | `Geospatial.V1` gRPC surface | Generated from the stable proto contract; no per-client version matrix | [gRPC reference](../protocols/grpc.md) |
 | AI agents / MCP | MCP over admin + query surfaces | — | [Connect AI agents](../../guides/connect/ai-agents-mcp.md) |
 
-ArcGIS Pro, QGIS (manual lane), Power BI, and Excel evidence is the checked-in
-2026-04-02 immutable certification snapshot; PyQGIS, MapLibre, Esri Leaflet, and
-Cesium lanes are re-certified automatically in CI. See the
-[certification matrix](../../gis/CROSS_CLIENT_CERTIFICATION_MATRIX.md) for the
-per-lane test-case coverage (connection, auth, discovery, schema, query, paging,
-geometry fidelity, error handling, rendering).
+ArcGIS Pro, QGIS (manual lane), Power BI, and Excel evidence is the 2026-04-02
+certification snapshot; the PyQGIS, MapLibre, Esri Leaflet, and Cesium lanes are
+re-certified automatically on every run.
 
 ## Public URL and host validation
 
@@ -63,9 +58,7 @@ The restriction applies with both `admin` and other supplied usernames. Direct
 API-key authorization retains the key's existing grants; configured OIDC token
 issuance uses its existing identity projection.
 
-This is an explicit unsupported exchange, not evidence that scoped Portal-token
-authentication works in a desktop client. Native acquisition, storage, lifecycle
-and protocol authorization still require separate client evidence. See
+Scoped Portal-token authentication is therefore not available to desktop clients. See
 [authentication setup and token revocation during upgrades](../../guides/secure/authentication.md#4-issue-arcgis-compatible-tokens).
 
 ## Realtime credentials and reconnects
@@ -94,8 +87,6 @@ HTTP 429 means the caller's own credential or tenant already holds its share of
 concurrent subscriptions (close one or wait), and HTTP 503 means the node is at
 capacity. Both carry `Retry-After`; clients must honour it rather than reconnect
 in a tight loop.
-These local regression guarantees do not certify a release candidate; exact-image
-live issuer/SDK evidence is still required by the qualification gate.
 
 ## Known limitations
 
@@ -195,8 +186,3 @@ Current gaps, stated as fact. Protocol-level Esri parity detail lives in
 - **STAC API has no transaction extensions**; `bbox`/`intersects` remain CRS84.
 - **OpenUSD/Omniverse export is a preview manifest only** (Pro-gated): no USD
   geometry conversion, USDZ packaging, or Nucleus publishing.
-
-Each release re-validates this page via the
-[release checklist](../../internal/contributor/RELEASE_CHECKLIST.md), which requires
-refreshed supported/partial status, tested client versions, and certification
-evidence per the [evidence specification](../../gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md).

@@ -8,6 +8,7 @@ using System.Text;
 using System.Xml;
 using System.Collections.Immutable;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -110,10 +111,13 @@ internal static partial class MapServerEndpoints
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
             var publishedLayers = ResolveGenerateKmlPublishedLayers(snapshot, service);
 
-            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
                 context,
                 publishedLayers.Select(static layer => layer.Resource),
-                service);
+                service,
+                AuthorizationOperation.Export,
+                cancellationToken).ConfigureAwait(false);
+            var accessError = access.RequireAny(publishedLayers.Select(static layer => layer.Resource));
             if (accessError != null)
             {
                 return accessError;
@@ -174,7 +178,7 @@ internal static partial class MapServerEndpoints
                 layersValue,
                 dynamicLayers,
                 context,
-                service);
+                access);
             if (renderLayerError != null)
             {
                 return renderLayerError;
@@ -374,13 +378,13 @@ internal static partial class MapServerEndpoints
         string? layersParam,
         IReadOnlyList<DynamicLayerDefinition> dynamicLayers,
         HttpContext context,
-        MetadataV2Service service)
+        ResourceAccessSet access)
     {
         var layerLookup = publishedLayers.ToDictionary(static layer => layer.PublicLayerId);
         if (dynamicLayers.Count == 0)
         {
             var accessibleLayers = publishedLayers
-                .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
+                .Where(layer => access.IsAccessible(layer.Resource))
                 .ToArray();
 
             if (string.IsNullOrWhiteSpace(layersParam))
@@ -478,7 +482,7 @@ internal static partial class MapServerEndpoints
                     var dynamicLayer = dynamicLayers.FirstOrDefault(layer => layer.Id == requestedId);
                     if (dynamicLayer is null ||
                         !layerLookup.TryGetValue(dynamicLayer.MapLayerId, out var requestedMapLayer) ||
-                        !AccessPolicyHelpers.IsResourceAccessible(context, requestedMapLayer.Resource, service))
+                        !access.IsAccessible(requestedMapLayer.Resource))
                     {
                         return (Array.Empty<GenerateKmlLayerDescriptor>(), StandardErrorHelpers.CreateBadRequest(
                             context,
@@ -498,7 +502,7 @@ internal static partial class MapServerEndpoints
                     "layers parameter references an invalid or inaccessible layer."));
             }
 
-            if (!AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
+            if (!access.IsAccessible(layer.Resource))
             {
                 return (Array.Empty<GenerateKmlLayerDescriptor>(), StandardErrorHelpers.CreateBadRequest(
                     context,

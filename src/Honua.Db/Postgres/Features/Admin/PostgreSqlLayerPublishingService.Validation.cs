@@ -135,9 +135,15 @@ internal sealed partial class PostgreSqlLayerPublishingService
         List<ColumnInfo> columns,
         List<ColumnInfo> selectedColumns,
         string? requestedPrimaryKey,
+        bool managedStore,
         List<TablePublishValidationCheck> checks)
     {
         var primaryKeyName = ResolvePrimaryKeyName(selectedColumns, requestedPrimaryKey);
+        if (managedStore)
+        {
+            return ResolveManagedSourceKeyForValidation(columns, requestedPrimaryKey, primaryKeyName, checks);
+        }
+
         if (string.IsNullOrWhiteSpace(primaryKeyName))
         {
             checks.Add(Error(

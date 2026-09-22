@@ -63,7 +63,7 @@ internal sealed class ImageServerIdentifyHandler
         {
             // Validate layer exists in the Metadata v2 graph
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
+            if (ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context) is not { } resolved)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
@@ -448,6 +448,15 @@ internal sealed class ImageServerIdentifyHandler
             {
                 return (x, y, srid);
             }
+        }
+
+        // The native ArcGIS REST raster provider sends a two-key point literal.
+        // Reuse MapServer's finite-coordinate parser without relaxing general JSON.
+        if ((string.IsNullOrWhiteSpace(request.GeometryType) ||
+             request.GeometryType.Equals(PointGeometryType, StringComparison.OrdinalIgnoreCase)) &&
+            GeoServicesPointGeometryParser.TryParsePointLiteral(request.Geometry, out var literalX, out var literalY))
+        {
+            return (literalX, literalY, srid);
         }
 
         // Handle JSON geometry: point ({x,y}), envelope, or polygon (rings). For area

@@ -106,7 +106,22 @@ internal static partial class FeatureServerEndpoints
                 "gdbVersion",
                 "returnEditMoment",
                 "attachments",
-                "token"
+                "token",
+                // Accepted and ignored (#4105): no effect on a server without branch-version edit
+                // sessions or true curves that always returns per-edit results.
+                "sessionID",
+                "trueCurveClient",
+                "usePreviousEditMoment",
+                "timeReferenceUnknownClient",
+                "returnEditResults",
+                // Admitted so the edit handler can reject a non-default value with a specific
+                // message instead of an unknown-parameter error (#4105).
+                "assetMaps",
+                "async",
+                "useUniqueIds",
+                "editsUploadId",
+                "editsUploadFormat",
+                "datumTransformation"
             }
             .ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 

@@ -1,0 +1,238 @@
+{
+  "schemaVersion": "honua.operate-read-observation/v1",
+  "observedAt": "2026-09-14T07:27:45.593756+00:00",
+  "candidate": {
+    "sha": "ff1a463e7d48865239bb7cb13208fc7b65c4adce",
+    "image": "ghcr.io/honua-io/honua-server:nightly-aot-ff1a463",
+    "digest": "sha256:75ac7813b541af98fe471701238ff8f8ca8a2687115d0a27d4d114ad95c9f349",
+    "reference": "ghcr.io/honua-io/honua-server@sha256:75ac7813b541af98fe471701238ff8f8ca8a2687115d0a27d4d114ad95c9f349",
+    "manifestSha256": "daa3eab14dae8a1b34df6c32cc7f597a9a60ee03757b9c0de37a652f77de697e"
+  },
+  "qualificationStatus": "not-accepted-pin",
+  "scope": "5 REST reads, 4 MCP observation calls, full-view catalog discovery and the status contract; not installed CLI, DevOps stdio, Console, proposal authorization, source outage, deployment or recovery qualification.",
+  "fixture": {
+    "harness": "scripts/qualification/metadata-release-installed.py",
+    "harnessSha256": "64825397f147c2af9c800cc6dcba43a4e0e4418735751b2c8e5e4842236a846b",
+    "replayScript": "scripts/qualification/operate-read-observation.py",
+    "replayScriptSha256": "32e959a2c6b8327a42591bf86e30bf2f8523cc9d634c9145ffea702b9b5b0fef",
+    "setup": "Harness.start only; isolated seeded PostGIS/Redis, Development Enterprise dev grant, no deploy targets, alerting disabled; no operation submitted"
+  },
+  "replayProcedure": [
+    "Run scripts/qualification/operate-read-observation.py --manifest <platform-manifest.yaml> --output <new dir> with the pinned image pulled locally; the installed harness verifies RepoDigests and the OCI revision label before boot.",
+    "Read 5 REST routes with the isolated admin key. POST initialize, notifications/initialized and the four scenario tools/call messages to /mcp with Accept application/json, text/event-stream; parse data events as JSON-RPC.",
+    "Assert HTTP 200, no JSON-RPC error or isError, and the listed structured fields. Independently expect no findings/events and a notConfigured alert_dispatch source without observedAt/lastSuccessfulAt; check REST and MCP separately.",
+    "Compare operate status against the schema 1.1 local-only SLO contract.",
+    "Page tools/list with view=full through every nextCursor, rejecting duplicate names and cursor cycles; require the five scenario tools, absence of honua_propose_operation, and required string findingId/candidateId on honua_propose_finding.",
+    "Harness.finish removes lane containers and network in every outcome."
+  ],
+  "imageId": "sha256:75ac7813b541af98fe471701238ff8f8ca8a2687115d0a27d4d114ad95c9f349",
+  "restReads": [
+    {
+      "route": "/api/v1/admin/version",
+      "httpStatus": 200
+    },
+    {
+      "route": "/api/v1/operate/status",
+      "httpStatus": 200
+    },
+    {
+      "route": "/api/v1/admin/observability/ops-health",
+      "httpStatus": 200
+    },
+    {
+      "route": "/api/v1/admin/observability/findings",
+      "httpStatus": 200
+    },
+    {
+      "route": "/api/v1/admin/observability/events?pageSize=5",
+      "httpStatus": 200
+    }
+  ],
+  "versionResponse": {
+    "success": true,
+    "data": {
+      "version": "2026.1.1",
+      "metadataApiVersion": "metadata.honua.io/v2alpha1",
+      "metadataSchemaVersion": "2.0.0-alpha.1",
+      "serverTime": "2026-09-14T07:28:05.7696911+00:00"
+    },
+    "message": null,
+    "timestamp": "2026-09-14T07:28:05.7696919+00:00"
+  },
+  "mcp": {
+    "protocolVersion": "2025-03-26",
+    "checks": [
+      {
+        "tool": "honua_ops_health",
+        "expected": {
+          "httpStatus": 200,
+          "rpcError": false,
+          "isError": false,
+          "structuredFields": [
+            "evidencePosture"
+          ]
+        },
+        "status": "passed"
+      },
+      {
+        "tool": "honua_ops_findings",
+        "expected": {
+          "httpStatus": 200,
+          "rpcError": false,
+          "isError": false,
+          "structuredFields": [
+            "evidencePosture",
+            "findings"
+          ]
+        },
+        "status": "passed"
+      },
+      {
+        "tool": "honua_operate_events",
+        "expected": {
+          "httpStatus": 200,
+          "rpcError": false,
+          "isError": false,
+          "structuredFields": [
+            "items",
+            "partialResult"
+          ]
+        },
+        "status": "passed"
+      },
+      {
+        "tool": "honua_supported_operation_kinds",
+        "expected": {
+          "httpStatus": 200,
+          "rpcError": false,
+          "isError": false,
+          "structuredFields": [
+            "supportedKinds"
+          ]
+        },
+        "status": "passed"
+      }
+    ],
+    "supportedKinds": [
+      "AdminConfigChange",
+      "Deploy",
+      "Geoprocess",
+      "MetadataRelease"
+    ]
+  },
+  "fixtureAssertions": {
+    "rest": {
+      "findingsEmpty": true,
+      "alertSourceNotConfigured": true,
+      "eventsEmpty": true,
+      "healthHasPosture": true
+    },
+    "mcp": {
+      "findingsEmpty": true,
+      "alertSourceNotConfigured": true,
+      "eventsEmpty": true,
+      "healthHasPosture": true
+    }
+  },
+  "statusContract": {
+    "expected": {
+      "schemaVersion": "1.1",
+      "slo.configured": false,
+      "slo.availability": null,
+      "slo.nodeLocalRetainedTail.scope": "replica-local",
+      "slo.nodeLocalRetainedTail.isPlatformSli": false
+    },
+    "observed": {
+      "schemaVersion": "1.1",
+      "slo.configured": false,
+      "slo.availability": null,
+      "slo.nodeLocalRetainedTail.scope": "replica-local",
+      "slo.nodeLocalRetainedTail.isPlatformSli": false
+    },
+    "status": "passed",
+    "observedSlo": {
+      "configured": false,
+      "reason": "Platform availability requires a distributed, all-request, in-band-aware query; no qualifying platform SLO source is configured.",
+      "availability": null,
+      "nodeLocalRetainedTail": {
+        "scope": "replica-local",
+        "isPlatformSli": false,
+        "configuredWindowSeconds": 300,
+        "retentionWindowSeconds": 300,
+        "oldestRetainedSampleAgeSeconds": 0.160042425,
+        "newestRetainedSampleAgeSeconds": 0.160042425,
+        "retainedRequestCount": 1,
+        "retainedHttpServerErrorCount": 0,
+        "retainedHttpSuccessRatio": 1,
+        "totalRecordedSinceReset": 1,
+        "overwrittenSampleCount": 0,
+        "includesInBandErrors": false,
+        "resetBehavior": "process-start-or-telemetry-reconfigure",
+        "source": "node-local-retained-tail(http-5xx-only)",
+        "protocols": [
+          {
+            "protocol": "Admin",
+            "retainedRequestCount": 1,
+            "retentionCapacity": 4096,
+            "totalRecordedSinceReset": 1,
+            "overwrittenSampleCount": 0,
+            "oldestRetainedSampleAgeSeconds": 0.160042425,
+            "newestRetainedSampleAgeSeconds": 0.160042425
+          }
+        ]
+      }
+    }
+  },
+  "catalog": {
+    "pages": [
+      {
+        "count": 12,
+        "nextCursor": "bDE6MTI"
+      },
+      {
+        "count": 12,
+        "nextCursor": "bDE6MjQ"
+      },
+      {
+        "count": 12,
+        "nextCursor": "bDE6MzY"
+      },
+      {
+        "count": 12,
+        "nextCursor": "bDE6NDg"
+      },
+      {
+        "count": 10,
+        "nextCursor": null
+      }
+    ],
+    "totalDescriptors": 58,
+    "expectedTools": [
+      "honua_ops_health",
+      "honua_ops_findings",
+      "honua_operate_events",
+      "honua_supported_operation_kinds",
+      "honua_propose_finding"
+    ],
+    "missingTools": [],
+    "removedOpaqueProposalToolAbsent": true,
+    "proposalInputCheck": {
+      "required": [
+        "findingId",
+        "candidateId"
+      ],
+      "status": "passed"
+    },
+    "digestEncoding": "SHA-256 of UTF-8 json.dumps(descriptor, sort_keys=True, separators=(',', ':')), ensure_ascii=True",
+    "descriptorDigests": {
+      "honua_ops_health": "7da867d7f51bf9c8204bf11b12b63abc37d0bd433cbfcbaf455ddbc3873e6f82",
+      "honua_ops_findings": "2e3b0085ed42683fc2478fcf72253217794b8638d73bc4739cc72659941f4ed2",
+      "honua_operate_events": "0c838174865746ccd80cde4290d5592c76ae0c7c3e8f0308f805800cb8785143",
+      "honua_supported_operation_kinds": "e77faced34913bcc8201b3bc579f62db85c4d828fa075d67c77eecbe3852879f",
+      "honua_propose_finding": "d034e80b9e865af6db472678fe4c2c189b19e9d3ece25dec5884790516eda17c"
+    }
+  },
+  "cleanup": "removed lane containers and network",
+  "status": "passed",
+  "failures": []
+}

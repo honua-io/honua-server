@@ -1,0 +1,67 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/qgis/ogc-api-maps/serve.ogc-api-maps",
+  "canonical_client": "QGIS",
+  "client_lane": "desktop-qgis",
+  "client_version": "3.44.13-Solothurn",
+  "client_version_detail": "QGIS 3.44.13-Solothurn (PyQGIS, qgis/qgis:3.44.13)",
+  "surface": "ogc-api-maps",
+  "operation": "serve.ogc-api-maps",
+  "protocol_version": "OGC API - Maps 1.0",
+  "protocol_profile": "core+collection-map",
+  "started_at": "2026-09-16T21:48:13.063386Z",
+  "finished_at": "2026-09-16T21:48:13.634656Z",
+  "duration_ms": 571,
+  "status": "fail",
+  "exercised_capabilities": [
+    "positive",
+    "negative",
+    "auth",
+    "crs-axis",
+    "media-schema"
+  ],
+  "summary": "failed checks positive:open the collection map through QGIS's GDAL OGCAPI provider and render it, auth:the protected collection's map requires a valid credential, crs-axis:the map is georeferenced over the fixture's lon/lat extent, media-schema:map responses decode as PNG",
+  "primary_request_url": "http://honua:5000/ogc/maps/collections/2000/map",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "open the collection map through QGIS's GDAL OGCAPI provider and render it",
+      "outcome": "fail",
+      "detail": "CheckFailed: Cannot open GDAL dataset OGCAPI:http://honua:5000/ogc/maps/collections/2000:\nHTTP error code : 404; GDAL fetched ['http://honua:5000/ogc/maps/collections/2000']",
+      "request_url": null,
+      "duration_ms": 82
+    },
+    {
+      "facet": "negative",
+      "name": "an unknown collection map is refused",
+      "outcome": "pass",
+      "detail": "Cannot open GDAL dataset OGCAPI:http://honua:5000/ogc/maps/collections/no-such-collection:\nHTTP error code : 404",
+      "request_url": null,
+      "duration_ms": 60
+    },
+    {
+      "facet": "auth",
+      "name": "the protected collection's map requires a valid credential",
+      "outcome": "fail",
+      "detail": "CheckFailed: {'anonymous': 'Cannot open GDAL dataset OGCAPI:http://honua:5000/ogc/maps/collections/2010:\\nHTT', 'wrong-api-key': 'Cannot open GDAL dataset OGCAPI:http://honua:5000/ogc/maps/collections/2010:\\nHTT', 'expired-bearer': 'Cannot open GDAL dataset OGCAPI:http://honua:5000/ogc/maps/collections/2010:\\nHTT', 'api-key': 'Cannot open GDAL dataset OGCAPI:http://honua:5000/ogc/maps/collections/2010:\\nHTT', 'oidc-bearer': 'Cannot open GDAL dataset OGCAPI:http://honua:5000/ogc/maps/collections/2010:\\nHTT'}",
+      "request_url": null,
+      "duration_ms": 309
+    },
+    {
+      "facet": "crs-axis",
+      "name": "the map is georeferenced over the fixture's lon/lat extent",
+      "outcome": "fail",
+      "detail": "CheckFailed: Cannot open GDAL dataset OGCAPI:http://honua:5000/ogc/maps/collections/2000:\nHTTP error code : 404",
+      "request_url": null,
+      "duration_ms": 59
+    },
+    {
+      "facet": "media-schema",
+      "name": "map responses decode as PNG",
+      "outcome": "fail",
+      "detail": "CheckFailed: Cannot open GDAL dataset OGCAPI:http://honua:5000/ogc/maps/collections/2000:\nHTTP error code : 404",
+      "request_url": null,
+      "duration_ms": 60
+    }
+  ]
+}

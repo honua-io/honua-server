@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -256,10 +257,13 @@ internal static partial class MapServerEndpoints
             activity?.SetTag("honua.mapserver.height", imageHeight);
             activity?.SetTag("honua.mapserver.format", imageFormat);
 
-            var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
                 context,
                 publishedLayers.Select(static layer => layer.Resource),
-                service);
+                service,
+                AuthorizationOperation.Export,
+                cancellationToken).ConfigureAwait(false);
+            var accessError = access.RequireAny(publishedLayers.Select(static layer => layer.Resource));
             if (accessError != null)
             {
                 return accessError;
@@ -293,7 +297,7 @@ internal static partial class MapServerEndpoints
 
             var (renderLayers, renderLayersError) = ResolveRenderLayers(
                 publishedLayers,
-                service,
+                access,
                 parameters.Layers,
                 dynamicLayers,
                 context);
@@ -1127,7 +1131,7 @@ internal static partial class MapServerEndpoints
 
     private static (ExportRenderLayer[] Layers, IResult? Error) ResolveRenderLayers(
         IReadOnlyList<MapServerMetadataLayerDescriptor> publishedLayers,
-        MetadataV2Service service,
+        ResourceAccessSet access,
         string? layersParam,
         IReadOnlyList<DynamicLayerDefinition> dynamicLayers,
         HttpContext context)
@@ -1136,7 +1140,7 @@ internal static partial class MapServerEndpoints
         if (dynamicLayers.Count == 0)
         {
             var accessibleLayers = publishedLayers
-                .Where(layer => AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
+                .Where(layer => access.IsAccessible(layer.Resource))
                 .ToArray();
 
             if (string.IsNullOrWhiteSpace(layersParam))
@@ -1232,7 +1236,7 @@ internal static partial class MapServerEndpoints
                     var dynamicLayer = dynamicLayers.FirstOrDefault(layer => layer.Id == requestedId);
                     if (dynamicLayer is null ||
                         !layerLookup.TryGetValue(dynamicLayer.MapLayerId, out var requestedMapLayer) ||
-                        !AccessPolicyHelpers.IsResourceAccessible(context, requestedMapLayer.Resource, service))
+                        !access.IsAccessible(requestedMapLayer.Resource))
                     {
                         return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(
                             context,
@@ -1252,7 +1256,7 @@ internal static partial class MapServerEndpoints
                     "layers parameter references an invalid or inaccessible layer."));
             }
 
-            if (!AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
+            if (!access.IsAccessible(layer.Resource))
             {
                 return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(
                     context,
@@ -1264,7 +1268,7 @@ internal static partial class MapServerEndpoints
             // authorization model identical across export/identify/metadata.
             if (dynamicLayer.Join is { } exportJoin &&
                 (!layerLookup.TryGetValue(exportJoin.RightMapLayerId, out var rightLayer) ||
-                 !AccessPolicyHelpers.IsResourceAccessible(context, rightLayer.Resource, service)))
+                 !access.IsAccessible(rightLayer.Resource)))
             {
                 return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(
                     context,

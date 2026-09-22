@@ -464,6 +464,182 @@ public sealed class FeatureServerReplicationTests : IAsyncLifetime
         layerChanges.GetArrayLength().Should().BeGreaterThanOrEqualTo(1);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ExtractChanges, Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task ReplicaDownload_PointZMFeature_KeepsZMAndLayerSpatialReference()
+    {
+        // #4027: every replica download used to flatten Z/M and carry no spatial reference, so a 3D or
+        // measured layer synced offline lost its ordinates and wrote them back flattened on upload.
+        // The expected ordinates are the literal values written below, and 4326 is the SRID the test
+        // layer is seeded with (TestDataBuilder), not values read back from the server under test.
+        const double ExpectedX = -157.85;
+        const double ExpectedY = 21.30;
+        const double ExpectedZ = 123.5;
+        const double ExpectedM = 7.25;
+        const int LayerWkid = 4326;
+        EnableSyncEditing();
+
+        var replicaId = await CreateReplicaForEditsAsync("ZMDownload");
+        var objectId = await AddPointZMFeatureAsync("zm-download-probe", ExpectedX, ExpectedY, ExpectedZ, ExpectedM);
+
+        using var extractContent = new StringContent(
+            JsonSerializer.Serialize(new { replicaID = replicaId, f = "json" }), Encoding.UTF8, "application/json");
+        var extractResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/extractChanges", extractContent);
+        extractResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var extractBody = await extractResponse.Content.ReadAsStringAsync();
+        using var extractDoc = JsonDocument.Parse(extractBody);
+        AssertDeliveredPointZM(extractDoc.RootElement.GetProperty("layerChanges"), objectId, extractBody);
+
+        using var syncContent = new StringContent(
+            JsonSerializer.Serialize(new { replicaID = replicaId, syncDirection = "download", f = "json" }),
+            Encoding.UTF8,
+            "application/json");
+        var syncResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica", syncContent);
+        syncResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var syncBody = await syncResponse.Content.ReadAsStringAsync();
+        using var syncDoc = JsonDocument.Parse(syncBody);
+        AssertDeliveredPointZM(syncDoc.RootElement.GetProperty("edits"), objectId, syncBody);
+
+        static void AssertDeliveredPointZM(JsonElement layers, long objectId, string body)
+        {
+            var layer = layers.EnumerateArray().Single(item => item.GetProperty("id").GetInt32() == 0);
+            layer.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(LayerWkid, body);
+
+            var feature = layer.GetProperty("addFeatures").EnumerateArray()
+                .Single(item => item.GetProperty("attributes").GetProperty("objectid").GetInt64() == objectId);
+            var geometry = feature.GetProperty("geometry");
+            geometry.GetProperty("x").GetDouble().Should().BeApproximately(ExpectedX, 1e-9, body);
+            geometry.GetProperty("y").GetDouble().Should().BeApproximately(ExpectedY, 1e-9, body);
+            geometry.GetProperty("z").GetDouble().Should().BeApproximately(ExpectedZ, 1e-9, body);
+            geometry.GetProperty("m").GetDouble().Should().BeApproximately(ExpectedM, 1e-9, body);
+            geometry.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(LayerWkid, body);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_RollbackOnFailureOmitted_RollsBackTheLayerBatch()
+    {
+        // #4031: Esri documents rollbackOnFailure=true as the Synchronize Replica default. A client that
+        // omits it must not get the valid add committed next to the failing update.
+        EnableSyncEditing();
+        var replicaId = await CreateReplicaForEditsAsync("RollbackDefault");
+        const string name = "rollback-default-must-not-persist";
+
+        var root = await UploadAddWithFailingUpdateAsync(replicaId, name, rollbackOnFailure: null);
+
+        root.TryGetProperty("error", out _).Should().BeTrue("the failing update fails the upload: {0}", root);
+        (await CountFeaturesByNameAsync(name)).Should().Be(0, "an omitted rollbackOnFailure must roll back the whole layer batch");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.SynchronizeReplica)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/synchronizeReplica")]
+    public async Task SynchronizeReplica_RollbackOnFailureFalse_CommitsTheValidRowBestEffort()
+    {
+        // #4031 control: best-effort per-row apply stays available as an explicit opt-in.
+        EnableSyncEditing();
+        var replicaId = await CreateReplicaForEditsAsync("RollbackFalse");
+        const string name = "rollback-false-persists";
+
+        var root = await UploadAddWithFailingUpdateAsync(replicaId, name, rollbackOnFailure: false);
+
+        root.TryGetProperty("error", out _).Should().BeTrue("the failing update still fails the upload: {0}", root);
+        (await CountFeaturesByNameAsync(name)).Should().Be(1, "rollbackOnFailure=false commits the valid add");
+    }
+
+    private void EnableSyncEditing()
+    {
+        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Query", "Create", "Update", "Delete", "Sync"]);
+        _fixture.UpdateV2ServiceMetadata(WebAppFixture.TestServiceId, capabilities: ["Query", "Create", "Update", "Delete", "Sync"]);
+    }
+
+    private async Task<string> CreateReplicaForEditsAsync(string name)
+    {
+        using var content = new StringContent(
+            JsonSerializer.Serialize(new { replicaName = name, layers = "0", syncModel = "perReplica", f = "json" }),
+            Encoding.UTF8,
+            "application/json");
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/createReplica", content);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        return doc.RootElement.TryGetProperty("replicaID", out var replicaId)
+            ? replicaId.GetString()!
+            : throw new InvalidOperationException($"createReplica failed: {body}");
+    }
+
+    private async Task<long> AddPointZMFeatureAsync(string name, double x, double y, double z, double m)
+    {
+        using var content = new StringContent(
+            JsonSerializer.Serialize(new
+            {
+                adds = new[] { new { attributes = new { name }, geometry = new { x, y, z, m, hasZ = true, hasM = true } } },
+                f = "json"
+            }),
+            Encoding.UTF8,
+            "application/json");
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/applyEdits", content);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        var addResult = doc.RootElement.GetProperty("addResults").EnumerateArray().Single();
+        addResult.GetProperty("success").GetBoolean().Should().BeTrue(body);
+        return addResult.GetProperty("objectId").GetInt64();
+    }
+
+    private async Task<JsonElement> UploadAddWithFailingUpdateAsync(string replicaId, string name, bool? rollbackOnFailure)
+    {
+        // One valid add plus an update of an object id that does not exist, which fails.
+        var edits = JsonSerializer.Serialize(new object[]
+        {
+            new
+            {
+                id = 0,
+                adds = new[] { new { attributes = new { name } } },
+                updates = new[] { new { attributes = new Dictionary<string, object?> { ["objectid"] = 999_999_999L, ["name"] = "missing" } } }
+            }
+        });
+        var payload = new Dictionary<string, object?>
+        {
+            ["replicaID"] = replicaId,
+            ["syncDirection"] = "upload",
+            ["edits"] = edits,
+            ["f"] = "json"
+        };
+        if (rollbackOnFailure is { } rollback)
+        {
+            payload["rollbackOnFailure"] = rollback;
+        }
+
+        using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/synchronizeReplica", content);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return doc.RootElement.Clone();
+    }
+
+    private async Task<int> CountFeaturesByNameAsync(string name)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{WebAppFixture.TestLayerId}/query" +
+            $"?where={Uri.EscapeDataString($"name = '{name}'")}&returnCountOnly=true&f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        return doc.RootElement.TryGetProperty("count", out var count)
+            ? count.GetInt32()
+            : throw new InvalidOperationException($"count query failed: {body}");
+    }
+
     // The serverGen-based change-tracking flow the ArcGIS SDK
     // FeatureLayerCollection.extract_changes() uses calls extractChanges WITHOUT a
     // replicaID. On a sync-enabled service this must return a valid changes envelope

@@ -2,10 +2,13 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net;
+using System.Security.Claims;
 using System.Text.Json;
 using System.Text;
 using System.Xml.Linq;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
@@ -13,12 +16,16 @@ using Honua.Geoprocessing;
 using Honua.ControlPlane;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using NSubstitute;
 using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
@@ -40,7 +47,7 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}")]
     public async Task SubmitJob_WithRedisBackedRuntime_CompletesAndReturnsDurableResult()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
 
         var fixture = CreateDurableFixture(productionExecutor: false);
 
@@ -93,7 +100,7 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
         }
     }
 
@@ -103,7 +110,7 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
     [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}")]
     public async Task SubmitJob_WorkspaceProviderUnavailable_FailsDurablyAfterOneAttempt()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
         var fixture = CreateDurableFixture(productionExecutor: true)
             .ConfigureServices(services =>
             {
@@ -161,7 +168,166 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData("submitJob")]
+    [InlineData("execute")]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/execute")]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer/{taskName}/jobs/{jobId}/results/{paramName}")]
+    public async Task Workspace_ProductionStorePreservesOutputAcrossRestartAndHonorsOverwrite(string operation)
+    {
+        await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
+        var fixture = CreateDurableFixture(productionExecutor: true)
+            // The default Test host delays provider registration until after the
+            // feature graph. Use its existing opt-in for the production composition order.
+            .ConfigureWebHost(builder => builder.UseSetting("HONUA_REGISTER_TEST_INFRASTRUCTURE", "true"))
+            .ConfigureServices(services => services.Configure<WorkspaceOptions>(options => options.EnableAutomaticCleanup = false));
+        await fixture.InitializeAsync();
+        string? workspaceId = null;
+        var migrationApplied = false;
+        var label = "workspace-proof-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            // Test hosts skip production DbUp. Apply the actual embedded migration,
+            // not a hand-written schema, before using the normally registered provider.
+            await using var migration = typeof(Program).Assembly.GetManifestResourceStream(
+                "Honua.Server.Migrations.119_CreateGeoprocessingWorkspaces.sql")!;
+            using var reader = new StreamReader(migration);
+            await fixture.Postgres.ExecuteDdlUnderLockAsync((await reader.ReadToEndAsync()).Replace("$HonuaSchema$", "honua", StringComparison.Ordinal));
+            migrationApplied = true;
+            fixture.GetService<IWorkspaceLifecycleService>().Should().NotBeNull();
+
+            await RunAreaAsync(3, overwrite: false, expectSuccess: true);
+            await using (var connection = await fixture.Postgres.DataSource.OpenConnectionAsync())
+            {
+                await using var query = connection.CreateCommand();
+                query.CommandText = "SELECT workspace_id FROM honua.gp_workspaces WHERE label = @label";
+                query.Parameters.AddWithValue("label", label);
+                workspaceId = await query.ExecuteScalarAsync() as string;
+            }
+            workspaceId.Should().NotBeNullOrWhiteSpace();
+            var before = await fixture.GetService<IArtifactStore>().ListByWorkspaceAsync(workspaceId!);
+            var original = before.Should().ContainSingle().Subject;
+            AssertArea(original.Uri!, 12);
+
+            await fixture.RestartHostAsync();
+            var reopened = await fixture.GetService<IWorkspaceStore>().GetAsync(workspaceId!);
+            reopened.Should().NotBeNull();
+            reopened!.Label.Should().Be(label);
+            reopened.Artifacts.Should().ContainSingle().Which.Should().BeEquivalentTo(original);
+
+            await RunAreaAsync(5, overwrite: false, expectSuccess: false);
+            var denied = await fixture.GetService<IArtifactStore>().ListByWorkspaceAsync(workspaceId!);
+            denied.Should().ContainSingle().Which.Should().BeEquivalentTo(original);
+
+            await RunAreaAsync(5, overwrite: true, expectSuccess: true);
+            var replaced = await fixture.GetService<IArtifactStore>().ListByWorkspaceAsync(workspaceId!);
+            var replacement = replaced.Should().ContainSingle().Subject;
+            replacement.ArtifactId.Should().NotBe(original.ArtifactId);
+            AssertArea(replacement.Uri!, 20);
+
+            async Task RunAreaAsync(double width, bool overwrite, bool expectSuccess)
+            {
+                using var client = fixture.CreateAdminClient();
+                client.Timeout = TimeSpan.FromSeconds(45);
+                using var content = new FormUrlEncodedContent(new Dictionary<string, string>
+                {
+                    ["f"] = "json",
+                    ["wkb"] = PolygonWkb((0, 0), (width, 0), (width, 4), (0, 4), (0, 0)),
+                    ["srid"] = "3857",
+                    ["env:workspace"] = label,
+                    ["env:overwriteOutput"] = overwrite ? "true" : "false"
+                });
+                using var response = await client.PostAsync($"/rest/services/{ServiceId}/GPServer/geometry.area/{operation}", content);
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                using var submitted = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                if (operation == "execute")
+                {
+                    if (!expectSuccess)
+                    {
+                        submitted.RootElement.TryGetProperty("error", out _).Should().BeTrue();
+                        submitted.RootElement.GetProperty("error").GetProperty("details").EnumerateArray()
+                            .Select(detail => detail.GetString()).Should().Contain(detail => detail != null && detail.Contains("already exists", StringComparison.Ordinal));
+                        return;
+                    }
+                    submitted.RootElement.TryGetProperty("error", out _).Should().BeFalse(submitted.RootElement.GetRawText());
+                    var scalar = submitted.RootElement.GetProperty("results").EnumerateArray()
+                        .Single(r => r.GetProperty("paramName").GetString() == "outputScalar");
+                    AssertArea(scalar.GetProperty("value").GetString()!, width * 4);
+                    return;
+                }
+                var jobId = submitted.RootElement.GetProperty("jobId").GetString();
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(35));
+                while (true)
+                {
+                    using var statusResponse = await client.GetAsync($"/rest/services/{ServiceId}/GPServer/geometry.area/jobs/{jobId}?f=json", timeout.Token);
+                    using var status = JsonDocument.Parse(await statusResponse.Content.ReadAsStringAsync(timeout.Token));
+                    var state = status.RootElement.GetProperty("jobStatus").GetString();
+                    if (state is "esriJobSucceeded" or "esriJobFailed" or "esriJobCancelled")
+                    {
+                        state.Should().Be(expectSuccess ? "esriJobSucceeded" : "esriJobFailed", status.RootElement.GetRawText());
+                        var durable = await fixture.GetService<IExecutionJobStore>().GetAsync(jobId!);
+                        durable!.AttemptCount.Should().Be(1);
+                        if (!expectSuccess)
+                        {
+                            durable.ErrorMessage.Should().Contain("already exists");
+                        }
+                        if (expectSuccess)
+                        {
+                            using var outputResponse = await client.GetAsync($"/rest/services/{ServiceId}/GPServer/geometry.area/jobs/{jobId}/results/outputScalar?f=json", timeout.Token);
+                            using var output = JsonDocument.Parse(await outputResponse.Content.ReadAsStringAsync(timeout.Token));
+                            AssertArea(output.RootElement.GetProperty("value").GetString()!, width * 4);
+                        }
+                        break;
+                    }
+                    await Task.Delay(100, timeout.Token);
+                }
+            }
+        }
+        finally
+        {
+            try
+            {
+                // An assertion may fail after a job creates the workspace but before
+                // the successful-path lookup. Recover only this test's unique fixture.
+                if (workspaceId is null && migrationApplied)
+                {
+                    await using var connection = await fixture.Postgres.DataSource.OpenConnectionAsync();
+                    await using var query = connection.CreateCommand();
+                    query.CommandText = "SELECT workspace_id FROM honua.gp_workspaces WHERE label = @label";
+                    query.Parameters.AddWithValue("label", label);
+                    workspaceId = await query.ExecuteScalarAsync() as string;
+                }
+                if (workspaceId is not null)
+                {
+                    var artifacts = fixture.GetService<IArtifactStore>();
+                    foreach (var artifact in await artifacts.ListByWorkspaceAsync(workspaceId))
+                    {
+                        (await artifacts.DeleteAsync(artifact.ArtifactId)).Should().BeTrue();
+                    }
+                    (await fixture.GetService<IWorkspaceStore>().DeleteAsync(workspaceId)).Should().BeTrue();
+                }
+            }
+            finally
+            {
+                await fixture.DisposeAsync();
+                await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
+            }
+        }
+
+        static void AssertArea(string uri, double expected)
+        {
+            const string prefix = "data:application/json;base64,";
+            uri.Should().StartWith(prefix);
+            using var decoded = JsonDocument.Parse(Convert.FromBase64String(uri[prefix.Length..]));
+            decoded.RootElement.GetProperty("value").GetDouble().Should().Be(expected);
+            decoded.RootElement.GetProperty("processId").GetString().Should().Be("geometry.area");
+            decoded.RootElement.GetProperty("inputSrid").GetInt32().Should().Be(3857);
         }
     }
 
@@ -235,7 +401,7 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
     [InterfaceOperation(TestProtocols.GPServer, "GetJobResult")]
     public async Task SoapArea_WithProductionExecutor_ReturnsIndependentRectangleAreaAndMetadata(string operation)
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
         var fixture = CreateDurableFixture(productionExecutor: true);
         await fixture.InitializeAsync();
         try
@@ -308,7 +474,7 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
     [InterfaceOperation(TestProtocols.GPServer, "GetJobResult")]
     public async Task SoapBuffer_WithProductionExecutor_ReturnsRecordSetBoundedByTheIndependentBufferGeometry()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
         var fixture = CreateDurableFixture(productionExecutor: true);
         await fixture.InitializeAsync();
         try
@@ -352,7 +518,7 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
     [InterfaceOperation(TestProtocols.GPServer, "GetJobResult")]
     public async Task SoapUnion_WithMultiValueInput_ReturnsTheIndependentlyComputedRectangle()
     {
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
         var fixture = CreateDurableFixture(productionExecutor: true);
         await fixture.InitializeAsync();
         try
@@ -383,25 +549,198 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
         }
     }
 
+    [IntegrationTheory]
+    [InlineData("GetJobStatus")]
+    [InlineData("GetJobMessages")]
+    [InlineData("GetJobToolName")]
+    [InlineData("GetJobResult")]
+    [InlineData("CancelJob")]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /services/{serviceId}/GPServer")]
+    public async Task SoapJobOperation_OtherCaller_IsDeniedByCanonicalJobOwnership(string operation)
+    {
+        await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
+        // Only the operator grant is substituted, so both callers may execute and read
+        // jobs. Per-job ownership stays with the real job service and Redis job store.
+        var authorizer = Substitute.For<IOperatorAuthorizationEvaluator>();
+        authorizer.EvaluateAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(AccessDecision.Allowed());
+        var approval = Substitute.For<IOperatorApprovalEvaluator>();
+        approval.Evaluate(Arg.Any<ClaimsPrincipal>(), Arg.Any<OperatorAuthorizationRequest>())
+            .Returns(ApprovalRequirement.NotRequired());
+        var fixture = CreateDurableFixture(productionExecutor: true)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.ConfigureTestServices(services =>
+                {
+                    services.RemoveAll<IOperatorAuthorizationEvaluator>();
+                    services.AddSingleton(authorizer);
+                    services.RemoveAll<IOperatorApprovalEvaluator>();
+                    services.AddSingleton(approval);
+                    services.AddAuthentication()
+                        .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>(TestAuthHandler.SchemeName, _ => { });
+                    services.PostConfigureAll<AuthenticationOptions>(options =>
+                    {
+                        options.DefaultAuthenticateScheme = TestAuthHandler.SchemeName;
+                        options.DefaultChallengeScheme = TestAuthHandler.SchemeName;
+                        options.DefaultScheme = TestAuthHandler.SchemeName;
+                    });
+                });
+            });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var owner = fixture.CreateClient(client => client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, "alice"));
+            using var other = fixture.CreateClient(client => client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, "bob"));
+            owner.Timeout = TimeSpan.FromSeconds(45);
+            other.Timeout = TimeSpan.FromSeconds(45);
+            var submitted = await SendSoapAsync(owner, "SubmitJob",
+                "<ToolName>Honua_67656F6D657472792E61726561</ToolName><Values xsi:type=\"tns:GPValues\">" +
+                $"<GPValue xsi:type=\"tns:GPString\"><Value>{PolygonWkb((0, 0), (3, 0), (3, 4), (0, 4), (0, 0))}</Value></GPValue>" +
+                "<GPValue xsi:type=\"tns:GPLong\"><Value>3857</Value></GPValue></Values>" +
+                GPServerSoapRequestFixtures.ArcPyDefaultControls);
+            var jobId = submitted.Value;
+            await WaitForSoapJobSucceededAsync(owner, jobId);
+            var jobStore = fixture.GetService<IExecutionJobStore>();
+            (await jobStore.GetAsync(jobId))!.Audit.RequestedBy.Should().Be("alice");
+
+            var outputNames = "<ParameterNames><String>outputScalar</String></ParameterNames>";
+            using var denied = await PostSoapAsync(other, operation,
+                $"<JobID>{jobId}</JobID>" + (operation == "GetJobResult" ? outputNames : string.Empty));
+            var body = await denied.Content.ReadAsStringAsync();
+            // The canonical denial is not-found, so another caller cannot confirm that
+            // the job exists. A job read without the ownership check would return 200,
+            // and a cancel of this already-terminal job would return 412.
+            denied.StatusCode.Should().Be(HttpStatusCode.NotFound, body);
+            XDocument.Parse(body).Descendants(XName.Get("Fault", "http://schemas.xmlsoap.org/soap/envelope/"))
+                .Should().ContainSingle();
+            body.Should().NotContain("esriJob").And.NotContain("geometry.area")
+                .And.NotContain("Honua_67656F6D657472792E61726561").And.NotContain("data:application/json");
+
+            // The owner still reads the unchanged job and its independently computed 3 by 4 area.
+            (await SendSoapAsync(owner, "GetJobStatus", $"<JobID>{jobId}</JobID>")).Value.Should().Be("esriJobSucceeded");
+            (await jobStore.GetAsync(jobId))!.Status.Should().Be(ExecutionJobStatus.Succeeded);
+            var result = await SendSoapAsync(owner, "GetJobResult", $"<JobID>{jobId}</JobID>{outputNames}");
+            var dataUri = result.Element("Values")!.Elements("GPValue").Should().ContainSingle().Subject.Element("Value")!.Value;
+            const string prefix = "data:application/json;base64,";
+            dataUri.Should().StartWith(prefix);
+            using var measure = JsonDocument.Parse(Convert.FromBase64String(dataUri[prefix.Length..]));
+            measure.RootElement.GetProperty("value").GetDouble().Should().Be(3 * 4);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData("anonymous")]
+    [InlineData("invalid-api-key")]
+    [InlineData("invalid-bearer")]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /services/{serviceId}/GPServer")]
+    public async Task SoapJobOperation_UnauthenticatedCaller_IsChallengedWithoutJobState(string caller)
+    {
+        await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
+        // The real API-key handler decides; the dev bypass would accept any key. Only the
+        // shared factory configures the admin password, so this host needs it explicitly.
+        var fixture = CreateDurableFixture(productionExecutor: true)
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+            });
+        await fixture.InitializeAsync();
+        try
+        {
+            using var owner = fixture.CreateAdminClient();
+            using var denied = fixture.CreateClient(client =>
+            {
+                if (caller == "invalid-api-key")
+                {
+                    client.DefaultRequestHeaders.Add("X-API-Key", "honua-test-" + Guid.NewGuid().ToString("N"));
+                }
+                else if (caller == "invalid-bearer")
+                {
+                    client.DefaultRequestHeaders.Add("Authorization", "Bearer honua-test-" + Guid.NewGuid().ToString("N"));
+                }
+            });
+            owner.Timeout = TimeSpan.FromSeconds(45);
+            denied.Timeout = TimeSpan.FromSeconds(45);
+            var area = "<ToolName>Honua_67656F6D657472792E61726561</ToolName><Values xsi:type=\"tns:GPValues\">" +
+                $"<GPValue xsi:type=\"tns:GPString\"><Value>{PolygonWkb((0, 0), (3, 0), (3, 4), (0, 4), (0, 0))}</Value></GPValue>" +
+                "<GPValue xsi:type=\"tns:GPLong\"><Value>3857</Value></GPValue></Values>" +
+                GPServerSoapRequestFixtures.ArcPyDefaultControls;
+            var jobId = (await SendSoapAsync(owner, "SubmitJob", area)).Value;
+            await WaitForSoapJobSucceededAsync(owner, jobId);
+            var jobStore = fixture.GetService<IExecutionJobStore>();
+            var jobsBefore = (await jobStore.QueryAsync(new ExecutionJobQuery())).Items.Count;
+
+            var outputNames = "<ParameterNames><String>outputScalar</String></ParameterNames>";
+            foreach (var (operation, arguments) in new[]
+            {
+                ("SubmitJob", area),
+                ("Execute", area),
+                ("GetJobStatus", $"<JobID>{jobId}</JobID>"),
+                ("GetJobMessages", $"<JobID>{jobId}</JobID>"),
+                ("GetJobToolName", $"<JobID>{jobId}</JobID>"),
+                ("GetJobResult", $"<JobID>{jobId}</JobID>{outputNames}"),
+                ("CancelJob", $"<JobID>{jobId}</JobID>"),
+            })
+            {
+                using var response = await PostSoapAsync(denied, operation, arguments);
+                var body = await response.Content.ReadAsStringAsync();
+                // Authentication is decided before submission parsing or any job lookup,
+                // so the challenge cannot confirm the job, its task or its result.
+                response.StatusCode.Should().Be(HttpStatusCode.Unauthorized, $"{operation}: {body}");
+                XDocument.Parse(body).Descendants(XName.Get("Fault", "http://schemas.xmlsoap.org/soap/envelope/"))
+                    .Should().ContainSingle(operation);
+                body.Should().NotContain("esriJob").And.NotContain("geometry.area").And.NotContain(jobId)
+                    .And.NotContain("Honua_67656F6D657472792E61726561").And.NotContain("data:application/json");
+            }
+
+            // No challenged submission created a job, and the refused cancel left the
+            // owner's job and its independently computed 3 by 4 area unchanged.
+            (await jobStore.QueryAsync(new ExecutionJobQuery())).Items.Count.Should().Be(jobsBefore);
+            (await jobStore.GetAsync(jobId))!.Status.Should().Be(ExecutionJobStatus.Succeeded);
+            var result = await SendSoapAsync(owner, "GetJobResult", $"<JobID>{jobId}</JobID>{outputNames}");
+            var dataUri = result.Element("Values")!.Elements("GPValue").Should().ContainSingle().Subject.Element("Value")!.Value;
+            const string prefix = "data:application/json;base64,";
+            dataUri.Should().StartWith(prefix);
+            using var measure = JsonDocument.Parse(Convert.FromBase64String(dataUri[prefix.Length..]));
+            measure.RootElement.GetProperty("value").GetDouble().Should().Be(3 * 4);
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
     private static async Task<XElement> SubmitSoapAndReadResultAsync(HttpClient client, string toolName, string values, string outputName)
     {
         var submitted = await SendSoapAsync(client, "SubmitJob",
             $"<ToolName>{toolName}</ToolName><Values xsi:type=\"tns:GPValues\">{values}</Values>" +
             GPServerSoapRequestFixtures.ArcPyDefaultControls);
         var jobId = submitted.Value;
+        await WaitForSoapJobSucceededAsync(client, jobId);
+        return await SendSoapAsync(client, "GetJobResult",
+            $"<JobID>{jobId}</JobID><ParameterNames><String>{outputName}</String></ParameterNames>");
+    }
+
+    private static async Task WaitForSoapJobSucceededAsync(HttpClient client, string jobId)
+    {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         while (true)
         {
             var status = await SendSoapAsync(client, "GetJobStatus", $"<JobID>{jobId}</JobID>");
             if (status.Value == "esriJobSucceeded")
             {
-                break;
+                return;
             }
             status.Value.Should().NotBe("esriJobFailed").And.NotBe("esriJobCancelled");
             await Task.Delay(100, timeout.Token);
         }
-        return await SendSoapAsync(client, "GetJobResult",
-            $"<JobID>{jobId}</JobID><ParameterNames><String>{outputName}</String></ParameterNames>");
     }
 
     private static (double X, double Y)[] ReadSingleRing(XElement result, out string wkid)
@@ -444,15 +783,20 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
 
     private static async Task<XElement> SendSoapAsync(HttpClient client, string operation, string arguments)
     {
+        using var response = await PostSoapAsync(client, operation, arguments);
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        return XDocument.Parse(body).Descendants("Result").Single();
+    }
+
+    private static async Task<HttpResponseMessage> PostSoapAsync(HttpClient client, string operation, string arguments)
+    {
         var xml = $"""
             <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:tns="http://www.esri.com/schemas/ArcGIS/10.8" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
             <soap:Body><tns:{operation}>{arguments}</tns:{operation}></soap:Body></soap:Envelope>
             """;
         using var content = new StringContent(xml, Encoding.UTF8, "text/xml");
-        using var response = await client.PostAsync($"/services/{ServiceId}/GPServer", content);
-        var body = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
-        return XDocument.Parse(body).Descendants("Result").Single();
+        return await client.PostAsync($"/services/{ServiceId}/GPServer", content);
     }
 
     private WebAppFixture CreateDurableFixture(bool productionExecutor)
@@ -464,14 +808,14 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
                 {
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
-                        ["ConnectionStrings:redis"] = redis.ConnectionString
+                        ["ConnectionStrings:redis"] = GPServerRedisTestConnection.For(redis)
                     });
                 });
             })
             .ConfigureServices(services =>
             {
                 services.RemoveAll<IConnectionMultiplexer>();
-                services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redis.ConnectionString));
+                services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(GPServerRedisTestConnection.For(redis)));
 
                 services.RemoveAll<IExecutionJobStore>();
                 services.AddSingleton<IExecutionJobStore>(sp =>

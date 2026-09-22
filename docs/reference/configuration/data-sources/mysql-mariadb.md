@@ -7,8 +7,7 @@ description: "Honua supports MySQL 8.0.11+ and MariaDB 10.6+ as a read-only spat
 
 Honua supports MySQL 8.0.11+ and MariaDB 10.6+ as a **read-only** spatial feature
 provider. This is a thin slice intended for serving spatial data that already
-lives in MySQL/MariaDB tables (Tier 2 enterprise backend under epic
-[#362](https://github.com/honua-io/honua-server/issues/362)).
+lives in MySQL/MariaDB tables.
 
 Use the [PostGIS provider](README.md) for full read/write,
 edits, statistics, MVT, and analytics. Use the
@@ -321,54 +320,11 @@ of the MySQL services.
 
 ## Testing
 
-### Unit tests
-
-`tests/dotnet/Honua.Db.MySql.Tests` contains unit tests for SQL generation,
-filter translation, registry behaviour, and provider resolution. They run on
-every PR and require no external services.
-
-```bash
-dotnet test tests/dotnet/Honua.Db.MySql.Tests/Honua.MySql.Tests.csproj \
-    --filter "Category!=MySql"
-```
-
-### Integration tests (gated)
-
-`MySqlFeatureStoreIntegrationTests` exercises the full stack against a MySQL
-8 container provisioned by Testcontainers. They are tagged
-`[Trait("Category", "MySql")]` and are **opt-in**: the `Category=MySql`
-filter selects them, and the test fixture additionally requires
-`HONUA_TEST_MYSQL=1` so a stray `--filter Category=MySql` cannot start
-Docker containers in CI environments without Docker.
-
-```bash
-# Requires Docker and the MySQL 8 image. Both the category filter AND the
-# environment variable are required — the env gate keeps the suite inert
-# unless explicitly enabled.
-HONUA_TEST_MYSQL=1 dotnet test tests/dotnet/Honua.Db.MySql.Tests/Honua.MySql.Tests.csproj \
-    --filter "Category=MySql"
-```
-
-If `HONUA_TEST_MYSQL` is unset (or not exactly `1`) each infrastructure-gated
-test is reported as skipped before `InitializeAsync` starts Docker. They are
-not part of the default PR test suite.
-
-### HTTP-stack smoke coverage (nightly)
-
-`Honua.ProviderSmoke.Tests` boots a full HTTP-stack host with
-`DataSource:Provider=mysql` against a Testcontainers `mysql:8` instance and asserts real
-seeded-row correctness — not just 200s — through GeoServices FeatureServer, OGC API
-Features, OData, and tiles (TileJSON + a raster PNG tile; vector MVT is out of scope, see
-Limitations Summary). Runs nightly and on demand via
-[`provider-http-smoke.yml`](../../../../.github/workflows/provider-http-smoke.yml); not
-part of standard PR CI.
-
-### MariaDB compatibility
-
-The integration suite uses MySQL 8 as the canonical engine. MariaDB 10.6 is
-nominally supported via the same SQL surface; manual verification against a
-MariaDB container is the recommended path until a second Testcontainers
-fixture is added in a follow-on slice.
+The provider is exercised nightly through the full HTTP stack against a MySQL 8
+instance: GeoServices FeatureServer, OGC API Features, OData, and tiles (TileJSON plus a
+raster PNG tile; vector MVT is out of scope, see the limitations below). MySQL 8 is the
+canonical engine; MariaDB 10.6 is supported via the same SQL surface and verified
+manually.
 
 ## Limitations Summary
 

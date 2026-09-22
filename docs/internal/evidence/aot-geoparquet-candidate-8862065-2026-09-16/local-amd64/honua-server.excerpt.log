@@ -1,0 +1,12 @@
+633:honua-server-1  | {"@t":"2026-09-16T04:38:41.9091662Z","@mt":"Query {Operation} executed: {ServiceId}/FeatureServer/{LayerId} in {ElapsedMilliseconds} ms","@tr":"41b2d09be69e623860057b53257c0627","@sp":"c444d35ad8f6e78d","Operation":"query_parquet","ServiceId":"cng","LayerId":1000,"ElapsedMilliseconds":17.7467,"EventId":{"Id":2206,"Name":"QueryExecuted"},"SourceContext":"Honua.Protocols.GeoServices.FeatureServer.FeatureServerQueryHandler","RequestId":"0HNOJLHH736GO:00000001","RequestPath":"/rest/services/cng/FeatureServer/1000/query","ConnectionId":"0HNOJLHH736GO","CorrelationId":"00-41b2d09be69e623860057b53257c0627-c444d35ad8f6e78d-00","EnvironmentName":"Test","MachineName":"59462bdfef97","ThreadId":25,"SpanId":"c444d35ad8f6e78d","TraceId":"41b2d09be69e623860057b53257c0627","ParentId":"0000000000000000","Application":"Honua","Version":"2026.1.1.0"}
+635:honua-server-1  |       Query "query_parquet" executed: "cng"/FeatureServer/1000 in 17.7467 ms
+642:honua-server-1  | {"@t":"2026-09-16T04:38:41.9214675Z","@mt":"Request finished {Protocol} {Method} {Scheme}://{Host}{PathBase}{Path}{QueryString} - {StatusCode} {ContentLength} {ContentType} {ElapsedMilliseconds}ms","@tr":"41b2d09be69e623860057b53257c0627","@sp":"c444d35ad8f6e78d","ElapsedMilliseconds":45.2946,"StatusCode":200,"ContentType":"application/vnd.apache.parquet","ContentLength":4947,"Protocol":"HTTP/1.1","Method":"GET","Scheme":"http","Host":"localhost:18922","PathBase":"","Path":"/rest/services/cng/FeatureServer/1000/query","QueryString":"[REDACTED]","EventId":{"Id":2},"SourceContext":"Microsoft.AspNetCore.Hosting.Diagnostics","RequestId":"0HNOJLHH736GO:00000001","RequestPath":"/rest/services/cng/FeatureServer/1000/query","ConnectionId":"0HNOJLHH736GO","EnvironmentName":"Test","MachineName":"59462bdfef97","ThreadId":25,"SpanId":"c444d35ad8f6e78d","TraceId":"41b2d09be69e623860057b53257c0627","ParentId":"0000000000000000","Application":"Honua","Version":"2026.1.1.0"}
+644:honua-server-1  |       Request finished "HTTP/1.1" "GET" "http"://"localhost:18922""""/rest/services/cng/FeatureServer/1000/query""[REDACTED]" - 200 4947 "application/vnd.apache.parquet" 45.2946ms
+
+# absence check (grep -c over the full 645-line container log):
+DllNotFoundException               0
+ParquetRuntimeUnavailable          0
+Reflection-based serialization     0
+Query failed                       0
+libatomic                          0
+Unhandled exception                0

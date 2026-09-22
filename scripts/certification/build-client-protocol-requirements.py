@@ -327,6 +327,8 @@ def project(upstream: dict, upstream_revision: str, revision: str, root: Path) -
         governed for governed in upstream["requirements"]
         if governed.get("canonical_client") in BOUNDED_ROSTER_CLIENTS
     ]
+    excluded = [row for row in bounded if row.get("addressable_by_client") is False]
+    bounded = [row for row in bounded if row.get("addressable_by_client") is not False]
     collisions = ambiguous_test_ids(bounded)
 
     requirements = []
@@ -370,6 +372,7 @@ def project(upstream: dict, upstream_revision: str, revision: str, root: Path) -
         "generator": "scripts/certification/build-client-protocol-requirements.py",
         "producerAuthority": [EXPECTED_PAIRS_RELATIVE_PATH, BASELINE_ROOT_RELATIVE_PATH],
         "source_revisions": upstream.get("source_revisions", {}),
+        "excludedRequirements": excluded,
         "requirements": requirements,
     }
 

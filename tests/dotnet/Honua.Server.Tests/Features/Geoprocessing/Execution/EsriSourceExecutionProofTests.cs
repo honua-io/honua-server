@@ -66,7 +66,7 @@ public sealed class EsriSourceExecutionProofTests
             [ExecutionJobParameterKeys.GeoprocessingProcessDefinitions] = "source.esri-featureserver",
             ["protocolProcessId"] = "source.esri-featureserver"
         };
-        foreach (var (key, value) in new[] { ("serviceUrl", "https://fixture.example/FeatureServer"),
+        foreach (var (key, value) in new[] { ("serviceUrl", "https://fixture.example/arcgis/rest/services/Stations/FeatureServer"),
             ("esriLayerId", "7"), ("where", "status = 'active'"), ("since", "2026-01-01T00:00:00Z"),
             ("watermarkField", "edited"), ("pageSize", "2"), ("outSrid", "4326"),
             ("outFields", "OBJECTID,name,value") })
@@ -129,7 +129,7 @@ public sealed class EsriSourceExecutionProofTests
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            request.RequestUri!.AbsolutePath.Should().Be("/FeatureServer/7/query");
+            request.RequestUri!.AbsolutePath.Should().Be("/arcgis/rest/services/Stations/FeatureServer/7/query");
             var query = QueryHelpers.ParseQuery(request.RequestUri.Query);
             query["where"].ToString().Should().Be("status = 'active' AND edited >= TIMESTAMP '2026-01-01T00:00:00Z'");
             query["outFields"].ToString().Should().Be("OBJECTID,name,value");

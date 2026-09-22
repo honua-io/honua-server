@@ -24,6 +24,18 @@ internal sealed partial class DeployWorkflowService
 {
     private const string RollbackSubmissionPendingPhase = "Rollback request accepted; submitting to deploy backend.";
     private const string RollbackSubmissionRetryablePhase = "Rollback provider submission was not confirmed; retry is allowed.";
+    private const string MaxStalenessParameterKey = "telemetry.max_staleness_seconds";
+
+    /// <summary>
+    /// Built-in providers that query a fixed window and never read a sample's observation time, so they
+    /// cannot honor <see cref="MaxStalenessParameterKey"/> (#4617). Host-registered providers are not
+    /// assumed to share that limitation.
+    /// </summary>
+    private static readonly HashSet<string> FixedWindowTelemetryProviders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "cloudwatch",
+        "azuremonitor"
+    };
     private static readonly Regex UnsafeOperationIdCharacters = new("[^a-z0-9]+", RegexOptions.Compiled | RegexOptions.IgnoreCase);
     private readonly IDeployTargetRegistry _targetRegistry;
     private readonly IWorkflowOperationStore? _workflowStore;
@@ -31,6 +43,7 @@ internal sealed partial class DeployWorkflowService
     private readonly IOperatorApprovalEvaluator _approvalEvaluator;
     private readonly ILogger<DeployWorkflowService> _logger;
     private readonly IOptionsMonitor<ControlPlaneOptions>? _controlPlaneOptions;
+    private readonly IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? _tenantOptions;
 
     public DeployWorkflowService(
         IDeployTargetRegistry targetRegistry,
@@ -38,9 +51,11 @@ internal sealed partial class DeployWorkflowService
         IEnumerable<IDeployBackend> backends,
         IOperatorApprovalEvaluator approvalEvaluator,
         ILogger<DeployWorkflowService> logger,
-        IOptionsMonitor<ControlPlaneOptions>? controlPlaneOptions = null)
+        IOptionsMonitor<ControlPlaneOptions>? controlPlaneOptions = null,
+        IOptions<Honua.Infrastructure.MultiTenancy.TenantContextOptions>? tenantOptions = null)
     {
         _controlPlaneOptions = controlPlaneOptions;
+        _tenantOptions = tenantOptions;
         _targetRegistry = targetRegistry;
         _workflowStore = workflowStores.FirstOrDefault();
         _backends = backends.ToDictionary(
@@ -157,13 +172,28 @@ internal sealed partial class DeployWorkflowService
             return $"Telemetry gate configuration rejected: {policy.ValidationError}";
         }
 
-        if (!policy.IsHealthOnly &&
-            _controlPlaneOptions != null &&
-            !_controlPlaneOptions.CurrentValue.TelemetryConnections.Any(connection =>
-                string.Equals(connection.ConnectionId, policy.ConnectionId, StringComparison.Ordinal)))
+        if (policy.IsHealthOnly || _controlPlaneOptions == null)
+        {
+            return null;
+        }
+
+        var connection = _controlPlaneOptions.CurrentValue.TelemetryConnections.FirstOrDefault(candidate =>
+            string.Equals(candidate.ConnectionId, policy.ConnectionId, StringComparison.Ordinal));
+        if (connection == null)
         {
             return $"Telemetry gate configuration rejected: connection '{policy.ConnectionId}' is not configured under " +
                 "ControlPlane:TelemetryConnections, so the metric gate could never be satisfied.";
+        }
+
+        // CloudWatch and Azure Monitor query a fixed 300-second window and never read a sample's observation
+        // time, so an explicit staleness bound on them would be silently ignored (#4617).
+        if (spec.Parameters.TryGetValue(MaxStalenessParameterKey, out var staleness) &&
+            !string.IsNullOrWhiteSpace(staleness) &&
+            FixedWindowTelemetryProviders.Contains(connection.Provider?.Trim() ?? string.Empty))
+        {
+            return $"Telemetry gate configuration rejected: {MaxStalenessParameterKey} is not honored by connection " +
+                $"'{connection.ConnectionId}': its '{connection.Provider}' provider reads a fixed 300-second query window, " +
+                "so the bound would be silently ignored.";
         }
 
         return null;
@@ -280,6 +310,9 @@ internal sealed partial class DeployWorkflowService
             Audit = new OperationAuditInfo
             {
                 RequestedBy = requestedBy,
+                // honua-server#4958: the tenant binding is captured from the validated identity here,
+                // so the protection window sealed at activation can bind recovery to the same pair.
+                TenantId = Honua.Server.Features.Admin.PlatformDeployAuthority.ResolveTenantId(principal, _tenantOptions?.Value),
                 Reason = reason,
                 IdempotencyKey = idempotencyKey,
                 CorrelationId = correlationId,
@@ -391,6 +424,15 @@ internal sealed partial class DeployWorkflowService
         {
             throw new ResourceConflictException(
                 $"Deploy operation '{operation.OperationId}' cannot be submitted: {string.Join(" ", operation.BlockingReasons)}");
+        }
+
+        // The persisted blocking reasons describe the connections as they were at plan time. A reload or
+        // restart can remove a connection or change its provider before submission, so check the gate again
+        // against the current configuration before anything is claimed or mutated (#4617).
+        if (DescribeTelemetryGateBlock(operation.Deploy) is { } gateBlock)
+        {
+            throw new ResourceConflictException(
+                $"Deploy operation '{operation.OperationId}' cannot be submitted: {gateBlock}");
         }
 
         var target = await _targetRegistry.GetAsync(operation.Deploy.TargetId, cancellationToken).ConfigureAwait(false);

@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Concurrent;
+using Amazon.CloudWatch.Model;
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
@@ -242,6 +243,10 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
         // win so the client targets the emulator endpoint.
         client.Config.ServiceURL.Should().Be("http://localhost:4566/");
         client.Config.RegionEndpoint.Should().BeNull();
+
+        // Without a pinned signing region the SDK resolves one from the ambient chain, ending in
+        // EC2 instance metadata, which hangs every request inside a container (#4998).
+        client.Config.AuthenticationRegion.Should().Be("us-east-1");
     }
 
     [Fact]
@@ -273,6 +278,81 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
         decision!.WaitForMoreTelemetry.Should().BeTrue("an invalid reading must never satisfy the latency threshold");
         decision.RollbackRecommended.Should().BeFalse();
         decision.Message.Should().Contain("latency");
+    }
+
+    [Fact]
+    public void SelectSignalValue_MultipleSeries_IsAmbiguousAndRejected()
+    {
+        // #4617: a SEARCH or GROUP BY expression returns one result per series for the single query.
+        var response = new GetMetricDataResponse
+        {
+            MetricDataResults =
+            [
+                new MetricDataResult { Id = "honua_deploy_signal", Label = "blue", Values = [0.01] },
+                new MetricDataResult { Id = "honua_deploy_signal", Label = "green", Values = [0.9] }
+            ]
+        };
+
+        var act = () => AwsSdkCloudWatchMetricClient.SelectSignalValue(response);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*2 series*");
+    }
+
+    [Fact]
+    public void SelectSignalValue_SingleSeries_ReturnsNewestDatapoint()
+    {
+        var response = new GetMetricDataResponse
+        {
+            MetricDataResults = [new MetricDataResult { Id = "honua_deploy_signal", Values = [0.0125, 0.9] }]
+        };
+
+        AwsSdkCloudWatchMetricClient.SelectSignalValue(response).Should().Be(0.0125);
+    }
+
+    [Fact]
+    public void SelectSignalValue_NoResultsNoDatapointsOrNonFinite_IsAbsent()
+    {
+        AwsSdkCloudWatchMetricClient.SelectSignalValue(new GetMetricDataResponse()).Should().BeNull();
+        AwsSdkCloudWatchMetricClient.SelectSignalValue(new GetMetricDataResponse { MetricDataResults = [] }).Should().BeNull();
+        AwsSdkCloudWatchMetricClient.SelectSignalValue(new GetMetricDataResponse
+        {
+            MetricDataResults = [new MetricDataResult { Id = "honua_deploy_signal", Values = [] }]
+        }).Should().BeNull();
+        AwsSdkCloudWatchMetricClient.SelectSignalValue(new GetMetricDataResponse
+        {
+            MetricDataResults = [new MetricDataResult { Id = "honua_deploy_signal", Values = [double.NaN] }]
+        }).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_AmbiguousMultiSeriesErrorRate_HoldsInsteadOfPassing()
+    {
+        // The healthy series comes first, so a first-result reader would pass the gate on it.
+        var client = new FakeCloudWatchMetricClient(new Dictionary<string, double?>(StringComparer.Ordinal)
+        {
+            [SampleExpression] = 50,
+            [LatencyExpression] = 120
+        })
+        {
+            ResponseOverrides =
+            {
+                [ErrorRateExpression] = new GetMetricDataResponse
+                {
+                    MetricDataResults =
+                    [
+                        new MetricDataResult { Id = "honua_deploy_signal", Label = "stable", Values = [0.0] },
+                        new MetricDataResult { Id = "honua_deploy_signal", Label = "candidate", Values = [0.6] }
+                    ]
+                }
+            }
+        };
+
+        var decision = await Evaluate(client);
+
+        decision.Should().NotBeNull();
+        decision!.WaitForMoreTelemetry.Should().BeTrue("an ambiguous multi-series reading never satisfies the error-rate requirement");
+        decision.RollbackRecommended.Should().BeFalse();
+        decision.Message.Should().Contain("telemetry query backend is unavailable");
     }
 
     private static async Task<DeployTelemetryDecision?> Evaluate(
@@ -370,6 +450,9 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
 
         public string? LastServiceUrl { get; private set; }
 
+        /// <summary>Raw responses read through the production response reader instead of a canned value.</summary>
+        public Dictionary<string, GetMetricDataResponse> ResponseOverrides { get; } = new(StringComparer.Ordinal);
+
         public Task<double?> GetExpressionValueAsync(
             string? region,
             string expression,
@@ -382,6 +465,11 @@ public sealed class CloudWatchDeployTelemetryProviderEvaluatorTests
             LastRegion = region;
             LastServiceUrl = serviceUrl;
             RequestedExpressions.Enqueue(expression);
+            if (ResponseOverrides.TryGetValue(expression, out var response))
+            {
+                return Task.FromResult(AwsSdkCloudWatchMetricClient.SelectSignalValue(response));
+            }
+
             return Task.FromResult(values.TryGetValue(expression, out var value) ? value : null);
         }
     }

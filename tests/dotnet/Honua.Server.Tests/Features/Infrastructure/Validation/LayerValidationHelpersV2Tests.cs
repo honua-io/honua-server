@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.MultiTenancy.Abstractions;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Infrastructure.Validation;
@@ -111,6 +112,118 @@ public sealed class LayerValidationHelpersV2Tests
 
         result.IsValid.Should().BeFalse();
         result.ErrorResult.Should().NotBeNull();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task ValidateLayerWithAccessV2_TenantScopedLayerHiddenFromUnauthenticatedDefaultTenant_ChallengesInsteadOfNotFound()
+    {
+        // The deployed pipeline gives a request without a valid credential the default
+        // "public" tenant, which cannot see tenant-a's layer. The receipt candidate answered
+        // 404 "Layer 10 not found" there (honua-server#4778).
+        var context = BuildTenantScopedContext(requestTenant: "public", authenticatedTenant: null);
+
+        var result = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
+            context,
+            layerId: 0,
+            LayerValidationHelpers.ValidationProtocol.OData);
+
+        result.IsValid.Should().BeFalse();
+        result.Publication.Should().BeNull("a hidden layer's metadata must not reach the caller");
+        await result.ErrorResult!.ExecuteAsync(context);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        context.Response.Headers.WWWAuthenticate.ToString().Should().NotBeNullOrEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task ValidateLayerWithAccessV2_TenantScopedLayerHiddenFromAuthenticatedOtherTenant_KeepsNotFound()
+    {
+        var context = BuildTenantScopedContext(requestTenant: "tenant-b", authenticatedTenant: "tenant-b");
+
+        var result = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
+            context,
+            layerId: 0,
+            LayerValidationHelpers.ValidationProtocol.OData);
+
+        result.IsValid.Should().BeFalse();
+        await result.ErrorResult!.ExecuteAsync(context);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status404NotFound, "another tenant's principal keeps tenant concealment");
+        context.Response.Headers.WWWAuthenticate.ToString().Should().BeEmpty();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Metadata)]
+    public async Task ValidateLayerWithAccessV2_TenantHiddenLayerWithoutRequiredProtocol_KeepsNotFoundWithoutChallenge()
+    {
+        var context = BuildTenantScopedContext(requestTenant: "public", authenticatedTenant: null);
+
+        var result = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
+            context,
+            layerId: 0,
+            LayerValidationHelpers.ValidationProtocol.OData,
+            requiredProtocol: ServiceProtocols.ImageServer);
+
+        result.IsValid.Should().BeFalse();
+        await result.ErrorResult!.ExecuteAsync(context);
+        context.Response.StatusCode.Should().Be(
+            StatusCodes.Status404NotFound,
+            "authenticating cannot open a protocol the layer's service does not serve, so the layer is not disclosed");
+        context.Response.Headers.WWWAuthenticate.ToString().Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("query")]
+    [InlineData("esri-header")]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.Metadata)]
+    public async Task ValidateLayerWithAccessV2_TenantHiddenLayerWithPortalTokenTransport_ChallengesBearer(string transport)
+    {
+        var context = BuildTenantScopedContext(requestTenant: "public", authenticatedTenant: null);
+        if (transport == "query")
+        {
+            context.Request.QueryString = new QueryString("?token=expired-portal-token");
+        }
+        else
+        {
+            context.Request.Headers["X-Esri-Authorization"] = "Bearer expired-portal-token";
+        }
+
+        var result = await LayerValidationHelpers.ValidateLayerWithAccessV2Async(
+            context,
+            layerId: 0,
+            LayerValidationHelpers.ValidationProtocol.OData);
+
+        await result.ErrorResult!.ExecuteAsync(context);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status401Unauthorized);
+        context.Response.Headers.WWWAuthenticate.ToString().Should().Be(
+            "Bearer",
+            "the challenge names the credential family the caller attempted");
+    }
+
+    private static HttpContext BuildTenantScopedContext(string requestTenant, string? authenticatedTenant)
+    {
+        var (context, graph) = BuildContext(allowAnonymous: false);
+        var resource = graph.Resources[0];
+        graph = graph with { Resources = [resource with { Metadata = resource.Metadata with { Tenant = "tenant-a" } }] };
+
+        var tenant = Substitute.For<ITenantContext>();
+        tenant.TenantId.Returns(requestTenant);
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<IMetadataV2GraphProvider>(new TestMetadataV2GraphProvider(graph));
+        services.AddSingleton(context.RequestServices.GetRequiredService<IAccessPolicyEvaluator>());
+        services.AddSingleton(tenant);
+        context.RequestServices = services.BuildServiceProvider();
+        context.Request.Path = "/odata/Features(0)";
+        context.Response.Body = new MemoryStream();
+        if (authenticatedTenant is not null)
+        {
+            context.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim("tenant_id", authenticatedTenant)], "PortalToken"));
+        }
+
+        return context;
     }
 
     private static (HttpContext Context, MetadataV2Graph Graph) BuildContext(bool allowAnonymous)

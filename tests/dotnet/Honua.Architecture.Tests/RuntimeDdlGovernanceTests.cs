@@ -22,9 +22,9 @@ public sealed partial class RuntimeDdlGovernanceTests
             ["src/Honua.Db/Postgres/Features/Migration/OgcWfsImportService.cs"] =
                 new(RuntimeDdlCategory.GeneratedImportTarget, 7, "OgcWfsImportService owns atomic staging promotion and rollback/drop cleanup for its generated target table."),
             ["src/Honua.Db/Postgres/Features/Migration/GeoservicesImportService.cs"] =
-                new(RuntimeDdlCategory.GeneratedImportTarget, 1, "GeoservicesImportService owns the generated target index in its import transaction."),
+                new(RuntimeDdlCategory.GeneratedImportTarget, 5, "GeoservicesImportService owns the generated target index and the replacement swap (drop the prior target, rename the job-scoped staging table and its derived key and sequence) inside its import transaction; rollback discards the staging table (#4600)."),
             ["src/Honua.Db/Postgres/Features/Migration/GeoservicesImportService.ImportSteps.cs"] =
-                new(RuntimeDdlCategory.GeneratedImportTarget, 3, "GeoservicesImportService owns create/drop compensation for its generated import table."),
+                new(RuntimeDdlCategory.GeneratedImportTarget, 2, "GeoservicesImportService creates its generated import table, or job-scoped staging table, and schema inside the import transaction; rollback is the cleanup."),
             ["src/Honua.Db/Postgres/Features/Migration/PostgresMigrationCatalogWriter.cs"] =
                 new(RuntimeDdlCategory.GeneratedImportTarget, 2, "PostgresMigrationCatalogWriter owns attempt-scoped target creation and catalog rollback."),
             ["src/Honua.Db/Postgres/Features/Geoprocessing/PostgresHonuaLayerSink.cs"] =

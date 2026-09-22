@@ -23,6 +23,32 @@ public sealed class GeoArrowQueryFormatterTests
     private const string FixtureFileName = "honua-server-geoarrow-02-point.arrow";
 
     [Fact]
+    public async Task FormatAsGeoArrowAsync_CalendarDates_PreserveDayAndDate32Type()
+    {
+        var layer = CreateLayer(new MetadataV2Field { Name = "day", Type = MetadataV2FieldType.Date });
+        object?[] values = [new DateOnly(2024, 1, 2), "2024-01-02T00:30:00+14:00",
+            new DateTimeOffset(2024, 1, 2, 23, 30, 0, TimeSpan.FromHours(-10)),
+            JsonSerializer.SerializeToElement("2024-01-02"), 1704153600000L,
+            JsonSerializer.SerializeToElement(1704153600000L), null];
+        var features = values.Select((value, index) => Feature.Create(index + 1, null,
+            ImmutableDictionary<string, object?>.Empty.Add("day", value))).ToImmutableArray();
+        var (payload, _) = await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
+            QueryResult<Feature>.Create(features.Length, features), layer,
+            returnGeometry: false, outputSrid: null, returnZ: false, returnM: false,
+            geometryLimits: new GeometryLimits());
+        using var reader = new ArrowStreamReader(new MemoryStream(payload));
+        using var batch = await reader.ReadNextRecordBatchAsync();
+        batch.Should().NotBeNull();
+        batch!.Schema.GetFieldByName("day").DataType.Should().BeOfType<Date32Type>();
+        var dates = batch.Column("day").Should().BeOfType<Date32Array>().Which;
+        for (var i = 0; i < values.Length - 1; i++)
+        {
+            dates.GetDateTime(i).Should().Be(new DateTime(2024, 1, 2));
+        }
+        dates.IsNull(values.Length - 1).Should().BeTrue();
+    }
+
+    [Fact]
     public async Task FormatAsGeoArrowAsync_WithFeatures_WritesReadableArrowStreamWithGeoMetadata()
     {
         var layer = CreateLayer(

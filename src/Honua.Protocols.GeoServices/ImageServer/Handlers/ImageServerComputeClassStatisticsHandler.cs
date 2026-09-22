@@ -65,7 +65,7 @@ internal sealed class ImageServerComputeClassStatisticsHandler
         try
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
+            if (ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context) is not { } resolved)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
@@ -248,7 +248,10 @@ internal sealed class ImageServerComputeClassStatisticsHandler
         };
     }
 
-    /// <summary>Parses the optional <c>bandIds</c> parameter as 1-based band indices (CSV or JSON array).</summary>
+    /// <summary>
+    /// Parses the optional <c>bandIds</c> parameter as 0-based band indices (CSV or JSON array), the
+    /// same base as <c>exportImage</c> (#4068), and returns them as 1-based raster-store bands.
+    /// </summary>
     private static bool TryParseBandIds(string? raw, out int[]? bands, out string? error)
     {
         bands = null;
@@ -267,20 +270,21 @@ internal sealed class ImageServerComputeClassStatisticsHandler
                 using var doc = System.Text.Json.JsonDocument.Parse(trimmed);
                 if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array)
                 {
-                    error = "bandIds must be a JSON array of 1-based band indices.";
+                    error = "bandIds must be a JSON array of 0-based band indices.";
                     return false;
                 }
 
                 var values = new List<int>(doc.RootElement.GetArrayLength());
                 foreach (var element in doc.RootElement.EnumerateArray())
                 {
-                    if (element.ValueKind != System.Text.Json.JsonValueKind.Number || !element.TryGetInt32(out var band) || band <= 0)
+                    // int.MaxValue has no 1-based store band: shifting it would wrap negative.
+                    if (element.ValueKind != System.Text.Json.JsonValueKind.Number || !element.TryGetInt32(out var band) || band is < 0 or int.MaxValue)
                     {
-                        error = "bandIds entries must be positive integers.";
+                        error = "bandIds entries must be non-negative 0-based band indices.";
                         return false;
                     }
 
-                    values.Add(band);
+                    values.Add(band + 1);
                 }
 
                 bands = values.Count == 0 ? null : values.ToArray();
@@ -297,13 +301,13 @@ internal sealed class ImageServerComputeClassStatisticsHandler
         var parsed = new List<int>(parts.Length);
         foreach (var part in parts)
         {
-            if (!int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var band) || band <= 0)
+            if (!int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var band) || band is < 0 or int.MaxValue)
             {
-                error = "bandIds entries must be positive integers.";
+                error = "bandIds entries must be non-negative 0-based band indices.";
                 return false;
             }
 
-            parsed.Add(band);
+            parsed.Add(band + 1);
         }
 
         bands = parsed.Count == 0 ? null : parsed.ToArray();

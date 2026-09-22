@@ -57,7 +57,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<OracleFeatureStore>(sp => new OracleFeatureStore(
             sp.GetRequiredService<OracleFeatureDataAccess>(),
             sp.GetRequiredService<OracleSpatialGuard>(),
-            sp.GetService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>()));
+            sp.GetService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>(),
+            Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp)));
 
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<OracleFeatureStore>());
 

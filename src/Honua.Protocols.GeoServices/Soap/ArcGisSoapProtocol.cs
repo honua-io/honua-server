@@ -82,7 +82,7 @@ internal static class ArcGisSoapProtocol
                     soap));
             }
 
-            return (operations[0], soap, null);
+            return (BindArgumentsByLocalName(operations[0]), soap, null);
         }
         catch (Exception exception) when (exception is XmlException or XmlSchemaValidationException or InvalidOperationException)
         {
@@ -92,6 +92,30 @@ internal static class ArcGisSoapProtocol
                 StatusCodes.Status400BadRequest,
                 requestedSoap));
         }
+    }
+
+    /// <summary>
+    /// Rebinds every element below a validated ArcGIS operation to its local name.
+    /// </summary>
+    /// <remarks>
+    /// The Esri WSDLs declare <c>elementFormDefault="unqualified"</c>, so ArcGIS Pro and
+    /// ArcPy send a namespace-qualified operation with unqualified arguments. Other
+    /// document/literal clients qualify the arguments with the operation prefix or
+    /// inherit a default namespace. All three are the same request: adapters bind
+    /// arguments by local name only, while the operation keeps its negotiated
+    /// namespace for the response.
+    /// </remarks>
+    internal static XElement BindArgumentsByLocalName(XElement operation)
+    {
+        foreach (var argument in operation.Descendants())
+        {
+            if (argument.Name.Namespace != XNamespace.None)
+            {
+                argument.Name = XNamespace.None + argument.Name.LocalName;
+            }
+        }
+
+        return operation;
     }
 
     internal static IResult CreateSoapResponse(

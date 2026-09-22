@@ -31,7 +31,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     IMetadataV2GraphStore metadataGraphStore,
     ILogger<PostgreSqlLayerPublishingService> logger,
     string? metadataSchema = null,
-    Honua.Core.Features.Styling.Abstractions.IStyleCatalog? styleCatalog = null) : ILayerPublishingService
+    Honua.Core.Features.Styling.Abstractions.IStyleCatalog? styleCatalog = null,
+    Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider? featureStoreConnections = null) : ILayerPublishingService
 {
     private const string DefaultServiceName = "default";
     private const int CatalogExtentSrid = 4326;
@@ -71,6 +72,19 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     private readonly string _metadataSchema = string.IsNullOrWhiteSpace(metadataSchema)
         ? "honua"
         : metadataSchema.Trim();
+
+    // The schema the managed feature writer qualifies the shared `features` table with
+    // (Database:Schema, the same value FeatureDataAccess receives), or null when it writes
+    // the unqualified table through the server connection's search path. A managed-store
+    // binding must name exactly the table that writer writes (honua-server#4859).
+    private readonly string? _configuredFeatureSchema = string.IsNullOrWhiteSpace(metadataSchema)
+        ? null
+        : metadataSchema.Trim();
+
+    // The server's own feature-store connections (the ones the managed feature writer uses),
+    // used to prove a managed-store publish reaches the table that writer writes.
+    private readonly Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider? _featureStoreConnections =
+        featureStoreConnections;
 
     public async Task<IReadOnlyList<PublishedLayerSummary>> ListPublishedLayersAsync(
         string connectionString,
@@ -188,12 +202,15 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         }
 
         var serviceName = NormalizeServiceName(request.ServiceName);
+        var isManagedStore = request.StorageMode == LayerStorageMode.Managed;
+        var publicationCapabilities = ResolvePublicationCapabilities(request.Capabilities, isManagedStore);
 
         var validation = await ValidateTableForPublishAsync(
                 connectionString,
                 new TablePublishValidationRequest
                 {
                     AllowEmptyTable = request.AllowEmptyTable,
+                    ManagedStore = isManagedStore,
                     Schema = schema,
                     Table = table,
                     LayerName = request.LayerName,
@@ -262,14 +279,19 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 "No fields selected for publishing.");
         }
 
-        var primaryKeyName = ResolvePrimaryKeyName(selectedColumns, request.PrimaryKey)
-            ?? throw new LayerPublishingException(
+        var primaryKeyName = ResolvePrimaryKeyName(selectedColumns, request.PrimaryKey);
+        if (primaryKeyName is null && !isManagedStore)
+        {
+            throw new LayerPublishingException(
                 LayerPublishingErrorKind.Validation,
                 "Primary key is required.");
+        }
 
-        var primaryKeyColumn = selectedColumns.FirstOrDefault(col =>
-            string.Equals(col.Name, primaryKeyName, StringComparison.OrdinalIgnoreCase));
-        if (primaryKeyColumn == null)
+        var primaryKeyColumn = primaryKeyName is null
+            ? null
+            : selectedColumns.FirstOrDefault(col =>
+                string.Equals(col.Name, primaryKeyName, StringComparison.OrdinalIgnoreCase));
+        if (primaryKeyColumn == null && !isManagedStore)
         {
             var existsInTable = columns.Any(col =>
                 string.Equals(col.Name, primaryKeyName, StringComparison.OrdinalIgnoreCase));
@@ -278,15 +300,26 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 : $"Primary key field '{primaryKeyName}' was not found on the source table.";
             throw new LayerPublishingException(LayerPublishingErrorKind.Validation, message);
         }
-        var primaryKeyType = MapPostgresType(primaryKeyColumn.DataType);
-        if (primaryKeyType is not MetadataV2FieldType.Integer and not MetadataV2FieldType.BigInteger)
+
+        // A managed-store layer takes its identity from the managed store, so its source key
+        // may be of any type, unselected or absent (honua-server#4859).
+        if (!isManagedStore)
         {
-            throw new LayerPublishingException(
-                LayerPublishingErrorKind.Validation,
-                "Primary key must be an integer column.");
+            var primaryKeyType = MapPostgresType(primaryKeyColumn!.DataType);
+            if (primaryKeyType is not MetadataV2FieldType.Integer and not MetadataV2FieldType.BigInteger)
+            {
+                throw new LayerPublishingException(
+                    LayerPublishingErrorKind.Validation,
+                    "Primary key must be an integer column.");
+            }
         }
 
-        var fields = BuildLayerFields(selectedColumns, primaryKeyColumn, geometryColumn, request.FieldDomains);
+        var fields = isManagedStore
+            ? BuildManagedLayerFields(selectedColumns, primaryKeyColumn, geometryColumn, request.FieldDomains)
+            : BuildLayerFields(selectedColumns, primaryKeyColumn!, geometryColumn, request.FieldDomains);
+        var attributeColumns = isManagedStore
+            ? SelectManagedAttributeColumns(selectedColumns, primaryKeyColumn, geometryColumn)
+            : selectedColumns;
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -297,13 +330,32 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         await EnsureServiceAsync(connection, transaction, serviceName, srid, request.ConnectionId, cancellationToken);
         await AcquireLayerPublishLockAsync(connection, transaction, schema, table, cancellationToken);
-        var existingLayerId = await FindExistingLayerAsync(connection, transaction, schema, table, cancellationToken);
-        if (existingLayerId.HasValue)
+
+        // A managed-store layer is an independent copy of the source rows, so the one-layer-
+        // per-source-table rule that protects source-backed layers does not apply to it.
+        if (!isManagedStore)
         {
-            throw new LayerPublishingException(
-                LayerPublishingErrorKind.Conflict,
-                $"Layer already exists for table '{schema}.{table}'.",
-                existingLayerId);
+            var existingLayerId = await FindExistingLayerAsync(connection, transaction, schema, table, cancellationToken);
+            if (existingLayerId.HasValue)
+            {
+                throw new LayerPublishingException(
+                    LayerPublishingErrorKind.Conflict,
+                    $"Layer already exists for table '{schema}.{table}'.",
+                    existingLayerId);
+            }
+        }
+
+        var storage = isManagedStore
+            ? PublishedLayerStorage.ForManagedStore(
+                _configuredFeatureSchema
+                    ?? await ResolveCanonicalFeaturesSchemaAsync(connection, transaction, cancellationToken).ConfigureAwait(false),
+                _configuredFeatureSchema,
+                srid)
+            : PublishedLayerStorage.ForSourceTable(schema, table, primaryKeyColumn!.Name, geometryColumn, storageSrid);
+
+        if (storage.IsManagedStore)
+        {
+            await VerifyManagedStoreConnectionAsync(connection, transaction, cancellationToken).ConfigureAwait(false);
         }
 
         await EnsureLayerSequenceAsync(connection, transaction, cancellationToken);
@@ -315,6 +367,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 table,
                 geometryColumn,
                 storageSrid,
+                managedLayerId: null,
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -323,15 +376,16 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             transaction,
             request.LayerName.Trim(),
             request.Description,
-            schema,
-            table,
-            primaryKeyColumn.Name,
-            geometryColumn,
+            storage.Schema,
+            storage.Table,
+            storage.PrimaryKeyColumn,
+            storage.GeometryColumn,
             geometryType,
             srid,
-            storageSrid,
+            storage.StorageSrid,
             extent,
             request.Enabled,
+            storage.StorageOptionsJson,
             cancellationToken);
 
         await InsertFieldsAsync(connection, transaction, layerId, fields, cancellationToken);
@@ -344,7 +398,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             table,
             geometryColumn,
             srid,
-            selectedColumns,
+            attributeColumns,
+            storage.IsManagedStore ? storage.Schema : null,
             cancellationToken);
         Log.LayerMaterialized(_logger, layerId, materializedCount);
 
@@ -365,15 +420,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                     serviceName,
                     request,
                     layerId,
-                    schema,
-                    table,
-                    primaryKeyColumn.Name,
-                    geometryColumn,
+                    storage,
                     geometryType,
                     srid,
-                    storageSrid,
                     fields,
                     extent,
+                    publicationCapabilities,
                     cancellationToken)
                 .ConfigureAwait(false);
 
@@ -414,14 +466,16 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             Publisher = request.SourceGovernance?.Publisher,
             LicenseUrl = request.SourceGovernance?.EffectiveLicenseUrl,
             SourceUrl = request.SourceGovernance?.SourceUrl,
-            Schema = schema,
-            Table = table,
+            Schema = storage.Schema,
+            Table = storage.Table,
             GeometryType = geometryType,
             Srid = srid,
-            PrimaryKey = primaryKeyColumn.Name,
+            PrimaryKey = storage.PrimaryKeyColumn,
             FieldCount = fields.Count,
             Enabled = request.Enabled,
-            ServiceName = serviceName
+            ServiceName = serviceName,
+            StorageMode = storage.IsManagedStore ? ManagedStorageModeName : SourceStorageModeName,
+            Capabilities = publicationCapabilities
         };
     }
 
@@ -562,7 +616,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         var geometryColumn = ResolveGeometryColumnForValidation(tableInfo, request.GeometryColumn, checks);
         var geometryType = ResolveGeometryTypeForValidation(tableInfo, checks);
-        var primaryKeyName = ResolvePrimaryKeyForValidation(tableInfo.Columns, selectedColumns, request.PrimaryKey, checks);
+        var primaryKeyName = ResolvePrimaryKeyForValidation(
+            tableInfo.Columns,
+            selectedColumns,
+            request.PrimaryKey,
+            request.ManagedStore,
+            checks);
         var serviceSrid = await ResolveExistingServiceSridAsync(connectionString, serviceName, cancellationToken)
             .ConfigureAwait(false);
         var targetSrid = string.IsNullOrWhiteSpace(geometryColumn)
@@ -595,8 +654,13 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 : Pass("feature-count", $"Source table contains {nonSpatialRowCount} row(s)."));
         }
 
-        await AddExistingLayerCheckAsync(connectionString, schema, table, checks, cancellationToken)
-            .ConfigureAwait(false);
+        // A managed-store publication is an independent copy of the source rows, so an existing
+        // layer over the same table is not a conflict (honua-server#4859).
+        if (!request.ManagedStore)
+        {
+            await AddExistingLayerCheckAsync(connectionString, schema, table, checks, cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         return BuildValidationResult(
             request,
@@ -872,7 +936,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         string Schema,
         string Table,
         string GeometryColumn,
-        int SourceSrid);
+        int SourceSrid,
+        bool IsManagedStore);
 
     private readonly record struct GeometryHealth(
         long FeatureCount,

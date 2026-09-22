@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
@@ -222,7 +223,13 @@ internal static partial class FeatureServerEndpoints
                 [selectionError ?? "Invalid layer selection."]);
         }
 
-        var accessError = AccessPolicyHelpers.RequireAnyResourceAccess(context, selectedLayers.Select(pair => pair.Resource), service);
+        var access = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
+            context,
+            selectedLayers.Select(pair => pair.Resource),
+            service,
+            AuthorizationOperation.Query,
+            cancellationToken).ConfigureAwait(false);
+        var accessError = access.RequireAny(selectedLayers.Select(pair => pair.Resource));
         if (accessError != null)
         {
             return accessError;
@@ -235,7 +242,7 @@ internal static partial class FeatureServerEndpoints
                 [layerDefsError ?? "Invalid layerDefs parameter."]);
         }
 
-        var accessibleLayers = FilterAccessibleLayersV2(context, snapshot, service, selectedLayers);
+        var accessibleLayers = FilterAccessibleLayersV2(access, snapshot, selectedLayers);
         var layerResults = new List<ServiceQueryLayerResponse>(accessibleLayers.Length);
 
         foreach (var (publication, resource) in accessibleLayers)
