@@ -226,11 +226,6 @@ internal static partial class AttachmentEndpoints
         // Resolve it through the shared filter-expression pipeline so the SQL is safely
         // parameterised and schema-validated before being sent to the feature reader.
         var definitionExpression = GetFirst(values, "definitionExpression", "definitionexpression");
-        var parentQuery = new FeatureQuery
-        {
-            ObjectIds = ImmutableArray.CreateRange(featureIds),
-            ExcludeAttributes = true
-        };
         if (!string.IsNullOrWhiteSpace(definitionExpression))
         {
             var filterService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
@@ -251,16 +246,13 @@ internal static partial class AttachmentEndpoints
                     "definitionExpression is not a valid WHERE clause for this layer.");
                 return;
             }
-
-            parentQuery = parentQuery with { SqlFilter = translationResult.SqlFilter };
         }
 
         // Apply published-source visibility even when no definitionExpression was
         // supplied. Attachment metadata must not reveal a deleted or hidden parent
         // merely because a stale row remains in the default feature-store snapshot.
-        var matchingIds = await resource.Value.Reader.QueryObjectIdsAsync(layerId, parentQuery, cancellationToken);
-        var allowed = matchingIds.ToHashSet();
-        featureIds = Array.FindAll(featureIds, allowed.Contains);
+        featureIds = await FilterVisibleAttachmentParentsAsync(
+            resource.Value.Reader, layerId, featureIds, definitionExpression, cancellationToken);
 
         var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
         var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
@@ -276,6 +268,33 @@ internal static partial class AttachmentEndpoints
             cancellationToken);
 
         await result.ExecuteAsync(context);
+    }
+
+    internal static async Task<long[]> FilterVisibleAttachmentParentsAsync(
+        IFeatureReader reader,
+        int layerId,
+        long[] featureIds,
+        string? validatedDefinitionExpression,
+        CancellationToken cancellationToken)
+    {
+        // Stay below Oracle's 1000-item IN limit, SQL Server's 2100 total parameters,
+        // and the federated ArcGIS reader's 2000-ID limit, with room for filter values.
+        const int parentBatchSize = 500;
+        var allowed = new HashSet<long>();
+        foreach (var batch in featureIds.Chunk(parentBatchSize))
+        {
+            var query = new FeatureQuery
+            {
+                ObjectIds = ImmutableArray.CreateRange(batch),
+                // Each provider translates the already validated canonical WHERE itself.
+                Where = string.IsNullOrWhiteSpace(validatedDefinitionExpression) ? null : validatedDefinitionExpression,
+                ExcludeAttributes = true
+            };
+            var matches = await reader.QueryObjectIdsAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+            allowed.UnionWith(matches);
+        }
+
+        return Array.FindAll(featureIds, allowed.Contains);
     }
 
     /// <summary>

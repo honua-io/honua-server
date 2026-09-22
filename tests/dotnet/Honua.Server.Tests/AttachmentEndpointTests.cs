@@ -81,7 +81,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         // group['parentGlobalId'] unconditionally and raises KeyError when the key
         // is absent. Esri always emits the key (empty string when there is no
         // global-id column). Assert the raw JSON carries the key on every group,
-        // including groups with no attachments.
+        // Missing parents must not acquire a visible attachment group.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryAttachments?objectIds={TestFeatureId},999");
 
@@ -90,7 +90,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
         var groups = document.RootElement.GetProperty("attachmentGroups");
-        groups.GetArrayLength().Should().Be(2);
+        groups.GetArrayLength().Should().Be(1, "the nonexistent parent must not be exposed");
+        groups[0].GetProperty("parentObjectId").GetInt64().Should().Be(TestFeatureId);
         foreach (var group in groups.EnumerateArray())
         {
             group.TryGetProperty("parentGlobalId", out var parentGlobalId).Should().BeTrue(
