@@ -3,6 +3,7 @@
 
 using System.Reflection;
 using FluentAssertions;
+using Honua.TestKit.Attributes;
 using Xunit;
 
 namespace Honua.Architecture.Tests;
@@ -72,6 +73,35 @@ public sealed class TierTraitEnforcementTests
             "shrink. These entries name methods that are now tiered (or no longer exist), so their " +
             "lines must be deleted from the baseline in the same change:\n" +
             string.Join("\n", stale));
+    }
+
+    /// <summary>
+    /// Pins the tier-detection primitive itself.
+    /// </summary>
+    /// <remarks>
+    /// The guard above is only as good as <see cref="TierTraitScanner.EmitsTierTrait"/>. If that
+    /// silently stops recognising the TestKit attributes, EVERY method looks untiered: the emitter
+    /// writes a baseline covering the whole suite (15 398 entries when this was first generated,
+    /// against ~3 100 genuinely untiered methods), and afterwards the enforcement guard fails every
+    /// NEWLY ADDED and correctly tiered test — the exact inverse of what it is for. That failure mode
+    /// is invisible in the guard's own output, so it gets its own assertion.
+    /// </remarks>
+    [ArchitectureTest]
+    public void TierDetection_RecognisesTestKitTierAttributes_AndRejectsPlainXunitFacts()
+    {
+        TierTraitScanner.EmitsTierTrait(typeof(UnitTestAttribute)).Should().BeTrue(
+            "[UnitTest] emits Tier=Fast, which is what the required gate filters on");
+        TierTraitScanner.EmitsTierTrait(typeof(IntegrationTestAttribute)).Should().BeTrue(
+            "[IntegrationTest] emits Tier=Integration");
+        TierTraitScanner.EmitsTierTrait(typeof(ScaleTestAttribute)).Should().BeTrue(
+            "[ScaleTest] emits Tier=Slow");
+
+        TierTraitScanner.EmitsTierTrait(typeof(FactAttribute)).Should().BeFalse(
+            "a plain [Fact] emits no trait at all — that is the hole this guard closes");
+        TierTraitScanner.EmitsTierTrait(typeof(TheoryAttribute)).Should().BeFalse(
+            "a plain [Theory] emits no trait at all");
+        TierTraitScanner.EmitsTierTrait(typeof(ArchitectureTestAttribute)).Should().BeFalse(
+            "[ArchitectureTest] emits Category=Architecture but no Tier, so it must not satisfy the guard");
     }
 
     [ArchitectureTest]
@@ -151,7 +181,9 @@ internal static class TierTraitScanner
         {
             foreach (var type in ArchitectureTestHelpers.GetTypesSafely(assembly))
             {
-                if (type is null || type.IsAbstract && type.IsSealed)
+                // Static classes hold no xUnit test methods; a null FullName would produce an
+                // unusable baseline key, so both are skipped before any attribute is read.
+                if (type is null || type.FullName is null || (type.IsAbstract && type.IsSealed))
                 {
                     continue;
                 }
@@ -186,7 +218,8 @@ internal static class TierTraitScanner
     {
         for (var current = attributeType; current is not null; current = current.BaseType)
         {
-            if (XunitFactAttributeNames.Contains(current.FullName, StringComparer.Ordinal))
+            var fullName = current.FullName;
+            if (fullName is not null && XunitFactAttributeNames.Contains(fullName, StringComparer.Ordinal))
             {
                 return true;
             }
@@ -207,7 +240,7 @@ internal static class TierTraitScanner
 
     private static readonly Dictionary<Type, bool> _tierEmittingCache = [];
 
-    private static bool EmitsTierTrait(Type attributeType)
+    internal static bool EmitsTierTrait(Type attributeType)
     {
         lock (_tierEmittingCache)
         {
@@ -222,37 +255,68 @@ internal static class TierTraitScanner
         }
     }
 
+    /// <summary>
+    /// Resolves the <c>ITraitDiscoverer</c> that xUnit would use for <paramref name="attributeType"/>.
+    /// </summary>
+    /// <remarks>
+    /// <c>Xunit.Sdk.TraitDiscovererAttribute</c> is declared with an EMPTY BODY in xunit.core: it
+    /// stores its <c>typeName</c>/<c>assemblyName</c> constructor arguments nowhere readable, which
+    /// is why xUnit's own discovery reads them through <c>IAttributeInfo.GetConstructorArguments()</c>.
+    /// Reflecting for <c>TypeName</c>/<c>AssemblyName</c> PROPERTIES therefore always yields null and
+    /// would make every attribute — including <c>[UnitTest]</c> and <c>[IntegrationTest]</c> — look
+    /// non-tier-bearing, so the guard would baseline the entire suite and then fail every newly added
+    /// and correctly tiered test. The arguments must come from the attribute METADATA instead.
+    /// </remarks>
+    private static Type? ResolveDiscovererType(Type attributeType)
+    {
+        // [TraitDiscoverer] is Inherited=true, so mirror xUnit and walk the attribute's base chain.
+        for (var current = attributeType; current is not null; current = current.BaseType)
+        {
+            var data = current.GetCustomAttributesData().FirstOrDefault(candidate =>
+                string.Equals(
+                    candidate.AttributeType.FullName,
+                    "Xunit.Sdk.TraitDiscovererAttribute",
+                    StringComparison.Ordinal));
+
+            if (data is null)
+            {
+                continue;
+            }
+
+            var arguments = data.ConstructorArguments;
+
+            // [TraitDiscoverer(Type discovererType)]
+            if (arguments.Count == 1 && arguments[0].Value is Type discovererType)
+            {
+                return discovererType;
+            }
+
+            // [TraitDiscoverer(string typeName, string assemblyName)] — the form TestKit uses.
+            if (arguments.Count == 2 &&
+                arguments[0].Value is string typeName &&
+                arguments[1].Value is string assemblyName &&
+                !string.IsNullOrWhiteSpace(typeName) &&
+                !string.IsNullOrWhiteSpace(assemblyName))
+            {
+                try
+                {
+                    return Assembly.Load(assemblyName).GetType(typeName);
+                }
+                catch (Exception exception) when (exception is FileNotFoundException or BadImageFormatException or TypeLoadException)
+                {
+                    return null;
+                }
+            }
+
+            return null;
+        }
+
+        return null;
+    }
+
     private static bool ResolveEmitsTierTrait(Type attributeType)
     {
-        var discovererAttribute = attributeType.GetCustomAttributes(inherit: true)
-            .FirstOrDefault(candidate =>
-                string.Equals(candidate.GetType().FullName, "Xunit.Sdk.TraitDiscovererAttribute", StringComparison.Ordinal));
-
-        if (discovererAttribute is null)
-        {
-            return false;
-        }
-
-        var typeName = (string?)discovererAttribute.GetType()
-            .GetProperty("TypeName")?.GetValue(discovererAttribute);
-        var assemblyName = (string?)discovererAttribute.GetType()
-            .GetProperty("AssemblyName")?.GetValue(discovererAttribute);
-
-        if (string.IsNullOrWhiteSpace(typeName) || string.IsNullOrWhiteSpace(assemblyName))
-        {
-            return false;
-        }
-
-        Type? discovererType;
-        try
-        {
-            discovererType = Assembly.Load(assemblyName).GetType(typeName);
-        }
-        catch (Exception exception) when (exception is FileNotFoundException or BadImageFormatException or TypeLoadException)
-        {
-            return false;
-        }
-
+        var discovererType = ResolveDiscovererType(attributeType);
         if (discovererType is null)
         {
             return false;
@@ -288,19 +352,26 @@ internal static class TierTraitScanner
                 return false;
             }
 
+            // Enumerate INSIDE the try. GetTraits implementations are iterator methods, so a
+            // discoverer that really does dereference its IAttributeInfo argument throws from
+            // MoveNext() — not from Invoke() — and that exception is therefore NOT wrapped in
+            // TargetInvocationException.
             foreach (var trait in traits)
             {
-                var key = trait.GetType().GetProperty("Key")?.GetValue(trait) as string;
+                var key = trait?.GetType().GetProperty("Key")?.GetValue(trait) as string;
                 if (string.Equals(key, "Tier", StringComparison.Ordinal))
                 {
                     return true;
                 }
             }
         }
-        catch (TargetInvocationException)
+        catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            // A discoverer that genuinely needs its argument cannot be probed this way; treat
-            // it as non-tier-bearing rather than crashing the guard.
+            // A discoverer that genuinely needs its argument cannot be probed this way; treat it
+            // as non-tier-bearing rather than crashing the guard over an unrelated attribute.
+            // This cannot silently swallow a REAL tier attribute: TierDetection_RecognisesTestKit
+            // AttributesAndRejectsPlainXunitFacts pins [UnitTest]/[IntegrationTest]/[ScaleTest]
+            // as tier-bearing, and fails loudly if this path ever starts absorbing one of them.
             return false;
         }
 
