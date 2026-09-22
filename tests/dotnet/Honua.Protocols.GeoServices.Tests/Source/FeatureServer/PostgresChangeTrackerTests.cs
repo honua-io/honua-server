@@ -227,6 +227,65 @@ public sealed class PostgresChangeTrackerTests : IClassFixture<WebAppFixture>
 
     [IntegrationTest]
     [Operation(Operations.ExtractChanges)]
+    public async Task GetChangesSince_PreservesTheWindowFirstPreImageAcrossCollapsedOperations()
+    {
+        const int layerId = 990134;
+        const int otherLayerId = 990135;
+        var tracker = _fixture.GetService<IChangeTracker>();
+        var baseline = await tracker.GetCurrentGenerationAsync();
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+
+        async Task<long> RecordAsync(int layer, long objectId, short operation, string? preAttributes = null)
+        {
+            await using var command = new Npgsql.NpgsqlCommand("""
+                INSERT INTO honua.feature_changes
+                    (generation, layer_id, objectid, operation, pre_attributes)
+                VALUES (nextval('honua.sync_generation'), @layer, @objectId, @operation, CAST(@preAttributes AS jsonb))
+                RETURNING change_id;
+                """, connection);
+            command.Parameters.AddWithValue("layer", layer);
+            command.Parameters.AddWithValue("objectId", objectId);
+            command.Parameters.AddWithValue("operation", operation);
+            command.Parameters.AddWithValue("preAttributes", (object?)preAttributes ?? DBNull.Value);
+            return (long)(await command.ExecuteScalarAsync())!;
+        }
+
+        // An insert at the start of the window means the client held no row, even if later
+        // updates/deletes recorded images and the same object id was inserted again.
+        await RecordAsync(layerId, 1, 1);
+        await RecordAsync(layerId, 1, 2, "{}");
+        await RecordAsync(layerId, 1, 3, "{}");
+        await RecordAsync(layerId, 1, 1);
+
+        // A delete followed by a reinsert is an update to a client that held the original row.
+        var firstDelete = await RecordAsync(layerId, 2, 3, "{}");
+        await RecordAsync(layerId, 2, 1);
+
+        // A legacy first event has no trustworthy pre-image; a later captured one cannot stand in for it.
+        await RecordAsync(layerId, 3, 2);
+        await RecordAsync(layerId, 3, 2, "{}");
+
+        var firstUpdate = await RecordAsync(layerId, 4, 2, "{}");
+        await RecordAsync(layerId, 4, 3, "{}");
+        await RecordAsync(layerId, 5, 1);
+        await RecordAsync(layerId, 5, 3, "{}");
+        await RecordAsync(otherLayerId, 4, 2, "{}");
+
+        var changes = await tracker.GetChangesSinceAsync(baseline, [layerId]);
+        changes.Select(change => change.ObjectId).Should().BeEquivalentTo(new[] { 1L, 2L, 3L, 4L });
+        changes.Should().OnlyContain(change => change.LayerId == layerId);
+        changes.Single(change => change.ObjectId == 1).Should().Match<FeatureChange>(change =>
+            change.Operation == FeatureChangeOperation.Insert && change.PreImageChangeId is null);
+        changes.Single(change => change.ObjectId == 2).Should().Match<FeatureChange>(change =>
+            change.Operation == FeatureChangeOperation.Update && change.PreImageChangeId == firstDelete);
+        changes.Single(change => change.ObjectId == 3).Should().Match<FeatureChange>(change =>
+            change.Operation == FeatureChangeOperation.Update && change.PreImageChangeId is null);
+        changes.Single(change => change.ObjectId == 4).Should().Match<FeatureChange>(change =>
+            change.Operation == FeatureChangeOperation.Delete && change.PreImageChangeId == firstUpdate);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ExtractChanges)]
     public async Task GetChangesSince_PublicObjectIdFilter_FindsDeletedCustomIdChange()
     {
         const int layerId = 990105;
