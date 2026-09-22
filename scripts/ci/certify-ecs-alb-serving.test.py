@@ -13,7 +13,9 @@ SCRIPT = Path(__file__).resolve().parents[1] / "cloud/certify-ecs-alb-serving.sh
 
 
 class ServingCertificationTests(unittest.TestCase):
-    def certify(self, readiness_status=200, readiness_body="Ready", count=1):
+    def certify(self, readiness_status=200, readiness_body="Ready", count=1,
+                query_path="rest/services/test/FeatureServer/0/query?returnCountOnly=true",
+                expected_count="1"):
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
                 status, body = 404, "missing"
@@ -43,9 +45,13 @@ class ServingCertificationTests(unittest.TestCase):
             env.update(
                 HONUA_REALAWS_CERT_ALB_BASE_URL=f"http://127.0.0.1:{server.server_port}",
                 HONUA_REALAWS_CERT_ALB_ADMIN_API_KEY="test-admin-key",
-                HONUA_REALAWS_CERT_ALB_QUERY_PATH="rest/services/test/FeatureServer/0/query?returnCountOnly=true",
-                HONUA_REALAWS_CERT_ALB_EXPECTED_COUNT="1",
             )
+            env.pop("HONUA_REALAWS_CERT_ALB_QUERY_PATH", None)
+            env.pop("HONUA_REALAWS_CERT_ALB_EXPECTED_COUNT", None)
+            if query_path is not None:
+                env["HONUA_REALAWS_CERT_ALB_QUERY_PATH"] = query_path
+            if expected_count is not None:
+                env["HONUA_REALAWS_CERT_ALB_EXPECTED_COUNT"] = expected_count
             try:
                 return subprocess.run(
                     [str(SCRIPT)], env=env, capture_output=True, text=True, timeout=15,
@@ -73,6 +79,15 @@ class ServingCertificationTests(unittest.TestCase):
         result = self.certify(count=2)
         self.assertNotEqual(0, result.returncode)
         self.assertIn("expected 1", result.stderr)
+
+    def test_missing_row_count_configuration_is_rejected(self):
+        for query_path, expected_count in ((None, None), (None, "1"),
+                                           ("rest/services/test/FeatureServer/0/query?returnCountOnly=true", None)):
+            with self.subTest(query_path=query_path, expected_count=expected_count):
+                result = self.certify(query_path=query_path, expected_count=expected_count)
+                self.assertNotEqual(0, result.returncode, result.stdout + result.stderr)
+                self.assertIn("row-count certification requires both", result.stderr)
+                self.assertNotIn("Honua serving certification passed", result.stdout)
 
 
 if __name__ == "__main__":

@@ -18,8 +18,7 @@
 #      when the ALB is still fronting nginx or any other non-Honua service),
 #   2. readiness reports Ready,
 #   3. the GeoServices catalog serves a real `currentVersion`,
-#   4. a FeatureServer query returns the expected row count, when a query URL and
-#      expected count are configured,
+#   4. a FeatureServer query returns the required expected row count,
 #   5. an unauthenticated request to an admin route is denied.
 #
 # It never weakens the lane: when the base URL is not configured the caller
@@ -29,8 +28,8 @@
 # Environment:
 #   HONUA_REALAWS_CERT_ALB_BASE_URL          Required. Public base URL of the cert ALB.
 #   HONUA_REALAWS_CERT_ALB_ADMIN_API_KEY     Optional. Enables the authenticated admin check.
-#   HONUA_REALAWS_CERT_ALB_QUERY_PATH        Optional. FeatureServer query path (with query string).
-#   HONUA_REALAWS_CERT_ALB_EXPECTED_COUNT    Optional. Expected feature count for that query.
+#   HONUA_REALAWS_CERT_ALB_QUERY_PATH        Required. FeatureServer query path (with query string).
+#   HONUA_REALAWS_CERT_ALB_EXPECTED_COUNT    Required. Expected feature count for that query.
 #   HONUA_REALAWS_CERT_ALB_TIMEOUT_SECONDS   Optional. Per-request timeout (default 20).
 
 set -Eeuo pipefail
@@ -126,7 +125,7 @@ if [[ -n "${QUERY_PATH}" && -n "${EXPECTED_COUNT}" ]]; then
         record PASS "the FeatureServer query returned the expected ${EXPECTED_COUNT} feature(s) through the ALB."
     fi
 else
-    record SKIP "no row-count query configured (set HONUA_REALAWS_CERT_ALB_QUERY_PATH and HONUA_REALAWS_CERT_ALB_EXPECTED_COUNT to certify a row count through the ALB)."
+    record FAIL "row-count certification requires both HONUA_REALAWS_CERT_ALB_QUERY_PATH and HONUA_REALAWS_CERT_ALB_EXPECTED_COUNT."
 fi
 
 # 5. Authorization is enforced on the deployed service, not just in tests.
