@@ -70,6 +70,16 @@ public sealed class GeometryInputBudgetTests
         Assert.Contains("MaxVerticesPerGeometry", result.Body, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task VertexBudget_AllowsMissingOptionalZOrMOrdinate()
+    {
+        const string geometry = "{\"hasZ\":true,\"hasM\":true,\"points\":[[1,2,null,4]]}";
+
+        var result = await InvokeAsync(geometry);
+
+        Assert.True(result.Passed, result.Body);
+    }
+
     [Theory]
     [InlineData("{broken")]
     [InlineData("{}")]
