@@ -57,6 +57,7 @@ public sealed class EsriConstructCapabilityRegistryTests
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceCapabilities, MigrationFidelityAutomationStatuses.Unsupported, ImportCompatibilityCodes.ArcGisQueryCapabilityMissing)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceFields, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ManualReview)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceDomains, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisDomainTruncated)]
+    [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceSubtypes, MigrationFidelityAutomationStatuses.Unsupported, ImportCompatibilityCodes.ArcGisSubtypesManualReview)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceRelationships, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisRelationshipsManualReview)]
     [InlineData(EsriConstructCapabilityRegistry.Keys.ResourceAttachments, MigrationFidelityAutomationStatuses.ManualReview, ImportCompatibilityCodes.ArcGisAttachments)]
     public void ResolveOrUnknown_ConditionalConstruct_ExposesUnsupportedFallback(
