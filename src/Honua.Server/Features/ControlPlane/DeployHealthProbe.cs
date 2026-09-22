@@ -127,7 +127,7 @@ internal sealed class HttpDeployHealthProbe(IHttpClientFactory httpClientFactory
         DeployHealthProbeRequest request,
         CancellationToken cancellationToken)
     {
-        var validation = await OutboundHttpUrlValidator
+        var validation = await DeployProbeUrlPolicy
             .ValidateAsync(request.Url, cancellationToken)
             .ConfigureAwait(false);
 
@@ -202,7 +202,7 @@ internal sealed class HttpDeployHealthProbe(IHttpClientFactory httpClientFactory
         DeployGoldenQueryRequest request,
         CancellationToken cancellationToken)
     {
-        var validation = await OutboundHttpUrlValidator
+        var validation = await DeployProbeUrlPolicy
             .ValidateAsync(request.Url, cancellationToken)
             .ConfigureAwait(false);
 
@@ -339,6 +339,19 @@ internal sealed class HttpDeployHealthProbe(IHttpClientFactory httpClientFactory
 
         return buffer.ToArray();
     }
+}
+
+/// <summary>
+/// The single destination rule for deploy probe URLs (<c>telemetry.healthz.url</c> and
+/// <c>telemetry.golden_query.url</c>). The runtime probes and deploy planning both call it, so the plan
+/// refuses exactly the URLs the probe would refuse instead of admitting a rollout whose gate can never
+/// be evaluated (honua-server#4988).
+/// </summary>
+internal static class DeployProbeUrlPolicy
+{
+    /// <summary>Validates a probe URL: HTTPS only, no private, loopback or reserved destination.</summary>
+    public static Task<OutboundHttpUrlValidationResult> ValidateAsync(string url, CancellationToken cancellationToken)
+        => OutboundHttpUrlValidator.ValidateAsync(url, cancellationToken);
 }
 
 /// <summary>
