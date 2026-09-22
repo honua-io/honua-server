@@ -37,11 +37,32 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /ogc/tiles")]
-    public async Task GetLandingPage_ReturnsRequiredLinks()
+    public async Task GetLandingPage_ReturnsRequiredLinks(bool singleCollection)
     {
+        if (singleCollection)
+        {
+            var otherLayers = _fixture.GetCurrentV2GraphSnapshot().Graph.Publications
+                .Select(publication => publication.LayerIndex)
+                .OfType<int>()
+                .Where(layer => layer != WebAppFixture.TestLayerId)
+                .Distinct()
+                .ToArray();
+            foreach (var layer in otherLayers)
+            {
+                _fixture.SetV2LayerEnabled(layer, enabled: false);
+            }
+
+            using var collectionsResponse = await _fixture.Client.GetAsync("/ogc/tiles/collections");
+            collectionsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var collections = JsonDocument.Parse(await collectionsResponse.Content.ReadAsStringAsync());
+            collections.RootElement.GetProperty("collections").GetArrayLength().Should().Be(1);
+        }
+
         var response = await _fixture.Client.GetAsync("/ogc/tiles");
 
         response.Be200Ok();
@@ -71,6 +92,25 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
             .ToArray();
         dataTypes.Should().NotBeEmpty();
         dataTypes.Should().OnlyContain(dataType => dataType == "map");
+
+        var firstTileset = tilesets.RootElement.GetProperty("tilesets")[0];
+        var metadataLink = firstTileset.GetProperty("links").EnumerateArray()
+            .Single(link => link.GetProperty("rel").GetString() == RelationTypes.Self);
+        using var metadataResponse = await _fixture.Client.GetAsync(new Uri(metadataLink.GetProperty("href").GetString()!).PathAndQuery);
+        metadataResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var metadata = await metadataResponse.Content.ReadFromJsonAsync<TileSet>();
+        metadata!.DataType.Should().Be("map");
+        metadata.Links.Should().Contain(link => link.Rel == "item" && link.Type == MediaTypes.Png);
+
+        using var vectorResponse = await _fixture.Client.GetAsync($"/ogc/tiles/collections/{WebAppFixture.TestLayerId}/tiles");
+        vectorResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var vectorTilesets = await vectorResponse.Content.ReadFromJsonAsync<TileSetsList>();
+        vectorTilesets!.Tilesets.Should().OnlyContain(tileset => tileset.DataType == "vector");
+
+        using var selectedResponse = await _fixture.Client.GetAsync($"/ogc/tiles/tiles?collections={WebAppFixture.TestLayerId}");
+        selectedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var selectedTilesets = await selectedResponse.Content.ReadFromJsonAsync<TileSetsList>();
+        selectedTilesets!.Tilesets.Should().OnlyContain(tileset => tileset.DataType == "vector");
     }
 
     [IntegrationTest]
