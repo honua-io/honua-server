@@ -7,6 +7,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Security;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
@@ -57,6 +58,33 @@ public sealed class PortalTokenIssuerTests
         validation.Principal.FindFirstValue(ClaimTypes.Name).Should().Be("alice");
         validation.Principal.FindFirstValue(PortalTokenIssuer.TenantClaimType).Should().Be("tenant-A");
         validation.Principal.IsInRole("editor").Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task ValidateAsync_ProjectedAuthorityClaims_SurviveFrameworkClaimSanitization()
+    {
+        var issuer = CreateIssuer();
+        var issuance = await issuer.IssueAsync(
+            new PortalTokenIssueRequest(
+                PrincipalId: "alice",
+                DisplayName: "Alice",
+                TenantId: "tenant-A",
+                Roles: ["editor"],
+                ClientType: PortalTokenClientType.Referer,
+                BindingValue: "https://app.example.com/maps/",
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(30)),
+            CancellationToken.None);
+        var validation = await issuer.ValidateAsync(
+            issuance.Token,
+            new PortalTokenBinding(Referer: "https://app.example.com/other", ClientIp: "192.0.2.1"),
+            CancellationToken.None);
+        validation.Should().NotBeNull();
+
+        CanonicalSecurityActor.RemoveUnstampedAuthorityClaims(validation!.Principal);
+
+        validation.Principal.FindFirstValue("auth_type").Should().Be(PortalTokenIssuer.AuthTypeClaimValue);
+        validation.Principal.FindFirstValue(PortalTokenIssuer.BindingClaimType)
+            .Should().Be(nameof(PortalTokenClientType.Referer));
     }
 
     [UnitTest]

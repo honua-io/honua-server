@@ -9848,6 +9848,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.CreateReplica_InvalidOrUnsupportedParameter_IsRejectedWithoutRegistering",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.CreateReplica_SyncModelNone_ReturnsScopedDataWithoutRegisteringAReplica",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.CreateReplica_UnsupportedDataFormat_ReturnsHttp400WithEsriErrorEnvelope",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.Replicas_AfterCreateAndUnregister_ReflectsLiveRegistryImmediately",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.Replicas_WhenReplicaExists_ReturnsReplicaList",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaOwnershipEndpointTests.Replicas_AreScopedToTheirOwningPrincipal"
@@ -10313,6 +10314,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishedBinding_AttachmentRoundTripUsesLiveParentInsteadOfSnapshot",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishedBinding_AttachmentsDoNotExposeParentRemainingOnlyInOldSnapshot",
         "Honua.Server.Tests.AttachmentEndpointTests.QueryAttachments_AlwaysEmitsParentGlobalIdKey",
         "Honua.Server.Tests.AttachmentEndpointTests.QueryAttachments_FeatureWithNoAttachments_ReturnsEmptyArray",
         "Honua.Server.Tests.AttachmentEndpointTests.QueryAttachments_WithMalformedObjectIdsDelimiter_Returns400",
@@ -10530,6 +10533,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishedBinding_AttachmentRoundTripUsesLiveParentInsteadOfSnapshot",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishedBinding_AttachmentsDoNotExposeParentRemainingOnlyInOldSnapshot",
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_ThenGetAttachmentInfos_ReturnsNewAttachmentNotStaleCache",
         "Honua.Server.Tests.AttachmentEndpointTests.AttachmentInfos_WithValidFeature_ReturnsAttachmentInfos"
       ],
@@ -10545,6 +10550,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishedBinding_AttachmentRoundTripUsesLiveParentInsteadOfSnapshot",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishedBinding_AttachmentsDoNotExposeParentRemainingOnlyInOldSnapshot",
         "Honua.Server.Tests.AttachmentEndpointTests.DownloadAttachment_WithNonExistentId_Returns404",
         "Honua.Server.Tests.AttachmentEndpointTests.DownloadAttachment_WithValidId_ReturnsFileContent",
         "Honua.Server.Tests.AttachmentEndpointTests.DownloadAttachment_WithoutCredentials_IsRefusedAndNeverReturnsTheBytes"
@@ -14702,6 +14709,7 @@
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishManagedCopy_WithDifferentFeatureStoreSearchPath_IsRejected",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishRetainedTable_AdvertisesTableAndQueriesRowsWithoutSpatialMetadata",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishUploadedGeoJson_ThroughSecureConnection_ServesQueryAndVectorTile",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishedBinding_AttachmentRoundTripUsesLiveParentInsteadOfSnapshot",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshLayerExtents_WithEnabledEmptyLayer_NullsLayerExtentAndKeepsServiceExtentFromNonEmptyLayer",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshLayerExtents_WithProjectedSource_RecomputesLayerAndServiceExtentInWgs84",
         "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.RefreshMaterializedFeatures_AfterSourceUpdate_RebuildsSnapshotMvtReads",
@@ -19699,6 +19707,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.CreateReplica_GeometryLayerQueriesAndReplicaSR_ScopeDataDeltasAndReplicaInfo",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.CreateReplica_InvalidOrUnsupportedParameter_IsRejectedWithoutRegistering",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.CreateReplica_SyncModelNone_ReturnsScopedDataWithoutRegisteringAReplica",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.CreateReplica_UnsupportedDataFormat_ReturnsHttp400WithEsriErrorEnvelope",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.ReplicaRejections_OtherThanCreateReplicaDataFormat_KeepHttp200Envelope",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.SynchronizeReplica_UpdateAcrossTheScopeBoundary_DeletesRowsThatLeftTheScope",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.CreateReplica_InvalidService_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.CreateReplica_LayersAsJsonArray_ReturnsReplicaId",
@@ -19742,6 +19752,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.ExtractChanges_ReturnSelectionAndIdsOnly_ShapeTheChangeEnvelope",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.ExtractChanges_ServerGensRange_StopsAtTheMaxGeneration",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.ExtractChanges_UnsupportedOrInvalidOption_IsRejectedNotIgnored",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.ReplicaRejections_OtherThanCreateReplicaDataFormat_KeepHttp200Envelope",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.UploadOnly_PreservesForeignChangesAcrossRepeatedUploads",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.ExtractChanges_LayersAsJsonArray_ReturnsChanges",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.ExtractChanges_NonexistentReplica_ReturnsNotFound",
@@ -20440,6 +20451,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishedBinding_AttachmentRoundTripUsesLiveParentInsteadOfSnapshot",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishedBinding_AttachmentsDoNotExposeParentRemainingOnlyInOldSnapshot",
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_ConcurrentUploadsToTheSameFeature_BothPersistWithTheirOwnBytes",
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_FileTooLarge_Returns413",
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_RacingADeleteOnTheSameFeature_LeavesBothStoresConsistent",
@@ -20493,6 +20506,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishedBinding_AttachmentRoundTripUsesLiveParentInsteadOfSnapshot",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishedBinding_AttachmentsDoNotExposeParentRemainingOnlyInOldSnapshot",
         "Honua.Server.Tests.AttachmentEndpointTests.DeleteAttachments_ForMissingAttachment_ReturnsFailureErrorObject",
         "Honua.Server.Tests.AttachmentEndpointTests.DeleteAttachments_RemovesTheMetadataRowAndTheStoredObject",
         "Honua.Server.Tests.AttachmentEndpointTests.DeleteAttachments_WithCanonicalFeatureRoute_ReturnsSuccess",
@@ -20515,6 +20530,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishedBinding_AttachmentRoundTripUsesLiveParentInsteadOfSnapshot",
+        "Honua.Server.Tests.Admin.LayerPublishingIntegrationTests.PublishedBinding_AttachmentsDoNotExposeParentRemainingOnlyInOldSnapshot",
         "Honua.Server.Tests.AttachmentEndpointTests.UpdateAttachment_WithCanonicalFeatureRoute_ReturnsSuccess",
         "Honua.Server.Tests.AttachmentEndpointTests.UpdateAttachment_WithNonExistentAttachment_Returns404",
         "Honua.Server.Tests.AttachmentEndpointTests.UpdateAttachment_WithReplacementFile_ReplacesStoredContent",

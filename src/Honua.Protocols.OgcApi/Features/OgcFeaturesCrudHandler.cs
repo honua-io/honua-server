@@ -71,9 +71,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
 
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var storageLayerId = publication.LayerIndex
-                ?? snapshot.ResolveStorageLayerId(publication)
-                ?? snapshot.ResolveStorageLayerId(resource);
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication, resource);
             if (storageLayerId is not { } layerId)
             {
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' has no storage binding.");
@@ -232,9 +230,7 @@ internal sealed partial class OgcFeaturesCrudHandler(
 
             var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
             var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            var storageLayerId = publication.LayerIndex
-                ?? snapshot.ResolveStorageLayerId(publication)
-                ?? snapshot.ResolveStorageLayerId(resource);
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication, resource);
             if (storageLayerId is not { } layerId)
             {
                 return StandardErrorHelpers.CreateNotFound(context, $"Collection '{collectionId}' has no storage binding.");

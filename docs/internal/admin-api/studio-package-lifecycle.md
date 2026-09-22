@@ -246,7 +246,7 @@ on:
 
 Policy denials happen before any endpoint handler runs, so a dedicated
 `IAuthorizationMiddlewareResultHandler`
-(`StudioLifecycleAuthorizationMiddlewareResultHandler`) records exactly one
+(`HonuaAuthorizationMiddlewareResultHandler`) records exactly one
 `AuditEventType.Authorization`/`AuditOutcome.Denied` event for every Studio
 policy short-circuit. Its audit detail carries a stable code:
 `studio_authorization/end_user_mode_disabled`,

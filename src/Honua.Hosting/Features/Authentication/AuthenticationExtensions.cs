@@ -116,7 +116,9 @@ public static class AuthenticationExtensions
         // users behind a feature flag (honua-server#3001).
         services.AddSingleton<IAuthorizationHandler, StudioLifecycleAuthorizationHandler>();
         services.AddSingleton<IAuthorizationHandler, StudioAiProxyAuthorizationHandler>();
-        services.AddSingleton<IAuthorizationMiddlewareResultHandler, StudioLifecycleAuthorizationMiddlewareResultHandler>();
+        // Records the 401/403 outcome of every policy the authorization middleware evaluates —
+        // those denials short-circuit above the audit middleware and are observable nowhere else.
+        services.AddSingleton<IAuthorizationMiddlewareResultHandler, HonuaAuthorizationMiddlewareResultHandler>();
 
         // Add authentication with API key scheme
         _ = services.AddAuthentication(defaultScheme: ApiKeyScheme)

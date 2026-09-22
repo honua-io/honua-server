@@ -81,7 +81,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         // group['parentGlobalId'] unconditionally and raises KeyError when the key
         // is absent. Esri always emits the key (empty string when there is no
         // global-id column). Assert the raw JSON carries the key on every group,
-        // including groups with no attachments.
+        // Missing parents must not acquire a visible attachment group.
         var response = await _fixture.Client.GetAsync(
             $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/queryAttachments?objectIds={TestFeatureId},999");
 
@@ -90,7 +90,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         var content = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(content);
         var groups = document.RootElement.GetProperty("attachmentGroups");
-        groups.GetArrayLength().Should().Be(2);
+        groups.GetArrayLength().Should().Be(1, "the nonexistent parent must not be exposed");
+        groups[0].GetProperty("parentObjectId").GetInt64().Should().Be(TestFeatureId);
         foreach (var group in groups.EnumerateArray())
         {
             group.TryGetProperty("parentGlobalId", out var parentGlobalId).Should().BeTrue(
@@ -132,10 +133,11 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         var result = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.AttachmentQueryResponse);
 
         result.Should().NotBeNull();
-        result!.AttachmentGroups.Should().HaveCount(2);
-        result.AttachmentInfos.Should().BeNull();
+        result!.AttachmentGroups.Should().ContainSingle("nonexistent parents are not visible");
 
         var seededGroup = result.AttachmentGroups.Single(group => group.ParentObjectId == TestFeatureId);
+        result.AttachmentInfos.Should().BeEquivalentTo(seededGroup.AttachmentInfos,
+            "the legacy flattened list contains only the one visible parent's attachments");
         seededGroup.AttachmentInfos.Should().NotBeEmpty();
         seededGroup.AttachmentInfos.Should().OnlyContain(attachment => !string.IsNullOrWhiteSpace(attachment.Url));
 
@@ -146,8 +148,7 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         urlResponse.BeSuccessful();
         (await urlResponse.Content.ReadAsByteArrayAsync()).Should().Equal(AttachmentTestData.SeededTextFileBytes.ToArray());
 
-        var emptyGroup = result.AttachmentGroups.Single(group => group.ParentObjectId == 999);
-        emptyGroup.AttachmentInfos.Should().BeEmpty();
+        result.AttachmentGroups.Should().NotContain(group => group.ParentObjectId == 999);
     }
 
     [IntegrationTest]

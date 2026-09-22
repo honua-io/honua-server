@@ -2,40 +2,70 @@
 #
 # One-command deploy (server already running, e.g. via the root `docker compose up -d`):
 #
+#     export HONUA_MONITORING_GRAFANA_PASSWORD='<a password you choose>'
+#     export HONUA_METRICS_SCRAPE_KEY_FILE="$PWD/honua-scrape-key"   # see below
 #     docker compose -f docker/monitoring/compose.yml up -d
 #
-# Then open Grafana at http://localhost:3000 (admin / admin) — the Prometheus datasource
-# and the three curated dashboards (Serving, GP/Jobs, Ops/Alerts) are provisioned on boot.
-# Prometheus is at http://localhost:9090. Edit prometheus/prometheus.yml to change the
-# scrape target/credentials for your deployment.
+# Both variables are required; the bundle refuses to start without them. Mint the
+# scrape key as a read-only admin API key (permissions ["admin:read"]) and write it
+# to the file named by HONUA_METRICS_SCRAPE_KEY_FILE — `/metrics` is served under the
+# Admin policy, and a GET is a safe method, so an `admin:read` grant is the narrowest
+# credential that can scrape it. Do not reuse HONUA_ADMIN_PASSWORD here.
+#
+# Then open Grafana at http://localhost:3000 (user `admin`, the password you exported)
+# — the Prometheus datasource and the three curated dashboards (Serving, GP/Jobs,
+# Ops/Alerts) are provisioned on boot. Prometheus is at http://localhost:9090.
+#
+# Published ports bind to loopback by default, like the repo-root compose file. Set
+# HONUA_BIND_ADDRESS to widen that deliberately, behind your own network controls.
 name: honua-monitoring
 
 services:
+  prometheus-secret-init:
+    image: alpine:3.20
+    user: "0:0"
+    entrypoint:
+      - /bin/sh
+      - -ec
+    command: >-
+      test -s /run/source/honua-scrape-key;
+      cp /run/source/honua-scrape-key /run/destination/honua-scrape-key;
+      chown 65534:65534 /run/destination/honua-scrape-key;
+      chmod 0440 /run/destination/honua-scrape-key
+    volumes:
+      - "${HONUA_METRICS_SCRAPE_KEY_FILE:?Set HONUA_METRICS_SCRAPE_KEY_FILE to a file holding a read-only (admin:read) Honua API key for the /metrics scrape}:/run/source/honua-scrape-key:ro"
+      - prometheus_secrets:/run/destination
+
   prometheus:
     image: prom/prometheus:v3.1.0
     ports:
-      - "${HONUA_MONITORING_PROMETHEUS_PORT:-9090}:9090"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_MONITORING_PROMETHEUS_PORT:-9090}:9090"
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/alerts.yml:/etc/prometheus/alerts/alerts.yml:ro
+      # The scrape credential is copied into a named volume with Prometheus' UID and
+      # read-only group mode, never baked into the scrape config.
+      - prometheus_secrets:/etc/prometheus/secrets:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
       - '--storage.tsdb.retention.time=200h'
-      - '--web.enable-lifecycle'
     extra_hosts:
       # Lets the honua scrape target reach the Docker host on Linux engines too.
       - "host.docker.internal:host-gateway"
+    depends_on:
+      prometheus-secret-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   grafana:
     image: grafana/grafana:11.4.0
     ports:
-      - "${HONUA_MONITORING_GRAFANA_PORT:-3000}:3000"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_MONITORING_GRAFANA_PORT:-3000}:3000"
     environment:
       GF_SECURITY_ADMIN_USER: "${HONUA_MONITORING_GRAFANA_USER:-admin}"
-      GF_SECURITY_ADMIN_PASSWORD: "${HONUA_MONITORING_GRAFANA_PASSWORD:-admin}"
+      GF_SECURITY_ADMIN_PASSWORD: "${HONUA_MONITORING_GRAFANA_PASSWORD:?Set HONUA_MONITORING_GRAFANA_PASSWORD to the Grafana administrator password for this deployment}"
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
     volumes:
@@ -48,4 +78,5 @@ services:
 
 volumes:
   prometheus_data:
+  prometheus_secrets:
   grafana_data:

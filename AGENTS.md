@@ -490,7 +490,8 @@ Query_InvalidSyntax_Returns400WithErrorDetails()
 
 **Scale Tests (Multi-Node + Redis)**:
 - Start the scale stack: `docker compose -f docker/scale-test/compose.yml up --build --scale honua=3`
-- Set env vars (inside the devcontainer): `HONUA_SCALE_TEST_BASE_URL=http://localhost:8080`, `HONUA_SCALE_TEST_REDIS=localhost:6379`, `HONUA_SCALE_TEST_ADMIN_API_KEY=scale-test-admin-password`
+- Export the stack credentials first - the scale stack runs the non-relaxed `ScaleTest` environment and has no shipped defaults: `HONUA_ADMIN_PASSWORD`, `HONUA_SCALE_TEST_ENCRYPTION_KEY` (32+ characters), `HONUA_SCALE_TEST_ENCRYPTION_SALT` (base64), and `HONUA_SCALE_TEST_GRAFANA_PASSWORD` for the `monitoring` profile
+- Set env vars: `HONUA_SCALE_TEST_BASE_URL=http://localhost:8080`, `HONUA_SCALE_TEST_REDIS=localhost:6379`, `HONUA_SCALE_TEST_ADMIN_API_KEY="$HONUA_ADMIN_PASSWORD"`
 - Set `HONUA_SCALE_TEST_SERVICE_ID=<service-name>` to run replica-state scale tests (create/extract/sync/unregister).
 - Optional host-port overrides when defaults are busy: `HONUA_SCALE_TEST_HTTP_PORT=18080`, `HONUA_SCALE_TEST_REDIS_PORT=6380`, `HONUA_SCALE_TEST_POSTGRES_PORT=55434`
 - Run scale tests only: `dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj --filter Category=Scale`

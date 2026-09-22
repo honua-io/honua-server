@@ -1049,11 +1049,7 @@ internal static class WmtsRequestHandlers
             }
             var routableResource = resource!;
 
-            // Prefer the publication's protocol-facing LayerIndex (legacy GeoServices-style
-            // int handle); fall back to the storage binding's StorageLayerId for graphs
-            // that haven't migrated their bindings. Matches the resolution order used by
-            // the FeatureServer V2 ports.
-            var storageLayerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication);
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication, routableResource);
             if (!storageLayerId.HasValue)
             {
                 continue;

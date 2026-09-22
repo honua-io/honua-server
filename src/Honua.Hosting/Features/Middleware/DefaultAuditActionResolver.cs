@@ -137,6 +137,14 @@ internal sealed class DefaultAuditActionResolver : IAuditActionResolver
         Add("POST", "/oauth/token", authToken);
         Add("POST", "/sharing/rest/oauth2/token", authToken);
 
+        // ArcGIS-compatible portal token issuance. Both routes are anonymous and answer an
+        // unusable credential with 400, so neither the admin-prefix fallback nor the
+        // middleware's 401/403 branch would classify them — they need explicit rows.
+        // Only the path is recorded, never the query string that the GET form carries
+        // credentials in.
+        Add("POST", "/sharing/rest/generateToken", authToken);
+        Add("GET", "/sharing/rest/generateToken", authToken);
+
         return pairs.ToFrozenDictionary(StringComparer.Ordinal);
     }
 }

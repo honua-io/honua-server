@@ -99,14 +99,25 @@ promtool test rules prometheus-alerts.test.yml
 
 For availability budgets, the [SLO metric contract](https://github.com/honua-io/honua-server/blob/trunk/observability/slo-metric-contract.json) counts in-band errors plus out-of-band logical 5xx errors. Logical error codes are independent of HTTP transport status: a GeoServices logical 500 returned over HTTP 200 must count once. Union the two selectors before aggregation so either error class remains visible when the other is absent.
 
-5. (Optional one-command Docker depth) For local or single-node deployments that also need Grafana and Prometheus, bring up the curated bundle - provisioned datasource plus the Serving, GP/Jobs, and Ops/Alerts dashboards - against a running server:
+5. (Optional one-command Docker depth) For local or single-node deployments that also need Grafana and Prometheus, bring up the curated bundle - provisioned datasource plus the Serving, GP/Jobs, and Ops/Alerts dashboards - against a running server.
+
+First mint the scrape credential. `/metrics` is served under the `Admin` policy and a scrape is a `GET`, so the narrowest credential that can read it is an API key with the read-only `admin:read` grant - not the admin password. With a full-admin credential, `POST /api/v1/admin/api-keys` with `{"name":"prometheus-scrape","permissions":["admin:read"]}` (see [Authenticate clients](../secure/authentication.md#2-create-scoped-api-keys-for-automation)), then write the returned `data.key` into a file that only you can read:
 
 ```bash
-docker compose -f docker/monitoring/compose.yml up -d
-# Grafana http://localhost:3000 (admin/admin), Prometheus http://localhost:9090
+umask 077
+printf '%s' "$HONUA_SCRAPE_KEY" > ./honua-scrape-key
 ```
 
-Prometheus scrapes `/metrics` with `basic_auth` (the API-key handler accepts the admin key as the Basic password). Edit [`docker/monitoring/prometheus/prometheus.yml`](../../../docker/monitoring/prometheus/prometheus.yml) to set the scrape target/credentials, and see [`docker/monitoring/README.md`](../../../docker/monitoring/README.md) for details.
+Then start the bundle. Both variables are required; the bundle refuses to start without them, and published ports bind to loopback unless you set `HONUA_BIND_ADDRESS`:
+
+```bash
+export HONUA_MONITORING_GRAFANA_PASSWORD='<a password you choose>'
+export HONUA_METRICS_SCRAPE_KEY_FILE="$PWD/honua-scrape-key"
+docker compose -f docker/monitoring/compose.yml up -d
+# Grafana http://127.0.0.1:3000 (user admin), Prometheus http://127.0.0.1:9090
+```
+
+Prometheus sends the mounted key in the `X-API-Key` header; the key file is mounted read-only and never stored in the scrape config. Edit [`docker/monitoring/prometheus/prometheus.yml`](../../../docker/monitoring/prometheus/prometheus.yml) to change the scrape target, and see [`docker/monitoring/README.md`](../../../docker/monitoring/README.md) for details.
 
 ## Verify
 

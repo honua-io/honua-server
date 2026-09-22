@@ -10,6 +10,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Edit;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
@@ -251,27 +252,13 @@ internal static partial class AttachmentEndpoints
                     "definitionExpression is not a valid WHERE clause for this layer.");
                 return;
             }
-
-            var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
-            ImmutableArray<long> matchingIds;
-            try
-            {
-                matchingIds = await featureReader.QueryObjectIdsAsync(
-                    layerId,
-                    new FeatureQuery { SqlFilter = translationResult.SqlFilter, ExcludeAttributes = true },
-                    cancellationToken);
-            }
-            catch (Exception ex) when (ex is ArgumentException or FormatException or InvalidOperationException)
-            {
-                await RouteValidationHelpers.WriteValidationErrorAsync(
-                    context,
-                    "definitionExpression is not a valid WHERE clause for this layer.");
-                return;
-            }
-
-            var allowed = matchingIds.ToHashSet();
-            featureIds = Array.FindAll(featureIds, allowed.Contains);
         }
+
+        // Apply published-source visibility even when no definitionExpression was
+        // supplied. Attachment metadata must not reveal a deleted or hidden parent
+        // merely because a stale row remains in the default feature-store snapshot.
+        featureIds = await FilterVisibleAttachmentParentsAsync(
+            resource.Value.Reader, layerId, featureIds, definitionExpression, cancellationToken);
 
         var attachmentStore = context.RequestServices.GetRequiredService<IAttachmentStore>();
         var logger = context.RequestServices.GetRequiredService<ILogger<AttachmentOperations>>();
@@ -287,6 +274,33 @@ internal static partial class AttachmentEndpoints
             cancellationToken);
 
         await result.ExecuteAsync(context);
+    }
+
+    internal static async Task<long[]> FilterVisibleAttachmentParentsAsync(
+        IFeatureReader reader,
+        int layerId,
+        long[] featureIds,
+        string? validatedDefinitionExpression,
+        CancellationToken cancellationToken)
+    {
+        // Stay below Oracle's 1000-item IN limit, SQL Server's 2100 total parameters,
+        // and the federated ArcGIS reader's 2000-ID limit, with room for filter values.
+        const int parentBatchSize = 500;
+        var allowed = new HashSet<long>();
+        var queries = featureIds.Chunk(parentBatchSize).Select(batch => new FeatureQuery
+        {
+            ObjectIds = ImmutableArray.CreateRange(batch),
+            // Each provider translates the already validated canonical WHERE itself.
+            Where = string.IsNullOrWhiteSpace(validatedDefinitionExpression) ? null : validatedDefinitionExpression,
+            ExcludeAttributes = true
+        });
+        foreach (var query in queries)
+        {
+            var matches = await reader.QueryObjectIdsAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+            allowed.UnionWith(matches);
+        }
+
+        return Array.FindAll(featureIds, allowed.Contains);
     }
 
     /// <summary>
@@ -341,7 +355,7 @@ internal static partial class AttachmentEndpoints
             return;
         }
 
-        if (!await EnsureFeatureVisibleAsync(context, layerId, featureId).ConfigureAwait(false))
+        if (!await EnsureFeatureVisibleAsync(context, resource.Value.Reader, layerId, featureId).ConfigureAwait(false))
         {
             return;
         }
@@ -355,7 +369,7 @@ internal static partial class AttachmentEndpoints
         var file = form.Files[0];
         var keywords = form.TryGetValue("keywords", out var keywordsValue) ? keywordsValue.ToString() : null;
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var featureReader = resource.Value.Reader;
         var feature = await featureReader.GetAsync(layerId, featureId, context.RequestAborted);
         if (feature == null)
         {
@@ -365,6 +379,7 @@ internal static partial class AttachmentEndpoints
 
         if (!await AuthorizeAttachmentOwnerEditAsync(
                 context,
+                resource.Value.Reader,
                 resource.Value.Resource,
                 layerId,
                 featureId,
@@ -444,6 +459,7 @@ internal static partial class AttachmentEndpoints
 
         if (!await AuthorizeAttachmentOwnerEditAsync(
                 context,
+                resource.Value.Reader,
                 resource.Value.Resource,
                 layerId,
                 featureId,
@@ -538,6 +554,7 @@ internal static partial class AttachmentEndpoints
 
         if (!await AuthorizeAttachmentOwnerEditAsync(
                 context,
+                resource.Value.Reader,
                 resource.Value.Resource,
                 layerId,
                 featureId,
@@ -627,7 +644,7 @@ internal static partial class AttachmentEndpoints
             return;
         }
 
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+        var featureReader = resource.Value.Reader;
         var feature = await featureReader.GetAsync(resource.Value.StorageLayerId, featureId, context.RequestAborted);
         if (feature == null)
         {
@@ -674,7 +691,7 @@ internal static partial class AttachmentEndpoints
             return;
         }
 
-        if (!await EnsureFeatureVisibleAsync(context, layerId, featureId).ConfigureAwait(false))
+        if (!await EnsureFeatureVisibleAsync(context, resource.Value.Reader, layerId, featureId).ConfigureAwait(false))
         {
             return;
         }
@@ -696,10 +713,10 @@ internal static partial class AttachmentEndpoints
 
     private static async Task<bool> EnsureFeatureVisibleAsync(
         HttpContext context,
+        IFeatureReader featureReader,
         int layerId,
         long featureId)
     {
-        var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
         var feature = await featureReader.GetAsync(layerId, featureId, context.RequestAborted).ConfigureAwait(false);
         if (feature is not null)
         {
@@ -737,19 +754,19 @@ internal static partial class AttachmentEndpoints
     internal readonly record struct AttachmentAccessContext(
         MetadataV2Service Service,
         MetadataV2Resource Resource,
-        int StorageLayerId);
+        int StorageLayerId,
+        IFeatureReader Reader);
 
     private static async Task<bool> AuthorizeAttachmentOwnerEditAsync(
         HttpContext context,
+        IFeatureReader featureReader,
         MetadataV2Resource resource,
         int layerId,
         long featureId,
         AttributeRuleEditEvent editEvent,
         Feature? existingFeature = null)
     {
-        var feature = existingFeature ?? await context.RequestServices
-            .GetRequiredService<IFeatureReader>()
-            .GetAsync(layerId, featureId, context.RequestAborted)
+        var feature = existingFeature ?? await featureReader.GetAsync(layerId, featureId, context.RequestAborted)
             .ConfigureAwait(false);
 
         if (feature is not { } existing)
@@ -884,7 +901,13 @@ internal static partial class AttachmentEndpoints
             return null;
         }
 
-        return new AttachmentAccessContext(service, resource, storageLayerId.Value);
+        var reader = string.IsNullOrEmpty(publication.StorageBindingId)
+            ? context.RequestServices.GetRequiredService<IFeatureReader>()
+            : await context.RequestServices.GetRequiredService<FeatureProviderQueryRouter>()
+                .ResolveReaderAsync(snapshot, service, resource, publication, storageLayerId.Value,
+                    FeatureProviderReadOperation.Query, context.RequestAborted).ConfigureAwait(false);
+
+        return new AttachmentAccessContext(service, resource, storageLayerId.Value, reader);
     }
 
     private static bool TryParseObjectIds(

@@ -2,7 +2,7 @@ services:
   honua-server:
     image: honua-server:latest
     ports:
-      - "127.0.0.1:${HONUA_CITE_OGCAPI_PROCESSES_SERVER_PORT:-8101}:8080"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_CITE_OGCAPI_PROCESSES_SERVER_PORT:-8101}:8080"
     environment:
       ASPNETCORE_ENVIRONMENT: Test
       ASPNETCORE_URLS: http://+:8080

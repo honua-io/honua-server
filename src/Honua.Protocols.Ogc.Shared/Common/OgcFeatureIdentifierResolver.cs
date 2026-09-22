@@ -214,9 +214,7 @@ internal static class OgcFeatureIdentifierResolver
         var idField = ResolvePublicIdField(resource);
         // Mirror the OgcFeaturesQueryHandler / FeatureServer V2 ports: when the graph
         // carries no explicit storage binding, fall back to publication.LayerIndex.
-        var storageLayerId = publication.LayerIndex
-            ?? snapshot.ResolveStorageLayerId(publication)
-            ?? snapshot.ResolveStorageLayerId(resource);
+        var storageLayerId = snapshot.ResolveStorageLayerId(publication, resource);
 
         if (CanUseObjectIdFastPath(idField) &&
             TryParseCanonicalPositiveObjectId(featureId, out var objectId) &&
@@ -286,9 +284,7 @@ internal static class OgcFeatureIdentifierResolver
             return resolved;
         }
 
-        var storageLayerId = publication.LayerIndex
-            ?? snapshot.ResolveStorageLayerId(publication)
-            ?? snapshot.ResolveStorageLayerId(resource);
+        var storageLayerId = snapshot.ResolveStorageLayerId(publication, resource);
         if (storageLayerId is not { } layerId)
         {
             return resolved;

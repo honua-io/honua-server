@@ -183,9 +183,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
         var snapshotProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
         var snapshot = await snapshotProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var storageLayerId = snapshot.ResolveStorageLayerId(publication)
-            ?? snapshot.ResolveStorageLayerId(resource)
-            ?? publication.LayerIndex;
+        var storageLayerId = snapshot.ResolveStorageLayerId(publication, resource);
         if (!storageLayerId.HasValue)
         {
             return (null, StandardErrorHelpers.CreateNotFound(
