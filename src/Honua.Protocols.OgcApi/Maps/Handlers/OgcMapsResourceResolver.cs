@@ -1,7 +1,12 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
+using System.Runtime.CompilerServices;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Shared.Models;
 using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.Ogc.Api.Maps.Handlers;
@@ -22,6 +27,179 @@ namespace Honua.Protocols.Ogc.Api.Maps.Handlers;
 internal static class OgcMapsResourceResolver
 {
     private const string OgcApiMapsProtocol = "OGC-API-Maps";
+    // A snapshot is immutable and the graph provider already bounds its lifetime by metadata
+    // cache invalidation/TTL. Keep only pure, per-resource transform results here; never cache
+    // an authorization-dependent dataset extent or landing response.
+    private static readonly ConditionalWeakTable<MetadataV2GraphSnapshot, ConcurrentDictionary<(string ResourceId, int TargetSrid), CachedTransform>>
+        TransformCache = new();
+
+    /// <summary>
+    /// Enumerates the dataset's collision-aware storage-layer entries once, so dataset
+    /// rendering and dataset discovery describe the same resources (#5048).
+    /// </summary>
+    /// <remarks>
+    /// Protocol enablement and access policy are deliberately NOT applied here: the caller
+    /// applies them, because discovery and rendering evaluate them against their own
+    /// operation. Falls back to the indexed resource for non-colliding / non-Maps layers so
+    /// their behaviour is unchanged (#2799).
+    /// </remarks>
+    public static List<(int LayerId, MetadataV2Resource Resource, MetadataV2Service? Service)> EnumerateDatasetEntries(
+        MetadataV2GraphSnapshot snapshot,
+        ILogger logger)
+    {
+        var entries = new List<(int LayerId, MetadataV2Resource Resource, MetadataV2Service? Service)>();
+        var seenStorageLayerIds = new HashSet<int>();
+        foreach (var binding in snapshot.Graph.StorageBindings)
+        {
+            if (binding.StorageLayerId is not int storageLayerId ||
+                !seenStorageLayerIds.Add(storageLayerId))
+            {
+                continue;
+            }
+
+            var (resolvedResource, resolvedService) = ResolveMapsResource(snapshot, storageLayerId, logger);
+            if (resolvedResource is not null)
+            {
+                entries.Add((storageLayerId, resolvedResource, resolvedService));
+            }
+            else if (snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out var indexResource))
+            {
+                entries.Add((storageLayerId, indexResource, ResolveOgcApiMapsService(snapshot, indexResource)));
+            }
+        }
+
+        return entries;
+    }
+
+    /// <summary>
+    /// Combines the supplied resources into one dataset extent expressed in the first
+    /// resource's CRS, using the canonical coordinate transform service (#5048).
+    /// </summary>
+    /// <remarks>
+    /// Rendering previously combined extents through the synchronous
+    /// <c>CoordinateTransformer</c>, which supports far fewer CRS pairs than the canonical
+    /// PostGIS-backed <see cref="ICoordinateTransformService"/>, and it turned an
+    /// unsupported pair into an exception that surfaced as HTTP 500. The transform result is
+    /// reported instead: <c>TransformUnavailable</c> lets the caller answer with an
+    /// actionable client error, or omit the metadata, rather than inventing an extent.
+    /// </remarks>
+    /// <returns>
+    /// The combined extent (<see langword="null"/> when no resource declares bounds) and
+    /// whether a required transform could not be performed.
+    /// </returns>
+    public static async Task<(FeatureExtent? Extent, bool TransformUnavailable)> BuildDatasetExtentAsync(
+        IEnumerable<MetadataV2Resource> resources,
+        ICoordinateTransformService? coordinateTransformService,
+        CancellationToken cancellationToken,
+        MetadataV2GraphSnapshot? snapshot = null)
+    {
+        FeatureExtent? combined = null;
+        foreach (var resource in resources)
+        {
+            var bbox = resource.ReadBbox();
+            if (bbox is null)
+            {
+                continue;
+            }
+
+            var srid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
+            var extent = FeatureExtent.Create(bbox.West, bbox.South, bbox.East, bbox.North, srid);
+
+            if (combined is not { } current)
+            {
+                combined = extent;
+                continue;
+            }
+
+            if (current.SpatialReference != extent.SpatialReference)
+            {
+                if (coordinateTransformService is null)
+                {
+                    return (null, true);
+                }
+
+                var transformed = snapshot is null
+                    ? await TransformExtentAsync(extent, current.SpatialReference, coordinateTransformService, cancellationToken).ConfigureAwait(false)
+                    : await TransformCachedExtentAsync(snapshot, resource, extent, current.SpatialReference,
+                        coordinateTransformService, cancellationToken).ConfigureAwait(false);
+                if (transformed is not { } bounds)
+                {
+                    return (null, true);
+                }
+
+                extent = bounds;
+            }
+
+            combined = FeatureExtent.Create(
+                Math.Min(current.MinX, extent.MinX),
+                Math.Min(current.MinY, extent.MinY),
+                Math.Max(current.MaxX, extent.MaxX),
+                Math.Max(current.MaxY, extent.MaxY),
+                current.SpatialReference);
+        }
+
+        return (combined, false);
+    }
+
+    private static async Task<FeatureExtent?> TransformCachedExtentAsync(
+        MetadataV2GraphSnapshot snapshot,
+        MetadataV2Resource resource,
+        FeatureExtent extent,
+        int targetSrid,
+        ICoordinateTransformService coordinateTransformService,
+        CancellationToken cancellationToken)
+    {
+        var cache = TransformCache.GetValue(snapshot, static _ => new());
+        var entry = cache.GetOrAdd((resource.Metadata.Id, targetSrid), static _ => new CachedTransform());
+        if (entry.Result is { } cached)
+        {
+            return cached.Extent;
+        }
+
+        await entry.Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (entry.Result is { } completed)
+            {
+                return completed.Extent;
+            }
+
+            var transformed = await TransformExtentAsync(extent, targetSrid, coordinateTransformService,
+                cancellationToken).ConfigureAwait(false);
+            if (transformed is not null)
+            {
+                entry.Result = new TransformResult(transformed.Value);
+            }
+            return transformed;
+        }
+        finally
+        {
+            entry.Gate.Release();
+        }
+    }
+
+    private static async Task<FeatureExtent?> TransformExtentAsync(
+        FeatureExtent extent,
+        int targetSrid,
+        ICoordinateTransformService coordinateTransformService,
+        CancellationToken cancellationToken)
+    {
+        var transformed = await coordinateTransformService.TransformExtentAsync(
+            extent.MinX, extent.MinY, extent.MaxX, extent.MaxY,
+            extent.SpatialReference, targetSrid, cancellationToken).ConfigureAwait(false);
+        return transformed is { } bounds
+            ? FeatureExtent.Create(bounds.MinX, bounds.MinY, bounds.MaxX, bounds.MaxY, targetSrid)
+            : null;
+    }
+
+    private sealed class CachedTransform
+    {
+        public SemaphoreSlim Gate { get; } = new(1, 1);
+
+        public volatile TransformResult? Result;
+    }
+
+    private sealed record TransformResult(FeatureExtent Extent);
 
     /// <summary>
     /// Resolves the resource and Maps-enabled service for a storage layer id, preferring the
