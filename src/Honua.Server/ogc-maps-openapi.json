@@ -782,7 +782,29 @@
             }
           },
           "extent": {
-            "$ref": "#/components/schemas/MapsCollection/properties/extent"
+            "type": "object",
+            "description": "Extent of the caller-visible dataset, omitted when no bounds can be described.",
+            "properties": {
+              "spatial": {
+                "type": "object",
+                "properties": {
+                  "bbox": {
+                    "type": "array",
+                    "items": {
+                      "type": "array",
+                      "minItems": 4,
+                      "maxItems": 6,
+                      "items": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "crs": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
           },
           "crs": {
             "type": "array",
