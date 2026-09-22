@@ -69,17 +69,17 @@ public sealed class CompositeRelationshipMetadataTests
         var snapshot = new MetadataV2GraphSnapshot(new MetadataV2Graph(), "test", DateTimeOffset.UnixEpoch);
         var layer = FeatureServerEndpoints.MapLayerToResponseV2(
             service, composite, publication, snapshot, new QueryLimits(),
-            null, null, null, null, false, false, false);
+            null, null, null, null, false, false, false, offlineSyncEnabled: false);
         layer.AllowGeometryUpdates.Should().BeFalse();
         layer.SupportsRollbackOnFailureParameter.Should().BeFalse();
         layer.EditingInfo.Should().BeNull();
 
         var readOnlyService = FeatureServerEndpoints.MapServiceToResponseV2(
-            service, [(publication, composite)], snapshot, new QueryLimits(), false, false, false, false);
+            service, [(publication, composite)], snapshot, new QueryLimits(), false, false, false, false, offlineSyncEnabled: false);
         readOnlyService.AllowGeometryUpdates.Should().BeFalse();
         var mixedService = FeatureServerEndpoints.MapServiceToResponseV2(
             service, [(publication, composite), (new MetadataV2Publication(), new MetadataV2Resource())],
-            snapshot, new QueryLimits(), false, false, false, false);
+            snapshot, new QueryLimits(), false, false, false, false, offlineSyncEnabled: false);
         mixedService.AllowGeometryUpdates.Should().BeTrue();
     }
 }
