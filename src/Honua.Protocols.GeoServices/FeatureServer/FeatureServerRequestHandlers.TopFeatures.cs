@@ -293,34 +293,18 @@ internal static partial class FeatureServerEndpoints
             return Results.Bytes(pbfPayload, pbfContentType);
         }
 
-        return CreateTopFeaturesJsonResult(
-            BuildTopFeaturesJsonResponse(result, resource, returnGeometry, outputSrid), topFeaturesIsPretty);
-    }
-
-    internal static QueryResponse BuildTopFeaturesJsonResponse(
-        QueryResult<Feature> result,
-        MetadataV2Resource resource,
-        bool returnGeometry,
-        int? outputSrid)
-    {
-        var temporalFieldTypes = GeoServicesFieldConventions.ResolveTemporalFieldTypes(resource);
-        var responseFeatures = result.Items.Select(feature =>
+        var responseFeatures = result.Items.Select(feature => new GeoServicesFeature
         {
-            var attributes = feature.Attributes
+            Attributes = feature.Attributes
                 .Where(kvp => !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
-                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-            GeoServicesFieldConventions.CoerceTemporalAttributes(attributes, temporalFieldTypes);
-            return new GeoServicesFeature
-            {
-                Attributes = attributes,
-                Geometry = returnGeometry
-                    ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
-                        feature.Geometry, null, null, false, false)
-                    : null,
-                // returnGeometry=false must omit the geometry property entirely (not emit
-                // null), matching the normal query operation (#1906).
-                IncludeGeometry = returnGeometry
-            };
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+            Geometry = returnGeometry
+                ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
+                    feature.Geometry, null, null, false, false)
+                : null,
+            // returnGeometry=false must omit the geometry property entirely (not emit
+            // null), matching the normal query operation (#1906).
+            IncludeGeometry = returnGeometry
         }).ToArray();
 
         var geometryType = resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;
@@ -339,7 +323,7 @@ internal static partial class FeatureServerEndpoints
             ExceededTransferLimit = result.HasMoreResults
         };
 
-        return response;
+        return CreateTopFeaturesJsonResult(response, topFeaturesIsPretty);
     }
 
     /// <summary>

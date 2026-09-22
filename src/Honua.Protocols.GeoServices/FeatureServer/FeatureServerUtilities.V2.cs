@@ -316,7 +316,9 @@ internal static partial class FeatureServerEndpoints
                 : field.Length,
             Nullable = field.Nullable && !isObjectId,
             Editable = !isGeometry && !isObjectId,
-            DefaultValue = GeoServicesFieldConventions.NormalizeFieldDefault(field),
+            // V2 has no default-value slot on the canonical field; the catalog/admin layer
+            // owns insertion defaults.
+            DefaultValue = null,
             Domain = GeoServicesFieldDomainMapper.Map(field.Domain),
             Visible = !field.Hidden
         };
@@ -825,7 +827,7 @@ internal static partial class FeatureServerEndpoints
             MetadataV2FieldType.Float => "esriFieldTypeSingle",
             MetadataV2FieldType.Boolean => "esriFieldTypeSmallInteger",
             MetadataV2FieldType.DateTime => "esriFieldTypeDate",
-            MetadataV2FieldType.Date => "esriFieldTypeDateOnly",
+            MetadataV2FieldType.Date => "esriFieldTypeDate",
             MetadataV2FieldType.Time => "esriFieldTypeString",
             MetadataV2FieldType.Json => "esriFieldTypeString",
             MetadataV2FieldType.Binary => "esriFieldTypeBlob",

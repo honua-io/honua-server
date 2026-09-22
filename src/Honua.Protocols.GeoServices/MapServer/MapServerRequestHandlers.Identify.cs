@@ -400,7 +400,6 @@ internal static partial class MapServerEndpoints
                 // right layer is access-policy gated exactly like the left layer; a denied right
                 // layer fails the whole identify rather than silently dropping the join.
                 DynamicJoinLookup? joinLookup = null;
-                var temporalFieldTypes = GeoServicesFieldConventions.ResolveTemporalFieldTypes(layer.Resource);
                 if (renderLayer.Join is { } join)
                 {
                     if (!TryResolveIdentifyJoinRightLayer(
@@ -411,11 +410,6 @@ internal static partial class MapServerEndpoints
                             out var joinError))
                     {
                         return StandardErrorHelpers.CreateBadRequest(context, joinError ?? "Invalid join source.");
-                    }
-
-                    foreach (var field in GeoServicesFieldConventions.ResolveTemporalFieldTypes(rightLayer!.Resource))
-                    {
-                        temporalFieldTypes[$"{join.RightQualifier}.{field.Key}"] = field.Value;
                     }
 
                     joinLookup = await DynamicJoinLookup.BuildAsync(
@@ -429,8 +423,10 @@ internal static partial class MapServerEndpoints
 
                 var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer.Resource);
                 var displayField = ResolveDisplayField(layer.Resource, objectIdField);
-                // Normalize both left and qualified right temporal fields using the
-                // same calendar-date/timestamp conventions as query.
+                // esriFieldTypeDate attributes must serialize as epoch-ms integers uniformly across
+                // rows. JSONB stores dates as either ISO strings (seeds) or epoch-ms longs
+                // (applyEdits); coerce both via the shared GeoServices date convention (matches query).
+                var dateFieldNames = GeoServicesFieldConventions.ResolveDateFieldNames(layer.Resource);
 
                 foreach (var feature in queryResult.Items)
                 {
@@ -462,7 +458,7 @@ internal static partial class MapServerEndpoints
                         attributes[kvp.Key] = FeatureAttributeValueNormalizer.Normalize(kvp.Value);
                     }
 
-                    GeoServicesFieldConventions.CoerceTemporalAttributes(attributes, temporalFieldTypes);
+                    GeoServicesFieldConventions.CoerceDateAttributes(attributes, dateFieldNames);
 
                     object? geometryResult = null;
                     if (returnGeometry && feature.Geometry != null)

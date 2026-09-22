@@ -18,36 +18,6 @@ public sealed class PbfQueryFormatterTests
     private readonly PbfQueryFormatter _sut = new(Options.Create(new LimitsOptions()));
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void FormatAsPbf_CalendarDateAndTimestamp_PreserveDistinctWireTypes(bool nullDate)
-    {
-        var resource = CreateLayer([
-            new MetadataV2Field { Name = "day", Type = MetadataV2FieldType.Date },
-            new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime }
-        ], MetadataV2GeometryType.Point);
-        var feature = Feature.Create(1, null, new Dictionary<string, object?>
-        {
-            ["day"] = nullDate ? null : new DateOnly(2024, 2, 29),
-            ["timestamp"] = "2024-02-29T00:00:00Z"
-        }.ToImmutableDictionary());
-        var (payload, _) = _sut.FormatAsPbf(QueryResult<Feature>.Create(1, [feature]), resource,
-            false, null, false, false, null, null, ["day", "timestamp"]);
-        var query = GetFirstLengthDelimitedField(payload, 2);
-        var result = GetFirstLengthDelimitedField(query, 1);
-        GetFirstVarintField(GetFirstLengthDelimitedField(result, 13, 0), 2).Should().Be(14);
-        GetFirstVarintField(GetFirstLengthDelimitedField(result, 13, 1), 2).Should().Be(5);
-        var outputFeature = GetFirstLengthDelimitedField(result, 15);
-        var date = GetFirstLengthDelimitedField(outputFeature, 1, 0);
-        if (nullDate)
-            GetFirstVarintField(date, 10).Should().Be(1);
-        else
-            System.Text.Encoding.UTF8.GetString(GetFirstLengthDelimitedField(date, 1)).Should().Be("2024-02-29");
-        var timestamp = GetFirstLengthDelimitedField(outputFeature, 1, 1);
-        GetFirstVarintField(timestamp, 6).Should().Be((ulong)new DateTimeOffset(2024, 2, 29, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds());
-    }
-
-    [Theory]
     [InlineData(true, 9007199254740991L)]
     [InlineData(true, -9007199254740991L)]
     [InlineData(true, 2147483648L)]

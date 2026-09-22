@@ -1611,7 +1611,6 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             double doubleValue => doubleValue,
             float floatValue => (double)floatValue,
             string stringValue => stringValue,
-            DateOnly dateOnly => dateOnly.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
             DateTime dateTime => new DateTimeOffset(DateTime.SpecifyKind(
                 dateTime,
                 dateTime.Kind == DateTimeKind.Unspecified ? DateTimeKind.Utc : dateTime.Kind)),

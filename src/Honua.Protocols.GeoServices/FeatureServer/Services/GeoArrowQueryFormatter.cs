@@ -163,8 +163,7 @@ internal sealed class GeoArrowQueryFormatter
             MetadataV2FieldType.Float => FloatType.Default,
             MetadataV2FieldType.Double => DoubleType.Default,
             MetadataV2FieldType.Boolean => BooleanType.Default,
-            MetadataV2FieldType.DateTime => new TimestampType(TimeUnit.Millisecond, "UTC"),
-            MetadataV2FieldType.Date => Date32Type.Default,
+            MetadataV2FieldType.DateTime or MetadataV2FieldType.Date => new TimestampType(TimeUnit.Millisecond, "UTC"),
             MetadataV2FieldType.Time => new Time64Type(TimeUnit.Microsecond),
             MetadataV2FieldType.Binary => BinaryType.Default,
             _ => StringType.Default
@@ -320,8 +319,7 @@ internal sealed class GeoArrowQueryFormatter
             MetadataV2FieldType.Float => BuildFloatArray(features, field.Name),
             MetadataV2FieldType.Double => BuildDoubleArray(features, field.Name),
             MetadataV2FieldType.Boolean => BuildBooleanArray(features, field.Name),
-            MetadataV2FieldType.DateTime => BuildTimestampArray(features, field.Name),
-            MetadataV2FieldType.Date => BuildDate32Array(features, field.Name),
+            MetadataV2FieldType.DateTime or MetadataV2FieldType.Date => BuildTimestampArray(features, field.Name),
             MetadataV2FieldType.Time => BuildTime64Array(features, field.Name),
             MetadataV2FieldType.Binary => BuildBinaryArray(features, field.Name),
             _ => BuildStringArray(features, field.Name)
@@ -433,25 +431,6 @@ internal sealed class GeoArrowQueryFormatter
             }
         }
 
-        return builder.Build();
-    }
-
-    private static Date32Array BuildDate32Array(IReadOnlyList<Feature> features, string fieldName)
-    {
-        var builder = new Date32Array.Builder();
-        foreach (var feature in features)
-        {
-            var value = GeoParquetQueryFormatter.GetAttributeValue(feature, fieldName);
-            if (value is not null
-                && GeoServicesFieldConventions.TryConvertTemporalValue(value, MetadataV2FieldType.Date, out var converted)
-                && converted is string text)
-            {
-                var date = DateOnly.ParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture);
-                builder.Append(date.ToDateTime(TimeOnly.MinValue));
-            }
-            else
-                builder.AppendNull();
-        }
         return builder.Build();
     }
 
