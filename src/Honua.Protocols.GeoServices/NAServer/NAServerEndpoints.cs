@@ -3,11 +3,13 @@
 
 using System.Diagnostics;
 using System.Text.Json;
+using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.GeoServices.GPServer;
 using Honua.Protocols.GeoServices.NAServer.Models;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices.NAServer;
@@ -149,12 +151,61 @@ internal static class NAServerEndpoints
         return endpoints;
     }
 
+    /// <summary>
+    /// Rejects an NAServer request whose <c>{serviceId}</c> segment names no service.
+    /// </summary>
+    /// <remarks>
+    /// Routing is a deployment-global capability, so these handlers legitimately ignore
+    /// which service was named when producing their answer. What they must NOT do is
+    /// answer for a service that does not exist: before this check
+    /// <c>rest/services/__nope__/NAServer</c> returned the same 200 service description
+    /// as a real service, so an Esri client enumerating the catalog saw an NAServer on
+    /// every name it tried, including ones the catalog had never published. Existence is
+    /// validated protocol-agnostically (the service does not need to publish NAServer,
+    /// because no service does - the routing provider is global).
+    /// </remarks>
+    private static async Task<IResult?> ValidateNamedServiceAsync(HttpContext context, CancellationToken ct)
+    {
+        var serviceId = context.Request.RouteValues.TryGetValue("serviceId", out var raw)
+            ? raw?.ToString()
+            : null;
+        if (string.IsNullOrWhiteSpace(serviceId))
+        {
+            return null;
+        }
+
+        // Routing-only deployments may not register a metadata validator at all; in that
+        // case there is no catalog to contradict and the request stands.
+        var validator = context.RequestServices.GetService<IResourceValidator>();
+        if (validator is null)
+        {
+            return null;
+        }
+
+        var result = await validator.ValidateServiceV2Async(serviceId, ct).ConfigureAwait(false);
+        if (result.IsValid)
+        {
+            return null;
+        }
+
+        return SetSpanErrorAndReturn(
+            StandardErrorHelpers.CreateNotFound(
+                context,
+                $"Service '{serviceId}' does not exist or is inaccessible."),
+            "NAServer service not found");
+    }
+
     private static async Task<IResult> HandleServiceInfo(
         HttpContext context,
         IRoutingProvider routing,
         CancellationToken ct)
     {
         EnrichActivity("ServiceInfo");
+
+        if (await ValidateNamedServiceAsync(context, ct).ConfigureAwait(false) is { } notFound)
+        {
+            return notFound;
+        }
 
         // Read the request parameters the same way the solves do, so f=pjson formats the
         // service root identically to every other NAServer response.
@@ -196,6 +247,11 @@ internal static class NAServerEndpoints
         CancellationToken ct)
     {
         EnrichActivity("LayerInfo");
+
+        if (await ValidateNamedServiceAsync(context, ct).ConfigureAwait(false) is { } notFound)
+        {
+            return notFound;
+        }
 
         var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
         var capabilities = await routing.GetCapabilitiesAsync(ct).ConfigureAwait(false);
