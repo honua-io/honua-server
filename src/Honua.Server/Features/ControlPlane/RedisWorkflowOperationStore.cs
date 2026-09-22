@@ -198,9 +198,13 @@ internal sealed partial class RedisWorkflowOperationStore(
         // terminal-operations index (newest-completed first, bounded to a materialization window).
         var activeKey = query.Kind.HasValue ? GetKindActiveKey(query.Kind.Value) : ActiveOperationsKey;
         var activeIds = await _database.SetMembersAsync(activeKey).ConfigureAwait(false);
-        var terminalIds = await _database
-            .SortedSetRangeByRankAsync(TerminalOperationsKey, 0, MaterializationCap - 1, Order.Descending)
+        var terminalCandidates = await _database
+            .SortedSetRangeByRankAsync(TerminalOperationsKey, 0, MaterializationCap, Order.Descending)
             .ConfigureAwait(false);
+        var terminalIndexTruncated = terminalCandidates.Length > MaterializationCap;
+        var terminalIds = terminalIndexTruncated
+            ? terminalCandidates[..MaterializationCap]
+            : terminalCandidates;
 
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var records = new List<WorkflowOperationRecord>(activeIds.Length + terminalIds.Length);
@@ -245,7 +249,10 @@ internal sealed partial class RedisWorkflowOperationStore(
             Page = page,
             PageSize = pageSize,
             TotalCount = filtered.Length,
-            HasMore = skip + items.Length < filtered.Length
+            // The filtered result can be empty even when the terminal index has more records beyond
+            // the materialization window. Preserve that uncertainty so callers that need complete
+            // evidence publish partial coverage instead of treating an older matching operation as absent.
+            HasMore = terminalIndexTruncated || skip + items.Length < filtered.Length
         };
     }
 
@@ -308,21 +315,31 @@ internal sealed partial class RedisWorkflowOperationStore(
             return null;
         }
 
-        var ids = await _database.SortedSetRangeByRankAsync(key, 0, -1, Order.Descending).ConfigureAwait(false);
-        var incomplete = ids.Length >= DeployCreatedTargetCap;
-        foreach (var id in ids)
+        var entries = await _database.SortedSetRangeByRankWithScoresAsync(key, 0, -1, Order.Descending).ConfigureAwait(false);
+        var incomplete = false;
+        var operationCreatedAt = operation.CreatedAt.ToUnixTimeMilliseconds();
+        foreach (var entry in entries)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (!id.HasValue || string.Equals(id.ToString(), operation.OperationId, StringComparison.Ordinal))
+            if (!entry.Element.HasValue || string.Equals(entry.Element.ToString(), operation.OperationId, StringComparison.Ordinal))
             {
                 continue;
             }
 
-            var candidate = await GetAsync(id.ToString(), cancellationToken).ConfigureAwait(false);
+            var candidate = await GetAsync(entry.Element.ToString(), cancellationToken).ConfigureAwait(false);
             if (candidate is null)
             {
-                // An expired later record may have moved the target; absence is not proof of safety.
-                incomplete = true;
+                if (entry.Score > operationCreatedAt)
+                {
+                    // An expired later record may have moved the target; absence is not proof of safety.
+                    incomplete = true;
+                }
+                else
+                {
+                    // An expired older record cannot supersede this operation and needlessly makes
+                    // the bounded creation history look incomplete. Prune it while we are here.
+                    await _database.SortedSetRemoveAsync(key, entry.Element).ConfigureAwait(false);
+                }
             }
             else if (candidate.Kind == WorkflowOperationKind.Deploy
                 && string.Equals(candidate.Deploy?.TargetId, targetId, StringComparison.Ordinal)

@@ -253,6 +253,38 @@ public sealed class RedisWorkflowOperationStoreIntegrationTests(RedisFixture red
     }
 
     [Fact]
+    public async Task WorkflowStore_QueryAsync_ReportsTruncatedTerminalIndexEvenWhenFilterHasNoMatches()
+    {
+        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisWorkflowOperationStore(multiplexer, NullLogger<RedisWorkflowOperationStore>.Instance);
+        var database = multiplexer.GetDatabase();
+        var now = DateTimeOffset.UtcNow;
+        var decoyPrefix = $"query-cap-{Guid.NewGuid():N}-";
+        var decoys = Enumerable.Range(0, 1001)
+            .Select(index => new SortedSetEntry(decoyPrefix + index, now.AddMinutes(index).ToUnixTimeMilliseconds()))
+            .ToArray();
+
+        await database.SortedSetAddAsync("controlplane:workflow:terminal", decoys);
+        try
+        {
+            var page = await store.QueryAsync(new WorkflowOperationQuery
+            {
+                Kind = WorkflowOperationKind.Deploy,
+                Status = WorkflowOperationStatus.ManualInterventionRequired,
+                Page = 1,
+                PageSize = 200,
+            });
+
+            page.Items.Should().BeEmpty();
+            page.HasMore.Should().BeTrue();
+        }
+        finally
+        {
+            await database.SortedSetRemoveAsync("controlplane:workflow:terminal", decoys.Select(decoy => decoy.Element).ToArray());
+        }
+    }
+
+    [Fact]
     public async Task WorkflowStore_GetMostRecentSucceededDeployByTarget_ReturnsLatestAndPrunesRolledBack()
     {
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
@@ -355,6 +387,27 @@ public sealed class RedisWorkflowOperationStoreIntegrationTests(RedisFixture red
         {
             await db.SortedSetRemoveAsync("controlplane:workflow:terminal", decoys.Select(e => e.Element).ToArray());
         }
+    }
+
+    [Fact]
+    public async Task WorkflowStore_LaterDeployLookup_PrunesExpiredOlderCreationMember()
+    {
+        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisWorkflowOperationStore(multiplexer, NullLogger<RedisWorkflowOperationStore>.Instance);
+        var database = multiplexer.GetDatabase();
+        var targetId = $"supersession-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+        var older = CreateDeployOperationRecord($"older-{Guid.NewGuid():N}", targetId,
+            now.AddMinutes(-10), WorkflowOperationStatus.Failed);
+        var stuck = CreateDeployOperationRecord($"stuck-{Guid.NewGuid():N}", targetId,
+            now.AddMinutes(-5), WorkflowOperationStatus.ManualInterventionRequired);
+
+        (await store.TryCreateAsync(older)).Should().BeTrue();
+        (await store.TryCreateAsync(stuck)).Should().BeTrue();
+        await database.KeyDeleteAsync($"controlplane:workflow:{older.OperationId}");
+
+        (await store.HasLaterDeployOfTargetAsync(stuck)).Should().BeFalse();
+        (await database.SortedSetScoreAsync($"controlplane:workflow:deploy-created:{targetId}", older.OperationId)).Should().BeNull();
     }
 
     private static WorkflowOperationRecord CreateDeployOperationRecord(
