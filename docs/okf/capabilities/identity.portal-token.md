@@ -18,7 +18,7 @@ Expose POST/GET /sharing/rest/generateToken so Esri clients can authenticate aga
 | Edition | Community |
 | Surface maturity | 2 implemented |
 | Registry entries | 2 |
-| Proving tests | 19 |
+| Proving tests | 21 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
