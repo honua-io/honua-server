@@ -17,6 +17,7 @@ using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -38,6 +39,17 @@ public static class SharingRestEndpoints
     internal const string ReadEntitlementFeatureName = "ArcGIS Portal Sharing Read Surface";
 
     private const string JsonContentType = "application/json";
+
+    /// <summary>
+    /// Explicit no-cache decision shared by every Portal/Sharing GET (SEC-20).
+    /// This is an identity surface: <c>generateToken</c> returns a freshly issued
+    /// credential, and the discovery reads are scoped to the caller's portal token
+    /// (<c>?token=</c>, <c>Authorization</c>, or <c>X-Esri-Authorization</c>). None of
+    /// the responses is a pure function of the request URL, so none of them may be
+    /// stored in the shared output cache.
+    /// </summary>
+    private static readonly Action<OutputCachePolicyBuilder> NoOutputCache =
+        static policy => policy.NoCache();
 
     // The Portal facade only accepts the ArcGIS family of services as items, so
     // the search result page size is bounded to a sane default/maximum.
@@ -83,6 +95,10 @@ public static class SharingRestEndpoints
             .WithTags("GeoServices Sharing")
             .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get, HttpMethods.Post]))
             .AllowAnonymous()
+            // NoCache is required (SEC-20): the response body is a freshly issued,
+            // caller-bound credential, so it must never enter the shared output cache
+            // where the next caller of the same URL would be handed it.
+            .CacheOutput(NoOutputCache)
             .Produces<GenerateTokenResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status401Unauthorized)
@@ -113,6 +129,7 @@ public static class SharingRestEndpoints
             .WithSummary("Portal version and authentication info")
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
+            .CacheOutput(NoOutputCache)
             .WithMetadata(TenantIndependentControlPlaneMetadata.Instance)
             .Produces<SharingInfoResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status404NotFound);
@@ -128,6 +145,7 @@ public static class SharingRestEndpoints
             .WithSummary("RBAC-scoped portal/user self description")
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
+            .CacheOutput(NoOutputCache)
             .Produces<PortalSelfResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status404NotFound);
 
@@ -137,6 +155,7 @@ public static class SharingRestEndpoints
             .WithSummary("RBAC-scoped user self description")
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
+            .CacheOutput(NoOutputCache)
             .Produces<CommunitySelfResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status401Unauthorized)
             .Produces(StatusCodes.Status404NotFound);
@@ -147,6 +166,7 @@ public static class SharingRestEndpoints
             .WithSummary("Search visible portal items with paging")
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
+            .CacheOutput(NoOutputCache)
             .Produces<SearchResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status404NotFound);
@@ -157,6 +177,7 @@ public static class SharingRestEndpoints
             .WithSummary("Fetch a single portal item by id")
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
+            .CacheOutput(NoOutputCache)
             .Produces<PortalItem>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status404NotFound);
 
@@ -166,6 +187,7 @@ public static class SharingRestEndpoints
             .WithSummary("Fetch a single portal item's data document by id")
             .WithTags("GeoServices Sharing")
             .AllowAnonymous()
+            .CacheOutput(NoOutputCache)
             .Produces<PortalItem>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status404NotFound);
 

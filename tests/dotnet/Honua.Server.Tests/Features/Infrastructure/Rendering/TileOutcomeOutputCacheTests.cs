@@ -121,6 +121,23 @@ public sealed class TileOutcomeOutputCacheTests
     }
 
     [Fact]
+    public async Task EmptyTileForARequestCarryingAToken_IsNotStored()
+    {
+        var state = new TileEndpointState { Bytes = 0, Budget = 512_000 };
+        using var host = await StartHostAsync("OgcTilesTile", OgcTilePath, state);
+        using var client = host.GetTestClient();
+
+        using var first = await client.GetAsync($"{OgcTilePath}?token=a");
+        ((int)first.StatusCode).Should().Be(StatusCodes.Status204NoContent);
+        using var second = await client.GetAsync($"{OgcTilePath}?token=a");
+        ((int)second.StatusCode).Should().Be(StatusCodes.Status204NoContent);
+
+        state.Invocations.Should().Be(
+            2,
+            "re-enabling storage for 204/413 outcomes must not store a response produced for a credentialed request");
+    }
+
+    [Fact]
     public async Task FailedTile_IsNotCached()
     {
         var state = new TileEndpointState { Bytes = 0, Budget = 512_000, Fail = true };
