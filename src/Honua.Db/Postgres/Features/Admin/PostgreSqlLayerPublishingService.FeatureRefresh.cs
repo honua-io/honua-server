@@ -178,7 +178,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         return selected;
     }
 
-    private static async Task DeleteLayerFeaturesAsync(
+    private async Task DeleteLayerFeaturesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         int layerId,
@@ -193,7 +193,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@layerId", layerId);
-        await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+        await ExecuteSnapshotCommandAsync(command, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<MaterializeRefreshMetadata?> ResolveMaterializeRefreshMetadataByIdAsync(
@@ -214,7 +214,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 COALESCE(NULLIF(srid, 0), NULLIF(storage_srid, 0), @catalogSrid) AS layer_srid,
                 COALESCE(storage_options ->> 'managedStore', 'false') = 'true' AS managed_store
             FROM honua.layers
-            WHERE layer_id = @layerId;
+            WHERE layer_id = @layerId
+              AND COALESCE(storage_options->>'managedCopy', 'false') <> 'true';
             """;
 
         await using var command = new NpgsqlCommand(sql, connection);

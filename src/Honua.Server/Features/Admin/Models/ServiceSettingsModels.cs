@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Metadata.Domain.V2;
+
 namespace Honua.Server.Features.Admin.Models;
 
 /// <summary>
@@ -110,6 +112,9 @@ internal sealed class UpdateTimeInfoRequest
 /// </summary>
 internal sealed class LayerMetadataResponse
 {
+    /// <summary>Persisted editing and attachment bindings for the canonical resource.</summary>
+    public MetadataV2ResourceEditing? Editing { get; init; }
+
     /// <summary>The layer identifier.</summary>
     public required int LayerId { get; init; }
 
@@ -146,6 +151,12 @@ internal sealed class LayerMetadataResponse
 /// </summary>
 internal sealed class UpdateLayerMetadataRequest
 {
+    /// <summary>
+    /// Partial resource binding repair and explicit edit policy for this service's
+    /// FeatureServer publication. Omitted fields preserve existing values.
+    /// </summary>
+    public MetadataV2EditingPatch? Editing { get; init; }
+
     /// <summary>
     /// SPDX license expression or <c>proprietary</c>. Null preserves the current value;
     /// an empty string clears it.

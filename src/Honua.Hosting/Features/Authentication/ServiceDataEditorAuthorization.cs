@@ -143,6 +143,13 @@ internal static class ServiceDataEditorAuthorization
             return AccessDecision.Forbidden(AccessPolicyHelpers.TenantScopeDeniedReason);
         }
 
+        // Ownership semantics are a capability constraint, not a discretionary
+        // grant. Admins, wildcard grants and scoped write keys cannot bypass it.
+        if (MetadataV2RelationshipEditPolicy.RequiresReadOnly(resource))
+        {
+            return AccessDecision.Forbidden(MetadataV2RelationshipEditPolicy.ReadOnlyReason);
+        }
+
         // Layer-scoped write keys (#1637) are enforced here in the shared pipeline.
         // The key must carry a grant for the target (service, layer); a service-wide
         // grant authorizes any layer of that service, a layer-specific grant only

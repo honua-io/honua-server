@@ -191,10 +191,12 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests(PostgresFix
     }
 
     private GeoservicesImportService CreateService(PostgresMetadataV2GraphStore graphStore, string dataSchema, bool featureTypes,
-        bool hasZ = false, bool hasM = false, bool nonSpatial = false)
+        bool hasZ = false, bool hasM = false, HttpMessageHandler? handler = null,
+        Honua.Core.Features.Attachments.Abstractions.IAttachmentStore? attachmentStore = null,
+        bool nonSpatial = false)
     {
         var restClient = new ArcGisRestClient(
-            new HttpClient(new SubtypeFeatureServerHandler(featureTypes, hasZ, hasM, nonSpatial)),
+            new HttpClient(handler ?? new SubtypeFeatureServerHandler(featureTypes, hasZ, hasM, nonSpatial)),
             NullLogger<ArcGisRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
 
@@ -223,7 +225,8 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests(PostgresFix
             NullLogger<GeoservicesImportService>.Instance,
             new GeoservicesLayerPublicationService(
                 NullLogger<GeoservicesLayerPublicationService>.Instance,
-                layerPublishingService: publishingService));
+                layerPublishingService: publishingService),
+            attachmentStore: attachmentStore);
     }
 
     private async Task EnsureCatalogSchemaAsync()
