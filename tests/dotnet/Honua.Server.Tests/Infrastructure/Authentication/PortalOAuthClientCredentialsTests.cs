@@ -9,6 +9,7 @@ using Honua.Infrastructure.Authentication;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -90,6 +91,29 @@ public sealed class PortalOAuthClientCredentialsTests
             new PortalTokenBinding(Referer: null, ClientIp: "203.0.113.99"),
             CancellationToken.None);
         wrongIp.Should().BeNull("the token is bound to the issuing client IP");
+    }
+
+    [UnitTest]
+    public async Task Exchange_ClientCredentials_TokenFollowsTheApiKeyItWasIssuedFrom()
+    {
+        var keyExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
+        var (service, issuer, secret, keyStore, keyId) = await CreateKeyBoundServiceAsync(
+            enableClientCredentials: true,
+            permissions: ["admin:*"],
+            keyExpiresAt: keyExpiresAt);
+
+        var result = await service.ExchangeAsync(ClientCredentialsRequest(secret), requestBinding: "x", CancellationToken.None);
+
+        result.Succeeded.Should().BeTrue();
+        // The token lifetime is clamped to the key's own expiry.
+        result.ExpiresInSeconds.Should().BeLessThanOrEqualTo(5 * 60);
+        var binding = new PortalTokenBinding(Referer: null, ClientIp: ClientIp);
+        (await issuer.ValidateAsync(result.AccessToken!, binding, CancellationToken.None)).Should().NotBeNull();
+
+        await keyStore.RevokeAsync(keyId, CancellationToken.None);
+
+        (await issuer.ValidateAsync(result.AccessToken!, binding, CancellationToken.None))
+            .Should().BeNull("the API key the token was issued from was revoked");
     }
 
     [UnitTest]
@@ -353,28 +377,49 @@ public sealed class PortalOAuthClientCredentialsTests
         bool enableClientCredentials,
         IReadOnlyList<string>? permissions = null)
     {
+        var (service, issuer, secret, _, _) = await CreateKeyBoundServiceAsync(
+            enableClientCredentials, permissions);
+        return (service, issuer, secret);
+    }
+
+    /// <summary>
+    /// Builds the service over an issuer wired to the real source validator, so a token
+    /// minted from the API key is re-checked against that key on every restore.
+    /// </summary>
+    private static async Task<(PortalOAuthTokenService Service, IPortalTokenIssuer Issuer, string Secret, InMemoryAdminApiKeyStore KeyStore, Guid KeyId)>
+        CreateKeyBoundServiceAsync(
+            bool enableClientCredentials,
+            IReadOnlyList<string>? permissions = null,
+            DateTimeOffset? keyExpiresAt = null)
+    {
         var memoryCache = new MemoryCache(new MemoryCacheOptions());
-        var issuer = new PortalTokenIssuer(memoryCache, NullLogger<PortalTokenIssuer>.Instance);
-        var store = new PortalOAuthStore(memoryCache, NullLogger<PortalOAuthStore>.Instance);
         var apiKeyStore = new InMemoryAdminApiKeyStore();
         var created = await apiKeyStore.CreateAsync(
             name: "etl-worker",
             permissions: permissions ?? [],
-            expiresAt: null,
+            expiresAt: keyExpiresAt,
             createdBy: "test",
             CancellationToken.None);
 
         var options = Options.Create(new PortalTokenAuthenticationOptions
         {
             OAuth2 = new PortalOAuth2Options { EnableClientCredentials = enableClientCredentials },
+            SourceRevalidationSeconds = 0,
         });
+
+        var services = new ServiceCollection()
+            .AddSingleton<IAdminApiKeyStore>(apiKeyStore)
+            .AddSingleton<IPortalTokenSourceValidator>(sp => new PortalTokenSourceValidator(memoryCache, options, sp))
+            .BuildServiceProvider();
+        var issuer = new PortalTokenIssuer(memoryCache, NullLogger<PortalTokenIssuer>.Instance, serviceProvider: services);
+        var store = new PortalOAuthStore(memoryCache, NullLogger<PortalOAuthStore>.Instance);
 
         var clientStore = new InMemoryOAuthClientStore();
         var scopeCatalogue = new InMemoryOAuthScopeCatalogue();
         var jwtService = new PortalJwtAccessTokenService(issuer, options);
         var federation = new ClientCredentialsFederationService(new NullHttpClientFactory(), options);
         var service = new PortalOAuthTokenService(issuer, store, apiKeyStore, clientStore, scopeCatalogue, jwtService, federation, options);
-        return (service, issuer, created.Key);
+        return (service, issuer, created.Key, apiKeyStore, created.Record.Id);
     }
 
     /// <summary>
