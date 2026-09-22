@@ -27,6 +27,7 @@ internal sealed partial class JobExecutionService(
     ILicenseOperationPolicy? licensePolicy = null) : BackgroundService
 {
     private const string SafeExecutionFailureMessage = "Job execution failed.";
+    private const int PreDispatchRecoveryAttempts = 2;
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan LogRetention = TimeSpan.FromDays(7);
     private static readonly TimeSpan DefaultPartitionLeaseDuration = TimeSpan.FromMinutes(1);
@@ -244,9 +245,17 @@ internal sealed partial class JobExecutionService(
     {
         try
         {
-            var job = await jobStore.GetAsync(operationId, CancellationToken.None).ConfigureAwait(false);
-            if (job != null && !IsTerminalOrNotOwnedBy(job, workerId))
+            // A concurrent write (an operator cancellation, say) can make the abandon's own CAS lose,
+            // which leaves the record claimed. Re-read and resolve the new state once before giving
+            // the job to reconciliation; the second pass honours a durable cancellation signal.
+            for (var attempt = 0; attempt < PreDispatchRecoveryAttempts; attempt++)
             {
+                var job = await jobStore.GetAsync(operationId, CancellationToken.None).ConfigureAwait(false);
+                if (job == null || IsTerminalOrNotOwnedBy(job, workerId))
+                {
+                    break;
+                }
+
                 await AbandonJobAsync(
                         job,
                         workerId,

@@ -2676,6 +2676,34 @@ public sealed class JobExecutionServiceTests
             Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
     }
 
+    /// <summary>
+    /// A write that lands between the recovery's re-read and its requeue makes that requeue's CAS
+    /// lose. The claim must still be resolved on the spot — here the durable cancellation signal that
+    /// caused the conflict is honoured — rather than left for heartbeat-expiry reconciliation.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_ResolvesClaim_WhenRequeueAfterPreDispatchFaultLosesTheCas()
+    {
+        var provisioning = CreateProvisioningJob();
+        var store = new PreDispatchFaultStore(provisioning, PreDispatchFaultStore.RunningTransitionLost)
+        {
+            CancelOnFirstRequeue = true,
+        };
+        var queue = Substitute.For<IJobQueue>();
+        var executor = new CountingSuccessExecutor();
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+        using var service = new JobExecutionService(
+            queue, store, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        Assert.True(store.FaultInjected);
+        Assert.Equal(0, executor.Calls);
+        Assert.Equal(ExecutionJobStatus.Cancelled, store.Current.Status);
+        Assert.False(cancellationTokens.Cancel(provisioning.OperationId));
+    }
+
     private static ExecutionJobRecord CreateQueuedJob(bool withPartitionLease)
         => CreateProvisioningJob(operationId: $"job-{Guid.NewGuid():N}") with
         {
@@ -2706,8 +2734,15 @@ public sealed class JobExecutionServiceTests
         private ExecutionJobRecord _job = initial;
         private int _getCalls;
         private int _releases;
+        private bool _cancelStamped;
 
         public bool FailAfterFirstFault { get; init; }
+
+        /// <summary>
+        /// Makes the first requeue write lose its CAS the way a concurrent operator cancellation
+        /// would: the durable signal is stamped on the record and the write is rejected.
+        /// </summary>
+        public bool CancelOnFirstRequeue { get; init; }
 
         public bool FaultInjected { get; private set; }
 
@@ -2793,6 +2828,13 @@ public sealed class JobExecutionServiceTests
                     }
 
                     InjectFault();
+                }
+
+                if (CancelOnFirstRequeue && !_cancelStamped && job.Status == ExecutionJobStatus.Queued)
+                {
+                    _cancelStamped = true;
+                    _job = _job with { CancellationRequestedAt = DateTimeOffset.UtcNow };
+                    return Task.FromResult(false);
                 }
 
                 _job = job;
