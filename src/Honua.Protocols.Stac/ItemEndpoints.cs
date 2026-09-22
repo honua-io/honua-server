@@ -90,14 +90,16 @@ internal static class ItemEndpoints
 
             var resource = validation.Resource!;
             var publication = validation.Publication!;
-            var layerId = publication.LayerIndex
+            var snapshot = validation.Snapshot
+                ?? throw new InvalidOperationException("Validated STAC metadata snapshot is unavailable.");
+            var layerId = snapshot.ResolveStorageLayerId(publication, resource)
                 ?? throw new InvalidOperationException(
-                    $"Publication {publication.Metadata.Id} has no LayerIndex; the STAC items handler requires one.");
+                    $"Publication {publication.Metadata.Id} is not bound to feature storage; the STAC items handler requires a storage layer.");
             var resourceSrid = resource.ReadSrid() ?? Wgs84Srid;
             var readerResolution = await StacFeatureReaderResolver.ResolveAsync(
                 context,
                 featureReader,
-                validation.Snapshot ?? throw new InvalidOperationException("Validated STAC metadata snapshot is unavailable."),
+                snapshot,
                 validation.Service,
                 resource,
                 publication,
@@ -261,14 +263,16 @@ internal static class ItemEndpoints
 
             var resource = validation.Resource!;
             var publication = validation.Publication!;
-            var layerId = publication.LayerIndex
+            var snapshot = validation.Snapshot
+                ?? throw new InvalidOperationException("Validated STAC metadata snapshot is unavailable.");
+            var layerId = snapshot.ResolveStorageLayerId(publication, resource)
                 ?? throw new InvalidOperationException(
-                    $"Publication {publication.Metadata.Id} has no LayerIndex; the STAC item handler requires one.");
+                    $"Publication {publication.Metadata.Id} is not bound to feature storage; the STAC item handler requires a storage layer.");
             var resourceSrid = resource.ReadSrid() ?? Wgs84Srid;
             var readerResolution = await StacFeatureReaderResolver.ResolveAsync(
                 context,
                 featureReader,
-                validation.Snapshot ?? throw new InvalidOperationException("Validated STAC metadata snapshot is unavailable."),
+                snapshot,
                 validation.Service,
                 resource,
                 publication,
