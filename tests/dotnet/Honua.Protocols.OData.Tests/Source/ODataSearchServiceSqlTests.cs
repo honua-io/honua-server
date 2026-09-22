@@ -8,6 +8,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Geometry.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Protocols.OData;
 using Honua.Protocols.OData.Models;
 using Microsoft.Extensions.Options;
 using NSubstitute;
@@ -29,7 +30,8 @@ public sealed class ODataSearchServiceSqlTests
         var active = new MetadataV2Status { Lifecycle = MetadataV2LifecycleStatus.Active };
         var parent = new MetadataV2Resource
         {
-            Metadata = new() { Id = "parents" }, Status = active,
+            Metadata = new() { Id = "parents" },
+            Status = active,
             Relationships = [new() { Id = "rel", Name = "Children", RelatedResourceId = "children", OriginField = "join_id", DestinationField = "join_id" }]
         };
         var child = new MetadataV2Resource { Metadata = new() { Id = "children" }, Status = active, StorageBindingIds = ["binding"] };
