@@ -10427,7 +10427,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryTopFeaturesTests.QueryTopFeatures_WithReturnCountOnly_ReturnsCountNotFeatures",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryTopFeaturesTests.QueryTopFeatures_WithReturnGeometryFalse_OmitsGeometry",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryTopFeaturesTests.QueryTopFeatures_WithReturnIdsOnly_ReturnsObjectIdsNotFeatures",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTopFeaturesTemporalTests.QueryTopFeatures_TemporalAttributes_ReturnEpochMilliseconds"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTopFeaturesTemporalTests.QueryTopFeatures_TemporalAttributes_ReturnCalendarDateAndEpochTimestamp"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
@@ -11725,6 +11725,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests.Identify_WithInaccessibleRightLayer_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests.Identify_WithInnerJoinAndNoMatch_DropsUnmatchedLeftFeatures",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests.Identify_WithJoinKeyContainingInjection_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests.Identify_WithJoinedCalendarDate_NormalizesQualifiedValuesAndDefaults",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests.Identify_WithLeftOuterJoin_ReturnsQualifiedJoinedAttributes",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerIdentifyEndpointTests.MapServer_Identify_NonPointGeometryWithinTolerance_ReturnsResults",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerIdentifyEndpointTests.MapServer_Identify_PointLiteralMatchesQuotedJson",

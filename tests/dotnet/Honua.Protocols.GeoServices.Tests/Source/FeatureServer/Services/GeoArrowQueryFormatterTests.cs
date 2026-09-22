@@ -23,29 +23,29 @@ public sealed class GeoArrowQueryFormatterTests
     private const string FixtureFileName = "honua-server-geoarrow-02-point.arrow";
 
     [Fact]
-    public async Task FormatAsGeoArrowAsync_CalendarDates_PreserveDayAndDate32Type()
+    public async Task FormatAsGeoArrowAsync_CalendarDates_UseDate32AndPreserveNulls()
     {
-        var layer = CreateLayer(new MetadataV2Field { Name = "day", Type = MetadataV2FieldType.Date });
-        object?[] values = [new DateOnly(2024, 1, 2), "2024-01-02T00:30:00+14:00",
-            new DateTimeOffset(2024, 1, 2, 23, 30, 0, TimeSpan.FromHours(-10)),
-            JsonSerializer.SerializeToElement("2024-01-02"), 1704153600000L,
-            JsonSerializer.SerializeToElement(1704153600000L), null];
+        var resource = CreateResource(
+            new MetadataV2Field { Name = "day", Type = MetadataV2FieldType.Date },
+            new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime });
+        object?[] values = ["2024-02-28", new DateOnly(2024, 2, 29),
+            new DateTimeOffset(2024, 3, 1, 0, 0, 0, TimeSpan.FromHours(14)), null];
+        var timestamp = new DateTimeOffset(2024, 2, 29, 12, 0, 0, TimeSpan.Zero);
         var features = values.Select((value, index) => Feature.Create(index + 1, null,
-            ImmutableDictionary<string, object?>.Empty.Add("day", value))).ToImmutableArray();
+            new Dictionary<string, object?> { ["day"] = value, ["timestamp"] = timestamp }.ToImmutableDictionary())).ToImmutableArray();
         var (payload, _) = await GeoArrowQueryFormatter.FormatAsGeoArrowAsync(
-            QueryResult<Feature>.Create(features.Length, features), layer,
-            returnGeometry: false, outputSrid: null, returnZ: false, returnM: false,
-            geometryLimits: new GeometryLimits());
+            QueryResult<Feature>.Create(features.Length, features), resource, false, null, false, false, new GeometryLimits());
+
         using var reader = new ArrowStreamReader(new MemoryStream(payload));
         using var batch = await reader.ReadNextRecordBatchAsync();
-        batch.Should().NotBeNull();
-        batch!.Schema.GetFieldByName("day").DataType.Should().BeOfType<Date32Type>();
-        var dates = batch.Column("day").Should().BeOfType<Date32Array>().Which;
-        for (var i = 0; i < values.Length - 1; i++)
-        {
-            dates.GetDateTime(i).Should().Be(new DateTime(2024, 1, 2));
-        }
-        dates.IsNull(values.Length - 1).Should().BeTrue();
+        reader.Schema.GetFieldByName("day").DataType.Should().BeOfType<Date32Type>();
+        reader.Schema.GetFieldByName("timestamp").DataType.Should().BeOfType<TimestampType>();
+        var dates = batch!.Column("day").Should().BeOfType<Date32Array>().Subject;
+        dates.GetDateTime(0).Should().Be(new DateTime(2024, 2, 28));
+        dates.GetDateTime(1).Should().Be(new DateTime(2024, 2, 29));
+        dates.GetDateTime(2).Should().Be(new DateTime(2024, 3, 1));
+        dates.IsNull(3).Should().BeTrue();
+        batch.Column("timestamp").Should().BeOfType<TimestampArray>().Subject.GetTimestamp(0).Should().Be(timestamp);
     }
 
     [Fact]

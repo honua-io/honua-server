@@ -399,11 +399,8 @@ internal static partial class MapServerEndpoints
                 // Resolve a joinTable source's right side into a key-indexed attribute lookup. The
                 // right layer is access-policy gated exactly like the left layer; a denied right
                 // layer fails the whole identify rather than silently dropping the join.
-                // esriFieldTypeDate attributes must serialize as epoch-ms integers uniformly across
-                // rows. JSONB stores dates as either ISO strings (seeds) or epoch-ms longs
-                // (applyEdits); coerce both via the shared GeoServices date convention (matches query).
-                var dateFieldNames = GeoServicesFieldConventions.ResolveDateFieldNames(layer.Resource);
                 DynamicJoinLookup? joinLookup = null;
+                var temporalFieldTypes = GeoServicesFieldConventions.ResolveTemporalFieldTypes(layer.Resource);
                 if (renderLayer.Join is { } join)
                 {
                     if (!TryResolveIdentifyJoinRightLayer(
@@ -416,8 +413,10 @@ internal static partial class MapServerEndpoints
                         return StandardErrorHelpers.CreateBadRequest(context, joinError ?? "Invalid join source.");
                     }
 
-                    dateFieldNames.UnionWith(GeoServicesFieldConventions.ResolveDateFieldNames(rightLayer!.Resource)
-                        .Select(name => $"{join.RightQualifier}.{name}"));
+                    foreach (var field in GeoServicesFieldConventions.ResolveTemporalFieldTypes(rightLayer!.Resource))
+                    {
+                        temporalFieldTypes[$"{join.RightQualifier}.{field.Key}"] = field.Value;
+                    }
 
                     joinLookup = await DynamicJoinLookup.BuildAsync(
                         featureReader,
@@ -430,6 +429,9 @@ internal static partial class MapServerEndpoints
 
                 var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer.Resource);
                 var displayField = ResolveDisplayField(layer.Resource, objectIdField);
+                // Normalize both left and qualified right temporal fields using the
+                // same calendar-date/timestamp conventions as query.
+
                 foreach (var feature in queryResult.Items)
                 {
                     IReadOnlyDictionary<string, object?> sourceAttributes = feature.Attributes;
@@ -460,7 +462,7 @@ internal static partial class MapServerEndpoints
                         attributes[kvp.Key] = FeatureAttributeValueNormalizer.Normalize(kvp.Value);
                     }
 
-                    GeoServicesFieldConventions.CoerceDateAttributes(attributes, dateFieldNames);
+                    GeoServicesFieldConventions.CoerceTemporalAttributes(attributes, temporalFieldTypes);
 
                     object? geometryResult = null;
                     if (returnGeometry && feature.Geometry != null)
