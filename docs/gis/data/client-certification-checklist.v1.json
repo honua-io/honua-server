@@ -2961,7 +2961,7 @@
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. Stock arcgismapserver explicitly supports ImageServer rendering, and stock GDAL AGS reads numeric TIFF pixels. Dynamic 0x0 dimensions and the narrower identify-parser failure do not exclude elevation sampling."
           },
-          "evidence": "honua-client-compat/evidence/pyqgis-deep-exclusions-20260920-d/observations.json (retained at commit 046a74c); PyQGIS 3.44.14-Solothurn / GDAL 3.13.3: stock GDAL AGS TIFF numeric sample 10 at [-122.498828125,37.83890625] matches independent ImageServer identify at the same point; four corners/affine grid match SQL and native project reload repeats samples; does not certify native identify endpoint; server 25fa17d9cfa72340c9de4a33a743f19ff0911800 / image 0ad6f6c9d81e; Development JIT SDK evidence, no UI credit"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GET /elevation/0/value at the fixture centre (-122.425, 37.77) returned elevation=100 (outOfBounds=False); the fixture's known value at that point is 100, so this is compared to the oracle rather than to the status code"
         }
       }
     }
