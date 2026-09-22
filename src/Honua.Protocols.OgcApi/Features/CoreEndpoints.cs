@@ -177,12 +177,13 @@ internal static class CoreEndpoints
             type: "image/png",
             title: "Dataset map"));
 
-        // Vector tilesets list
+        // Dataset tilesets list: map (PNG) tiles, so tilesets-map. Per-collection vector
+        // tilesets are linked from each collection with tilesets-vector.
         links.Add(Link.Create(
             href: $"{baseUrl}/ogc/tiles/tiles",
-            rel: RelationTypes.TilesetsVector,
+            rel: RelationTypes.TilesetsMap,
             type: MediaTypes.Json,
-            title: "Vector tilesets"));
+            title: "Dataset map tilesets"));
 
         var landingPage = new LandingPage
         {

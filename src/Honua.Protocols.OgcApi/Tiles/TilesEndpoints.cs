@@ -133,7 +133,10 @@ internal static partial class TilesEndpoints
         var tileLimits = limitsOptions.Value.Tiles;
         var titleBase = BuildDatasetTitleBase(selectedLayers!);
         var querySuffix = BuildCollectionsQuerySuffix(collections, selectedLayers!);
-        var advertiseVectorTiles = selectedLayers!.Length == 1 &&
+        // Landing pages advertise the unfiltered dataset as map tiles, regardless
+        // of how many collections this caller can see. Explicit selections retain
+        // their existing vector metadata when a single collection supports it.
+        var advertiseVectorTiles = !string.IsNullOrWhiteSpace(collections) && selectedLayers!.Length == 1 &&
             await SupportsVectorTilesAsync(selectedLayers[0], context, cancellationToken).ConfigureAwait(false);
         var tilesets = BuildDatasetTileSetItems(titleBase, baseUrl, tileLimits, querySuffix, advertiseVectorTiles, tileMatrixSetRegistry).ToImmutableArray();
         return BuildTilesetsListResponse(
@@ -198,7 +201,7 @@ internal static partial class TilesEndpoints
         var description = layers.Length == 1
             ? layers[0].Description
             : $"Dataset tiles across {layers.Length} collections.";
-        var advertiseVectorTiles = layers.Length == 1 &&
+        var advertiseVectorTiles = !string.IsNullOrWhiteSpace(collections) && layers.Length == 1 &&
             await SupportsVectorTilesAsync(layers[0], context, cancellationToken).ConfigureAwait(false);
 
         var (customEntry, customGeometry) = ResolveCustomTilesetGrid(tileMatrixSetEntry, tileMatrixSetRegistry, limitsOptions);
