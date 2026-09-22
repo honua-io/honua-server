@@ -151,9 +151,6 @@ internal sealed class LayerMetadataResponse
 /// </summary>
 internal sealed class UpdateLayerMetadataRequest
 {
-    /// <summary>Partial attachment configuration. Omitted values preserve existing metadata.</summary>
-    public UpdateLayerEditingRequest? Editing { get; init; }
-
     /// <summary>
     /// Partial resource binding repair and explicit edit policy for this service's
     /// FeatureServer publication. Omitted fields preserve existing values.
@@ -186,13 +183,6 @@ internal sealed class UpdateLayerMetadataRequest
 
     /// <summary>Raster mosaic updates.</summary>
     public UpdateRasterMosaicRequest? RasterMosaic { get; init; }
-}
-
-/// <summary>Attachment intent only; does not change GlobalID, editor tracking or edit permissions.</summary>
-internal sealed class UpdateLayerEditingRequest
-{
-    /// <summary>Whether the resource supports attachments. Null preserves the existing declaration.</summary>
-    public bool? SupportsAttachments { get; init; }
 }
 
 /// <summary>

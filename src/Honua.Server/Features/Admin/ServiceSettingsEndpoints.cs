@@ -449,17 +449,6 @@ internal static class ServiceSettingsEndpoints
                         };
                     }
 
-                    if (request.Editing?.SupportsAttachments is bool supportsAttachments)
-                    {
-                        // Preserve existing editor tracking and policy. For a legacy resource,
-                        // use the canonical model defaults without changing publication grants.
-                        var editing = next.Editing ?? new MetadataV2ResourceEditing();
-                        next = next with
-                        {
-                            Editing = editing with { SupportsAttachments = supportsAttachments }
-                        };
-                    }
-
                     if (request.TimeInfo is { } incomingTimeInfo)
                     {
                         var existingTemporal = next.Temporal;

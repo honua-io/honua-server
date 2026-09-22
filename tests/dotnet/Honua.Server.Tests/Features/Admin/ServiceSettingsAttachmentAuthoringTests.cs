@@ -121,12 +121,12 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
         {
             defaultEditing.GetProperty(name).ValueKind.Should().Be(JsonValueKind.Null);
         }
-        defaultEditing.GetProperty("canModify").GetBoolean().Should().BeTrue();
+        defaultEditing.GetProperty("canModify").GetBoolean().Should().BeFalse();
         defaultEditing.GetProperty("supportsAttachments").GetBoolean().Should().BeFalse();
         defaultEditing.GetProperty("supportsRelatedRecords").GetBoolean().Should().BeTrue();
         var updated = fixture.GetCurrentV2GraphSnapshot().Graph;
         var resource = updated.Resources.Single(resource => resource.Metadata.Id == ResourceId);
-        resource.Editing.Should().BeEquivalentTo(new MetadataV2ResourceEditing { SupportsAttachments = false });
+        resource.Editing.Should().BeEquivalentTo(new MetadataV2ResourceEditing { SupportsAttachments = false, CanModify = false });
         resource.Metadata.Annotations["honua.io/attachments"].Should().Be("true");
         updated.Publications.Should().BeEquivalentTo(original.Publications);
         updated.Services.Should().BeEquivalentTo(original.Services);
@@ -182,13 +182,13 @@ public sealed class ServiceSettingsAttachmentAuthoringTests(ITestOutputHelper ou
             Path.Join(root.FullName, "docs", "developer", "api-specs", "admin-api.json")));
         var schemas = document.RootElement.GetProperty("components").GetProperty("schemas");
         schemas.GetProperty("UpdateLayerMetadataRequest").GetProperty("properties").GetProperty("editing")
-            .GetProperty("$ref").GetString().Should().Be("#/components/schemas/UpdateLayerEditingRequest");
+            .GetProperty("$ref").GetString().Should().Be("#/components/schemas/MetadataV2EditingPatch");
         schemas.GetProperty("LayerMetadataResponse").GetProperty("properties").GetProperty("editing")
             .GetProperty("$ref").GetString().Should().Be("#/components/schemas/MetadataV2ResourceEditing");
-        var request = schemas.GetProperty("UpdateLayerEditingRequest");
+        var request = schemas.GetProperty("MetadataV2EditingPatch");
         request.GetProperty("nullable").GetBoolean().Should().BeTrue();
         request.GetProperty("properties").EnumerateObject().Select(property => property.Name)
-            .Should().BeEquivalentTo(["supportsAttachments"]);
+            .Should().BeEquivalentTo(["globalIdField", "supportsAttachments", "create", "update", "delete"]);
         var intent = request.GetProperty("properties").GetProperty("supportsAttachments");
         intent.GetProperty("type").GetString().Should().Be("boolean");
         intent.GetProperty("nullable").GetBoolean().Should().BeTrue();
