@@ -1,12 +1,39 @@
 name: Cloud Post-Apply Validation
 
+# Validates an already-deployed Honua environment: the post-deployment probe script plus the
+# Category=Cloud cells in Honua.Server.Tests (CloudDeploymentValidationTests), which hold the only
+# staged-import row-count assertion in the deploy story
+# (`featuresProcessed == 1`, `failedFeatures == 0`).
+#
+# honua-server#4414 defect 2: this was workflow_call + workflow_dispatch with ZERO callers, so those
+# cells had been unreachable since April 2026 — and because every one of them is a [CloudTest] that
+# SKIPS when its inputs are absent, nothing ever noticed. Two changes fix that here:
+#   * `local_target: true` boots a real Honua.Server + PostGIS on the runner and validates against
+#     it, so the workflow has a free, credential-free target it can always reach. That is what
+#     `cloud-post-apply-validation-nightly.yml` calls every night.
+#   * the run is followed by a counts tripwire, so a run in which every cell skipped fails instead
+#     of reporting green.
+# `local_target` proves the post-apply CONTRACT against a real server; it is NOT a cloud substrate.
+# Validating a real cloud deployment still means passing `base_url` (honua-iac's terraform-manual-
+# validation lane is the intended caller for that, once its stale script path is repaired).
+
 on:
   workflow_call:
     inputs:
       base_url:
-        description: Public base URL for the deployed Honua environment.
-        required: true
+        description: Public base URL for the deployed Honua environment. Required unless local_target is true.
+        required: false
         type: string
+      local_target:
+        description: Boot a real Honua.Server + PostGIS on the runner and validate against it instead of a deployed environment.
+        required: false
+        type: boolean
+        default: false
+      min_passed:
+        description: Counts tripwire floor — fail when fewer than this many Category=Cloud cells executed.
+        required: false
+        type: string
+        default: '1'
       expected_environment:
         description: Optional expected environment label returned by deploy preflight.
         required: false
@@ -87,9 +114,19 @@ on:
   workflow_dispatch:
     inputs:
       base_url:
-        description: Public base URL for the deployed Honua environment.
-        required: true
+        description: Public base URL for the deployed Honua environment. Required unless local_target is true.
+        required: false
         type: string
+      local_target:
+        description: Boot a real Honua.Server + PostGIS on the runner and validate against it instead of a deployed environment.
+        required: false
+        type: boolean
+        default: false
+      min_passed:
+        description: Counts tripwire floor — fail when fewer than this many Category=Cloud cells executed.
+        required: false
+        type: string
+        default: '1'
       expected_environment:
         description: Optional expected environment label returned by deploy preflight.
         required: false
@@ -180,10 +217,34 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
+      - name: Require a validation target
+        run: |
+          if [ -z "${{ inputs.base_url }}" ] && [ "${{ inputs.local_target }}" != "true" ]; then
+            echo "::error::Pass base_url for a deployed environment, or local_target: true to boot one on the runner."
+            exit 1
+          fi
+
+      # Build only what the local target needs; the deployed-environment path skips this entirely.
+      - name: Build Honua.Server for the local target
+        if: ${{ inputs.local_target }}
+        timeout-minutes: 25
+        run: |
+          dotnet restore src/Honua.Server/Honua.Server.csproj
+          dotnet build src/Honua.Server/Honua.Server.csproj --no-restore --configuration Release
+
+      - name: Boot the local post-apply target
+        id: local-target
+        if: ${{ inputs.local_target }}
+        run: scripts/cloud/start-local-post-apply-target.sh
+
       - name: Run cloud post-apply validation
+        id: validate
         env:
-          HONUA_CLOUD_TEST_BASE_URL: ${{ inputs.base_url }}
-          HONUA_CLOUD_TEST_ADMIN_API_KEY: ${{ secrets.admin_api_key || secrets.cloud_validation_admin_api_key || '' }}
+          # start-local-post-apply-target.sh exports HONUA_CLOUD_TEST_* into $GITHUB_ENV, so the
+          # local-target path already has a base URL, an admin key and publish-DB credentials here.
+          # An explicit base_url input always wins.
+          HONUA_CLOUD_TEST_BASE_URL: ${{ inputs.base_url || env.HONUA_CLOUD_TEST_BASE_URL }}
+          HONUA_CLOUD_TEST_ADMIN_API_KEY: ${{ secrets.admin_api_key || secrets.cloud_validation_admin_api_key || env.HONUA_CLOUD_TEST_ADMIN_API_KEY }}
           HONUA_CLOUD_TEST_EXPECTED_ENVIRONMENT: ${{ inputs.expected_environment }}
           HONUA_CLOUD_TEST_EXPECTED_DEPLOYMENT_MODE: ${{ inputs.expected_deployment_mode }}
           HONUA_CLOUD_TEST_EXPECT_READY_FOR_COORDINATED_DEPLOY: ${{ inputs.expected_ready_for_coordinated_deploy }}
@@ -204,3 +265,38 @@ jobs:
         run: |
           chmod +x scripts/cloud/run-cloud-post-apply-validation.sh
           ./scripts/cloud/run-cloud-post-apply-validation.sh
+
+      # honua-server#4414 defect 1. Every Category=Cloud cell is a [CloudTest] whose Skip is set
+      # when its inputs are missing, and `dotnet test` exits 0 on an all-skipped run. Without this,
+      # a validation run that proved nothing — including the staged-import row count — reported
+      # exactly like one that proved everything.
+      - name: Prove the post-apply validation actually executed
+        if: ${{ !cancelled() && steps.validate.conclusion != 'skipped' }}
+        run: |
+          python3 scripts/ci/assert-trx-executed.py \
+            --label "Cloud post-apply validation" \
+            --trx tests/TestResults/cloud-post-apply-validation.trx \
+            --min-passed "${{ inputs.min_passed || '1' }}"
+
+      - name: Upload post-apply validation results
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: cloud-post-apply-validation-results-${{ github.run_id }}-${{ github.run_attempt }}
+          path: tests/TestResults/
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Stop the local post-apply target
+        if: ${{ always() && inputs.local_target }}
+        run: |
+          pid_file="${RUNNER_TEMP:-/tmp}/honua-post-apply-server.pid"
+          container_file="${RUNNER_TEMP:-/tmp}/honua-post-apply-db.container"
+          if [ -f "$pid_file" ]; then
+            kill "$(cat "$pid_file")" 2>/dev/null || true
+          fi
+          if [ -f "$container_file" ]; then
+            docker rm --force "$(cat "$container_file")" >/dev/null 2>&1 || true
+          fi
+          echo "----- local post-apply target server log -----"
+          sed -n '1,200p' "${RUNNER_TEMP:-/tmp}/honua-post-apply-server.log" 2>/dev/null || true

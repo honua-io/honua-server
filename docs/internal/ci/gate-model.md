@@ -240,6 +240,7 @@ These workflows run on schedule and can be dispatched manually:
 | `deploy.yml` | Tags / manual | Environment promotion |
 | `deploy-platform-images.yml` | Tags / manual | Platform image deployment |
 | `cloud-post-apply-validation.yml` | Workflow call / manual | Post-deploy validation |
+| `cloud-post-apply-validation-nightly.yml` | Nightly (03:00 UTC) / manual | Post-apply contract against a local target; caller for the above |
 
 ## Maintenance Lane
 
