@@ -16,40 +16,6 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 
 public sealed class RelatedRecordsServiceTests
 {
-    [Fact]
-    public void GroupRelatedRecords_TemporalFields_PreserveCalendarDateAndTimestamp()
-    {
-        var sut = CreateSut(Substitute.For<IRelationshipStore>());
-        var relationship = new MetadataV2Relationship
-        {
-            Id = "rel-1",
-            RelatedResourceId = "child",
-            OriginField = "objectid",
-            DestinationField = "parent_id"
-        };
-        var resource = CreateRelatedResource();
-        resource = resource with
-        {
-            SchemaFields = [.. resource.SchemaFields,
-                new MetadataV2Field { Name = "day", Type = MetadataV2FieldType.Date },
-                new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime }
-            ]
-        };
-        var feature = Feature.Create(10, null, new Dictionary<string, object?>
-        {
-            ["objectid"] = 10L,
-            ["parent_id"] = 1L,
-            ["day"] = "2024-02-29",
-            ["timestamp"] = "2024-02-29T00:00:00Z"
-        }.ToImmutableDictionary());
-        var grouped = sut.GroupRelatedRecords(QueryResult<Feature>.Create(1, [feature]), [1], relationship,
-            "objectid", false, null, false, false, null, null, null, resource);
-        grouped.Fields.Single(field => field.Name == "day").Type.Should().Be("esriFieldTypeDateOnly");
-        var attributes = grouped.Groups.Single().RelatedRecords!.Single().Attributes;
-        attributes["day"].Should().Be("2024-02-29");
-        attributes["timestamp"].Should().Be(new DateTimeOffset(2024, 2, 29, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds());
-    }
-
     // Regression (#1431 + #1452): queryRelatedRecords must populate the field schema
     // from the related layer (so clients can map the returned attributes) and, per the
     // Esri spec, those fields live at the response top level while each group's

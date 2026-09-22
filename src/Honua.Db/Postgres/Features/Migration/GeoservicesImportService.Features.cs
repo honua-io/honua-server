@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Shared.Models;
@@ -257,13 +256,6 @@ internal sealed partial class GeoservicesImportService
                 element.ValueKind == JsonValueKind.Number
                     ? DateTimeOffset.FromUnixTimeMilliseconds(element.GetInt64())
                     : null,
-
-            "ESRIFIELDTYPEDATEONLY" =>
-                element.ValueKind == JsonValueKind.String
-                    && DateOnly.TryParseExact(element.GetString(), "yyyy-MM-dd", CultureInfo.InvariantCulture,
-                        DateTimeStyles.None, out var dateOnly)
-                    ? dateOnly
-                    : throw new FormatException("Date-only fields require an ISO calendar date (yyyy-MM-dd)."),
 
             "ESRIFIELDTYPEGUID" or "ESRIFIELDTYPEGLOBALID" =>
                 element.ValueKind == JsonValueKind.String && Guid.TryParse(element.GetString(), out var guid)

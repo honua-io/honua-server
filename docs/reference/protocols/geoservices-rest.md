@@ -37,25 +37,6 @@ Honua serves a GeoServices REST surface under `/rest/services`, plus a Portal Sh
 
 Base: `/rest/services/{serviceId}/FeatureServer` (service and `/{layerId}` metadata via GET or POST).
 
-### Calendar dates and timestamps
-
-Esri service imports preserve `esriFieldTypeDateOnly` as PostgreSQL `DATE` and
-canonical `Date`. GeoServices metadata advertises `esriFieldTypeDateOnly`, and
-JSON/PBF attributes carry ISO `yyyy-MM-dd` calendar dates or null. Calendar dates
-have no time zone. Date-only filters use SQL `DATE` literals, for example
-`DateOfFlight >= DATE '2026-01-11' AND DateOfFlight < DATE '2026-01-12'`.
-Invalid non-null source dates count as failed import rows rather than silently
-becoming null or text. Arrow queries encode declared calendar dates as Date32.
-
-This corrects the previous output for existing canonical `Date` fields, which
-advertised `esriFieldTypeDate` and emitted epoch milliseconds (or Arrow timestamps).
-Clients must read the declared field type and retain calendar dates as dates.
-Canonical `DateTime` fields continue to advertise `esriFieldTypeDate` and emit
-epoch milliseconds. Existing imports whose date-only fields became text require
-a fresh import; this correction does not rewrite those tables in place.
-
-### Operations
-
 | Operation group | Routes | Notes |
 | --- | --- | --- |
 | Query | `/{layerId}/query` (GET, POST), `/query` (service level) | `where`, `objectIds`, `geometry`, `geometryType`, `inSR`, `spatialRel`, `outFields`, `outSR`, `returnGeometry`, `orderByFields`, `resultOffset`, `resultRecordCount`, `outStatistics`, `groupByFieldsForStatistics`, `returnCountOnly`, `returnIdsOnly`, `time`, `f`. See [GeoServices parity — FeatureServer](../compatibility/geoservices-parity.md#featureserver) for full parameter semantics. |

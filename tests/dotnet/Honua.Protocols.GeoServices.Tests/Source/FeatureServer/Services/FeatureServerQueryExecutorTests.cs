@@ -291,36 +291,6 @@ public sealed class FeatureServerQueryExecutorTests
     }
 
     [Fact]
-    public async Task QueryRawGeoServicesPointJsonWithValidationAsync_TemporalFields_PreserveCalendarDateAndEpoch()
-    {
-        var featureReader = Substitute.For<IFeatureReader, IPagedRawGeoServicesFeatureStore>();
-        var rawStore = (IPagedRawGeoServicesFeatureStore)featureReader;
-        var rawFeatures = ImmutableArray.Create(RawGeoServicesFeature.Create(42,
-            attributesJson: """{"day":"2024-02-29T00:00:00+14:00","nullable_day":null,"timestamp":"2024-02-29T00:00:00Z"}""", x: 1.5, y: 2.5));
-        rawStore.QueryGeoServicesRawPointPageAsync(7, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult(PagedQueryResult<RawGeoServicesFeature>.Create(rawFeatures)));
-        var sut = CreateSut(featureReader);
-        var service = CreateService();
-        var resource = CreatePointResource() with
-        {
-            SchemaFields = [
-                new MetadataV2Field { Name = "day", Type = MetadataV2FieldType.Date },
-                new MetadataV2Field { Name = "nullable_day", Type = MetadataV2FieldType.Date },
-                new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime }
-            ]
-        };
-        var (payload, count) = await sut.QueryRawGeoServicesPointJsonWithValidationAsync(
-            service, resource, CreatePublication(service, resource), 7, new FeatureQuery { Limit = 1 },
-            returnGeometry: true, outputSrid: null, cancellationToken: CancellationToken.None);
-        count.Should().Be(1);
-        using var document = JsonDocument.Parse(payload);
-        var attributes = document.RootElement.GetProperty("features")[0].GetProperty("attributes");
-        attributes.GetProperty("day").GetString().Should().Be("2024-02-29");
-        attributes.GetProperty("nullable_day").ValueKind.Should().Be(JsonValueKind.Null);
-        attributes.GetProperty("timestamp").GetInt64().Should().Be(new DateTimeOffset(2024, 2, 29, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds());
-    }
-
-    [Fact]
     public async Task QueryRawGeoServicesPointJsonWithValidationAsync_WithNoStoredAttributes_InjectsInternalObjectId()
     {
         var featureReader = Substitute.For<IFeatureReader, IPagedRawGeoServicesFeatureStore>();
