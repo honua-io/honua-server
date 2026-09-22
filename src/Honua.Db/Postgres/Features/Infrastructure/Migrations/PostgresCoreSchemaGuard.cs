@@ -497,33 +497,50 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
 
         // Compare the complete creation-time contract. CREATE TABLE IF NOT EXISTS does not
         // repair types, defaults, constraints or partitioning on an existing seed table.
-        var definitions = await PostgresSeedSchemaContract.ReadAsync(connection, _schemaName, cancellationToken)
-            .ConfigureAwait(false);
         string? firstMigration = null;
         var incomplete = new List<string>();
-        foreach (var family in AdoptableFamilies(state))
+        // Configured-schema migrations can move legacy honua tables forward. Validate both
+        // locations before permitting those moves, including a seed in the legacy schema only.
+        var schemas = _schemaName == PostgresSchemaConfiguration.DefaultMetadataSchema
+            ? new[] { _schemaName }
+            : new[] { _schemaName, PostgresSchemaConfiguration.DefaultMetadataSchema };
+        foreach (var schema in schemas)
         {
-            foreach (var table in family.Tables)
+            var definitions = await PostgresSeedSchemaContract.ReadAsync(connection, schema, cancellationToken)
+                .ConfigureAwait(false);
+            foreach (var family in AdoptableFamilies(state))
             {
-                if (!definitions.ContainsKey((table, "table")))
+                foreach (var table in family.Tables)
                 {
-                    continue;
-                }
+                    if (!definitions.ContainsKey((table, "table")))
+                    {
+                        continue;
+                    }
 
-                var missing = PostgresSeedSchemaContract.Definitions
-                    .Where(entry => entry.Key.Table == table)
-                    // Standalone indexes absent from a seed are created by the pending scripts.
-                    // Existing names, however, must have the canonical definition.
-                    .Where(entry => !entry.Key.Property.StartsWith("index ", StringComparison.Ordinal) ||
-                        definitions.Keys.Any(key => key.Property == entry.Key.Property))
-                    .Where(entry => !definitions.TryGetValue(entry.Key, out var actual) || actual != entry.Value)
-                    .Select(entry => $"{entry.Key.Property.Split(' ', 2)[0]} {table}." +
-                        entry.Key.Property[(entry.Key.Property.IndexOf(' ') + 1)..])
-                    .ToArray();
-                if (missing.Length > 0)
-                {
-                    firstMigration ??= family.Migration;
-                    incomplete.Add($"{family.Migration} ({string.Join(", ", missing)})");
+                    var expected = PostgresSeedSchemaContract.Definitions
+                        .Where(entry => entry.Key.Table == table)
+                        .ToArray();
+                    if (expected.Length == 0)
+                    {
+                        firstMigration ??= family.Migration;
+                        incomplete.Add($"{family.Migration} (no adoption definition for {table})");
+                        continue;
+                    }
+
+                    var missing = expected
+                        // Standalone indexes absent from a seed are created by the pending scripts.
+                        // Existing names, however, must have the canonical definition.
+                        .Where(entry => !entry.Key.Property.StartsWith("index ", StringComparison.Ordinal) ||
+                            definitions.Keys.Any(key => key.Property == entry.Key.Property))
+                        .Where(entry => !definitions.TryGetValue(entry.Key, out var actual) || actual != entry.Value)
+                        .Select(entry => $"{entry.Key.Property.Split(' ', 2)[0]} {table}." +
+                            entry.Key.Property[(entry.Key.Property.IndexOf(' ') + 1)..])
+                        .ToArray();
+                    if (missing.Length > 0)
+                    {
+                        firstMigration ??= family.Migration;
+                        incomplete.Add($"{family.Migration} ({string.Join(", ", missing)})");
+                    }
                 }
             }
         }
@@ -537,23 +554,23 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         }
     }
 
-    private IEnumerable<(string Migration, string[] Tables, (string Table, string Column)[] Columns)> AdoptableFamilies(
+    private IEnumerable<(string Migration, string[] Tables)> AdoptableFamilies(
         SchemaState state)
     {
         if (state.RequiresRasterFloor)
         {
-            yield return (RasterTablesMigration, ["raster_data", "raster_statistics", "raster_tiles"], []);
-            yield return (_migrations.RasterOverviewsMigration, _rasterOverviewsTables, _rasterOverviewsColumns);
-            yield return (_migrations.RasterFootprintsMigration, _rasterFootprintsTables, _rasterFootprintsColumns);
+            yield return (RasterTablesMigration, ["raster_data", "raster_statistics", "raster_tiles"]);
+            yield return (_migrations.RasterOverviewsMigration, _rasterOverviewsTables);
+            yield return (_migrations.RasterFootprintsMigration, _rasterFootprintsTables);
         }
 
-        yield return (RasterLayerStatisticsMigration, ["raster_layer_statistics"], _rasterLayerStatisticsColumns);
-        yield return (_migrations.MetadataV2SnapshotMigration, _metadataV2Tables, _metadataV2Columns);
-        yield return (_migrations.MetadataV2ReleasePackagesMigration, _metadataV2ReleasePackageTables, _metadataV2ReleasePackageColumns);
-        yield return (_migrations.SensorThingsMigration, _sensorThingsTables, _sensorThingsColumns);
+        yield return (RasterLayerStatisticsMigration, ["raster_layer_statistics"]);
+        yield return (_migrations.MetadataV2SnapshotMigration, _metadataV2Tables);
+        yield return (_migrations.MetadataV2ReleasePackagesMigration, _metadataV2ReleasePackageTables);
+        yield return (_migrations.SensorThingsMigration, _sensorThingsTables);
         if (_migrations.InitialSchemaMigration is { } initialSchemaMigration)
         {
-            yield return (initialSchemaMigration, [.. _initialSchemaTables, "features"], _initialSchemaColumns);
+            yield return (initialSchemaMigration, [.. _initialSchemaTables, "features"]);
         }
     }
 

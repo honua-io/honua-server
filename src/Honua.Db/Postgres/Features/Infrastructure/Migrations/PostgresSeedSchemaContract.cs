@@ -54,8 +54,10 @@ internal static class PostgresSeedSchemaContract
             definition = definition.Replace($"honua.{table}", $"$initial$.{table}", StringComparison.Ordinal);
         }
 
+        var quotedSchema = SchemaSearchPath.ValidateAndQuote(schema);
         return definition
-            .Replace(SchemaSearchPath.ValidateAndQuote(schema) + ".", "$schema$.", StringComparison.Ordinal)
+            .Replace(quotedSchema.Replace("\"", "\\\"", StringComparison.Ordinal) + ".", "$schema$.", StringComparison.Ordinal)
+            .Replace(quotedSchema + ".", "$schema$.", StringComparison.Ordinal)
             .Replace(schema + ".", "$schema$.", StringComparison.Ordinal)
             .Replace("$initial$.", "honua.", StringComparison.Ordinal);
     }

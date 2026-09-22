@@ -182,10 +182,10 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
     // (#4900): two of migration 031's seven metadata tables with a row, the raster baseline table
     // without its migration-owned EXTERNAL storage, and migration 063's overview table.
     private const string PreSeededSchemaSql = """
-        CREATE SCHEMA honua;
+        CREATE SCHEMA IF NOT EXISTS honua;
         CREATE TABLE honua.raster_data (
             id BIGSERIAL PRIMARY KEY,
-            layer_id INTEGER NOT NULL,
+            layer_id INTEGER NOT NULL CONSTRAINT raster_data_layer_id_fk REFERENCES honua.layers(layer_id) ON DELETE CASCADE,
             name VARCHAR(255) NOT NULL,
             description TEXT,
             raster raster NOT NULL,
@@ -205,7 +205,8 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             raster raster NOT NULL,
             ground_resolution DOUBLE PRECISION NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            CONSTRAINT raster_overviews_unique_factor UNIQUE (raster_data_id, overview_factor)
+            CONSTRAINT raster_overviews_unique_factor UNIQUE (raster_data_id, overview_factor),
+            CONSTRAINT raster_overviews_factor_positive CHECK (overview_factor >= 2)
         );
         ALTER TABLE honua.raster_overviews ALTER COLUMN raster SET STORAGE EXTERNAL;
         CREATE TABLE honua.metadata_v2_snapshots (
@@ -256,6 +257,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
     [SkippableTheory]
     [InlineData("honua")]
     [InlineData("seed_contract_custom")]
+    [InlineData("SeedContractCustom")]
     public async Task SeedAdoptionContract_MatchesEveryCreationMigrationDefinition(string schema)
     {
         Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the seeded-schema lane.");
@@ -276,25 +278,36 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
 
     [SkippableTheory]
     [InlineData("ALTER TABLE honua.raster_data DROP CONSTRAINT raster_data_layer_id_fk", "raster_data")]
+    [InlineData("ALTER TABLE honua.raster_data DROP CONSTRAINT raster_data_layer_id_fk", "raster_data", "seed_contract_custom")]
     [InlineData("ALTER TABLE honua.raster_overviews DROP CONSTRAINT raster_overviews_factor_positive", "raster_overviews")]
     [InlineData("ALTER TABLE honua.raster_overviews DROP CONSTRAINT raster_overviews_unique_factor", "raster_overviews")]
     [InlineData("ALTER TABLE honua.raster_statistics ALTER COLUMN band_number TYPE text", "raster_statistics")]
     [InlineData("ALTER TABLE honua.raster_tiles ALTER COLUMN tile_data DROP NOT NULL", "raster_tiles")]
     [InlineData("ALTER TABLE honua.layers DROP COLUMN description", "layers")]
+    [InlineData("ALTER SEQUENCE honua.raster_data_id_seq INCREMENT BY 2", "raster_data")]
+    [InlineData("ALTER TABLE honua.raster_data ENABLE ROW LEVEL SECURITY", "raster_data")]
     [InlineData("ALTER TABLE honua.raster_data ALTER COLUMN width DROP EXPRESSION", "raster_data")]
     [InlineData("ALTER TABLE honua.metadata_v2_current ALTER COLUMN activated_at DROP DEFAULT", "metadata_v2_current")]
     [InlineData("ALTER TABLE honua.sta_observation DETACH PARTITION honua.sta_observation_default", "sta_observation_default")]
     [InlineData("DROP INDEX honua.idx_raster_data_name; CREATE INDEX idx_raster_data_name ON honua.raster_data(description)", "raster_data")]
     [InlineData("ALTER TABLE honua.raster_data DROP CONSTRAINT raster_data_layer_id_fk; ALTER TABLE honua.raster_data ADD CONSTRAINT raster_data_layer_id_fk FOREIGN KEY (layer_id) REFERENCES honua.layers(layer_id) ON DELETE CASCADE NOT VALID", "raster_data")]
-    public async Task CanonicalRunner_AdoptionRejectsStructuralDriftWithoutMutation(string drift, string table)
+    public async Task CanonicalRunner_AdoptionRejectsStructuralDriftWithoutMutation(
+        string drift, string table, string schema = "honua")
     {
         Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the seeded-schema lane.");
         var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGisRaster: true);
         await CreateCanonicalSeedAsync(connectionString);
         await ExecuteAsync(connectionString, drift);
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        var definitionsBefore = await PostgresSeedSchemaContract.ReadAsync(connection, "honua", CancellationToken.None);
         var before = await CaptureUnmigratedStateAsync(connectionString);
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(
-            new Dictionary<string, string?> { ["Database:AdoptSeededSchemaOnFirstMigration"] = "true" }).Build();
+            new Dictionary<string, string?>
+            {
+                ["Database:AdoptSeededSchemaOnFirstMigration"] = "true",
+                ["Database:Schema"] = schema,
+            }).Build();
         var runner = new PostgresDatabaseMigrationRunner(
             new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration),
             ServerCoreSchemaMigrations.Manifest, configuration: configuration);
@@ -307,6 +320,8 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         result.Error.Should().BeOfType<DatabaseSchemaFloorException>().Which.Detail.Should().Contain(table);
         (await CaptureUnmigratedStateAsync(connectionString)).Should().Be(before,
             "preflight and apply must reject malformed seed tables without advancing the journal");
+        (await PostgresSeedSchemaContract.ReadAsync(connection, "honua", CancellationToken.None))
+            .Should().BeEquivalentTo(definitionsBefore, "rejection must preserve the entire physical definition");
     }
 
     [SkippableFact]
@@ -315,6 +330,8 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the seeded-schema lane.");
 
         var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGisRaster: true);
+        await ExecuteAsync(connectionString, await File.ReadAllTextAsync(
+            RepositoryPaths.Resolve("src", "Honua.Server", "Migrations", "001_CreateHonuaSchema.sql")));
         await ExecuteAsync(connectionString, PreSeededSchemaSql);
         var before = await CaptureUnmigratedStateAsync(connectionString);
         var runner = new PostgresDatabaseMigrationRunner(
@@ -341,6 +358,8 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the seeded-schema lane.");
 
         var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGisRaster: true);
+        await ExecuteAsync(connectionString, await File.ReadAllTextAsync(
+            RepositoryPaths.Resolve("src", "Honua.Server", "Migrations", "001_CreateHonuaSchema.sql")));
         await ExecuteAsync(connectionString, PreSeededSchemaSql);
         var configuration = new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?> { ["Database:AdoptSeededSchemaOnFirstMigration"] = "true" })
@@ -380,12 +399,17 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
             SELECT
                 (SELECT etag FROM honua.metadata_v2_current WHERE environment = 'seed-4900'),
                 (SELECT a.attstorage::text FROM pg_catalog.pg_attribute a
-                 WHERE a.attrelid = 'honua.raster_data'::regclass AND a.attname = 'raster')
+                 WHERE a.attrelid = 'honua.raster_data'::regclass AND a.attname = 'raster'),
+                (SELECT count(*) FROM pg_catalog.pg_constraint
+                 WHERE conrelid IN ('honua.raster_data'::regclass, 'honua.raster_overviews'::regclass)
+                   AND conname IN ('raster_data_layer_id_fk', 'raster_overviews_factor_positive')
+                   AND convalidated)
             """;
         await using var reader = await command.ExecuteReaderAsync();
         (await reader.ReadAsync()).Should().BeTrue();
         reader.GetString(0).Should().Be("seed-etag", "adoption keeps the seeded rows");
         reader.GetString(1).Should().Be("e", "migration 055 applies its storage policy to the adopted table");
+        reader.GetInt64(2).Should().Be(2, "both reviewed integrity constraints must survive adoption");
     }
 
     [SkippableFact]
