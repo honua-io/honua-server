@@ -81,6 +81,22 @@ public sealed class OidcPortalCredentialVerifierTests
     }
 
     [UnitTest]
+    public async Task VerifyAsync_SourceExpiredWithinOidcClockSkew_ReturnsNull()
+    {
+        var verifier = CreateVerifier(enabled: true);
+        var token = CreateToken(
+            subject: "user-123",
+            name: "Ada",
+            roles: ["editor"],
+            tenantId: null,
+            expires: DateTime.UtcNow.AddMinutes(-1));
+
+        var result = await verifier.VerifyAsync("ada", token, CancellationToken.None);
+
+        result.Should().BeNull("clock skew must not permit issuing an already-expired portal token");
+    }
+
+    [UnitTest]
     public async Task VerifyAndIssue_BridgedToken_ClampsPortalTokenToTheBridgedTokenExpiry()
     {
         var verifier = CreateVerifier(enabled: true);

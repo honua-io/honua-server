@@ -202,6 +202,15 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
             ? new DateTimeOffset(DateTime.SpecifyKind(validTo, DateTimeKind.Utc))
             : (DateTimeOffset?)null;
 
+        // OIDC lifetime validation permits clock skew, but a derived credential must
+        // have a future expiry. Refuse an already-expired source instead of issuing
+        // an unusable portal token or passing a past expiration to distributed cache.
+        if (bridgedExpiry is { } expiresAt && expiresAt <= DateTimeOffset.UtcNow)
+        {
+            OidcAuthenticationLog.PortalCredentialRejected(_logger, "source token expired");
+            return null;
+        }
+
         return new PortalCredentialPrincipal(
             principalId, displayName, tenantId, roles, rolesRequireClaimsMapping,
             tenantRequiresClaimsMapping, rolesWithoutClaimsMapping,
