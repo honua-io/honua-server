@@ -283,7 +283,8 @@ internal static partial class FeatureServerEndpoints
         bool supportsDistinct,
         bool supportsPagination,
         bool supportsQueryAttachments = false,
-        bool supportsReturningGeometryCentroid = false)
+        bool supportsReturningGeometryCentroid = false,
+        bool hasGeometry = true)
     {
         return new AdvancedQueryCapabilities
         {
@@ -294,9 +295,9 @@ internal static partial class FeatureServerEndpoints
             SupportsDistinct = supportsDistinct,
             SupportsCountDistinct = supportsStatistics,
             SupportsPagination = supportsPagination,
-            SupportsReturningQueryExtent = supportsAdvancedQueries,
+            SupportsReturningQueryExtent = supportsAdvancedQueries && hasGeometry,
             SupportsReturningGeometryCentroid = supportsReturningGeometryCentroid,
-            SupportsQueryWithDistance = supportsAdvancedQueries,
+            SupportsQueryWithDistance = supportsAdvancedQueries && hasGeometry,
             SupportsSqlExpression = supportsAdvancedQueries,
             // queryTopFeatures is served unconditionally by HandleQueryTopFeatures;
             // advertise it whenever the layer supports advanced queries so Esri

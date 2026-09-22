@@ -262,6 +262,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             FROM honua.layers
             WHERE table_name = @table
               AND (@schema IS NULL OR table_schema = @schema)
+              AND NULLIF(geometry_column, '') IS NOT NULL
               -- Managed-store layers own their rows; a source-table refresh must never
               -- rebuild them (honua-server#4859).
               AND COALESCE(storage_options ->> 'managedStore', 'false') <> 'true'

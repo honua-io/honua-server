@@ -73,7 +73,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         if (string.IsNullOrWhiteSpace(discoveredGeometryColumn))
         {
-            checks.Add(Error("geometry-column", "Source table does not expose a geometry column."));
+            checks.Add(string.IsNullOrWhiteSpace(requestedGeometryColumn)
+                ? Pass("geometry-column", "Attribute-only table has no geometry column.")
+                : Error("geometry-column", "Source table does not expose the requested geometry column."));
             return geometryColumn;
         }
 
@@ -101,6 +103,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
         TableInfo tableInfo,
         List<TablePublishValidationCheck> checks)
     {
+        if (string.IsNullOrWhiteSpace(tableInfo.GeometryColumn))
+        {
+            return null;
+        }
+
         if (string.IsNullOrWhiteSpace(tableInfo.GeometryType))
         {
             checks.Add(Error("geometry-type", "Source table does not report a geometry type."));
@@ -300,7 +307,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         TableInfo? tableInfo,
         ResolvedPublishValidation? resolved,
         GeometryHealth? geometryHealth,
-        IReadOnlyCollection<TablePublishValidationCheck> checks)
+        IReadOnlyCollection<TablePublishValidationCheck> checks,
+        long? nonSpatialRowCount = null)
     {
         var hasErrors = checks.Any(check => check.Severity == SeverityError);
         var hasWarnings = checks.Any(check => check.Severity == SeverityWarning);
@@ -321,7 +329,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             ServiceSrid = resolved?.ServiceSrid,
             TargetSrid = resolved?.TargetSrid,
             EstimatedRows = tableInfo?.EstimatedRows,
-            FeatureCount = geometryHealth?.FeatureCount,
+            FeatureCount = geometryHealth?.FeatureCount ?? nonSpatialRowCount,
             NullGeometryCount = geometryHealth?.NullGeometryCount,
             InvalidGeometryCount = geometryHealth?.InvalidGeometryCount,
             Fields = BuildValidationFields(tableInfo?.Columns ?? [], request.Fields),

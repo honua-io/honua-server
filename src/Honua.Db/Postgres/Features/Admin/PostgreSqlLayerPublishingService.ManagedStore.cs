@@ -124,7 +124,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private static List<LayerFieldInsert> BuildManagedLayerFields(
         List<ColumnInfo> selectedColumns,
         ColumnInfo? sourcePrimaryKeyColumn,
-        string sourceGeometryColumn,
+        string? sourceGeometryColumn,
         IReadOnlyDictionary<string, MetadataV2FieldDomain> fieldDomains)
     {
         var fields = new List<LayerFieldInsert>
@@ -162,7 +162,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private static List<ColumnInfo> SelectManagedAttributeColumns(
         List<ColumnInfo> selectedColumns,
         ColumnInfo? sourcePrimaryKeyColumn,
-        string sourceGeometryColumn)
+        string? sourceGeometryColumn)
     {
         var attributes = new List<ColumnInfo>(selectedColumns.Count);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -302,7 +302,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string? BindingSchemaName,
         string Table,
         string PrimaryKeyColumn,
-        string GeometryColumn,
+        string? GeometryColumn,
         int StorageSrid,
         string StorageOptionsJson,
         bool IsManagedStore)
@@ -311,7 +311,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             string schema,
             string table,
             string primaryKeyColumn,
-            string geometryColumn,
+            string? geometryColumn,
             int storageSrid)
             => new(
                 schema,

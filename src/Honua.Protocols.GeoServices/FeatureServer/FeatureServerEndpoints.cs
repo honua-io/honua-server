@@ -71,6 +71,7 @@ internal static partial class FeatureServerEndpoints
             .Produces(StatusCodes.Status422UnprocessableEntity);
 
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", HandleQueryFeaturesGet)
+            .WithMetadata(GeoServicesQueryGeometryMetadata.Instance)
             .WithDisplayName("Query FeatureServer Features (GET)")
             .WithName("QueryFeaturesGet")
             .WithSummary("Query features from a FeatureServer layer using GET")
@@ -88,6 +89,7 @@ internal static partial class FeatureServerEndpoints
             .Produces(404);
 
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/{layerId:int}/query", HandleQueryFeaturesPost)
+            .WithMetadata(GeoServicesQueryGeometryMetadata.Instance)
             .WithDisplayName("Query FeatureServer Features (POST)")
             .WithName("QueryFeaturesPost")
             .WithSummary("Query features from a FeatureServer layer using POST")
@@ -108,6 +110,7 @@ internal static partial class FeatureServerEndpoints
             .Produces(404);
 
         endpoints.MapGet("/rest/services/{serviceId}/FeatureServer/query", HandleServiceQueryFeaturesGet)
+            .WithMetadata(GeoServicesQueryGeometryMetadata.Instance)
             .WithDisplayName("Query FeatureServer Service (GET)")
             .WithName("QueryFeatureServiceGet")
             .WithSummary("Query features from a FeatureServer service using GET")
@@ -123,6 +126,7 @@ internal static partial class FeatureServerEndpoints
         // (honua-server#1825). The POST companion shares the read-only handler and is
         // anonymous by design (per-layer access is enforced by the handler).
         endpoints.MapPost("/rest/services/{serviceId}/FeatureServer/query", HandleServiceQueryFeaturesPost)
+            .WithMetadata(GeoServicesQueryGeometryMetadata.Instance)
             .WithDisplayName("Query FeatureServer Service (POST)")
             .WithName("QueryFeatureServicePost")
             .WithSummary("Query features from a FeatureServer service using POST")
