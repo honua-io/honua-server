@@ -1580,6 +1580,10 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Migration" \
   --assert-owner \
+    "Honua.Server.Tests.Import.ImportCoordinatorRecoveryTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Cloud and Streaming Import" \
+  --assert-owner \
     "Honua.Server.Tests.Import.StreamingImportTests" \
     "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
     "Cloud and Streaming Import" \
