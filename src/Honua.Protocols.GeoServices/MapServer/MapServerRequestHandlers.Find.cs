@@ -229,7 +229,7 @@ internal static partial class MapServerEndpoints
                 // esriFieldTypeDate attributes must serialize as epoch-ms integers uniformly,
                 // matching the MapServer identify and FeatureServer query paths (a date field
                 // searched via searchFields would otherwise leak its raw stored shape).
-                var temporalFieldTypes = GeoServicesFieldConventions.ResolveTemporalFieldTypes(layer.Resource);
+                var dateFieldNames = GeoServicesFieldConventions.ResolveDateFieldNames(layer.Resource);
 
                 SqlFragment? layerSqlFilter = null;
                 if (!string.IsNullOrWhiteSpace(layerDef) &&
@@ -289,7 +289,7 @@ internal static partial class MapServerEndpoints
                             attributes[kvp.Key] = FeatureAttributeValueNormalizer.Normalize(kvp.Value);
                         }
 
-                        GeoServicesFieldConventions.CoerceTemporalAttributes(attributes, temporalFieldTypes);
+                        GeoServicesFieldConventions.CoerceDateAttributes(attributes, dateFieldNames);
 
                         object? geometryResult = null;
                         if (returnGeometry && feature.Geometry != null)

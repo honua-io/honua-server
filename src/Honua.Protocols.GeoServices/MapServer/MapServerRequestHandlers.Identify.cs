@@ -399,8 +399,11 @@ internal static partial class MapServerEndpoints
                 // Resolve a joinTable source's right side into a key-indexed attribute lookup. The
                 // right layer is access-policy gated exactly like the left layer; a denied right
                 // layer fails the whole identify rather than silently dropping the join.
+                // esriFieldTypeDate attributes must serialize as epoch-ms integers uniformly across
+                // rows. JSONB stores dates as either ISO strings (seeds) or epoch-ms longs
+                // (applyEdits); coerce both via the shared GeoServices date convention (matches query).
+                var dateFieldNames = GeoServicesFieldConventions.ResolveDateFieldNames(layer.Resource);
                 DynamicJoinLookup? joinLookup = null;
-                var temporalFieldTypes = GeoServicesFieldConventions.ResolveTemporalFieldTypes(layer.Resource);
                 if (renderLayer.Join is { } join)
                 {
                     if (!TryResolveIdentifyJoinRightLayer(
@@ -413,10 +416,8 @@ internal static partial class MapServerEndpoints
                         return StandardErrorHelpers.CreateBadRequest(context, joinError ?? "Invalid join source.");
                     }
 
-                    foreach (var field in GeoServicesFieldConventions.ResolveTemporalFieldTypes(rightLayer!.Resource))
-                    {
-                        temporalFieldTypes[$"{join.RightQualifier}.{field.Key}"] = field.Value;
-                    }
+                    dateFieldNames.UnionWith(GeoServicesFieldConventions.ResolveDateFieldNames(rightLayer!.Resource)
+                        .Select(name => $"{join.RightQualifier}.{name}"));
 
                     joinLookup = await DynamicJoinLookup.BuildAsync(
                         featureReader,
@@ -429,9 +430,6 @@ internal static partial class MapServerEndpoints
 
                 var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer.Resource);
                 var displayField = ResolveDisplayField(layer.Resource, objectIdField);
-                // Normalize both left and qualified right temporal fields using the
-                // same calendar-date/timestamp conventions as query.
-
                 foreach (var feature in queryResult.Items)
                 {
                     IReadOnlyDictionary<string, object?> sourceAttributes = feature.Attributes;
@@ -462,7 +460,7 @@ internal static partial class MapServerEndpoints
                         attributes[kvp.Key] = FeatureAttributeValueNormalizer.Normalize(kvp.Value);
                     }
 
-                    GeoServicesFieldConventions.CoerceTemporalAttributes(attributes, temporalFieldTypes);
+                    GeoServicesFieldConventions.CoerceDateAttributes(attributes, dateFieldNames);
 
                     object? geometryResult = null;
                     if (returnGeometry && feature.Geometry != null)
@@ -682,7 +680,7 @@ internal static partial class MapServerEndpoints
 
         if (string.Equals(geometryType, "esriGeometryPoint", StringComparison.OrdinalIgnoreCase) &&
             (TryParsePointPair(geometryValue, out var pairX, out var pairY) ||
-             TryParsePointLiteral(geometryValue, out pairX, out pairY)))
+             GeoServicesPointGeometryParser.TryParsePointLiteral(geometryValue, out pairX, out pairY)))
         {
             geometry = new IdentifyGeometryInput(
                 geometryValue,
@@ -770,55 +768,6 @@ internal static partial class MapServerEndpoints
 
         return double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out x) &&
                double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out y);
-    }
-
-    private static bool TryParsePointLiteral(string value, out double x, out double y)
-    {
-        // Esri's Identify wire examples and native QGIS use {x: number, y: number}.
-        // Accept only those two finite coordinates, then use the existing point
-        // validation/CRS pipeline. Do not relax the general GeoServices JSON parser.
-        x = 0;
-        y = 0;
-        var literal = value.AsSpan().Trim();
-        if (literal.Length < 2 || literal[0] != '{' || literal[^1] != '}')
-        {
-            return false;
-        }
-
-        var members = literal[1..^1];
-        var comma = members.IndexOf(',');
-        if (comma < 0 ||
-            !TryParsePointLiteralMember(members[..comma], out var firstKey, out var firstValue) ||
-            !TryParsePointLiteralMember(members[(comma + 1)..], out var secondKey, out var secondValue) ||
-            firstKey == secondKey)
-        {
-            return false;
-        }
-
-        x = firstKey == 'x' ? firstValue : secondValue;
-        y = firstKey == 'y' ? firstValue : secondValue;
-        return true;
-    }
-
-    private static bool TryParsePointLiteralMember(ReadOnlySpan<char> member, out char key, out double value)
-    {
-        key = default;
-        value = default;
-        var colon = member.IndexOf(':');
-        if (colon < 0)
-        {
-            return false;
-        }
-
-        var name = member[..colon].Trim();
-        if (name.Length != 1 || name[0] is not ('x' or 'y'))
-        {
-            return false;
-        }
-
-        key = name[0];
-        return double.TryParse(member[(colon + 1)..], NumberStyles.Float, CultureInfo.InvariantCulture, out value) &&
-               double.IsFinite(value);
     }
 
     private static double? TryGetDouble(JsonElement obj, string propertyName)
