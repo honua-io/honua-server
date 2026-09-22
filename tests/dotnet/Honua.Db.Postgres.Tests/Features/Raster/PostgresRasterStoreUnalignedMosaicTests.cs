@@ -181,6 +181,112 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
         }
     }
 
+    [IntegrationTest]
+    public async Task ExportMosaicAsync_WithSkewedInput_UsesSmallestAffinePixelArea()
+    {
+        var schemaName = await CreateSchemaAsync();
+        try
+        {
+            // The skewed raster's scale product is 1, but its affine pixel area is 1.5.
+            // The square raster's area is 1.44 and must supply the finer union grid.
+            var skewed = await InsertConstantRasterAsync(
+                schemaName, "skewed", 0, 2, 1, 10, Day(1), skewX: 0.5, skewY: 1);
+            var fine = await InsertConstantRasterAsync(schemaName, "fine", 4, 2, 1.2, 20, Day(2));
+            _schemaName = schemaName;
+
+            var result = await CreateStore(schemaName).ExportMosaicAsync(
+                LayerId, [skewed, fine], RasterMergeStrategy.Newest,
+                new RasterQuery { OutputFormat = RasterFormat.TIFF });
+            var probe = await ProbeAsync(result.Data);
+
+            probe.ScaleX.Should().BeApproximately(1.2, 1e-9);
+            probe.ScaleY.Should().BeApproximately(-1.2, 1e-9);
+            probe.SkewX.Should().BeApproximately(0, 1e-9);
+            probe.SkewY.Should().BeApproximately(0, 1e-9);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task MosaicOperations_WithUnsignedZeroAndMixedPixelTypes_PreserveValuesInEitherUnionOrder()
+    {
+        foreach (var (pixelType, maximum) in new[] { ("8BUI", 255d), ("32BUI", 4294967295d) })
+        {
+            var schemaName = await CreateSchemaAsync();
+            try
+            {
+                var signed = await InsertConstantRasterAsync(schemaName, "signed", 0, 2, 1, -1, Day(1));
+                var unsigned = await InsertUnsignedRasterAsync(schemaName, pixelType, maximum);
+                var store = CreateStore(schemaName);
+                _schemaName = schemaName;
+
+                foreach (var strategy in new[] { RasterMergeStrategy.Newest, RasterMergeStrategy.Oldest })
+                {
+                    var stats = await store.GetMosaicStatisticsAsync(LayerId, [signed, unsigned], strategy);
+                    stats.Should().ContainSingle();
+                    stats[0].MinValue.Should().Be(-1);
+                    stats[0].MaxValue.Should().Be(maximum);
+                    stats[0].ValidPixelCount.Should().Be(8, "the snapped margin is NoData");
+
+                    var export = await store.ExportMosaicAsync(
+                        LayerId, [signed, unsigned], strategy, new RasterQuery { OutputFormat = RasterFormat.TIFF });
+                    export.PixelType.Should().Be("64BF", "all union inputs share a type that preserves the unsigned maximum");
+                    var probe = await ProbeAsync(export.Data, (0.5, 1.5), (2.5, 1.5), (3.5, 1.5));
+                    probe.Values.Should().Equal(-1, 0, maximum);
+                    probe.PixelType.Should().Be("64BF");
+                    probe.NoData.Should().Be(double.MinValue);
+
+                    Band1(await store.IdentifyMosaicAsync(LayerId, [signed, unsigned], strategy, 2.5, 1.5, 4326))
+                        .Should().Be(0);
+                }
+            }
+            finally
+            {
+                await fixture.DropSchemaAsync(schemaName);
+            }
+        }
+    }
+
+    [IntegrationTest]
+    public async Task GetMosaicStatisticsAsync_WithReserved64BFPixel_ReportsCollisionInsteadOfLosingData()
+    {
+        var schemaName = await CreateSchemaAsync();
+        try
+        {
+            long extreme;
+            await using (var connection = await fixture.GetConnectionAsync(schemaName))
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = """
+                    INSERT INTO raster_data (layer_id, name, raster, acquisition_date, created_at)
+                    SELECT @layerId, 'extreme',
+                           ST_AddBand(ST_MakeEmptyRaster(2, 2, 0, 2, 1, -1, 0, 0, 4326),
+                                      '64BF'::text, @minimum, NULL),
+                           @acquisition, @acquisition
+                    RETURNING id;
+                    """;
+                command.Parameters.AddWithValue("layerId", LayerId);
+                command.Parameters.AddWithValue("minimum", double.MinValue);
+                command.Parameters.AddWithValue("acquisition", Day(1).UtcDateTime);
+                extreme = (long)(await command.ExecuteScalarAsync())!;
+            }
+
+            var unsigned = await InsertUnsignedRasterAsync(schemaName, "8BUI", 255);
+            Func<Task> action = async () => await CreateStore(schemaName).GetMosaicStatisticsAsync(
+                LayerId, [extreme, unsigned], RasterMergeStrategy.Newest);
+
+            var exception = await action.Should().ThrowAsync<PostgresException>();
+            exception.Which.Message.Should().Contain("raster_mosaic_64bf_nodata_collision");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
     private async Task WithNestedMosaicAsync(Func<PostgresRasterStore, long[], Task> assert)
     {
         var schemaName = await CreateSchemaAsync();
@@ -251,7 +357,9 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
         double upperLeftY,
         double pixelSize,
         double value,
-        DateTimeOffset acquisition)
+        DateTimeOffset acquisition,
+        double skewX = 0,
+        double skewY = 0)
     {
         await using var connection = await fixture.GetConnectionAsync(schemaName);
         await using var command = connection.CreateCommand();
@@ -260,7 +368,8 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
             SELECT @layerId,
                    @name,
                    ST_AddBand(
-                       ST_MakeEmptyRaster(2, 2, @upperLeftX, @upperLeftY, @pixelSize, -@pixelSize, 0, 0, 4326),
+                       ST_MakeEmptyRaster(2, 2, @upperLeftX, @upperLeftY, @pixelSize, -@pixelSize,
+                                          @skewX, @skewY, 4326),
                        '32BF'::text,
                        @value,
                        NULL
@@ -274,8 +383,31 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
         command.Parameters.AddWithValue("upperLeftX", upperLeftX);
         command.Parameters.AddWithValue("upperLeftY", upperLeftY);
         command.Parameters.AddWithValue("pixelSize", pixelSize);
+        command.Parameters.AddWithValue("skewX", skewX);
+        command.Parameters.AddWithValue("skewY", skewY);
         command.Parameters.AddWithValue("value", value);
         command.Parameters.AddWithValue("acquisition", acquisition.UtcDateTime);
+        return (long)(await command.ExecuteScalarAsync())!;
+    }
+
+    private async Task<long> InsertUnsignedRasterAsync(string schemaName, string pixelType, double maximum)
+    {
+        await using var connection = await fixture.GetConnectionAsync(schemaName);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            INSERT INTO raster_data (layer_id, name, raster, acquisition_date, created_at)
+            SELECT @layerId, 'unsigned',
+                   ST_SetValue(ST_SetValue(
+                       ST_AddBand(ST_MakeEmptyRaster(2, 2, 2.5, 2, 1, -1, 0, 0, 4326),
+                                  @pixelType, 0, NULL),
+                       1, 2, 1, @maximum), 1, 2, 2, @maximum),
+                   @acquisition, @acquisition
+            RETURNING id;
+            """;
+        command.Parameters.AddWithValue("layerId", LayerId);
+        command.Parameters.AddWithValue("pixelType", pixelType);
+        command.Parameters.AddWithValue("maximum", maximum);
+        command.Parameters.AddWithValue("acquisition", Day(2).UtcDateTime);
         return (long)(await command.ExecuteScalarAsync())!;
     }
 
@@ -291,7 +423,9 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
         return (byte[])(await command.ExecuteScalarAsync())!;
     }
 
-    private sealed record RasterProbe(int Width, int Height, double[] Values);
+    private sealed record RasterProbe(
+        int Width, int Height, double[] Values, double ScaleX, double ScaleY,
+        double SkewX, double SkewY, string PixelType, double? NoData);
 
     private async Task<RasterProbe> ProbeAsync(byte[] exported, params (double X, double Y)[] points)
     {
@@ -303,7 +437,9 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
                    ST_Height(rast),
                    ARRAY(SELECT ST_Value(rast, 1, ST_SetSRID(ST_MakePoint(p.x, p.y), ST_SRID(rast)))
                          FROM unnest(@xs, @ys) WITH ORDINALITY AS p(x, y, ord)
-                         ORDER BY p.ord)
+                         ORDER BY p.ord),
+                   ST_ScaleX(rast), ST_ScaleY(rast), ST_SkewX(rast), ST_SkewY(rast),
+                   ST_BandPixelType(rast, 1), ST_BandNoDataValue(rast, 1)
             FROM r;
             """;
         command.Parameters.AddWithValue("data", exported);
@@ -314,7 +450,9 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
         return new RasterProbe(
             reader.GetInt32(0),
             reader.GetInt32(1),
-            reader.GetFieldValue<double[]>(2));
+            reader.GetFieldValue<double[]>(2),
+            reader.GetDouble(3), reader.GetDouble(4), reader.GetDouble(5), reader.GetDouble(6),
+            reader.GetString(7), reader.IsDBNull(8) ? null : reader.GetDouble(8));
     }
 
     private sealed class FixtureConnectionProvider(NpgsqlDataSource dataSource) : IAdoNetDatabaseConnectionProvider

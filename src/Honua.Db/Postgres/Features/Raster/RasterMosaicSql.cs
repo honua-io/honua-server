@@ -77,25 +77,26 @@ internal static class RasterMosaicSql
     /// dataset map renderer applies before its union (honua-server#2487).
     /// </para>
     /// <para>
-    /// The reference is the source raster with the smallest pixel area (ties broken by <c>id</c>),
+    /// The reference is the source raster with the smallest affine pixel area (ties broken by <c>id</c>),
     /// so no input is coarsened and the mosaic keeps the finest native resolution the layer has.
-    /// Inputs are resampled with nearest-neighbour, which invents no pixel values. A raster already
-    /// on the reference grid — every raster of an aligned layer — is passed through untouched, so
-    /// aligned mosaics are byte-identical to the pre-#4792 result. The reference lookup is an
-    /// uncorrelated scalar subquery evaluated once per statement; the source must project
+    /// Inputs are resampled with nearest-neighbour, which invents no pixel values. An aligned
+    /// layer passes through untouched, so its mosaics are byte-identical to the pre-#4792 result.
+    /// The reference lookup is an uncorrelated scalar subquery evaluated once per statement;
+    /// the source must project
     /// <c>rast</c> and <c>id</c>, which every mosaic source already does.
     /// </para>
     /// <para>
-    /// Snapping to the reference grid widens a raster to whole reference pixels, and the margin
-    /// that creates is filled with the pixel type's default value. PostGIS only marks that margin
-    /// as NoData when the band carries a NoData value, so for a band without one the fill would be
-    /// counted as data — an ImageServer mosaic whose minimum reads -123456.789. Every resampled
-    /// band that has no NoData value therefore gets the pixel type's default declared as its NoData
-    /// value, which is exactly the value the margin was filled with. The documented consequence:
-    /// in a mosaic of unaligned rasters, pixels of a NoData-less band that hold that default
-    /// sentinel (0 for the unsigned integer types, -128/-32768/-123457 for the signed ones,
-    /// -123456.789 for the float types) are treated as NoData. Aligned layers never resample and
-    /// are unaffected.
+    /// Snapping to the reference grid widens a raster to whole reference pixels. For unsigned
+    /// bands without NoData, zero can be valid data. If an unaligned mosaic has such a band,
+    /// every input is converted to 64BF before union and reserves the lowest finite double
+    /// as NoData. That value lies outside every integer and 32BF source range. Double precision
+    /// exactly represents every source integer pixel type, and a uniform output type prevents
+    /// ST_Union from narrowing back to its first input's pixel type.
+    /// A valid 64BF pixel equal to that reserved value instead raises an explicit collision
+    /// error; one NoData marker cannot also represent that valid value.
+    /// Outside that promotion path, NoData-less bands receive their pixel type's default as
+    /// NoData after resampling so the snapped margin is excluded. Signed and floating pixels
+    /// holding that default can therefore be treated as NoData in an unaligned mosaic.
     /// </para>
     /// </remarks>
     internal static string CreateAlignedRasterExpression(string sourceCte)
@@ -104,7 +105,8 @@ internal static class RasterMosaicSql
             (SELECT align_ref.rast
              FROM {sourceCte} AS align_ref
              WHERE align_ref.rast IS NOT NULL AND NOT ST_IsEmpty(align_ref.rast)
-             ORDER BY abs(ST_ScaleX(align_ref.rast) * ST_ScaleY(align_ref.rast)) ASC, align_ref.id ASC
+             ORDER BY abs(ST_ScaleX(align_ref.rast) * ST_ScaleY(align_ref.rast)
+                        - ST_SkewX(align_ref.rast) * ST_SkewY(align_ref.rast)) ASC, align_ref.id ASC
              LIMIT 1)
             """;
 
@@ -121,6 +123,44 @@ internal static class RasterMosaicSql
             END
             """;
 
+        const string UnsignedTypes = "'1BB', '2BUI', '4BUI', '8BUI', '16BUI', '32BUI'";
+        var widenSource = $"""
+            (EXISTS (
+                SELECT 1 FROM {sourceCte} AS candidate
+                WHERE candidate.rast IS NOT NULL AND NOT ST_IsEmpty(candidate.rast)
+                  AND NOT COALESCE(ST_SameAlignment(candidate.rast, {reference}), TRUE))
+             AND EXISTS (
+                SELECT 1 FROM {sourceCte} AS candidate
+                CROSS JOIN LATERAL generate_series(1, ST_NumBands(candidate.rast)) AS band(n)
+                WHERE candidate.rast IS NOT NULL AND NOT ST_IsEmpty(candidate.rast)
+                  AND ST_BandPixelType(candidate.rast, band.n) IN ({UnsignedTypes})
+                  AND ST_BandNoDataValue(candidate.rast, band.n) IS NULL))
+            """;
+
+        // Map algebra emits the requested NoData value for an input NoData pixel. Resetting
+        // that value on the wider result keeps existing masks intact while preserving valid
+        // zero and signed -1. Every band is widened because ST_Union inherits the first
+        // input's pixel type, independently of which row needed resampling.
+        // A 64BF source can itself contain the reserved value. Detect that exceptional
+        // collision before conversion and fail explicitly instead of silently erasing it.
+        // The cast deliberately carries a stable diagnostic into the PostgreSQL error.
+        const string WideNoData = """
+            CASE WHEN ST_BandPixelType(rast, band.n) = '64BF'
+                       AND ST_ValueCount(rast, band.n, TRUE, -1.7976931348623157e308) > 0
+                 THEN ('raster_mosaic_64bf_nodata_collision:' || ST_BandPixelType(rast, band.n))::double precision
+                 ELSE -1.7976931348623157e308
+            END
+            """;
+        var wide = $"""
+            ST_AddBand(
+                ST_MakeEmptyRaster(rast),
+                (SELECT array_agg(
+                            ST_SetBandNoDataValue(
+                                ST_MapAlgebra(rast, band.n, '64BF', '[rast.val]', {WideNoData}),
+                                1, {WideNoData}) ORDER BY band.n)
+                 FROM generate_series(1, ST_NumBands(rast)) AS band(n)))
+            """;
+
         var resampled = $"""
             (SELECT ST_AddBand(
                         ST_MakeEmptyRaster(resampled.rast),
@@ -130,14 +170,16 @@ internal static class RasterMosaicSql
                                          ELSE ST_Band(resampled.rast, band.n)
                                     END ORDER BY band.n)
                          FROM generate_series(1, ST_NumBands(resampled.rast)) AS band(n)))
-             FROM (SELECT ST_Resample(rast, {reference}, 'NearestNeighbor') AS rast) AS resampled)
+             FROM (SELECT ST_Resample(prepared.rast, {reference}, 'NearestNeighbor') AS rast) AS resampled)
             """;
 
         return $"""
-            CASE
-                WHEN ST_IsEmpty(rast) OR COALESCE(ST_SameAlignment(rast, {reference}), TRUE) THEN rast
-                ELSE {resampled}
-            END
+            (SELECT CASE
+                        WHEN ST_IsEmpty(rast) OR COALESCE(ST_SameAlignment(rast, {reference}), TRUE)
+                            THEN prepared.rast
+                        ELSE {resampled}
+                    END
+             FROM (SELECT CASE WHEN {widenSource} THEN {wide} ELSE rast END AS rast) AS prepared)
             """;
     }
 
