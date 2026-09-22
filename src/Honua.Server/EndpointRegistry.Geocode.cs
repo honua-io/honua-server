@@ -10,7 +10,9 @@ public static partial class EndpointRegistry
     private static IReadOnlyList<EndpointDefinition> GeocodeEndpoints =>
     [
         new("GET", "/rest/services"),
+        new("POST", "/rest/services"),
         new("GET", "/rest/info"),
+        new("POST", "/rest/info"),
         new("GET", "/rest/services/{locatorName}/GeocodeServer"),
         new("POST", "/rest/services/{locatorName}/GeocodeServer"),
         new("GET", "/rest/services/{locatorName}/GeocodeServer/findAddressCandidates"),

@@ -18552,6 +18552,34 @@
       "capability": "styling.ogc-api-styles"
     },
     {
+      "id": "post-rest-info",
+      "route": "/rest/info",
+      "method": "POST",
+      "family": "GeoServices REST",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostRestInfo_WithFormBody_ReturnsRootInfo"
+      ],
+      "proof_ledger_surface": "geoservices-catalog",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-root"
+    },
+    {
+      "id": "post-rest-services",
+      "route": "/rest/services",
+      "method": "POST",
+      "family": "GeoServices REST",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.PostServicesDirectory_WithFormBody_ReturnsCatalogPayload"
+      ],
+      "proof_ledger_surface": "geoservices-catalog",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-root"
+    },
+    {
       "id": "post-rest-services-geocodeserver",
       "route": "/rest/services/GeocodeServer",
       "method": "POST",
@@ -20325,6 +20353,34 @@
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_WithValidFile_ReturnsSuccess",
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_WithoutFile_Returns400",
         "Honua.Server.Tests.Features.CloudDemo.CloudDemoEndpointsTests.WritableFeatureGuard_WithoutWriteToken_ReturnsUnauthorizedForWritableOperations"
+      ],
+      "proof_ledger_surface": "feature-server",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-featureserver"
+    },
+    {
+      "id": "post-rest-services-serviceid-featureserver-layerid-featureid-attachments",
+      "route": "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments",
+      "method": "POST",
+      "family": "GeoServices REST FeatureServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.AttachmentEndpointTests.AttachmentInfos_WithFormPost_ReturnsSameAttachmentInfosAsGet"
+      ],
+      "proof_ledger_surface": "feature-server",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-featureserver"
+    },
+    {
+      "id": "post-rest-services-serviceid-featureserver-layerid-featureid-attachments-attachmentid",
+      "route": "/rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}",
+      "method": "POST",
+      "family": "GeoServices REST FeatureServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.AttachmentEndpointTests.DownloadAttachment_WithFormPost_ReturnsFileContent"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",

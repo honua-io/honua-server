@@ -647,6 +647,59 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.DownloadAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments")]
+    public async Task AttachmentInfos_WithFormPost_ReturnsSameAttachmentInfosAsGet()
+    {
+        // honua-server#5012: ArcGIS Pro lists a feature's attachments with a form-encoded POST.
+        // The GeoServices REST contract is that a resource answers GET and POST alike, so the
+        // POST must return the same attachment infos as the GET rather than an error envelope.
+        var getResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments?f=json");
+        getResponse.BeSuccessful();
+        var viaGet = JsonSerializer.Deserialize(
+            await getResponse.Content.ReadAsStringAsync(),
+            FeatureServerJsonContext.Default.AttachmentInfosResponse);
+
+        using var form = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
+        var postResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments",
+            form);
+
+        postResponse.BeSuccessful();
+        postResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        var content = await postResponse.Content.ReadAsStringAsync();
+        content.Should().NotContain("\"error\"", "the route must answer POST instead of returning an error envelope");
+
+        var viaPost = JsonSerializer.Deserialize(content, FeatureServerJsonContext.Default.AttachmentInfosResponse);
+        viaPost.Should().NotBeNull();
+        viaPost!.AttachmentInfos.Should().HaveCount(2);
+        viaPost.AttachmentInfos.Should().Contain(a => a.Name == "test1.txt");
+        viaPost.AttachmentInfos.Should().Contain(a => a.Name == "test2.jpg");
+        viaPost.AttachmentInfos.Select(static info => info.Id)
+            .Should().BeEquivalentTo(viaGet!.AttachmentInfos.Select(static info => info.Id));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.DownloadAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}")]
+    public async Task DownloadAttachment_WithFormPost_ReturnsFileContent()
+    {
+        // honua-server#5012: the per-attachment download answers POST as well as GET.
+        const long attachmentId = 1;
+
+        using var form = new FormUrlEncodedContent([]);
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments/{attachmentId}",
+            form);
+
+        response.BeSuccessful();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("text/plain");
+        var bytes = await response.Content.ReadAsByteArrayAsync();
+        bytes.Should().Equal(AttachmentTestData.SeededTextFileBytes.ToArray());
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.DownloadAttachment)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}")]
     public async Task DownloadAttachment_WithValidId_ReturnsFileContent()
     {
