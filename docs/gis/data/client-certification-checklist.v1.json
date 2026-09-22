@@ -30,9 +30,9 @@
         "fail": 2
       },
       "arcpy": {
-        "pass": 33,
-        "n/a-no-client": 48,
-        "blocked": 5,
+        "pass": 29,
+        "n/a-no-client": 51,
+        "blocked": 6,
         "fail": 8
       },
       "qgis-ui": {
@@ -50,8 +50,8 @@
     },
     "overall": {
       "cells": 376,
-      "closed": 231,
-      "open": 145
+      "closed": 230,
+      "open": 146
     }
   },
   "rows": [
@@ -66,7 +66,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.wms rule 'getcapabilities': Map.addDataFromPath(..., 'WMS') added 5 layer(s) ['browser_compat', 'browser_compat', 'Browser Polygons', 'Browser Lines', 'Browser Points'] from https://host.docker.internal:18443/ogc/services/browser_compat/wms; the capabilities document advertises ['Browser Points', 'Browser Lines', 'Browser Polygons']"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.wms rule 'getcapabilities': Map.addDataFromPath(..., 'WMS') added 5 layer(s) ['browser_compat', 'browser_compat', 'Browser Polygons', 'Browser Lines', 'Browser Points'] from https://host.docker.internal:18443/ogc/services/browser_compat/wms; the capabilities document advertises ['Browser Points', 'Browser Lines', 'Browser Polygons']"
         },
         "qgis-ui": {
           "state": "pass",
@@ -89,7 +89,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.wms rule 'getmap': the 5 added WMS layer(s) drew a 4225-byte PNG over the fixture extent through arcpy's map view"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.wms rule 'getmap': the 5 added WMS layer(s) drew a 4225-byte PNG over the fixture extent through arcpy's map view"
         },
         "qgis-ui": {
           "state": "pass",
@@ -331,7 +331,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy.conversion.WFSToFeatureClass bound https://host.docker.internal:18443/wfs and materialised 'browser_points'; the tool cannot resolve a feature type without first reading and parsing GetCapabilities."
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy.conversion.WFSToFeatureClass bound https://host.docker.internal:18443/wfs and materialised 'browser_points'; the tool cannot resolve a feature type without first reading and parsing GetCapabilities."
         },
         "qgis-ui": {
           "state": "pass",
@@ -354,7 +354,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the feature class arcpy built carries the type's fields ['OBJECTID_1', 'GmlID', 'Shape', 'objectid', 'name'], which are the DescribeFeatureType response mapped onto a schema."
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the feature class arcpy built carries the type's fields ['OBJECTID_1', 'GmlID', 'Shape', 'objectid', 'name'], which are the DescribeFeatureType response mapped onto a schema."
         },
         "qgis-ui": {
           "state": "pass",
@@ -377,7 +377,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy read 3 feature(s) through GetFeature into a file geodatabase."
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy read 3 feature(s) through GetFeature into a file geodatabase."
         },
         "qgis-ui": {
           "state": "pass",
@@ -404,7 +404,7 @@
             "state": "n/a-no-client",
             "citation": "arcpy 3.7.1 module probe, 2026-09-18: the only WFS entry point is arcpy.conversion.WFSToFeatureClass, and GetParameterInfo lists exactly input_WFS_server, WFS_feature_type, out_path, out_name, out_feature_class, is_complex, out_gdb, max_features, expose_metadata, swap_xy and page_size. It reads a feature type into a feature class: no transaction, no property-value projection, no stored-query parameter, so WFS-T, GetPropertyValue and ListStoredQueries have no arcpy caller."
           },
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy.conversion.WFSToFeatureClass read 'browser_points' (from namespaced 'honua:browser_points') at https://host.docker.internal:18443/wfs into a file geodatabase: 3 feature(s), fields ['OBJECTID_1', 'GmlID', 'Shape', 'objectid', 'name']. Property values are reached through those fields; arcpy issues no separate GetPropertyValue request."
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy.conversion.WFSToFeatureClass read 'browser_points' (from namespaced 'honua:browser_points') at https://host.docker.internal:18443/wfs into a file geodatabase: 3 feature(s), fields ['OBJECTID_1', 'GmlID', 'Shape', 'objectid', 'name']. Property values are reached through those fields; arcpy issues no separate GetPropertyValue request."
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -1089,7 +1089,7 @@
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS."
           },
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy's Python reached stac and the document carries 'stac_version'; this is the catalogue CreateSTACConnectionFile binds (honua_stac.astac, 423 bytes)"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy's Python reached stac and the document carries 'stac_version'; this is the catalogue CreateSTACConnectionFile binds (honua_stac.astac, 423 bytes)"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1119,7 +1119,7 @@
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS."
           },
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy's Python reached stac/collections and the document carries 'collections'; this is the catalogue CreateSTACConnectionFile binds (honua_stac.astac, 423 bytes)"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy's Python reached stac/collections and the document carries 'collections'; this is the catalogue CreateSTACConnectionFile binds (honua_stac.astac, 423 bytes)"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1149,7 +1149,7 @@
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS."
           },
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy's Python reached stac/search and the document carries 'features'; this is the catalogue CreateSTACConnectionFile binds (honua_stac.astac, 423 bytes)"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy's Python reached stac/search and the document carries 'features'; this is the catalogue CreateSTACConnectionFile binds (honua_stac.astac, 423 bytes)"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1294,7 +1294,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'initialextent': Describe.extent=(-122.44,37.76).."
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'initialextent': Describe.extent=(-122.44,37.76).."
         },
         "qgis-ui": {
           "state": "pass",
@@ -1317,7 +1317,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'fields': ListFields -> 3 field(s): ['Shape', 'name', 'objectid']"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'fields': ListFields -> 3 field(s): ['Shape', 'name', 'objectid']"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1340,7 +1340,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'outfields': field projection via SearchCursor(['objectid']) -> 3 row(s)"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'outfields': field projection via SearchCursor(['objectid']) -> 3 row(s)"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1363,7 +1363,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'spatialrel': spatialRel via SelectLayerByLocation(INTERSECT extent) -> 3 selected"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'spatialrel': spatialRel via SelectLayerByLocation(INTERSECT extent) -> 3 selected"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1476,7 +1476,7 @@
             "citation": "docs/gis/arcpy-local-calculation-verdict-audit-2026-09-20.md: Historical receipt counts SearchCursor rows locally; it does not prove a native outStatistics/groupByFieldsForStatistics request. Fresh remote aggregate evidence and independent result assertions are required."
           },
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'outstatistics': outStatistics (count) computed over the cursor -> 3"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'outstatistics': outStatistics (count) computed over the cursor -> 3"
         },
         "qgis-ui": {
           "state": "blocked",
@@ -1512,7 +1512,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'domains': arcpy ListFields on test_service/FeatureServer/0 reports domain(s) on ['status']: ['StatusDomain']"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'domains': arcpy ListFields on test_service/FeatureServer/0 reports domain(s) on ['status']: ['StatusDomain']"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1561,7 +1561,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.map_server rule 'service metadata': ms-load layer added and loaded in ArcGIS Pro (2 layer(s) in map)"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.map_server rule 'service metadata': ms-load layer added and loaded in ArcGIS Pro (2 layer(s) in map)"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1584,7 +1584,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.map_server rule 'export map': added ms-export layer and exported a drawn PNG (5697 bytes)"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.map_server rule 'export map': added ms-export layer and exported a drawn PNG (5697 bytes)"
         },
         "qgis-ui": {
           "state": "fail",
@@ -1662,7 +1662,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.image_server rule 'service metadata': arcpy Describe(ImageServer) -> dataType=RasterLayer"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.image_server rule 'service metadata': arcpy Describe(ImageServer) -> dataType=RasterLayer"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1700,7 +1700,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.image_server rule 'export image': arcpy.Raster(ImageServer) opened (width=64)"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.image_server rule 'export image': arcpy.Raster(ImageServer) opened (width=64)"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1737,8 +1737,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-imageserver.cert.json - operations IS-OP-IDENTIFY, ArcGIS Pro/arcpy 3.7.1.1904: GetCellValue (identify) at (-122.4150,37.7650) -> 180, matching the service's identify ('180')"
+          "state": "n/a-no-client",
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.image_server rule 'identify': GetCellValue (identify) at (-122.4150,37.7650) -> NoData: arcpy reads pixels through a SOAP ExportImage in esriImageBSQ and this service declares SupportBSQ=false, so there is no pixel-read path for this client to certify. The service itself answers '180' at that point over REST identify, so the raster and its georeferencing are correct; only the BSQ transport is absent."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -1770,7 +1770,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.vector_tile_server rule 'service-info': the service document names 'browser_compat' at 'tile/{z}/{y}/{x}.pbf', and arcpy added 1 layer(s) ['Vector Tile Layer'] from it"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.vector_tile_server rule 'service-info': the service document names 'browser_compat' at 'tile/{z}/{y}/{x}.pbf', and arcpy added 1 layer(s) ['Vector Tile Layer'] from it"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1793,7 +1793,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.vector_tile_server rule 'tile': tile 13/1310/3166 at the fixture centre returned 128 bytes of application/vnd.mapbox-vector-tile from the advertised template 'tile/{z}/{y}/{x}.pbf' (levels ['z18:204', 'z17:204', 'z16:204', 'z15:204', 'z14:204'] answered 204, no features that deep)"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.vector_tile_server rule 'tile': tile 13/1310/3166 at the fixture centre returned 128 bytes of application/vnd.mapbox-vector-tile from the advertised template 'tile/{z}/{y}/{x}.pbf' (levels ['z18:204', 'z17:204', 'z16:204', 'z15:204', 'z14:204'] answered 204, no features that deep)"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1816,7 +1816,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.vector_tile_server rule 'style': the style resource at https://host.docker.internal:18443/rest/services/browser_compat/VectorTileServer/resources/styles/root.json declares 1 layer(s) over source(s) ['esri'] - a Mapbox style a client can render"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.vector_tile_server rule 'style': the style resource at https://host.docker.internal:18443/rest/services/browser_compat/VectorTileServer/resources/styles/root.json declares 1 layer(s) over source(s) ['esri'] - a Mapbox style a client can render"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1838,7 +1838,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.gp_server rule '': arcpy.ImportToolbox resolved https://host.docker.internal:18443/arcgis/services;test_service and published task 'Buffer' as arcpy.Buffer_testservice"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.gp_server rule '': arcpy.ImportToolbox resolved https://host.docker.internal:18443/arcgis/services;test_service and published task 'Buffer' as arcpy.Buffer_testservice"
         },
         "qgis-ui": {
           "state": "blocked",
@@ -1869,7 +1869,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922u/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.gp_server rule 'task info': task 'Buffer' publishes signature 'Buffer_testservice(wkb, srid, distance, {geodesic})' and 3 typed parameter(s): wkb (String):; srid (Long):; distance (Double):"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.gp_server rule 'task info': task 'Buffer' publishes signature 'Buffer_testservice(wkb, srid, distance, {geodesic})' and 3 typed parameter(s): wkb (String):; srid (Long):; distance (Double):"
         },
         "qgis-ui": {
           "state": "blocked",
@@ -2062,7 +2062,7 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "pass",
+          "state": "n/a-no-client",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "arcpy 3.7.1 module probe, 2026-09-18: arcpy.geocoding exposes GeocodeAddresses, BatchGeocodeServer, ReverseGeocode, RematchAddresses and locator authoring, but nothing issuing findAddressCandidates or suggest. Those are interactive REST endpoints Pro's search box calls; arcpy geocodes tables against a locator. reverseGeocode is deliberately NOT closed here: arcpy.geocoding.ReverseGeocode exists, so it is reachable."
@@ -2071,7 +2071,7 @@
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The installed and documented Locator class exposes geocode and suggest; fresh native calls against Honua return independently validated candidates and suggestions."
           },
-          "evidence": "honua-esri-compat/evidence/arcpy-exclusion-followup-20260920-d/observations.json (retained at commit b691b03); native Locator suggest: ten geocode candidates or five suggestions validated against separate HTTP controls, including addresses/scores/WGS84 XY or suggestion texts/magic keys/collection flags; geocode forStorage=False; ArcGIS Pro 3.7.1.1904 executable version/hash bound alongside ArcPy 3.7.1 build 1901; server 25fa17d9cfa72340c9de4a33a743f19ff0911800 / image 0ad6f6c9d81e; Development JIT SDK evidence, no UI credit"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.geocode_server rule 'suggest': arcpy.geocoding exposes GeocodeAddresses, ReverseGeocode and GeocodeFile, each of which resolves a complete address to a location; none issues the interactive suggest/typeahead call, which ArcGIS Pro drives from the Locate pane rather than from a geoprocessing tool. This is a client-surface absence, not a server one - the server does implement it (2 suggestion(s) for 'San Fran' over REST). (ArcGIS Pro 3.7.1 arcpy.geocoding tool reference: pro.arcgis.com/en/pro-app/latest/tool-reference/geocoding/an-overview-of-the-geocoding-toolbox.htm)"
         },
         "qgis-ui": {
           "state": "blocked",
@@ -2892,8 +2892,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-wf-scene-scene-vectortile.cert.json - extensions WF-3D-01, ArcGIS Pro/arcpy 3.7.1.1904: wf-scene layer added and loaded in ArcGIS Pro (1 layer(s) in map)"
+          "state": "blocked",
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.elevation_scene rule 'scene-layer': no I3S scene is published for a client to open: /rest/services/browser_compat/SceneServer answers 404 'Not Found' (Scene was not found.). The SceneServer routes are registered on this build and the auth fixture's scene answers 401 rather than 404, so scenes exist as a concept here - what is missing is a published, anonymously readable one. Fixture gap, not a capability gap, and not a client absence: arcpy does add I3S scene layers."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -2950,8 +2950,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260918-c/certification/arcpy-client-compat-20260918-c-read-desktop-arcgis-imageserver.cert.json - extensions IS-EXT-ELEV-01, ArcGIS Pro/arcpy 3.7.1.1904: arcpy read elevation 180 at (-122.4150,37.7650) through RasterToNumPyArray, matching the service's identify ('180'); serviceDataType=esriImageServiceDataTypeElevation"
+          "state": "n/a-no-client",
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.elevation_scene rule 'point-query': /elevation/{datasetId}/value is a Honua-native HTTP API, not an Esri protocol surface: ArcGIS Pro 3.7.1 publishes no geoprocessing tool or layer type that issues an elevation point query against it. arcpy reads the same pixel only through ImageServer, which is a different cell. Client-surface absence, not a server one - the endpoint answered 100 at (-122.425, 37.77) with noData=False and outOfBounds=False, while ImageServer identify returns '180' (http=200). (ArcGIS Pro 3.7.1 arcpy tool reference: no elevation-service client.)"
         },
         "qgis-ui": {
           "state": "blocked",
