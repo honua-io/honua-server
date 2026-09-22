@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
@@ -218,30 +219,9 @@ internal sealed class OgcMapsRenderingHandler
 
             if (layerIds.Length == 0)
             {
-                // Enumerate distinct storage layer ids collision-aware so a colliding
-                // Maps-enabled resource that lost the first-wins index is still included
-                // (matching the collections=<id> path). Falls back to the indexed resource
-                // for non-colliding / non-Maps layers so their behavior is unchanged (#2799).
-                var allEntries = new List<(int LayerId, MetadataV2Resource Resource, MetadataV2Service? Service)>();
-                var seenStorageLayerIds = new HashSet<int>();
-                foreach (var binding in snapshot.Graph.StorageBindings)
-                {
-                    if (binding.StorageLayerId is not int storageLayerId ||
-                        !seenStorageLayerIds.Add(storageLayerId))
-                    {
-                        continue;
-                    }
-
-                    var (resolvedResource, resolvedService) = ResolveResourceAndService(snapshot, storageLayerId);
-                    if (resolvedResource is not null)
-                    {
-                        allEntries.Add((storageLayerId, resolvedResource, resolvedService));
-                    }
-                    else if (snapshot.Index.ResourcesByStorageLayerId.TryGetValue(storageLayerId, out var indexResource))
-                    {
-                        allEntries.Add((storageLayerId, indexResource, ResolveOgcApiMapsService(snapshot, indexResource)));
-                    }
-                }
+                // Dataset discovery and dataset rendering enumerate through the same shared
+                // helper so /ogc/maps describes exactly what /ogc/maps/map renders (#5048).
+                var allEntries = OgcMapsResourceResolver.EnumerateDatasetEntries(snapshot, _logger);
                 if (allEntries.Count == 0)
                 {
                     return CreateNotFoundResult(context, "No collections available for dataset map rendering.");
@@ -359,7 +339,27 @@ internal sealed class OgcMapsRenderingHandler
 
             var defaultExtentResource = entries[0].Resource;
             var defaultExtentLayerId = entries[0].LayerId;
-            var datasetExtent = BuildDatasetExtent(entries.Select(e => e.Resource));
+
+            // #5048: the default dataset viewport is only the fallback for a caller who did
+            // not supply one, so an explicit bbox must not pay for it - nor be refused by it.
+            // When it IS needed, combine through the canonical transform service and answer
+            // an untransformable dataset with an actionable 400 instead of an unmapped 500.
+            FeatureExtent? datasetExtent = null;
+            if (string.IsNullOrEmpty(request.Bbox))
+            {
+                var (combinedExtent, transformUnavailable) = await OgcMapsResourceResolver.BuildDatasetExtentAsync(
+                    entries.Select(entry => entry.Resource),
+                    context?.RequestServices.GetService<ICoordinateTransformService>(),
+                    cancellationToken).ConfigureAwait(false);
+                if (transformUnavailable)
+                {
+                    return CreateBadRequestResult(
+                        context,
+                        "The collections in this dataset declare bounds in coordinate reference systems that cannot be combined into a single default viewport. Supply an explicit bbox.");
+                }
+
+                datasetExtent = combinedExtent;
+            }
 
             var (renderRequest, validationError) = CreateMapRenderRequest(
                 request,
@@ -961,61 +961,6 @@ internal sealed class OgcMapsRenderingHandler
 
     private static string FormatContentBboxHeader(double[] bbox)
         => FormattableString.Invariant($"{bbox[0]},{bbox[1]},{bbox[2]},{bbox[3]}");
-
-    private static FeatureExtent? BuildDatasetExtent(IEnumerable<MetadataV2Resource> resources)
-    {
-        FeatureExtent? combined = null;
-        foreach (var resource in resources)
-        {
-            var bbox = resource.ReadBbox();
-            if (bbox is null)
-            {
-                continue;
-            }
-
-            var srid = resource.ReadSrid() ?? SpatialReference.WGS84.Wkid;
-            var extent = FeatureExtent.Create(bbox.West, bbox.South, bbox.East, bbox.North, srid);
-
-            if (!combined.HasValue)
-            {
-                combined = extent;
-                continue;
-            }
-
-            var current = combined.Value;
-            if (current.SpatialReference != extent.SpatialReference)
-            {
-                try
-                {
-                    var transformedExtent = CoordinateTransformer.TransformExtent(
-                        new RenderExtent(extent.MinX, extent.MinY, extent.MaxX, extent.MaxY),
-                        extent.SpatialReference,
-                        current.SpatialReference);
-                    extent = FeatureExtent.Create(
-                        transformedExtent.MinX,
-                        transformedExtent.MinY,
-                        transformedExtent.MaxX,
-                        transformedExtent.MaxY,
-                        current.SpatialReference);
-                }
-                catch (NotSupportedException ex)
-                {
-                    throw new InvalidOperationException(
-                        $"Unable to combine dataset extents because SRID {extent.SpatialReference} cannot be transformed to {current.SpatialReference}.",
-                        ex);
-                }
-            }
-
-            combined = FeatureExtent.Create(
-                Math.Min(current.MinX, extent.MinX),
-                Math.Min(current.MinY, extent.MinY),
-                Math.Max(current.MaxX, extent.MaxX),
-                Math.Max(current.MaxY, extent.MaxY),
-                current.SpatialReference);
-        }
-
-        return combined;
-    }
 
     /// <summary>
     /// Resolves the output format from the Accept header and/or f query parameter.
