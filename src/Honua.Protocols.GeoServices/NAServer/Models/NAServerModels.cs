@@ -541,9 +541,6 @@ internal sealed class NAServerLayerDescription
 /// </summary>
 internal sealed class NAServerServiceInfoResponse
 {
-    /// <summary>GeoServices REST version this adapter speaks.</summary>
-    public double CurrentVersion { get; init; }
-
     /// <summary>Human-readable service description.</summary>
     public string ServiceDescription { get; init; } = string.Empty;
 
@@ -577,9 +574,6 @@ internal sealed class NAServerServiceInfoResponse
 /// </summary>
 internal sealed class NAServerLayerInfoResponse
 {
-    /// <summary>GeoServices REST version this adapter speaks.</summary>
-    public double CurrentVersion { get; init; }
-
     /// <summary>Layer name as addressed in the URL.</summary>
     public string LayerName { get; init; } = string.Empty;
 

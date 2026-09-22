@@ -177,7 +177,6 @@ internal static class NAServerEndpoints
 
         var response = new NAServerServiceInfoResponse
         {
-            CurrentVersion = 10.8,
             ServiceDescription = "Honua network analysis service",
             RouteLayers = Layer(capabilities.SupportsRoute, "Route", "esriNAServerRouteLayer"),
             ServiceAreaLayers = Layer(capabilities.SupportsServiceArea, "ServiceArea", "esriNAServerServiceAreaLayer"),
@@ -224,7 +223,6 @@ internal static class NAServerEndpoints
 
         var response = new NAServerLayerInfoResponse
         {
-            CurrentVersion = 10.8,
             LayerName = layerName,
             LayerType = layerType,
             ImpedanceAttributeName = "TravelTime",
