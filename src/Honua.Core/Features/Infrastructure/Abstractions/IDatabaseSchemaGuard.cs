@@ -47,6 +47,28 @@ public interface IDatabaseSchemaGuard
     Task VerifyConsistencyAsync(DbConnection connection, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Checks a database that has never been migrated (its journal is empty) whose migration-owned
+    /// tables were created up front by a seed, so the pending migrations can adopt them. Every
+    /// present migration-owned table must already carry the columns its migration creates; tables,
+    /// indexes and sequences that are absent are left to the pending migrations. The complete floor
+    /// is still enforced by <see cref="VerifyAsync(DbConnection, CancellationToken)"/> after they run.
+    /// On a database whose journal is not empty this is identical to
+    /// <see cref="VerifyConsistencyAsync(DbConnection, CancellationToken)"/>.
+    /// </summary>
+    /// <param name="connection">Open connection to the target database.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A task that completes when every present migration-owned table can be adopted.</returns>
+    /// <exception cref="DatabaseSchemaFloorException">
+    /// A present migration-owned table is incomplete, or the journal contradicts the physical schema.
+    /// </exception>
+    /// <remarks>
+    /// The default implementation adopts nothing and keeps the strict consistency check, so a guard
+    /// that does not model adoption fails closed.
+    /// </remarks>
+    Task VerifyFirstMigrationAdoptionAsync(DbConnection connection, CancellationToken cancellationToken = default)
+        => VerifyConsistencyAsync(connection, cancellationToken);
+
+    /// <summary>
     /// Checks the migration-owned schema required by one ordinary runtime operation.
     /// </summary>
     /// <param name="connection">Open connection to the target database.</param>

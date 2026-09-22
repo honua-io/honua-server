@@ -178,6 +178,219 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         reader.IsDBNull(1).Should().BeFalse("the physical guarded schema must remain present for diagnosis");
     }
 
+    // A fixture seed that pre-creates part of the migration-owned schema before the first boot
+    // (#4900): two of migration 031's seven metadata tables with a row, the raster baseline table
+    // without its migration-owned EXTERNAL storage, and migration 063's overview table.
+    private const string PreSeededSchemaSql = """
+        CREATE SCHEMA honua;
+        CREATE TABLE honua.raster_data (
+            id BIGSERIAL PRIMARY KEY,
+            layer_id INTEGER NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            description TEXT,
+            raster raster NOT NULL,
+            acquisition_date TIMESTAMPTZ,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMPTZ,
+            width INTEGER GENERATED ALWAYS AS (ST_Width(raster)) STORED,
+            height INTEGER GENERATED ALWAYS AS (ST_Height(raster)) STORED,
+            band_count INTEGER GENERATED ALWAYS AS (ST_NumBands(raster)) STORED,
+            pixel_type VARCHAR(10) GENERATED ALWAYS AS (ST_BandPixelType(raster, 1)) STORED,
+            srid INTEGER GENERATED ALWAYS AS (ST_SRID(raster)) STORED
+        );
+        CREATE TABLE honua.raster_overviews (
+            id BIGSERIAL PRIMARY KEY,
+            raster_data_id BIGINT NOT NULL REFERENCES honua.raster_data(id) ON DELETE CASCADE,
+            overview_factor INTEGER NOT NULL,
+            raster raster NOT NULL,
+            ground_resolution DOUBLE PRECISION NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            CONSTRAINT raster_overviews_unique_factor UNIQUE (raster_data_id, overview_factor)
+        );
+        ALTER TABLE honua.raster_overviews ALTER COLUMN raster SET STORAGE EXTERNAL;
+        CREATE TABLE honua.metadata_v2_snapshots (
+            environment TEXT NOT NULL,
+            revision BIGINT NOT NULL,
+            schema_version TEXT NOT NULL,
+            api_version TEXT NOT NULL,
+            document JSONB NOT NULL,
+            etag TEXT NOT NULL,
+            generated_at TIMESTAMPTZ NOT NULL,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (environment, revision)
+        );
+        CREATE TABLE honua.metadata_v2_current (
+            environment TEXT NOT NULL PRIMARY KEY,
+            revision BIGINT NOT NULL,
+            etag TEXT NOT NULL,
+            activated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            FOREIGN KEY (environment, revision)
+                REFERENCES honua.metadata_v2_snapshots(environment, revision) ON DELETE RESTRICT
+        );
+        INSERT INTO honua.metadata_v2_snapshots (environment, revision, schema_version, api_version, document, etag, generated_at)
+        VALUES ('seed-4900', 1, '2', 'v2', '{}'::jsonb, 'seed-etag', NOW());
+        INSERT INTO honua.metadata_v2_current (environment, revision, etag) VALUES ('seed-4900', 1, 'seed-etag');
+        """;
+
+    [SkippableFact]
+    public async Task CanonicalRunner_OnNeverMigratedSeededDatabase_FailsClosedNamingEveryUnjournaledFamily()
+    {
+        Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the seeded-schema lane.");
+
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGisRaster: true);
+        await ExecuteAsync(connectionString, PreSeededSchemaSql);
+        var before = await CaptureUnmigratedStateAsync(connectionString);
+        var runner = new PostgresDatabaseMigrationRunner(
+            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest),
+            ServerCoreSchemaMigrations.Manifest);
+
+        var result = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+
+        result.Successful.Should().BeFalse("adoption of seed-created schema is opt-in");
+        var failure = result.Error.Should().BeOfType<DatabaseSchemaFloorException>().Which;
+        failure.FailureKind.Should().Be(DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal);
+        failure.MigrationScript.Should().Be(ServerCoreSchemaMigrations.Manifest.RasterOverviewsMigration);
+        failure.Detail.Should().Contain(ServerCoreSchemaMigrations.Manifest.MetadataV2SnapshotMigration,
+            "the failure names every unjournaled family, not only the first one in check order")
+            .And.Contain("metadata_v2_snapshots, metadata_v2_current")
+            .And.Contain("Database:AdoptSeededSchemaOnFirstMigration=true");
+        (await CaptureUnmigratedStateAsync(connectionString)).Should().Be(before,
+            "a refused first run must not create the journal or any table");
+    }
+
+    [SkippableFact]
+    public async Task CanonicalRunner_OnNeverMigratedSeededDatabase_WhenAdoptionIsOptedIn_AdoptsAndVerifiesTheFloor()
+    {
+        Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the seeded-schema lane.");
+
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGisRaster: true);
+        await ExecuteAsync(connectionString, PreSeededSchemaSql);
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Database:AdoptSeededSchemaOnFirstMigration"] = "true" })
+            .Build();
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration);
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest, configuration: configuration);
+
+        var plan = await runner.PlanMigrationsAsync(connectionString, typeof(Program).Assembly);
+        plan.Successful.Should().BeTrue($"preflight accepts complete seed-created tables. Error: {plan.Error?.Message}");
+        var result = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+
+        result.Successful.Should().BeTrue($"the pending migrations adopt the seeded tables. Error: {result.ErrorMessage}");
+        result.AppliedScripts.Should().Contain(
+        [
+            ServerCoreSchemaMigrations.Manifest.RasterOverviewsMigration,
+            ServerCoreSchemaMigrations.Manifest.RasterExternalStorageMigration,
+            ServerCoreSchemaMigrations.Manifest.MetadataV2SnapshotMigration,
+        ]);
+        var verify = () => guard.VerifyAsync(connectionString);
+        await verify.Should().NotThrowAsync("the complete floor holds after adoption");
+        (await CountTablesAsync(
+                connectionString,
+                "honua",
+                "metadata_v2_snapshots",
+                "metadata_v2_current",
+                "metadata_v2_resources_idx",
+                "metadata_v2_services_idx",
+                "metadata_v2_publications_idx",
+                "metadata_v2_storage_bindings_idx",
+                "metadata_v2_connections_idx"))
+            .Should().Be(7, "migration 031 creates the five tables the seed did not");
+
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT
+                (SELECT etag FROM honua.metadata_v2_current WHERE environment = 'seed-4900'),
+                (SELECT a.attstorage::text FROM pg_catalog.pg_attribute a
+                 WHERE a.attrelid = 'honua.raster_data'::regclass AND a.attname = 'raster')
+            """;
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetString(0).Should().Be("seed-etag", "adoption keeps the seeded rows");
+        reader.GetString(1).Should().Be("e", "migration 055 applies its storage policy to the adopted table");
+    }
+
+    [SkippableFact]
+    public async Task CanonicalRunner_WhenAdoptionIsOptedIn_RejectsAnIncompleteSeededTableWithoutMutation()
+    {
+        Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the seeded-schema lane.");
+
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGisRaster: true);
+        await ExecuteAsync(connectionString, """
+            CREATE SCHEMA honua;
+            CREATE TABLE honua.metadata_v2_snapshots (environment text NOT NULL, revision bigint NOT NULL);
+            """);
+        var before = await CaptureUnmigratedStateAsync(connectionString);
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Database:AdoptSeededSchemaOnFirstMigration"] = "true" })
+            .Build();
+        var runner = new PostgresDatabaseMigrationRunner(
+            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration),
+            ServerCoreSchemaMigrations.Manifest,
+            configuration: configuration);
+
+        var result = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+
+        result.Successful.Should().BeFalse("CREATE TABLE IF NOT EXISTS cannot complete a table that already exists");
+        var failure = result.Error.Should().BeOfType<DatabaseSchemaFloorException>().Which;
+        failure.FailureKind.Should().Be(DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal);
+        failure.MigrationScript.Should().Be(ServerCoreSchemaMigrations.Manifest.MetadataV2SnapshotMigration);
+        failure.Detail.Should().Contain("adoption candidate(s) are incomplete")
+            .And.Contain("column metadata_v2_snapshots.schema_version")
+            .And.Contain("column metadata_v2_snapshots.document");
+        (await CaptureUnmigratedStateAsync(connectionString)).Should().Be(before,
+            "an incomplete candidate is rejected before any migration runs");
+    }
+
+    [SkippableFact]
+    public async Task CanonicalRunner_AdoptionOptIn_DoesNotApplyOnceAnyMigrationIsJournaled()
+    {
+        Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the seeded-schema lane.");
+
+        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGisRaster: true);
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?> { ["Database:AdoptSeededSchemaOnFirstMigration"] = "true" })
+            .Build();
+        var runner = new PostgresDatabaseMigrationRunner(
+            new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest, configuration),
+            ServerCoreSchemaMigrations.Manifest,
+            configuration: configuration);
+        var baseline = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+        baseline.Successful.Should().BeTrue($"the test requires a canonical schema baseline. Error: {baseline.ErrorMessage}");
+        await ExecuteAsync(connectionString, $"""
+            DELETE FROM public.schema_versions
+            WHERE scriptname = '{ServerCoreSchemaMigrations.Manifest.MetadataV2SnapshotMigration}';
+            """);
+
+        var result = await runner.RunMigrationsAsync(connectionString, typeof(Program).Assembly);
+
+        result.Successful.Should().BeFalse("on a journaled database a missing journal row is divergence, not a seed");
+        var failure = result.Error.Should().BeOfType<DatabaseSchemaFloorException>().Which;
+        failure.FailureKind.Should().Be(DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal);
+        failure.MigrationScript.Should().Be(ServerCoreSchemaMigrations.Manifest.MetadataV2SnapshotMigration);
+        failure.Detail.Should().NotContain("AdoptSeededSchemaOnFirstMigration");
+    }
+
+    private static async Task<string> CaptureUnmigratedStateAsync(string connectionString)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT jsonb_build_object(
+                'journal', to_regclass('public.schema_versions') IS NOT NULL,
+                'tables', COALESCE((
+                    SELECT jsonb_agg(n.nspname || '.' || c.relname ORDER BY n.nspname, c.relname)
+                    FROM pg_catalog.pg_class c
+                    JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                    WHERE n.nspname IN ('public', 'honua') AND c.relkind IN ('r', 'p', 'S')
+                ), '[]'::jsonb)
+            )::text;
+            """;
+        return (string)(await command.ExecuteScalarAsync())!;
+    }
+
     [SkippableFact]
     public async Task CanonicalRunner_WhenMetadataSchemaIsConfigured_AppliesAndVerifiesGuardedFloorThere()
     {

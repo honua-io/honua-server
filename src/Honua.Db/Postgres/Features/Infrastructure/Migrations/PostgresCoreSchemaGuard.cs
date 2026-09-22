@@ -447,6 +447,116 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         ArgumentNullException.ThrowIfNull(connection);
         var state = await ReadStateAsync(connection, cancellationToken).ConfigureAwait(false);
 
+        if (!state.JournalIsEmpty)
+        {
+            VerifyConsistency(state);
+            return;
+        }
+
+        try
+        {
+            VerifyConsistency(state);
+        }
+        catch (DatabaseSchemaFloorException ex) when (ex.FailureKind == DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal)
+        {
+            // A database that has never been migrated but already holds migration-owned tables is
+            // usually a fixture seeded before its first boot. Name every unjournaled family at once,
+            // not just the first one in check order, and the explicit opt-in that adopts them (#4900).
+            var others = DescribeUnjournaledFamilies(state)
+                .Where(family => !string.Equals(family.Migration, ex.MigrationScript, StringComparison.Ordinal))
+                .Select(family => $"{family.Migration} ({string.Join(", ", family.Present)})")
+                .ToArray();
+            var detail = ex.Detail;
+            if (others.Length > 0)
+            {
+                detail += $" Other migration-owned tables without a journal row: {string.Join("; ", others)}.";
+            }
+
+            detail += " The migration journal is empty. If a seed created these tables before the first " +
+                $"migration run, set {PostgresDatabaseMigrationRunner.AdoptSeededSchemaOnFirstMigrationKey}=true " +
+                "so the pending migrations adopt them; the complete schema floor is still verified afterwards.";
+            throw CreateFailure(ex.MigrationScript, ex.FailureKind, detail);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task VerifyFirstMigrationAdoptionAsync(
+        DbConnection connection,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        var state = await ReadStateAsync(connection, cancellationToken).ConfigureAwait(false);
+
+        // Adoption is scoped to a database that has never been migrated. Once any migration is
+        // journaled, a migration-owned table without its journal row is ordinary divergence.
+        if (!state.JournalIsEmpty)
+        {
+            VerifyConsistency(state);
+            return;
+        }
+
+        // Every guarded migration that creates these tables uses CREATE ... IF NOT EXISTS, so a
+        // pending run adopts a present table as-is and creates whatever is absent. It cannot add a
+        // column to a table that already exists, so an incomplete candidate is rejected here,
+        // before anything is applied. Governed-lineage columns (110) are excluded because that
+        // migration adds them itself.
+        string? firstMigration = null;
+        var incomplete = new List<string>();
+        foreach (var family in AdoptableFamilies(state))
+        {
+            var present = family.Tables.Where(state.Tables.Contains).ToHashSet(StringComparer.Ordinal);
+            if (present.Count == 0)
+            {
+                continue;
+            }
+
+            var missing = family.Columns
+                .Where(column => present.Contains(column.Table) && !state.Columns.Contains(column))
+                .Select(column => $"column {column.Table}.{column.Column}")
+                .ToArray();
+            if (missing.Length > 0)
+            {
+                firstMigration ??= family.Migration;
+                incomplete.Add($"{family.Migration} ({string.Join(", ", missing)})");
+            }
+        }
+
+        if (firstMigration is not null)
+        {
+            throw CreateFailure(
+                firstMigration,
+                DatabaseSchemaFloorFailureKind.SchemaExistsWithoutJournal,
+                $"migration adoption candidate(s) are incomplete: {string.Join("; ", incomplete)}.");
+        }
+    }
+
+    private IEnumerable<(string Migration, string[] Tables, (string Table, string Column)[] Columns)> AdoptableFamilies(
+        SchemaState state)
+    {
+        if (state.RequiresRasterFloor)
+        {
+            yield return (_migrations.RasterOverviewsMigration, _rasterOverviewsTables, _rasterOverviewsColumns);
+            yield return (_migrations.RasterFootprintsMigration, _rasterFootprintsTables, _rasterFootprintsColumns);
+        }
+
+        yield return (RasterLayerStatisticsMigration, ["raster_layer_statistics"], _rasterLayerStatisticsColumns);
+        yield return (_migrations.MetadataV2SnapshotMigration, _metadataV2Tables, _metadataV2Columns);
+        yield return (_migrations.MetadataV2ReleasePackagesMigration, _metadataV2ReleasePackageTables, _metadataV2ReleasePackageColumns);
+        yield return (_migrations.SensorThingsMigration, _sensorThingsTables, _sensorThingsColumns);
+        if (_migrations.InitialSchemaMigration is { } initialSchemaMigration)
+        {
+            yield return (initialSchemaMigration, _initialSchemaTables, _initialSchemaColumns);
+        }
+    }
+
+    private IEnumerable<(string Migration, string[] Present)> DescribeUnjournaledFamilies(SchemaState state)
+        => AdoptableFamilies(state)
+            .Where(family => !state.IsApplied(family.Migration))
+            .Select(family => (family.Migration, Present: family.Tables.Where(state.Tables.Contains).ToArray()))
+            .Where(family => family.Present.Length > 0);
+
+    private void VerifyConsistency(SchemaState state)
+    {
         if (state.RequiresRasterFloor)
         {
             var canAwaitLateRasterProvisioning = !state.IsApplied(RasterLateProvisioningMigration);
@@ -1080,6 +1190,12 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             !IsApplied(ConfiguredSchemaAdoptionMigration);
 
         public bool IsApplied(string migration) => AppliedScripts.Contains(migration);
+
+        /// <summary>
+        /// No migration has ever been journaled: either a genuinely fresh database or one whose
+        /// migration-owned tables were created by something other than the migration runner.
+        /// </summary>
+        public bool JournalIsEmpty => AppliedScripts.Count == 0;
 
         public List<string> MissingRasterBaselineTables()
             => _rasterBaselineTables
