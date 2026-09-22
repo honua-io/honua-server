@@ -187,6 +187,10 @@ internal static class ObservabilityServiceCollectionExtensions
                 // for every route, not only the routes that remembered to say so.
                 policy.AddPolicy<BypassOutputCacheOnCredentialedRequestPolicy>();
                 policy.AddPolicy<BypassOutputCacheOnNoStoreResponsePolicy>();
+                // A GeoServices error envelope travels as HTTP 200, so the status-code rule
+                // alone would store it and replay a transient fault for the TTL (#4980).
+                // Deliberately cached tile refusals are re-admitted by TileOutcomeOutputCachePolicy.
+                policy.AddPolicy<BypassOutputCacheOnErrorEnvelopePolicy>();
                 policy.VaryByValue(static context => ResolveTenantOutputCacheKey(context));
                 // Metadata responses (service directory, capabilities, collections, STAC,
                 // tiles, styles) are filtered by the process-wide license edition and

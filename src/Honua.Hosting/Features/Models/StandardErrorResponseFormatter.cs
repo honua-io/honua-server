@@ -376,6 +376,11 @@ internal static class StandardErrorResponseFormatter
 
         AddResponseHeaders(context, options);
 
+        // #4980: the envelope usually travels as HTTP 200, which the output cache would otherwise
+        // store like a success. Mark it so the shared base policy refuses storage without parsing
+        // the body; policies that deliberately cache a deterministic refusal read the code back.
+        BypassOutputCacheOnErrorEnvelopePolicy.MarkErrorEnvelope(context, bodyCode);
+
         // PA-070/PA-117: Esri GeoServices REST spec: ALL responses (including errors) use HTTP 200 OK.
         // The error is signalled exclusively through the JSON body {"error":{"code":N,...}}.
         // The one exception is a caller that opts a specific rejection into its real status
