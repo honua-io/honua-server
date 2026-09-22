@@ -8,4 +8,5 @@ bash scripts/generate-admin-operation-parity-exports.sh "$@" --no-build --no-res
 python3 scripts/ci/verify-admin-operation-parity.py
 bash scripts/generate-geoservices-parity.sh "$@" --no-build --no-restore
 python3 scripts/ci/generate-capability-matrix.py
+python3 scripts/ci/generate-capability-concepts.py
 python3 scripts/examples/generate-manifest.py
