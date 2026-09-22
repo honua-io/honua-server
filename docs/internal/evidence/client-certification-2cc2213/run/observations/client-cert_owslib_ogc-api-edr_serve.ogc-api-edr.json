@@ -1,0 +1,76 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/owslib/ogc-api-edr/serve.ogc-api-edr",
+  "canonical_client": "OWSLib",
+  "client_lane": "py-owslib",
+  "client_version": "0.36.0",
+  "client_version_detail": "OWSLib==0.36.0",
+  "surface": "ogc-api-edr",
+  "operation": "serve.ogc-api-edr",
+  "protocol_version": "OGC API - EDR 1.1",
+  "protocol_profile": "core+position+area",
+  "started_at": "2026-09-16T21:42:09.591044Z",
+  "finished_at": "2026-09-16T21:42:09.692261Z",
+  "duration_ms": 101,
+  "status": "fail",
+  "exercised_capabilities": [
+    "positive",
+    "negative",
+    "auth",
+    "boundary",
+    "crs-axis",
+    "media-schema"
+  ],
+  "summary": "failed checks positive:discover EDR collections and query a position, negative:unknown collection is a problem response, auth:protected EDR collection challenges credentials, boundary:area query at the collection extent edge, crs-axis:position query CRS84 axis order, media-schema:CoverageJSON/GeoJSON responses carry their media types",
+  "primary_request_url": "http://honua:5000/edr/collections",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "discover EDR collections and query a position",
+      "outcome": "fail",
+      "detail": "RuntimeError: {\"type\":\"honua:capability-experimental-disabled\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"The \\u0027serve.ogc-api-edr\\u0027 capability is preview and disabled. Enable it via the configuration key \\u0027Capabilities:Experimental:serve.ogc-api-edr:Enabled=true\\u0027 (or the global switch \\u0027Capabilities:Experimental:Enabled=true\\u0027).\",\"instance\":\"/edr/collections\",\"correlationId\":\"00-f81c581fa8b3e706603ba0cbe87ff115-809ae347a7567c1d-00\",\"timestamp\":\"2026-09-16T21:42:09.6088421\\u002B00:00\"}\nRuntimeError: {\"type\":\"honua:capability-experimental-disabled\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"The \\u0027serve.ogc-api-edr\\u0027 capability is preview and disabled. Enable it via the configuration key \\u0027Capabilities:Experimental:serve.ogc-api-edr:Enabled=true\\u0027 (or the global switch \\u0027Capabilities:Experimental:Enabled=true\\u0027).\",\"instance\":\"/edr/collections\",\"correlationId\":\"00-f81c581fa8b3e706603ba0cbe87ff115-809ae347a7567c1d-00\",\"timestamp\":\"2026-09-16T21:42:09.6088421\\u002B00:00\"}",
+      "request_url": null,
+      "duration_ms": 21
+    },
+    {
+      "facet": "negative",
+      "name": "unknown collection is a problem response",
+      "outcome": "fail",
+      "detail": "RuntimeError: {\"type\":\"honua:capability-experimental-disabled\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"The \\u0027serve.ogc-api-edr\\u0027 capability is preview and disabled. Enable it via the configuration key \\u0027Capabilities:Experimental:serve.ogc-api-edr:Enabled=true\\u0027 (or the global switch \\u0027Capabilities:Experimental:Enabled=true\\u0027).\",\"instance\":\"/edr/collections\",\"correlationId\":\"00-dd7eb213047cfa750f9697a0dcba3172-a428a0d01bdb5db2-00\",\"timestamp\":\"2026-09-16T21:42:09.6270182\\u002B00:00\"}\nRuntimeError: {\"type\":\"honua:capability-experimental-disabled\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"The \\u0027serve.ogc-api-edr\\u0027 capability is preview and disabled. Enable it via the configuration key \\u0027Capabilities:Experimental:serve.ogc-api-edr:Enabled=true\\u0027 (or the global switch \\u0027Capabilities:Experimental:Enabled=true\\u0027).\",\"instance\":\"/edr/collections\",\"correlationId\":\"00-dd7eb213047cfa750f9697a0dcba3172-a428a0d01bdb5db2-00\",\"timestamp\":\"2026-09-16T21:42:09.6270182\\u002B00:00\"}",
+      "request_url": null,
+      "duration_ms": 17
+    },
+    {
+      "facet": "auth",
+      "name": "protected EDR collection challenges credentials",
+      "outcome": "fail",
+      "detail": "RuntimeError: {\"type\":\"honua:capability-experimental-disabled\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"The \\u0027serve.ogc-api-edr\\u0027 capability is preview and disabled. Enable it via the configuration key \\u0027Capabilities:Experimental:serve.ogc-api-edr:Enabled=true\\u0027 (or the global switch \\u0027Capabilities:Experimental:Enabled=true\\u0027).\",\"instance\":\"/edr/collections\",\"correlationId\":\"00-aae4d81e1c57d08e3a1d1f5fb98384c7-31610adbcfa5115a-00\",\"timestamp\":\"2026-09-16T21:42:09.6448219\\u002B00:00\"}\nRuntimeError: {\"type\":\"honua:capability-experimental-disabled\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"The \\u0027serve.ogc-api-edr\\u0027 capability is preview and disabled. Enable it via the configuration key \\u0027Capabilities:Experimental:serve.ogc-api-edr:Enabled=true\\u0027 (or the global switch \\u0027Capabilities:Experimental:Enabled=true\\u0027).\",\"instance\":\"/edr/collections\",\"correlationId\":\"00-aae4d81e1c57d08e3a1d1f5fb98384c7-31610adbcfa5115a-00\",\"timestamp\":\"2026-09-16T21:42:09.6448219\\u002B00:00\"}",
+      "request_url": null,
+      "duration_ms": 17
+    },
+    {
+      "facet": "boundary",
+      "name": "area query at the collection extent edge",
+      "outcome": "fail",
+      "detail": "RuntimeError: {\"type\":\"honua:capability-experimental-disabled\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"The \\u0027serve.ogc-api-edr\\u0027 capability is preview and disabled. Enable it via the configuration key \\u0027Capabilities:Experimental:serve.ogc-api-edr:Enabled=true\\u0027 (or the global switch \\u0027Capabilities:Experimental:Enabled=true\\u0027).\",\"instance\":\"/edr/collections\",\"correlationId\":\"00-e57d0c995813af5f983896000b8c6840-4a6ca100a498dff7-00\",\"timestamp\":\"2026-09-16T21:42:09.6612962\\u002B00:00\"}\nRuntimeError: {\"type\":\"honua:capability-experimental-disabled\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"The \\u0027serve.ogc-api-edr\\u0027 capability is preview and disabled. Enable it via the configuration key \\u0027Capabilities:Experimental:serve.ogc-api-edr:Enabled=true\\u0027 (or the global switch \\u0027Capabilities:Experimental:Enabled=true\\u0027).\",\"instance\":\"/edr/collections\",\"correlationId\":\"00-e57d0c995813af5f983896000b8c6840-4a6ca100a498dff7-00\",\"timestamp\":\"2026-09-16T21:42:09.6612962\\u002B00:00\"}",
+      "request_url": null,
+      "duration_ms": 17
+    },
+    {
+      "facet": "crs-axis",
+      "name": "position query CRS84 axis order",
+      "outcome": "fail",
+      "detail": "RuntimeError: {\"type\":\"honua:capability-experimental-disabled\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"The \\u0027serve.ogc-api-edr\\u0027 capability is preview and disabled. Enable it via the configuration key \\u0027Capabilities:Experimental:serve.ogc-api-edr:Enabled=true\\u0027 (or the global switch \\u0027Capabilities:Experimental:Enabled=true\\u0027).\",\"instance\":\"/edr/collections\",\"correlationId\":\"00-62d1799bae09871faa091b0984e1bb9f-faad4082a099d9b3-00\",\"timestamp\":\"2026-09-16T21:42:09.6754702\\u002B00:00\"}\nRuntimeError: {\"type\":\"honua:capability-experimental-disabled\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"The \\u0027serve.ogc-api-edr\\u0027 capability is preview and disabled. Enable it via the configuration key \\u0027Capabilities:Experimental:serve.ogc-api-edr:Enabled=true\\u0027 (or the global switch \\u0027Capabilities:Experimental:Enabled=true\\u0027).\",\"instance\":\"/edr/collections\",\"correlationId\":\"00-62d1799bae09871faa091b0984e1bb9f-faad4082a099d9b3-00\",\"timestamp\":\"2026-09-16T21:42:09.6754702\\u002B00:00\"}",
+      "request_url": null,
+      "duration_ms": 14
+    },
+    {
+      "facet": "media-schema",
+      "name": "CoverageJSON/GeoJSON responses carry their media types",
+      "outcome": "fail",
+      "detail": "RuntimeError: {\"type\":\"honua:capability-experimental-disabled\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"The \\u0027serve.ogc-api-edr\\u0027 capability is preview and disabled. Enable it via the configuration key \\u0027Capabilities:Experimental:serve.ogc-api-edr:Enabled=true\\u0027 (or the global switch \\u0027Capabilities:Experimental:Enabled=true\\u0027).\",\"instance\":\"/edr/collections\",\"correlationId\":\"00-16d8e4e7023ef9aae1319bf33ff66038-4a70a7aaf7472597-00\",\"timestamp\":\"2026-09-16T21:42:09.6897162\\u002B00:00\"}\nRuntimeError: {\"type\":\"honua:capability-experimental-disabled\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"The \\u0027serve.ogc-api-edr\\u0027 capability is preview and disabled. Enable it via the configuration key \\u0027Capabilities:Experimental:serve.ogc-api-edr:Enabled=true\\u0027 (or the global switch \\u0027Capabilities:Experimental:Enabled=true\\u0027).\",\"instance\":\"/edr/collections\",\"correlationId\":\"00-16d8e4e7023ef9aae1319bf33ff66038-4a70a7aaf7472597-00\",\"timestamp\":\"2026-09-16T21:42:09.6897162\\u002B00:00\"}",
+      "request_url": null,
+      "duration_ms": 14
+    }
+  ]
+}

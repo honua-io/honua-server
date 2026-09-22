@@ -348,16 +348,28 @@ public sealed class CustomCodeSubmitTests
     [UnitTest]
     [Operation(Operations.Create)]
     [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
-    public async Task SubmitJob_CustomCode_ServerSetsOutputPrefix_OverridingCaller()
+    public async Task SubmitJob_CustomCode_ServerSetsOutputPrefix_RefusingRequestValue()
     {
         var sut = CreateService();
-        var metadata = CustomCodeMetadata();
-        metadata[CustomCodeJobContract.OutputPrefixParam] = "s3://attacker/loot";
 
-        var job = await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), metadata);
+        // The output prefix is server-set: a request that names one is refused...
+        var withPrefix = CustomCodeMetadata();
+        withPrefix[CustomCodeJobContract.OutputPrefixParam] = "s3://other-bucket/prefix";
+        var prefixAct = async () => await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), withPrefix);
+        (await prefixAct.Should().ThrowAsync<GeoprocessingValidationException>())
+            .Which.Message.Should().Contain(CustomCodeJobContract.OutputPrefixParam);
 
-        job.Spec.Parameters[CustomCodeJobContract.OutputPrefixParam].Should().NotContain("attacker");
+        // ...as is one that names a container environment pass-through the gate injects itself.
+        var withEnv = CustomCodeMetadata();
+        withEnv[CustomCodeJobContract.JobTokenEnvParam] = "request-value";
+        var envAct = async () => await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), withEnv);
+        (await envAct.Should().ThrowAsync<GeoprocessingValidationException>())
+            .Which.Message.Should().Contain(CustomCodeJobContract.JobTokenEnvParam);
+
+        // The server-allocated per-job prefix and injected environment still arrive.
+        var job = await sut.SubmitJobAsync(CustomCodePlan(), null, OwnerPrincipal(), CustomCodeMetadata());
         job.Spec.Parameters[CustomCodeJobContract.OutputPrefixParam].Should().Contain(job.OperationId);
+        job.Spec.Parameters.Should().ContainKey(CustomCodeJobContract.JobTokenEnvParam);
     }
 
     // -----------------------------------------------------------------------

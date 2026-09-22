@@ -1,0 +1,10 @@
+# Governed client releases (certification/client-protocol-requirements.v1.json).
+OWSLib==0.36.0
+pystac==1.15.2
+pystac-client==0.9.0
+# Support libraries the lane uses to check what the clients returned.
+lxml==6.1.2
+requests==2.34.2
+pillow==12.3.0
+python-dateutil==2.9.0.post0
+PyYAML==6.0.3

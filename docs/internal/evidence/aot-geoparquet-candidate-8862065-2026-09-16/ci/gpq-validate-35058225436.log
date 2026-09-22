@@ -1,0 +1,24 @@
+
+Summary: Passed 20 checks.
+
+ ✓ file must include a "geo" metadata key
+ ✓ metadata must be a JSON object
+ ✓ metadata must include a "version" string
+ ✓ metadata must include a "primary_column" string
+ ✓ metadata must include a "columns" object
+ ✓ column metadata must include the "primary_column" name
+ ✓ column metadata must include a valid "encoding" string
+ ✓ column metadata must include a "geometry_types" list
+ ✓ optional "crs" must be null or a PROJJSON object
+ ✓ optional "orientation" must be a valid string
+ ✓ optional "edges" must be a valid string
+ ✓ optional "bbox" must be an array of 4 or 6 numbers
+ ✓ optional "epoch" must be a number
+ ✓ geometry columns must not be grouped
+ ✓ geometry columns must be stored using the BYTE_ARRAY parquet type
+ ✓ geometry columns must be required or optional, not repeated
+ ✓ all geometry values match the "encoding" metadata
+ ✓ all geometry types must be included in the "geometry_types" metadata (if not empty)
+ ✓ all polygon geometries must follow the "orientation" metadata (if present)
+ ✓ all geometries must fall within the "bbox" metadata (if present)
+

@@ -148,6 +148,11 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
                 activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 return JobExecutionResult.Failed(ex.Message) with { IsRetryable = false };
             }
+            catch (WorkspaceQuotaExceededException ex)
+            {
+                activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+                return JobExecutionResult.Failed(ex.Message) with { IsRetryable = false };
+            }
             catch (ArtifactReplacementFailedException ex)
             {
                 Log.OutputCollision(_logger, job.OperationId, ex.Message);
@@ -214,14 +219,20 @@ internal sealed partial class GeoprocessingDispatchJobExecutor : IJobExecutor
         Workspace resolvedWorkspace;
         try
         {
-            resolvedWorkspace = await workspaceLifecycle
-                .GetOrCreateNamedWorkspaceAsync(ownerId, requestedLabel, cancellationToken)
-                .ConfigureAwait(false);
+            var scopeId = job.Audit.SubmitterSecurityContext?.TenantId;
+            resolvedWorkspace = scopeId is null
+                ? await workspaceLifecycle.GetOrCreateNamedWorkspaceAsync(ownerId, requestedLabel, cancellationToken).ConfigureAwait(false)
+                : await workspaceLifecycle.GetOrCreateScopedWorkspaceAsync(ownerId, requestedLabel, scopeId, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             scope?.Dispose();
             throw;
+        }
+        catch (WorkspaceQuotaExceededException ex)
+        {
+            scope?.Dispose();
+            return (null, context, ex.Message, false);
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {

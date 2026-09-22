@@ -6,26 +6,30 @@
 # Pin manifest digests to avoid intermittent MCR tag resolution failures in GitHub Actions buildx.
 # These ARG defaults are the single source of truth for the GHCR mirror of these
 # bases (scripts/ci/base-image-mirrors.sh + the nightly `mirror-base-images` job).
-ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0-alpine@sha256:620e765fe18186c08399f7aa978f79f04b6bbf0ee1b3b8a91e2d5c9619e59da1
-ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0-alpine@sha256:379b17d7d388a2a1b5330bfc2429a01091f85e255d3bce7981d65927d786c000
+#
+# glibc, not Alpine/musl (honua-server#4912). The published graph ships glibc-only native
+# libraries: ParquetSharp's ParquetSharpNative (the GeoParquet f=parquet encoder) and DuckDB's
+# libduckdb have no musl asset, so a musl RID publish copies the glibc binaries and
+# they cannot load. On Alpine every f=parquet request returned the typed 501, and gcompat +
+# libatomic loaded the library but segfaulted the server on the first request. These are the
+# same Ubuntu-based SDK/runtime-deps digests as docker/Dockerfile.lambda.aot.
+ARG DOTNET_SDK_IMAGE=mcr.microsoft.com/dotnet/sdk:10.0@sha256:e1ffd2a92ae84c1291bc1b6887501f8af98e6331e7af6d4c8d37168c5e87a64c
+ARG DOTNET_RUNTIME_DEPS_IMAGE=mcr.microsoft.com/dotnet/runtime-deps:10.0@sha256:9b37bbaf06fc653cb0e757215081139fb493658e1f864a738f6a478620c9196f
 
 # Build stage with security hardening
 FROM ${DOTNET_SDK_IMAGE} AS build
 WORKDIR /src
 
 # Security: Create non-root build user
-RUN addgroup -g 1001 -S builduser && \
-    adduser -S builduser -G builduser -u 1001
+RUN groupadd --gid 1001 --system builduser && \
+    useradd --uid 1001 --gid 1001 --system --no-create-home --shell /usr/sbin/nologin builduser
 
-# Version floors retain security fixes while accepting later revisions from the
-# pinned Alpine release. Exact revisions disappear from the live APK index.
-# Install native AOT build dependencies with version pinning for security
-RUN apk add --no-cache \
-    'gcompat>=1.1.0-r4' \
-    'clang21>=21.1.8-r3' \
-    'build-base>=0.5-r4' \
-    'zlib-dev>=1.3.2-r0' \
-    && rm -rf /var/cache/apk/*
+# Install native AOT build dependencies (ILC links with clang/lld against glibc).
+# The base is digest-pinned; package versions follow that Ubuntu snapshot's repositories.
+# hadolint ignore=DL3008
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends clang lld zlib1g-dev && \
+    rm -rf /var/lib/apt/lists/*
 
 # Copy the full project graph (all .csproj) plus build/config files first so the
 # RID-specific restore below covers every transitive project the publish needs.
@@ -45,6 +49,14 @@ ARG HONUA_INCLUDE_AZURE=
 ARG HONUA_INCLUDE_ORACLE=false
 ARG HONUA_INCLUDE_SNOWFLAKE=false
 
+# SkiaSharp native asset (honua-server#4949): both RIDs publish
+# SkiaSharp.NativeAssets.Linux.NoDependencies, like docker/Dockerfile.lambda.aot. The
+# distro-linked linux-arm64 libSkiaSharp.so references uuid_* and FT_Get_BDF_Property but
+# declares no NEEDED entry for libuuid, libfreetype or libfontconfig, so no installed package
+# can satisfy it: the `ldd -r` gate below rejected every arm64 build. The NoDependencies asset
+# links only libc/libm/libdl/libpthread on both arches and reads fonts from files, which the
+# runtime stage ships and pins through HONUA_DEFAULT_FONT_PATH.
+
 # Restore dependencies for the target runtime so the AOT self-contained publish
 # (which runs --no-restore) finds obj/project.assets.json for every project in
 # the Honua.Server graph at the RID it builds.
@@ -52,11 +64,11 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     --mount=type=secret,id=github_actor \
     --mount=type=secret,id=github_token \
     case "${TARGETARCH:-amd64}" in \
-        amd64) RUNTIME_ID="linux-musl-x64" ;; \
-        arm64) RUNTIME_ID="linux-musl-arm64" ;; \
+        amd64) RUNTIME_ID="linux-x64" ;; \
+        arm64) RUNTIME_ID="linux-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    set -- "-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" && \
+    set -- "-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" "-p:HonuaUseSkiaNoDependencies=true" && \
     if [ -n "${HONUA_INCLUDE_AWS:-}" ]; then set -- "$@" "-p:HonuaIncludeAws=$HONUA_INCLUDE_AWS"; fi && \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then set -- "$@" "-p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then set -- "$@" "-p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
@@ -91,11 +103,11 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
     --mount=type=secret,id=github_actor \
     --mount=type=secret,id=github_token \
     case "${TARGETARCH:-amd64}" in \
-        amd64) RUNTIME_ID="linux-musl-x64" ;; \
-        arm64) RUNTIME_ID="linux-musl-arm64" ;; \
+        amd64) RUNTIME_ID="linux-x64" ;; \
+        arm64) RUNTIME_ID="linux-arm64" ;; \
         *) echo "Unsupported TARGETARCH=${TARGETARCH}" && exit 1 ;; \
     esac && \
-    set -- "-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" && \
+    set -- "-p:HonuaBuildProfile=${HONUA_BUILD_PROFILE:-full}" "-p:HonuaUseSkiaNoDependencies=true" && \
     if [ -n "${HONUA_INCLUDE_AWS:-}" ]; then set -- "$@" "-p:HonuaIncludeAws=$HONUA_INCLUDE_AWS"; fi && \
     if [ -n "${HONUA_INCLUDE_AZURE:-}" ]; then set -- "$@" "-p:HonuaIncludeAzure=$HONUA_INCLUDE_AZURE"; fi && \
     if [ -n "${HONUA_INCLUDE_ORACLE:-}" ]; then set -- "$@" "-p:HonuaIncludeOracle=$HONUA_INCLUDE_ORACLE"; fi && \
@@ -138,28 +150,57 @@ RUN --mount=type=cache,target=/root/.nuget/packages \
 # Runtime stage - distroless-style minimal image for maximum security
 FROM ${DOTNET_RUNTIME_DEPS_IMAGE} AS runtime
 
-# No newer upstream digest is available. Invalidate the cached upgrade layer
-# to pick up Alpine's libexpat 2.8.4-r0 security fixes in every architecture.
+# Invalidate the cached upgrade layer with security refreshes so a cached package
+# layer cannot retain old packages.
 ARG RUNTIME_PACKAGE_REVISION=20260905
 
-# Security: Install runtime dependencies
-RUN apk upgrade --no-cache && \
-    apk add --no-cache \
-    'icu-libs>=78.1-r0' \
-    'krb5-libs>=1.22.2-r1' \
-    'tzdata>=2026c-r0' \
-    'fontconfig>=2.17.1-r1' \
-    'ca-certificates>=20260611-r0' && \
-    rm -rf /var/cache/apk/* && \
-    rm -rf /tmp/*
+# Security: Install runtime dependencies. The Ubuntu runtime-deps base already ships
+# ICU (InvariantGlobalization=false, honua-server#1369). libatomic1 is required by
+# ParquetSharpNative, which backs the GeoParquet writer (honua-server#4912); wget backs
+# the HEALTHCHECK below. fonts-dejavu-core is the rendering font: the NoDependencies Skia
+# asset has no Fontconfig lookup, and without a font file every label, legend and Studio
+# deliverable renders blank (honua-server#4908, #4949).
+# The base is digest-pinned; compatible security updates and dependency versions
+# intentionally follow that Ubuntu snapshot's configured repositories.
+# hadolint ignore=DL3005,DL3008
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    fonts-dejavu-core \
+    libatomic1 \
+    libgssapi-krb5-2 \
+    tzdata \
+    wget && \
+    rm -rf /var/lib/apt/lists/* /tmp/* && \
+    test -r /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
 
 # Security: Create non-root user with minimal privileges
-RUN addgroup -g 1001 -S honua && \
-    adduser -S honua -G honua -u 1001 -s /sbin/nologin -h /app
+RUN groupadd --gid 1001 --system honua && \
+    useradd --uid 1001 --gid 1001 --system --no-create-home --home-dir /app --shell /usr/sbin/nologin honua
 
 # Security: Set strict file permissions
 WORKDIR /app
 COPY --from=build --chown=1001:1001 /app .
+
+# Native dependency gate (honua-server#4912). `ldd -r` forces every relocation of the
+# native libraries the server P/Invokes, so a missing shared library or an incompatible
+# libc fails the image build instead of the first customer request. The librdkafka
+# variants are excluded: Confluent.Kafka probes them in order and loads the one that
+# matches the running distribution. libe_sqlite3.so is excluded because it takes its
+# libm symbols from the host executable instead of declaring libm as NEEDED, so a
+# standalone `ldd -r` reports false undefined symbols for it.
+RUN for native in ParquetSharpNative.so libduckdb.so libSkiaSharp.so; do \
+      test -f "/app/${native}" || { echo "missing native library /app/${native}" >&2; exit 1; }; \
+      echo "== ${native}"; \
+      ldd -r "/app/${native}" > /tmp/native-linkage.txt 2>&1; \
+      cat /tmp/native-linkage.txt; \
+      if grep -Eq 'not found|undefined symbol|not a dynamic executable' /tmp/native-linkage.txt; then \
+        echo "native dependency validation failed for /app/${native}" >&2; \
+        exit 1; \
+      fi; \
+    done && \
+    rm -f /tmp/native-linkage.txt
 
 # Security: Create runtime directories with proper permissions.
 # This set MUST include every writable directory the default configuration writes
@@ -219,7 +260,8 @@ ENV ASPNETCORE_ENVIRONMENT=Production \
     Kestrel__Endpoints__Grpc__Protocols=Http2 \
     DOTNET_RUNNING_IN_CONTAINER=true \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
-    DOTNET_EnableDiagnostics=0
+    DOTNET_EnableDiagnostics=0 \
+    HONUA_DEFAULT_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
 
 # Security: Enhanced health check with timeout and authentication bypass
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \

@@ -78,6 +78,10 @@ internal static class SecurityServiceCollectionExtensions
             return new CompositeSecretResolver(resolvers, logger);
         });
 
+        // Request-supplied secret references (imports, workflow source steps, registered
+        // connections) resolve through the operator policy, never through the resolver above.
+        services.AddRequestSecretReferenceResolution(configuration);
+
         // Register secret resolver factory for extensibility
         services.AddSingleton<IConnectionSecretResolverFactory>(serviceProvider =>
             new ConnectionSecretResolverFactory(

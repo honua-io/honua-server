@@ -25,6 +25,7 @@ namespace Honua.Db.DuckDB.Features.FeatureStore;
 internal sealed class DuckDBFeatureStore :
     IFeatureDataProvider,
     IFeatureReader,
+    IBindableFeatureDataProvider,
     IGeoJsonFeatureStore,
     IStreamingFeatureStore,
     IPagedFeatureReader
@@ -34,19 +35,50 @@ internal sealed class DuckDBFeatureStore :
     private readonly IFeatureCacheManager _cacheManager;
     private readonly IMetadataV2GraphProvider? _v2Provider;
     private readonly IFilterExpressionService? _filterExpressionService;
+    private readonly LayerReadSecurityResolver? _readSecurity;
+    private readonly FeatureProviderBinding? _binding;
 
     public DuckDBFeatureStore(
         IFeatureQueryBuilder queryBuilder,
         IFeatureDataAccess dataAccess,
         IFeatureCacheManager cacheManager,
         IMetadataV2GraphProvider? v2Provider = null,
-        IFilterExpressionService? filterExpressionService = null)
+        IFilterExpressionService? filterExpressionService = null,
+        LayerReadSecurityResolver? readSecurity = null)
+        : this(queryBuilder, dataAccess, cacheManager, v2Provider, filterExpressionService, readSecurity, binding: null)
+    {
+    }
+
+    private DuckDBFeatureStore(
+        IFeatureQueryBuilder queryBuilder,
+        IFeatureDataAccess dataAccess,
+        IFeatureCacheManager cacheManager,
+        IMetadataV2GraphProvider? v2Provider,
+        IFilterExpressionService? filterExpressionService,
+        LayerReadSecurityResolver? readSecurity,
+        FeatureProviderBinding? binding)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
         _v2Provider = v2Provider;
         _filterExpressionService = filterExpressionService;
+        _readSecurity = readSecurity;
+        _binding = binding;
+    }
+
+    /// <inheritdoc />
+    public IFeatureReader CreateReaderForBinding(FeatureProviderBinding binding)
+    {
+        ArgumentNullException.ThrowIfNull(binding);
+        return new DuckDBFeatureStore(
+            _queryBuilder,
+            _dataAccess,
+            _cacheManager,
+            _v2Provider,
+            _filterExpressionService,
+            _readSecurity,
+            binding);
     }
 
     /// <inheritdoc />
@@ -136,6 +168,7 @@ internal sealed class DuckDBFeatureStore :
     public async Task<TemporalExtentResult?> GetTemporalExtentAsync(
         int layerId, string fieldName, TemporalPropertyType propertyType, CancellationToken cancellationToken = default)
     {
+        await EnsureRowAndFieldPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
         var temporalQuery = _queryBuilder.BuildTemporalExtentQuery(layerId, fieldName, propertyType);
         return await _dataAccess.GetTemporalExtentAsync(layerId, temporalQuery, cancellationToken).ConfigureAwait(false);
     }
@@ -298,22 +331,38 @@ internal sealed class DuckDBFeatureStore :
     #region Private helpers
 
     /// <summary>
-    /// Resolves and applies the layer's permanent (row-visibility) filter to the query.
-    /// Idempotent: queries already carrying an enforced filter are returned unchanged.
+    /// Refuses the read when a row-level security or field-mask policy applies to the request:
+    /// this provider translates the layer's permanent filter but applies neither of those.
+    /// </summary>
+    private Task EnsureRowAndFieldPolicyEnforceableAsync(int layerId, CancellationToken cancellationToken)
+        => _readSecurity is null
+            ? Task.CompletedTask
+            : _readSecurity.EnsureNoUnenforcedPolicyAsync(
+                "DuckDB", layerId, _binding?.Resource, rejectPermanentFilter: false, cancellationToken);
+
+    /// <summary>
+    /// Resolves and applies the layer's permanent (row-visibility) filter to the query, after
+    /// refusing the read when a row-level security or field-mask policy applies that this
+    /// provider cannot enforce. The permanent filter step is idempotent: queries already
+    /// carrying an enforced filter are returned unchanged.
     /// </summary>
     private async Task<FeatureQuery> ApplyPermanentFilterAsync(
         int layerId,
         FeatureQuery query,
         CancellationToken cancellationToken)
     {
+        await EnsureRowAndFieldPolicyEnforceableAsync(layerId, cancellationToken).ConfigureAwait(false);
+
         if (query.EnforcedSqlFilter != null)
         {
             return query;
         }
 
-        var enforcedFilter = await PermanentFilterResolver
-            .ResolveAsync(_v2Provider, _filterExpressionService, layerId, cancellationToken)
-            .ConfigureAwait(false);
+        var enforcedFilter = _binding is not null
+            ? LayerReadSecurityResolver.ResolvePermanentFilter(_binding.Resource, _filterExpressionService)
+            : await PermanentFilterResolver
+                .ResolveAsync(_v2Provider, _filterExpressionService, layerId, cancellationToken)
+                .ConfigureAwait(false);
 
         if (enforcedFilter != null)
         {

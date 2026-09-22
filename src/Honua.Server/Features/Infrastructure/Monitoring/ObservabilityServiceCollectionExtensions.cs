@@ -83,11 +83,16 @@ internal static class ObservabilityServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
         services.AddScoped<IOpsHealthSnapshotService, OpsHealthSnapshotService>();
+        // Singleton: the scoped engine must still report a store source's last successful collection
+        // after a failed read in a later scope (#4840).
+        services.AddSingleton<OpsFindingsCollectionLedger>();
         services.AddScoped(sp => new OpsFindingsExtendedSignals
         {
             DatabasePressureSignal = sp.GetService<IOpsDatabasePressureSignal>(),
             AdmissionGate = sp.GetService<Honua.Core.Features.Infrastructure.Abstractions.IRuntimeTunableAdmissionGate>(),
             RollupStore = sp.GetService<IOpsHealthRollupStore>(),
+            CollectionLedger = sp.GetRequiredService<OpsFindingsCollectionLedger>(),
+            TimeProvider = sp.GetService<TimeProvider>(),
         });
         // One scoped instance behind both seams: callers that only need findings keep the domain
         // abstraction, while the read/proposal surfaces resolve the evidence-carrying view.
@@ -484,6 +489,7 @@ internal static class ObservabilityServiceCollectionExtensions
             options.AddPolicy("OgcTilesDatasetTile", policy =>
             {
                 policy.VaryByValue(ResolveTileSizeOutputCacheKey);
+                policy.AddPolicy<TileOutcomeOutputCachePolicy>();
                 policy.Expire(ttl.OgcTilesDatasetTile);
                 policy.SetVaryByRouteValue("tileMatrixSetId", "tileMatrix", "tileRow", "tileCol");
                 policy.SetVaryByQuery("f", "datetime", "subset", "crs", "subset-crs", "collections");
@@ -495,6 +501,7 @@ internal static class ObservabilityServiceCollectionExtensions
             options.AddPolicy("OgcTilesTile", policy =>
             {
                 policy.VaryByValue(ResolveTileSizeOutputCacheKey);
+                policy.AddPolicy<TileOutcomeOutputCachePolicy>();
                 policy.Expire(ttl.OgcTilesTile);
                 policy.SetVaryByRouteValue("collectionId", "tileMatrixSetId", "tileMatrix", "tileRow", "tileCol");
                 policy.SetVaryByQuery("f", "datetime", "subset", "crs", "subset-crs");
@@ -506,6 +513,7 @@ internal static class ObservabilityServiceCollectionExtensions
             options.AddPolicy("MvtTile", policy =>
             {
                 policy.VaryByValue(ResolveTileSizeOutputCacheKey);
+                policy.AddPolicy<TileOutcomeOutputCachePolicy>();
                 policy.Expire(ttl.MvtTile);
                 policy.SetVaryByRouteValue("layerId", "z", "x", "y");
                 // `where` for attribute filtering; `time` for the temporal-animation
@@ -520,6 +528,7 @@ internal static class ObservabilityServiceCollectionExtensions
             options.AddPolicy("H3MvtTile", policy =>
             {
                 policy.VaryByValue(ResolveTileSizeOutputCacheKey);
+                policy.AddPolicy<TileOutcomeOutputCachePolicy>();
                 policy.Expire(ttl.MvtTile);
                 policy.SetVaryByRouteValue("layerId", "z", "x", "y");
                 policy.SetVaryByQuery("where", "resolution");

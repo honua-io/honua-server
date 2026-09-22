@@ -14,7 +14,7 @@ GeoServices-REST mutations on the (anonymous, read-only) ImageServer surface.
 Instead, raster ingestion and mutation are owned by the canonical, admin-authorized
 Honua admin API, which enforces layer homogeneity, advisory locks, EXTERNAL-TOAST
 storage, statistics, and tile pre-generation atomically through a single hardened
-pipeline (#1875 decision memo).
+pipeline.
 
 This page maps each Esri ImageServer admin op to its Honua admin equivalent for
 ArcGIS-client users migrating to Honua.
@@ -29,13 +29,13 @@ ArcGIS-client users migrating to Honua.
 | `validate` | File validation occurs at import time | Not supported by design |
 | `calculateVolume` | None — analytic, not catalog mutation | Deferred (raster-analysis scope) |
 | `computeMultidimensionalInfo` | Single `acquisitionDate` per raster | Partial (no true multidimensional cube) |
-| `computeTiePoints` | None — photogrammetry; ties to the sensor-model work (#1879/#1880/#1881) | Deferred |
+| `computeTiePoints` | None — photogrammetry; ties to the sensor-model work | Deferred |
 
 ## Why admin-API canonical instead of GeoServices-REST parity
 
 1. **One ingestion path = one correctness/security surface.** The admin path
    enforces layer homogeneity (SRID/band-count), advisory locks, EXTERNAL-TOAST
-   storage (#1625), statistics, and tile pre-generation atomically. A second
+   storage, statistics, and tile pre-generation atomically. A second
    ingestion path over GeoServices REST would duplicate or bypass all of that.
 2. **The Esri admin ops assume a mosaic-dataset model Honua does not have.**
    Honua's catalog is an implicit projection of `raster_data`; each row *is* a

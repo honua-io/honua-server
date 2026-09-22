@@ -38,23 +38,6 @@ identifies the immutable release-repository source and SHA-256 of the public cop
 The GHCR manifest URL uses the OCI registry protocol; Docker handles its anonymous
 bearer-token exchange. It does not require a GitHub account.
 
-**This is not a qualified 2026.1 candidate.** After the cut, replace the server
-and compatible client pins together from the signed release lock and repeat this
-journey on a clean Windows machine in the Windows licensed lane. Link that
-separate qualification record on [#4300](https://github.com/honua-io/honua-server/issues/4300).
-Do not substitute the historical 2026.1 release or the moving candidate snapshot.
-
-The [pre-cut Windows receipt](../guides/deploy/evidence/windows-packages-4300.json)
-records successful fresh-volume startup, anonymous denial, authenticated admin
-access, import/publish/query, restart readback, container-recreation readback,
-and scoped teardown with these packages. It used an existing Windows host with
-a new installation directory and virtual environment, not a clean-machine RC
-qualification.
-
-The [documentation validation record](../guides/deploy/evidence/customer-install-docs-4300.json) separately records
-a Linux runtime replay of the updated commands, database and file-storage restore,
-and native PowerShell syntax checks. It is not a clean-Windows qualification.
-
 ## 1. Create a private, isolated installation
 
 Choose unused loopback ports if `18080` (HTTP) or `18081` (native gRPC) is occupied.

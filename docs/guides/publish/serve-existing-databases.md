@@ -41,7 +41,7 @@ In the authorized [API explorer](../../reference/openapi-and-explorer.md), run `
 }
 ```
 
-Credentials are encrypted at rest and never returned by the API. Use `secretReference` + `secretType` instead of `password` to pull credentials from a secret manager.
+Credentials are encrypted at rest and never returned by the API. Use `secretReference` + `secretType` instead of `password` to pull credentials from a secret manager. The reference must be a whole `provider:identifier` value (for example `aws:secretsmanager:honua/connections/warehouse`) that the operator has permitted under `Security__RequestSecretReferences__*` ([References supplied in a request](../deploy/configuration.md#references-supplied-in-a-request)); a literal connection string is not accepted in `secretReference`.
 
 ### 2. Test the connection
 
@@ -83,6 +83,7 @@ Open `http://localhost:8080/ogc/features/collections` in a browser and confirm t
 
 - **Connection test fails** — verify host/port reachability from the server container and that `sslMode` matches the database TLS setup (`Disable`, `Allow`, `Prefer`, `Require`, `VerifyCA`, `VerifyFull`).
 - **`Cannot specify both Password and SecretReference` (400)** — supply exactly one credential mechanism.
+- **`secretReference` rejected (400)** — the value is not a whole `provider:identifier` reference, or the operator has not permitted it under `Security__RequestSecretReferences__*`.
 - **Table missing from discovery** — discovery lists tables with a registered geometry column; confirm the table has a typed geometry column and the connection user has SELECT on it.
 - **Publish returns `409 Conflict`** — a layer with that name already exists in the target service; pick another `layerName`.
 - **Read-only provider table cannot be edited** — DuckDB, SQL Server, Oracle, and MySQL providers reject edits by design; copy data into PostGIS for editable layers.

@@ -7,6 +7,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.ArcGisRest;
 
@@ -56,7 +57,10 @@ public static class ServiceCollectionExtensions
             .ConfigureHttpClient(static client => client.Timeout = TimeSpan.FromSeconds(30))
             .AddHttpResiliencePolicy("arcgis-rest");
 
-        services.AddScoped<ArcGisRestFeatureStore>();
+        services.AddScoped<ArcGisRestFeatureStore>(sp => new ArcGisRestFeatureStore(
+            sp.GetRequiredService<IArcGisRestFeatureClient>(),
+            sp.GetRequiredService<ILogger<ArcGisRestFeatureStore>>(),
+            Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp)));
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<ArcGisRestFeatureStore>());
 
         return services;

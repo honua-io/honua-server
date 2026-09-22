@@ -228,15 +228,23 @@ internal static class CoreEndpoints
                 "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/html",
                 "http://www.opengis.net/spec/ogcapi-features-1/1.0/conf/geojson",
 
-                // OGC API Features Part 3 - Queryables. This is the only Part 3
-                // class promoted here because the exact-candidate lane validates
-                // the queryables schema, while its CQL2/filter probes are not a
-                // complete class suite.
-                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables"
+                // OGC API Features Part 2 - CRS by Reference. The ETS
+                // ogcapi-features-1.0 run by cite-evidence-report.yml executes
+                // the complete Part 2 class against the candidate image once it
+                // is declared, and the evidence bundle fails on any skipped test.
+                "http://www.opengis.net/spec/ogcapi-features-2/1.0/conf/crs",
 
-            // CRS, filtering, CQL2, and Part 4 remain implemented or
-            // test-covered in places, but are not advertised until an exact
-            // candidate conformance lane proves their complete classes.
+                // Part 3 discovery enables desktop clients to push filters into
+                // the shared CQL2 pipeline instead of downloading entire layers.
+                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/queryables",
+                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/filter",
+                "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/features-filter",
+                "http://www.opengis.net/spec/cql2/1.0/conf/basic-cql2",
+                "http://www.opengis.net/spec/cql2/1.0/conf/cql2-text",
+                "http://www.opengis.net/spec/cql2/1.0/conf/cql2-json"
+
+            // Optional CQL2 extensions and Part 4 remain unadvertised pending
+            // complete class evidence.
             ).AddRange(OgcConformanceUris.Common)
               .AddRange(OgcConformanceUris.VendorExtensions),
             Links = OgcCoreMetadataUtilities.BuildConformanceLinks(

@@ -7,6 +7,8 @@ description: "Task-oriented guides, grouped by what you want to do."
 
 Task-oriented guides, grouped by what you want to do. New to Honua? Start with the [quickstart](../get-started/quickstart.md).
 
+Examples use `http://localhost:8080`, the repository Compose default. A quickstart install publishes on `18080`; substitute your own base URL throughout.
+
 ## Publish data
 
 | I want to… | Guide |
@@ -75,23 +77,20 @@ Task-oriented guides, grouped by what you want to do. New to Honua? Start with t
 | Run without containers for development | [Local development](deploy/local-development.md) |
 | Deploy on Kubernetes | [Kubernetes](deploy/kubernetes.md) |
 | Deploy on AWS or Azure | [Cloud deployments](deploy/cloud-deployments.md) |
-| Choose a deployment topology | [Deployment scenarios](deploy/cloud-deployments.md) |
 | Configure the server with environment variables | [Configuration](deploy/configuration.md) |
 | Understand the operate loop, two seats, autonomy ladder, and rollback taxonomy | [Operating Honua](operate/README.md) |
 | Monitor health, metrics, and alerts | [Monitoring](deploy/monitoring.md) |
-| Run day-2 operations | [Operations](deploy/backup-and-restore.md) |
 | Back up and restore | [Backup and restore](deploy/backup-and-restore.md) |
 | Scale and tune performance | [Scaling and performance](deploy/scaling-and-performance.md) |
 | Upgrade or roll back a release | [Upgrade and rollback](deploy/upgrade-and-rollback.md) |
-| Tune outbound HTTP resilience | [HTTP client resilience](deploy/scaling-and-performance.md) |
+| Tune outbound HTTP resilience | [HTTP client resilience](deploy/scaling-and-performance.md#outbound-http-resilience) |
 | Fix a broken deployment | [Troubleshooting](deploy/troubleshooting.md) |
 
 ## Migrate from Esri or GeoServer
 
 | I want to… | Guide |
 |---|---|
-| Inventory my ArcGIS Server estate before migrating | [ArcGIS inventory and discovery](migrate/from-arcgis-server.md) |
 | Migrate services from ArcGIS Server | [From ArcGIS Server](migrate/from-arcgis-server.md) |
 | Point existing ArcGIS apps and SDKs at Honua | [ArcGIS apps and SDKs](migrate/arcgis-apps-and-sdks.md) |
 | Migrate from GeoServer | [From GeoServer](migrate/from-geoserver.md) |
-| Run a pilot and plan the cutover | [Migration pilot and cutover checklist](migrate/from-arcgis-server.md) |
+| Run a pilot and plan the cutover | [Cutover checklist](migrate/from-arcgis-server.md#cutover-checklist) |

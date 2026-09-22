@@ -41,7 +41,7 @@ image runs the whole job lifecycle itself:
   `Licensing__DevGrantEdition=Pro` unlocks it **without a signed license**. The
   compose file sets this for you.
 
-The heavyweight **GDAL/PDAL worker** (`docker/worker-gdal/Dockerfile`, ADR-0038)
+The heavyweight **GDAL/PDAL worker** (`docker/worker-gdal/Dockerfile`)
 is a separate, optional container only needed for the native-profile `gdal.*`
 raster/surface family. The `geometry.buffer` sample below does not need it.
 

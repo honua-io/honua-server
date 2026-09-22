@@ -35,9 +35,8 @@ This is the right first slice because:
   denoising, decimation, and COPC output, and photogrammetry exports
   from Metashape / RealityCapture for mesh tilesets. Zero new server
   dependencies, zero cloud spend, zero new endpoints.
-- The
-  [NVIDIA construction demo fixture](../demo/nvidia-construction.md) already
-  shows the end-to-end shape with placeholder b3dm tiles and an
+- The committed scene fixtures under `tests/fixtures/scenes/` already
+  show the end-to-end shape with placeholder b3dm tiles and an
   observations sidecar; replacing the placeholders with real drone-derived
   3D Tiles is a content swap, not a code change.
 
@@ -85,7 +84,7 @@ file and requires no server-side LOD intelligence to stream.
    tileset filename. The hosted serving path begins answering immediately
    from `/scenes/{sceneId}/tileset.json`.
 5. CesiumJS or another 3D Tiles client loads the URL exactly as it does for
-   the [NVIDIA construction demo](../demo/nvidia-construction.md).
+   the committed scene fixtures.
 
 No new ingest job, conversion executor, or GPU/Batch resource is touched.
 The scene `AssetRoot` is a filesystem directory canonicalized at startup;
@@ -327,5 +326,4 @@ should be answered before child #1 is filed:
 - Honua scene references: [Hosted 3D Tiles Scenes](../../guides/publish/publish-3d-scenes.md),
   [3D Tiles Generation Pipeline](../../guides/publish/publish-3d-scenes.md),
   [Scene Dataset Registry (Admin API)](../admin-api/scene-dataset-registry.md),
-  [NVIDIA Construction Demo Fixture](../demo/nvidia-construction.md),
   [OpenUSD and Omniverse Export Path](openusd-omniverse-export-path.md).

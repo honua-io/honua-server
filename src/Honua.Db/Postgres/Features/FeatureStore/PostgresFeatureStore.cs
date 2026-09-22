@@ -53,6 +53,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     private readonly IRowLevelSecurityFilterSource? _rlsFilterSource;
     private readonly IFieldMaskSource? _fieldMaskSource;
     private readonly ILogger<PostgresStorageMappedFeatureReader>? _storageMappedReaderLogger;
+    private readonly LayerReadSecurityResolver _readSecurity;
 
     public PostgresFeatureStoreRefactored(
         IFeatureQueryBuilder queryBuilder,
@@ -93,6 +94,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         _storageMappedReaderLogger = storageMappedReaderLogger;
         _rlsFilterSource = rlsFilterSource;
         _fieldMaskSource = fieldMaskSource;
+        _readSecurity = new LayerReadSecurityResolver(v2Provider, filterExpressionService, rlsFilterSource, fieldMaskSource);
     }
 
     public string ProviderName => DataProviderNames.Postgis;
@@ -975,145 +977,19 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         return fallbackCount;
     }
 
-    private async Task<FeatureQuery> ApplyPermanentFilterAsync(
+    // The enforcement itself lives in LayerReadSecurityResolver so the spatial analytics
+    // reader applies exactly the same permanent filter, RLS predicate and field masks.
+    private Task<FeatureQuery> ApplyPermanentFilterAsync(
         int layerId,
         FeatureQuery query,
         CancellationToken cancellationToken)
-    {
-        // Resolve each concern independently. A nested caller may already carry one
-        // enforced value, but that must not suppress resolution of the other concern.
-        if (query.EnforcedSqlFilter is null)
-        {
-            var enforcedFilter = await ResolveEnforcedSqlFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
-            if (enforcedFilter is not null)
-            {
-                query = query with { EnforcedSqlFilter = enforcedFilter };
-            }
-        }
+        => _readSecurity.ApplyAsync(layerId, query, cancellationToken);
 
-        if (query.EnforcedMaskedFields is null)
-        {
-            var maskedFields = await ResolveMaskedFieldsAsync(layerId, cancellationToken).ConfigureAwait(false);
-            if (!maskedFields.IsDefaultOrEmpty)
-            {
-                query = query with { EnforcedMaskedFields = maskedFields };
-            }
-        }
+    private Task<ImmutableArray<string>> ResolveMaskedFieldsAsync(int layerId, CancellationToken cancellationToken)
+        => _readSecurity.ResolveMaskedFieldsAsync(layerId, cancellationToken);
 
-        FeatureQuerySecurity.Validate(query);
-        return query;
-    }
-
-    /// <summary>
-    /// Resolves the request-scoped field-level-security (column masking) set (#1940) for
-    /// the layer, or an empty set when no masking applies (no policy, no request context).
-    /// Best-effort metadata lookup so a missing resource never throws here; the field-mask
-    /// source itself returns an empty set when nothing matches.
-    /// </summary>
-    private async Task<ImmutableArray<string>> ResolveMaskedFieldsAsync(int layerId, CancellationToken cancellationToken)
-    {
-        if (_fieldMaskSource is null || _v2Provider is null)
-        {
-            return ImmutableArray<string>.Empty;
-        }
-
-        var snapshot = await _v2Provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource))
-        {
-            return ImmutableArray<string>.Empty;
-        }
-
-        return await _fieldMaskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// Resolves the layer's enforced (row-visibility) filter to a parameterized SQL
-    /// fragment, or null when no filter applies. Combines two independent sources with
-    /// AND so both are honored on every read surface:
-    /// <list type="bullet">
-    ///   <item>the layer's metadata-v2 <em>permanent filter</em> (server-declared,
-    ///   always-on), and</item>
-    ///   <item>the request-scoped <em>row-level security (RLS)</em> predicate (#502),
-    ///   derived from the caller's roles/claims and the layer's RLS policies.</item>
-    /// </list>
-    /// Both fragments are independently parameterized; RLS placeholders are renumbered
-    /// so the merged fragment stays positionally consistent for the provider.
-    /// </summary>
-    private async Task<SqlFragment?> ResolveEnforcedSqlFilterAsync(
-        int layerId,
-        CancellationToken cancellationToken)
-    {
-        var permanentFilter = await PermanentFilterResolver
-            .ResolveAsync(_v2Provider, _filterExpressionService, layerId, cancellationToken)
-            .ConfigureAwait(false);
-
-        var rlsFilter = await ResolveRlsFilterAsync(layerId, cancellationToken).ConfigureAwait(false);
-
-        return CombineEnforcedFilters(permanentFilter, rlsFilter);
-    }
-
-    /// <summary>
-    /// Resolves the request-scoped RLS predicate for the layer, or null when no RLS
-    /// applies (no policy, or no request context). Best-effort metadata lookup so a
-    /// missing resource never throws here; the RLS source itself fails secure.
-    /// </summary>
-    private async Task<SqlFragment?> ResolveRlsFilterAsync(int layerId, CancellationToken cancellationToken)
-    {
-        if (_rlsFilterSource is null || _v2Provider is null)
-        {
-            return null;
-        }
-
-        var snapshot = await _v2Provider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        if (!snapshot.Index.ResourcesByStorageLayerId.TryGetValue(layerId, out var resource))
-        {
-            return null;
-        }
-
-        return await _rlsFilterSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false);
-    }
-
-    /// <summary>
-    /// AND-combines the permanent filter and RLS fragments. Either may be null.
-    /// The RLS fragment's <c>@pN</c> placeholders are shifted past the permanent
-    /// filter's parameters so the merged parameter list lines up positionally.
-    /// </summary>
-    private static SqlFragment? CombineEnforcedFilters(SqlFragment? permanentFilter, SqlFragment? rlsFilter)
-    {
-        if (permanentFilter is null)
-        {
-            return rlsFilter;
-        }
-
-        if (rlsFilter is null)
-        {
-            return permanentFilter;
-        }
-
-        var offset = permanentFilter.Parameters.Count;
-        var shiftedRlsSql = ShiftNamedParameters(rlsFilter.Sql, offset);
-        var parameters = new List<object?>(permanentFilter.Parameters);
-        parameters.AddRange(rlsFilter.Parameters);
-        return new SqlFragment($"({permanentFilter.Sql}) AND ({shiftedRlsSql})", parameters);
-    }
-
-    private static string ShiftNamedParameters(string sql, int offset)
-    {
-        if (offset == 0)
-        {
-            return sql;
-        }
-
-        return System.Text.RegularExpressions.Regex.Replace(
-            sql,
-            @"@p(\d+)",
-            match =>
-            {
-                var index = int.Parse(match.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
-                return $"@p{index + offset}";
-            },
-            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
-    }
+    private Task<SqlFragment?> ResolveEnforcedSqlFilterAsync(int layerId, CancellationToken cancellationToken)
+        => _readSecurity.ResolveEnforcedSqlFilterAsync(layerId, cancellationToken);
 
     private async Task<MetadataV2Resource> GetMetadataResourceAsync(int layerId, CancellationToken cancellationToken)
     {

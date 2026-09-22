@@ -1,8 +1,17 @@
 ---
 type: reference
 title: "SQL Server provider"
+description: "Serve SQL Server geometry and geography tables as read-only feature layers in place, including Azure SQL and managed instances."
 ---
 # SQL Server provider
+
+Honua exposes SQL Server (`geometry` and `geography`) tables as read-only feature layers
+through the shared `IFeatureDataProvider` seam. SQL Server is the Tier 1 enterprise backend
+for organizations standardized on Microsoft data platforms.
+
+This page describes the **read/query slice**. Edits, native MVT, native
+FlatGeobuf/Geobuf/GML, statistics aggregates, and admin UI integration are deliberately
+out of scope.
 
 ## Protocol routing
 
@@ -13,22 +22,10 @@ This provider is read-only, so OData create/update/delete requests (including `$
 return `501 ProviderWriteNotSupported` instead of dispatching to the primary provider.
 
 OGC API Tiles raster (`f=png`) tile requests resolve this provider per collection the same way,
-through `FeatureProviderQueryRouter`; Honua never falls back to the primary provider for a routed
+through the provider router; Honua never falls back to the primary provider for a routed
 collection's raster tiles. Vector (MVT) tile requests instead return a `501 Not Implemented`
 problem response naming the collection and provider: native MVT generation is a per-provider
-capability that only the PostGIS provider implements today, independent of the routing fix
-delivered under [issue #2962](https://github.com/honua-io/honua-server/issues/2962).
-
-
-Honua exposes SQL Server (`geometry` and `geography`) tables as read-only feature layers
-through the shared `IFeatureDataProvider` seam. SQL Server is the Tier 1 enterprise backend
-for organizations standardized on Microsoft data platforms.
-
-This page describes the **read/query thin slice** delivered under issue
-[#850](https://github.com/honua-io/honua-server/issues/850). Edits, native MVT, native
-FlatGeobuf/Geobuf/GML, statistics aggregates, and admin UI integration are deliberately
-out of scope and will land as separate slices under epic
-[#362](https://github.com/honua-io/honua-server/issues/362).
+capability that only the PostGIS provider implements today.
 
 ## Supported Versions
 
@@ -198,41 +195,10 @@ callers that need the absolute total should use `CountAsync`.
 
 ## Testing
 
-### Unit Tests (always run in CI)
-
-```bash
-dotnet test tests/dotnet/Honua.Db.SqlServer.Tests
-```
-
-Covers the SQL translation paths (SELECT, COUNT, EXTENT, ObjectIds, paging, attribute
-filters, spatial filters, identifier validation) plus provider-resolution against
-`FeatureProviderBindingResolver`. No SQL Server instance is required.
-
-### Gated Integration Tests
-
-The integration suite is skipped automatically in standard PR CI. To run it locally
-against a SQL Server 2016+ instance:
-
-```bash
-export HONUA_SQLSERVER_TEST_CONNECTION="Server=localhost,1433;Database=tempdb;User Id=sa;Password=Strong!Pass;Encrypt=False"
-dotnet test tests/dotnet/Honua.Db.SqlServer.Tests --filter Category=SqlServerIntegration
-```
-
-The test fixture creates and drops a temporary table named
-`honua_sqlserver_test_<guid>` in the configured database. The test user must therefore
-have `CREATE TABLE` and `DROP TABLE` permission in the target database (a scratch
-database such as `tempdb` is recommended).
-
-### HTTP-Stack Smoke Coverage (nightly)
-
-`Honua.ProviderSmoke.Tests` boots a full HTTP stack (Postgres primary + this provider
-registered as a secondary connection) against a Testcontainers
-`mcr.microsoft.com/mssql/server:2022-latest` instance and asserts real seeded-row
-correctness — not just 200s — through GeoServices FeatureServer, OGC API Features, OData,
-and OGC API Tiles raster (PNG) tiles. Runs nightly and on demand via
-[`provider-http-smoke.yml`](../../../../.github/workflows/provider-http-smoke.yml); not
-part of standard PR CI. Vector (MVT) tiles are not exercised for this provider — see
-[Limitations and Known Gaps](#limitations-and-known-gaps) below.
+The provider is exercised nightly through the full HTTP stack (PostGIS primary plus SQL
+Server as a secondary connection) against a SQL Server 2022 instance: GeoServices
+FeatureServer, OGC API Features, OData, and OGC API Tiles raster (PNG) tiles. Vector (MVT)
+tiles are not exercised — see the limitations below.
 
 ## Limitations and Known Gaps
 
@@ -251,10 +217,6 @@ part of standard PR CI. Vector (MVT) tiles are not exercised for this provider �
   `501 Not Implemented` problem response naming the collection/provider instead of silently
   serving PostGIS data for the same layer id. OData and OGC API Tiles raster (PNG) tiles do
   reach SQL Server-backed layers, routed per layer through `FeatureProviderQueryRouter`
-  ([honua-server#2962](https://github.com/honua-io/honua-server/issues/2962)). The same MVT
+  . The same MVT
   gap applies to every other secondary/additional provider (Oracle, Redshift, Snowflake,
   Databricks) — none of them implement `ITileProvider` either.
-
-Follow-ups for write support, admin UI wiring, native output formats, statistics, and
-temporal/H3 aggregations are tracked under epic
-[#362](https://github.com/honua-io/honua-server/issues/362).

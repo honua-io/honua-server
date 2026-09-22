@@ -20,7 +20,7 @@ All endpoints require admin authentication — see [Authentication](../../guides
 | POST | `/api/v1/admin/api-keys/{id}/revoke` | Revoke an API key |
 | GET | `/api/v1/admin/api-keys/{id}/effective-permissions` | Get the key's effective permissions |
 
-In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/api-keys` with `{"name":"ci-publisher","roles":["publisher"]}`.
+In the authorized [API explorer](../openapi-and-explorer.md), run `POST /api/v1/admin/api-keys` with `{"name":"ci-publisher","permissions":["admin:write"]}`. The body takes `name`, `permissions` and an optional `expiresAt`; an empty `permissions` list grants full admin access.
 
 ## Roles and permissions
 

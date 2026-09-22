@@ -1,0 +1,164 @@
+{
+  "candidate": {
+    "cut_at": "2026-09-16T02:20:00Z",
+    "image_digest": "sha256:0b16046533e5330ecdd48255c06b5397e869191299e1e5e8cc7b4b2ded60b388",
+    "source_sha": "886206527cc97bad1bbaa5fa6358910ebc45e9c0"
+  },
+  "cell_receipt": {
+    "executed": 22,
+    "governed_cells": 24,
+    "not_run": [
+      "3d-tiles/browser-render/CesiumJS",
+      "pmtiles/producer-validate/Tippecanoe"
+    ],
+    "passed": 6
+  },
+  "generated_at": "2026-09-16T03:32:22.974936Z",
+  "geoparquet_observations": [
+    {
+      "artifact_producer": "honua",
+      "auth_policy_revision": "anonymous-v1",
+      "budget_profile": "geoparquet",
+      "budget_results": {
+        "met": true,
+        "profile": "geoparquet",
+        "unmet": []
+      },
+      "canonical_client": "PyArrow",
+      "client_lane": "pyarrow-geoparquet",
+      "client_version": "25.0.1",
+      "completed_at": "2026-09-16T03:31:49.214747Z",
+      "contract_revision": "geoparquet-1.1",
+      "deployment_target": "local-docker",
+      "evidence_digest": "sha256:2c07ac80da8b8c5e41a3dd5a88bfca8107aae889e1a85da671018d926620da4f",
+      "evidence_receipt": null,
+      "evidence_uri": "https://evidence.honua.io/data/sha256/2c07ac80da8b8c5e41a3dd5a88bfca8107aae889e1a85da671018d926620da4f",
+      "executed": true,
+      "facet_results": {
+        "media-schema": {
+          "evidence_digest": "sha256:2c07ac80da8b8c5e41a3dd5a88bfca8107aae889e1a85da671018d926620da4f",
+          "result": "pass"
+        },
+        "metadata": {
+          "evidence_digest": "sha256:2c07ac80da8b8c5e41a3dd5a88bfca8107aae889e1a85da671018d926620da4f",
+          "result": "pass"
+        },
+        "positive": {
+          "evidence_digest": "sha256:2c07ac80da8b8c5e41a3dd5a88bfca8107aae889e1a85da671018d926620da4f",
+          "result": "pass"
+        }
+      },
+      "fixture_revision": "docker/cng/seed.sql@af22624c94c9d9e8ce4f0215307f5e8a2fb3e029",
+      "hard_gated": false,
+      "honua_in_loop": true,
+      "image_digest": "sha256:0b16046533e5330ecdd48255c06b5397e869191299e1e5e8cc7b4b2ded60b388",
+      "lane": "pyarrow-geoparquet",
+      "observed_metadata": {
+        "bounds": [
+          -122.4194,
+          0.0,
+          179.5,
+          86.0
+        ],
+        "crs": "EPSG:4326",
+        "feature_count": 6,
+        "geo.version": "1.1.0",
+        "geometry_encoding": "WKB",
+        "primary_column": "geometry"
+      },
+      "operation": "feature-read",
+      "producer_source_sha": "886206527cc97bad1bbaa5fa6358910ebc45e9c0",
+      "result": "pass",
+      "scenario_facets": [
+        "positive",
+        "metadata",
+        "media-schema"
+      ],
+      "skip_reason": null,
+      "source_sha": "886206527cc97bad1bbaa5fa6358910ebc45e9c0",
+      "started_at": "2026-09-16T03:31:49.203902Z",
+      "surface": "geoparquet"
+    },
+    {
+      "artifact_producer": "honua",
+      "auth_policy_revision": "anonymous-v1",
+      "budget_profile": "geoparquet",
+      "budget_results": {
+        "met": false,
+        "profile": "geoparquet",
+        "unmet": [
+          "no metadata was read back from the artifact, so the geoparquet metadata oracle is unproven"
+        ]
+      },
+      "canonical_client": "GeoPandas",
+      "client_lane": "geopandas-geoparquet",
+      "client_version": "1.1.4",
+      "completed_at": "2026-09-16T03:31:49.222288Z",
+      "contract_revision": "geoparquet-1.1",
+      "deployment_target": "local-docker",
+      "evidence_digest": null,
+      "evidence_receipt": null,
+      "evidence_uri": null,
+      "executed": true,
+      "facet_results": null,
+      "fixture_revision": "docker/cng/seed.sql@af22624c94c9d9e8ce4f0215307f5e8a2fb3e029",
+      "hard_gated": false,
+      "honua_in_loop": true,
+      "image_digest": "sha256:0b16046533e5330ecdd48255c06b5397e869191299e1e5e8cc7b4b2ded60b388",
+      "lane": "geopandas-geoparquet",
+      "operation": "geometry-read",
+      "producer_source_sha": "886206527cc97bad1bbaa5fa6358910ebc45e9c0",
+      "result": "skip",
+      "scenario_facets": [
+        "positive",
+        "metadata",
+        "crs-axis"
+      ],
+      "skip_reason": "no metadata was read back from the artifact, so the geoparquet metadata oracle is unproven",
+      "source_sha": "886206527cc97bad1bbaa5fa6358910ebc45e9c0",
+      "started_at": "2026-09-16T03:31:49.214764Z",
+      "surface": "geoparquet"
+    },
+    {
+      "artifact_producer": "honua",
+      "auth_policy_revision": "anonymous-v1",
+      "budget_profile": "geoparquet",
+      "budget_results": {
+        "met": false,
+        "profile": "geoparquet",
+        "unmet": [
+          "no metadata was read back from the artifact, so the geoparquet metadata oracle is unproven"
+        ]
+      },
+      "canonical_client": "GDAL",
+      "client_lane": "gdal-geoparquet",
+      "client_version": "3.14.0",
+      "completed_at": "2026-09-16T03:32:21.689728Z",
+      "contract_revision": "geoparquet-1.1",
+      "deployment_target": "local-docker",
+      "evidence_digest": null,
+      "evidence_receipt": null,
+      "evidence_uri": null,
+      "executed": true,
+      "facet_results": null,
+      "fixture_revision": "docker/cng/seed.sql@af22624c94c9d9e8ce4f0215307f5e8a2fb3e029",
+      "hard_gated": false,
+      "honua_in_loop": true,
+      "image_digest": "sha256:0b16046533e5330ecdd48255c06b5397e869191299e1e5e8cc7b4b2ded60b388",
+      "lane": "gdal-geoparquet",
+      "operation": "feature-read",
+      "producer_source_sha": "886206527cc97bad1bbaa5fa6358910ebc45e9c0",
+      "result": "skip",
+      "scenario_facets": [
+        "positive",
+        "metadata",
+        "media-schema"
+      ],
+      "skip_reason": "no metadata was read back from the artifact, so the geoparquet metadata oracle is unproven",
+      "source_sha": "886206527cc97bad1bbaa5fa6358910ebc45e9c0",
+      "started_at": "2026-09-16T03:31:49.222308Z",
+      "surface": "geoparquet"
+    }
+  ],
+  "producer": "honua-server-cng"
+}

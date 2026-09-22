@@ -33,6 +33,7 @@ internal sealed class OgcCoveragesHandler
     private const int MaxScaleSize = 8192;
     private const string CoverageItemType = "coverage";
     private const string GeoTiffContentType = "image/tiff";
+    private const string GeoTiffLinkType = "image/tiff; application=geotiff";
     private const string PngContentType = "image/png";
     private const string CoveragesProtocol = "OGC-API-Coverages";
 
@@ -53,6 +54,7 @@ internal sealed class OgcCoveragesHandler
             "resolution",
             "scale-factor",
             "scale-size",
+            "scaleSize",
             "scale-axes",
             "datetime",
             "subset");
@@ -473,6 +475,7 @@ internal sealed class OgcCoveragesHandler
                     context,
                     f,
                     resolution.Raster!.Value,
+                    storageSrid,
                     supportedCrs,
                     out var rasterQuery,
                     out var negotiatedFormat,
@@ -657,7 +660,7 @@ internal sealed class OgcCoveragesHandler
         links.Add(Link.Create(
             href: $"{basePath}/coverage",
             rel: RelationTypes.Coverage,
-            type: GeoTiffContentType,
+            type: GeoTiffLinkType,
             title: "Coverage data"));
         links.Add(Link.Create(
             href: $"{basePath}/coverage?f=png",
@@ -697,6 +700,8 @@ internal sealed class OgcCoveragesHandler
             StorageCrs = storageCrs,
             Grid = CreateGrid(raster),
             Domain = CreateDomain(raster),
+            DomainSet = CreateDomainSet(raster, storageSrid),
+            RangeType = CreateRangeType(raster),
             DefaultFields = CreateDefaultFields(raster)
         };
     }
@@ -772,6 +777,62 @@ internal sealed class OgcCoveragesHandler
         return transformed.HasValue
             ? (transformed.Value.MinX, transformed.Value.MinY, transformed.Value.MaxX, transformed.Value.MaxY)
             : null;
+    }
+
+    private static CoverageDomainSet? CreateDomainSet(RasterInfo raster, int storageSrid)
+    {
+        if (raster.Extent is not { } extent || raster.Width <= 0 || raster.Height <= 0 ||
+            (raster.GeoTransform is { Length: >= 6 } transform && (transform[2] != 0 || transform[4] != 0)))
+        {
+            return null;
+        }
+
+        return new CoverageDomainSet
+        {
+            GeneralGrid = new CoverageGeneralGrid
+            {
+                SrsName = storageSrid == 4326 ? SpatialReferenceHelpers.Crs84Uri : CreateEpsgUri(storageSrid),
+                AxisLabels = storageSrid == 4326 ? ["Lon", "Lat"] : ["x", "y"],
+                Axes =
+                [
+                    new CoverageGridAxis
+                    {
+                        LowerBound = extent.XMin,
+                        UpperBound = extent.XMax,
+                        Resolution = (extent.XMax - extent.XMin) / raster.Width
+                    },
+                    new CoverageGridAxis
+                    {
+                        LowerBound = extent.YMin,
+                        UpperBound = extent.YMax,
+                        Resolution = (extent.YMax - extent.YMin) / raster.Height
+                    }
+                ]
+            }
+        };
+    }
+
+    private static CoverageRangeType CreateRangeType(RasterInfo raster)
+    {
+        var definition = raster.PixelType.ToUpperInvariant() switch
+        {
+            "1BB" or "2BUI" or "4BUI" or "8BUI" => "UINT8",
+            "8BSI" => "INT8",
+            "16BSI" => "INT16",
+            "16BUI" => "UINT16",
+            "32BSI" => "INT32",
+            "32BUI" => "UINT32",
+            "32BF" => "FLOAT32",
+            _ => "FLOAT64"
+        };
+        return new CoverageRangeType
+        {
+            Fields = CreateDefaultFields(raster).Select(name => new CoverageRangeField
+            {
+                Name = name,
+                Definition = definition
+            }).ToImmutableArray()
+        };
     }
 
     private static CoverageGrid CreateGrid(RasterInfo raster)
@@ -899,9 +960,14 @@ internal sealed class OgcCoveragesHandler
             return "The datetime parameter is not applicable to a single-raster coverage. Temporal subsetting is supported only for multidimensional (Zarr) coverages with a time axis.";
         }
 
-        if (context.Request.Query.ContainsKey("subset"))
+        if (context.Request.Query.ContainsKey("subset") && context.Request.Query.ContainsKey("bbox"))
         {
-            return "The subset parameter is not supported by this OGC API Coverages implementation. Use bbox for spatial subsetting.";
+            return "Use only one of subset or bbox for spatial subsetting.";
+        }
+
+        if (context.Request.Query.ContainsKey("scale-size") && context.Request.Query.ContainsKey("scaleSize"))
+        {
+            return "Use only one of scale-size or its legacy alias scaleSize.";
         }
 
         if (context.Request.Query.ContainsKey("scale-axes"))
@@ -916,6 +982,7 @@ internal sealed class OgcCoveragesHandler
         HttpContext context,
         string? f,
         RasterInfo raster,
+        int storageSrid,
         IReadOnlyDictionary<string, CrsDefinition> supportedCrs,
         out RasterQuery rasterQuery,
         out CoverageFormat negotiatedFormat,
@@ -941,6 +1008,17 @@ internal sealed class OgcCoveragesHandler
         if (!TryApplyBbox(context, supportedCrs, ref query, out error))
         {
             return false;
+        }
+
+        if (context.Request.Query.TryGetValue("subset", out var subsets))
+        {
+            if (!OgcCoverageSpatialSubset.TryParse(subsets, raster, storageSrid, out var subset, out error))
+            {
+                return false;
+            }
+
+            var subsetCrs = ResolveStorageCrsDefinition(subset.Srid);
+            query = query with { ClipRegion = CreateClipRegion(subset.MinX, subset.MinY, subset.MaxX, subset.MaxY, subsetCrs) };
         }
 
         if (!TryApplyOutputCrs(context, supportedCrs, ref query, out outputCrs, out error))
@@ -1005,6 +1083,8 @@ internal sealed class OgcCoveragesHandler
             case "tiff":
             case "tif":
             case GeoTiffContentType:
+            case GeoTiffLinkType:
+            case "image/tiff;application=geotiff":
                 format = new CoverageFormat(RasterFormat.TIFF, GeoTiffContentType, "geotiff");
                 return true;
             case "png":
@@ -1227,7 +1307,7 @@ internal sealed class OgcCoveragesHandler
             scalingParameters++;
         }
 
-        if (context.Request.Query.ContainsKey("scale-size"))
+        if (context.Request.Query.ContainsKey("scale-size") || context.Request.Query.ContainsKey("scaleSize"))
         {
             scalingParameters++;
         }
@@ -1252,6 +1332,7 @@ internal sealed class OgcCoveragesHandler
                     supportedCrs,
                     storageSrid,
                     requestedPixelSize,
+                    query,
                     cancellationToken)
                 .ConfigureAwait(false);
             if (validationError is not null)
@@ -1289,6 +1370,7 @@ internal sealed class OgcCoveragesHandler
                     supportedCrs,
                     storageSrid,
                     requestedPixelSize,
+                    query,
                     cancellationToken)
                 .ConfigureAwait(false);
             if (validationError is not null)
@@ -1299,15 +1381,27 @@ internal sealed class OgcCoveragesHandler
             return ScalingResult.Successful(query with { PixelSize = requestedPixelSize });
         }
 
-        var scaleSize = OgcCommonUtilities.GetQueryValue(context.Request, "scale-size");
+        var scaleSize = OgcCommonUtilities.GetQueryValue(context.Request, "scale-size")
+            ?? OgcCommonUtilities.GetQueryValue(context.Request, "scaleSize");
         if (!string.IsNullOrWhiteSpace(scaleSize))
         {
-            if (!TryParseScaleSize(scaleSize, out var width, out var height))
+            if (!TryParseScaleSize(scaleSize, context.Request.Query.ContainsKey("scaleSize"), out var width, out var height))
             {
                 return ScalingResult.Failure($"scale-size must be width,height or axis size pairs such as x(512),y(512), with values from 1 to {MaxScaleSize.ToString(CultureInfo.InvariantCulture)}.");
             }
 
             return ScalingResult.Successful(query with { OutputWidth = width, OutputHeight = height });
+        }
+
+        if (context.Request.Query.ContainsKey("subset") && query.ClipRegion is { } nativeClip &&
+            (raster.Width > MaxScaleSize || raster.Height > MaxScaleSize))
+        {
+            var nativeSizeError = await ValidateNativeSubsetSizeAsync(raster, storageSrid, nativeClip, cancellationToken)
+                .ConfigureAwait(false);
+            if (nativeSizeError is not null)
+            {
+                return ScalingResult.Failure(nativeSizeError);
+            }
         }
 
         // No scaling parameters were supplied, so the coverage is exported at native
@@ -1324,6 +1418,56 @@ internal sealed class OgcCoveragesHandler
         }
 
         return ScalingResult.Successful(query);
+    }
+
+    private async ValueTask<string?> ValidateNativeSubsetSizeAsync(
+        RasterInfo raster,
+        int storageSrid,
+        RasterClipRegion clip,
+        CancellationToken cancellationToken)
+    {
+        var error = $"Native subset must not exceed {MaxScaleSize.ToString(CultureInfo.InvariantCulture)} pixels on either axis. Select a smaller subset or use scale-size to bound the output.";
+        if (raster.Extent is not { } extent || extent.Srid.GetValueOrDefault(storageSrid) != storageSrid ||
+            raster.Width <= 0 || raster.Height <= 0 ||
+            (raster.GeoTransform is { Length: >= 6 } transform && (transform[2] != 0 || transform[4] != 0)))
+        {
+            // A rotated or unknown native grid cannot safely establish the output
+            // window from its envelope. Explicit scaling still provides a bound.
+            return error;
+        }
+
+        var nativeWidth = extent.XMax - extent.XMin;
+        var nativeHeight = extent.YMax - extent.YMin;
+        if (!IsFinitePositive(nativeWidth) || !IsFinitePositive(nativeHeight))
+        {
+            return error;
+        }
+
+        var envelope = new WKBReader().Read(clip.Geometry).EnvelopeInternal;
+        var clipSrid = clip.Srid ?? storageSrid;
+        var bounds = clipSrid == storageSrid
+            ? (MinX: envelope.MinX, MinY: envelope.MinY, MaxX: envelope.MaxX, MaxY: envelope.MaxY)
+            : await _coordinateTransformService.TransformExtentAsync(
+                envelope.MinX, envelope.MinY, envelope.MaxX, envelope.MaxY,
+                clipSrid, storageSrid, cancellationToken).ConfigureAwait(false);
+        if (!bounds.HasValue)
+        {
+            return error;
+        }
+
+        // Clip to the native footprint first (including an omitted/unrestricted
+        // axis), then round outward to bound every possibly touched grid cell.
+        var minX = Math.Clamp(bounds.Value.MinX, extent.XMin, extent.XMax);
+        var maxX = Math.Clamp(bounds.Value.MaxX, extent.XMin, extent.XMax);
+        var minY = Math.Clamp(bounds.Value.MinY, extent.YMin, extent.YMax);
+        var maxY = Math.Clamp(bounds.Value.MaxY, extent.YMin, extent.YMax);
+        var width = Math.Ceiling((maxX - extent.XMin) / nativeWidth * raster.Width) -
+                    Math.Floor((minX - extent.XMin) / nativeWidth * raster.Width);
+        var height = Math.Ceiling((maxY - extent.YMin) / nativeHeight * raster.Height) -
+                     Math.Floor((minY - extent.YMin) / nativeHeight * raster.Height);
+        return !double.IsFinite(width) || !double.IsFinite(height) || width > MaxScaleSize || height > MaxScaleSize
+            ? error
+            : null;
     }
 
     private static bool TryParseResolution(string value, out double pixelWidth, out double pixelHeight)
@@ -1349,7 +1493,7 @@ internal sealed class OgcCoveragesHandler
         return TryParsePositiveDouble(parts[1], out pixelHeight);
     }
 
-    private static bool TryParseScaleSize(string value, out int width, out int height)
+    private static bool TryParseScaleSize(string value, bool allowReversedAxes, out int width, out int height)
     {
         width = height = 0;
         var parts = value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
@@ -1363,8 +1507,10 @@ internal sealed class OgcCoveragesHandler
             return true;
         }
 
-        return TryParseAxisSize(parts[0], isX: true, out width) &&
-               TryParseAxisSize(parts[1], isX: false, out height);
+        return (TryParseAxisSize(parts[0], isX: true, out width) &&
+                TryParseAxisSize(parts[1], isX: false, out height)) ||
+               (allowReversedAxes && TryParseAxisSize(parts[1], isX: true, out width) &&
+                TryParseAxisSize(parts[0], isX: false, out height));
     }
 
     private static bool TryParseAxisSize(string value, bool isX, out int size)
@@ -1403,6 +1549,7 @@ internal sealed class OgcCoveragesHandler
         IReadOnlyDictionary<string, CrsDefinition> supportedCrs,
         int storageSrid,
         PixelSize pixelSize,
+        RasterQuery query,
         CancellationToken cancellationToken)
     {
         if (!IsFinitePositive(pixelSize.Width) || !IsFinitePositive(pixelSize.Height))
@@ -1415,6 +1562,7 @@ internal sealed class OgcCoveragesHandler
                 raster,
                 supportedCrs,
                 storageSrid,
+                query,
                 cancellationToken)
             .ConfigureAwait(false);
         if (!scaleExtentSize.HasValue)
@@ -1440,9 +1588,18 @@ internal sealed class OgcCoveragesHandler
         RasterInfo raster,
         IReadOnlyDictionary<string, CrsDefinition> supportedCrs,
         int storageSrid,
+        RasterQuery query,
         CancellationToken cancellationToken)
     {
         var storageCrs = ResolveStorageCrsDefinition(storageSrid);
+        if (context.Request.Query.ContainsKey("subset") && query.ClipRegion is { } clip)
+        {
+            var envelope = new WKBReader().Read(clip.Geometry).EnvelopeInternal;
+            return await TransformExtentForScaleValidationAsync(
+                envelope.MinX, envelope.MinY, envelope.MaxX, envelope.MaxY,
+                ResolveStorageCrsDefinition(clip.Srid ?? storageSrid), storageCrs, cancellationToken)
+                .ConfigureAwait(false);
+        }
         var bbox = OgcCommonUtilities.GetQueryValue(context.Request, "bbox");
         if (!string.IsNullOrWhiteSpace(bbox))
         {

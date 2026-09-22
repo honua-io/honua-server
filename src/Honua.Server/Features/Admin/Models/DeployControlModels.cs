@@ -380,10 +380,94 @@ public sealed class CreateDeployOperationRequest
 /// <summary>
 /// Request payload for a deploy rollback operation.
 /// </summary>
+/// <remarks>
+/// Every property other than <see cref="Reason"/> is part of the optional <b>recovery fence</b>
+/// (honua-server#4958). A body that supplies none of them keeps the pre-#4958 behaviour for existing
+/// callers; a body that supplies any of them is asserting the terms of a declared recovery grant, and
+/// the server refuses the rollback outright when any supplied term does not match what the protected
+/// activation actually recorded. A supplied term is never treated as advisory and never silently
+/// dropped: the type disallows unmapped members, so a property this server does not implement is itself
+/// a refusal and a client that believes it is fencing cannot be wrong about it.
+/// </remarks>
+[JsonUnmappedMemberHandling(JsonUnmappedMemberHandling.Disallow)]
 public sealed class RollbackDeployOperationRequest
 {
     [JsonPropertyName("reason")]
     public string? Reason { get; init; }
+
+    /// <summary>Deploy target the caller believes it is compensating. Must equal the operation's target.</summary>
+    [JsonPropertyName("targetId")]
+    public string? TargetId { get; init; }
+
+    /// <summary>Revision the caller believes is currently activated. Must equal <c>protection.candidateRevision</c>.</summary>
+    [JsonPropertyName("expectedCandidateRevision")]
+    public string? ExpectedCandidateRevision { get; init; }
+
+    /// <summary>Revision the caller believes the compensation restores. Must equal <c>protection.previousRevision</c>.</summary>
+    [JsonPropertyName("expectedPreviousRevision")]
+    public string? ExpectedPreviousRevision { get; init; }
+
+    /// <summary>
+    /// Protection phase the caller believes the operation is in — one of <c>observing</c>,
+    /// <c>protected</c>, <c>recovering</c>, <c>expired</c>, <c>unavailable</c>. Must equal
+    /// <c>protection.phase</c>, which is what makes a rollback outside an observation window refusable.
+    /// </summary>
+    [JsonPropertyName("expectedProtectionPhase")]
+    public string? ExpectedProtectionPhase { get; init; }
+
+    /// <summary>Identity of the recovery grant. Must equal <c>protection.grantId</c>.</summary>
+    [JsonPropertyName("grantId")]
+    public string? GrantId { get; init; }
+
+    /// <summary>Safety-policy digest the grant was minted against. Must equal <c>protection.policyDigest</c>.</summary>
+    [JsonPropertyName("policyDigest")]
+    public string? PolicyDigest { get; init; }
+
+    /// <summary>Principal the grant authorizes. Must equal both the authenticated caller and <c>protection.actor</c>.</summary>
+    [JsonPropertyName("actor")]
+    public string? Actor { get; init; }
+
+    /// <summary>Tenant the grant is bound to. Must equal both the caller's tenant and <c>protection.tenantId</c>.</summary>
+    [JsonPropertyName("tenantId")]
+    public string? TenantId { get; init; }
+
+    /// <summary>Grant expiry. The rollback is refused once the server clock is past it.</summary>
+    [JsonPropertyName("notAfter")]
+    public DateTimeOffset? NotAfter { get; init; }
+
+    /// <summary>
+    /// Compensation the caller is asking for. Must equal <c>protection.permittedCompensation</c>; any
+    /// other value is broader than what the activation preauthorized and is refused.
+    /// </summary>
+    [JsonPropertyName("compensation")]
+    public string? Compensation { get; init; }
+
+    /// <summary>Whether the caller supplied any recovery-fence term at all.</summary>
+    [JsonIgnore]
+    public bool HasFence =>
+        !string.IsNullOrWhiteSpace(TargetId) ||
+        !string.IsNullOrWhiteSpace(ExpectedCandidateRevision) ||
+        !string.IsNullOrWhiteSpace(ExpectedPreviousRevision) ||
+        !string.IsNullOrWhiteSpace(ExpectedProtectionPhase) ||
+        !string.IsNullOrWhiteSpace(GrantId) ||
+        !string.IsNullOrWhiteSpace(PolicyDigest) ||
+        !string.IsNullOrWhiteSpace(Actor) ||
+        !string.IsNullOrWhiteSpace(TenantId) ||
+        !string.IsNullOrWhiteSpace(Compensation) ||
+        NotAfter.HasValue;
+
+    /// <summary>
+    /// Whether the caller supplied a term that only a protection record can answer. Such a term is a
+    /// refusal, not a no-op, when no protection window exists.
+    /// </summary>
+    [JsonIgnore]
+    public bool HasProtectionBoundFence =>
+        !string.IsNullOrWhiteSpace(ExpectedCandidateRevision) ||
+        !string.IsNullOrWhiteSpace(ExpectedPreviousRevision) ||
+        !string.IsNullOrWhiteSpace(ExpectedProtectionPhase) ||
+        !string.IsNullOrWhiteSpace(GrantId) ||
+        !string.IsNullOrWhiteSpace(PolicyDigest) ||
+        !string.IsNullOrWhiteSpace(Compensation);
 }
 
 /// <summary>
@@ -718,6 +802,25 @@ public sealed class DeployProtectionResponse
 
     [JsonPropertyName("reasonCode")]
     public string? ReasonCode { get; init; }
+
+    /// <summary>
+    /// Identity of the recovery grant sealed when the candidate was activated (honua-server#4958).
+    /// A fenced rollback quotes this back in <c>grantId</c>.
+    /// </summary>
+    [JsonPropertyName("grantId")]
+    public string? GrantId { get; init; }
+
+    /// <summary>Principal that requested the protected activation, and the only one the grant authorizes.</summary>
+    [JsonPropertyName("actor")]
+    public string? Actor { get; init; }
+
+    /// <summary>Tenant binding of <c>actor</c>, or absent on a single-tenant installation.</summary>
+    [JsonPropertyName("tenantId")]
+    public string? TenantId { get; init; }
+
+    /// <summary>The single compensation this window preauthorizes, for example <c>restore-previous-revision</c>.</summary>
+    [JsonPropertyName("permittedCompensation")]
+    public string? PermittedCompensation { get; init; }
 }
 
 /// <summary>

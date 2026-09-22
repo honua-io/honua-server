@@ -205,7 +205,8 @@ internal sealed partial class CachingReplicaStore : IReplicaStore
         CreatedAt = state.CreatedAt,
         LastSyncTime = state.LastSyncTime,
         LastSyncGeneration = state.LastSyncGeneration,
-        UploadBaseGeneration = state.UploadBaseGeneration
+        UploadBaseGeneration = state.UploadBaseGeneration,
+        ScopeDefinition = state.ScopeDefinition
     };
 
     private static ReplicaState ToState(ReplicaRecord record) => new(
@@ -219,7 +220,8 @@ internal sealed partial class CachingReplicaStore : IReplicaStore
     {
         LastSyncTime = record.LastSyncTime,
         LastSyncGeneration = record.LastSyncGeneration,
-        UploadBaseGeneration = record.UploadBaseGeneration
+        UploadBaseGeneration = record.UploadBaseGeneration,
+        ScopeDefinition = record.ScopeDefinition
     };
 
     private static partial class Log

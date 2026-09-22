@@ -6,6 +6,7 @@ using System.Globalization;
 using DuckDB.NET.Data;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Query;
 using Honua.Core.Queries.Filters;
@@ -25,6 +26,7 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
 {
     private string _dbPath = null!;
     private DuckDBFeatureStore _store = null!;
+    private Func<LayerReadSecurityResolver?, DuckDBFeatureStore> _createStore = null!;
     private DuckDBLayerRegistry _registry = null!;
     private string _connectionString = null!;
     private DuckDBSpatialBootstrap _spatialBootstrap = null!;
@@ -100,7 +102,8 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
             NullLogger<DuckDBFeatureDataAccess>.Instance);
         var cacheManager = new DuckDBFeatureCacheManager(_registry);
 
-        _store = new DuckDBFeatureStore(queryBuilder, dataAccess, cacheManager);
+        _createStore = readSecurity => new DuckDBFeatureStore(queryBuilder, dataAccess, cacheManager, readSecurity: readSecurity);
+        _store = _createStore(null);
         _filterTranslator = new DuckDbSqlFilterTranslator();
         _resource = new MetadataV2Resource
         {
@@ -145,6 +148,169 @@ public class DuckDBFeatureStoreIntegrationTests : IAsyncLifetime
             System.Diagnostics.Debug.WriteLine(caughtException);
         }
         return Task.CompletedTask;
+    }
+
+    public static TheoryData<string, string> RefusedReads
+    {
+        get
+        {
+            var data = new TheoryData<string, string>();
+            foreach (var policy in new[] { "row-level security", "field-mask" })
+            {
+                foreach (var operation in new[] { "get", "query", "geojson", "ids", "count", "extent", "temporal", "estimates", "page", "stream" })
+                {
+                    data.Add(policy, operation);
+                }
+            }
+
+            return data;
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(RefusedReads))]
+    public async Task Read_WithRowOrFieldPolicyResolved_IsRefused(string policy, string operation)
+    {
+        var resolver = policy == "field-mask"
+            ? CreateResolver(maskedFields: ["name"])
+            : CreateResolver(rowFilter: new Honua.Core.Queries.Filters.SqlFragment("type = $1", ["residential"]));
+        var store = _createStore(resolver);
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(() => InvokeReadAsync(store, operation));
+
+        Assert.Contains(policy, exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("DuckDB", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Read_WithNoPolicyResolved_ReturnsSameRowsAsWithoutResolver()
+    {
+        var store = _createStore(CreateResolver());
+        var query = new FeatureQuery();
+
+        var expectedIds = await _store.QueryObjectIdsAsync(LayerId, query);
+        var actualIds = await store.QueryObjectIdsAsync(LayerId, query);
+        var expected = await _store.QueryAsync(LayerId, query);
+        var actual = await store.QueryAsync(LayerId, query);
+
+        Assert.NotEmpty(expectedIds);
+        Assert.Equal(expectedIds.Order(), actualIds.Order());
+        Assert.Equal(expected.TotalCount, actual.TotalCount);
+        Assert.Equal(await _store.CountAsync(LayerId, new FeatureQuery()), await store.CountAsync(LayerId, new FeatureQuery()));
+    }
+
+    private static LayerReadSecurityResolver CreateResolver(
+        Honua.Core.Queries.Filters.SqlFragment? rowFilter = null,
+        string[]? maskedFields = null)
+        => new(
+            new StubV2Provider(LayerId, permanentFilterExpression: null),
+            filterExpressionService: null,
+            new StubRowFilterSource(rowFilter),
+            new StubFieldMaskSource(maskedFields ?? []));
+
+    private static async Task InvokeReadAsync(DuckDBFeatureStore store, string operation)
+    {
+        switch (operation)
+        {
+            case "get":
+                await store.GetAsync(LayerId, 1);
+                break;
+            case "query":
+                await store.QueryAsync(LayerId, new FeatureQuery());
+                break;
+            case "geojson":
+                await store.QueryGeoJsonAsync(LayerId, new FeatureQuery());
+                break;
+            case "ids":
+                await store.QueryObjectIdsAsync(LayerId, new FeatureQuery());
+                break;
+            case "count":
+                await store.CountAsync(LayerId, new FeatureQuery());
+                break;
+            case "extent":
+                await store.GetExtentAsync(LayerId);
+                break;
+            case "temporal":
+                await store.GetTemporalExtentAsync(LayerId, "start_time", TemporalPropertyType.DateTime);
+                break;
+            case "estimates":
+                await store.GetEstimatesAsync(LayerId);
+                break;
+            case "page":
+                await store.QueryPageAsync(LayerId, new FeatureQuery { Limit = 5 });
+                break;
+            case "stream":
+                await foreach (var _ in store.StreamFeaturesAsync(LayerId, new FeatureQuery()))
+                {
+                    // Intentionally empty: draining the stream triggers the read.
+                }
+
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(operation), operation, null);
+        }
+    }
+
+    private sealed class StubV2Provider(int storageLayerId, string? permanentFilterExpression) :
+        Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider
+    {
+        public ValueTask<MetadataV2GraphSnapshot> GetCurrentAsync(CancellationToken cancellationToken = default)
+        {
+            var resource = new MetadataV2Resource
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "res-parcels", Name = "Parcels" },
+                Type = MetadataV2ResourceType.FeatureDataset,
+                PermanentFilter = permanentFilterExpression == null ? null : new MetadataV2PermanentFilter
+                {
+                    Expression = permanentFilterExpression,
+                    Language = MetadataV2PermanentFilterLanguages.ArcGisSql
+                }
+            };
+            var storageBinding = new MetadataV2StorageBinding
+            {
+                Metadata = new MetadataV2ObjectMetadata { Id = "binding-parcels", Name = "binding-parcels" },
+                ResourceId = resource.Metadata.Id,
+                StorageLayerId = storageLayerId,
+                StorageType = MetadataV2StorageType.RelationalTable,
+                Locator = "gis.parcels"
+            };
+            var graph = new MetadataV2Graph
+            {
+                Revision = 1,
+                Environment = "test",
+                Resources = [resource],
+                StorageBindings = [storageBinding]
+            };
+            return ValueTask.FromResult(new MetadataV2GraphSnapshot(graph, "etag-stub", DateTimeOffset.UtcNow));
+        }
+
+        public ValueTask<MetadataV2GraphSnapshot?> GetByRevisionAsync(long revision, CancellationToken cancellationToken = default)
+            => ValueTask.FromResult<MetadataV2GraphSnapshot?>(null);
+    }
+
+    private sealed class StubRowFilterSource(Honua.Core.Queries.Filters.SqlFragment? fragment) :
+        Honua.Core.Features.Authorization.Abstractions.IRowLevelSecurityFilterSource
+    {
+        public string? LastResourceId { get; private set; }
+
+        public Task<Honua.Core.Queries.Filters.SqlFragment?> ResolveAsync(MetadataV2Resource resource, CancellationToken cancellationToken = default)
+        {
+            LastResourceId = resource.Metadata.Id;
+            return Task.FromResult(fragment);
+        }
+    }
+
+    private sealed class StubFieldMaskSource(string[] maskedFields) :
+        Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource
+    {
+        public string? LastResourceId { get; private set; }
+
+        public Task<System.Collections.Immutable.ImmutableArray<string>> ResolveAsync(
+            MetadataV2Resource resource, CancellationToken cancellationToken = default)
+        {
+            LastResourceId = resource.Metadata.Id;
+            return Task.FromResult(System.Collections.Immutable.ImmutableArray.Create(maskedFields));
+        }
     }
 
     [Fact]

@@ -26,6 +26,12 @@ public sealed record MigrationBatchFidelityInput
 
     /// <summary>Relationship apply outcomes, when apply executed.</summary>
     public MigrationRelationshipApplyOutcome[] Relationships { get; init; } = [];
+
+    /// <summary>
+    /// Pre-apply accounting of the source constructs against the batch selection, or <c>null</c> when the
+    /// batch recorded none (acceptance criterion 1).
+    /// </summary>
+    public MigrationConstructAccountingReport? ConstructAccounting { get; init; }
 }
 
 /// <summary>
@@ -51,7 +57,11 @@ public static class MigrationBatchFidelityEvaluator
     {
         ArgumentNullException.ThrowIfNull(input);
 
-        var differences = new List<MigrationFidelityDifference>();
+        // Every construct discovered on the source must be accounted against the selection before apply;
+        // a service whose accounting never ran cannot be proven full fidelity.
+        var differences = new List<MigrationFidelityDifference>(
+            input.ConstructAccounting?.Differences
+            ?? MigrationServiceConstructAccountant.NotExecuted("the batch recorded no construct accounting.").Differences);
         foreach (var child in input.Children)
         {
             CollectChild(child, differences);

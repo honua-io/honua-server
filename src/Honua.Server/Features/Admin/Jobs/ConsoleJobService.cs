@@ -2,12 +2,14 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Geoprocessing.Raster;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Infrastructure;
@@ -621,9 +623,15 @@ internal sealed partial class ConsoleJobService(
                 var artifact = await artifactStore.GetAsync(reference, cancellationToken).ConfigureAwait(false);
                 if (artifact == null)
                 {
+                    // Jobs also contain direct provider references. A metadata provider
+                    // being registered does not turn those references into missing IDs.
+                    if (IsDirectArtifactReference(reference))
+                    {
+                        return MapDirectArtifact(reference);
+                    }
                     return new ConsoleJobArtifact
                     {
-                        ArtifactId = reference,
+                        ArtifactId = SafeArtifactIdentifier(reference),
                         Availability = "Unavailable",
                         Message = "Artifact metadata is not available."
                     };
@@ -633,22 +641,37 @@ internal sealed partial class ConsoleJobService(
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                ArtifactLookupFailed(logger, reference, ex);
+                ArtifactLookupFailed(logger, SafeArtifactIdentifier(reference), ex);
                 return new ConsoleJobArtifact
                 {
-                    ArtifactId = reference,
+                    ArtifactId = SafeArtifactIdentifier(reference),
                     Availability = "ProviderError",
                     Message = "Artifact metadata could not be loaded."
                 };
             }
         }
 
+        return MapDirectArtifact(reference);
+    }
+
+    private static string SafeArtifactIdentifier(string reference)
+        => IsSafeProviderLink(reference) ? reference
+            : "redacted-" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(reference)));
+
+    private static bool IsDirectArtifactReference(string reference)
+        => Uri.TryCreate(reference, UriKind.Absolute, out _)
+            || reference.Contains('/') || reference.Contains('\\')
+            || RasterOutputJson.LooksLikeDescriptor(reference);
+
+    private static ConsoleJobArtifact MapDirectArtifact(string reference)
+    {
+        var safe = IsSafeProviderLink(reference);
         return new ConsoleJobArtifact
         {
-            ArtifactId = reference,
-            Availability = IsSafeProviderLink(reference) ? "Available" : "Redacted",
-            ProviderLink = IsSafeProviderLink(reference) ? reference : null,
-            Message = IsSafeProviderLink(reference) ? null : "Artifact reference is not safe to expose."
+            ArtifactId = SafeArtifactIdentifier(reference),
+            Availability = safe ? "Available" : "Redacted",
+            ProviderLink = safe ? reference : null,
+            Message = safe ? null : "Artifact reference is not safe to expose."
         };
     }
 
@@ -658,7 +681,7 @@ internal sealed partial class ConsoleJobService(
         {
             return new ConsoleJobArtifact
             {
-                ArtifactId = artifact.ArtifactId,
+                ArtifactId = SafeArtifactIdentifier(artifact.ArtifactId),
                 Availability = "Expired",
                 Kind = artifact.Kind.ToString(),
                 Label = artifact.Label,
@@ -670,7 +693,7 @@ internal sealed partial class ConsoleJobService(
         var safe = IsSafeProviderLink(artifact.Uri);
         return new ConsoleJobArtifact
         {
-            ArtifactId = artifact.ArtifactId,
+            ArtifactId = SafeArtifactIdentifier(artifact.ArtifactId),
             Availability = safe ? "Available" : "Redacted",
             Kind = artifact.Kind.ToString(),
             Label = artifact.Label,
@@ -1189,7 +1212,8 @@ internal sealed partial class ConsoleJobService(
 
     private static bool IsSafeProviderLink(string? value)
     {
-        if (string.IsNullOrWhiteSpace(value) || ContainsSecretToken(value))
+        if (string.IsNullOrWhiteSpace(value) || value.Any(char.IsControl) ||
+            ContainsSecretToken(value) || RasterOutputJson.LooksLikeDescriptor(value))
         {
             return false;
         }
@@ -1204,7 +1228,7 @@ internal sealed partial class ConsoleJobService(
 
         if (Uri.TryCreate(value, UriKind.Absolute, out var uri))
         {
-            return uri.Scheme is "http" or "https";
+            return (uri.Scheme is "http" or "https") && string.IsNullOrEmpty(uri.UserInfo);
         }
 
         return Uri.TryCreate(value, UriKind.Relative, out _);

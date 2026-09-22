@@ -43,6 +43,7 @@ public sealed class Cql2Parser
             if (!IsAtEnd())
                 throw new ArgumentException($"Unexpected token '{Current().Value}' at position {Current().Position}");
 
+            FilterParserGuard.EnsureExpressionTree(result);
             return result;
         }
         catch (ArgumentException ex) when (ex.ParamName == nameof(cql2Text) &&
@@ -67,9 +68,11 @@ public sealed class Cql2Parser
     private FilterExpression ParseBooleanExpression(bool allowBareScalar = false)
     {
         var expr = ParseBooleanTerm(allowBareScalar);
+        var operands = 1;
 
         while (Match(Cql2TokenType.Or))
         {
+            FilterParserGuard.EnsureLogicalOperandCount(++operands);
             var right = ParseBooleanTerm(allowBareScalar);
             expr = new BinaryExpression(expr, BinaryOperator.Or, right);
         }
@@ -80,9 +83,11 @@ public sealed class Cql2Parser
     private FilterExpression ParseBooleanTerm(bool allowBareScalar)
     {
         var expr = ParseBooleanFactor(allowBareScalar);
+        var operands = 1;
 
         while (Match(Cql2TokenType.And))
         {
+            FilterParserGuard.EnsureLogicalOperandCount(++operands);
             var right = ParseBooleanFactor(allowBareScalar);
             expr = new BinaryExpression(expr, BinaryOperator.And, right);
         }

@@ -1,11 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Claims;
+using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Server.Features.Admin.Deploy;
 using Honua.Server.Features.Admin.Models;
 using Honua.ControlPlane;
 using Honua.ControlPlane.Executors;
@@ -13,6 +16,7 @@ using Honua.Core.Features.Guardrails.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Monitoring;
+using Honua.Infrastructure.MultiTenancy;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Server.Features.Operations;
@@ -226,6 +230,11 @@ internal static class DeployControlEndpoints
         [FromServices] DeployWorkflowService deployWorkflowService,
         HttpContext context)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         if (string.IsNullOrWhiteSpace(request.TargetId) || string.IsNullOrWhiteSpace(request.DesiredRevision))
         {
             return ProblemDetailsHelpers.CreateAdminProblem(
@@ -259,6 +268,11 @@ internal static class DeployControlEndpoints
         [FromServices] DeployWorkflowService deployWorkflowService,
         HttpContext context)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         // Approval gating is handled by DeployWorkflowService.CreateAsync which bridges
         // the canonical evaluator and persists AwaitingApproval status when required.
         // Do not gate creation here — the workflow must be allowed to persist the operation.
@@ -328,6 +342,7 @@ internal static class DeployControlEndpoints
         CancellationToken cancellationToken)
     {
         var query = request.Query;
+        var redactRecoveryGrantIdentity = ShouldRedactRecoveryGrantIdentity(request.HttpContext);
 
         WorkflowOperationKind? kind = null;
         var rawKind = QueryFilterParsers.GetString(query, "kind");
@@ -386,7 +401,7 @@ internal static class DeployControlEndpoints
 
             var response = new DeployOperationListResponse
             {
-                Items = result.Items.Select(MapOperationResponse).ToArray(),
+                Items = result.Items.Select(item => MapOperationResponse(item, redactRecoveryGrantIdentity)).ToArray(),
                 Page = result.Page,
                 PageSize = result.PageSize,
                 TotalCount = result.TotalCount,
@@ -449,7 +464,9 @@ internal static class DeployControlEndpoints
                 operation = await deployWorkflowService.GetAsync(operationId, context.RequestAborted).ConfigureAwait(false) ?? operation;
             }
 
-            return Results.Json(MapOperationResponse(operation), DeployControlJsonContext.Default.DeployOperationResponse);
+            return Results.Json(
+                MapOperationResponse(operation, ShouldRedactRecoveryGrantIdentity(context)),
+                DeployControlJsonContext.Default.DeployOperationResponse);
         }
         catch (InvalidOperationException)
         {
@@ -466,6 +483,11 @@ internal static class DeployControlEndpoints
         [FromServices] DeployWorkflowService deployWorkflowService,
         HttpContext context)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         // Submit is the manual approval action — an operator explicitly advancing an
         // AwaitingApproval operation. Re-gating here would make approval-gated deploys
         // permanently unsubmittable. Rollback retains its own destructive-action gate.
@@ -511,6 +533,11 @@ internal static class DeployControlEndpoints
         [FromServices] DeployWorkflowService deployWorkflowService,
         HttpContext context)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         // Manual promotion is the operator escape hatch for a deploy parked awaiting promotion (for
         // example an on-prem rolling deploy with no telemetry gate to auto-clear). It is a forward,
         // non-destructive cutover, so it rides the group-level admin authorization plus audit logging
@@ -560,11 +587,33 @@ internal static class DeployControlEndpoints
 
     private static async Task<IResult> HandleRollbackDeployOperation(
         string operationId,
-        [FromBody] RollbackDeployOperationRequest? request,
         [FromServices] DeployWorkflowService deployWorkflowService,
         [FromServices] IOperationInvoker operationInvoker,
         HttpContext context)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
+        // honua-server#4958 ask 4: the body is read here rather than model-bound so an unrecognized
+        // property is a refusal a client can branch on, not a framework 400 with no code and not the
+        // silent drop the pinned candidate shipped. RollbackDeployOperationRequest is marked
+        // JsonUnmappedMemberHandling.Disallow, so the deserializer itself is what rejects it.
+        RollbackDeployOperationRequest? request;
+        try
+        {
+            request = await ReadRollbackRequestAsync(context).ConfigureAwait(false);
+        }
+        catch (JsonException exception)
+        {
+            return Results.Problem(
+                title: ProblemDetailsHelpers.GetTitle(StatusCodes.Status400BadRequest),
+                detail: DescribeRollbackBodyRejection(exception),
+                statusCode: StatusCodes.Status400BadRequest,
+                extensions: new Dictionary<string, object?> { ["code"] = RecoveryGrantFence.UnknownPropertyCode });
+        }
+
         try
         {
             var existing = await deployWorkflowService.GetAsync(operationId, context.RequestAborted).ConfigureAwait(false);
@@ -574,6 +623,26 @@ internal static class DeployControlEndpoints
                     StatusCodes.Status404NotFound,
                     ProblemDetailsHelpers.GetTitle(StatusCodes.Status404NotFound),
                     $"Deploy operation '{operationId}' was not found.");
+            }
+
+            // honua-server#4958: fence the compensation before anything durable happens. This runs ahead of
+            // the approval gate and the invoker so a refused rollback leaves the operation exactly as it
+            // was — the pinned candidate admitted a fully mismatched rollback and only failed later, in the
+            // backend, after the operation had already transitioned.
+            var tenantOptions = context.RequestServices.GetService<IOptions<TenantContextOptions>>()?.Value;
+            var fenceRefusal = RecoveryGrantFence.Evaluate(
+                existing,
+                request,
+                ResolveRequestedBy(context),
+                PlatformDeployAuthority.ResolveTenantId(context.User, tenantOptions),
+                DateTimeOffset.UtcNow);
+            if (fenceRefusal != null)
+            {
+                return Results.Problem(
+                    title: ProblemDetailsHelpers.GetTitle(fenceRefusal.StatusCode),
+                    detail: fenceRefusal.Detail,
+                    statusCode: fenceRefusal.StatusCode,
+                    extensions: new Dictionary<string, object?> { ["code"] = fenceRefusal.Code });
             }
 
             var rollbackPlan = existing.MetadataRelease?.RollbackPlan;
@@ -683,6 +752,11 @@ internal static class DeployControlEndpoints
         HttpContext context,
         [FromServices] IOperationGateway? gateway = null)
     {
+        if (PlatformDeployAuthority.Deny(context) is { } platformDenied)
+        {
+            return platformDenied;
+        }
+
         var options = controlPlaneOptions.CurrentValue;
         var release = options.PlatformRelease.ToDefinition();
 
@@ -912,6 +986,23 @@ internal static class DeployControlEndpoints
         };
 
     internal static DeployOperationResponse MapOperationResponse(WorkflowOperationRecord operation)
+        => MapOperationResponse(operation, redactRecoveryGrantIdentity: false);
+
+    /// <summary>
+    /// Whether a reader may see a recovery grant's sealed identity (<c>grantId</c>, <c>actor</c>,
+    /// <c>tenantId</c>). A principal without platform deploy authority can actuate no compensation, so it
+    /// has no use for those terms, and publishing them told a tenant-bound reader another tenant's grant
+    /// and the principal it is sealed to (honua-server#4987).
+    /// </summary>
+    internal static bool ShouldRedactRecoveryGrantIdentity(ClaimsPrincipal principal, TenantContextOptions? tenantOptions)
+        => !PlatformDeployAuthority.IsAuthorized(principal, tenantOptions);
+
+    private static bool ShouldRedactRecoveryGrantIdentity(HttpContext context)
+        => ShouldRedactRecoveryGrantIdentity(
+            context.User,
+            context.RequestServices.GetService<IOptions<TenantContextOptions>>()?.Value);
+
+    internal static DeployOperationResponse MapOperationResponse(WorkflowOperationRecord operation, bool redactRecoveryGrantIdentity)
         => new()
         {
             OperationId = operation.OperationId,
@@ -932,10 +1023,12 @@ internal static class DeployControlEndpoints
             CreatedAt = operation.CreatedAt,
             UpdatedAt = operation.UpdatedAt,
             CompletedAt = operation.CompletedAt,
-            Protection = operation.Deploy?.Protection == null ? null : MapProtectionResponse(operation.Deploy.Protection)
+            Protection = operation.Deploy?.Protection == null
+                ? null
+                : MapProtectionResponse(operation.Deploy.Protection, redactRecoveryGrantIdentity)
         };
 
-    private static DeployProtectionResponse MapProtectionResponse(DeployProtectionState protection)
+    private static DeployProtectionResponse MapProtectionResponse(DeployProtectionState protection, bool redactRecoveryGrantIdentity)
         => new()
         {
             PreviousRevision = protection.PreviousRevision,
@@ -945,6 +1038,10 @@ internal static class DeployControlEndpoints
             RecoveryDeadline = protection.RecoveryDeadline,
             PolicyDigest = protection.PolicyDigest,
             ApprovalScope = protection.ApprovalScope,
+            GrantId = redactRecoveryGrantIdentity ? null : protection.GrantId,
+            Actor = redactRecoveryGrantIdentity ? null : protection.Actor,
+            TenantId = redactRecoveryGrantIdentity ? null : protection.TenantId,
+            PermittedCompensation = protection.PermittedCompensation,
             Phase = protection.Phase switch
             {
                 DeployProtectionPhase.Observing => "observing",
@@ -1027,6 +1124,35 @@ internal static class DeployControlEndpoints
 
         return Enum.TryParse(rawPriority, ignoreCase: true, out priority);
     }
+
+    /// <summary>
+    /// Reads the rollback body, treating an absent or empty body as "no fence supplied" so pre-#4958
+    /// callers that POST nothing keep working. A body that is present but malformed — including one
+    /// carrying a property this server does not recognise — throws and is refused.
+    /// </summary>
+    private static async Task<RollbackDeployOperationRequest?> ReadRollbackRequestAsync(HttpContext context)
+    {
+        if (context.Request.ContentLength == 0 || !context.Request.HasJsonContentType())
+        {
+            return null;
+        }
+
+        return await context.Request
+            .ReadFromJsonAsync(DeployControlJsonContext.Default.RollbackDeployOperationRequest, context.RequestAborted)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Operator-facing detail for a rejected rollback body. The JSON path is echoed because it names the
+    /// offending property, which is the whole point of refusing rather than dropping it.
+    /// </summary>
+    private static string DescribeRollbackBodyRejection(JsonException exception)
+        => string.IsNullOrWhiteSpace(exception.Path)
+            ? "The rollback request body could not be read. A recovery fence is never partially applied, " +
+              "so a body this server cannot fully interpret is refused."
+            : $"The rollback request body was refused at '{exception.Path}': the property is not part of the " +
+              "recovery fence this server implements. A recovery fence is never partially applied, so an " +
+              "unrecognized property is refused rather than dropped.";
 
     private static string? ResolveRequestedBy(HttpContext context)
     {

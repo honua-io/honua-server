@@ -109,6 +109,26 @@ public interface IRasterStore
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Renders an all-NoData image covering <paramref name="query"/>'s clip extent for a layer
+    /// whose rasters do not reach that extent.
+    /// </summary>
+    /// <remarks>
+    /// Esri's exportImage answers a request whose extent holds no data with an empty image rather
+    /// than an error, and tiling clients depend on that: they request a grid of adjacent extents
+    /// and treat any non-image body as a failed tile. The canvas takes its band layout and NoData
+    /// values from a raster of the same layer, so an empty image is encoded exactly like a
+    /// populated export of that layer. Requires a clip region and output dimensions; a layer with
+    /// no rasters at all returns an empty result so the caller can still report not-found.
+    /// </remarks>
+    /// <param name="layerId">Layer identifier whose band layout the canvas copies.</param>
+    /// <param name="query">Query supplying the clip extent, output size, SRID and format.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task<RasterResult> ExportEmptyExtentAsync(
+        int layerId,
+        RasterQuery query,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Identifies pixel values at a specific geographic point.
     /// Equivalent to Esri Image Server identify operation.
     /// </summary>

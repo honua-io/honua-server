@@ -1,8 +1,17 @@
 ---
 type: reference
 title: "Oracle provider"
+description: "Serve standard Oracle Spatial SDO_GEOMETRY tables as read-only feature layers in place; ArcSDE formats are detected and refused."
 ---
 # Oracle provider
+
+Honua exposes standard Oracle Spatial (`SDO_GEOMETRY`) tables as read-only feature layers
+through the shared `IFeatureDataProvider` seam. Oracle is the dominant enterprise-geodatabase
+backend and the most-requested connect-in-place target after PostGIS / SQL Server / MySQL.
+
+This page describes the **read/query slice**. Edits, native MVT, native
+FlatGeobuf/Geobuf/GML, statistics aggregates, and ArcSDE proprietary formats are deliberately
+out of scope.
 
 ## Protocol routing
 
@@ -13,21 +22,10 @@ This provider is read-only, so OData create/update/delete requests (including `$
 return `501 ProviderWriteNotSupported` instead of dispatching to the primary provider.
 
 OGC API Tiles raster (`f=png`) tile requests resolve this provider per collection the same way,
-through `FeatureProviderQueryRouter`; Honua never falls back to the primary provider for a routed
+through the provider router; Honua never falls back to the primary provider for a routed
 collection's raster tiles. Vector (MVT) tile requests instead return a `501 Not Implemented`
 problem response naming the collection and provider: native MVT generation is a per-provider
-capability that only the PostGIS provider implements today, independent of the routing fix
-delivered under [issue #2962](https://github.com/honua-io/honua-server/issues/2962).
-
-
-Honua exposes standard Oracle Spatial (`SDO_GEOMETRY`) tables as read-only feature layers
-through the shared `IFeatureDataProvider` seam. Oracle is the dominant enterprise-geodatabase
-backend and the most-requested connect-in-place target after PostGIS / SQL Server / MySQL.
-
-This page describes the **read/query thin slice** delivered under issue
-[#1252](https://github.com/honua-io/honua-server/issues/1252). Edits, native MVT, native
-FlatGeobuf/Geobuf/GML, statistics aggregates, and ArcSDE proprietary formats are deliberately
-out of scope.
+capability that only the PostGIS provider implements today.
 
 ## Supported Sources
 
@@ -245,44 +243,6 @@ reflects the size of the returned page only; callers that need the absolute tota
   surface rejection), `7103` (versioned-table rejection). The provider does not emit raw
   Oracle exception messages or connection strings.
 
-## Testing
-
-### Unit Tests (always run in CI)
-
-```bash
-dotnet test tests/dotnet/Honua.Db.Oracle.Tests
-```
-
-Covers the SQL translation paths (SELECT, COUNT, EXTENT, ObjectIds, paging, attribute
-filters, spatial filters, identifier validation), provider-resolution through the shared
-`FeatureProviderQueryRouter`, and the spatial-guard's refusal of non-`SDO_GEOMETRY` columns
-and versioning columns. No Oracle instance is required.
-
-### Integration
-
-`OracleRealDatabaseIntegrationTests` (in `tests/dotnet/Honua.Db.Oracle.Tests`) exercises
-connection open, query build+execute, and WKB/`SDO_GEOMETRY` decode against a real
-`gvenzl/oracle-free` instance via Testcontainers — promotion groundwork per
-honua-server#2947, not a change to Oracle's experimental status. It is **opt-in**: every
-test method is skipped unless `HONUA_TEST_ORACLE=1` is set, so the default
-`dotnet test tests/dotnet/Honua.Db.Oracle.Tests` run (invoked unfiltered by the PR gate's
-fast-unit-only step) stays fast and never starts Docker.
-
-```bash
-# Requires Docker; pulls the gvenzl/oracle-free:23-faststart image (several GB —
-# NOT the "slim" variant, which excludes the Oracle Spatial component this lane
-# needs) and takes several
-# minutes to start.
-HONUA_TEST_ORACLE=1 dotnet test tests/dotnet/Honua.Db.Oracle.Tests/Honua.Oracle.Tests.csproj \
-    --filter "Category=Oracle"
-```
-
-Runs nightly and on demand via
-[`provider-http-smoke.yml`](../../../../.github/workflows/provider-http-smoke.yml). Oracle
-is **not** wired into the `Honua.ProviderSmoke.Tests` HTTP-stack smoke suite and remains
-experimental — this lane proves the provider-layer code path only, not the full protocol
-stack.
-
 ## Limitations and Known Gaps
 
 - **Read-only.** Edits, transactions, and `applyEdits` are not implemented.
@@ -299,6 +259,3 @@ stack.
   (`SqlFragment`/`Filter`) for complex predicates rather than free-form SQL.
 - **Native AOT incompatible.** ODP.NET reflection blocks Native AOT; disable the provider
   in AOT-published images.
-
-Follow-ups for write support, admin UI wiring, native output formats, statistics, and
-temporal/H3 aggregations are tracked alongside the other Tier 1 enterprise providers.

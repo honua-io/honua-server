@@ -9,7 +9,10 @@ Upload a GeoJSON file, publish it as a layer, and query it through the supported
 
 **Prerequisites:** a running server with an admin password set (steps 1–4 of the [quickstart](quickstart.md)), Python with `honua-admin`, and Node.js with `npx`.
 
-> **Shell.** Every block on this page is `bash` — heredocs, `export`, and `python3`. On Windows run > them in WSL or Git Bash, not PowerShell, and note that a bare `python3` there resolves to the > Microsoft Store stub; use `python` or a venv interpreter. The [quickstart](quickstart.md) is the > PowerShell-native path.
+> **Shell.** Every block on this page is `bash` — heredocs, `export`, and `python3`. On Windows run
+> them in WSL or Git Bash, not PowerShell, and note that a bare `python3` there resolves to the
+> Microsoft Store stub; use `python` or a venv interpreter. The [quickstart](quickstart.md) shows
+> the PowerShell equivalents where they differ.
 
 > **Base URL and admin key.** Steps 1–4 of the [quickstart](quickstart.md) write a generated
 > password into `.env` and publish the server on `18080`. Take both from there rather than
@@ -172,7 +175,7 @@ npx --yes -p @honua/sdk-js honua query default/0 --limit 1 --format geojson
 
 ## Troubleshoot
 
-- **401 from an admin operation** — set `HONUA_ADMIN_PASSWORD` on the server; the repository Compose profile uses the development value shown above.
+- **401 from an admin operation** — `HONUA_API_KEY` must be the `HONUA_ADMIN_PASSWORD` from your install's `.env`; re-run the two `export` lines at the top of this page.
 - **`Table name is required`** — pass `TableName` in the `data` field alongside `file` on the import call.
 - **`Table 'honua_data.hawaii_cities' was not found`** on publish — publish the physical `imported_hawaii_cities` name, not the logical one you imported under.
 - **`could not determine executable to run`** from `npx` — use `-p @honua/sdk-js honua <command>`.
