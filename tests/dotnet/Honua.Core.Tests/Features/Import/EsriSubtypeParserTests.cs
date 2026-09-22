@@ -4,6 +4,7 @@
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Migration.Services;
 
@@ -187,7 +188,12 @@ public sealed class EsriSubtypeParserTests
         // whole layer read. Nothing ambiguous is persisted either way.
         var act = () => EsriSubtypeParser.Parse(layer);
         act.Should().NotThrow();
-        EsriSubtypeParser.Parse(layer).Subtypes.Should().BeNull("an ambiguous template set is never silently reduced");
+
+        var result = EsriSubtypeParser.Parse(layer);
+        result.Subtypes.Should().BeNull("an ambiguous template set is never silently reduced");
+        result.Truncated.Should().BeFalse();
+        result.UnsupportedCode.Should().Be(ImportCompatibilityCodes.ArcGisFeatureTypeTemplatesUnsupported);
+        result.UnsupportedDetail.Should().Contain("One").And.Contain("2 editing templates");
     }
 
     [Fact]
@@ -218,7 +224,11 @@ public sealed class EsriSubtypeParserTests
 
         var act = () => EsriSubtypeParser.Parse(layer);
         act.Should().NotThrow();
-        EsriSubtypeParser.Parse(layer).Subtypes.Should().BeNull("domain clearing is never silently dropped to inheritance");
+
+        var result = EsriSubtypeParser.Parse(layer);
+        result.Subtypes.Should().BeNull("domain clearing is never silently dropped to inheritance");
+        result.UnsupportedCode.Should().Be(ImportCompatibilityCodes.ArcGisFeatureTypeDomainClearingUnsupported);
+        result.UnsupportedDetail.Should().Contain("status", "the finding names the field whose domain is cleared");
     }
 
     [Fact]
@@ -230,7 +240,25 @@ public sealed class EsriSubtypeParserTests
 
         var act = () => EsriSubtypeParser.Parse(layer);
         act.Should().NotThrow();
-        EsriSubtypeParser.Parse(layer).Subtypes.Should().BeNull();
+
+        var result = EsriSubtypeParser.Parse(layer);
+        result.Subtypes.Should().BeNull();
+        result.UnsupportedCode.Should().Be(ImportCompatibilityCodes.ArcGisFeatureTypeIdentityUnsupported);
+    }
+
+    [Fact]
+    public void Parse_SupportedFeatureTypes_ReportsNoUnsupportedConstruct()
+    {
+        var layer = ParseLayer("""
+            { "typeIdField": "kind", "types": [{ "id": 1, "name": "One",
+              "templates": [{ "prototype": { "attributes": { "kind": 1 } } }] }] }
+            """);
+
+        var result = EsriSubtypeParser.Parse(layer);
+
+        result.UnsupportedCode.Should().BeNull();
+        result.UnsupportedDetail.Should().BeNull();
+        result.Subtypes!.Subtypes.Should().ContainSingle();
     }
 
     private static JsonElement ParseLayer(string json)

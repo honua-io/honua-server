@@ -58,6 +58,24 @@ public static class ImportCompatibilityCodes
     /// <summary>ArcGIS subtype metadata is captured but not automatically migrated by this slice.</summary>
     public const string ArcGisSubtypesManualReview = "ARCGIS_SUBTYPES_MANUAL_REVIEW";
 
+    /// <summary>
+    /// An ArcGIS feature type declares more than one editing template. The canonical model
+    /// carries a single prototype per type, so the type's editing defaults are not captured.
+    /// </summary>
+    public const string ArcGisFeatureTypeTemplatesUnsupported = "ARCGIS_FEATURE_TYPE_TEMPLATES_UNSUPPORTED";
+
+    /// <summary>
+    /// An ArcGIS feature type explicitly clears a field domain. The canonical model expresses
+    /// only inheritance or replacement, so the cleared domain is not captured.
+    /// </summary>
+    public const string ArcGisFeatureTypeDomainClearingUnsupported = "ARCGIS_FEATURE_TYPE_DOMAIN_CLEARING_UNSUPPORTED";
+
+    /// <summary>
+    /// An ArcGIS feature type carries no scalar identifier or no name, so it cannot be
+    /// projected onto a canonical subtype entry.
+    /// </summary>
+    public const string ArcGisFeatureTypeIdentityUnsupported = "ARCGIS_FEATURE_TYPE_IDENTITY_UNSUPPORTED";
+
     /// <summary>ArcGIS relationship metadata is captured but not automatically migrated by this slice.</summary>
     public const string ArcGisRelationshipsManualReview = "ARCGIS_RELATIONSHIPS_MANUAL_REVIEW";
 

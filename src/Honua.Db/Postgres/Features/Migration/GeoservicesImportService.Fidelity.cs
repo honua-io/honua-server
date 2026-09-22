@@ -173,17 +173,22 @@ internal sealed partial class GeoservicesImportService
 
         if (HasSubtypeMetadata(resourceElement))
         {
+            // #4824 REQ-002: the finding is derived from the same parser the importer persists
+            // from, so a source editing construct that cannot be captured is named here instead
+            // of surfacing as an opaque failure of the whole layer read.
             var subtypes = _constructCapabilityRegistry.ResolveOrUnknown(EsriConstructCapabilityRegistry.Keys.ResourceSubtypes);
+            var finding = EsriSubtypeFidelityClassifier.Classify(resourceElement, subtypes);
             records.Add(CreateFidelityRecord(
                 $"{resource.Id}:subtypes",
                 resource.Id,
                 "subtype",
                 "subtypes",
                 resource.Name,
-                subtypes.AutomationStatus,
-                subtypes.Code,
-                subtypes.Reason,
-                subtypes.ManualSteps));
+                finding.AutomationStatus,
+                finding.Code,
+                finding.Reason,
+                finding.ManualSteps,
+                metadata: finding.Metadata));
         }
 
         records.AddRange(BuildRelationshipFidelityRecords(resource, resourceElement));
