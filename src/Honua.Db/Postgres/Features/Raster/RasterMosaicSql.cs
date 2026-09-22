@@ -77,8 +77,11 @@ internal static class RasterMosaicSql
     /// dataset map renderer applies before its union (honua-server#2487).
     /// </para>
     /// <para>
-    /// The reference is the source raster with the smallest affine pixel area (ties broken by <c>id</c>),
-    /// so no input is coarsened and the mosaic keeps the finest native resolution the layer has.
+    /// Already-aligned inputs keep their native grid. Otherwise the reference is a deterministic
+    /// axis-aligned grid with the finest horizontal and vertical source sampling. Skewed inputs also
+    /// bound both axes by their smallest affine singular value, so no direction is coarsened.
+    /// A 256-fold per-source amplification limit prevents pathological intermediate allocations;
+    /// the query fails explicitly if it is exceeded.
     /// Inputs are resampled with nearest-neighbour, which invents no pixel values. An aligned
     /// layer passes through untouched, so its mosaics are byte-identical to the pre-#4792 result.
     /// The reference lookup is an uncorrelated scalar subquery evaluated once per statement;
@@ -101,13 +104,47 @@ internal static class RasterMosaicSql
     /// </remarks>
     internal static string CreateAlignedRasterExpression(string sourceCte)
     {
+        const string Determinant = "(ST_ScaleX(candidate.rast) * ST_ScaleY(candidate.rast) - ST_SkewX(candidate.rast) * ST_SkewY(candidate.rast))";
+        const string Trace = "(power(ST_ScaleX(candidate.rast), 2) + power(ST_ScaleY(candidate.rast), 2) + power(ST_SkewX(candidate.rast), 2) + power(ST_SkewY(candidate.rast), 2))";
+        // The smaller singular value is evaluated in its rationalized form to avoid
+        // cancellation for a nearly singular affine transform.
+        var skewResolution = $"sqrt(2 * power({Determinant}, 2) / nullif({Trace} + sqrt(greatest(0, power({Trace}, 2) - 4 * power({Determinant}, 2))), 0))";
         var reference = $"""
-            (SELECT align_ref.rast
-             FROM {sourceCte} AS align_ref
-             WHERE align_ref.rast IS NOT NULL AND NOT ST_IsEmpty(align_ref.rast)
-             ORDER BY abs(ST_ScaleX(align_ref.rast) * ST_ScaleY(align_ref.rast)
-                        - ST_SkewX(align_ref.rast) * ST_SkewY(align_ref.rast)) ASC, align_ref.id ASC
-             LIMIT 1)
+            (SELECT CASE WHEN NOT EXISTS (
+                        SELECT 1 FROM {sourceCte} AS candidate
+                        WHERE candidate.rast IS NOT NULL AND NOT ST_IsEmpty(candidate.rast)
+                          AND NOT COALESCE(ST_SameAlignment(candidate.rast, first.rast), TRUE))
+                        THEN first.rast
+                        ELSE ST_MakeEmptyRaster(
+                            CASE WHEN NOT (grid.x_resolution > 0 AND grid.y_resolution > 0
+                                           AND grid.x_resolution < 'Infinity'::double precision
+                                           AND grid.y_resolution < 'Infinity'::double precision)
+                                THEN ('raster_mosaic_invalid_affine_grid:' || ST_SRID(first.rast))::integer
+                                WHEN EXISTS (
+                                SELECT 1 FROM {sourceCte} AS candidate
+                                WHERE candidate.rast IS NOT NULL AND NOT ST_IsEmpty(candidate.rast)
+                                  AND abs(ST_ScaleX(candidate.rast) * ST_ScaleY(candidate.rast)
+                                          - ST_SkewX(candidate.rast) * ST_SkewY(candidate.rast))
+                                      / nullif(grid.x_resolution * grid.y_resolution, 0) > 256)
+                                THEN ('raster_mosaic_grid_amplification_exceeded:' || ST_SRID(first.rast))::integer
+                                ELSE 1 END, 1,
+                            ST_UpperLeftX(first.rast), ST_UpperLeftY(first.rast),
+                            CASE WHEN ST_ScaleX(first.rast) < 0 THEN -grid.x_resolution ELSE grid.x_resolution END,
+                            CASE WHEN ST_ScaleY(first.rast) > 0 THEN grid.y_resolution ELSE -grid.y_resolution END,
+                            0, 0, ST_SRID(first.rast))
+                    END
+             FROM (SELECT align_ref.rast FROM {sourceCte} AS align_ref
+                   WHERE align_ref.rast IS NOT NULL AND NOT ST_IsEmpty(align_ref.rast)
+                   ORDER BY align_ref.id ASC LIMIT 1) AS first
+             CROSS JOIN LATERAL (
+                 SELECT least(min(nullif(abs(ST_ScaleX(candidate.rast)), 0)),
+                              min(CASE WHEN ST_SkewX(candidate.rast) <> 0 OR ST_SkewY(candidate.rast) <> 0
+                                       THEN {skewResolution} END)) AS x_resolution,
+                        least(min(nullif(abs(ST_ScaleY(candidate.rast)), 0)),
+                              min(CASE WHEN ST_SkewX(candidate.rast) <> 0 OR ST_SkewY(candidate.rast) <> 0
+                                       THEN {skewResolution} END)) AS y_resolution
+                 FROM {sourceCte} AS candidate
+                 WHERE candidate.rast IS NOT NULL AND NOT ST_IsEmpty(candidate.rast)) AS grid)
             """;
 
         // The pixel type's default NoData value, i.e. the value PostGIS fills the snapped-out

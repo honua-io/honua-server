@@ -182,13 +182,13 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
     }
 
     [IntegrationTest]
-    public async Task ExportMosaicAsync_WithSkewedInput_UsesSmallestAffinePixelArea()
+    public async Task ExportMosaicAsync_WithSkewedInput_PreservesFinestDirectionalSampling()
     {
         var schemaName = await CreateSchemaAsync();
         try
         {
-            // The skewed raster's scale product is 1, but its affine pixel area is 1.5.
-            // The square raster's area is 1.44 and must supply the finer union grid.
+            // A skewed pixel's shortest sampling direction is finer than its area suggests.
+            // The synthetic grid bounds both axes by that affine singular value.
             var skewed = await InsertConstantRasterAsync(
                 schemaName, "skewed", 0, 2, 1, 10, Day(1), skewX: 0.5, skewY: 1);
             var fine = await InsertConstantRasterAsync(schemaName, "fine", 4, 2, 1.2, 20, Day(2));
@@ -199,10 +199,65 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
                 new RasterQuery { OutputFormat = RasterFormat.TIFF });
             var probe = await ProbeAsync(result.Data);
 
-            probe.ScaleX.Should().BeApproximately(1.2, 1e-9);
-            probe.ScaleY.Should().BeApproximately(-1.2, 1e-9);
+            probe.ScaleX.Should().BeApproximately(1, 1e-9);
+            probe.ScaleY.Should().BeApproximately(-1, 1e-9);
             probe.SkewX.Should().BeApproximately(0, 1e-9);
             probe.SkewY.Should().BeApproximately(0, 1e-9);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ExportMosaicAsync_WithCrossedAnisotropicPixels_PreservesBothDirectionalResolutions()
+    {
+        foreach (var reverseInsertion in new[] { false, true })
+        {
+            var schemaName = await CreateSchemaAsync();
+            try
+            {
+                async Task<long> InsertNarrowAsync() => await InsertConstantRasterAsync(
+                    schemaName, "narrow", 0, 4, 0.5, 10, Day(1), pixelSizeY: 2);
+                async Task<long> InsertSquareAsync() => await InsertConstantRasterAsync(
+                    schemaName, "square", 3, 4, 1, 20, Day(2));
+                var first = reverseInsertion ? await InsertSquareAsync() : await InsertNarrowAsync();
+                var second = reverseInsertion ? await InsertNarrowAsync() : await InsertSquareAsync();
+                _schemaName = schemaName;
+
+                var result = await CreateStore(schemaName).ExportMosaicAsync(
+                    LayerId, [first, second], RasterMergeStrategy.Newest,
+                    new RasterQuery { OutputFormat = RasterFormat.TIFF });
+                var probe = await ProbeAsync(result.Data, (0.25, 3.5), (3.5, 3.5));
+
+                probe.ScaleX.Should().BeApproximately(0.5, 1e-9);
+                probe.ScaleY.Should().BeApproximately(-1, 1e-9);
+                probe.Values.Should().Equal(10, 20);
+            }
+            finally
+            {
+                await fixture.DropSchemaAsync(schemaName);
+            }
+        }
+    }
+
+    [IntegrationTest]
+    public async Task GetMosaicStatisticsAsync_WithExtremeCrossedResolutions_FailsBeforeExcessiveUpsampling()
+    {
+        var schemaName = await CreateSchemaAsync();
+        try
+        {
+            var narrowX = await InsertConstantRasterAsync(
+                schemaName, "narrow-x", 0, 200, 0.01, 10, Day(1), pixelSizeY: 100);
+            var narrowY = await InsertConstantRasterAsync(
+                schemaName, "narrow-y", 300, 200, 100, 20, Day(2), pixelSizeY: 0.01);
+
+            Func<Task> action = async () => await CreateStore(schemaName).GetMosaicStatisticsAsync(
+                LayerId, [narrowX, narrowY], RasterMergeStrategy.Newest);
+
+            var exception = await action.Should().ThrowAsync<PostgresException>();
+            exception.Which.Message.Should().Contain("raster_mosaic_grid_amplification_exceeded");
         }
         finally
         {
@@ -359,7 +414,8 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
         double value,
         DateTimeOffset acquisition,
         double skewX = 0,
-        double skewY = 0)
+        double skewY = 0,
+        double? pixelSizeY = null)
     {
         await using var connection = await fixture.GetConnectionAsync(schemaName);
         await using var command = connection.CreateCommand();
@@ -368,7 +424,7 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
             SELECT @layerId,
                    @name,
                    ST_AddBand(
-                       ST_MakeEmptyRaster(2, 2, @upperLeftX, @upperLeftY, @pixelSize, -@pixelSize,
+                       ST_MakeEmptyRaster(2, 2, @upperLeftX, @upperLeftY, @pixelSize, -@pixelSizeY,
                                           @skewX, @skewY, 4326),
                        '32BF'::text,
                        @value,
@@ -383,6 +439,7 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
         command.Parameters.AddWithValue("upperLeftX", upperLeftX);
         command.Parameters.AddWithValue("upperLeftY", upperLeftY);
         command.Parameters.AddWithValue("pixelSize", pixelSize);
+        command.Parameters.AddWithValue("pixelSizeY", pixelSizeY ?? pixelSize);
         command.Parameters.AddWithValue("skewX", skewX);
         command.Parameters.AddWithValue("skewY", skewY);
         command.Parameters.AddWithValue("value", value);
