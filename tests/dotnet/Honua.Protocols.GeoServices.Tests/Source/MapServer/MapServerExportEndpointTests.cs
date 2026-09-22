@@ -42,6 +42,29 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithJpgPngFormat_ReturnsPngImage()
+    {
+        // Regression: format=jpgpng was rejected with "Output format 'jpgpng' is not
+        // supported." That is the Image Encoding QGIS's ArcGIS REST Server connection
+        // defaults to, so a stock QGIS user adding a Honua MapServer saw an empty canvas
+        // and "Error 400: Bad Request" while identify, legend and the service document
+        // all worked - found by driving QGIS 3.44.14 against the certification fixture.
+        //
+        // ImageServerExportHandler.TryResolveOutputFormat already accepted jpgpng and
+        // normalised it to PNG. The two services must not disagree about a format Esri
+        // defines identically for both, so MapServer now does the same: PNG preserves
+        // transparency and is the safe lossless choice for the combined token.
+        var response = await Fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&bboxSR=4326&imageSR=4326&size=256,256&format=jpgpng&transparent=true&f=image");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        (await response.Content.ReadAsByteArrayAsync()).Should().HaveCountGreaterThan(100);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_WithMalformedBbox_AsImage_ReturnsBadRequest()
     {
         // CERT-ERRH-01: a binary image export (f=image) whose bbox cannot be parsed must be
