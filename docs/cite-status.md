@@ -23,6 +23,13 @@ and its `cite-conformance-evidence-23` bundle, built from `trunk` source commit
 1138 passed, 0 failed, 0 skipped, and 0 CantTell across 14 suites
 (`allPassed=true`). OGC API Features includes the complete Part 2 CRS class.
 
+These numbers certify the source commit above; reviewing this page does not
+rerun the suites against later trunk commits. The August 28 WFS 2.0 `basic`
+result of 166/167 predates [the atomic multi-layer transaction repair in
+#3817](https://github.com/honua-io/honua-server/pull/3817), trunk commit
+`dd7d14506c27faea5ce22c338d76353c7eaa34f4`. That repair is an ancestor of
+`80e23bed`, whose September 18 bundle records 167/167 for the same profile.
+
 | Suite | Profile | Passed / Total | Pass Rate | Last Evidence Run |
 |---|---|---:|---:|---|
 | OGC API Features 1.0 | `default` | 137 / 137 | 100% | [2026-09-18](https://github.com/honua-io/honua-server/actions/runs/35345482813) |
