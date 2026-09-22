@@ -564,7 +564,8 @@
               "/FeatureServer/{layerId}/{featureId}/attachments"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments"
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments",
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments"
             ],
             "capabilityMaturity": [
               "implemented"
@@ -578,7 +579,8 @@
               "/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}"
+              "GET /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}",
+              "POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}"
             ],
             "capabilityMaturity": [
               "implemented"
@@ -3992,7 +3994,8 @@
               "/rest/services"
             ],
             "honuaEndpoints": [
-              "GET /rest/services"
+              "GET /rest/services",
+              "POST /rest/services"
             ],
             "capabilityMaturity": [
               "implemented"
@@ -4009,7 +4012,8 @@
               "/rest/info"
             ],
             "honuaEndpoints": [
-              "GET /rest/info"
+              "GET /rest/info",
+              "POST /rest/info"
             ],
             "capabilityMaturity": [
               "implemented"
