@@ -68,6 +68,9 @@ internal sealed partial class GeoservicesImportService
             };
         }
 
+        // #4827: the step a top-level failure happened in, so the job reports where it failed and
+        // whether imported rows had already been committed.
+        var stage = ImportFailureStage.DiscoveringLayer;
         try
         {
             // Phase 1: Discover layer metadata
@@ -120,12 +123,14 @@ internal sealed partial class GeoservicesImportService
             }
 
             // Phase 2: Create table
+            stage = ImportFailureStage.CreatingTable;
             ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.CreatingTable, request,
                 "Creating PostGIS table", 0, totalFeatures, layerInfo.Name);
 
             await CreateTableAsync(connection, targetSchema, loadTable, layerInfo, request.TargetSrid, cancellationToken);
 
             // Phase 3: Retrieve and insert features
+            stage = ImportFailureStage.TransferringFeatures;
             var featuresProcessed = 0;
             var failedFeatures = 0;
             var offset = 0;
@@ -167,7 +172,7 @@ internal sealed partial class GeoservicesImportService
                 batchNumber++;
                 if (batchNumber > maxImportPages)
                 {
-                    throw new InvalidOperationException(
+                    throw new GeoservicesImportAbortedException(
                         $"ArcGIS import stopped after {maxImportPages} pages because the source did not make pagination progress.");
                 }
                 ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.RetrievingFeatures, request,
@@ -202,7 +207,7 @@ internal sealed partial class GeoservicesImportService
                 {
                     if (queryResult.ExceededTransferLimit)
                     {
-                        throw new InvalidOperationException(
+                        throw new GeoservicesImportAbortedException(
                             $"ArcGIS object-id window {batchNumber} exceeded the source transfer limit; the import was not completed.");
                     }
 
@@ -212,13 +217,13 @@ internal sealed partial class GeoservicesImportService
                             !TryReadSourceObjectId(feature, objectIdField, out var returnedObjectId)
                             || !returnedObjectIds.Add(returnedObjectId)))
                     {
-                        throw new InvalidOperationException(
+                        throw new GeoservicesImportAbortedException(
                             $"ArcGIS object-id window {batchNumber} did not return identifiable source object IDs.");
                     }
 
                     if (objectIdWindows[batchNumber - 1].Any(objectId => !returnedObjectIds.Contains(objectId)))
                     {
-                        throw new InvalidOperationException(
+                        throw new GeoservicesImportAbortedException(
                             $"ArcGIS object-id window {batchNumber} did not return every requested source object ID.");
                     }
                 }
@@ -232,11 +237,11 @@ internal sealed partial class GeoservicesImportService
                 {
                     if (objectIdWindows is null)
                     {
-                        throw new InvalidOperationException(
+                        throw new GeoservicesImportAbortedException(
                             "ArcGIS import stopped because the source returned no pagination progress.");
                     }
 
-                    throw new InvalidOperationException(
+                    throw new GeoservicesImportAbortedException(
                         $"ArcGIS object-id window {batchNumber} returned no requested features.");
                 }
 
@@ -260,7 +265,11 @@ internal sealed partial class GeoservicesImportService
 
                 if (batchInsert.Failed > 0)
                 {
-                    warnings.Add($"Batch {batchNumber}: {batchInsert.Failed} features failed to insert");
+                    // #4827: keep the (redacted) reason the database gave, so a rejected geometry or value
+                    // is diagnosable from the job rather than only from the server log.
+                    warnings.Add(batchInsert.FirstFailureReason is { } reason
+                        ? $"Batch {batchNumber}: {batchInsert.Failed} features failed to insert; first rejection: {reason}"
+                        : $"Batch {batchNumber}: {batchInsert.Failed} features failed to insert");
                 }
 
                 Log.BatchCompleted(_logger, batchNumber, batchInsert.Inserted, batchInsert.Failed, featuresProcessed);
@@ -278,7 +287,7 @@ internal sealed partial class GeoservicesImportService
 
             if (objectIdWindows is { } && batchNumber < objectIdWindows.Length)
             {
-                throw new InvalidOperationException("ArcGIS object-id window import did not process all source object IDs.");
+                throw new GeoservicesImportAbortedException("ArcGIS object-id window import did not process all source object IDs.");
             }
 
             if (replacingExistingTarget && failedFeatures > 0)
@@ -292,6 +301,8 @@ internal sealed partial class GeoservicesImportService
                 return BuildReplacementRefusedResult(
                     request, layerInfo, featuresProcessed, failedFeatures, warnings, stopwatch.Elapsed);
             }
+
+            stage = ImportFailureStage.Finalizing;
 
             // The per-window buffers are finished with. Release them before the source is enumerated
             // again, so the comparison adds at most one object-ID array to the import's footprint.
@@ -325,7 +336,9 @@ internal sealed partial class GeoservicesImportService
 
             await AnalyzeTableAsync(connection, targetSchema, request.TableName, cancellationToken);
 
+            stage = ImportFailureStage.Committing;
             await transaction.CommitSafelyAsync(cancellationToken);
+            stage = ImportFailureStage.AfterCommit;
 
             PublishedLayerSummary? publishedLayer = null;
             if (request.AutoPublish)
@@ -524,15 +537,16 @@ internal sealed partial class GeoservicesImportService
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            await transaction.RollbackAsync(CancellationToken.None);
+            await RollbackAfterFailureAsync(transaction, stage, request.TableName);
             Log.ImportCancelled(_logger, request.TableName);
             throw;
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
             // Top-level import failure: roll back, log, and map to a sanitized failure result via
-            // BuildImportFailureMessage rather than leaking the raw exception to the caller.
-            await transaction.RollbackAsync(CancellationToken.None);
+            // BuildImportFailureMessage rather than leaking the raw exception to the caller. #4827: the
+            // rollback is guarded, so a failed cleanup can never replace the error being reported.
+            await RollbackAfterFailureAsync(transaction, stage, request.TableName);
             stopwatch.Stop();
             Log.ImportFailed(_logger, request.TableName, ex);
 
@@ -540,7 +554,7 @@ internal sealed partial class GeoservicesImportService
                 request.TableName,
                 request.ServiceUrl,
                 request.LayerId,
-                BuildImportFailureMessage(ex),
+                BuildImportFailureMessage(ex, stage),
                 stopwatch.Elapsed);
         }
         finally
@@ -558,10 +572,66 @@ internal sealed partial class GeoservicesImportService
         }
     }
 
-    private static string BuildImportFailureMessage(Exception exception)
-        => exception switch
+    /// <summary>
+    /// The import step a top-level failure happened in. It words the failure reason and records
+    /// whether the imported rows had already been committed when the failure happened.
+    /// </summary>
+    internal enum ImportFailureStage
+    {
+        /// <summary>Reading the source layer's metadata.</summary>
+        DiscoveringLayer,
+
+        /// <summary>Creating the target (or staging) table.</summary>
+        CreatingTable,
+
+        /// <summary>Reading source pages and inserting them.</summary>
+        TransferringFeatures,
+
+        /// <summary>Re-reading the source population, swapping and indexing.</summary>
+        Finalizing,
+
+        /// <summary>Sending COMMIT; a lost acknowledgement leaves the durable outcome unknown.</summary>
+        Committing,
+
+        /// <summary>After the data commit: publication, attachments and reconciliation.</summary>
+        AfterCommit
+    }
+
+    /// <summary>
+    /// Rolls back the import transaction on a failure path. #4827: this runs while another error
+    /// is being handled, so it never throws. A committed transaction has nothing to roll back, and
+    /// a lost session cannot run the rollback at all (the server discards the transaction with the
+    /// session); either way the originating error stays the one reported.
+    /// </summary>
+    private async Task RollbackAfterFailureAsync(NpgsqlTransaction transaction, ImportFailureStage stage, string tableName)
+    {
+        if (stage == ImportFailureStage.AfterCommit)
         {
-            ArcGisAuthenticationException auth => auth.Kind switch
+            return;
+        }
+
+        try
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+        }
+        catch (Exception rollbackException) when (rollbackException is not OutOfMemoryException)
+        {
+            Log.ImportRollbackFailed(_logger, tableName, rollbackException);
+        }
+    }
+
+    /// <summary>
+    /// Maps a top-level import failure to the job's failure reason: a stable code, the step that
+    /// failed, and a category the operator can act on. #4827: provider and HTTP exception text can
+    /// carry SQL, hosts, URLs, tokens or credentials, so it is never echoed; only the SQLSTATE or
+    /// HTTP status is. Reasons the importer authored itself (<see cref="GeoservicesImportAbortedException"/>)
+    /// are reported as written.
+    /// </summary>
+    internal static string BuildImportFailureMessage(Exception exception, ImportFailureStage stage)
+    {
+        if (exception is ArcGisAuthenticationException auth)
+        {
+            return auth.Kind switch
             {
                 ArcGisAuthenticationFailureKind.CredentialExpired =>
                     $"{ImportCompatibilityCodes.ArcGisTokenExpired}: ArcGIS credentials are expired. Provide a refreshed token or credential reference and retry.",
@@ -569,9 +639,109 @@ internal sealed partial class GeoservicesImportService
                     $"{ImportCompatibilityCodes.ArcGisAccessDenied}: ArcGIS rejected the supplied credentials. Verify access to the layer and retry.",
                 _ =>
                     $"{ImportCompatibilityCodes.ArcGisTokenRequired}: ArcGIS service requires authentication. Provide a token or credential reference and retry."
-            },
-            _ => "Import from ArcGIS service failed."
+            };
+        }
+
+        if (exception is GeoservicesImportAbortedException aborted)
+        {
+            return $"{ImportCompatibilityCodes.ArcGisImportAborted}: {aborted.Message}";
+        }
+
+        var step = stage switch
+        {
+            ImportFailureStage.DiscoveringLayer => "discovering source layer metadata",
+            ImportFailureStage.CreatingTable => "creating the target table",
+            ImportFailureStage.TransferringFeatures => "transferring source features",
+            ImportFailureStage.Finalizing => "finalizing the imported table",
+            ImportFailureStage.Committing => "committing the imported table",
+            _ => "publishing the imported layer"
         };
+        // A command-level ERROR acknowledges rejection. Session loss and PostgreSQL's
+        // explicit unknown-completion states cannot establish the durable outcome.
+        var databaseFailure = UnwrapDatabaseFailure(exception);
+        var commitRejected = databaseFailure is PostgresException postgresFailure
+            && postgresFailure.InvariantSeverity == "ERROR"
+            && !postgresFailure.SqlState.StartsWith("08", StringComparison.Ordinal)
+            && postgresFailure.SqlState != "40003";
+        var outcome = stage switch
+        {
+            ImportFailureStage.AfterCommit =>
+                "Imported rows were already committed; check the target table and its publication before retrying.",
+            // Cancellation-safe commit prevents caller cancellation from interrupting the round-trip,
+            // but a connection failure can still hide a successful server-side commit.
+            ImportFailureStage.Committing when !commitRejected =>
+                "The commit outcome could not be confirmed; check the target table and its publication before retrying.",
+            _ => "No imported data was committed, and any existing target table was left unchanged."
+        };
+
+        // A lost or broken session surfaces as an ObjectDisposedException/InvalidOperationException from
+        // Npgsql that wraps the server's own error, so classify on the first database exception in the
+        // chain rather than on the wrapper the cleanup path produced.
+        return databaseFailure switch
+        {
+            PostgresException postgres when IsGeometryRejection(postgres) =>
+                $"{ImportCompatibilityCodes.ArcGisImportGeometryRejected}: The target database rejected a source geometry while {step} "
+                + $"(SQLSTATE {postgres.SqlState}). Check that the layer's advertised geometry type and Z/M flags match the source coordinates. {outcome}",
+            PostgresException postgres when IsDatabaseUnavailable(postgres.SqlState) =>
+                $"{ImportCompatibilityCodes.ArcGisImportDatabaseUnavailable}: The target database connection was lost or refused while {step} "
+                + $"(SQLSTATE {postgres.SqlState}). {outcome}",
+            PostgresException postgres =>
+                $"{ImportCompatibilityCodes.ArcGisImportDatabaseError}: The target database rejected the import while {step} "
+                + $"(SQLSTATE {postgres.SqlState}). {outcome}",
+            NpgsqlException or TimeoutException =>
+                $"{ImportCompatibilityCodes.ArcGisImportDatabaseUnavailable}: The target database connection failed while {step}. {outcome}",
+            HttpRequestException { StatusCode: { } status } =>
+                $"{ImportCompatibilityCodes.ArcGisServiceError}: The ArcGIS service request failed with HTTP {(int)status} while {step}. {outcome}",
+            HttpRequestException =>
+                $"{ImportCompatibilityCodes.ArcGisServiceError}: The ArcGIS service could not be reached while {step}. {outcome}",
+            OperationCanceledException =>
+                $"{ImportCompatibilityCodes.ArcGisServiceError}: An ArcGIS service request timed out while {step}. {outcome}",
+            _ =>
+                $"{ImportCompatibilityCodes.ArcGisImportFailed}: Import from ArcGIS service failed while {step}. {outcome}"
+        };
+    }
+
+    /// <summary>
+    /// Redacted reason a single feature row was rejected, carried into the batch warning. Like
+    /// <see cref="BuildImportFailureMessage"/>, it names the category and SQLSTATE only.
+    /// </summary>
+    internal static string DescribeFeatureInsertFailure(Exception exception)
+        => UnwrapDatabaseFailure(exception) switch
+        {
+            PostgresException postgres when IsGeometryRejection(postgres) =>
+                $"geometry rejected by the target database (SQLSTATE {postgres.SqlState})",
+            PostgresException postgres =>
+                $"value rejected by the target database (SQLSTATE {postgres.SqlState})",
+            _ => "row could not be converted for insert"
+        };
+
+    private static Exception UnwrapDatabaseFailure(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is PostgresException or NpgsqlException)
+            {
+                return current;
+            }
+        }
+
+        return exception;
+    }
+
+    // PostGIS reports malformed or dimensionally inconsistent geometry (for example "can not mix
+    // dimensionality in a geometry", "Column has Z dimension but geometry does not") as XX000 or
+    // 22023. The message is classified here and never forwarded.
+    private static bool IsGeometryRejection(PostgresException exception)
+        => exception.SqlState is "XX000" or "22023"
+            && (exception.MessageText.Contains("geometry", StringComparison.OrdinalIgnoreCase)
+                || exception.MessageText.Contains("dimension", StringComparison.OrdinalIgnoreCase));
+
+    // Connection exception (08), insufficient resources (53) and operator intervention (57,
+    // including a terminated session) mean the database could not run the import at all.
+    private static bool IsDatabaseUnavailable(string sqlState)
+        => sqlState.StartsWith("08", StringComparison.Ordinal)
+            || sqlState.StartsWith("53", StringComparison.Ordinal)
+            || sqlState.StartsWith("57", StringComparison.Ordinal);
 
     private static GeoservicesImportResult BuildReplacementRefusedResult(
         GeoservicesImportRequest request,
