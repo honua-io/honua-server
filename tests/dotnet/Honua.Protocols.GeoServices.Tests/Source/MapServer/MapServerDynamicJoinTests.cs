@@ -48,58 +48,14 @@ public sealed class MapServerDynamicJoinTests
     [IntegrationTest]
     [Operation(Operations.Identify)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
-    public async Task Identify_WithJoinedCalendarDate_NormalizesQualifiedValuesAndDefaults()
-    {
-        using var factory = CreateFactory(rightLayerAnonymous: true, temporalFields: true);
-        using var client = factory.CreateClient();
-        var reader = factory.Services.GetRequiredService<IFeatureReader>();
-        var writer = factory.Services.GetRequiredService<IFeatureWriter>();
-        var rows = await reader.QueryAsync(RightStorageId, new FeatureQuery { Limit = 10 });
-        var epoch = new DateTimeOffset(2024, 2, 29, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds();
-        foreach (var row in rows.Items)
-        {
-            await writer.UpdateAsync(RightStorageId, row with
-            {
-                Attributes = row.Attributes.SetItem("day", epoch)
-                    .SetItem("timestamp", "2024-02-29T00:00:00Z")
-                    .SetItem("nullable_day", null)
-            });
-        }
-
-        var dynamicLayers = Uri.EscapeDataString(BuildJoinDynamicLayers("esriLeftOuterJoin"));
-        var response = await client.GetAsync(
-            $"/rest/services/{ServiceName}/MapServer/identify" +
-            "?geometry=-122.5,37.5&geometryType=esriGeometryPoint&mapExtent=-180,-90,180,90" +
-            "&imageDisplay=800,600,96&tolerance=10&layers=all" +
-            $"&dynamicLayers={dynamicLayers}&f=json");
-        var content = await response.Content.ReadAsStringAsync();
-        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        using var document = JsonDocument.Parse(content);
-        var results = document.RootElement.GetProperty("results");
-        results.GetArrayLength().Should().BeGreaterThan(0, content);
-        foreach (var attributes in results.EnumerateArray().Select(result => result.GetProperty("attributes")))
-        {
-            attributes.GetProperty("right_parcels.day").GetString().Should().Be("2024-02-29");
-            attributes.GetProperty("right_parcels.timestamp").GetInt64().Should().Be(epoch);
-            attributes.GetProperty("right_parcels.nullable_day").ValueKind.Should().Be(JsonValueKind.Null);
-        }
-
-        var layer = Uri.EscapeDataString(BuildJoinLayer("esriLeftOuterJoin"));
-        var metadata = await client.GetAsync($"/rest/services/{ServiceName}/MapServer/dynamicLayer?f=json&layer={layer}");
-        metadata.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var layerDocument = JsonDocument.Parse(await metadata.Content.ReadAsStringAsync());
-        var day = layerDocument.RootElement.GetProperty("fields").EnumerateArray()
-            .Single(field => field.GetProperty("name").GetString() == "right_parcels.day");
-        day.GetProperty("type").GetString().Should().Be("esriFieldTypeDateOnly");
-        day.GetProperty("defaultValue").GetString().Should().Be("2024-02-29");
-    }
-
-    [IntegrationTest]
-    [Operation(Operations.Identify)]
-    [Endpoint("GET /rest/services/{serviceId}/MapServer/identify")]
     public async Task Identify_WithLeftOuterJoin_ReturnsQualifiedJoinedAttributes()
     {
-        using var factory = CreateFactory(rightLayerAnonymous: true);
+        using var store = new TestFeatureStore();
+        var feature = (await store.GetAsync(RightStorageId, 1))!.Value;
+        await store.UpdateAsync(RightStorageId, Feature.Create(feature.Id, feature.Geometry,
+            feature.Attributes.SetItem("day", "2024-01-02")
+                .SetItem("observed", "2024-01-02T01:00:00+01:00")));
+        using var factory = CreateFactory(rightLayerAnonymous: true, store);
         using var client = factory.CreateClient();
 
         var dynamicLayers = Uri.EscapeDataString(BuildJoinDynamicLayers("esriLeftOuterJoin"));
@@ -122,6 +78,8 @@ public sealed class MapServerDynamicJoinTests
         // Right attribute qualified by the right table name.
         first.TryGetProperty("right_parcels.name", out var joinedName).Should().BeTrue(content);
         joinedName.GetString().Should().NotBeNullOrEmpty();
+        first.GetProperty("right_parcels.day").GetInt64().Should().Be(1704153600000L);
+        first.GetProperty("right_parcels.observed").GetInt64().Should().Be(1704153600000L);
     }
 
     [IntegrationTest]
@@ -240,25 +198,23 @@ public sealed class MapServerDynamicJoinTests
             + $"\"leftTableKey\":\"{leftKey}\",\"rightTableKey\":\"{rightKey}\","
             + $"\"joinType\":\"{joinType}\"}}}}}}";
 
-    private static WebApplicationFactory<Program> CreateFactory(bool rightLayerAnonymous, bool temporalFields = false)
+    private static WebApplicationFactory<Program> CreateFactory(bool rightLayerAnonymous, TestFeatureStore? store = null)
         => new TestWebApplicationFactory().WithWebHostBuilder(builder =>
         {
             builder.ConfigureTestServices(services =>
             {
-                if (temporalFields)
-                {
-                    // Keep seeded temporal values visible to the HTTP request's scope.
-                    services.RemoveAll<TestFeatureStore>();
-                    services.AddSingleton<TestFeatureStore>();
-                }
-
                 services.RemoveAll<IMetadataV2GraphProvider>();
                 services.RemoveAll<IMetadataV2GraphStore>();
-                services.AddSingleton(_ => BuildJoinGraphProvider(rightLayerAnonymous, temporalFields));
+                services.AddSingleton(_ => BuildJoinGraphProvider(rightLayerAnonymous));
                 services.AddSingleton<IMetadataV2GraphProvider>(provider =>
                     provider.GetRequiredService<TestMetadataV2GraphProvider>());
                 services.AddSingleton<IMetadataV2GraphStore>(provider =>
                     provider.GetRequiredService<TestMetadataV2GraphProvider>());
+
+                if (store is not null)
+                {
+                    services.AddSingleton<IFeatureReader>(store);
+                }
 
                 services.Configure<MapServerDynamicLayersOptions>(options =>
                 {
@@ -270,7 +226,7 @@ public sealed class MapServerDynamicJoinTests
             });
         });
 
-    private static TestMetadataV2GraphProvider BuildJoinGraphProvider(bool rightLayerAnonymous, bool temporalFields)
+    private static TestMetadataV2GraphProvider BuildJoinGraphProvider(bool rightLayerAnonymous)
     {
         var openAccessPolicy = new AccessPolicy { AllowAnonymous = true, AllowAnonymousWrite = true };
         var rightAccessPolicy = rightLayerAnonymous
@@ -287,24 +243,12 @@ public sealed class MapServerDynamicJoinTests
 
         MetadataV2Field[] rightFields =
         [
+            new() { Name = "day", Type = MetadataV2FieldType.Date },
+            new() { Name = "observed", Type = MetadataV2FieldType.DateTime },
             new() { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false, SemanticRoles = ["id.primary"] },
             new() { Name = "id", Type = MetadataV2FieldType.String, Length = 255 },
             new() { Name = "name", Type = MetadataV2FieldType.String, Length = 255 },
         ];
-
-        if (temporalFields)
-        {
-            rightFields = [.. rightFields,
-                new MetadataV2Field
-                {
-                    Name = "day", Type = MetadataV2FieldType.Date,
-                    DefaultValue = JsonSerializer.SerializeToElement(
-                        new DateTimeOffset(2024, 2, 29, 0, 0, 0, TimeSpan.Zero).ToUnixTimeMilliseconds())
-                },
-                new MetadataV2Field { Name = "timestamp", Type = MetadataV2FieldType.DateTime },
-                new MetadataV2Field { Name = "nullable_day", Type = MetadataV2FieldType.Date, Nullable = true }
-            ];
-        }
 
         return new TestMetadataV2GraphBuilder()
             .AddConnection(WorkspaceId, "Analytics Workspace", provider: "postgres")

@@ -286,6 +286,48 @@ internal sealed class GeoArrowQueryFormatter
         return builder.Build();
     }
 
+    private static Date32Array BuildDate32Array(IReadOnlyList<Feature> features, string fieldName)
+    {
+        var builder = new Date32Array.Builder();
+        foreach (var feature in features)
+        {
+            var value = GeoParquetQueryFormatter.GetAttributeValue(feature, fieldName);
+            if (value is JsonElement element && element.ValueKind == JsonValueKind.String)
+            {
+                value = element.GetString();
+            }
+
+            if (value is JsonElement number && number.ValueKind == JsonValueKind.Number && number.TryGetInt64(out var epoch))
+            {
+                value = epoch;
+            }
+
+            // Preserve the supplied calendar day, including for offset-bearing values.
+            DateOnly? date = value switch
+            {
+                DateOnly day => day,
+                int milliseconds => DateOnly.FromDateTime(DateTimeOffset.FromUnixTimeMilliseconds(milliseconds).UtcDateTime),
+                long milliseconds when milliseconds is >= -62135596800000 and <= 253402300799999 =>
+                    DateOnly.FromDateTime(DateTimeOffset.FromUnixTimeMilliseconds(milliseconds).UtcDateTime),
+                DateTime timestamp => DateOnly.FromDateTime(timestamp),
+                DateTimeOffset timestamp => DateOnly.FromDateTime(timestamp.DateTime),
+                string text when DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture,
+                    DateTimeStyles.AllowWhiteSpaces, out var parsed) => DateOnly.FromDateTime(parsed.DateTime),
+                _ => null
+            };
+            if (date.HasValue)
+            {
+                builder.Append(date.Value.ToDateTime(TimeOnly.MinValue));
+            }
+            else
+            {
+                builder.AppendNull();
+            }
+        }
+
+        return builder.Build();
+    }
+
     private static TimestampArray BuildTimestampArrayByName(IReadOnlyList<Feature> features, string fieldName)
     {
         var builder = new TimestampArray.Builder(new TimestampType(TimeUnit.Millisecond, "UTC"));
@@ -433,25 +475,6 @@ internal sealed class GeoArrowQueryFormatter
             }
         }
 
-        return builder.Build();
-    }
-
-    private static Date32Array BuildDate32Array(IReadOnlyList<Feature> features, string fieldName)
-    {
-        var builder = new Date32Array.Builder();
-        foreach (var feature in features)
-        {
-            var value = GeoParquetQueryFormatter.GetAttributeValue(feature, fieldName);
-            if (value is not null
-                && GeoServicesFieldConventions.TryConvertTemporalValue(value, MetadataV2FieldType.Date, out var converted)
-                && converted is string text)
-            {
-                var date = DateOnly.ParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture);
-                builder.Append(date.ToDateTime(TimeOnly.MinValue));
-            }
-            else
-                builder.AppendNull();
-        }
         return builder.Build();
     }
 
