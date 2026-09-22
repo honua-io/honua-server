@@ -5,7 +5,7 @@ services:
       context: ../../..
       dockerfile: Dockerfile
     ports:
-      - "${HONUA_CITE_WCS20_SERVER_PORT:-8092}:8080"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_CITE_WCS20_SERVER_PORT:-8092}:8080"
     environment:
       - ASPNETCORE_ENVIRONMENT=Test
       - ASPNETCORE_URLS=http://+:8080
@@ -56,7 +56,7 @@ services:
     volumes:
       - ./init-extensions.sql:/docker-entrypoint-initdb.d/20-raster-extension.sql:ro
     ports:
-      - "${HONUA_CITE_WCS20_POSTGRES_PORT:-5438}:5432"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_CITE_WCS20_POSTGRES_PORT:-5438}:5432"
     networks:
       - cite-wcs20-network
     healthcheck:
@@ -79,7 +79,7 @@ services:
   cite-engine:
     image: ogccite/ets-wcs20:1.22-teamengine-6.0.0-RC2
     ports:
-      - "${HONUA_CITE_WCS20_TEAMENGINE_PORT:-8086}:8080"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_CITE_WCS20_TEAMENGINE_PORT:-8086}:8080"
     environment:
       - JAVA_OPTS=-Xmx2g -DTE_BASE=/root/te_base
       - TEAMENGINE_BASE_URL=http://cite-engine:8080/teamengine
