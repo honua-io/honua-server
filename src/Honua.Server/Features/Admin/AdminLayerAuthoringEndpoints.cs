@@ -325,8 +325,14 @@ internal static partial class AdminLayerAuthoringEndpoints
         for (var attempt = 1; ; attempt++)
         {
             var snapshot = await graphStore.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+            // LayerIndex already encodes numeric routing identity: it is non-null only
+            // when the publication's identifier is a stringified layer index, or when a
+            // legacy snapshot supplied layerIndex directly. Matching on it alone covers
+            // both shapes; the previous `p.Identifier.IsNumeric &&` prefix additionally
+            // dereferenced an Identifier that legacy snapshots leave unset, which made
+            // every PUT to drawing-info, popup-info and relationships return HTTP 500.
             var targetResourceIds = snapshot.Graph.Publications
-                .Where(p => p.Identifier.IsNumeric && p.LayerIndex == layerId)
+                .Where(p => p.LayerIndex == layerId)
                 .Select(p => p.ResourceId)
                 .ToHashSet(StringComparer.Ordinal);
             if (targetResourceIds.Count == 0)
