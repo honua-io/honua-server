@@ -49,8 +49,9 @@ public interface IDatabaseSchemaGuard
     /// <summary>
     /// Checks a database that has never been migrated (its journal is empty) whose migration-owned
     /// tables were created up front by a seed, so the pending migrations can adopt them. Every
-    /// present migration-owned table must already carry the columns its migration creates; tables,
-    /// indexes and sequences that are absent are left to the pending migrations. The complete floor
+    /// present migration-owned table must match its creation-time column definitions, constraints
+    /// and table properties; existing indexes must also match. Absent tables and indexes, and
+    /// later schema alterations, are left to the pending migrations. The complete floor
     /// is still enforced by <see cref="VerifyAsync(DbConnection, CancellationToken)"/> after they run.
     /// On a database whose journal is not empty this is identical to
     /// <see cref="VerifyConsistencyAsync(DbConnection, CancellationToken)"/>.

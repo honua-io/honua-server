@@ -495,29 +495,36 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
             return;
         }
 
-        // Every guarded migration that creates these tables uses CREATE ... IF NOT EXISTS, so a
-        // pending run adopts a present table as-is and creates whatever is absent. It cannot add a
-        // column to a table that already exists, so an incomplete candidate is rejected here,
-        // before anything is applied. Governed-lineage columns (110) are excluded because that
-        // migration adds them itself.
+        // Compare the complete creation-time contract. CREATE TABLE IF NOT EXISTS does not
+        // repair types, defaults, constraints or partitioning on an existing seed table.
+        var definitions = await PostgresSeedSchemaContract.ReadAsync(connection, _schemaName, cancellationToken)
+            .ConfigureAwait(false);
         string? firstMigration = null;
         var incomplete = new List<string>();
         foreach (var family in AdoptableFamilies(state))
         {
-            var present = family.Tables.Where(state.Tables.Contains).ToHashSet(StringComparer.Ordinal);
-            if (present.Count == 0)
+            foreach (var table in family.Tables)
             {
-                continue;
-            }
+                if (!definitions.ContainsKey((table, "table")))
+                {
+                    continue;
+                }
 
-            var missing = family.Columns
-                .Where(column => present.Contains(column.Table) && !state.Columns.Contains(column))
-                .Select(column => $"column {column.Table}.{column.Column}")
-                .ToArray();
-            if (missing.Length > 0)
-            {
-                firstMigration ??= family.Migration;
-                incomplete.Add($"{family.Migration} ({string.Join(", ", missing)})");
+                var missing = PostgresSeedSchemaContract.Definitions
+                    .Where(entry => entry.Key.Table == table)
+                    // Standalone indexes absent from a seed are created by the pending scripts.
+                    // Existing names, however, must have the canonical definition.
+                    .Where(entry => !entry.Key.Property.StartsWith("index ", StringComparison.Ordinal) ||
+                        definitions.Keys.Any(key => key.Property == entry.Key.Property))
+                    .Where(entry => !definitions.TryGetValue(entry.Key, out var actual) || actual != entry.Value)
+                    .Select(entry => $"{entry.Key.Property.Split(' ', 2)[0]} {table}." +
+                        entry.Key.Property[(entry.Key.Property.IndexOf(' ') + 1)..])
+                    .ToArray();
+                if (missing.Length > 0)
+                {
+                    firstMigration ??= family.Migration;
+                    incomplete.Add($"{family.Migration} ({string.Join(", ", missing)})");
+                }
             }
         }
 
@@ -535,6 +542,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
     {
         if (state.RequiresRasterFloor)
         {
+            yield return (RasterTablesMigration, ["raster_data", "raster_statistics", "raster_tiles"], []);
             yield return (_migrations.RasterOverviewsMigration, _rasterOverviewsTables, _rasterOverviewsColumns);
             yield return (_migrations.RasterFootprintsMigration, _rasterFootprintsTables, _rasterFootprintsColumns);
         }
@@ -545,7 +553,7 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
         yield return (_migrations.SensorThingsMigration, _sensorThingsTables, _sensorThingsColumns);
         if (_migrations.InitialSchemaMigration is { } initialSchemaMigration)
         {
-            yield return (initialSchemaMigration, _initialSchemaTables, _initialSchemaColumns);
+            yield return (initialSchemaMigration, [.. _initialSchemaTables, "features"], _initialSchemaColumns);
         }
     }
 
