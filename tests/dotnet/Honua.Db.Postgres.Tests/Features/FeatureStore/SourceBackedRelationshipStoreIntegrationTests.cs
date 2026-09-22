@@ -137,8 +137,37 @@ public sealed class SourceBackedRelationshipStoreIntegrationTests(PostgresFixtur
         await action.Should().ThrowAsync<ArgumentException>();
     }
 
+    [Fact]
+    public async Task QueryRelatedAsync_SqlServerBinding_UsesCanonicalPredicateInsteadOfPostgresFragment()
+    {
+        var reader = Substitute.For<IFeatureReader>();
+        var attributes = new Dictionary<string, object?> { ["join_id"] = 2055 }.ToImmutableDictionary();
+        reader.QueryAsync(13, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1, [Feature.Create(901, null, attributes)]));
+        reader.QueryAsync(14, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1, [Feature.Create(81, null, attributes)]));
+        var filters = new FilterExpressionService(
+            new FilterExpressionTranslator(new PostgresSqlFilterTranslator(useJsonAttributes: true)));
+        const string where = "details = 'low'";
+        var translated = filters.Translate(filters.Parse(FilterLanguage.ArcGisSql, where).Expression!,
+            Resource("children", 14, MetadataV2FieldType.Integer));
+
+        var result = await CreateStore(providerName: DataProviderNames.SqlServer, readerOverride: reader)
+            .QueryRelatedAsync(13, RelatedQuery.ForObjects([901], 14, "join_id", "join_id") with
+            {
+                Where = where,
+                SqlFilter = translated.SqlFilter
+            });
+
+        result.Items.Should().ContainSingle().Which.Id.Should().Be(81);
+        await reader.Received(1).QueryAsync(14, Arg.Is<FeatureQuery>(query => query.SqlFilter == null &&
+            query.Where == "(details = 'low') AND (\"join_id\" IN (2055))"), Arg.Any<CancellationToken>());
+    }
+
     private SourceBackedRelationshipStore CreateStore(MetadataV2FieldType keyType = MetadataV2FieldType.Integer,
-        IFieldMaskSource? fieldMasks = null)
+        IFieldMaskSource? fieldMasks = null,
+        string providerName = DataProviderNames.Postgis,
+        IFeatureReader? readerOverride = null)
     {
         var service = new MetadataV2Service { Metadata = new() { Id = "service" } };
         var resources = new[] { Resource("parents", 13, keyType), Resource("children", 14, keyType) };
@@ -177,15 +206,21 @@ public sealed class SourceBackedRelationshipStoreIntegrationTests(PostgresFixtur
         });
         var pool = new DefaultObjectPoolProvider().Create(new Honua.Core.Features.Infrastructure.ServiceRegistration.DictionaryPooledObjectPolicy());
         var provider = Substitute.For<IFeatureDataProvider, IBindableFeatureDataProvider>();
-        provider.ProviderName.Returns(DataProviderNames.Postgis);
+        provider.ProviderName.Returns(providerName);
         provider.Capabilities.Returns(FeatureProviderCapabilities.ReadWritePostgis);
         ((IBindableFeatureDataProvider)provider).CreateReaderForBinding(Arg.Any<FeatureProviderBinding>()).Returns(call =>
         {
             var binding = call.Arg<FeatureProviderBinding>();
+            if (readerOverride is not null)
+            {
+                return readerOverride;
+            }
+
             return new PostgresStorageMappedFeatureReader(connections, pool, binding.Resource, binding.StorageMapping, null, null,
                 fieldMaskSource: fieldMasks);
         });
-        var router = new FeatureProviderQueryRouter(Substitute.For<ISecureConnectionRegistry>(), new FeatureDataProviderRegistry([provider]));
+        var router = new FeatureProviderQueryRouter(Substitute.For<ISecureConnectionRegistry>(),
+            new FeatureDataProviderRegistry([provider]), providerName);
         return new SourceBackedRelationshipStore(Substitute.For<IRelationshipStore>(), graph, router,
             new FilterExpressionService(new FilterExpressionTranslator(new PostgresSqlFilterTranslator(useJsonAttributes: true))),
             fieldMasks);
