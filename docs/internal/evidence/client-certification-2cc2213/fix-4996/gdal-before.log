@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/regressions/coverage_clients.py", line 96, in <module>
+    result = (gdal_checks if args.client == "gdal" else owslib_checks)(args.base_url.rstrip("/"))
+  File "/regressions/coverage_clients.py", line 40, in gdal_checks
+    dataset = gdal.OpenEx("OGCAPI:" + base + "/ogc/coverages/collections/2496",
+  File "/usr/lib/python3/dist-packages/osgeo/gdal.py", line 6041, in OpenEx
+    return _gdal.OpenEx(*args, **kwargs)
+RuntimeError: API COVERAGE requested, but not available

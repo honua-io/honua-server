@@ -7,8 +7,7 @@ resource: "honua://capability/serve.ogc-api-features"
 # OGC conformance
 
 Honua Server currently passes 1138/1138 OGC CITE assertions across 14 suites on
-`trunk`, including WFS 2.0 `basic` at 167/167. The canonical per-suite pass rates, evidence-run links,
-and re-grading guidance
+`trunk`, including WFS 2.0 `basic` at 167/167. The canonical per-suite pass rates and evidence-run links
 live in [`docs/cite-status.md`](../../cite-status.md) — see that page for the
 current numbers; they are not restated here so there is nothing for this page
 to fall out of sync with.
@@ -52,8 +51,7 @@ section of the CITE status page.
 
 ## Runtime conformance endpoints
 
-Each OGC API surface declares its implemented conformance classes at runtime
-(paths verified against `src/Honua.Server/EndpointRegistry.cs`):
+Each OGC API surface declares its implemented conformance classes at runtime:
 
 | Surface | Endpoint |
 |---|---|
@@ -66,10 +64,9 @@ Each OGC API surface declares its implemented conformance classes at runtime
 | OGC API Styles | `GET /ogc/styles/conformance` |
 | STAC API | `GET /stac/conformance` |
 
-The OpenAPI specs under `src/Honua.Server/*-openapi.json` carry the same CITE
-totals in an `x-honua-cite-compliance` vendor extension on the `info` object.
-An architecture test (`CiteStatusComplianceDriftTests`) fails the build if any
-of those five files disagree with `docs/cite-status.md`.
+The runtime OpenAPI documents carry the same CITE totals in an
+`x-honua-cite-compliance` vendor extension on the `info` object, and a build gate keeps
+them in step with the CITE status page.
 
 ## API versioning in one paragraph
 
@@ -86,8 +83,5 @@ breaking changes require a new major package (`Geospatial.V2`); see the
 ## Related
 
 - [`docs/cite-status.md`](../../cite-status.md) — authoritative CITE snapshot (source of truth for the numbers above).
-- [CITE conformance evidence](../../internal/contributor/ogc-cite-conformance-evidence.md) — stable, website-linkable evidence-run narrative; see `cite-status.md` for the numbers.
-- [CITE runbook](../../internal/contributor/cite-runbook.md) — per-suite scope, scripts, and workflow files.
-- [OGC certification path](../../internal/contributor/ogc-certification-path.md) — formal certification posture.
 - [Supported clients](clients.md) — which clients consume these protocols, with tested versions.
 - [Protocols overview](../../concepts/protocols.md) — every protocol Honua speaks.

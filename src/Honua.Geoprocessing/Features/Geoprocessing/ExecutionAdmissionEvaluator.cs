@@ -36,6 +36,13 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
     /// </summary>
     public const string PartitionKeyParameterKey = "admission.partitionKey";
 
+    /// <summary>
+    /// Total attempts spent on the active-job snapshot read before the submission is refused.
+    /// One retry: a StackExchange.Redis command timeout has already burned its own deadline, so
+    /// the elapsed timeout is the backoff and a second immediate attempt adds no extra delay.
+    /// </summary>
+    private const int ActiveJobReadAttempts = 2;
+
     private const string GlobalPartitionSentinel = "__global__";
     private const string AnonymousPrincipalSentinel = "__anonymous__";
 
@@ -99,8 +106,28 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
 
         if (_jobStore != null)
         {
-            var active = await _jobStore.ListActiveAsync(kind: null, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+            var active = await ReadActiveJobsAsync(cancellationToken).ConfigureAwait(false);
+            if (active == null)
+            {
+                // The active-job snapshot backs the backpressure, concurrency and cost gates. When
+                // the store cannot be read and any of them is configured, refuse with a retryable
+                // backpressure denial rather than admitting past a limit we cannot evaluate — the
+                // same fail-closed rule the shared rate limit follows (#3853).
+                if (options.MaxConcurrentJobsGlobal > 0
+                    || options.MaxConcurrentJobsPerPartition > 0
+                    || options.MaxCostWeightPerPartition > 0)
+                {
+                    return Deny(
+                        ExecutionAdmissionDimension.Backpressure,
+                        $"backpressure:{request.JobKind.ToString().ToLowerInvariant()}:active-state-unavailable",
+                        "Shared active-job state is unavailable; retry later.",
+                        options.DefaultRetryAfterSeconds,
+                        new ExecutionAdmissionSnapshot(), request, activity, partitionTag, principalTag);
+                }
+
+                active = [];
+            }
+
             activeGlobal = active.Count;
 
             foreach (var job in active)
@@ -340,6 +367,40 @@ internal sealed class ExecutionAdmissionEvaluator : IExecutionAdmissionEvaluator
         }
 
         return 1.0;
+    }
+
+    /// <summary>
+    /// Reads the active-job snapshot, retrying once when the store faults transiently.
+    /// Returns <c>null</c> when both attempts fail.
+    /// </summary>
+    /// <remarks>
+    /// The read is a side-effect-free count of the shared active set, so re-issuing it is safe.
+    /// A Redis command that times out is not a connection failure, so the multiplexer's own
+    /// <c>ConnectRetry</c>/<c>ReconnectRetryPolicy</c> never covers it: before this retry a single
+    /// timed-out SMEMBERS escaped <see cref="EvaluateAsync"/> as an unhandled exception and failed
+    /// the whole submission, which is how a CPU-contended CI runner turned one 5.6 s stall into a
+    /// red GPServer submitJob (honua-server trunk run 35039723809).
+    /// </remarks>
+    private async Task<IReadOnlyList<ExecutionJobRecord>?> ReadActiveJobsAsync(CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await _jobStore!.ListActiveAsync(kind: null, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not OperationCanceledException)
+            {
+                if (attempt >= ActiveJobReadAttempts)
+                {
+                    ExecutionAdmissionLog.ActiveStateUnavailable(_logger, attempt, ex);
+                    return null;
+                }
+
+                ExecutionAdmissionLog.ActiveStateReadRetrying(_logger, attempt, ex);
+            }
+        }
     }
 
     private int PeekSubmissions(ExecutionAdmissionRequest request, ExecutionAdmissionOptions options)

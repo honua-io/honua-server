@@ -438,6 +438,11 @@ internal sealed class PbfQueryFormatter
                 // null_value = field 10 (bool, true = null)
                 valueMsg.WriteBool(10, true);
             }
+            else if (field.Type == "esriFieldTypeDate" &&
+                GeoServicesFieldConventions.TryConvertToEpochMilliseconds(value, out var epochMilliseconds))
+            {
+                valueMsg.WriteInt64Always(6, epochMilliseconds);
+            }
             else
             {
                 WriteAttributeValue(ref valueMsg, value);

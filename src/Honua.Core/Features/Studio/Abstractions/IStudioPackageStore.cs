@@ -105,6 +105,18 @@ public interface IStudioPackageStore
         Guid requestId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Gets the accepted publication request that currently governs <paramref name="route"/>
+    /// (honua-server#4907). Each item is governed by its newest accepted publication request;
+    /// the newest governing request whose intent route equals <paramref name="route"/> (ordinal)
+    /// owns the route, so republishing an item at another route retires the old one. Returns
+    /// <see langword="null"/> when nothing is published at the route. Callers serve the item's
+    /// published pointer rather than the request's version, so a rollback is honoured.
+    /// </summary>
+    Task<StudioPublicationRequest?> GetActivePublicationRequestByRouteAsync(
+        string route,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Creates a persisted rollback request and updates item pointers.</summary>
     Task<StudioRollbackRequest> RollbackAsync(
         Guid itemId,
@@ -304,6 +316,14 @@ public interface IStudioPackageLifecycleService
         Guid itemId,
         Guid versionId,
         Guid requestId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the accepted publication request that currently governs <paramref name="route"/>
+    /// (honua-server#4907); see <see cref="IStudioPackageStore.GetActivePublicationRequestByRouteAsync"/>.
+    /// </summary>
+    Task<StudioPublicationRequest?> GetActivePublicationRequestByRouteAsync(
+        string route,
         CancellationToken cancellationToken = default);
 
     /// <summary>Reopens an immutable version as a new mutable draft.</summary>

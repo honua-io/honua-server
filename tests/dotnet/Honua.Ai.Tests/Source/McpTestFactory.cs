@@ -6,6 +6,7 @@ using System.Text.Json;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Domain;
 using Honua.Core.Features.Operations.Domain;
@@ -259,11 +260,14 @@ internal static class McpTestFactory
         public string? ResolveCallerId(ClaimsPrincipal principal) =>
             principal.FindFirst(ClaimTypes.NameIdentifier)?.Value ?? principal.Identity?.Name;
 
+        public TenantScopeFilter? CreateTenantScopeFilter(ClaimsPrincipal principal) => null;
+
         public Task<StudioAuthorizationDecision> AuthorizeAsync(
             ClaimsPrincipal principal,
             string? callerId,
             StudioAuthorizationOperation operation,
             string? resourceOwnerId,
+            string? resourceTenantId,
             bool isPubliclyReadable = false,
             string? resourceId = null,
             CancellationToken cancellationToken = default) =>

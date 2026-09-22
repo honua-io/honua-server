@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Authorization;
+using Honua.Core.Features.MultiTenancy;
 using Honua.Core.Features.Studio.Abstractions;
 using Honua.Core.Features.Studio.Drafts;
 using Honua.Core.Features.Studio.Services;
@@ -65,10 +66,17 @@ public static class StudioServiceCollectionExtensions
         // Honua.Core referencing Honua.Hosting's OidcAuthenticationOptions type. See
         // AdminRoleOptions for the full rationale.
         var adminRoleOptionsBuilder = services.AddOptions<AdminRoleOptions>();
+
+        // Tenant ownership (honua-server#4905): bind from the same MultiTenancy config section
+        // TenantContextOptions reads, so the Core-level tenant boundary agrees with the
+        // resolution middleware on the default tenant and the multi-tenant admin roles. See
+        // TenantIsolationOptions for the full rationale.
+        var tenantIsolationOptionsBuilder = services.AddOptions<TenantIsolationOptions>();
         if (configuration is not null)
         {
             optionsBuilder.Bind(configuration.GetSection(StudioEndUserAuthorizationOptions.SectionName));
             adminRoleOptionsBuilder.Bind(configuration.GetSection(AdminRoleOptions.SectionName));
+            tenantIsolationOptionsBuilder.Bind(configuration.GetSection(TenantIsolationOptions.SectionName));
         }
 
         return services;

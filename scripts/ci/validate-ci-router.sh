@@ -460,7 +460,44 @@ assert_descriptor \
   "src/Honua.Core/Features/Validation/ResourceValidator.cs" \
   "targeted" \
   "false" \
-  "OGC API Maps and Tiles"
+  "OGC API Maps Basic and Conformance"
+
+assert_descriptor \
+  "maps-source-basic" \
+  "src/Honua.Protocols.OgcApi/Maps/OgcMapsEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "OGC API Maps Basic and Conformance"
+assert_descriptor \
+  "maps-source-rendering" \
+  "src/Honua.Protocols.OgcApi/Maps/OgcMapsEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "OGC API Maps Rendering and Records"
+assert_descriptor \
+  "maps-tests-basic" \
+  "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Maps/OgcMapsBasicTests.cs" \
+  "targeted" \
+  "false" \
+  "OGC API Maps Basic and Conformance"
+assert_descriptor \
+  "maps-tests-rendering" \
+  "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Maps/OgcMapsParameterValidationTests.cs" \
+  "targeted" \
+  "false" \
+  "OGC API Maps Rendering and Records"
+assert_descriptor \
+  "records-tests" \
+  "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Records/OgcRecordsEndpointTests.cs" \
+  "targeted" \
+  "false" \
+  "OGC API Maps Rendering and Records"
+assert_descriptor \
+  "core-validation-maps-rendering" \
+  "src/Honua.Core/Features/Validation/ResourceValidator.cs" \
+  "targeted" \
+  "false" \
+  "OGC API Maps Rendering and Records"
 
 assert_descriptor \
   "core-validation-targeted-features" \
@@ -1444,6 +1481,22 @@ echo "Checking shard headroom audit and its drain guard..."
 echo "Checking shard filter/test-class coverage in both directions..."
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests" \
+    "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
+    "OGC API Maps Basic and Conformance" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsConformanceTests" \
+    "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
+    "OGC API Maps Basic and Conformance" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsParameterValidationTests" \
+    "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
+    "OGC API Maps Rendering and Records" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests" \
+    "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
+    "OGC API Maps Rendering and Records" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests" \
     "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \

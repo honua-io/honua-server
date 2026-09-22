@@ -180,8 +180,8 @@ jobs:
           context: .
           file: docker/Dockerfile.aot
           build-args: |
-            DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-10.0-alpine
-            DOTNET_RUNTIME_DEPS_IMAGE=${{ env.BASE_REPO }}:runtime-deps-10.0-alpine
+            DOTNET_SDK_IMAGE=${{ env.BASE_REPO }}:sdk-10.0-aot
+            DOTNET_RUNTIME_DEPS_IMAGE=${{ env.BASE_REPO }}:runtime-deps-10.0-aot
             HONUA_GIT_SHA=${{ github.sha }}
           platforms: ${{ matrix.platform }}
           outputs: type=image,name=${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }},push-by-digest=true,name-canonical=true,push=true
@@ -208,6 +208,20 @@ jobs:
           set -euo pipefail
           docker pull "$CANDIDATE"
           python3 scripts/ci/verify-serving-image-boundary.py --serving-image "$CANDIDATE"
+
+      # honua-server#4912: the musl image passed the boundary check and every unit lane while
+      # f=parquet answered 501 because ParquetSharpNative could not load. Boot the exact
+      # candidate digest against the CNG seed and require GeoParquet bytes before any tag moves.
+      # amd64 only: the CNG lane's postgis/postgis:16-3.4 publishes no arm64 image. The arm64
+      # leg keeps the Dockerfile's build-time `ldd -r` gate on the same native libraries.
+      - name: Smoke nightly AOT candidate GeoParquet encoder before registry publication
+        if: matrix.arch == 'amd64'
+        shell: bash
+        env:
+          CANDIDATE: ${{ env.REGISTRY_GHCR }}/${{ env.IMAGE_NAME_GHCR }}@${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          scripts/ci/smoke-aot-geoparquet.sh "$CANDIDATE" "${RUNNER_TEMP}/aot-geoparquet-smoke"
 
       - name: Publish verified nightly AOT architecture tags
         shell: bash

@@ -1,0 +1,58 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/qgis/ogc-api-styles/styling.ogc-api-styles",
+  "canonical_client": "QGIS",
+  "client_lane": "desktop-qgis",
+  "client_version": "3.44.13-Solothurn",
+  "client_version_detail": "QGIS 3.44.13-Solothurn (PyQGIS, qgis/qgis:3.44.13)",
+  "surface": "ogc-api-styles",
+  "operation": "styling.ogc-api-styles",
+  "protocol_version": "OGC API - Styles 1.0",
+  "protocol_profile": "core+mapbox-styles",
+  "started_at": "2026-09-21T09:59:36.211601Z",
+  "finished_at": "2026-09-21T09:59:36.697834Z",
+  "duration_ms": 486,
+  "status": "pass",
+  "exercised_capabilities": [
+    "positive",
+    "negative",
+    "auth",
+    "media-schema"
+  ],
+  "summary": "all 4 checks passed across 4 governed facets",
+  "primary_request_url": "http://honua:5000/ogc/styles",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "apply the collection's advertised MapLibre stylesheet to its vector tiles",
+      "outcome": "pass",
+      "detail": "style applied; responses [(200, 'application/vnd.mapbox.style+json; charset=utf-8')]",
+      "request_url": null,
+      "duration_ms": 161
+    },
+    {
+      "facet": "negative",
+      "name": "an unknown style is a 404",
+      "outcome": "pass",
+      "detail": "loadDefaultStyle False; statuses [404]",
+      "request_url": null,
+      "duration_ms": 108
+    },
+    {
+      "facet": "auth",
+      "name": "styles of the protected collection require a valid credential",
+      "outcome": "pass",
+      "detail": "anonymous [401]",
+      "request_url": null,
+      "duration_ms": 109
+    },
+    {
+      "facet": "media-schema",
+      "name": "the stylesheet is served as a Mapbox/MapLibre style document",
+      "outcome": "pass",
+      "detail": "[(200, 'application/vnd.mapbox.style+json; charset=utf-8')]",
+      "request_url": null,
+      "duration_ms": 107
+    }
+  ]
+}

@@ -1,0 +1,670 @@
+honua-server-1  | info: Honua.Infrastructure.Licensing.FileBackedLicenseService[10000]
+honua-server-1  |       No license path configured.
+honua-server-1  | info: Honua.Infrastructure.Licensing.FileBackedLicenseService[10000]
+honua-server-1  |       No license path configured.
+honua-server-1  | info: Honua.Server[4010]
+honua-server-1  |       Feature '"Observability"' is "disabled"
+honua-server-1  | {"@t":"2026-09-15T05:31:58.8382372Z","@mt":"Feature '{FeatureName}' is {Status}","FeatureName":"Observability","Status":"disabled","EventId":{"Id":4010,"Name":"FeatureStatus"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:31:58.8399471Z","@mt":"Feature '{FeatureName}' is {Status}","FeatureName":"OpenTelemetry tracing","Status":"disabled","EventId":{"Id":4010,"Name":"FeatureStatus"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:31:58.8404465Z","@mt":"Feature '{FeatureName}' is {Status}","FeatureName":"Skip migrations","Status":"disabled","EventId":{"Id":4010,"Name":"FeatureStatus"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server[4010]
+honua-server-1  |       Feature '"OpenTelemetry tracing"' is "disabled"
+honua-server-1  | info: Honua.Server[4010]
+honua-server-1  |       Feature '"Skip migrations"' is "disabled"
+honua-server-1  | {"@t":"2026-09-15T05:31:58.8407343Z","@mt":"Feature '{FeatureName}' is {Status}","FeatureName":"SensorThings API Preview","Status":"disabled (experimental, default)","EventId":{"Id":4010,"Name":"FeatureStatus"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server[4010]
+honua-server-1  |       Feature '"SensorThings API Preview"' is "disabled (experimental, default)"
+honua-server-1  | info: Honua.Server[4010]
+honua-server-1  |       Feature '"Customer alerting"' is "preview (opted in; workers require Alerts:Enabled)"
+honua-server-1  | {"@t":"2026-09-15T05:31:58.8489468Z","@mt":"Feature '{FeatureName}' is {Status}","FeatureName":"Customer alerting","Status":"preview (opted in; workers require Alerts:Enabled)","EventId":{"Id":4010,"Name":"FeatureStatus"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:31:58.8496589Z","@mt":"Feature '{FeatureName}' is {Status}","FeatureName":"Federated Query","Status":"experimental (enabled)","EventId":{"Id":4010,"Name":"FeatureStatus"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:31:58.8518866Z","@mt":"Feature '{FeatureName}' is {Status}","FeatureName":"Redshift provider","Status":"experimental (enabled)","EventId":{"Id":4010,"Name":"FeatureStatus"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server[4010]
+honua-server-1  |       Feature '"Federated Query"' is "experimental (enabled)"
+honua-server-1  | info: Honua.Server[4010]
+honua-server-1  |       Feature '"Redshift provider"' is "experimental (enabled)"
+honua-server-1  | info: Honua.Server[4010]
+honua-server-1  |       Feature '"Snowflake provider"' is "experimental (enabled)"
+honua-server-1  | {"@t":"2026-09-15T05:31:58.8548266Z","@mt":"Feature '{FeatureName}' is {Status}","FeatureName":"Snowflake provider","Status":"experimental (enabled)","EventId":{"Id":4010,"Name":"FeatureStatus"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server[4010]
+honua-server-1  |       Feature '"Databricks provider"' is "disabled (experimental, default)"
+honua-server-1  | {"@t":"2026-09-15T05:31:58.8551843Z","@mt":"Feature '{FeatureName}' is {Status}","FeatureName":"Databricks provider","Status":"disabled (experimental, default)","EventId":{"Id":4010,"Name":"FeatureStatus"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server[4011]
+honua-server-1  |       Configuration summary: Database "configured", Cache "disabled"
+honua-server-1  | {"@t":"2026-09-15T05:31:58.8554585Z","@mt":"Configuration summary: Database {DatabaseStatus}, Cache {CacheStatus}","DatabaseStatus":"configured","CacheStatus":"disabled","EventId":{"Id":4011,"Name":"ConfigurationSummary"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server[4015]
+honua-server-1  |       All configuration options validated successfully
+honua-server-1  | {"@t":"2026-09-15T05:31:58.8561392Z","@mt":"All configuration options validated successfully","EventId":{"Id":4015,"Name":"ConfigurationValidationSucceeded"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:31:58.9135497Z","@mt":"SECURITY: HONUA_DEV_AUTH=true is set in environment '{Environment}' but the dev-auth bypass is NOT active. Either remove HONUA_DEV_AUTH or, only for disposable Test environments, set HONUA_DEV_AUTH_ALLOW_BYPASS=true.","@l":"Warning","Environment":"Test","EventId":{"Id":4113,"Name":"DevelopmentBypassRequestedButRejected"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | warn: Honua.Server[4113]
+honua-server-1  |       SECURITY: HONUA_DEV_AUTH=true is set in environment '"Test"' but the dev-auth bypass is NOT active. Either remove HONUA_DEV_AUTH or, only for disposable Test environments, set HONUA_DEV_AUTH_ALLOW_BYPASS=true.
+honua-server-1  | warn: Microsoft.AspNetCore.StaticFiles.StaticFileMiddleware[16]
+honua-server-1  |       The WebRootPath was not found: "/app/wwwroot". Static files may be unavailable.
+honua-server-1  | {"@t":"2026-09-15T05:31:58.9528033Z","@mt":"The WebRootPath was not found: {WebRootPath}. Static files may be unavailable.","@l":"Warning","WebRootPath":"/app/wwwroot","EventId":{"Id":16,"Name":"WebRootPathNotFound"},"SourceContext":"Microsoft.AspNetCore.StaticFiles.StaticFileMiddleware","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server[4001]
+honua-server-1  |       Application starting: Version "2026.1.1.0", Environment "Test"
+honua-server-1  | {"@t":"2026-09-15T05:31:59.0098685Z","@mt":"Application starting: Version {Version}, Environment {Environment}","Version":"2026.1.1.0","Environment":"Test","EventId":{"Id":4001,"Name":"ApplicationStarting"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua"}
+honua-server-1  | info: Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers.CompositeSecretResolver[4]
+honua-server-1  |       Secret resolver initialized with 4 providers: "env, aws, azure, null"
+honua-server-1  | {"@t":"2026-09-15T05:31:59.0282245Z","@mt":"Secret resolver initialized with {ProviderCount} providers: {Providers}","ProviderCount":4,"Providers":"env, aws, azure, null","EventId":{"Id":4,"Name":"_logResolverInitialized"},"SourceContext":"Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers.CompositeSecretResolver","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":6,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:31:59.0304467Z","@mt":"PostGIS preflight check starting","EventId":{"Id":4055,"Name":"PostGisPreflightCheckStarting"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server[4055]
+honua-server-1  |       PostGIS preflight check starting
+honua-server-1  | {"@t":"2026-09-15T05:31:59.8375239Z","@mt":"Database engine: {EngineVersion}","EngineVersion":"PostgreSQL 16.4 (Debian 16.4-1.pgdg110+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 10.2.1-6) 10.2.1 20210110, 64-bit","EventId":{"Id":7910,"Name":"LogEngineVersion"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.PostgresDatabaseCompatibilityChecker","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":6,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Db.Postgres.Features.Infrastructure.PostgresDatabaseCompatibilityChecker[7910]
+honua-server-1  |       Database engine: "PostgreSQL 16.4 (Debian 16.4-1.pgdg110+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 10.2.1-6) 10.2.1 20210110, 64-bit"
+honua-server-1  | {"@t":"2026-09-15T05:31:59.8401071Z","@mt":"PostGIS version: {PostGisVersion}","PostGisVersion":"3.4.3","EventId":{"Id":7911,"Name":"LogPostGisVersion"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.PostgresDatabaseCompatibilityChecker","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":6,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:31:59.8403923Z","@mt":"PostGIS raster extension is not installed. Raster features will be unavailable.","@l":"Warning","EventId":{"Id":7914,"Name":"LogPostGisRasterMissing"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.PostgresDatabaseCompatibilityChecker","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":6,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Db.Postgres.Features.Infrastructure.PostgresDatabaseCompatibilityChecker[7911]
+honua-server-1  |       PostGIS version: "3.4.3"
+honua-server-1  | warn: Honua.Db.Postgres.Features.Infrastructure.PostgresDatabaseCompatibilityChecker[7914]
+honua-server-1  |       PostGIS raster extension is not installed. Raster features will be unavailable.
+honua-server-1  | {"@t":"2026-09-15T05:31:59.8405720Z","@mt":"PostGIS preflight check passed: engine={EngineVersion}, PostGIS={PostGisVersion}","EngineVersion":"PostgreSQL 16.4 (Debian 16.4-1.pgdg110+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 10.2.1-6) 10.2.1 20210110, 64-bit","PostGisVersion":"3.4.3","EventId":{"Id":4056,"Name":"PostGisPreflightCheckPassed"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":6,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server[4056]
+honua-server-1  |       PostGIS preflight check passed: engine="PostgreSQL 16.4 (Debian 16.4-1.pgdg110+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 10.2.1-6) 10.2.1 20210110, 64-bit", PostGIS="3.4.3"
+honua-server-1  | {"@t":"2026-09-15T05:31:59.8451529Z","@mt":"Database migrations starting","EventId":{"Id":4010,"Name":"DatabaseMigrationsStarting"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":6,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server[4010]
+honua-server-1  |       Database migrations starting
+honua-server-1  | 2026-09-15 05:32:00 +00:00 [INF] Beginning transaction
+honua-server-1  | 2026-09-15 05:32:00 +00:00 [INF] Checking whether journal table exists
+honua-server-1  | 2026-09-15 05:32:00 +00:00 [INF] Journal table does not exist
+honua-server-1  | 2026-09-15 05:32:00 +00:00 [INF] Beginning transaction
+honua-server-1  | 2026-09-15 05:32:00 +00:00 [INF] Checking whether journal table exists
+honua-server-1  | 2026-09-15 05:32:00 +00:00 [INF] Journal table does not exist
+honua-server-1  | 2026-09-15 05:32:00 +00:00 [INF] Beginning transaction
+honua-server-1  | 2026-09-15 05:32:00 +00:00 [INF] Beginning database upgrade
+honua-server-1  | 2026-09-15 05:32:00 +00:00 [INF] Checking whether journal table exists
+honua-server-1  | 2026-09-15 05:32:00 +00:00 [INF] Journal table does not exist
+honua-server-1  | 2026-09-15 05:32:00 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.001_CreateHonuaSchema.sql'
+honua-server-1  | 2026-09-15 05:32:00 +00:00 [INF] Checking whether journal table exists
+honua-server-1  | 2026-09-15 05:32:00 +00:00 [INF] Creating the "public"."schema_versions" table
+honua-server-1  | 2026-09-15 05:32:00 +00:00 [INF] The "public"."schema_versions" table has been created
+honua-server-1  | 2026-09-15 05:32:01 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.002_CreateAttachmentsTable.sql'
+honua-server-1  | 2026-09-15 05:32:02 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.003_CreateRelationshipsTable.sql'
+honua-server-1  | 2026-09-15 05:32:03 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.004_CreateImportFunctions.sql'
+honua-server-1  | 2026-09-15 05:32:03 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.005_AddLayerTableSchema.sql'
+honua-server-1  | 2026-09-15 05:32:03 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.006_CreateSecureConnectionRegistry.sql'
+honua-server-1  | 2026-09-15 05:32:03 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.007_AddCatalogMetadata.sql'
+honua-server-1  | 2026-09-15 05:32:03 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.008_AddServiceConnections.sql'
+honua-server-1  | 2026-09-15 05:32:03 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.009_AddLayerStyles.sql'
+honua-server-1  | 2026-09-15 05:32:03 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.010_AddMetadataResources.sql'
+honua-server-1  | 2026-09-15 05:32:04 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.011_AddLayerEnabledFlag.sql'
+honua-server-1  | 2026-09-15 05:32:04 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.012_AddReplicationDurability.sql'
+honua-server-1  | 2026-09-15 05:32:05 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.013_AddSpatialAlerts.sql'
+honua-server-1  | 2026-09-15 05:32:06 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.014_AddCloudAlertChannels.sql'
+honua-server-1  | 2026-09-15 05:32:06 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.015_AddManifestVersions.sql'
+honua-server-1  | 2026-09-15 05:32:06 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.016_AddManifestPendingChanges.sql'
+honua-server-1  | 2026-09-15 05:32:06 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.017_AddGitOpsWatch.sql'
+honua-server-1  | 2026-09-15 05:32:06 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.018_AddCloudRasterCatalog.sql'
+honua-server-1  | 2026-09-15 05:32:07 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.018_AddPerformanceIndexes.sql'
+honua-server-1  | 2026-09-15 05:32:07 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.019_AddBulkImportFunctions.sql'
+honua-server-1  | 2026-09-15 05:32:07 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.020_AddAlertRulesCompositeIndex.sql'
+honua-server-1  | 2026-09-15 05:32:07 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.021_AddProviderStorageBinding.sql'
+honua-server-1  | 2026-09-15 05:32:07 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.022_AddStyleRevisionMetadata.sql'
+honua-server-1  | 2026-09-15 05:32:07 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.023_CreateSceneDatasetRegistry.sql'
+honua-server-1  | 2026-09-15 05:32:08 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.024_AddFieldCollectionSync.sql'
+honua-server-1  | 2026-09-15 05:32:08 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.024_CreateFeatureChangeOutbox.sql'
+honua-server-1  | 2026-09-15 05:32:08 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.025_AddMultidimensionalCoverageCatalog.sql'
+honua-server-1  | 2026-09-15 05:32:08 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.025_CreateOperationalDataSchema.sql'
+honua-server-1  | 2026-09-15 05:32:08 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.026_AddLayerFieldDomains.sql'
+honua-server-1  | 2026-09-15 05:32:08 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.027_AddGitOpsWatchProcessingGuard.sql'
+honua-server-1  | 2026-09-15 05:32:09 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.028_AddLayerFieldVisibility.sql'
+honua-server-1  | 2026-09-15 05:32:09 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.029_CreateMigrationDataSourceCatalog.sql'
+honua-server-1  | 2026-09-15 05:32:09 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.029_CreateMigrationPerformanceEvidence.sql'
+honua-server-1  | 2026-09-15 05:32:09 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.030_CreateMigrationStyleCatalog.sql'
+honua-server-1  | 2026-09-15 05:32:09 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.031_CreateMetadataV2Snapshot.sql'
+honua-server-1  | 2026-09-15 05:32:10 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.031_CreateMigrationRunCatalog.sql'
+honua-server-1  | 2026-09-15 05:32:10 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.032_AddArcGisMigrationEvidenceStore.sql'
+honua-server-1  | 2026-09-15 05:32:11 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.033_CreateAuditLog.sql'
+honua-server-1  | 2026-09-15 05:32:11 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.033_CreateTileCacheCatalog.sql'
+honua-server-1  | 2026-09-15 05:32:11 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.034_CreateMetadataV2ReleasePackages.sql'
+honua-server-1  | 2026-09-15 05:32:11 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.034_CreateOperateObservability.sql'
+honua-server-1  | 2026-09-15 05:32:12 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.035_CreateAnalysisContent.sql'
+honua-server-1  | 2026-09-15 05:32:12 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.035_CreateFormPackages.sql'
+honua-server-1  | 2026-09-15 05:32:13 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.035_CreateStudioPackageLifecycle.sql'
+honua-server-1  | 2026-09-15 05:32:14 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.036_CreateContentPublications.sql'
+honua-server-1  | 2026-09-15 05:32:15 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.036_CreateOperateObservabilityFixtures.sql'
+honua-server-1  | 2026-09-15 05:32:16 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.037_CreateShareExportTraffic.sql'
+honua-server-1  | 2026-09-15 05:32:16 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.038_DropV1MetadataGraphTables.sql'
+honua-server-1  | 2026-09-15 05:32:16 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.039_CreateStudioMapCollaboration.sql'
+honua-server-1  | 2026-09-15 05:32:17 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.040_AddReplicaConflictReview.sql'
+honua-server-1  | 2026-09-15 05:32:18 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.041_CreateRbacRoleStore.sql'
+honua-server-1  | 2026-09-15 05:32:19 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.042_CreateStyleCatalog.sql'
+honua-server-1  | 2026-09-15 05:32:19 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.043_CreatePgRoutingTopology.sql'
+honua-server-1  | 2026-09-15 05:32:19 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.044_AddMigrationRunReconciliationScorecard.sql'
+honua-server-1  | 2026-09-15 05:32:19 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.045_CreateMigrationBatchRuns.sql'
+honua-server-1  | 2026-09-15 05:32:20 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.046_AddReplicaUploadBaseGeneration.sql'
+honua-server-1  | 2026-09-15 05:32:20 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.046_CreateUnaccentExtension.sql'
+honua-server-1  | 2026-09-15 05:32:20 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.047_CreateGdbVersions.sql'
+honua-server-1  | 2026-09-15 05:32:21 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.048_AddVersionToChangeLog.sql'
+honua-server-1  | 2026-09-15 05:32:21 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.049_CreateVersionEdits.sql'
+honua-server-1  | 2026-09-15 05:32:21 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.050_AddChangeLogAttribution.sql'
+honua-server-1  | 2026-09-15 05:32:22 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.051_RelaxMetadataV2ServiceNameIndex.sql'
+honua-server-1  | 2026-09-15 05:32:22 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.052_CreateFieldReview.sql'
+honua-server-1  | 2026-09-15 05:32:22 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.053_AddImportDatumTransformation.sql'
+honua-server-1  | 2026-09-15 05:32:22 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.054_CreateVersionConflicts.sql'
+honua-server-1  | 2026-09-15 05:32:23 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.055_SetRasterDataExternalStorage.sql'
+honua-server-1  | 2026-09-15 05:32:23 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.056_SeedOperationApproveGrant.sql'
+honua-server-1  | 2026-09-15 05:32:23 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.057_AddFieldCollectionPushedClientScope.sql'
+honua-server-1  | 2026-09-15 05:32:23 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.058_AllowGribMultidimCoverageFormat.sql'
+honua-server-1  | 2026-09-15 05:32:23 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.059_CreateSensorThings.sql'
+honua-server-1  | 2026-09-15 05:32:23 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.060_AddRasterSensorMetadata.sql'
+honua-server-1  | 2026-09-15 05:32:23 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.061_BackfillChangeLogBaseline.sql'
+honua-server-1  | 2026-09-15 05:32:23 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.062_CreateNetworkDatasets.sql'
+honua-server-1  | 2026-09-15 05:32:24 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.063_CreateRasterOverviews.sql'
+honua-server-1  | 2026-09-15 05:32:24 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.064_CreateRasterFootprints.sql'
+honua-server-1  | 2026-09-15 05:32:24 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.065_CreateRlsPolicies.sql'
+honua-server-1  | 2026-09-15 05:32:24 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.066_AddNetworkDatasetEditingColumns.sql'
+honua-server-1  | 2026-09-15 05:32:24 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.067_AddTileCachePackageImport.sql'
+honua-server-1  | 2026-09-15 05:32:24 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.067_CreateFieldExportRecords.sql'
+honua-server-1  | 2026-09-15 05:32:24 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.067_SerializeChangeLogGenerationAllocation.sql'
+honua-server-1  | 2026-09-15 05:32:24 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.068_CreateFieldMaskPolicies.sql'
+honua-server-1  | 2026-09-15 05:32:24 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.069_AddAuditLogHashChain.sql'
+honua-server-1  | 2026-09-15 05:32:24 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.070_AddImportLoadModes.sql'
+honua-server-1  | 2026-09-15 05:32:24 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.071_FixImportStagingTableNameLength.sql'
+honua-server-1  | 2026-09-15 05:32:24 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.072_CreateEnrichmentDatasets.sql'
+honua-server-1  | 2026-09-15 05:32:24 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.073_CreateMigrationRunCheckpoints.sql'
+honua-server-1  | 2026-09-15 05:32:24 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.074_AddSceneAssetStoragePrefix.sql'
+honua-server-1  | 2026-09-15 05:32:24 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.075_AddAlertOpsSource.sql'
+honua-server-1  | 2026-09-15 05:32:24 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.076_AddAlertDispatchRetentionIndexes.sql'
+honua-server-1  | 2026-09-15 05:32:24 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.077_CreateOpsHealthRollup.sql'
+honua-server-1  | 2026-09-15 05:32:24 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.078_AddAlertChannelPauseState.sql'
+honua-server-1  | 2026-09-15 05:32:24 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.079_CreateOpsAutonomyPolicy.sql'
+honua-server-1  | 2026-09-15 05:32:25 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.080_AddOpsAutonomyTerminalOutcomes.sql'
+honua-server-1  | 2026-09-15 05:32:25 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.081_CreateOpsAutonomyProposalResolutions.sql'
+honua-server-1  | 2026-09-15 05:32:25 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.082_CreatePromotionStores.sql'
+honua-server-1  | 2026-09-15 05:32:26 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.083_AddNetworkDatasetTravelProfiles.sql'
+honua-server-1  | 2026-09-15 05:32:26 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.084_CreateNetworkTopologyGenerations.sql'
+honua-server-1  | 2026-09-15 05:32:26 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.085_AddOpsHealthLatencyDistribution.sql'
+honua-server-1  | 2026-09-15 05:32:26 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.086_CreateNetworkTopologyEdits.sql'
+honua-server-1  | 2026-09-15 05:32:26 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.087_CreateNetworkTopologyRebuildAttempts.sql'
+honua-server-1  | 2026-09-15 05:32:27 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.088_CreateNetworkTopologyPromotions.sql'
+honua-server-1  | 2026-09-15 05:32:27 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.089_AddStudioContentEnumerationIndexes.sql'
+honua-server-1  | 2026-09-15 05:32:27 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.090_AddStudioContentItemOwner.sql'
+honua-server-1  | 2026-09-15 05:32:27 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.091_RenormalizeGeocodeReferenceSearchText.sql'
+honua-server-1  | 2026-09-15 05:32:27 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.092_CreateSavedMapOperationLog.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.093_EnsureConfiguredStudioPackageLifecycle.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.094_CreateSavedMapCheckpointVersionRecovery.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.095_DeleteSavedMapOperationLogWithStudioDraft.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.096_AddReplicaConflictClientEditApplied.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.097_AddReplicaConflictResolutionPreconditions.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.098_AddReplicaConflictClaimIdentity.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.099_AddReplicaConflictClientEditOutcomeUnknown.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.100_AddReplicaConflictClientEditSuperseded.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.101_AddReplicaConflictPreWriteStateToken.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.102_WidenReplicaConflictTypeForDeleteDelete.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.103_AddReplicaConflictPreWriteRowAbsent.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.104_AddReplicaConflictStorageObjectId.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.105_AddChangeLogPublicObjectId.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.106_CreateManagedUsersAndScimGroups.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.106_RetainAlertEvidenceAfterRuleDeletion.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.107_AddRbacRoleTombstones.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.108_FixLongImportIndexNames.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.109_AddAlertDispatchClaimToken.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.110_AddReplicaOwner.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.110_PreserveGovernedLineage.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.111_AttachFeatureChangeTriggerToMetadataFeatures.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.111_PreserveImportOrdinateDimensions.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.112_TrackReplicaUploadOrigin.sql'
+honua-server-1  | 2026-09-15 05:32:28 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.113_AddDurableQuerySnapshots.sql'
+honua-server-1  | 2026-09-15 05:32:29 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.114_AddAlertAuditOutbox.sql'
+honua-server-1  | 2026-09-15 05:32:29 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.115_AddDropImportStagingTable.sql'
+honua-server-1  | 2026-09-15 05:32:29 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.116_AddSensorThingsIdSequences.sql'
+honua-server-1  | 2026-09-15 05:32:29 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.117_AddMigrationBatchFidelityVerdict.sql'
+honua-server-1  | 2026-09-15 05:32:29 +00:00 [INF] Upgrade successful
+honua-server-1  | {"@t":"2026-09-15T05:32:29.3448836Z","@mt":"Database migrations completed: {ScriptCount} scripts applied","ScriptCount":133,"EventId":{"Id":4011,"Name":"DatabaseMigrationsCompleted"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server[4011]
+honua-server-1  |       Database migrations completed: 133 scripts applied
+honua-server-1  | warn: Microsoft.AspNetCore.DataProtection.Repositories.FileSystemXmlRepository[60]
+honua-server-1  |       Storing keys in a directory '"/app/.aspnet/DataProtection-Keys"' that may not be persisted outside of the container. Protected data will be unavailable when container is destroyed. For more information go to https://aka.ms/aspnet/dataprotectionwarning
+honua-server-1  | {"@t":"2026-09-15T05:32:30.6653994Z","@mt":"Storing keys in a directory '{path}' that may not be persisted outside of the container. Protected data will be unavailable when container is destroyed. For more information go to https://aka.ms/aspnet/dataprotectionwarning","@l":"Warning","path":"/app/.aspnet/DataProtection-Keys","EventId":{"Id":60,"Name":"UsingEphemeralFileSystemLocationInContainer"},"SourceContext":"Microsoft.AspNetCore.DataProtection.Repositories.FileSystemXmlRepository","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:32:30.6951303Z","@mt":"Cache coordination running in local fallback mode","EventId":{"Id":1106,"Name":"FallbackModeEnabled"},"SourceContext":"Honua.Infrastructure.Caching.DistributedCacheRefreshCoordinator","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Infrastructure.Caching.DistributedCacheRefreshCoordinator[1106]
+honua-server-1  |       Cache coordination running in local fallback mode
+honua-server-1  | {"@t":"2026-09-15T05:32:30.8337159Z","@mt":"Process catalog loaded with {Count} built-in processes","Count":98,"EventId":{"Id":8016,"Name":"ProcessCatalogLoaded"},"SourceContext":"Honua.Geoprocessing.BuiltInProcessCatalog","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Geoprocessing.BuiltInProcessCatalog[8016]
+honua-server-1  |       Process catalog loaded with 98 built-in processes
+honua-server-1  | info: Honua.Geoprocessing.BuiltInProcessCatalog[8040]
+honua-server-1  |       honua.gp.ogc_projected_processes=82
+honua-server-1  | {"@t":"2026-09-15T05:32:30.8341381Z","@mt":"honua.gp.ogc_projected_processes={Count}","Count":82,"EventId":{"Id":8040,"Name":"OgcProjectedProcessCount"},"SourceContext":"Honua.Geoprocessing.BuiltInProcessCatalog","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:32:30.9871631Z","@mt":"MCP operator surface initialized: Tools={ToolCount}, Resources={ResourceCount}","ToolCount":58,"ResourceCount":17,"EventId":{"Id":8157,"Name":"SurfaceInitialized"},"SourceContext":"Honua.Ai.Protocols.Mcp.McpDataAccessSurface","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Ai.Protocols.Mcp.McpDataAccessSurface[8157]
+honua-server-1  |       MCP operator surface initialized: Tools=58, Resources=17
+honua-server-1  | {"@t":"2026-09-15T05:32:30.9909953Z","@mt":"Redis unavailable for distributed import queue (queue key: {QueueKey}); using in-memory fallback","@l":"Warning","QueueKey":"[REDACTED]","EventId":{"Id":7600,"Name":"QueueUsingFallback"},"SourceContext":"Honua.Migration.RedisImportJobManager","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | warn: Honua.Migration.RedisImportJobManager[7600]
+honua-server-1  |       Redis unavailable for distributed import queue (queue key: "[REDACTED]"); using in-memory fallback
+honua-server-1  | warn: Honua.Migration.RedisImportJobManager[7610]
+honua-server-1  |       Redis leadership unavailable for instance "ab5d94ae350f-1"; using local fallback leadership
+honua-server-1  | {"@t":"2026-09-15T05:32:30.9930798Z","@mt":"Redis leadership unavailable for instance {InstanceId}; using local fallback leadership","@l":"Warning","InstanceId":"ab5d94ae350f-1","EventId":{"Id":7610,"Name":"LocalFallbackLeadershipEnabled"},"SourceContext":"Honua.Migration.RedisImportJobManager","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | warn: Honua.Migration.GeoServerImportJobManager[7600]
+honua-server-1  |       Redis unavailable for distributed import queue (queue key: "[REDACTED]"); using in-memory fallback
+honua-server-1  | {"@t":"2026-09-15T05:32:30.9971969Z","@mt":"Redis unavailable for distributed import queue (queue key: {QueueKey}); using in-memory fallback","@l":"Warning","QueueKey":"[REDACTED]","EventId":{"Id":7600,"Name":"QueueUsingFallback"},"SourceContext":"Honua.Migration.GeoServerImportJobManager","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | warn: Honua.Migration.GeoServerImportJobManager[7610]
+honua-server-1  |       Redis leadership unavailable for instance "ab5d94ae350f-1"; using local fallback leadership
+honua-server-1  | {"@t":"2026-09-15T05:32:30.9975840Z","@mt":"Redis leadership unavailable for instance {InstanceId}; using local fallback leadership","@l":"Warning","InstanceId":"ab5d94ae350f-1","EventId":{"Id":7610,"Name":"LocalFallbackLeadershipEnabled"},"SourceContext":"Honua.Migration.GeoServerImportJobManager","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:32:31.1742146Z","@mt":"Loaded {Count} files from existing metadata","Count":0,"EventId":{"Id":5419,"Name":"MetadataLoaded"},"SourceContext":"Honua.FileStorage.LocalFileStorage","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.FileStorage.LocalFileStorage[5419]
+honua-server-1  |       Loaded 0 files from existing metadata
+honua-server-1  | info: Honua.Core.Features.Infrastructure.Monitoring.AdaptiveSampler[1]
+honua-server-1  |       Adaptive sampling initialized with base rate 10.00 %, range [1.00 % - 50.00 %], evaluation window 00:02:00
+honua-server-1  | {"@t":"2026-09-15T05:32:31.5604063Z","@mt":"Adaptive sampling initialized with base rate {BaseSamplingRate:P2}, range [{MinRate:P2} - {MaxRate:P2}], evaluation window {EvaluationWindow}","@r":["10.00 %","1.00 %","50.00 %"],"BaseSamplingRate":0.1,"MinRate":0.01,"MaxRate":0.5,"EvaluationWindow":"00:02:00","EventId":{"Id":1,"Name":"AdaptiveSamplingInitialized"},"SourceContext":"Honua.Core.Features.Infrastructure.Monitoring.AdaptiveSampler","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:32:31.5788425Z","@mt":"No license path configured.","EventId":{"Id":10000,"Name":"NoLicensePathConfigured"},"SourceContext":"Honua.Infrastructure.Licensing.FileBackedLicenseService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Infrastructure.Licensing.FileBackedLicenseService[10000]
+honua-server-1  |       No license path configured.
+honua-server-1  | {"@t":"2026-09-15T05:32:31.5816187Z","@mt":"No XML encryptor configured. Key {KeyId:B} may be persisted to storage in unencrypted form.","@r":["\"[REDACTED]\""],"@l":"Warning","KeyId":"[REDACTED]","EventId":{"Id":35,"Name":"NoXMLEncryptorConfiguredKeyMayBePersistedToStorageInUnencryptedForm"},"SourceContext":"Microsoft.AspNetCore.DataProtection.KeyManagement.XmlKeyManager","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | warn: Microsoft.AspNetCore.DataProtection.KeyManagement.XmlKeyManager[35]
+honua-server-1  |       No XML encryptor configured. Key "[REDACTED]" may be persisted to storage in unencrypted form.
+honua-server-1  | {"@t":"2026-09-15T05:32:31.5839465Z","@mt":"Starting high-frequency query preparation for {QueryCount} queries","QueryCount":9,"EventId":{"Id":8602,"Name":"PreparationStarting"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.Caching.HighFrequencyQueryPreparationService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":11,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Db.Postgres.Features.Infrastructure.Caching.HighFrequencyQueryPreparationService[8602]
+honua-server-1  |       Starting high-frequency query preparation for 9 queries
+honua-server-1  | info: Honua.Db.Postgres.Features.Infrastructure.Crs.PostgresCrsWarmupService[7202]
+honua-server-1  |       CRS warmup service started
+honua-server-1  | {"@t":"2026-09-15T05:32:31.5839952Z","@mt":"Starting configuration validation...","EventId":{"Id":953052830,"Name":"ConfigurationValidationStarting"},"SourceContext":"Honua.Infrastructure.Configuration.ConfigurationValidationStartupService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Infrastructure.Configuration.ConfigurationValidationStartupService[953052830]
+honua-server-1  |       Starting configuration validation...
+honua-server-1  | {"@t":"2026-09-15T05:32:31.5841352Z","@mt":"CRS warmup service started","EventId":{"Id":7202,"Name":"WarmupServiceStarted"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.Crs.PostgresCrsWarmupService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":6,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:32:31.5856905Z","@mt":"Leadership acquired, beginning CRS warmup","EventId":{"Id":7204,"Name":"LeadershipAcquiredForWarmup"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.Crs.PostgresCrsWarmupService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":6,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Db.Postgres.Features.Infrastructure.Crs.PostgresCrsWarmupService[7204]
+honua-server-1  |       Leadership acquired, beginning CRS warmup
+honua-server-1  | {"@t":"2026-09-15T05:32:31.5870696Z","@mt":"CRS warmup started","EventId":{"Id":7207,"Name":"WarmupStarted"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.Crs.PostgresCrsWarmupService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":6,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Db.Postgres.Features.Infrastructure.Crs.PostgresCrsWarmupService[7207]
+honua-server-1  |       CRS warmup started
+honua-server-1  | info: Honua.Infrastructure.Configuration.ConfigurationValidator[9651]
+honua-server-1  |       Configuration validation completed successfully. Validated 4 sections
+honua-server-1  | {"@t":"2026-09-15T05:32:31.5880438Z","@mt":"Configuration validation completed successfully. Validated {Count} sections","Count":4,"EventId":{"Id":9651,"Name":"ValidationCompleted"},"SourceContext":"Honua.Infrastructure.Configuration.ConfigurationValidator","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:32:31.5892142Z","@mt":"Configuration validation completed successfully. Validated {Count} sections","Count":4,"EventId":{"Id":9651,"Name":"ValidationCompleted"},"SourceContext":"Honua.Infrastructure.Configuration.ConfigurationValidationStartupService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Infrastructure.Configuration.ConfigurationValidationStartupService[9651]
+honua-server-1  |       Configuration validation completed successfully. Validated 4 sections
+honua-server-1  | {"@t":"2026-09-15T05:32:31.5896449Z","@mt":"Resource leak detector started","EventId":{"Id":9101,"Name":"ResourceLeakDetectorStarted"},"SourceContext":"Honua.Core.Features.Infrastructure.Monitoring.ResourceLeakDetector","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Core.Features.Infrastructure.Monitoring.ResourceLeakDetector[9101]
+honua-server-1  |       Resource leak detector started
+honua-server-1  | {"@t":"2026-09-15T05:32:31.5906840Z","@mt":"Background cache refresh started with max {MaxConcurrent} concurrent operations (distributed: {IsDistributed})","MaxConcurrent":10,"IsDistributed":false,"EventId":{"Id":1101,"Name":"BackgroundRefreshStarted"},"SourceContext":"Honua.Infrastructure.Caching.DistributedCacheRefreshCoordinator","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":11,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Infrastructure.Caching.DistributedCacheRefreshCoordinator[1101]
+honua-server-1  |       Background cache refresh started with max 10 concurrent operations (distributed: False)
+honua-server-1  | info: Honua.FileStorage.FileStorageCleanupService[5402]
+honua-server-1  |       File storage cleanup service started with interval of 01:00:00
+honua-server-1  | {"@t":"2026-09-15T05:32:31.5907544Z","@mt":"File storage cleanup service started with interval of {Interval}","Interval":"01:00:00","EventId":{"Id":5402,"Name":"CleanupServiceStarted"},"SourceContext":"Honua.FileStorage.FileStorageCleanupService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":14,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:32:31.5913185Z","@mt":"Temporary file cleanup service started. Cleanup interval: {Interval}","Interval":"00:30:00","EventId":{"Id":8900,"Name":"ServiceStarted"},"SourceContext":"Honua.Infrastructure.Services.TemporaryFileCleanupService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":14,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Infrastructure.Services.TemporaryFileCleanupService[8900]
+honua-server-1  |       Temporary file cleanup service started. Cleanup interval: 00:30:00
+honua-server-1  | {"@t":"2026-09-15T05:32:31.6605531Z","@mt":"Connection encryption service initialized with key version {KeyVersion}","KeyVersion":"[REDACTED]","EventId":{"Id":1,"Name":"_logServiceInitialized"},"SourceContext":"Honua.Db.Postgres.Features.Security.ConnectionEncryptionService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":6,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Db.Postgres.Features.Security.ConnectionEncryptionService[1]
+honua-server-1  |       Connection encryption service initialized with key version "[REDACTED]"
+honua-server-1  | {"@t":"2026-09-15T05:32:31.6630673Z","@mt":"CRS warmup completed","EventId":{"Id":7208,"Name":"WarmupCompleted"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.Crs.PostgresCrsWarmupService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":6,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Db.Postgres.Features.Infrastructure.Crs.PostgresCrsWarmupService[7208]
+honua-server-1  |       CRS warmup completed
+honua-server-1  | {"@t":"2026-09-15T05:32:32.0563358Z","@mt":"Default geoprocessing GPServer service seeded as '{ServiceName}'","ServiceName":"geoprocessing","EventId":{"Id":9730,"Name":"Seeded"},"SourceContext":"Honua.Server.Features.Geoprocessing.GeoprocessingServiceSeeder","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":25,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server.Features.Geoprocessing.GeoprocessingServiceSeeder[9730]
+honua-server-1  |       Default geoprocessing GPServer service seeded as '"geoprocessing"'
+honua-server-1  | {"@t":"2026-09-15T05:32:32.0574373Z","@mt":"Digest flush service is disabled.","EventId":{"Id":9430,"Name":"LogDisabled"},"SourceContext":"Honua.Alerts.DigestFlushBackgroundService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":14,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:32:32.0579343Z","@mt":"Alert evaluator is disabled.","EventId":{"Id":9410,"Name":"LogDisabled"},"SourceContext":"Honua.Alerts.AlertEvaluationBackgroundService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":14,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:32:32.0581167Z","@mt":"Alert dispatcher is disabled.","EventId":{"Id":9420,"Name":"LogDisabled"},"SourceContext":"Honua.Alerts.AlertDispatchBackgroundService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":6,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:32:32.0583361Z","@mt":"FieldCollection automation dispatcher is disabled.","EventId":{"Id":21220,"Name":"LogDisabled"},"SourceContext":"Honua.Server.Features.Mobile.FieldCollection.Automations.FieldCollectionAutomationDispatchBackgroundService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":6,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Alerts.DigestFlushBackgroundService[9430]
+honua-server-1  |       Digest flush service is disabled.
+honua-server-1  | info: Honua.Alerts.AlertEvaluationBackgroundService[9410]
+honua-server-1  |       Alert evaluator is disabled.
+honua-server-1  | info: Honua.Alerts.AlertDispatchBackgroundService[9420]
+honua-server-1  |       Alert dispatcher is disabled.
+honua-server-1  | info: Honua.Server.Features.Mobile.FieldCollection.Automations.FieldCollectionAutomationDispatchBackgroundService[21220]
+honua-server-1  |       FieldCollection automation dispatcher is disabled.
+honua-server-1  | info: Honua.Server.Features.Admin.Services.ConfigurationValidationHostedService[4014]
+honua-server-1  |       Configuration validation: "All IOptions configurations are valid"
+honua-server-1  | {"@t":"2026-09-15T05:32:32.0625134Z","@mt":"Configuration validation: {Message}","Message":"All IOptions configurations are valid","EventId":{"Id":4014,"Name":"ConfigurationValidated"},"SourceContext":"Honua.Server.Features.Admin.Services.ConfigurationValidationHostedService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":25,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Migration.MigrationBatchBackgroundService[7984]
+honua-server-1  |       Migration batch background service starting (instance: "ab5d94ae350f-1")
+honua-server-1  | {"@t":"2026-09-15T05:32:32.0631308Z","@mt":"Migration batch background service starting (instance: {InstanceId})","InstanceId":"ab5d94ae350f-1","EventId":{"Id":7984,"Name":"ServiceStarting"},"SourceContext":"Honua.Migration.MigrationBatchBackgroundService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":14,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:32:32.0633491Z","@mt":"All configuration options validated successfully","EventId":{"Id":4015,"Name":"ConfigurationValidationSucceeded"},"SourceContext":"Honua.Server.Features.Admin.Services.ConfigurationValidationHostedService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":25,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server.Features.Admin.Services.ConfigurationValidationHostedService[4015]
+honua-server-1  |       All configuration options validated successfully
+honua-server-1  | {"@t":"2026-09-15T05:32:32.0637266Z","@mt":"GeoServer import background service starting (instance: {InstanceId})","InstanceId":"ab5d94ae350f-1","EventId":{"Id":7960,"Name":"ServiceStarting"},"SourceContext":"Honua.Migration.GeoServerImportBackgroundService","ImportWorkerInstanceId":"ab5d94ae350f-1","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":11,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Migration.GeoServerImportBackgroundService[7960]
+honua-server-1  |       GeoServer import background service starting (instance: "ab5d94ae350f-1")
+honua-server-1  | {"@t":"2026-09-15T05:32:32.0640829Z","@mt":"Outbox dispatcher started on node {NodeId}.","NodeId":"ab5d94ae350f:1","EventId":{"Id":9300,"Name":"DispatcherStarted"},"SourceContext":"Honua.Infrastructure.Events.Outbox.OutboxDispatcherBackgroundService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":14,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Infrastructure.Events.Outbox.OutboxDispatcherBackgroundService[9300]
+honua-server-1  |       Outbox dispatcher started on node "ab5d94ae350f:1".
+honua-server-1  | {"@t":"2026-09-15T05:32:32.0627440Z","@mt":"Geoservices import background service starting (instance: {InstanceId})","InstanceId":"ab5d94ae350f-1","EventId":{"Id":7700,"Name":"ServiceStarting"},"SourceContext":"Honua.Migration.GeoservicesImportBackgroundService","ImportWorkerInstanceId":"ab5d94ae350f-1","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":6,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Migration.GeoservicesImportBackgroundService[7700]
+honua-server-1  |       Geoservices import background service starting (instance: "ab5d94ae350f-1")
+honua-server-1  | {"@t":"2026-09-15T05:32:32.0665000Z","@mt":"Scheduled audit hash-chain verification enabled (interval {Interval}).","Interval":"06:00:00","EventId":{"Id":7331,"Name":"LogStarted"},"SourceContext":"Honua.Server.Features.Infrastructure.AuditLog.AuditChainVerificationBackgroundService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":13,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server.Features.Infrastructure.AuditLog.AuditChainVerificationBackgroundService[7331]
+honua-server-1  |       Scheduled audit hash-chain verification enabled (interval 06:00:00).
+honua-server-1  | info: Honua.Server.Features.Streaming.FeatureStreamHeartbeatService[5008]
+honua-server-1  |       Feature stream heartbeat service started (interval=00:00:30)
+honua-server-1  | {"@t":"2026-09-15T05:32:32.0665966Z","@mt":"Feature stream heartbeat service started (interval={Interval})","Interval":"00:00:30","EventId":{"Id":5008,"Name":"HeartbeatServiceStarted"},"SourceContext":"Honua.Server.Features.Streaming.FeatureStreamHeartbeatService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":11,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | warn: Honua.Server.CorsConfiguration[4060]
+honua-server-1  |       No CORS origins configured. All cross-origin requests will be blocked in production.
+honua-server-1  | warn: Honua.Server.CorsConfiguration[4060]
+honua-server-1  |       No CORS origins configured. All cross-origin requests will be blocked in production.
+honua-server-1  | {"@t":"2026-09-15T05:32:33.0271800Z","@mt":"Overriding address(es) '{addresses}'. Binding to endpoints defined via IConfiguration and/or UseKestrel() instead.","@l":"Warning","addresses":"http://+:8080","SourceContext":"Microsoft.AspNetCore.Server.Kestrel","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":25,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | warn: Microsoft.AspNetCore.Server.Kestrel[0]
+honua-server-1  |       Overriding address(es) '"http://+:8080"'. Binding to endpoints defined via IConfiguration and/or UseKestrel() instead.
+honua-server-1  | {"@t":"2026-09-15T05:32:36.6044510Z","@mt":"Health check {HealthCheckName} with status {HealthStatus} completed after {ElapsedMilliseconds}ms with message '{HealthCheckDescription}'","@l":"Warning","HealthCheckName":"production-metrics","HealthStatus":"Degraded","ElapsedMilliseconds":0.0839,"HealthCheckDescription":"Production metrics indicate degraded performance: Low cache hit ratio: 0.00 %","EventId":{"Id":103,"Name":"HealthCheckEnd"},"SourceContext":"Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":25,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:32:36.6045091Z","@mt":"Prepared priority statement: {StatementName}","StatementName":"health_check","EventId":{"Id":8705,"Name":"PriorityStatementPrepared"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.Caching.PreparedStatementCache","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":14,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | warn: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService[103]
+honua-server-1  |       Health check "production-metrics" with status Degraded completed after 0.0839ms with message '"Production metrics indicate degraded performance: Low cache hit ratio: 0.00 %"'
+honua-server-1  | info: Honua.Db.Postgres.Features.Infrastructure.Caching.PreparedStatementCache[8705]
+honua-server-1  |       Prepared priority statement: "health_check"
+honua-server-1  | {"@t":"2026-09-15T05:32:36.6059546Z","@mt":"High-frequency query preparation completed: {SuccessCount} successful, {FailureCount} failed, {SkippedCount} skipped","SuccessCount":1,"FailureCount":0,"SkippedCount":8,"EventId":{"Id":8607,"Name":"PreparationSummary"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.Caching.HighFrequencyQueryPreparationService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":14,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Db.Postgres.Features.Infrastructure.Caching.HighFrequencyQueryPreparationService[8607]
+honua-server-1  |       High-frequency query preparation completed: 1 successful, 0 failed, 8 skipped
+honua-server-1  | {"@t":"2026-09-15T05:32:36.6064146Z","@mt":"High-frequency query preparation completed. Cache contains {PreparedCount} prepared statements","PreparedCount":0,"EventId":{"Id":8603,"Name":"PreparationCompleted"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.Caching.HighFrequencyQueryPreparationService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":14,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Db.Postgres.Features.Infrastructure.Caching.HighFrequencyQueryPreparationService[8603]
+honua-server-1  |       High-frequency query preparation completed. Cache contains 0 prepared statements
+honua-server-1  | info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+honua-server-1  |       Request starting "HTTP/1.1" "GET" "http"://"localhost:8080""""/healthz/ready""" - null null
+honua-server-1  | {"@t":"2026-09-15T05:32:36.6874620Z","@mt":"Request starting {Protocol} {Method} {Scheme}://{Host}{PathBase}{Path}{QueryString} - {ContentType} {ContentLength}","@tr":"13bf7df78e2f659e2651d197431e4f81","@sp":"494273b08a765ec0","Protocol":"HTTP/1.1","Method":"GET","ContentType":null,"ContentLength":null,"Scheme":"http","Host":"localhost:8080","PathBase":"","Path":"/healthz/ready","QueryString":"","EventId":{"Id":1},"SourceContext":"Microsoft.AspNetCore.Hosting.Diagnostics","RequestId":"0HNOITB03SH0C:00000001","RequestPath":"/healthz/ready","ConnectionId":"0HNOITB03SH0C","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":11,"SpanId":"494273b08a765ec0","TraceId":"13bf7df78e2f659e2651d197431e4f81","ParentId":"0000000000000000","Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:32:37.7543857Z","@mt":"Failed to determine the https port for redirect.","@l":"Warning","@tr":"13bf7df78e2f659e2651d197431e4f81","@sp":"494273b08a765ec0","EventId":{"Id":3,"Name":"FailedToDeterminePort"},"SourceContext":"Microsoft.AspNetCore.HttpsPolicy.HttpsRedirectionMiddleware","RequestId":"0HNOITB03SH0C:00000001","RequestPath":"/healthz/ready","ConnectionId":"0HNOITB03SH0C","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":11,"SpanId":"494273b08a765ec0","TraceId":"13bf7df78e2f659e2651d197431e4f81","ParentId":"0000000000000000","Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | warn: Microsoft.AspNetCore.HttpsPolicy.HttpsRedirectionMiddleware[3]
+honua-server-1  |       Failed to determine the https port for redirect.
+honua-server-1  | info: Honua.Server.Features.HealthCheck.ReadinessCheckService[4020]
+honua-server-1  |       Health check executed: "DatabaseHealth" = "Healthy" in 1.74ms
+honua-server-1  | {"@t":"2026-09-15T05:32:37.8883108Z","@mt":"Health check executed: {CheckName} = {Status} in {ElapsedMs:F2}ms","@r":["1.74"],"@tr":"13bf7df78e2f659e2651d197431e4f81","@sp":"494273b08a765ec0","CheckName":"DatabaseHealth","Status":"Healthy","ElapsedMs":1.7417,"EventId":{"Id":4020,"Name":"HealthCheckExecuted"},"SourceContext":"Honua.Server.Features.HealthCheck.ReadinessCheckService","RequestId":"0HNOITB03SH0C:00000001","RequestPath":"/healthz/ready","ConnectionId":"0HNOITB03SH0C","CorrelationId":"00-13bf7df78e2f659e2651d197431e4f81-494273b08a765ec0-00","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":11,"SpanId":"494273b08a765ec0","TraceId":"13bf7df78e2f659e2651d197431e4f81","ParentId":"0000000000000000","Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server.Features.HealthCheck.ReadinessCheckService[4020]
+honua-server-1  |       Health check executed: "CacheHealth" = "Healthy" in 0.38ms
+honua-server-1  | {"@t":"2026-09-15T05:32:37.8893953Z","@mt":"Health check executed: {CheckName} = {Status} in {ElapsedMs:F2}ms","@r":["0.38"],"@tr":"13bf7df78e2f659e2651d197431e4f81","@sp":"494273b08a765ec0","CheckName":"CacheHealth","Status":"Healthy","ElapsedMs":0.384,"EventId":{"Id":4020,"Name":"HealthCheckExecuted"},"SourceContext":"Honua.Server.Features.HealthCheck.ReadinessCheckService","RequestId":"0HNOITB03SH0C:00000001","RequestPath":"/healthz/ready","ConnectionId":"0HNOITB03SH0C","CorrelationId":"00-13bf7df78e2f659e2651d197431e4f81-494273b08a765ec0-00","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":11,"SpanId":"494273b08a765ec0","TraceId":"13bf7df78e2f659e2651d197431e4f81","ParentId":"0000000000000000","Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:32:37.8895365Z","@mt":"Health check executed: {CheckName} = {Status} in {ElapsedMs:F2}ms","@r":["0.00"],"@tr":"13bf7df78e2f659e2651d197431e4f81","@sp":"494273b08a765ec0","CheckName":"FeatureChangeEventStore","Status":"Healthy (fallback)","ElapsedMs":0.0005,"EventId":{"Id":4020,"Name":"HealthCheckExecuted"},"SourceContext":"Honua.Server.Features.HealthCheck.ReadinessCheckService","RequestId":"0HNOITB03SH0C:00000001","RequestPath":"/healthz/ready","ConnectionId":"0HNOITB03SH0C","CorrelationId":"00-13bf7df78e2f659e2651d197431e4f81-494273b08a765ec0-00","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":11,"SpanId":"494273b08a765ec0","TraceId":"13bf7df78e2f659e2651d197431e4f81","ParentId":"0000000000000000","Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server.Features.HealthCheck.ReadinessCheckService[4020]
+honua-server-1  |       Health check executed: "FeatureChangeEventStore" = "Healthy (fallback)" in 0.00ms
+honua-server-1  | info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+honua-server-1  |       Request finished "HTTP/1.1" "GET" "http"://"localhost:8080""""/healthz/ready""" - 200 null "text/plain; charset=utf-8" 1203.6834ms
+honua-server-1  | {"@t":"2026-09-15T05:32:37.8904431Z","@mt":"Request finished {Protocol} {Method} {Scheme}://{Host}{PathBase}{Path}{QueryString} - {StatusCode} {ContentLength} {ContentType} {ElapsedMilliseconds}ms","@tr":"13bf7df78e2f659e2651d197431e4f81","@sp":"494273b08a765ec0","ElapsedMilliseconds":1203.6834,"StatusCode":200,"ContentType":"text/plain; charset=utf-8","ContentLength":null,"Protocol":"HTTP/1.1","Method":"GET","Scheme":"http","Host":"localhost:8080","PathBase":"","Path":"/healthz/ready","QueryString":"","EventId":{"Id":2},"SourceContext":"Microsoft.AspNetCore.Hosting.Diagnostics","RequestId":"0HNOITB03SH0C:00000001","RequestPath":"/healthz/ready","ConnectionId":"0HNOITB03SH0C","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":11,"SpanId":"494273b08a765ec0","TraceId":"13bf7df78e2f659e2651d197431e4f81","ParentId":"0000000000000000","Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:32:42.5001390Z","@mt":"Feature stream heartbeat service stopped","EventId":{"Id":5009,"Name":"HeartbeatServiceStopped"},"SourceContext":"Honua.Server.Features.Streaming.FeatureStreamHeartbeatService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":11,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server.Features.Streaming.FeatureStreamHeartbeatService[5009]
+honua-server-1  |       Feature stream heartbeat service stopped
+honua-server-1  | {"@t":"2026-09-15T05:32:42.5006012Z","@mt":"Outbox dispatcher stopped on node {NodeId}.","NodeId":"ab5d94ae350f:1","EventId":{"Id":9301,"Name":"DispatcherStopped"},"SourceContext":"Honua.Infrastructure.Events.Outbox.OutboxDispatcherBackgroundService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":11,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Infrastructure.Events.Outbox.OutboxDispatcherBackgroundService[9301]
+honua-server-1  |       Outbox dispatcher stopped on node "ab5d94ae350f:1".
+honua-server-1  | {"@t":"2026-09-15T05:32:42.5020378Z","@mt":"GeoServer import background service stopped (instance: {InstanceId})","InstanceId":"ab5d94ae350f-1","EventId":{"Id":7961,"Name":"ServiceStopped"},"SourceContext":"Honua.Migration.GeoServerImportBackgroundService","ImportWorkerInstanceId":"ab5d94ae350f-1","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":11,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Migration.GeoServerImportBackgroundService[7961]
+honua-server-1  |       GeoServer import background service stopped (instance: "ab5d94ae350f-1")
+honua-server-1  | {"@t":"2026-09-15T05:32:42.5119369Z","@mt":"Migration batch background service stopped (instance: {InstanceId})","InstanceId":"ab5d94ae350f-1","EventId":{"Id":7985,"Name":"ServiceStopped"},"SourceContext":"Honua.Migration.MigrationBatchBackgroundService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":11,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:32:42.5124529Z","@mt":"Geoservices import background service stopped (instance: {InstanceId})","InstanceId":"ab5d94ae350f-1","EventId":{"Id":7701,"Name":"ServiceStopped"},"SourceContext":"Honua.Migration.GeoservicesImportBackgroundService","ImportWorkerInstanceId":"ab5d94ae350f-1","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":11,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Migration.MigrationBatchBackgroundService[7985]
+honua-server-1  |       Migration batch background service stopped (instance: "ab5d94ae350f-1")
+honua-server-1  | info: Honua.Migration.GeoservicesImportBackgroundService[7701]
+honua-server-1  |       Geoservices import background service stopped (instance: "ab5d94ae350f-1")
+honua-server-1  | {"@t":"2026-09-15T05:32:42.5188304Z","@mt":"Temporary file cleanup service stopped","EventId":{"Id":8902,"Name":"ServiceStopped"},"SourceContext":"Honua.Infrastructure.Services.TemporaryFileCleanupService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":13,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Infrastructure.Services.TemporaryFileCleanupService[8902]
+honua-server-1  |       Temporary file cleanup service stopped
+honua-server-1  | {"@t":"2026-09-15T05:32:42.5192325Z","@mt":"File storage cleanup service stopped","EventId":{"Id":5404,"Name":"CleanupServiceStopped"},"SourceContext":"Honua.FileStorage.FileStorageCleanupService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":13,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.FileStorage.FileStorageCleanupService[5404]
+honua-server-1  |       File storage cleanup service stopped
+honua-server-1  | {"@t":"2026-09-15T05:32:43.8626899Z","@mt":"Leadership lost, stopping CRS warmup","EventId":{"Id":7205,"Name":"LeadershipLostForWarmup"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.Crs.PostgresCrsWarmupService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":13,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Db.Postgres.Features.Infrastructure.Crs.PostgresCrsWarmupService[7205]
+honua-server-1  |       Leadership lost, stopping CRS warmup
+honua-server-1  | info: Honua.Db.Postgres.Features.Infrastructure.Crs.PostgresCrsWarmupService[7210]
+honua-server-1  |       Leadership released on service shutdown
+honua-server-1  | {"@t":"2026-09-15T05:32:43.8630344Z","@mt":"Leadership released on service shutdown","EventId":{"Id":7210,"Name":"LeadershipReleasedOnShutdown"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.Crs.PostgresCrsWarmupService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":13,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:32:43.8644399Z","@mt":"Adaptive sampler disposed","EventId":{"Id":6,"Name":"AdaptiveSamplerDisposed"},"SourceContext":"Honua.Core.Features.Infrastructure.Monitoring.AdaptiveSampler","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":13,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Core.Features.Infrastructure.Monitoring.AdaptiveSampler[6]
+honua-server-1  |       Adaptive sampler disposed
+honua-server-1  | info: Honua.Infrastructure.Licensing.FileBackedLicenseService[10000]
+honua-server-1  |       No license path configured.
+honua-server-1  | info: Honua.Infrastructure.Licensing.FileBackedLicenseService[10000]
+honua-server-1  |       No license path configured.
+honua-server-1  | info: Honua.Server[4010]
+honua-server-1  |       Feature '"Observability"' is "disabled"
+honua-server-1  | {"@t":"2026-09-15T05:33:04.4822243Z","@mt":"Feature '{FeatureName}' is {Status}","FeatureName":"Observability","Status":"disabled","EventId":{"Id":4010,"Name":"FeatureStatus"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server[4010]
+honua-server-1  |       Feature '"OpenTelemetry tracing"' is "disabled"
+honua-server-1  | {"@t":"2026-09-15T05:33:04.4843640Z","@mt":"Feature '{FeatureName}' is {Status}","FeatureName":"OpenTelemetry tracing","Status":"disabled","EventId":{"Id":4010,"Name":"FeatureStatus"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:04.4883590Z","@mt":"Feature '{FeatureName}' is {Status}","FeatureName":"Skip migrations","Status":"disabled","EventId":{"Id":4010,"Name":"FeatureStatus"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:04.4886863Z","@mt":"Feature '{FeatureName}' is {Status}","FeatureName":"SensorThings API Preview","Status":"disabled (experimental, default)","EventId":{"Id":4010,"Name":"FeatureStatus"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:04.4890450Z","@mt":"Feature '{FeatureName}' is {Status}","FeatureName":"Customer alerting","Status":"preview (opted in; workers require Alerts:Enabled)","EventId":{"Id":4010,"Name":"FeatureStatus"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:04.4891366Z","@mt":"Feature '{FeatureName}' is {Status}","FeatureName":"Federated Query","Status":"experimental (enabled)","EventId":{"Id":4010,"Name":"FeatureStatus"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:04.4892175Z","@mt":"Feature '{FeatureName}' is {Status}","FeatureName":"Redshift provider","Status":"experimental (enabled)","EventId":{"Id":4010,"Name":"FeatureStatus"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server[4010]
+honua-server-1  |       Feature '"Skip migrations"' is "disabled"
+honua-server-1  | info: Honua.Server[4010]
+honua-server-1  |       Feature '"SensorThings API Preview"' is "disabled (experimental, default)"
+honua-server-1  | info: Honua.Server[4010]
+honua-server-1  |       Feature '"Customer alerting"' is "preview (opted in; workers require Alerts:Enabled)"
+honua-server-1  | info: Honua.Server[4010]
+honua-server-1  |       Feature '"Federated Query"' is "experimental (enabled)"
+honua-server-1  | info: Honua.Server[4010]
+honua-server-1  |       Feature '"Redshift provider"' is "experimental (enabled)"
+honua-server-1  | {"@t":"2026-09-15T05:33:04.4892643Z","@mt":"Feature '{FeatureName}' is {Status}","FeatureName":"Snowflake provider","Status":"experimental (enabled)","EventId":{"Id":4010,"Name":"FeatureStatus"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:04.4958322Z","@mt":"Feature '{FeatureName}' is {Status}","FeatureName":"Databricks provider","Status":"disabled (experimental, default)","EventId":{"Id":4010,"Name":"FeatureStatus"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:04.4966961Z","@mt":"Configuration summary: Database {DatabaseStatus}, Cache {CacheStatus}","DatabaseStatus":"configured","CacheStatus":"disabled","EventId":{"Id":4011,"Name":"ConfigurationSummary"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:04.4972181Z","@mt":"All configuration options validated successfully","EventId":{"Id":4015,"Name":"ConfigurationValidationSucceeded"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server[4010]
+honua-server-1  |       Feature '"Snowflake provider"' is "experimental (enabled)"
+honua-server-1  | info: Honua.Server[4010]
+honua-server-1  |       Feature '"Databricks provider"' is "disabled (experimental, default)"
+honua-server-1  | info: Honua.Server[4011]
+honua-server-1  |       Configuration summary: Database "configured", Cache "disabled"
+honua-server-1  | info: Honua.Server[4015]
+honua-server-1  |       All configuration options validated successfully
+honua-server-1  | {"@t":"2026-09-15T05:33:04.5247756Z","@mt":"SECURITY: HONUA_DEV_AUTH=true is set in environment '{Environment}' but the dev-auth bypass is NOT active. Either remove HONUA_DEV_AUTH or, only for disposable Test environments, set HONUA_DEV_AUTH_ALLOW_BYPASS=true.","@l":"Warning","Environment":"Test","EventId":{"Id":4113,"Name":"DevelopmentBypassRequestedButRejected"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | warn: Honua.Server[4113]
+honua-server-1  |       SECURITY: HONUA_DEV_AUTH=true is set in environment '"Test"' but the dev-auth bypass is NOT active. Either remove HONUA_DEV_AUTH or, only for disposable Test environments, set HONUA_DEV_AUTH_ALLOW_BYPASS=true.
+honua-server-1  | {"@t":"2026-09-15T05:33:04.5494847Z","@mt":"The WebRootPath was not found: {WebRootPath}. Static files may be unavailable.","@l":"Warning","WebRootPath":"/app/wwwroot","EventId":{"Id":16,"Name":"WebRootPathNotFound"},"SourceContext":"Microsoft.AspNetCore.StaticFiles.StaticFileMiddleware","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | warn: Microsoft.AspNetCore.StaticFiles.StaticFileMiddleware[16]
+honua-server-1  |       The WebRootPath was not found: "/app/wwwroot". Static files may be unavailable.
+honua-server-1  | info: Honua.Server[4001]
+honua-server-1  |       Application starting: Version "2026.1.1.0", Environment "Test"
+honua-server-1  | {"@t":"2026-09-15T05:33:04.5804102Z","@mt":"Application starting: Version {Version}, Environment {Environment}","Version":"2026.1.1.0","Environment":"Test","EventId":{"Id":4001,"Name":"ApplicationStarting"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua"}
+honua-server-1  | {"@t":"2026-09-15T05:33:04.6040945Z","@mt":"Secret resolver initialized with {ProviderCount} providers: {Providers}","ProviderCount":4,"Providers":"env, aws, azure, null","EventId":{"Id":4,"Name":"_logResolverInitialized"},"SourceContext":"Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers.CompositeSecretResolver","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":7,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers.CompositeSecretResolver[4]
+honua-server-1  |       Secret resolver initialized with 4 providers: "env, aws, azure, null"
+honua-server-1  | {"@t":"2026-09-15T05:33:04.6057005Z","@mt":"PostGIS preflight check starting","EventId":{"Id":4055,"Name":"PostGisPreflightCheckStarting"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":1,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server[4055]
+honua-server-1  |       PostGIS preflight check starting
+honua-server-1  | {"@t":"2026-09-15T05:33:04.9048413Z","@mt":"Database engine: {EngineVersion}","EngineVersion":"PostgreSQL 16.4 (Debian 16.4-1.pgdg110+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 10.2.1-6) 10.2.1 20210110, 64-bit","EventId":{"Id":7910,"Name":"LogEngineVersion"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.PostgresDatabaseCompatibilityChecker","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":5,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Db.Postgres.Features.Infrastructure.PostgresDatabaseCompatibilityChecker[7910]
+honua-server-1  |       Database engine: "PostgreSQL 16.4 (Debian 16.4-1.pgdg110+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 10.2.1-6) 10.2.1 20210110, 64-bit"
+honua-server-1  | {"@t":"2026-09-15T05:33:04.9079454Z","@mt":"PostGIS version: {PostGisVersion}","PostGisVersion":"3.4.3","EventId":{"Id":7911,"Name":"LogPostGisVersion"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.PostgresDatabaseCompatibilityChecker","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":5,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:04.9087821Z","@mt":"PostGIS raster extension is not installed. Raster features will be unavailable.","@l":"Warning","EventId":{"Id":7914,"Name":"LogPostGisRasterMissing"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.PostgresDatabaseCompatibilityChecker","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":5,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Db.Postgres.Features.Infrastructure.PostgresDatabaseCompatibilityChecker[7911]
+honua-server-1  |       PostGIS version: "3.4.3"
+honua-server-1  | warn: Honua.Db.Postgres.Features.Infrastructure.PostgresDatabaseCompatibilityChecker[7914]
+honua-server-1  |       PostGIS raster extension is not installed. Raster features will be unavailable.
+honua-server-1  | {"@t":"2026-09-15T05:33:04.9091029Z","@mt":"PostGIS preflight check passed: engine={EngineVersion}, PostGIS={PostGisVersion}","EngineVersion":"PostgreSQL 16.4 (Debian 16.4-1.pgdg110+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 10.2.1-6) 10.2.1 20210110, 64-bit","PostGisVersion":"3.4.3","EventId":{"Id":4056,"Name":"PostGisPreflightCheckPassed"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":5,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server[4056]
+honua-server-1  |       PostGIS preflight check passed: engine="PostgreSQL 16.4 (Debian 16.4-1.pgdg110+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 10.2.1-6) 10.2.1 20210110, 64-bit", PostGIS="3.4.3"
+honua-server-1  | {"@t":"2026-09-15T05:33:04.9143382Z","@mt":"Database migrations starting","EventId":{"Id":4010,"Name":"DatabaseMigrationsStarting"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":5,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server[4010]
+honua-server-1  |       Database migrations starting
+honua-server-1  | 2026-09-15 05:33:05 +00:00 [INF] Beginning transaction
+honua-server-1  | 2026-09-15 05:33:05 +00:00 [INF] Checking whether journal table exists
+honua-server-1  | 2026-09-15 05:33:05 +00:00 [INF] Fetching list of already executed scripts.
+honua-server-1  | 2026-09-15 05:33:05 +00:00 [INF] Beginning transaction
+honua-server-1  | 2026-09-15 05:33:05 +00:00 [INF] Checking whether journal table exists
+honua-server-1  | 2026-09-15 05:33:05 +00:00 [INF] Fetching list of already executed scripts.
+honua-server-1  | 2026-09-15 05:33:05 +00:00 [INF] Beginning transaction
+honua-server-1  | 2026-09-15 05:33:05 +00:00 [INF] Beginning database upgrade
+honua-server-1  | 2026-09-15 05:33:05 +00:00 [INF] Checking whether journal table exists
+honua-server-1  | 2026-09-15 05:33:05 +00:00 [INF] Fetching list of already executed scripts.
+honua-server-1  | 2026-09-15 05:33:05 +00:00 [INF] No new scripts need to be executed - completing.
+honua-server-1  | {"@t":"2026-09-15T05:33:05.4207644Z","@mt":"No database migrations to apply","EventId":{"Id":4012,"Name":"NoDatabaseMigrationsToApply"},"SourceContext":"Honua.Server","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":7,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server[4012]
+honua-server-1  |       No database migrations to apply
+honua-server-1  | warn: Microsoft.AspNetCore.DataProtection.Repositories.FileSystemXmlRepository[60]
+honua-server-1  |       Storing keys in a directory '"/app/.aspnet/DataProtection-Keys"' that may not be persisted outside of the container. Protected data will be unavailable when container is destroyed. For more information go to https://aka.ms/aspnet/dataprotectionwarning
+honua-server-1  | {"@t":"2026-09-15T05:33:06.8122185Z","@mt":"Storing keys in a directory '{path}' that may not be persisted outside of the container. Protected data will be unavailable when container is destroyed. For more information go to https://aka.ms/aspnet/dataprotectionwarning","@l":"Warning","path":"/app/.aspnet/DataProtection-Keys","EventId":{"Id":60,"Name":"UsingEphemeralFileSystemLocationInContainer"},"SourceContext":"Microsoft.AspNetCore.DataProtection.Repositories.FileSystemXmlRepository","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":7,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:06.9761518Z","@mt":"Cache coordination running in local fallback mode","EventId":{"Id":1106,"Name":"FallbackModeEnabled"},"SourceContext":"Honua.Infrastructure.Caching.DistributedCacheRefreshCoordinator","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":7,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Infrastructure.Caching.DistributedCacheRefreshCoordinator[1106]
+honua-server-1  |       Cache coordination running in local fallback mode
+honua-server-1  | {"@t":"2026-09-15T05:33:07.0207253Z","@mt":"Process catalog loaded with {Count} built-in processes","Count":98,"EventId":{"Id":8016,"Name":"ProcessCatalogLoaded"},"SourceContext":"Honua.Geoprocessing.BuiltInProcessCatalog","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":7,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:07.0214191Z","@mt":"honua.gp.ogc_projected_processes={Count}","Count":82,"EventId":{"Id":8040,"Name":"OgcProjectedProcessCount"},"SourceContext":"Honua.Geoprocessing.BuiltInProcessCatalog","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":7,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Geoprocessing.BuiltInProcessCatalog[8016]
+honua-server-1  |       Process catalog loaded with 98 built-in processes
+honua-server-1  | info: Honua.Geoprocessing.BuiltInProcessCatalog[8040]
+honua-server-1  |       honua.gp.ogc_projected_processes=82
+honua-server-1  | info: Honua.Ai.Protocols.Mcp.McpDataAccessSurface[8157]
+honua-server-1  |       MCP operator surface initialized: Tools=58, Resources=17
+honua-server-1  | {"@t":"2026-09-15T05:33:07.1517925Z","@mt":"MCP operator surface initialized: Tools={ToolCount}, Resources={ResourceCount}","ToolCount":58,"ResourceCount":17,"EventId":{"Id":8157,"Name":"SurfaceInitialized"},"SourceContext":"Honua.Ai.Protocols.Mcp.McpDataAccessSurface","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":7,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:07.2850963Z","@mt":"Redis unavailable for distributed import queue (queue key: {QueueKey}); using in-memory fallback","@l":"Warning","QueueKey":"[REDACTED]","EventId":{"Id":7600,"Name":"QueueUsingFallback"},"SourceContext":"Honua.Migration.RedisImportJobManager","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":7,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:07.2854638Z","@mt":"Redis leadership unavailable for instance {InstanceId}; using local fallback leadership","@l":"Warning","InstanceId":"ab5d94ae350f-1","EventId":{"Id":7610,"Name":"LocalFallbackLeadershipEnabled"},"SourceContext":"Honua.Migration.RedisImportJobManager","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":7,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | warn: Honua.Migration.RedisImportJobManager[7600]
+honua-server-1  |       Redis unavailable for distributed import queue (queue key: "[REDACTED]"); using in-memory fallback
+honua-server-1  | warn: Honua.Migration.RedisImportJobManager[7610]
+honua-server-1  |       Redis leadership unavailable for instance "ab5d94ae350f-1"; using local fallback leadership
+honua-server-1  | {"@t":"2026-09-15T05:33:07.2867489Z","@mt":"Redis unavailable for distributed import queue (queue key: {QueueKey}); using in-memory fallback","@l":"Warning","QueueKey":"[REDACTED]","EventId":{"Id":7600,"Name":"QueueUsingFallback"},"SourceContext":"Honua.Migration.GeoServerImportJobManager","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":7,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | warn: Honua.Migration.GeoServerImportJobManager[7600]
+honua-server-1  |       Redis unavailable for distributed import queue (queue key: "[REDACTED]"); using in-memory fallback
+honua-server-1  | {"@t":"2026-09-15T05:33:07.2869398Z","@mt":"Redis leadership unavailable for instance {InstanceId}; using local fallback leadership","@l":"Warning","InstanceId":"ab5d94ae350f-1","EventId":{"Id":7610,"Name":"LocalFallbackLeadershipEnabled"},"SourceContext":"Honua.Migration.GeoServerImportJobManager","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":7,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | warn: Honua.Migration.GeoServerImportJobManager[7610]
+honua-server-1  |       Redis leadership unavailable for instance "ab5d94ae350f-1"; using local fallback leadership
+honua-server-1  | {"@t":"2026-09-15T05:33:07.3180898Z","@mt":"Loaded {Count} files from existing metadata","Count":0,"EventId":{"Id":5419,"Name":"MetadataLoaded"},"SourceContext":"Honua.FileStorage.LocalFileStorage","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":7,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.FileStorage.LocalFileStorage[5419]
+honua-server-1  |       Loaded 0 files from existing metadata
+honua-server-1  | {"@t":"2026-09-15T05:33:08.3024551Z","@mt":"Adaptive sampling initialized with base rate {BaseSamplingRate:P2}, range [{MinRate:P2} - {MaxRate:P2}], evaluation window {EvaluationWindow}","@r":["10.00 %","1.00 %","50.00 %"],"BaseSamplingRate":0.1,"MinRate":0.01,"MaxRate":0.5,"EvaluationWindow":"00:02:00","EventId":{"Id":1,"Name":"AdaptiveSamplingInitialized"},"SourceContext":"Honua.Core.Features.Infrastructure.Monitoring.AdaptiveSampler","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":7,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Core.Features.Infrastructure.Monitoring.AdaptiveSampler[1]
+honua-server-1  |       Adaptive sampling initialized with base rate 10.00 %, range [1.00 % - 50.00 %], evaluation window 00:02:00
+honua-server-1  | {"@t":"2026-09-15T05:33:08.3382584Z","@mt":"No license path configured.","EventId":{"Id":10000,"Name":"NoLicensePathConfigured"},"SourceContext":"Honua.Infrastructure.Licensing.FileBackedLicenseService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":7,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Infrastructure.Licensing.FileBackedLicenseService[10000]
+honua-server-1  |       No license path configured.
+honua-server-1  | info: Honua.Infrastructure.Configuration.ConfigurationValidationStartupService[953052830]
+honua-server-1  |       Starting configuration validation...
+honua-server-1  | info: Honua.Db.Postgres.Features.Infrastructure.Caching.HighFrequencyQueryPreparationService[8602]
+honua-server-1  |       Starting high-frequency query preparation for 9 queries
+honua-server-1  | {"@t":"2026-09-15T05:33:08.3444606Z","@mt":"Starting configuration validation...","EventId":{"Id":953052830,"Name":"ConfigurationValidationStarting"},"SourceContext":"Honua.Infrastructure.Configuration.ConfigurationValidationStartupService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":7,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:08.3445641Z","@mt":"Starting high-frequency query preparation for {QueryCount} queries","QueryCount":9,"EventId":{"Id":8602,"Name":"PreparationStarting"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.Caching.HighFrequencyQueryPreparationService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:08.3448929Z","@mt":"CRS warmup service started","EventId":{"Id":7202,"Name":"WarmupServiceStarted"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.Crs.PostgresCrsWarmupService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":5,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:08.3477548Z","@mt":"Leadership acquired, beginning CRS warmup","EventId":{"Id":7204,"Name":"LeadershipAcquiredForWarmup"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.Crs.PostgresCrsWarmupService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":5,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:08.3478106Z","@mt":"CRS warmup started","EventId":{"Id":7207,"Name":"WarmupStarted"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.Crs.PostgresCrsWarmupService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":5,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Db.Postgres.Features.Infrastructure.Crs.PostgresCrsWarmupService[7202]
+honua-server-1  |       CRS warmup service started
+honua-server-1  | info: Honua.Db.Postgres.Features.Infrastructure.Crs.PostgresCrsWarmupService[7204]
+honua-server-1  |       Leadership acquired, beginning CRS warmup
+honua-server-1  | info: Honua.Db.Postgres.Features.Infrastructure.Crs.PostgresCrsWarmupService[7207]
+honua-server-1  |       CRS warmup started
+honua-server-1  | {"@t":"2026-09-15T05:33:08.3486065Z","@mt":"Configuration validation completed successfully. Validated {Count} sections","Count":4,"EventId":{"Id":9651,"Name":"ValidationCompleted"},"SourceContext":"Honua.Infrastructure.Configuration.ConfigurationValidator","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":7,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:08.3490415Z","@mt":"Configuration validation completed successfully. Validated {Count} sections","Count":4,"EventId":{"Id":9651,"Name":"ValidationCompleted"},"SourceContext":"Honua.Infrastructure.Configuration.ConfigurationValidationStartupService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":7,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:08.3519503Z","@mt":"Resource leak detector started","EventId":{"Id":9101,"Name":"ResourceLeakDetectorStarted"},"SourceContext":"Honua.Core.Features.Infrastructure.Monitoring.ResourceLeakDetector","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":7,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:08.3526710Z","@mt":"Background cache refresh started with max {MaxConcurrent} concurrent operations (distributed: {IsDistributed})","MaxConcurrent":10,"IsDistributed":false,"EventId":{"Id":1101,"Name":"BackgroundRefreshStarted"},"SourceContext":"Honua.Infrastructure.Caching.DistributedCacheRefreshCoordinator","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Infrastructure.Configuration.ConfigurationValidator[9651]
+honua-server-1  |       Configuration validation completed successfully. Validated 4 sections
+honua-server-1  | info: Honua.Infrastructure.Configuration.ConfigurationValidationStartupService[9651]
+honua-server-1  |       Configuration validation completed successfully. Validated 4 sections
+honua-server-1  | info: Honua.Core.Features.Infrastructure.Monitoring.ResourceLeakDetector[9101]
+honua-server-1  |       Resource leak detector started
+honua-server-1  | {"@t":"2026-09-15T05:33:08.3530063Z","@mt":"File storage cleanup service started with interval of {Interval}","Interval":"01:00:00","EventId":{"Id":5402,"Name":"CleanupServiceStarted"},"SourceContext":"Honua.FileStorage.FileStorageCleanupService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Infrastructure.Caching.DistributedCacheRefreshCoordinator[1101]
+honua-server-1  |       Background cache refresh started with max 10 concurrent operations (distributed: False)
+honua-server-1  | info: Honua.FileStorage.FileStorageCleanupService[5402]
+honua-server-1  |       File storage cleanup service started with interval of 01:00:00
+honua-server-1  | {"@t":"2026-09-15T05:33:08.3531627Z","@mt":"Temporary file cleanup service started. Cleanup interval: {Interval}","Interval":"00:30:00","EventId":{"Id":8900,"Name":"ServiceStarted"},"SourceContext":"Honua.Infrastructure.Services.TemporaryFileCleanupService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Infrastructure.Services.TemporaryFileCleanupService[8900]
+honua-server-1  |       Temporary file cleanup service started. Cleanup interval: 00:30:00
+honua-server-1  | {"@t":"2026-09-15T05:33:08.4224867Z","@mt":"Connection encryption service initialized with key version {KeyVersion}","KeyVersion":"[REDACTED]","EventId":{"Id":1,"Name":"_logServiceInitialized"},"SourceContext":"Honua.Db.Postgres.Features.Security.ConnectionEncryptionService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":5,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Db.Postgres.Features.Security.ConnectionEncryptionService[1]
+honua-server-1  |       Connection encryption service initialized with key version "[REDACTED]"
+honua-server-1  | {"@t":"2026-09-15T05:33:08.4237673Z","@mt":"CRS warmup completed","EventId":{"Id":7208,"Name":"WarmupCompleted"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.Crs.PostgresCrsWarmupService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":5,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Db.Postgres.Features.Infrastructure.Crs.PostgresCrsWarmupService[7208]
+honua-server-1  |       CRS warmup completed
+honua-server-1  | {"@t":"2026-09-15T05:33:08.7762576Z","@mt":"Default geoprocessing GPServer service seeded as '{ServiceName}'","ServiceName":"geoprocessing","EventId":{"Id":9730,"Name":"Seeded"},"SourceContext":"Honua.Server.Features.Geoprocessing.GeoprocessingServiceSeeder","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":13,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:08.7787744Z","@mt":"Configuration validation: {Message}","Message":"All IOptions configurations are valid","EventId":{"Id":4014,"Name":"ConfigurationValidated"},"SourceContext":"Honua.Server.Features.Admin.Services.ConfigurationValidationHostedService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":13,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:08.7789829Z","@mt":"All configuration options validated successfully","EventId":{"Id":4015,"Name":"ConfigurationValidationSucceeded"},"SourceContext":"Honua.Server.Features.Admin.Services.ConfigurationValidationHostedService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":13,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server.Features.Geoprocessing.GeoprocessingServiceSeeder[9730]
+honua-server-1  |       Default geoprocessing GPServer service seeded as '"geoprocessing"'
+honua-server-1  | info: Honua.Server.Features.Admin.Services.ConfigurationValidationHostedService[4014]
+honua-server-1  |       Configuration validation: "All IOptions configurations are valid"
+honua-server-1  | info: Honua.Server.Features.Admin.Services.ConfigurationValidationHostedService[4015]
+honua-server-1  |       All configuration options validated successfully
+honua-server-1  | info: Honua.Alerts.AlertDispatchBackgroundService[9420]
+honua-server-1  |       Alert dispatcher is disabled.
+honua-server-1  | {"@t":"2026-09-15T05:33:08.8237055Z","@mt":"Alert dispatcher is disabled.","EventId":{"Id":9420,"Name":"LogDisabled"},"SourceContext":"Honua.Alerts.AlertDispatchBackgroundService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":24,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Alerts.AlertEvaluationBackgroundService[9410]
+honua-server-1  |       Alert evaluator is disabled.
+honua-server-1  | info: Honua.Alerts.DigestFlushBackgroundService[9430]
+honua-server-1  |       Digest flush service is disabled.
+honua-server-1  | info: Honua.Migration.GeoservicesImportBackgroundService[7700]
+honua-server-1  |       Geoservices import background service starting (instance: "ab5d94ae350f-1")
+honua-server-1  | {"@t":"2026-09-15T05:33:08.8250820Z","@mt":"Alert evaluator is disabled.","EventId":{"Id":9410,"Name":"LogDisabled"},"SourceContext":"Honua.Alerts.AlertEvaluationBackgroundService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":5,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:08.8255139Z","@mt":"Digest flush service is disabled.","EventId":{"Id":9430,"Name":"LogDisabled"},"SourceContext":"Honua.Alerts.DigestFlushBackgroundService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Migration.MigrationBatchBackgroundService[7984]
+honua-server-1  |       Migration batch background service starting (instance: "ab5d94ae350f-1")
+honua-server-1  | info: Honua.Migration.GeoServerImportBackgroundService[7960]
+honua-server-1  |       GeoServer import background service starting (instance: "ab5d94ae350f-1")
+honua-server-1  | info: Honua.Infrastructure.Events.Outbox.OutboxDispatcherBackgroundService[9300]
+honua-server-1  |       Outbox dispatcher started on node "ab5d94ae350f:1".
+honua-server-1  | {"@t":"2026-09-15T05:33:08.8270515Z","@mt":"GeoServer import background service starting (instance: {InstanceId})","InstanceId":"ab5d94ae350f-1","EventId":{"Id":7960,"Name":"ServiceStarting"},"SourceContext":"Honua.Migration.GeoServerImportBackgroundService","ImportWorkerInstanceId":"ab5d94ae350f-1","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":5,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:08.8267239Z","@mt":"Migration batch background service starting (instance: {InstanceId})","InstanceId":"ab5d94ae350f-1","EventId":{"Id":7984,"Name":"ServiceStarting"},"SourceContext":"Honua.Migration.MigrationBatchBackgroundService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":24,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server.Features.Infrastructure.AuditLog.AuditChainVerificationBackgroundService[7331]
+honua-server-1  |       Scheduled audit hash-chain verification enabled (interval 06:00:00).
+honua-server-1  | info: Honua.Server.Features.Streaming.FeatureStreamHeartbeatService[5008]
+honua-server-1  |       Feature stream heartbeat service started (interval=00:00:30)
+honua-server-1  | info: Honua.Server.Features.Mobile.FieldCollection.Automations.FieldCollectionAutomationDispatchBackgroundService[21220]
+honua-server-1  |       FieldCollection automation dispatcher is disabled.
+honua-server-1  | {"@t":"2026-09-15T05:33:08.8257551Z","@mt":"Geoservices import background service starting (instance: {InstanceId})","InstanceId":"ab5d94ae350f-1","EventId":{"Id":7700,"Name":"ServiceStarting"},"SourceContext":"Honua.Migration.GeoservicesImportBackgroundService","ImportWorkerInstanceId":"ab5d94ae350f-1","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":27,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:08.8281818Z","@mt":"Outbox dispatcher started on node {NodeId}.","NodeId":"ab5d94ae350f:1","EventId":{"Id":9300,"Name":"DispatcherStarted"},"SourceContext":"Honua.Infrastructure.Events.Outbox.OutboxDispatcherBackgroundService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:08.8288710Z","@mt":"Scheduled audit hash-chain verification enabled (interval {Interval}).","Interval":"06:00:00","EventId":{"Id":7331,"Name":"LogStarted"},"SourceContext":"Honua.Server.Features.Infrastructure.AuditLog.AuditChainVerificationBackgroundService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":25,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:08.8337385Z","@mt":"Feature stream heartbeat service started (interval={Interval})","Interval":"00:00:30","EventId":{"Id":5008,"Name":"HeartbeatServiceStarted"},"SourceContext":"Honua.Server.Features.Streaming.FeatureStreamHeartbeatService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":29,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:08.8254429Z","@mt":"FieldCollection automation dispatcher is disabled.","EventId":{"Id":21220,"Name":"LogDisabled"},"SourceContext":"Honua.Server.Features.Mobile.FieldCollection.Automations.FieldCollectionAutomationDispatchBackgroundService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":26,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | warn: Honua.Server.CorsConfiguration[4060]
+honua-server-1  |       No CORS origins configured. All cross-origin requests will be blocked in production.
+honua-server-1  | warn: Honua.Server.CorsConfiguration[4060]
+honua-server-1  |       No CORS origins configured. All cross-origin requests will be blocked in production.
+honua-server-1  | {"@t":"2026-09-15T05:33:10.0640946Z","@mt":"Overriding address(es) '{addresses}'. Binding to endpoints defined via IConfiguration and/or UseKestrel() instead.","@l":"Warning","addresses":"http://+:8080","SourceContext":"Microsoft.AspNetCore.Server.Kestrel","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":13,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | warn: Microsoft.AspNetCore.Server.Kestrel[0]
+honua-server-1  |       Overriding address(es) '"http://+:8080"'. Binding to endpoints defined via IConfiguration and/or UseKestrel() instead.
+honua-server-1  | {"@t":"2026-09-15T05:33:13.3413589Z","@mt":"Request starting {Protocol} {Method} {Scheme}://{Host}{PathBase}{Path}{QueryString} - {ContentType} {ContentLength}","@tr":"ff8b1250066f2c69afad713625dbe037","@sp":"32e4549c0e4301c6","Protocol":"HTTP/1.1","Method":"GET","ContentType":null,"ContentLength":null,"Scheme":"http","Host":"localhost:8080","PathBase":"","Path":"/healthz/ready","QueryString":"","EventId":{"Id":1},"SourceContext":"Microsoft.AspNetCore.Hosting.Diagnostics","RequestId":"0HNOITBB1EFH0:00000001","RequestPath":"/healthz/ready","ConnectionId":"0HNOITBB1EFH0","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":13,"SpanId":"32e4549c0e4301c6","TraceId":"ff8b1250066f2c69afad713625dbe037","ParentId":"0000000000000000","Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+honua-server-1  |       Request starting "HTTP/1.1" "GET" "http"://"localhost:8080""""/healthz/ready""" - null null
+honua-server-1  | {"@t":"2026-09-15T05:33:13.3492379Z","@mt":"Prepared priority statement: {StatementName}","StatementName":"health_check","EventId":{"Id":8705,"Name":"PriorityStatementPrepared"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.Caching.PreparedStatementCache","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:13.3500895Z","@mt":"High-frequency query preparation completed: {SuccessCount} successful, {FailureCount} failed, {SkippedCount} skipped","SuccessCount":1,"FailureCount":0,"SkippedCount":8,"EventId":{"Id":8607,"Name":"PreparationSummary"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.Caching.HighFrequencyQueryPreparationService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:13.3503059Z","@mt":"High-frequency query preparation completed. Cache contains {PreparedCount} prepared statements","PreparedCount":0,"EventId":{"Id":8603,"Name":"PreparationCompleted"},"SourceContext":"Honua.Db.Postgres.Features.Infrastructure.Caching.HighFrequencyQueryPreparationService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Db.Postgres.Features.Infrastructure.Caching.PreparedStatementCache[8705]
+honua-server-1  |       Prepared priority statement: "health_check"
+honua-server-1  | info: Honua.Db.Postgres.Features.Infrastructure.Caching.HighFrequencyQueryPreparationService[8607]
+honua-server-1  |       High-frequency query preparation completed: 1 successful, 0 failed, 8 skipped
+honua-server-1  | info: Honua.Db.Postgres.Features.Infrastructure.Caching.HighFrequencyQueryPreparationService[8603]
+honua-server-1  |       High-frequency query preparation completed. Cache contains 0 prepared statements
+honua-server-1  | {"@t":"2026-09-15T05:33:13.3564300Z","@mt":"Health check {HealthCheckName} with status {HealthStatus} completed after {ElapsedMilliseconds}ms with message '{HealthCheckDescription}'","@l":"Warning","HealthCheckName":"production-metrics","HealthStatus":"Degraded","ElapsedMilliseconds":0.0948,"HealthCheckDescription":"Production metrics indicate degraded performance: Low cache hit ratio: 0.00 %","EventId":{"Id":103,"Name":"HealthCheckEnd"},"SourceContext":"Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":4,"Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | warn: Microsoft.Extensions.Diagnostics.HealthChecks.DefaultHealthCheckService[103]
+honua-server-1  |       Health check "production-metrics" with status Degraded completed after 0.0948ms with message '"Production metrics indicate degraded performance: Low cache hit ratio: 0.00 %"'
+honua-server-1  | warn: Microsoft.AspNetCore.HttpsPolicy.HttpsRedirectionMiddleware[3]
+honua-server-1  |       Failed to determine the https port for redirect.
+honua-server-1  | {"@t":"2026-09-15T05:33:13.8331134Z","@mt":"Failed to determine the https port for redirect.","@l":"Warning","@tr":"ff8b1250066f2c69afad713625dbe037","@sp":"32e4549c0e4301c6","EventId":{"Id":3,"Name":"FailedToDeterminePort"},"SourceContext":"Microsoft.AspNetCore.HttpsPolicy.HttpsRedirectionMiddleware","RequestId":"0HNOITBB1EFH0:00000001","RequestPath":"/healthz/ready","ConnectionId":"0HNOITBB1EFH0","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":13,"SpanId":"32e4549c0e4301c6","TraceId":"ff8b1250066f2c69afad713625dbe037","ParentId":"0000000000000000","Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server.Features.HealthCheck.ReadinessCheckService[4020]
+honua-server-1  |       Health check executed: "DatabaseHealth" = "Healthy" in 1.42ms
+honua-server-1  | {"@t":"2026-09-15T05:33:13.8818866Z","@mt":"Health check executed: {CheckName} = {Status} in {ElapsedMs:F2}ms","@r":["1.42"],"@tr":"ff8b1250066f2c69afad713625dbe037","@sp":"32e4549c0e4301c6","CheckName":"DatabaseHealth","Status":"Healthy","ElapsedMs":1.4238,"EventId":{"Id":4020,"Name":"HealthCheckExecuted"},"SourceContext":"Honua.Server.Features.HealthCheck.ReadinessCheckService","RequestId":"0HNOITBB1EFH0:00000001","RequestPath":"/healthz/ready","ConnectionId":"0HNOITBB1EFH0","CorrelationId":"00-ff8b1250066f2c69afad713625dbe037-32e4549c0e4301c6-00","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":13,"SpanId":"32e4549c0e4301c6","TraceId":"ff8b1250066f2c69afad713625dbe037","ParentId":"0000000000000000","Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:13.8827538Z","@mt":"Health check executed: {CheckName} = {Status} in {ElapsedMs:F2}ms","@r":["0.47"],"@tr":"ff8b1250066f2c69afad713625dbe037","@sp":"32e4549c0e4301c6","CheckName":"CacheHealth","Status":"Healthy","ElapsedMs":0.4696,"EventId":{"Id":4020,"Name":"HealthCheckExecuted"},"SourceContext":"Honua.Server.Features.HealthCheck.ReadinessCheckService","RequestId":"0HNOITBB1EFH0:00000001","RequestPath":"/healthz/ready","ConnectionId":"0HNOITBB1EFH0","CorrelationId":"00-ff8b1250066f2c69afad713625dbe037-32e4549c0e4301c6-00","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":13,"SpanId":"32e4549c0e4301c6","TraceId":"ff8b1250066f2c69afad713625dbe037","ParentId":"0000000000000000","Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Honua.Server.Features.HealthCheck.ReadinessCheckService[4020]
+honua-server-1  |       Health check executed: "CacheHealth" = "Healthy" in 0.47ms
+honua-server-1  | info: Honua.Server.Features.HealthCheck.ReadinessCheckService[4020]
+honua-server-1  |       Health check executed: "FeatureChangeEventStore" = "Healthy (fallback)" in 0.00ms
+honua-server-1  | {"@t":"2026-09-15T05:33:13.8830681Z","@mt":"Health check executed: {CheckName} = {Status} in {ElapsedMs:F2}ms","@r":["0.00"],"@tr":"ff8b1250066f2c69afad713625dbe037","@sp":"32e4549c0e4301c6","CheckName":"FeatureChangeEventStore","Status":"Healthy (fallback)","ElapsedMs":0.0006,"EventId":{"Id":4020,"Name":"HealthCheckExecuted"},"SourceContext":"Honua.Server.Features.HealthCheck.ReadinessCheckService","RequestId":"0HNOITBB1EFH0:00000001","RequestPath":"/healthz/ready","ConnectionId":"0HNOITBB1EFH0","CorrelationId":"00-ff8b1250066f2c69afad713625dbe037-32e4549c0e4301c6-00","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":13,"SpanId":"32e4549c0e4301c6","TraceId":"ff8b1250066f2c69afad713625dbe037","ParentId":"0000000000000000","Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:13.8844420Z","@mt":"Request finished {Protocol} {Method} {Scheme}://{Host}{PathBase}{Path}{QueryString} - {StatusCode} {ContentLength} {ContentType} {ElapsedMilliseconds}ms","@tr":"ff8b1250066f2c69afad713625dbe037","@sp":"32e4549c0e4301c6","ElapsedMilliseconds":543.5485,"StatusCode":200,"ContentType":"text/plain; charset=utf-8","ContentLength":null,"Protocol":"HTTP/1.1","Method":"GET","Scheme":"http","Host":"localhost:8080","PathBase":"","Path":"/healthz/ready","QueryString":"","EventId":{"Id":2},"SourceContext":"Microsoft.AspNetCore.Hosting.Diagnostics","RequestId":"0HNOITBB1EFH0:00000001","RequestPath":"/healthz/ready","ConnectionId":"0HNOITBB1EFH0","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":13,"SpanId":"32e4549c0e4301c6","TraceId":"ff8b1250066f2c69afad713625dbe037","ParentId":"0000000000000000","Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+honua-server-1  |       Request finished "HTTP/1.1" "GET" "http"://"localhost:8080""""/healthz/ready""" - 200 null "text/plain; charset=utf-8" 543.5485ms
+honua-server-1  | {"@t":"2026-09-15T05:33:15.5866151Z","@mt":"Request starting {Protocol} {Method} {Scheme}://{Host}{PathBase}{Path}{QueryString} - {ContentType} {ContentLength}","@tr":"c99b0cda5f7b967e402c86d4671f31f2","@sp":"d32e0dea28a8dd91","Protocol":"HTTP/1.1","Method":"GET","ContentType":null,"ContentLength":null,"Scheme":"http","Host":"localhost:18914","PathBase":"","Path":"/rest/services/cng/FeatureServer/1000/query","QueryString":"[REDACTED]","EventId":{"Id":1},"SourceContext":"Microsoft.AspNetCore.Hosting.Diagnostics","RequestId":"0HNOITBB1EFH1:00000001","RequestPath":"/rest/services/cng/FeatureServer/1000/query","ConnectionId":"0HNOITBB1EFH1","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":13,"SpanId":"d32e0dea28a8dd91","TraceId":"c99b0cda5f7b967e402c86d4671f31f2","ParentId":"0000000000000000","Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+honua-server-1  |       Request starting "HTTP/1.1" "GET" "http"://"localhost:18914""""/rest/services/cng/FeatureServer/1000/query""[REDACTED]" - null null
+honua-server-1  | info: Honua.Protocols.GeoServices.FeatureServer.FeatureServerQueryHandler[2206]
+honua-server-1  |       Query "query_parquet" executed: "cng"/FeatureServer/1000 in 43.8534 ms
+honua-server-1  | {"@t":"2026-09-15T05:33:15.6658352Z","@mt":"Query {Operation} executed: {ServiceId}/FeatureServer/{LayerId} in {ElapsedMilliseconds} ms","@tr":"c99b0cda5f7b967e402c86d4671f31f2","@sp":"d32e0dea28a8dd91","Operation":"query_parquet","ServiceId":"cng","LayerId":1000,"ElapsedMilliseconds":43.8534,"EventId":{"Id":2206,"Name":"QueryExecuted"},"SourceContext":"Honua.Protocols.GeoServices.FeatureServer.FeatureServerQueryHandler","RequestId":"0HNOITBB1EFH1:00000001","RequestPath":"/rest/services/cng/FeatureServer/1000/query","ConnectionId":"0HNOITBB1EFH1","CorrelationId":"00-c99b0cda5f7b967e402c86d4671f31f2-d32e0dea28a8dd91-01","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":13,"SpanId":"d32e0dea28a8dd91","TraceId":"c99b0cda5f7b967e402c86d4671f31f2","ParentId":"0000000000000000","Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | {"@t":"2026-09-15T05:33:15.6971720Z","@mt":"Query failed for {ServiceId}/FeatureServer/{LayerId}: {ErrorMessage}","@l":"Error","@x":"Honua.Infrastructure.Services.ParquetRuntimeUnavailableException: GeoParquet (f=parquet) output is unavailable on this runtime image: the native ParquetSharp Arrow encoder (ParquetSharpNative) could not be loaded. The ParquetSharp native library requires glibc and its native dependencies, including libatomic.so.1. Deploy a compatible runtime image to enable GeoParquet output.\n ---> System.DllNotFoundException: Unable to load shared library 'ParquetSharpNative' or one of its dependencies. In order to help diagnose loading problems, consider using a tool like strace. If you're using glibc, consider setting the LD_DEBUG environment variable: \nError loading shared library libatomic.so.1: No such file or directory (needed by /app/ParquetSharpNative.so)\nError loading shared library ParquetSharpNative.so: No such file or directory\nError loading shared library /app/libParquetSharpNative.so: No such file or directory\nError loading shared library libParquetSharpNative.so: No such file or directory\nError loading shared library /app/ParquetSharpNative: No such file or directory\nError loading shared library ParquetSharpNative: No such file or directory\nError loading shared library /app/libParquetSharpNative: No such file or directory\nError loading shared library libParquetSharpNative: No such file or directory\n\n   at System.Runtime.InteropServices.NativeLibrary.LoadLibErrorTracker.Throw(String) + 0x46\n   at Internal.Runtime.CompilerHelpers.InteropHelpers.FixupModuleCell(InteropHelpers.ModuleFixupCell*) + 0x12c\n   at Internal.Runtime.CompilerHelpers.InteropHelpers.ResolvePInvokeSlow(InteropHelpers.MethodFixupCell*) + 0x35\n   at ParquetSharp.Arrow.ArrowWriterPropertiesBuilder.ArrowWriterPropertiesBuilder_Create(IntPtr&) + 0x34\n   at ParquetSharp.Arrow.ArrowWriterPropertiesBuilder..ctor() + 0x23\n   at Honua.Infrastructure.Services.GeoParquetFeatureWriter.WriteArrowParquet(Schema, RecordBatch) + 0x72\n   --- End of inner exception stack trace ---\n   at Honua.Infrastructure.Services.GeoParquetFeatureWriter.WriteArrowParquet(Schema, RecordBatch) + 0x2f4\n   at Honua.Infrastructure.Services.GeoParquetFeatureWriter.FormatAsGeoParquet(QueryResult`1, MetadataV2Resource, String, Boolean, Nullable`1, Boolean, Boolean, GeometryLimits, String[], ILogger) + 0x236\n   at Honua.Protocols.GeoServices.FeatureServer.Services.QueryFormatter.FormatQueryResultAsync(QueryResult`1, MetadataV2Resource, String, Boolean, Nullable`1, Boolean, Boolean, Nullable`1, Nullable`1, String[], Boolean, Boolean, Nullable`1, QuantizationTransform) + 0x2cf\n   at Honua.Protocols.GeoServices.FeatureServer.FeatureServerQueryHandler.<HandleQueryFeaturesAsync>d__55.MoveNext() + 0x3d38","@tr":"c99b0cda5f7b967e402c86d4671f31f2","@sp":"d32e0dea28a8dd91","ServiceId":"cng","LayerId":1000,"ErrorMessage":"GeoParquet (f=parquet) output is unavailable on this runtime image: the native ParquetSharp Arrow encoder (ParquetSharpNative) could not be loaded. The ParquetSharp native library requires glibc and its native dependencies, including libatomic.so.1. Deploy a compatible runtime image to enable GeoParquet output.","EventId":{"Id":2203,"Name":"QueryFailed"},"SourceContext":"Honua.Protocols.GeoServices.FeatureServer.FeatureServerQueryHandler","RequestId":"0HNOITBB1EFH1:00000001","RequestPath":"/rest/services/cng/FeatureServer/1000/query","ConnectionId":"0HNOITBB1EFH1","CorrelationId":"00-c99b0cda5f7b967e402c86d4671f31f2-d32e0dea28a8dd91-01","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":13,"SpanId":"d32e0dea28a8dd91","TraceId":"c99b0cda5f7b967e402c86d4671f31f2","ParentId":"0000000000000000","Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | fail: Honua.Protocols.GeoServices.FeatureServer.FeatureServerQueryHandler[2203]
+honua-server-1  |       Query failed for "cng"/FeatureServer/1000: "GeoParquet (f=parquet) output is unavailable on this runtime image: the native ParquetSharp Arrow encoder (ParquetSharpNative) could not be loaded. The ParquetSharp native library requires glibc and its native dependencies, including libatomic.so.1. Deploy a compatible runtime image to enable GeoParquet output."
+honua-server-1  |       Honua.Infrastructure.Services.ParquetRuntimeUnavailableException: GeoParquet (f=parquet) output is unavailable on this runtime image: the native ParquetSharp Arrow encoder (ParquetSharpNative) could not be loaded. The ParquetSharp native library requires glibc and its native dependencies, including libatomic.so.1. Deploy a compatible runtime image to enable GeoParquet output.
+honua-server-1  |        ---> System.DllNotFoundException: Unable to load shared library 'ParquetSharpNative' or one of its dependencies. In order to help diagnose loading problems, consider using a tool like strace. If you're using glibc, consider setting the LD_DEBUG environment variable: 
+honua-server-1  |       Error loading shared library libatomic.so.1: No such file or directory (needed by /app/ParquetSharpNative.so)
+honua-server-1  |       Error loading shared library ParquetSharpNative.so: No such file or directory
+honua-server-1  |       Error loading shared library /app/libParquetSharpNative.so: No such file or directory
+honua-server-1  |       Error loading shared library libParquetSharpNative.so: No such file or directory
+honua-server-1  |       Error loading shared library /app/ParquetSharpNative: No such file or directory
+honua-server-1  |       Error loading shared library ParquetSharpNative: No such file or directory
+honua-server-1  |       Error loading shared library /app/libParquetSharpNative: No such file or directory
+honua-server-1  |       Error loading shared library libParquetSharpNative: No such file or directory
+honua-server-1  |       
+honua-server-1  |          at System.Runtime.InteropServices.NativeLibrary.LoadLibErrorTracker.Throw(String) + 0x46
+honua-server-1  |          at Internal.Runtime.CompilerHelpers.InteropHelpers.FixupModuleCell(InteropHelpers.ModuleFixupCell*) + 0x12c
+honua-server-1  |          at Internal.Runtime.CompilerHelpers.InteropHelpers.ResolvePInvokeSlow(InteropHelpers.MethodFixupCell*) + 0x35
+honua-server-1  |          at ParquetSharp.Arrow.ArrowWriterPropertiesBuilder.ArrowWriterPropertiesBuilder_Create(IntPtr&) + 0x34
+honua-server-1  |          at ParquetSharp.Arrow.ArrowWriterPropertiesBuilder..ctor() + 0x23
+honua-server-1  |          at Honua.Infrastructure.Services.GeoParquetFeatureWriter.WriteArrowParquet(Schema, RecordBatch) + 0x72
+honua-server-1  |          --- End of inner exception stack trace ---
+honua-server-1  |          at Honua.Infrastructure.Services.GeoParquetFeatureWriter.WriteArrowParquet(Schema, RecordBatch) + 0x2f4
+honua-server-1  |          at Honua.Infrastructure.Services.GeoParquetFeatureWriter.FormatAsGeoParquet(QueryResult`1, MetadataV2Resource, String, Boolean, Nullable`1, Boolean, Boolean, GeometryLimits, String[], ILogger) + 0x236
+honua-server-1  |          at Honua.Protocols.GeoServices.FeatureServer.Services.QueryFormatter.FormatQueryResultAsync(QueryResult`1, MetadataV2Resource, String, Boolean, Nullable`1, Boolean, Boolean, Nullable`1, Nullable`1, String[], Boolean, Boolean, Nullable`1, QuantizationTransform) + 0x2cf
+honua-server-1  |          at Honua.Protocols.GeoServices.FeatureServer.FeatureServerQueryHandler.<HandleQueryFeaturesAsync>d__55.MoveNext() + 0x3d38
+honua-server-1  | {"@t":"2026-09-15T05:33:15.8010306Z","@mt":"HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000} ms","@r":["213.6880"],"@tr":"c99b0cda5f7b967e402c86d4671f31f2","@sp":"d32e0dea28a8dd91","RequestHost":"localhost:18914","UserAgent":"curl/8.5.0","Protocol":"HTTP/1.1","HonuaProtocol":"FeatureServer","HonuaOperation":"query","ServiceId":"cng","LayerId":"1000","RequestMethod":"GET","RequestPath":"/rest/services/cng/FeatureServer/1000/query","StatusCode":200,"Elapsed":213.687968,"SourceContext":"Serilog.AspNetCore.RequestLoggingMiddleware","CorrelationId":"00-c99b0cda5f7b967e402c86d4671f31f2-d32e0dea28a8dd91-01","RequestId":"0HNOITBB1EFH1:00000001","ConnectionId":"0HNOITBB1EFH1","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":13,"SpanId":"d32e0dea28a8dd91","TraceId":"c99b0cda5f7b967e402c86d4671f31f2","ParentId":"0000000000000000","Application":"Honua","Version":"2026.1.1.0"}
+honua-server-1  | info: Serilog.AspNetCore.RequestLoggingMiddleware[0]
+honua-server-1  |       HTTP "GET" "/rest/services/cng/FeatureServer/1000/query" responded 200 in 213.6880 ms
+honua-server-1  | info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+honua-server-1  |       Request finished "HTTP/1.1" "GET" "http"://"localhost:18914""""/rest/services/cng/FeatureServer/1000/query""[REDACTED]" - 200 null "application/json; charset=utf-8" 215.2351ms
+honua-server-1  | {"@t":"2026-09-15T05:33:15.8016457Z","@mt":"Request finished {Protocol} {Method} {Scheme}://{Host}{PathBase}{Path}{QueryString} - {StatusCode} {ContentLength} {ContentType} {ElapsedMilliseconds}ms","@tr":"c99b0cda5f7b967e402c86d4671f31f2","@sp":"d32e0dea28a8dd91","ElapsedMilliseconds":215.2351,"StatusCode":200,"ContentType":"application/json; charset=utf-8","ContentLength":null,"Protocol":"HTTP/1.1","Method":"GET","Scheme":"http","Host":"localhost:18914","PathBase":"","Path":"/rest/services/cng/FeatureServer/1000/query","QueryString":"[REDACTED]","EventId":{"Id":2},"SourceContext":"Microsoft.AspNetCore.Hosting.Diagnostics","RequestId":"0HNOITBB1EFH1:00000001","RequestPath":"/rest/services/cng/FeatureServer/1000/query","ConnectionId":"0HNOITBB1EFH1","EnvironmentName":"Test","MachineName":"ab5d94ae350f","ThreadId":13,"SpanId":"d32e0dea28a8dd91","TraceId":"c99b0cda5f7b967e402c86d4671f31f2","ParentId":"0000000000000000","Application":"Honua","Version":"2026.1.1.0"}

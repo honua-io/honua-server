@@ -197,7 +197,7 @@ The devkit loop is **authoring and test only**. It never deploys. A process reac
 - **Built-in (code) processes** — the executors you scaffold and edit here ship with the server image. Once your `.cs` and golden fixture are merged, they ride the normal build and deploy pipeline; there is no per-process publish step. They appear in the [geoprocessing operations](../../reference/geoprocessing-operations.md) catalog of any deployment running that image.
 - **Console-authored workflows** — graphs of catalog processes (built in Honua Console) go through the workflow-package publish lifecycle on the admin API (`/api/v{n}/console/workflow-packages`): **save** a draft → snapshot an **immutable version** → **validate** → **dry-run** → **publish**. Publication flows into a metadata release, which a governed GitOps reconcile rolls out across environments. See [Automate workflows](automate-workflows.md) for the request/response shapes.
 
-A future `honua gp publish` bridge (#2176) is planned to take a locally-authored process from the checkout to the package store in one command. It does **not** exist yet — today, code processes ship via the image and workflow packages publish through the console API as above.
+A future `honua gp publish` bridge is planned to take a locally-authored process from the checkout to the package store in one command. It does **not** exist yet — today, code processes ship via the image and workflow packages publish through the console API as above.
 
 ## Next steps
 

@@ -919,6 +919,7 @@ public sealed class McpEndpointIntegrationTests : IAsyncLifetime
         names.Should().Contain("hazard_assessment");
         names.Should().Contain("permit_review");
         names.Should().Contain("dashboard_scaffolding");
+        names.Should().Contain("setup_and_publish");
 
         var siteSelection = prompts.EnumerateArray()
             .Single(p => p.GetProperty("name").GetString() == "site_selection_analysis");

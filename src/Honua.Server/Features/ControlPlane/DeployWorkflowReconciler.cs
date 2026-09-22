@@ -661,15 +661,22 @@ internal sealed partial class DeployWorkflowReconciler(
         var now = DateTimeOffset.UtcNow;
         var window = ResolveProtectionObservationWindow(deploy);
         var previousRevision = string.IsNullOrWhiteSpace(deploy.CurrentRevision) ? deploy.DesiredRevision : deploy.CurrentRevision;
+        var policyDigest = ComputePolicyDigest(deploy);
         var protection = new DeployProtectionState
         {
             PreviousRevision = previousRevision,
             CandidateRevision = deploy.DesiredRevision,
             FirstExposureAt = now,
             ObservationDeadline = now + window,
-            PolicyDigest = ComputePolicyDigest(deploy),
+            PolicyDigest = policyDigest,
             ApprovalScope = promoted.Audit.ApprovalPolicyRef,
-            Phase = DeployProtectionPhase.Observing
+            Phase = DeployProtectionPhase.Observing,
+            // honua-server#4958: seal the recovery grant at the moment of exposure. Everything a
+            // fenced rollback has to quote is fixed here and never re-derived from the request.
+            GrantId = ComputeRecoveryGrantId(promoted.OperationId, deploy.TargetId, previousRevision, deploy.DesiredRevision, policyDigest, now),
+            Actor = promoted.Audit.RequestedBy,
+            TenantId = promoted.Audit.TenantId,
+            PermittedCompensation = DeployRecoveryCompensations.RestorePreviousRevision
         };
 
         return promoted with
@@ -797,6 +804,32 @@ internal sealed partial class DeployWorkflowReconciler(
 
         var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(builder.ToString()));
         return Convert.ToHexString(hash);
+    }
+
+    /// <summary>
+    /// Derives the stable recovery-grant identity for a protected activation (honua-server#4958).
+    /// Bound to the operation, its target, the prior/candidate revision pair, the policy digest that
+    /// was actually in effect and the exposure instant, so a re-activation of the same revisions mints
+    /// a different grant and a grant quoted from a superseded window can never satisfy the fence.
+    /// </summary>
+    private static string ComputeRecoveryGrantId(
+        string operationId,
+        string targetId,
+        string previousRevision,
+        string candidateRevision,
+        string policyDigest,
+        DateTimeOffset firstExposureAt)
+    {
+        var material = string.Join(
+            '|',
+            operationId,
+            targetId,
+            previousRevision,
+            candidateRevision,
+            policyDigest,
+            firstExposureAt.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(material));
+        return "grant-" + Convert.ToHexString(hash)[..32].ToLowerInvariant();
     }
 
     /// <summary>

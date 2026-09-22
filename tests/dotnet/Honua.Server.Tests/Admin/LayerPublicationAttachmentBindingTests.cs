@@ -30,7 +30,7 @@ public sealed partial class LayerPublishingIntegrationTests
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments")]
     public async Task PublishedBinding_AttachmentRoundTripUsesLiveParentInsteadOfSnapshot(bool nullGeometry)
     {
-        await PublishAttachmentBindingAsync();
+        var layerId = await PublishAttachmentBindingAsync();
         await using (var connection = await _fixture.Postgres.GetConnectionAsync())
         await using (var command = connection.CreateCommand())
         {
@@ -45,7 +45,7 @@ public sealed partial class LayerPublishingIntegrationTests
         }
 
         const long parentId = 900001;
-        var layerUrl = $"/rest/services/{_serviceName}/FeatureServer/{_layerId}";
+        var layerUrl = $"/rest/services/{_serviceName}/FeatureServer/{layerId}";
         var parentUrl = $"{layerUrl}/{parentId}";
         using var query = await ReadAttachmentJsonAsync($"{layerUrl}/query?objectIds={parentId}&outFields=*&returnGeometry=false&f=json");
         query.RootElement.GetProperty("features").GetArrayLength().Should().Be(1);
@@ -97,7 +97,7 @@ public sealed partial class LayerPublishingIntegrationTests
         {
             if (attachmentId.HasValue)
             {
-                await _fixture.GetService<IAttachmentStore>().DeleteAsync(_layerId!.Value, parentId, attachmentId.Value);
+                await _fixture.GetService<IAttachmentStore>().DeleteAsync(layerId, parentId, attachmentId.Value);
             }
         }
     }
@@ -112,11 +112,11 @@ public sealed partial class LayerPublishingIntegrationTests
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/deleteAttachments")]
     public async Task PublishedBinding_AttachmentsDoNotExposeParentRemainingOnlyInOldSnapshot()
     {
-        await PublishAttachmentBindingAsync();
+        var layerId = await PublishAttachmentBindingAsync();
         var store = _fixture.GetService<IAttachmentStore>();
         await using var content = new MemoryStream("private parent attachment"u8.ToArray());
-        var attachment = await store.UploadAsync(_layerId!.Value, 1, "parent.txt", "text/plain", content);
-        var layerUrl = $"/rest/services/{_serviceName}/FeatureServer/{_layerId}";
+        var attachment = await store.UploadAsync(layerId, 1, "parent.txt", "text/plain", content);
+        var layerUrl = $"/rest/services/{_serviceName}/FeatureServer/{layerId}";
         var parentUrl = $"{layerUrl}/1";
         try
         {
@@ -129,7 +129,7 @@ public sealed partial class LayerPublishingIntegrationTests
                 (await command.ExecuteNonQueryAsync()).Should().Be(1);
             }
 
-            (await _fixture.GetService<IFeatureReader>().GetAsync(_layerId.Value, 1))
+            (await _fixture.GetService<IFeatureReader>().GetAsync(layerId, 1))
                 .Should().NotBeNull("the regression requires a stale row in the default store");
             using var query = await ReadAttachmentJsonAsync($"{layerUrl}/query?objectIds=1&outFields=*&f=json");
             query.RootElement.GetProperty("features").GetArrayLength().Should().Be(0);
@@ -155,17 +155,18 @@ public sealed partial class LayerPublishingIntegrationTests
             });
             using var deniedDelete = await SendAttachmentJsonAsync($"{parentUrl}/deleteAttachments", form, allowError: true);
             deniedDelete.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404);
-            var retained = await store.GetAsync(_layerId.Value, 1, attachment.Id);
+            var retained = await store.GetAsync(layerId, 1, attachment.Id);
             retained.Should().NotBeNull();
-            retained!.Value.Filename.Should().Be("parent.txt");
+            var retainedAttachment = retained ?? throw new InvalidOperationException("The denied deletion must retain the attachment.");
+            retainedAttachment.Filename.Should().Be("parent.txt");
         }
         finally
         {
-            await store.DeleteAsync(_layerId.Value, 1, attachment.Id);
+            await store.DeleteAsync(layerId, 1, attachment.Id);
         }
     }
 
-    private async Task PublishAttachmentBindingAsync()
+    private async Task<int> PublishAttachmentBindingAsync()
     {
         var published = await PublishLayerAsync(new PublishLayerRequest
         {
@@ -180,6 +181,7 @@ public sealed partial class LayerPublishingIntegrationTests
             Enabled = true
         });
         _layerId = published.LayerId;
+        return published.LayerId;
     }
 
     private static MultipartFormDataContent AttachmentUploadForm(byte[] bytes)

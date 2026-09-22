@@ -294,6 +294,39 @@ public sealed class MigrationFidelityEvaluatorTests
     }
 
     [Fact]
+    public void Evaluate_WhenPublishWasRequestedButNoLayerWasPublished_IsIncompleteNotFullFidelity()
+    {
+        // A service migration publishes every layer. When that publish did not complete, the post-publish
+        // probes had no target, so nothing reported them as not executed and the run folded to full-fidelity
+        // with no differences while the migrated data was not served at all.
+        var input = new MigrationFidelityEvaluationInput
+        {
+            LayerName = "Inspections",
+            PublishRequested = true,
+            PublishedTarget = false
+        };
+
+        var evaluation = MigrationFidelityEvaluator.Evaluate(input);
+
+        evaluation.Verdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+        evaluation.IsBlocking.Should().BeTrue();
+        evaluation.BlockingReason.Should().NotBeNullOrWhiteSpace();
+        evaluation.Differences.Should().ContainSingle().Which.Should().Match<MigrationFidelityDifference>(difference =>
+            difference.Code == MigrationFidelityDifferenceCodes.PublishNotCompleted &&
+            difference.Severity == MigrationFidelityDifferenceSeverities.Blocking &&
+            difference.Subject == "Inspections");
+    }
+
+    [Fact]
+    public void Evaluate_WhenRequestedPublishCompletedAndEveryCheckPassed_ReportsFullFidelity()
+    {
+        var evaluation = MigrationFidelityEvaluator.Evaluate(FullyVerifiedInput() with { PublishRequested = true });
+
+        evaluation.Verdict.Should().Be(MigrationFidelityVerdicts.FullFidelity);
+        evaluation.Differences.Should().BeEmpty();
+    }
+
+    [Fact]
     public void Evaluate_WhenDataReconciliationFails_BlocksAndCarriesItsReasons()
     {
         var input = FullyVerifiedInput() with

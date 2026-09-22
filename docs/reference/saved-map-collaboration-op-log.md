@@ -89,7 +89,7 @@ Each `kind` maps to a conflict **family**. The MVP policy treats per-aspect fami
 | `PatchStyle` | Style | safe scalar | Yes |
 | `ReplaceWebMapDocument` | WebMapDocument | unsafe | Yes |
 
-### `SetMetadataField` is not accepted (honua-server#2999)
+### `SetMetadataField` is not accepted
 
 The append endpoint rejects `SetMetadataField` with `400`. The checkpoint applier persists
 operations onto the Studio composition body, which carries no metadata bag, so there is no
@@ -155,6 +155,6 @@ Durable edits are never accepted on the strength of authentication alone.
 
 ## Related surfaces
 
-- **Session transport** (presence, live cursors, follow): `POST /api/v1/saved-maps/{mapId}/collaboration/sessions/join`, `GET …/sessions/stream`. Ephemeral; see issue #971.
+- **Session transport** (presence, live cursors, follow): `POST /api/v1/saved-maps/{mapId}/collaboration/sessions/join`, `GET …/sessions/stream`. Ephemeral.
 - **Feature-service edit locks/conflicts**: row/geometry edit persistence is a separate seam from saved-map document edits.
 - **Capability discovery**: `GET /api/v1/capabilities/manifest` reports realtime/transport availability — see [integration patterns](integration-patterns.md#runtime-capability-discovery). Discovery only; authorization still happens at the operation endpoint.

@@ -8,8 +8,7 @@ description: "Register a database connection and publish its spatial tables thro
 Register a database connection and publish its spatial tables through Honua's supported control-plane SDK. Each published layer is immediately available through every enabled protocol.
 
 **Prerequisites:** a running server, an admin API key, a reachable database, and Python with
-[`honua-admin` installed from source](https://github.com/honua-io/honua-sdk-python#install)
-until the package's first PyPI release.
+`honua-admin` installed (`pip install honua-admin`).
 
 ## Create a secure connection
 
@@ -35,12 +34,11 @@ Use `admin.list_connections()` and `admin.get_connection(id)` to inspect existin
 
 ## Inspect and validate tables
 
-The table-discovery and pre-publish validation operations do not yet have high-level SDK methods. Use the [admin API explorer](../../reference/openapi-and-explorer.md) or generate a client from [`admin-api.json`](../../developer/api-specs/admin-api.json) for:
-
-- `GET /api/v1/admin/connections/{id}/tables`
-- `POST /api/v1/admin/connections/{id}/tables/validate`
-
-Validation reports missing primary keys, unsupported geometry, and other publish-blocking problems before catalog mutation.
+`admin.discover_tables(connection.connection_id)` lists the connection's spatial tables with the
+schema, geometry column and SRID that `publish_layer` needs. Pre-publish validation
+(`POST /api/v1/admin/connections/{id}/tables/validate`) does not yet have a high-level SDK
+method; call it through the admin client's HTTP transport or a client generated from
+[`admin-api.json`](../../developer/api-specs/admin-api.json). Validation reports missing primary keys, unsupported geometry, and other publish-blocking problems before catalog mutation.
 
 ## Publish a layer
 

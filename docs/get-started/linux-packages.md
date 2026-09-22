@@ -8,9 +8,8 @@ resource: "https://github.com/honua-io/honua-server/releases"
 
 Use Docker Engine with Compose 2.23.1 or later, Python 3.11 or later with venv and pip 22.3+,
 and a Bash terminal. The configuration runs the same Production image, registry
-clients and two-feature journey as the [Windows quickstart](quickstart.md).
-Read its [artifact identity and qualification](../internal/evidence/quickstart-artifact-qualification.md)
-first. No source checkout, build or GitHub login is needed. This pre-cut profile
+clients and two-feature journey as the [Windows install](windows-packages.md).
+No source checkout, build or GitHub login is needed. This pre-cut profile
 selects `linux/amd64`; use an amd64 host for this rehearsal.
 
 ## Create an isolated installation
@@ -207,7 +206,7 @@ async def ingest_fixture():
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 call = await session.call_tool('honua_ingest_dataset', {
-                    'format': 'geojson', 'datasetName': 'windows_points',
+                    'format': 'geojson', 'datasetName': 'linux_points',
                     'data': Path('points.geojson').read_text(encoding='utf-8'), 'sourceSrid': 4326})
                 require(not call.is_error, 'Honua MCP ingest failed')
                 result = call.structured_content
@@ -224,18 +223,18 @@ if '--verify-only' not in sys.argv:
         for name, (value, lon, lat) in expected.items()]}
     Path('points.geojson').write_text(json.dumps(fixture), encoding='utf-8')
     with HonuaAdminClient(base, api_key=key) as admin:
-        connection = next((c for c in admin.list_connections() if c.name == 'windows-local'), None)
+        connection = next((c for c in admin.list_connections() if c.name == 'linux-local'), None)
         if connection is None:
             connection = admin.create_connection(CreateSecureConnectionRequest(
-                name='windows-local', host='postgres', port=5432, database_name='honua',
+                name='linux-local', host='postgres', port=5432, database_name='honua',
                 username='honua', password=os.environ['POSTGRES_PASSWORD'],
                 ssl_mode='Disable', ssl_required=False))
         result = asyncio.run(ingest_fixture())
         layer = admin.publish_layer(connection.connection_id, PublishLayerRequest(
-            schema=result['schema'], table=result['table'], layer_name='windows-points',
-            service_name='windows', srid=4326, geometry_column=result['geometryColumn'],
+            schema=result['schema'], table=result['table'], layer_name='linux-points',
+            service_name='linux', srid=4326, geometry_column=result['geometryColumn'],
             geometry_type='Point', primary_key=result['primaryKey'], fields_list=['id', 'properties']))
-        state_path.write_text(json.dumps({'service': 'windows', 'layer': layer.layer_id}), encoding='utf-8')
+        state_path.write_text(json.dumps({'service': 'linux', 'layer': layer.layer_id}), encoding='utf-8')
 
 state = json.loads(state_path.read_text(encoding='utf-8'))
 with HonuaClient(base, api_key=key) as client:
@@ -306,7 +305,7 @@ logs; do not disable Production preflight. Public registry downloads require no
 credentials. Share only redacted logs and package identities, never `.env`.
 
 After a partial import or publication failure, inspect the logs and staging table,
-then rerun `journey.py` from this installation. It reuses `windows-local`; MCP
+then rerun `journey.py` from this installation. It reuses `linux-local`; MCP
 ingest replaces the named staging dataset. After publication saves
 `published-layer.json`, use `--verify-only` to read the retained layer.
 

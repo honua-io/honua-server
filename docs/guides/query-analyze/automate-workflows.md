@@ -75,7 +75,7 @@ A workflow package is a graph of nodes (each node is a catalog process, node typ
    }
    ```
 
-   The scheduler evaluates cron triggers every 30 seconds and claims each fire-time so exactly one replica creates a run per occurrence. Failed steps retry per the engine's per-step retry policy with exponential backoff; see [operations](../deploy/backup-and-restore.md#workflow-orchestration) for run lifecycle, failure policies, and crash-safety details.
+   The scheduler evaluates cron triggers every 30 seconds and claims each fire-time so exactly one replica creates a run per occurrence. Failed steps retry per the engine's per-step retry policy with exponential backoff, and runs survive a control-plane restart.
 
    Honua captures the publishing author's security context, then re-resolves current roles before
    every cron or event firing when the configured identity source manages that author (including
@@ -111,5 +111,5 @@ Expected (trimmed): run progress that ends in a succeeded state with both steps 
 ## Next steps
 
 - [Run geoprocessing](run-geoprocessing.md)
-- [Operations: workflow orchestration](../deploy/backup-and-restore.md#workflow-orchestration)
+- [Monitor Honua Server](../deploy/monitoring.md)
 - [Geoprocessing operations reference](../../reference/geoprocessing-operations.md)

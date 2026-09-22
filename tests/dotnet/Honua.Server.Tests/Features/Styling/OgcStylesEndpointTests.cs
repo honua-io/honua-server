@@ -8,8 +8,11 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FluentAssertions;
+using Honua.Core.Features.Authorization.Abstractions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Styling.Abstractions;
 using Honua.Server.Features.Admin.Models;
 using Honua.Server.Features.Styling;
@@ -17,6 +20,8 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
+using Honua.TestKit.Helpers;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.Styling;
@@ -926,16 +931,157 @@ public sealed class OgcStylesEndpointTests : IAsyncLifetime
             && l.GetProperty("href").GetString()!.Contains("/ogc/styles/", StringComparison.Ordinal));
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/styles/{styleId}")]
+    public async Task GetStylesheet_EveryAdvertisedCollectionStylesheet_ResolvesAndIsListed()
+    {
+        // #4993: every OGC API Features collection advertises rel=stylesheet at
+        // /ogc/styles/{resource name}. A collection that has never been styled renders with its
+        // layer default, and that default is what the link must return — before the fix it was
+        // 404 and /ogc/styles listed nothing, so MapLibre and QGIS could not style the layer.
+        var client = _fixture.CreateClient();
+
+        using var collectionsResponse = await client.GetAsync("/ogc/features/collections");
+        collectionsResponse.Be200Ok();
+        using var collectionsDocument = JsonDocument.Parse(await collectionsResponse.Content.ReadAsStringAsync());
+        var advertised = new List<(string CollectionId, Uri Stylesheet)>();
+        foreach (var collection in collectionsDocument.RootElement.GetProperty("collections").EnumerateArray())
+        {
+            var collectionId = collection.GetProperty("id").GetString()!;
+            using var detail = await client.GetAsync($"/ogc/features/collections/{Uri.EscapeDataString(collectionId)}");
+            detail.Be200Ok();
+            using var detailDocument = JsonDocument.Parse(await detail.Content.ReadAsStringAsync());
+            foreach (var link in detailDocument.RootElement.GetProperty("links").EnumerateArray())
+            {
+                if (link.GetProperty("rel").GetString() == "stylesheet")
+                {
+                    link.GetProperty("type").GetString().Should().Be(MapboxStyleMediaType);
+                    advertised.Add((collectionId, new Uri(link.GetProperty("href").GetString()!)));
+                }
+            }
+        }
+
+        advertised.Should().NotBeEmpty("the fixture publishes storage-bound feature collections");
+
+        // The default path must actually be exercised: at least one advertised style has no
+        // stored MapLibre document behind it.
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var styleCatalog = _fixture.Services.GetRequiredService<ILayerStyleCatalog>();
+        var unstyledStyleIds = new List<string>();
+        foreach (var (_, stylesheet) in advertised)
+        {
+            var styleId = Uri.UnescapeDataString(stylesheet.AbsolutePath["/ogc/styles/".Length..]);
+            var resource = snapshot.Graph.Resources.Single(candidate => candidate.Metadata.Name == styleId);
+            var stored = await styleCatalog.GetLayerStyleAsync(snapshot.ResolveStorageLayerId(resource)!.Value);
+            if (string.IsNullOrWhiteSpace(stored?.MapLibreStyleJson))
+            {
+                unstyledStyleIds.Add(styleId);
+            }
+        }
+
+        unstyledStyleIds.Should().NotBeEmpty("the regression is a collection that was never styled");
+
+        using var stylesResponse = await client.GetAsync("/ogc/styles");
+        stylesResponse.Be200Ok();
+        using var stylesDocument = JsonDocument.Parse(await stylesResponse.Content.ReadAsStringAsync());
+        var listed = stylesDocument.RootElement.GetProperty("styles").EnumerateArray()
+            .Select(style => style.GetProperty("id").GetString())
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var (collectionId, stylesheet) in advertised)
+        {
+            var styleId = Uri.UnescapeDataString(stylesheet.AbsolutePath["/ogc/styles/".Length..]);
+            listed.Should().Contain(styleId, "/ogc/styles must list the style collection {0} advertises", collectionId);
+
+            // MapLibre and QGIS load the advertised link with ?f=mapbox.
+            using var response = await client.GetAsync($"{stylesheet.AbsolutePath}?f=mapbox");
+            response.Be200Ok();
+            response.Content.Headers.ContentType?.MediaType.Should().Be(MapboxStyleMediaType);
+            using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            document.RootElement.GetProperty("version").GetInt32().Should().Be(8);
+            document.RootElement.GetProperty("layers").GetArrayLength().Should().BeGreaterThan(0);
+        }
+
+        // The derived encodings are available for a layer default too.
+        var unstyledPath = $"/ogc/styles/{Uri.EscapeDataString(unstyledStyleIds[0])}";
+        foreach (var mediaType in new[] { Sld11MediaType, EsriDrawingInfoMediaType })
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, unstyledPath);
+            request.Headers.Accept.Add(MediaTypeWithQualityHeaderValue.Parse(mediaType));
+            using var response = await client.SendAsync(request);
+            response.Be200Ok();
+            response.Content.Headers.ContentType?.ToString().Should().StartWith(mediaType.Split(';')[0]);
+        }
+
+        using var metadata = await client.GetAsync($"{unstyledPath}/metadata");
+        metadata.Be200Ok();
+        using var metadataDocument = JsonDocument.Parse(await metadata.Content.ReadAsStringAsync());
+        metadataDocument.RootElement.GetProperty("id").GetString().Should().Be(unstyledStyleIds[0]);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /ogc/styles/{styleId}")]
+    public async Task GetStylesheet_ProtectedCollectionDefaultStyle_RefusesAnonymousAndServesEntitledCaller()
+    {
+        // #4993: the stylesheet a protected collection advertises answers anonymous callers with
+        // 401 and serves an entitled caller the style, even when no style has been stored.
+        const string entitledRole = "styles-reader";
+        const string referer = "https://ogcapi-styles-proof.example/";
+        await using var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Pro).ConfigureWebHost(builder =>
+        {
+            // Displace the development-authentication bypass, which makes every caller an admin.
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        });
+        await fixture.InitializeAsync();
+        fixture.UpdateV2ResourceMetadata(
+            WebAppFixture.TestLayerId,
+            accessPolicy: new AccessPolicy { AllowAnonymous = false, AllowedRoles = [entitledRole] });
+        var resource = fixture.GetCurrentV2GraphSnapshot().Index.ResourcesByStorageLayerId[WebAppFixture.TestLayerId];
+        var stylesheetPath = $"/ogc/styles/{Uri.EscapeDataString(resource.Metadata.Name)}?f=mapbox";
+
+        var token = (await fixture.GetService<IPortalTokenIssuer>().IssueAsync(
+            new PortalTokenIssueRequest(
+                "styles-analyst",
+                "styles-analyst",
+                TenantId: null,
+                Roles: [entitledRole],
+                PortalTokenClientType.Referer,
+                referer,
+                DateTimeOffset.UtcNow.AddMinutes(30)),
+            CancellationToken.None)).Token;
+
+        using var anonymousClient = fixture.CreateClient();
+        using var anonymous = await anonymousClient.GetAsync(stylesheetPath);
+        anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, stylesheetPath);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Headers.Referrer = new Uri(referer);
+        using var entitledClient = fixture.CreateClient();
+        using var entitled = await entitledClient.SendAsync(request);
+        entitled.StatusCode.Should().Be(HttpStatusCode.OK, await entitled.Content.ReadAsStringAsync());
+        entitled.Content.Headers.ContentType?.MediaType.Should().Be(MapboxStyleMediaType);
+    }
+
     private async Task<string> SeedAndResolveStyleIdAsync(HttpClient adminClient)
     {
         await SeedTestLayerStyleAsync(adminClient);
 
+        // Every feature collection now publishes a style (#4993), so the list is not just the
+        // seeded one: resolve the seeded layer's own style id and prove it is listed.
+        var styleId = _fixture.GetCurrentV2GraphSnapshot()
+            .Index.ResourcesByStorageLayerId[WebAppFixture.TestLayerId].Metadata.Name;
+
         var response = await adminClient.GetAsync("/ogc/styles");
         response.Be200Ok();
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var styles = document.RootElement.GetProperty("styles");
-        styles.GetArrayLength().Should().BeGreaterThan(0);
-        return styles[0].GetProperty("id").GetString()!;
+        document.RootElement.GetProperty("styles").EnumerateArray()
+            .Select(style => style.GetProperty("id").GetString())
+            .Should().Contain(styleId);
+        return styleId;
     }
 
     private static async Task SeedTestLayerStyleAsync(HttpClient adminClient)

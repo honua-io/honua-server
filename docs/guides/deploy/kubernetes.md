@@ -1,6 +1,7 @@
 ---
 type: guide
 title: "Deploy on Kubernetes"
+description: "Install the honua-helm chart as one coordinated replica with a persistent volume, then move to the complete multi-node contract with Redis and cloud file storage."
 ---
 # Deploy on Kubernetes
 

@@ -119,15 +119,7 @@ public sealed class MigrationBatchOrchestratorTests
     [Fact]
     public async Task AdvanceAsync_AppliesRelationships_WhenAllChildrenPublishAndRequested()
     {
-        var manifest = new MigrationManifestArtifact
-        {
-            SourceKind = "arcgis-geoservices-rest",
-            Source = new MigrationSourceIdentity { DisplayName = "Example", BaseUrl = "https://example.com" },
-            Summary = new MigrationManifestSummary()
-        };
-        var manifestBody = System.Text.Json.JsonSerializer.Serialize(
-            manifest,
-            MigrationEvidencePackJsonContext.Default.MigrationManifestArtifact);
+        var manifestBody = DiscoveredManifestBody();
 
         var (orchestrator, catalog, jobManager, importService) = Build();
         var request = NewRequest() with { ManifestBody = manifestBody, ApplyRelationships = true };
@@ -162,7 +154,7 @@ public sealed class MigrationBatchOrchestratorTests
                 TargetRelationshipRef = "rel-200-0"
             }
         ];
-        var batch = await orchestrator.StartAsync(NewRequest() with { ManifestBody = EmptyManifestBody(), ApplyRelationships = true });
+        var batch = await orchestrator.StartAsync(NewRequest() with { ManifestBody = DiscoveredManifestBody(), ApplyRelationships = true });
 
         await CompleteAllChildrenAsync(orchestrator, catalog, jobManager, batch.BatchId, 200, MigrationFidelityVerdicts.FullFidelity);
 
@@ -190,7 +182,7 @@ public sealed class MigrationBatchOrchestratorTests
                 Deferred = true
             }
         ];
-        var batch = await orchestrator.StartAsync(NewRequest() with { ManifestBody = EmptyManifestBody(), ApplyRelationships = true });
+        var batch = await orchestrator.StartAsync(NewRequest() with { ManifestBody = DiscoveredManifestBody(), ApplyRelationships = true });
 
         await CompleteAllChildrenAsync(orchestrator, catalog, jobManager, batch.BatchId, 200, MigrationFidelityVerdicts.FullFidelity);
 
@@ -219,17 +211,18 @@ public sealed class MigrationBatchOrchestratorTests
         var final = await catalog.GetAsync(batch.BatchId);
         final!.Status.Should().Be(MigrationBatchRunStatus.NeedsReview);
         final.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
-        var difference = final.FidelityDifferences.Should().ContainSingle().Subject;
-        difference.Code.Should().Be(MigrationFidelityDifferenceCodes.RelationshipApplyNotExecuted);
-        difference.Severity.Should().Be(MigrationFidelityDifferenceSeverities.Blocking);
-        difference.Summary.Should().Contain("could not be parsed");
+        // The unreadable manifest also means no construct was accounted for before apply (#4600 AC1).
+        final.FidelityDifferences.Select(d => (d.Code, d.Severity)).Should().Equal(
+            (MigrationFidelityDifferenceCodes.ConstructAccountingNotExecuted, MigrationFidelityDifferenceSeverities.Unverified),
+            (MigrationFidelityDifferenceCodes.RelationshipApplyNotExecuted, MigrationFidelityDifferenceSeverities.Blocking));
+        final.FidelityDifferences.Should().OnlyContain(d => d.Summary.Contains("could not be parsed"));
     }
 
     [Fact]
     public async Task AdvanceAsync_WhenALayerCompletesUnverified_SucceedsWithoutClaimingFullFidelity()
     {
         var (orchestrator, catalog, jobManager, _) = Build();
-        var batch = await orchestrator.StartAsync(NewRequest());
+        var batch = await orchestrator.StartAsync(NewRequest() with { ManifestBody = DiscoveredManifestBody() });
 
         var children = await catalog.GetChildrenAsync(batch.BatchId);
         await jobManager.CompleteJobAsync(children[0].JobId!, GeoservicesImportStatus.Completed, 100, MigrationFidelityVerdicts.FullFidelity);
@@ -252,7 +245,7 @@ public sealed class MigrationBatchOrchestratorTests
     public async Task AdvanceAsync_WhenALayerIsRoutedToReview_ReportsIncompleteServiceWithThatLayer()
     {
         var (orchestrator, catalog, jobManager, _) = Build();
-        var batch = await orchestrator.StartAsync(NewRequest());
+        var batch = await orchestrator.StartAsync(NewRequest() with { ManifestBody = DiscoveredManifestBody() });
 
         var children = await catalog.GetChildrenAsync(batch.BatchId);
         await jobManager.CompleteJobAsync(children[0].JobId!, GeoservicesImportStatus.NeedsReview, 100, MigrationFidelityVerdicts.Incomplete);
@@ -279,7 +272,7 @@ public sealed class MigrationBatchOrchestratorTests
     public async Task AdvanceAsync_WhenALayerFails_RecordsEveryUnmigratedLayerAndTheSkippedRelationshipApply()
     {
         var (orchestrator, catalog, jobManager, importService) = Build();
-        var batch = await orchestrator.StartAsync(NewRequest() with { ManifestBody = EmptyManifestBody(), ApplyRelationships = true });
+        var batch = await orchestrator.StartAsync(NewRequest() with { ManifestBody = DiscoveredManifestBody(), ApplyRelationships = true });
 
         var children = await catalog.GetChildrenAsync(batch.BatchId);
         await jobManager.CompleteJobAsync(children[0].JobId!, GeoservicesImportStatus.Failed, fidelityVerdict: MigrationFidelityVerdicts.Incomplete);
@@ -351,14 +344,138 @@ public sealed class MigrationBatchOrchestratorTests
         (await catalog.GetChildrenAsync(second.BatchId))[0].JobId.Should().Be(jobManager.Queue[2]);
     }
 
-    private static string EmptyManifestBody() => System.Text.Json.JsonSerializer.Serialize(
-        new MigrationManifestArtifact
+    // ---- #4600 AC1: pre-apply construct accounting ---------------------------------------------------
+    // A service migration is full fidelity only when every layer the source scan discovered is selected.
+    // The expected differences follow from the manifests below: layer 2 is discovered but never selected.
+
+    [Fact]
+    public async Task AdvanceAsync_WhenTheSelectionLeavesOutADiscoveredLayer_RoutesTheServiceToNeedsReview()
+    {
+        const string surveys = "resource:x:layer:2";
+        var (orchestrator, catalog, jobManager, _) = Build();
+        var batch = await orchestrator.StartAsync(NewRequest() with { ManifestBody = DiscoveredManifestBody(surveys) });
+
+        await CompleteAllChildrenAsync(orchestrator, catalog, jobManager, batch.BatchId, 200, MigrationFidelityVerdicts.FullFidelity);
+
+        (await catalog.GetManifestBodyAsync(batch.BatchId)).Should().NotBeNull(
+            "an accounted manifest is kept for the terminal verdict even without relationship apply");
+        var final = await catalog.GetAsync(batch.BatchId);
+        final!.Status.Should().Be(
+            MigrationBatchRunStatus.NeedsReview,
+            "every selected layer imported at full fidelity, but the service has a layer that was never selected");
+        final.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+        var difference = final.FidelityDifferences.Should().ContainSingle().Subject;
+        difference.Code.Should().Be(MigrationFidelityDifferenceCodes.ServiceResourceUnselected);
+        difference.Severity.Should().Be(MigrationFidelityDifferenceSeverities.Blocking);
+        difference.Subject.Should().Be(surveys);
+        final.StatusNote.Should().Contain(surveys);
+    }
+
+    [Fact]
+    public async Task StartAsync_WhenFullFidelityIsRequiredAndAConstructBlocks_RefusesBeforeAnythingIsQueued()
+    {
+        const string surveys = "resource:x:layer:2";
+        var (orchestrator, catalog, jobManager, _) = Build();
+
+        var act = () => orchestrator.StartAsync(NewRequest() with
         {
-            SourceKind = "arcgis-geoservices-rest",
-            Source = new MigrationSourceIdentity { DisplayName = "Example", BaseUrl = "https://example.com" },
-            Summary = new MigrationManifestSummary()
-        },
-        MigrationEvidencePackJsonContext.Default.MigrationManifestArtifact);
+            ManifestBody = DiscoveredManifestBody(surveys),
+            RequireFullFidelity = true
+        });
+
+        var refusal = (await act.Should().ThrowAsync<MigrationConstructAccountingRefusedException>()).Which;
+        refusal.Report.Differences.Select(d => (d.Code, d.Subject)).Should().Equal(
+            (MigrationFidelityDifferenceCodes.ServiceResourceUnselected, surveys));
+        refusal.Message.Should().Contain(surveys);
+        jobManager.Queue.Should().BeEmpty();
+        ((InMemoryBatchCatalog)catalog).BatchCount.Should().Be(0, "a refused selection creates no batch");
+    }
+
+    [Fact]
+    public async Task StartAsync_WhenFullFidelityIsRequiredWithoutAManifest_RefusesBecauseNothingWasAccounted()
+    {
+        var (orchestrator, catalog, jobManager, _) = Build();
+
+        var act = () => orchestrator.StartAsync(NewRequest() with { RequireFullFidelity = true });
+
+        var refusal = (await act.Should().ThrowAsync<MigrationConstructAccountingRefusedException>()).Which;
+        refusal.Report.Executed.Should().BeFalse();
+        refusal.Message.Should().Contain("no source manifest was supplied");
+        jobManager.Queue.Should().BeEmpty();
+        ((InMemoryBatchCatalog)catalog).BatchCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task StartAsync_WhenFullFidelityIsRequiredAndEverySelectedConstructIsAccounted_StartsTheBatch()
+    {
+        var (orchestrator, catalog, jobManager, _) = Build();
+
+        var batch = await orchestrator.StartAsync(NewRequest() with
+        {
+            ManifestBody = DiscoveredManifestBody(),
+            RequireFullFidelity = true
+        });
+
+        batch.Status.Should().Be(MigrationBatchRunStatus.Running);
+        jobManager.Queue.Should().HaveCount(1);
+        (await catalog.GetManifestBodyAsync(batch.BatchId)).Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// A scanned FeatureServer manifest that discovers the two layers <see cref="NewRequest"/> selects, plus
+    /// <paramref name="extraLayerIds"/>, with every construct automated so accounting a full selection
+    /// contributes no difference of its own.
+    /// </summary>
+    private static string DiscoveredManifestBody(params string[] extraLayerIds)
+    {
+        string[] layerIds = ["resource:x:layer:0", "resource:x:layer:1", .. extraLayerIds];
+        return System.Text.Json.JsonSerializer.Serialize(
+            new MigrationManifestArtifact
+            {
+                SourceKind = "arcgis-geoservices-rest",
+                Source = new MigrationSourceIdentity
+                {
+                    DisplayName = "Example",
+                    BaseUrl = "https://example.com/FeatureServer",
+                    ServiceType = "FeatureServer"
+                },
+                Summary = new MigrationManifestSummary(),
+                TargetResources = layerIds
+                    .Select(static id => new MigrationManifestTargetResource
+                    {
+                        SourceResourceId = id,
+                        SourceKind = "layer",
+                        Action = "publish",
+                        TargetResourceId = "target:" + id,
+                        TargetServiceName = "x",
+                        TargetResourceName = id,
+                        GeometryType = "esriGeometryPoint",
+                        Capabilities = ["Query"],
+                        Compatibility = new MigrationCompatibilityAssessment
+                        {
+                            Level = "compatible",
+                            Code = "COMPATIBLE",
+                            Reason = "Vector resource can be queried through the GeoServices API."
+                        }
+                    })
+                    .ToArray(),
+                FidelityMatrix = new MigrationFidelityMatrix
+                {
+                    Cells =
+                    [
+                        new MigrationFidelityMatrixCell
+                        {
+                            Category = "fields",
+                            AutomationStatus = MigrationFidelityAutomationStatuses.Automated,
+                            Count = layerIds.Length,
+                            SourceIds = layerIds,
+                            Codes = ["COMPATIBLE"]
+                        }
+                    ]
+                }
+            },
+            MigrationEvidencePackJsonContext.Default.MigrationManifestArtifact);
+    }
 
     private static async Task CompleteAllChildrenAsync(
         MigrationBatchOrchestrator orchestrator,
@@ -540,6 +657,8 @@ public sealed class MigrationBatchOrchestratorTests
         private readonly ConcurrentDictionary<string, MigrationBatchRunRecord> _batches = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, List<MigrationBatchChildRecord>> _children = new(StringComparer.Ordinal);
         private readonly ConcurrentDictionary<string, string> _manifests = new(StringComparer.Ordinal);
+
+        public int BatchCount => _batches.Count;
 
         public Task<MigrationBatchRunRecord> CreateAsync(
             MigrationBatchRunRecord record,

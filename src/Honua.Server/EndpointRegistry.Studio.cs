@@ -28,6 +28,8 @@ public static partial class EndpointRegistry
         new("GET", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/publish-requests/{requestId}"),
         new("POST", "/api/v1/studio/content-items/{itemId}/versions/{versionId}/reopen"),
         new("POST", "/api/v1/studio/content-items/{itemId}/rollback-requests"),
+        // Studio published-route resolver: serves an Active publication's activeUrl (#4907).
+        new("GET", "/api/v1/studio/published/{*route}"),
         // Deterministic map/app package draft creation (#1180; re-founded by ADR-0076 #3255).
         new("POST", "/api/v1/studio/app-packages/generate"),
         new("POST", "/api/v1/studio/map-packages/generate"),
