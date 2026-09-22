@@ -60,7 +60,7 @@ internal static class FilterParserGeometryGuard
         }
     }
 
-    private static void EnsureGeometryTextSize(string geometryText, string description)
+    public static void EnsureGeometryTextSize(string geometryText, string description)
     {
         if (Encoding.UTF8.GetByteCount(geometryText) > FilterParserGuard.MaxGeometryTextBytes)
         {

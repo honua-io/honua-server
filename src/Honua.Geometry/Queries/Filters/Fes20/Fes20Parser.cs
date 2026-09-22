@@ -85,6 +85,24 @@ public static class Fes20Parser
         }
     }
 
+    /// <summary>
+    /// Applies the shared filter-geometry size limit to coordinate text that a protocol adapter
+    /// is about to rewrite into a FES 2.0 geometry literal, before the text is split.
+    /// </summary>
+    /// <param name="coordinateText">The raw coordinate list.</param>
+    /// <exception cref="Fes20ParseException">The text exceeds the limit.</exception>
+    public static void EnsureGeometryTextWithinLimits(string coordinateText)
+        => EnsureWithinGuard(() => FilterParserGeometryGuard.EnsureGeometryTextSize(coordinateText, "Filter geometry"));
+
+    /// <summary>
+    /// Applies the shared filter-geometry vertex limit to a coordinate list that a protocol
+    /// adapter is about to rewrite into a FES 2.0 geometry literal, before it is materialised.
+    /// </summary>
+    /// <param name="coordinateCount">The number of coordinate tuples.</param>
+    /// <exception cref="Fes20ParseException">The count exceeds the limit.</exception>
+    public static void EnsureCoordinateCountWithinLimits(int coordinateCount)
+        => EnsureWithinGuard(() => FilterParserGeometryGuard.EnsureCoordinateCount(coordinateCount, "Filter geometry"));
+
     // An XML local name is an NCName, so it cannot carry markup, quotes or whitespace; the
     // namespace URI is arbitrary text and is never quoted back.
     private static string DescribeElementName(XName name) => DescribeName(name.LocalName);

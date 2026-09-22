@@ -1113,7 +1113,7 @@ internal sealed partial class Wfs20Handler
     /// that encoding after negotiating WFS 2.0.0. Any other filter is returned unchanged, so FES
     /// 2.0 input and malformed XML still reach <see cref="Fes20Parser"/> as before.
     /// </summary>
-    private static string? NormalizeOgcFilterEncoding(string? filter)
+    internal static string? NormalizeOgcFilterEncoding(string? filter)
     {
         // Cheap pre-check: an element can only be in the ogc namespace if the namespace URI
         // appears in the text, so FES 2.0 filters are not parsed an extra time.
@@ -1326,6 +1326,7 @@ internal sealed partial class Wfs20Handler
             .ToArray();
         if (coordElements.Length > 0)
         {
+            Fes20Parser.EnsureCoordinateCountWithinLimits(coordElements.Length);
             coordinates = coordElements.Select(ParseLegacyCoordElement).ToArray();
             return true;
         }
@@ -1339,11 +1340,18 @@ internal sealed partial class Wfs20Handler
         var coordinateSeparator = coordinatesElement.Attribute("cs")?.Value ?? ",";
         var tupleSeparator = coordinatesElement.Attribute("ts")?.Value ?? " ";
         var decimalSeparator = coordinatesElement.Attribute("decimal")?.Value ?? ".";
-        var tuples = SplitLegacyCoordinateTuples(coordinatesElement.Value, tupleSeparator);
+
+        // Apply the shared filter-geometry limits before splitting and rewriting, so an
+        // oversized list is rejected without materialising it.
+        var coordinateText = coordinatesElement.Value;
+        Fes20Parser.EnsureGeometryTextWithinLimits(coordinateText);
+        var tuples = SplitLegacyCoordinateTuples(coordinateText, tupleSeparator);
         if (tuples.Length == 0)
         {
             throw Fes20ParseException.Reportable("GML coordinates must contain at least one coordinate tuple.");
         }
+
+        Fes20Parser.EnsureCoordinateCountWithinLimits(tuples.Length);
 
         var coordinates = new Coordinate[tuples.Length];
         for (var index = 0; index < tuples.Length; index++)
