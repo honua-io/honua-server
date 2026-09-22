@@ -41,15 +41,14 @@
         "n/a-no-client": 3
       },
       "pyqgis": {
-        "pass": 65,
-        "n/a-no-client": 3,
-        "blocked": 26
+        "pass": 67,
+        "n/a-no-client": 27
       }
     },
     "overall": {
       "cells": 376,
-      "closed": 221,
-      "open": 155
+      "closed": 247,
+      "open": 129
     }
   },
   "rows": [
@@ -1730,12 +1729,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "pass",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. QgsRasterLayer(arcgismapserver).dataProvider().identify()"
         }
       }
     },
@@ -1829,12 +1829,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. No specialized GP processing entry was found, but a provider/algorithm registry scan is not operation-specific proof for all discovery/job paths. The broader native SDK scope needs a retained source/request inventory.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native Esri GPServer job submission/polling client"
         }
       }
     },
@@ -1859,12 +1860,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. No specialized GP processing entry was found, but a provider/algorithm registry scan is not operation-specific proof for all discovery/job paths. The broader native SDK scope needs a retained source/request inventory.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native Esri GPServer job submission/polling client"
         }
       }
     },
@@ -1889,12 +1891,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. No specialized GP processing entry was found, but a provider/algorithm registry scan is not operation-specific proof for all discovery/job paths. The broader native SDK scope needs a retained source/request inventory.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native Esri GPServer job submission/polling client"
         }
       }
     },
@@ -1919,12 +1922,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. No specialized GP processing entry was found, but a provider/algorithm registry scan is not operation-specific proof for all discovery/job paths. The broader native SDK scope needs a retained source/request inventory.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native Esri GPServer job submission/polling client"
         }
       }
     },
@@ -1949,12 +1953,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. No specialized GP processing entry was found, but a provider/algorithm registry scan is not operation-specific proof for all discovery/job paths. The broader native SDK scope needs a retained source/request inventory.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native Esri GPServer job submission/polling client"
         }
       }
     },
@@ -1979,12 +1984,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. No specialized GP processing entry was found, but a provider/algorithm registry scan is not operation-specific proof for all discovery/job paths. The broader native SDK scope needs a retained source/request inventory.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native Esri GPServer job submission/polling client"
         }
       }
     },
@@ -2017,12 +2023,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The old receipt asserts stock QGIS has no Esri locator without an operation-specific native API/source inventory; fresh inventory has not found a specialized path but cannot justify the universal claim.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: stock QGIS has no Esri locator client."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native Esri GeocodeServer client"
         }
       }
     },
@@ -2055,12 +2062,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The old receipt asserts stock QGIS has no Esri locator without an operation-specific native API/source inventory; fresh inventory has not found a specialized path but cannot justify the universal claim.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: stock QGIS has no Esri locator client."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native Esri GeocodeServer client"
         }
       }
     },
@@ -2085,12 +2093,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The old receipt asserts stock QGIS has no Esri locator without an operation-specific native API/source inventory; fresh inventory has not found a specialized path but cannot justify the universal claim.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: stock QGIS has no Esri locator client."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native Esri GeocodeServer client"
         }
       }
     },
@@ -2115,12 +2124,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The old receipt asserts stock QGIS has no Esri locator without an operation-specific native API/source inventory; fresh inventory has not found a specialized path but cannot justify the universal claim.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: stock QGIS has no Esri locator client."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native Esri GeocodeServer client"
         }
       }
     },
@@ -2150,12 +2160,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. Observed local GEOS/GDAL computation does not by itself exclude every remote native SDK path. A remote-operation source/request inventory is still required.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS performs geometry operations locally through GEOS and GDAL and has no client for a remote Esri geometry service."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native remote Esri GeometryServer operations client"
         }
       }
     },
@@ -2185,12 +2196,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. Observed local GEOS/GDAL computation does not by itself exclude every remote native SDK path. A remote-operation source/request inventory is still required.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS performs geometry operations locally through GEOS and GDAL and has no client for a remote Esri geometry service."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native remote Esri GeometryServer operations client"
         }
       }
     },
@@ -2220,12 +2232,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. Observed local GEOS/GDAL computation does not by itself exclude every remote native SDK path. A remote-operation source/request inventory is still required.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS performs geometry operations locally through GEOS and GDAL and has no client for a remote Esri geometry service."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native remote Esri GeometryServer operations client"
         }
       }
     },
@@ -2255,12 +2268,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. Observed local GEOS/GDAL computation does not by itself exclude every remote native SDK path. A remote-operation source/request inventory is still required.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS performs geometry operations locally through GEOS and GDAL and has no client for a remote Esri geometry service."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native remote Esri GeometryServer operations client"
         }
       }
     },
@@ -2289,12 +2303,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native Esri NAServer solve client"
         }
       }
     },
@@ -2323,12 +2338,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native Esri NAServer solve client"
         }
       }
     },
@@ -2354,12 +2370,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. A missing dedicated provider or UI is not an operation-specific review of SDK and connection paths for create/reconcile/post; retain the work until the citation is sufficient.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS ships no provider or UI for Esri branch versioning."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native Esri VersionManagementServer client"
         }
       }
     },
@@ -2385,12 +2402,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. A missing dedicated provider or UI is not an operation-specific review of SDK and connection paths for create/reconcile/post; retain the work until the citation is sufficient.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS ships no provider or UI for Esri branch versioning."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native Esri VersionManagementServer client"
         }
       }
     },
@@ -2420,12 +2438,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. REST discovery observed in one provider does not prove absence of every native SOAP catalog path; review exact request builders and shared providers.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS discovers ArcGIS services over REST only and has no SOAP catalog client."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native GeoServices SOAP catalog discovery client"
         }
       }
     },
@@ -2460,12 +2479,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native OData v4 client"
         }
       }
     },
@@ -2500,12 +2520,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native OData v4 client"
         }
       }
     },
@@ -2584,12 +2605,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "pass",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GDAL OGCAPI driver against the coverages landing page"
         }
       }
     },
@@ -2668,12 +2690,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native OGC API Processes execution client"
         }
       }
     },
@@ -2740,12 +2763,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock inventory search for a native OGC API EDR client"
         }
       }
     },
@@ -2858,12 +2882,13 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-checklist-20260922-frozen/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. stock scene providers against https://host.docker.internal:18443/rest/services/test_service/SceneServer"
         }
       }
     },
