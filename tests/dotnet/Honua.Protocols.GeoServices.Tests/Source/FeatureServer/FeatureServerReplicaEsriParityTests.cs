@@ -377,6 +377,63 @@ public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
         (await ListReplicaIdsAsync()).Should().BeEquivalentTo(before);
     }
 
+    [IntegrationTheory]
+    [InlineData("sqlite")]
+    [InlineData("filegdb")]
+    [InlineData("shapefile")]
+    [Operation(Operations.CreateReplica, Operations.ListReplicas)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/replicas")]
+    public async Task CreateReplica_UnsupportedDataFormat_ReturnsHttp400WithEsriErrorEnvelope(string dataFormat)
+    {
+        // #5013: ArcGIS Pro's Download Map sends dataFormat=sqlite and reads the transport status alone.
+        // An HTTP 200 carrying the rejection read as success: no offline copy and no error shown.
+        var before = await ListReplicaIdsAsync();
+
+        var (status, root) = await PostFormForStatusAsync("createReplica", new Dictionary<string, string>
+        {
+            ["replicaName"] = "offline-map",
+            ["layers"] = "0",
+            ["syncModel"] = "perLayer",
+            ["dataFormat"] = dataFormat,
+            ["f"] = "json"
+        });
+
+        status.Should().Be(HttpStatusCode.BadRequest);
+        var error = root.GetProperty("error");
+        error.GetProperty("code").GetInt32().Should().Be(400);
+        string.Join('\n', CollectStrings(error)).Should().Contain($"dataFormat '{dataFormat}' is not supported");
+        (await ListReplicaIdsAsync()).Should().BeEquivalentTo(before);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.CreateReplica, Operations.ExtractChanges)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/createReplica")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/extractChanges")]
+    public async Task ReplicaRejections_OtherThanCreateReplicaDataFormat_KeepHttp200Envelope()
+    {
+        // #5013 is deliberately narrow: only createReplica's unsupported dataFormat leaves the
+        // GeoServices HTTP 200 error-envelope convention.
+        var (createStatus, createRoot) = await PostFormForStatusAsync("createReplica", new Dictionary<string, string>
+        {
+            ["replicaName"] = "rejected",
+            ["layers"] = "0",
+            ["syncModel"] = "perFeature",
+            ["f"] = "json"
+        });
+        createStatus.Should().Be(HttpStatusCode.OK);
+        createRoot.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
+
+        var (extractStatus, extractRoot) = await PostFormForStatusAsync("extractChanges", new Dictionary<string, string>
+        {
+            ["layers"] = "0",
+            ["dataFormat"] = "sqlite",
+            ["f"] = "json"
+        });
+        extractStatus.Should().Be(HttpStatusCode.OK);
+        extractRoot.GetProperty("error").GetProperty("code").GetInt32().Should().Be(400);
+    }
+
     private static (double X, double Y) ToWebMercator(double longitude, double latitude)
         => (longitude * WebMercatorHalfWorld / 180.0,
             Math.Log(Math.Tan((90.0 + latitude) * Math.PI / 360.0)) * WebMercatorHalfWorld / Math.PI);
@@ -477,6 +534,15 @@ public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
         var isError = response.StatusCode == HttpStatusCode.BadRequest || document.RootElement.TryGetProperty("error", out _);
         isError.Should().BeTrue("the request must be rejected: {0}", body);
         return string.Join('\n', CollectStrings(document.RootElement));
+    }
+
+    private async Task<(HttpStatusCode Status, JsonElement Root)> PostFormForStatusAsync(string operation, Dictionary<string, string> form)
+    {
+        using var content = new FormUrlEncodedContent(form);
+        using var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/FeatureServer/{operation}", content);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return (response.StatusCode, document.RootElement.Clone());
     }
 
     private static IEnumerable<string> CollectStrings(JsonElement element)
