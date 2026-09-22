@@ -54,14 +54,52 @@ public static class CurveGeometryConverter
     /// </summary>
     /// <exception cref="ArgumentException">A segment is malformed or unsupported.</exception>
     public static double[][] Densify(JsonElement[] part)
+        => Densify(part, int.MaxValue);
+
+    /// <summary>
+    /// Densifies a part with a hard output-vertex budget, checked while appending
+    /// each generated vertex. Cancellation is checked during expansion.
+    /// </summary>
+    public static double[][] Densify(JsonElement[] part, int maxVertices, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(part);
+        ArgumentOutOfRangeException.ThrowIfNegative(maxVertices);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        var output = new List<double[]>(part.Length);
+        var output = new VertexBuffer(Math.Min(part.Length, maxVertices), maxVertices, true, cancellationToken);
+        ProcessPart(part, output, cancellationToken);
+        return output.ToArray();
+    }
+
+    /// <summary>
+    /// Validates and counts the vertices produced by densifying a single path/ring without retaining
+    /// the expanded coordinate array. This is used by request admission checks; the canonical
+    /// conversion path still performs the one required allocation when dispatching the query.
+    /// </summary>
+    public static int CountDensifiedVertices(
+        JsonElement[] part,
+        int maxVertices,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(part);
+        ArgumentOutOfRangeException.ThrowIfNegative(maxVertices);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var output = new VertexBuffer(0, maxVertices, false, cancellationToken);
+        ProcessPart(part, output, cancellationToken);
+        return output.Count;
+    }
+
+    private static void ProcessPart(
+        JsonElement[] part,
+        VertexBuffer output,
+        CancellationToken cancellationToken)
+    {
         double[]? current = null;
 
         foreach (var element in part)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             switch (element.ValueKind)
             {
                 case JsonValueKind.Array:
@@ -85,14 +123,12 @@ public static class CurveGeometryConverter
                         $"Invalid true-curve element of kind '{element.ValueKind}'; expected a vertex array or a segment object.");
             }
         }
-
-        return output.ToArray();
     }
 
     private static void DensifySegment(
         JsonElement segment,
         double[] start,
-        List<double[]> output,
+        VertexBuffer output,
         out double[] end)
     {
         if (segment.TryGetProperty("c", out var circular))
@@ -126,7 +162,7 @@ public static class CurveGeometryConverter
     private static void DensifyCircularArc(
         JsonElement c,
         double[] start,
-        List<double[]> output,
+        VertexBuffer output,
         out double[] end)
     {
         if (c.ValueKind != JsonValueKind.Array || c.GetArrayLength() < 2)
@@ -201,7 +237,7 @@ public static class CurveGeometryConverter
         double startAngle,
         double interiorSweep,
         double totalSweep,
-        List<double[]> output)
+        VertexBuffer output)
     {
         var totalMagnitude = Math.Abs(totalSweep);
         if (totalMagnitude <= double.Epsilon)
@@ -264,7 +300,7 @@ public static class CurveGeometryConverter
         double[] start,
         double[] interior,
         double[] end,
-        List<double[]> output)
+        VertexBuffer output)
     {
         var firstLength = Math.Sqrt(
             ((interior[0] - start[0]) * (interior[0] - start[0])) +
@@ -286,7 +322,7 @@ public static class CurveGeometryConverter
     private static void DensifyEllipticArc(
         JsonElement a,
         double[] start,
-        List<double[]> output,
+        VertexBuffer output,
         out double[] end)
     {
         if (a.ValueKind != JsonValueKind.Array || a.GetArrayLength() < 4)
@@ -432,7 +468,7 @@ public static class CurveGeometryConverter
     private static void DensifyCubicBezier(
         JsonElement b,
         double[] start,
-        List<double[]> output,
+        VertexBuffer output,
         out double[] end)
     {
         if (b.ValueKind != JsonValueKind.Array || b.GetArrayLength() < 3)
@@ -508,19 +544,52 @@ public static class CurveGeometryConverter
 
     private static double[] ReadVertex(JsonElement element)
     {
-        if (element.ValueKind != JsonValueKind.Array || element.GetArrayLength() < 2)
+        if (element.ValueKind != JsonValueKind.Array || element.GetArrayLength() is < 2 or > 4)
         {
-            throw new ArgumentException("True-curve vertex must be a numeric array of at least [x, y].");
+            throw new ArgumentException("True-curve vertex must contain two to four finite numeric ordinates.");
         }
 
         var length = element.GetArrayLength();
         var coords = new double[length];
         for (var i = 0; i < length; i++)
         {
-            coords[i] = element[i].GetDouble();
+            if (element[i].ValueKind != JsonValueKind.Number || !element[i].TryGetDouble(out var coordinate) || !double.IsFinite(coordinate))
+            {
+                throw new ArgumentException("True-curve vertex must contain two to four finite numeric ordinates.");
+            }
+            coords[i] = coordinate;
         }
 
         return coords;
+    }
+
+    private sealed class VertexBuffer(
+        int capacity,
+        int maxVertices,
+        bool collect,
+        CancellationToken cancellationToken)
+    {
+        private readonly List<double[]>? _vertices = collect ? new(capacity) : null;
+
+        public int Count { get; private set; }
+
+        public void Add(double[] vertex)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (Count >= maxVertices)
+            {
+                throw new ArgumentException($"True-curve densification exceeds the remaining budget of {maxVertices} vertices.");
+            }
+            if (vertex.Any(static ordinate => !double.IsFinite(ordinate)))
+            {
+                throw new ArgumentException("True-curve densification produced a non-finite ordinate.");
+            }
+            Count++;
+            _vertices?.Add(vertex);
+        }
+
+        public double[][] ToArray() => _vertices?.ToArray()
+            ?? throw new InvalidOperationException("This vertex buffer does not collect coordinates.");
     }
 
 }

@@ -21,6 +21,23 @@ namespace Honua.Core.Tests.Features.Migration;
 /// </summary>
 public sealed class MigrationBatchOrchestratorTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task StartAsync_DefersChildRelationshipFidelityOnlyWhenBatchWillApply(bool applyRelationships)
+    {
+        var (orchestrator, catalog, jobManager, _) = Build();
+        var batch = await orchestrator.StartAsync(NewRequest() with
+        {
+            ManifestBody = DiscoveredManifestBody(),
+            ApplyRelationships = applyRelationships
+        });
+        var child = (await catalog.GetChildrenAsync(batch.BatchId))[0];
+        var request = await jobManager.RequestStore.GetProgressAsync(child.JobId!);
+        request.Should().NotBeNull();
+        request!.DeferRelationshipApplyToBatch.Should().Be(applyRelationships);
+    }
+
     [Fact]
     public async Task StartAsync_OrdersDependenciesBeforeDependents_AndQueuesFirstChild()
     {

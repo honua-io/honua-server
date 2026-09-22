@@ -722,6 +722,42 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         content.Should().Contain("<?xml");
         content.Should().Contain("msGMLOutput");
 
+        var schemaUri = await AssertGmlFeatureInfoValidatesAgainstCitedSchemaAsync(content);
+        schemaUri.AbsolutePath.Should().Be($"/rest/services/{WebAppFixture.TestServiceId}/MapServer/WMS");
+        schemaUri.Query.Should().Contain("VERSION=1.1.1");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Wms)]
+    [InterfaceOperation(TestProtocols.Wms13, "GetFeatureInfo")]
+    [Endpoint("GET /ogc/services/{serviceId}/wms")]
+    public async Task Wms_OgcRoute_GetFeatureInfo_WithGmlFormat_CitesSchemaOnSameMountAndVersion()
+    {
+        // honua-server#5019: the GML schema location must name the endpoint and WMS version that
+        // answered the request. With MapServer disabled the OGC mount is the only WMS endpoint, so
+        // a schema location pinned to the MapServer mount at 1.1.1 cannot even be dereferenced.
+        _fixture.UpdateV2ServiceMetadata(
+            WebAppFixture.TestServiceId,
+            enabledProtocols: [MetadataV2ServiceProtocols.Wms]);
+
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/{WebAppFixture.TestServiceId}/wms?SERVICE=WMS&REQUEST=GetFeatureInfo&VERSION=1.3.0&BBOX=-180,-90,180,90&CRS=CRS:84&WIDTH=256&HEIGHT=256&LAYERS={WebAppFixture.TestLayerId}&QUERY_LAYERS={WebAppFixture.TestLayerId}&INFO_FORMAT=application/vnd.ogc.gml&I=41&J=74");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.ogc.gml");
+
+        var schemaLocation = ReadGmlSchemaLocation(content);
+        var schemaUri = new Uri(schemaLocation, UriKind.Absolute);
+        schemaUri.AbsolutePath.Should().Be($"/ogc/services/{WebAppFixture.TestServiceId}/wms");
+        schemaUri.Query.Should().Contain("VERSION=1.3.0");
+        schemaUri.Query.Should().Contain("REQUEST=GetFeatureInfoSchema");
+
+        await AssertGmlFeatureInfoValidatesAgainstCitedSchemaAsync(content);
+    }
+
+    private static string ReadGmlSchemaLocation(string content)
+    {
         var document = System.Xml.Linq.XDocument.Parse(content);
         var schemaLocation = document.Root?.Attribute(
             System.Xml.Linq.XName.Get(
@@ -729,6 +765,16 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
                 System.Xml.Schema.XmlSchema.InstanceNamespace))?.Value
             ?? throw new InvalidOperationException("GML output is missing xsi:noNamespaceSchemaLocation.");
         schemaLocation.Should().NotBeNullOrWhiteSpace();
+        return schemaLocation;
+    }
+
+    /// <summary>
+    /// Dereferences the GML payload's <c>xsi:noNamespaceSchemaLocation</c> through the test client
+    /// and validates the payload against the schema it returns.
+    /// </summary>
+    private async Task<Uri> AssertGmlFeatureInfoValidatesAgainstCitedSchemaAsync(string content)
+    {
+        var schemaLocation = ReadGmlSchemaLocation(content);
 
         var schemaResponse = await _fixture.Client.GetAsync(schemaLocation);
         var schemaContent = await schemaResponse.Content.ReadAsStringAsync();
@@ -761,6 +807,7 @@ public sealed class OgcClassicWmsTests : IAsyncLifetime
         }
 
         validationErrors.Should().BeEmpty();
+        return new Uri(schemaLocation, UriKind.Absolute);
     }
 
     [IntegrationTest]

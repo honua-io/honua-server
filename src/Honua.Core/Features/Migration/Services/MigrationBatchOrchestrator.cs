@@ -226,7 +226,7 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
                     continue;
                 }
 
-                var jobId = await QueueChildAsync(jobManager, child, cancellationToken).ConfigureAwait(false);
+                var jobId = await QueueChildAsync(jobManager, child, batch.ApplyRelationships, cancellationToken).ConfigureAwait(false);
                 var queued = await catalog.UpdateChildAsync(
                     batchId,
                     child.Ordinal,
@@ -421,6 +421,7 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
     private static async Task<string> QueueChildAsync(
         IDistributedImportJobManager jobManager,
         MigrationBatchChildRecord child,
+        bool applyRelationships,
         CancellationToken cancellationToken)
     {
         // #4600: the job identity derives from the batch child instead of being minted per call.
@@ -440,6 +441,7 @@ public sealed partial class MigrationBatchOrchestrator : IMigrationBatchOrchestr
         var importRequest = new GeoservicesImportRequest
         {
             JobId = jobId,
+            DeferRelationshipApplyToBatch = applyRelationships,
             ServiceUrl = child.ServiceUrl,
             LayerId = child.SourceLayerId,
             TableName = child.TableName,

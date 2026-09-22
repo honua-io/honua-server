@@ -194,6 +194,14 @@ public sealed record GeoservicesImportRequest
     public string? JobId { get; init; }
 
     /// <summary>
+    /// Server-owned coordination flag persisted for a batch child whose parent batch
+    /// will apply relationships and evaluate their fidelity after all children publish.
+    /// Standalone API imports leave this false.
+    /// </summary>
+    public bool DeferRelationshipApplyToBatch { get; init; }
+
+
+    /// <summary>
     /// The base URL of the ArcGIS Server service.
     /// </summary>
     public required string ServiceUrl { get; init; }

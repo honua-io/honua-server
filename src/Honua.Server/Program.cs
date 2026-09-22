@@ -1488,6 +1488,10 @@ app.UseMiddleware<Honua.Infrastructure.Licensing.LicenseOperationMiddleware>();
 Honua.Server.Features.Capabilities.DeploymentCapabilityProfileApplicationBuilderExtensions
     .UseDeploymentCapabilityProfile(app);
 
+// Enforce the request size budget before input validation reads form or JSON bodies.
+// Oversized requests must receive the payload-limit response before parameter validation.
+app.UseLimitsEnforcement();
+
 // Validate query, form, and selected header inputs before authentication and endpoint execution.
 app.UseInputValidation();
 
@@ -1561,9 +1565,6 @@ app.UseHonuaTenantStatusEnforcement();
 // Reject invalid Esri portal tokens only after the shared rate limiter has metered the
 // request, so repeated bad credentials cannot bypass the configured source-IP bucket.
 app.UsePortalTokenAuthenticationRejection();
-
-// Add limits enforcement middleware (after auth, before request logging)
-app.UseLimitsEnforcement();
 
 // Map public demo service/layer contract IDs to internal seeded layer IDs and guard demo writes.
 app.UseCloudDemoServiceLayerAliases();
