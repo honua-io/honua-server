@@ -404,8 +404,8 @@ jobs:
             --tmpfs /tmp \
             --cap-drop ALL \
             --security-opt no-new-privileges:true \
-            -e HONUA_ADMIN_PASSWORD="Security-Nightly-Admin-Pass1!" \
-            -e Security__ConnectionEncryption__MasterKey="security-nightly-master-key-at-least-32-chars" \
+            -e HONUA_ADMIN_PASSWORD="Sec-Nightly-${{ github.run_id }}-${{ github.run_attempt }}-Aa1!" \
+            -e Security__ConnectionEncryption__MasterKey="sec-nightly-master-key-${{ github.run_id }}-${{ github.run_attempt }}-padding0000" \
             -e ConnectionStrings__DefaultConnection="Host=honua-runtime-db;Port=5432;Database=honua;Username=honua;Password=honua_password" \
             -p 8080:8080 \
             ${{ env.IMAGE_NAME }}:${{ matrix.image_tag }}

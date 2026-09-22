@@ -57,6 +57,7 @@ rejected `401`/`403` is still captured by the authorization row below.
 |---|---|---|---|---|---|
 | Admin OIDC backend-assisted login (code → token exchange) | `/api/v{version}/admin/auth/providers/{providerKey}/token` | `POST` | `Authentication` | `auth.login` | 2xx → `Success`; failure → `Failure`/`Denied` |
 | First-party OAuth token issuance | `/oauth/token`, `/sharing/rest/oauth2/token` | `POST` | `Authentication` | `auth.token.issue` | 2xx → `Success`; failure → `Failure`/`Denied` |
+| ArcGIS-compatible portal token issuance | `/sharing/rest/generateToken` | `POST`, `GET` | `Authentication` | `auth.token.issue` | 2xx → `Success`; failure (including `400` for unusable credentials) → `Failure`/`Denied` |
 | Failed authentication (any route) | `**` | any | `Authentication` | `auth.failure` | `401` → `Failure` |
 | Permission denied (any route) | `**` | any | `Authorization` | `auth.denied` | `403` → `Denied` |
 
@@ -64,6 +65,41 @@ Login success and failed login therefore both produce an `auth.login`
 (success/failure) event on the login routes, while a bare `401`/`403` on any
 other route is captured as `auth.failure` / `auth.denied`. This satisfies
 "login, failed login, permission denied".
+
+Token-issuance rows never carry the submitted credential or the issued token.
+`ResourceId` is the request path only (never the query string), and `Details`
+carries the status, method, and tenant — so a `GET /sharing/rest/generateToken`
+that passes a password in the query string is audited without the audit trail
+becoming a second place the password is written down.
+
+`401`/`403` outcomes are decided in two places and recorded in exactly one of
+them per request:
+
+| Decided by | Recorded by | Note |
+|---|---|---|
+| The authorization middleware (any policy, including a bare `RequireAuthorization`) | `HonuaAuthorizationMiddlewareResultHandler` | The denial short-circuits above `UseHonuaAuditLog`, so the result handler is the only seam that observes it. |
+| A domain endpoint or handler after authorization admitted the request | `AuditLogMiddleware` | Suppressed when an endpoint seam already recorded the decision (`AuditContextResolver.MarkAuthorizationFailureAudited`). |
+
+Both seams build the row through the same `HttpAuditEventFactory`, so the
+`EventType` / `Action` / `Outcome` / actor / resource fields are identical
+whichever one wrote it. Policy denials that a domain seam classifies (the
+Studio lifecycle policy) keep their own richer event and stable `code`; they
+are not recorded a second time as a generic `auth.denied`.
+
+Authorization-middleware denials omit operation, audit and proposal lineage headers:
+these requests stop before lineage attestation can validate those headers. Downstream
+audit events retain lineage after the attestation middleware has processed it.
+
+### Failures of audited operations
+
+| Operation | Trigger | EventType | Action | Outcome source |
+|---|---|---|---|---|
+| Audited route throws | Any unhandled exception raised beneath `UseHonuaAuditLog` on a route the matrix classifies | matrix `EventType` | matrix `Action` | Shared exception mapping (for example `400`, `500` or `503`) → `Failure`; `403` → `Denied` |
+
+The exception is rethrown unchanged after the record is written, so the global
+exception handler still shapes the response. Client-cancelled requests are not
+recorded as failures. Routes the matrix does not classify are not audited on
+fault — their failures remain covered by logging and telemetry.
 
 ### Destructive data writes
 

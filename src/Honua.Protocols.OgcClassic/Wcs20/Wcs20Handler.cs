@@ -580,10 +580,7 @@ internal sealed class Wcs20Handler
                 continue;
             }
 
-            // Prefer publication.LayerIndex (the protocol-facing handle) and fall
-            // back to the storage binding's StorageLayerId; matches the canonical
-            // V2 resolution order used by the FeatureServer ports.
-            var storageLayerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication);
+            var storageLayerId = snapshot.ResolveStorageLayerId(publication, routableResource);
             if (!storageLayerId.HasValue)
             {
                 continue;
@@ -664,7 +661,7 @@ internal sealed class Wcs20Handler
             return new CoverageResolutionResult(null, null);
         }
 
-        var storageLayerId = publication.LayerIndex ?? snapshot.ResolveStorageLayerId(publication);
+        var storageLayerId = snapshot.ResolveStorageLayerId(publication, resource);
         if (!storageLayerId.HasValue)
         {
             return new CoverageResolutionResult(null, null);

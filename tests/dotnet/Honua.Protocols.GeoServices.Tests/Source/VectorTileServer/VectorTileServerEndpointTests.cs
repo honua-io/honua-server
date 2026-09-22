@@ -69,6 +69,19 @@ public sealed class VectorTileServerEndpointTests : IAsyncLifetime
         metadata.MaxLod.Should().Be(metadata.TileInfo.Lods[^1].Level);
         metadata.FullExtent.Should().NotBeNull();
         metadata.InitialExtent.Should().NotBeNull();
+
+        // The extents are in the tiling scheme's spatial reference (#5015). The published
+        // layer's bbox is -123,37 .. -122,38 in EPSG:4326, which is these Web Mercator metres.
+        foreach (var extent in new[] { metadata.FullExtent!, metadata.InitialExtent! })
+        {
+            extent.SpatialReference.Should().NotBeNull();
+            extent.SpatialReference!.Wkid.Should().Be(metadata.TileInfo.SpatialReference.Wkid);
+            extent.SpatialReference.LatestWkid.Should().Be(metadata.TileInfo.SpatialReference.LatestWkid);
+            extent.Xmin.Should().BeApproximately(-13692297.3676, 0.01);
+            extent.Ymin.Should().BeApproximately(4439106.7873, 0.01);
+            extent.Xmax.Should().BeApproximately(-13580977.8768, 0.01);
+            extent.Ymax.Should().BeApproximately(4579425.8129, 0.01);
+        }
     }
 
     [IntegrationTest]

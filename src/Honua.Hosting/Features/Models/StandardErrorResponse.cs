@@ -295,6 +295,15 @@ internal sealed class ErrorResponseFormatterOptions
     public int? GeoServicesBodyCode { get; init; }
 
     /// <summary>
+    /// Emits the error's real HTTP status on GeoServices surfaces instead of the usual HTTP 200.
+    /// GeoServices errors are HTTP 200 by default and that is deliberate: Esri clients read the
+    /// body's <c>error.code</c>, and the 498/499 token flows depend on the 200. Set this only for a
+    /// rejection a client is known to read from the transport status alone (createReplica's
+    /// unsupported <c>dataFormat</c>, honua-server#5013), never for authentication failures.
+    /// </summary>
+    public bool GeoServicesUseHttpStatus { get; init; }
+
+    /// <summary>
     /// Indicates whether the client may retry after the transient condition clears.
     /// </summary>
     public bool? Retryable { get; init; }

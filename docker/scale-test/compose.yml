@@ -23,7 +23,7 @@ services:
       POSTGRESQL_CONF_shared_buffers: "256MB"
       POSTGRESQL_CONF_effective_cache_size: "1GB"
     ports:
-      - "${HONUA_SCALE_TEST_POSTGRES_PORT:-5434}:5432"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_SCALE_TEST_POSTGRES_PORT:-5434}:5432"
     volumes:
       - postgres_scale_data:/var/lib/postgresql/data
       - ../init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
@@ -39,7 +39,7 @@ services:
     image: redis:7.4-alpine
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
     ports:
-      - "${HONUA_SCALE_TEST_REDIS_PORT:-6379}:6379"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_SCALE_TEST_REDIS_PORT:-6379}:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -64,12 +64,14 @@ services:
       HONUA_INSTANCE_ID: "${HOSTNAME:-scale-test}"
       HONUA_ENABLE_METRICS: "true"
       HONUA_ENABLE_TRACING: "true"
-      HONUA_ADMIN_PASSWORD: "${HONUA_ADMIN_PASSWORD:-scale-test-admin-password}"
+      # Required, not defaulted: ASPNETCORE_ENVIRONMENT=ScaleTest is not a relaxed
+      # environment, so startup validation refuses shipped credential literals here.
+      HONUA_ADMIN_PASSWORD: "${HONUA_ADMIN_PASSWORD:?Set HONUA_ADMIN_PASSWORD to an admin password you choose}"
       HostValidation__AllowedHosts__0: "localhost"
       HostValidation__AllowedHosts__1: "127.0.0.1"
       HostValidation__AllowedHosts__2: "[::1]"
-      Security__ConnectionEncryption__MasterKey: "${HONUA_SCALE_TEST_ENCRYPTION_KEY:-scale-test-master-key-that-is-at-least-32-characters-long}"
-      Security__ConnectionEncryption__Salt: "${HONUA_SCALE_TEST_ENCRYPTION_SALT:-c2NhbGUtdGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3Rpbmc=}"
+      Security__ConnectionEncryption__MasterKey: "${HONUA_SCALE_TEST_ENCRYPTION_KEY:?Set HONUA_SCALE_TEST_ENCRYPTION_KEY to at least 32 characters}"
+      Security__ConnectionEncryption__Salt: "${HONUA_SCALE_TEST_ENCRYPTION_SALT:?Set HONUA_SCALE_TEST_ENCRYPTION_SALT to a base64 salt you choose}"
       # Caching configuration
       Cache__Enabled: "true"
       Cache__EnableFallback: "true"
@@ -120,12 +122,14 @@ services:
       HONUA_INSTANCE_ID: "${HOSTNAME:-scale-test-canary}"
       HONUA_ENABLE_METRICS: "true"
       HONUA_ENABLE_TRACING: "true"
-      HONUA_ADMIN_PASSWORD: "${HONUA_ADMIN_PASSWORD:-scale-test-admin-password}"
+      # Required, not defaulted: ASPNETCORE_ENVIRONMENT=ScaleTest is not a relaxed
+      # environment, so startup validation refuses shipped credential literals here.
+      HONUA_ADMIN_PASSWORD: "${HONUA_ADMIN_PASSWORD:?Set HONUA_ADMIN_PASSWORD to an admin password you choose}"
       HostValidation__AllowedHosts__0: "localhost"
       HostValidation__AllowedHosts__1: "127.0.0.1"
       HostValidation__AllowedHosts__2: "[::1]"
-      Security__ConnectionEncryption__MasterKey: "${HONUA_SCALE_TEST_ENCRYPTION_KEY:-scale-test-master-key-that-is-at-least-32-characters-long}"
-      Security__ConnectionEncryption__Salt: "${HONUA_SCALE_TEST_ENCRYPTION_SALT:-c2NhbGUtdGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3Rpbmc=}"
+      Security__ConnectionEncryption__MasterKey: "${HONUA_SCALE_TEST_ENCRYPTION_KEY:?Set HONUA_SCALE_TEST_ENCRYPTION_KEY to at least 32 characters}"
+      Security__ConnectionEncryption__Salt: "${HONUA_SCALE_TEST_ENCRYPTION_SALT:?Set HONUA_SCALE_TEST_ENCRYPTION_SALT to a base64 salt you choose}"
       Cache__Enabled: "true"
       Cache__EnableFallback: "true"
       Cache__KeyPrefix: "honua:"
@@ -162,7 +166,7 @@ services:
       HONUA_SCALE_TEST_CANARY_ENABLED: "${HONUA_SCALE_TEST_CANARY_ENABLED:-false}"
       HONUA_SCALE_TEST_CANARY_WEIGHT: "${HONUA_SCALE_TEST_CANARY_WEIGHT:-0}"
     ports:
-      - "${HONUA_SCALE_TEST_HTTP_PORT:-8080}:80"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:${HONUA_SCALE_TEST_HTTP_PORT:-8080}:80"
     volumes:
       - ./nginx/scale-test.conf:/etc/nginx/scale-test.conf.template:ro
       - ./nginx/render-scale-test-conf.sh:/docker-entrypoint.d/40-render-scale-test-conf.sh:ro
@@ -214,7 +218,7 @@ services:
   redis-insight:
     image: redislabs/redisinsight:latest
     ports:
-      - "8001:8001"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:8001:8001"
     environment:
       RIPORT: 8001
       RIHOST: "0.0.0.0"
@@ -227,7 +231,7 @@ services:
   prometheus:
     image: prom/prometheus:latest
     ports:
-      - "9090:9090"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:9090:9090"
     volumes:
       - ./prometheus/scale-test.yml:/etc/prometheus/prometheus.yml:ro
       - ../monitoring/prometheus/alerts.yml:/etc/prometheus/alerts/alerts.yml:ro
@@ -246,9 +250,22 @@ services:
   grafana:
     image: grafana/grafana:latest
     ports:
-      - "3000:3000"
+      - "${HONUA_BIND_ADDRESS:-127.0.0.1}:3000:3000"
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      # Keep the base model loadable without the monitoring-only credential. The
+      # container refuses to start if the monitoring profile is actually enabled
+      # without it.
+      GF_SECURITY_ADMIN_PASSWORD: "${HONUA_SCALE_TEST_GRAFANA_PASSWORD:-}"
+    entrypoint:
+      - /bin/sh
+      - -ec
+    command:
+      - >-
+        test -n "$${GF_SECURITY_ADMIN_PASSWORD}" || {
+        echo 'Set HONUA_SCALE_TEST_GRAFANA_PASSWORD for the monitoring profile' >&2;
+        exit 1;
+        };
+        exec /run.sh
     volumes:
       - grafana_data:/var/lib/grafana
       - ../monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro

@@ -176,6 +176,142 @@ public sealed class FeatureLockEnforcingFeatureWriterTests
         inner.DeleteCalls.Should().Be(0);
     }
 
+    // ---- Aliased publication: index vs storage handle (SEC-4) -----------
+
+    private const string AliasedServiceName = "permits";
+
+    /// <summary>Storage handle the aliased publication's <em>index</em> names on another resource.</summary>
+    private const int AliasedCollidingStorageLayerId = 3;
+
+    [UnitTest]
+    [Operation(Operations.Update)]
+    public async Task ApplyEditsAsync_AliasedPublications_ResolvesTheLeaseNamespaceFromTheStorageBinding()
+    {
+        // `parcels` publishes its layer at service-local index 3 but is bound to storage
+        // layer 7; `permits` owns storage layer 3. A write to storage layer 3 therefore
+        // belongs to `permits`, and the lease claimed in that namespace must block it.
+        var (writer, locks, inner) = CreateAliasedWriter();
+        await locks.ClaimAsync(
+            FeatureRef.Canonical(AliasedServiceName, AliasedCollidingStorageLayerId, 42),
+            new LockHolder("alice", "Alice Editor"),
+            TimeSpan.FromMinutes(5),
+            FeatureLockAccessContext.AuthorizedWrite);
+
+        var result = await writer.ApplyEditsAsync(
+            AliasedCollidingStorageLayerId,
+            new FeatureEditBatch { Updates = [FeatureWithId(42)] });
+
+        result.WasRolledBack.Should().BeTrue();
+        result.UpdateResults.Should().ContainSingle()
+            .Which.ErrorCode.Should().Be(FeatureLockEnforcingFeatureWriter.LockedErrorCode);
+        inner.ApplyEditsCalls.Should().Be(0);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Update)]
+    public async Task ApplyEditsAsync_AliasedPublications_DoesNotAdoptTheCollidingServiceNamespace()
+    {
+        // The mirror case: a lease held in `parcels` — the service whose publication merely
+        // carries index 3 — must not block a write to the unrelated storage layer 3.
+        var (writer, locks, inner) = CreateAliasedWriter();
+        await locks.ClaimAsync(
+            FeatureRef.Canonical("parcels", AliasedCollidingStorageLayerId, 42),
+            new LockHolder("alice", "Alice Editor"),
+            TimeSpan.FromMinutes(5),
+            FeatureLockAccessContext.AuthorizedWrite);
+
+        var result = await writer.ApplyEditsAsync(
+            AliasedCollidingStorageLayerId,
+            new FeatureEditBatch { Updates = [FeatureWithId(42)] });
+
+        result.WasRolledBack.Should().BeFalse();
+        inner.ApplyEditsCalls.Should().Be(1);
+    }
+
+    private static (FeatureLockEnforcingFeatureWriter Writer, IFeatureLockService Locks, RecordingFeatureWriter Inner)
+        CreateAliasedWriter()
+    {
+        var inner = new RecordingFeatureWriter();
+        var locks = new InMemoryFeatureLockService();
+        var guard = new FeatureEditGuard(locks);
+        var metadata = new CountingGraphProvider(BuildAliasedSnapshot());
+        var accessor = new HttpContextAccessor { HttpContext = new DefaultHttpContext() };
+        return (new FeatureLockEnforcingFeatureWriter(inner, locks, guard, metadata, accessor), locks, inner);
+    }
+
+    private static MetadataV2GraphSnapshot BuildAliasedSnapshot()
+    {
+        var graph = new MetadataV2Graph
+        {
+            Services =
+            [
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "svc-parcels", Name = ServiceName }
+                },
+                new MetadataV2Service
+                {
+                    Metadata = new MetadataV2ObjectMetadata { Id = "svc-permits", Name = AliasedServiceName }
+                }
+            ],
+            Resources =
+            [
+                AliasedResource("res-parcels", "parcels", "binding-parcels"),
+                AliasedResource("res-permits", "permits", "binding-permits")
+            ],
+            StorageBindings =
+            [
+                AliasedBinding("binding-parcels", "res-parcels", storageLayerId: 7),
+                AliasedBinding("binding-permits", "res-permits", storageLayerId: AliasedCollidingStorageLayerId)
+            ],
+            Publications =
+            [
+                AliasedPublication("pub-parcels", "svc-parcels", "res-parcels", "binding-parcels", layerIndex: AliasedCollidingStorageLayerId),
+                AliasedPublication("pub-permits", "svc-permits", "res-permits", "binding-permits", layerIndex: 9)
+            ]
+        };
+
+        return new MetadataV2GraphSnapshot(graph, "aliased-etag", DateTimeOffset.UnixEpoch);
+    }
+
+    private static MetadataV2Resource AliasedResource(string id, string name, string bindingId)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = name },
+            Type = MetadataV2ResourceType.FeatureDataset,
+            StorageBindingIds = [bindingId],
+            PrimaryStorageBindingId = bindingId
+        };
+
+    private static MetadataV2StorageBinding AliasedBinding(string id, string resourceId, int storageLayerId)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
+            ResourceId = resourceId,
+            StorageType = MetadataV2StorageType.RelationalTable,
+            Locator = $"public.{resourceId}",
+            StorageLayerId = storageLayerId
+        };
+
+    private static MetadataV2Publication AliasedPublication(
+        string id,
+        string serviceId,
+        string resourceId,
+        string storageBindingId,
+        int layerIndex)
+        => new()
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = id, Name = id },
+            ServiceId = serviceId,
+            ResourceId = resourceId,
+            StorageBindingId = storageBindingId,
+            Identifier = new MetadataV2PublicationIdentifier
+            {
+                Value = layerIndex.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                IsNumeric = true
+            }
+        };
+
     private static Feature FeatureWithId(long id)
         => new()
         {

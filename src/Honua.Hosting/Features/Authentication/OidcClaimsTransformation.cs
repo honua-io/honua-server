@@ -69,7 +69,9 @@ internal sealed class OidcClaimsTransformation(
     /// provenance that an issuer or custom mapping must not populate.
     /// </summary>
     internal static bool IsReservedProvenanceClaimType(string? claimType)
-        => claimType is not null && ReservedProvenanceClaimTypes.Contains(claimType);
+        => claimType is not null
+           && (ReservedProvenanceClaimTypes.Contains(claimType)
+               || CanonicalSecurityActor.IsFrameworkAuthorityClaimType(claimType));
 
     /// <summary>
     /// Transforms claims from OIDC providers to normalized application claims.
@@ -89,12 +91,21 @@ internal sealed class OidcClaimsTransformation(
         // preserves only claims carrying in-memory framework provenance.
         RemoveUntrustedFrameworkClaims(principal);
 
-        // These markers are framework-owned authorization provenance, not issuer claims. An
-        // OIDC provider must not be able to choose the fallback roles restored after the live
-        // claims-mapping entitlement expires. Remove every externally supplied copy (including
-        // copies on secondary identities), then recompute the exact markers below. Re-running
-        // this transformation is safe because previously computed markers are recomputed too.
+        // Strip framework provenance before retaining provider values for configured
+        // mappings. A claim such as `permission` can be a legitimate mapping SOURCE
+        // without being allowed to authorize a request under its original claim type.
         RemoveReservedProvenanceClaims(principal);
+        var mappingSource = identity.Clone();
+
+        // The admin permission grammar, the credential-kind discriminator, the API-key
+        // identity and the rate-limit tier are minted by this process's own authentication
+        // handlers and read as authoritative by shared authorization. Every handler that
+        // mints them stamps in-memory framework provenance, so dropping the unstamped
+        // copies here leaves an externally issued identity with exactly the authority its
+        // roles confer. This runs BEFORE the auth_type branch below, so an issuer cannot
+        // choose the transformation path either. Configured role mapping is unaffected:
+        // it targets role claim types, which are not in this set.
+        CanonicalSecurityActor.RemoveUnstampedAuthorityClaims(principal);
 
         // Skip transformation for API key authenticated users (including
         // layer-scoped write keys, #1637, which must not be granted a default
@@ -129,7 +140,7 @@ internal sealed class OidcClaimsTransformation(
         var transformedClaims = new List<Claim>();
 
         // Normalize user ID claim
-        var userId = FindClaimValue(identity,
+        var userId = FindClaimValue(mappingSource,
             _options.ClaimsMapping.UserIdClaimType,
             ClaimTypes.NameIdentifier,
             "sub",
@@ -141,7 +152,7 @@ internal sealed class OidcClaimsTransformation(
         }
 
         // Normalize name claim
-        var name = FindClaimValue(identity,
+        var name = FindClaimValue(mappingSource,
             _options.ClaimsMapping.NameClaimType,
             ClaimTypes.Name,
             "name",
@@ -154,7 +165,7 @@ internal sealed class OidcClaimsTransformation(
         }
 
         // Normalize email claim
-        var email = FindClaimValue(identity,
+        var email = FindClaimValue(mappingSource,
             _options.ClaimsMapping.EmailClaimType,
             ClaimTypes.Email,
             "email",
@@ -167,7 +178,7 @@ internal sealed class OidcClaimsTransformation(
 
         // Map roles from provider-specific claims
         var rolesWithoutMapping = GetRoleClaims(identity, claimsMappingEntitled: false);
-        var roles = GetRoleClaims(identity, claimsMappingEntitled);
+        var roles = GetRoleClaims(mappingSource, claimsMappingEntitled);
         var fallbackRoles = BuildEffectiveRoles(identity, rolesWithoutMapping);
         var fullRoles = BuildEffectiveRoles(identity, roles);
 
@@ -180,7 +191,7 @@ internal sealed class OidcClaimsTransformation(
                          static mapping => string.Equals(
                              mapping.Value, ClaimTypes.Role, StringComparison.Ordinal)))
             {
-                var sourceValue = identity.FindFirst(mapping.Key)?.Value;
+                var sourceValue = mappingSource.FindFirst(mapping.Key)?.Value;
                 if (!string.IsNullOrEmpty(sourceValue) &&
                     !fullRoles.Contains(sourceValue, StringComparer.OrdinalIgnoreCase))
                 {
@@ -216,7 +227,7 @@ internal sealed class OidcClaimsTransformation(
         // the tenant scope. Marking only role provenance meant an expired entitlement dropped
         // the mapping-derived roles while the mapping-derived TENANT kept authorizing
         // cross-tenant access indefinitely (honua-server#2997 review).
-        var mappedTenantClaimType = ResolveMappedTenantClaimType(identity, claimsMappingEntitled);
+        var mappedTenantClaimType = ResolveMappedTenantClaimType(mappingSource, claimsMappingEntitled);
         foreach (var role in roles.Where(role => !identity.HasClaim(c => c.Type == ClaimTypes.Role && c.Value == role)))
         {
             transformedClaims.Add(new Claim(ClaimTypes.Role, role));
@@ -253,11 +264,13 @@ internal sealed class OidcClaimsTransformation(
                 .Select(role => new Claim(RolesWithoutClaimsMappingClaimType, role)));
         }
 
-        // Add auth_type claim if not present
+        // Add auth_type claim if not present. The value is derived from the scheme ASP.NET
+        // selected, never from the token, so it is stamped as framework-owned and survives
+        // a re-entered transformation.
         if (!identity.HasClaim(c => c.Type == "auth_type"))
         {
             var scheme = identity.AuthenticationType ?? "oidc";
-            transformedClaims.Add(new Claim("auth_type", scheme));
+            transformedClaims.Add(CanonicalSecurityActor.CreateStampedClaim("auth_type", scheme));
         }
 
         // Apply custom mappings (Enterprise identity.claims-mapping only, #2997)
@@ -275,7 +288,7 @@ internal sealed class OidcClaimsTransformation(
                     continue;
                 }
 
-                var sourceValue = identity.FindFirst(mapping.Key)?.Value;
+                var sourceValue = mappingSource.FindFirst(mapping.Key)?.Value;
                 if (!string.IsNullOrEmpty(sourceValue) && !identity.HasClaim(c => c.Type == mapping.Value))
                 {
                     transformedClaims.Add(new Claim(mapping.Value, sourceValue));

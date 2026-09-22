@@ -27,6 +27,7 @@ using Honua.Infrastructure.Services;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
+using Honua.TestKit.Infrastructure;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -46,6 +47,7 @@ public sealed class GrpcFeatureServiceTests
     private const string FeatureServerProtocolName = "FeatureServer";
 
     private readonly IResourceValidator _resourceValidator = Substitute.For<IResourceValidator>();
+    private readonly TestMetadataV2GraphProvider _graphProvider = new TestMetadataV2GraphBuilder().BuildProvider();
     private readonly IFeatureReader _featureReader = Substitute.For<IFeatureReader>();
     private readonly IFeatureWriter _featureWriter = Substitute.For<IFeatureWriter>();
     private readonly IStreamingFeatureStore _streamingStore = Substitute.For<IStreamingFeatureStore>();
@@ -1232,7 +1234,9 @@ public sealed class GrpcFeatureServiceTests
             _resourceValidator, _featureReader, _featureWriter, _streamingStore,
             new CommonQueryValidator(Options.Create(new LimitsOptions())),
             new SpatialReferenceResolver(_crsDetectionService, _crsRegistry),
-            _featureChangeEventPublisher,
+            new FeatureMutationEventService(
+                _featureChangeEventPublisher,
+                outboxCapabilityProvider: _outboxCapabilityProvider),
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions { StreamBatchSize = 1 }),
             NullLogger<HonuaFeatureService>.Instance,
@@ -1508,7 +1512,10 @@ public sealed class GrpcFeatureServiceTests
                 },
                 IsPrimary = true
             },
-            resource);
+            resource)
+        {
+            StorageLayerId = 0
+        };
 
     private static TestServerCallContext CreateCallContext(ClaimsPrincipal? user = null)
         => CreateCallContext(user, resolverGrants: null);
@@ -1674,6 +1681,232 @@ public sealed class GrpcFeatureServiceTests
 
         public Task<IReadOnlyList<PermissionGrant>> SetPermissionsAsync(Guid roleId, IReadOnlyList<PermissionGrant> permissions, CancellationToken cancellationToken = default)
             => Task.FromResult(permissions);
+    }
+
+    // ---- Aliased publication: service-local index vs storage handle ------
+
+    private const string AliasedServiceName = "aliased";
+
+    /// <summary>Service-local index the request addresses; also the storage handle of a different resource.</summary>
+    private const int AliasedLayerIndex = 3;
+
+    /// <summary>Storage handle the addressed publication is actually bound to.</summary>
+    private const int AliasedStorageLayerId = 7;
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_AliasedPublication_ReadsTheBoundStorageLayer()
+    {
+        var (service, publication, resource) = ArrangeAliasedLayer();
+        _ = service;
+        _ = publication;
+        _ = resource;
+        _featureReader.QueryAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(0, ImmutableArray<Feature>.Empty));
+
+        await _sut.QueryFeatures(
+            new Proto.QueryFeaturesRequest { ServiceId = AliasedServiceName, LayerId = AliasedLayerIndex, Where = "1=1" },
+            CreateCallContext());
+
+        await _featureReader.Received(1).QueryAsync(
+            AliasedStorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        await _featureReader.DidNotReceive().QueryAsync(
+            AliasedLayerIndex, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    public async Task QueryFeatures_AliasedPublication_CountsTheBoundStorageLayer()
+    {
+        ArrangeAliasedLayer();
+        _featureReader.CountAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(4L);
+
+        var response = await _sut.QueryFeatures(
+            new Proto.QueryFeaturesRequest
+            {
+                ServiceId = AliasedServiceName,
+                LayerId = AliasedLayerIndex,
+                ReturnCountOnly = true
+            },
+            CreateCallContext());
+
+        response.Count.Should().Be(4);
+        await _featureReader.Received(1).CountAsync(
+            AliasedStorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        await _featureReader.DidNotReceive().CountAsync(
+            AliasedLayerIndex, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeaturesStream")]
+    public async Task QueryFeaturesStream_AliasedPublication_StreamsTheBoundStorageLayer()
+    {
+        ArrangeAliasedLayer();
+        _streamingStore.StreamFeaturesAsync(Arg.Any<int>(), Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(Array.Empty<Feature>().ToAsyncEnumerable());
+
+        await _sut.QueryFeaturesStream(
+            new Proto.QueryFeaturesRequest { ServiceId = AliasedServiceName, LayerId = AliasedLayerIndex },
+            new TestServerStreamWriter<Proto.FeaturePage>(),
+            CreateCallContext());
+
+        _streamingStore.Received(1).StreamFeaturesAsync(
+            AliasedStorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        _streamingStore.DidNotReceive().StreamFeaturesAsync(
+            AliasedLayerIndex, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task ApplyEdits_AliasedPublication_WritesTheBoundStorageLayer()
+    {
+        ArrangeAliasedLayer();
+        _featureWriter
+            .ApplyEditsAsync(default, default, default)
+            .ReturnsForAnyArgs(Task.FromResult(FeatureEditResult.Success(
+                createdCount: 0, updatedCount: 1, deletedCount: 0)));
+
+        var request = new Proto.ApplyEditsRequest
+        {
+            ServiceId = AliasedServiceName,
+            LayerId = AliasedLayerIndex
+        };
+        request.Updates.Add(new Proto.Feature { Id = 42 });
+
+        await _sut.ApplyEdits(request, CreateCallContext());
+
+        var write = _featureWriter.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync))
+            .Should().ContainSingle().Subject;
+        write.GetArguments()[0].Should().Be(AliasedStorageLayerId);
+        // The pre-write visibility read must resolve the same storage layer as the write.
+        await _featureReader.Received().GetAsync(
+            AliasedStorageLayerId, 42, Arg.Any<CancellationToken>());
+        await _featureReader.DidNotReceive().GetAsync(
+            AliasedLayerIndex, 42, Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task Request_WhenStorageBindingChangesAfterValidation_UsesValidatedStorage(bool edit)
+    {
+        ArrangeAliasedLayer();
+        var graph = (await _graphProvider.GetCurrentAsync()).Graph;
+        const int reboundStorageLayerId = 99;
+        _graphProvider.ActivateAfterNextRead(graph with
+        {
+            Revision = graph.Revision + 1,
+            StorageBindings = graph.StorageBindings.Select(binding => binding with
+            {
+                StorageLayerId = reboundStorageLayerId
+            }).ToArray()
+        });
+        var sut = new HonuaFeatureService(
+            new ResourceValidator(_graphProvider), _featureReader, _featureWriter, _streamingStore,
+            new CommonQueryValidator(Options.Create(new LimitsOptions())),
+            new SpatialReferenceResolver(_crsDetectionService, _crsRegistry),
+            new FeatureMutationEventService(
+                _featureChangeEventPublisher,
+                outboxCapabilityProvider: _outboxCapabilityProvider),
+            Options.Create(new LimitsOptions()),
+            Options.Create(new GrpcOptions()),
+            NullLogger<HonuaFeatureService>.Instance,
+            new GrpcApplyEditsIdempotencyStore());
+
+        if (edit)
+        {
+            _featureWriter.ApplyEditsAsync(default, default, default)
+                .ReturnsForAnyArgs(Task.FromResult(FeatureEditResult.Success(
+                    createdCount: 0, updatedCount: 1, deletedCount: 0)));
+            var request = new Proto.ApplyEditsRequest
+            {
+                ServiceId = AliasedServiceName,
+                LayerId = AliasedLayerIndex
+            };
+            request.Updates.Add(new Proto.Feature { Id = 42 });
+
+            await sut.ApplyEdits(request, CreateCallContext());
+
+            var write = _featureWriter.ReceivedCalls()
+                .Where(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync))
+                .Should().ContainSingle().Subject;
+            write.GetArguments()[0].Should().Be(AliasedStorageLayerId);
+        }
+        else
+        {
+            await sut.QueryFeatures(new Proto.QueryFeaturesRequest
+            {
+                ServiceId = AliasedServiceName,
+                LayerId = AliasedLayerIndex,
+                ReturnCountOnly = true
+            }, CreateCallContext());
+
+            await _featureReader.Received(1).CountAsync(
+                AliasedStorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+            await _featureReader.DidNotReceive().CountAsync(
+                reboundStorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        }
+
+        var current = await _graphProvider.GetCurrentAsync();
+        current.Graph.Revision.Should().Be(graph.Revision + 1);
+        current.Graph.StorageBindings.Should().OnlyContain(binding => binding.StorageLayerId == reboundStorageLayerId);
+    }
+
+    /// <summary>
+    /// Publishes <c>resource.aliased</c> at the service-local index
+    /// <see cref="AliasedLayerIndex"/> while binding it to storage handle
+    /// <see cref="AliasedStorageLayerId"/>, and gives a second resource
+    /// <see cref="AliasedLayerIndex"/> as its own storage handle. Reading the index as a
+    /// storage handle therefore lands on the neighbouring resource.
+    /// </summary>
+    private (MetadataV2Service Service, MetadataV2Publication Publication, MetadataV2Resource Resource) ArrangeAliasedLayer()
+    {
+        var graph = new TestMetadataV2GraphBuilder()
+            .AddResource("resource.aliased", "aliased")
+            .AddResource("resource.neighbour", "neighbour")
+            .AddStorageBinding("storage.aliased", "resource.aliased", "public.aliased", storageLayerId: AliasedStorageLayerId)
+            .AddStorageBinding("storage.neighbour", "resource.neighbour", "public.neighbour", storageLayerId: AliasedLayerIndex)
+            .AddService("service-aliased", AliasedServiceName, protocols: [GrpcProtocolName])
+            .AddPublication(
+                "pub.aliased",
+                "service-aliased",
+                "resource.aliased",
+                layerIndex: AliasedLayerIndex,
+                storageBindingId: "storage.aliased",
+                isPrimary: true)
+            .AddPublication(
+                "pub.neighbour",
+                "service-aliased",
+                "resource.neighbour",
+                layerIndex: 9,
+                storageBindingId: "storage.neighbour",
+                isPrimary: true)
+            .Build();
+        _graphProvider.SetGraph(graph);
+
+        var service = CreateService(AliasedServiceName);
+        var resource = CreateResource("aliased") with
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "resource.aliased", Name = "aliased" }
+        };
+        var publication = graph.Publications.Single(p => p.Metadata.Id == "pub.aliased");
+
+        _resourceValidator
+            .ValidateServiceLayerV2Async(AliasedServiceName, AliasedLayerIndex, Arg.Any<CancellationToken>())
+            .Returns(ResourceValidationResult.Success(
+                new MetadataV2ServiceLayerTriple(service, publication, resource)
+                {
+                    StorageLayerId = AliasedStorageLayerId
+                }));
+
+        return (service, publication, resource);
     }
 }
 

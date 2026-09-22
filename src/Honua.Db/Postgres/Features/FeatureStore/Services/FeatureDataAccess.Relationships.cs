@@ -86,6 +86,17 @@ internal sealed partial class FeatureDataAccess
 
         var foreignKeyValues = originObjectIdsByForeignKey.Keys.ToList();
 
+        // When the destination key IS the object-id column (a child-to-parent relate), match
+        // the objectid column, as GetOriginForeignKeyValuesAsync does for the origin side:
+        // the object id is injected into attributes only at read time, so
+        // attributes->>'objectid' is NULL for stored rows and would match nothing.
+        var destinationKeyIsObjectId = IsObjectIdField(destinationForeignKeyField);
+        var destinationObjectIds = destinationKeyIsObjectId ? ToObjectIds(foreignKeyValues) : Array.Empty<long>();
+        if (destinationKeyIsObjectId && destinationObjectIds.Length == 0)
+        {
+            return QueryResult<Feature>.Empty();
+        }
+
         var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
         var geometrySelect = _geometryProcessor.GetGeometrySelectExpression(geometryStorageType, new FeatureQuery());
 
@@ -95,16 +106,15 @@ internal sealed partial class FeatureDataAccess
             .Append(", attributes FROM ")
             .Append(_tableName)
             .Append(" WHERE layer_id = $1")
-            .Append($" AND {DatabaseSchema.AttributesColumn}->> $2 = ANY($3)");
+            .Append(destinationKeyIsObjectId
+                ? " AND objectid = ANY($2)"
+                : $" AND {DatabaseSchema.AttributesColumn}->> $2 = ANY($3)");
 
-        var parameters = new List<object>
-        {
-            relatedLayerId,
-            destinationForeignKeyField,
-            foreignKeyValues.ToArray()
-        };
+        var parameters = destinationKeyIsObjectId
+            ? new List<object> { relatedLayerId, destinationObjectIds }
+            : new List<object> { relatedLayerId, destinationForeignKeyField, foreignKeyValues.ToArray() };
 
-        var paramIndex = 4;
+        var paramIndex = parameters.Count + 1;
 
         // The related layer's permanent filter is enforced first, independently of
         // any caller-supplied filter, mirroring EnforcedSqlFilter in AppendWhereClause.
@@ -167,8 +177,14 @@ internal sealed partial class FeatureDataAccess
             // Resolve the origin object id(s) this related row belongs to BEFORE field
             // filtering so the destination key is still available, then re-stamp the
             // (possibly filtered) feature so grouping can bucket by origin object id.
+            // The read path injects the object id under the canonical key, whichever spelling
+            // the relationship uses.
+            var destinationKeyAttribute = destinationKeyIsObjectId
+                ? DatabaseSchema.ObjectIdColumn
+                : destinationForeignKeyField;
+
             long[]? originObjectIds = null;
-            if (feature.Attributes.TryGetValue(destinationForeignKeyField, out var destinationKeyValue) &&
+            if (feature.Attributes.TryGetValue(destinationKeyAttribute, out var destinationKeyValue) &&
                 TryNormalizeForeignKeyValue(destinationKeyValue, out var normalizedKey) &&
                 originObjectIdsByForeignKey.TryGetValue(normalizedKey, out var matchedOriginIds))
             {
@@ -227,9 +243,7 @@ internal sealed partial class FeatureDataAccess
         // them and their related records would not resolve. Reading the column keeps
         // object-id-keyed relationships working for any origin object id, including the
         // high auto-assigned ids produced by addFeatures.
-        var originKeyIsObjectId =
-            originForeignKeyField.Equals(DatabaseSchema.ObjectIdColumn, StringComparison.OrdinalIgnoreCase) ||
-            originForeignKeyField.Equals(DatabaseSchema.ObjectIdColumnAlt, StringComparison.OrdinalIgnoreCase);
+        var originKeyIsObjectId = IsObjectIdField(originForeignKeyField);
 
         var fkValueExpression = originKeyIsObjectId
             ? "objectid::text"
@@ -298,6 +312,31 @@ internal sealed partial class FeatureDataAccess
         }
 
         return map;
+    }
+
+    private static bool IsObjectIdField(string field)
+        => field.Equals(DatabaseSchema.ObjectIdColumn, StringComparison.OrdinalIgnoreCase) ||
+           field.Equals(DatabaseSchema.ObjectIdColumnAlt, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Converts origin foreign-key values (text, as read by <c>attributes-&gt;&gt;</c>) into
+    /// destination object ids. Only values whose canonical integer text equals the value are
+    /// kept, which is exactly the set <c>objectid::text = value</c> would match, while binding
+    /// them as <c>bigint</c> keeps the primary-key index usable.
+    /// </summary>
+    private static long[] ToObjectIds(List<string> foreignKeyValues)
+    {
+        var objectIds = new List<long>();
+        foreach (var value in foreignKeyValues)
+        {
+            if (long.TryParse(value, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var objectId) &&
+                objectId.ToString(CultureInfo.InvariantCulture) == value)
+            {
+                objectIds.Add(objectId);
+            }
+        }
+
+        return [.. objectIds];
     }
 
     /// <summary>

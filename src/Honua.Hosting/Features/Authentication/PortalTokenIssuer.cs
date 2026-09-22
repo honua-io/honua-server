@@ -10,6 +10,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Infrastructure.Logging;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Licensing;
+using Honua.Infrastructure.Security;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 
@@ -319,6 +320,12 @@ internal sealed partial class PortalTokenIssuer(
             AuthSchemeName,
             ClaimTypes.Name,
             ClaimTypes.Role);
+
+        // auth_type and the client binding are projected from the server-side token
+        // record, never from the presented token value, so mark them framework-owned
+        // and they survive shared claim sanitization.
+        CanonicalSecurityActor.StampAuthorityClaims(identity);
+
         return new ClaimsPrincipal(identity);
     }
 

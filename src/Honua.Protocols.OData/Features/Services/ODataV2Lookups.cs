@@ -177,18 +177,9 @@ internal static class ODataV2Lookups
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Publication? publication,
         MetadataV2Resource resource)
-    {
-        if (publication is not null)
-        {
-            var publicationStorageLayerId = snapshot.ResolveStorageLayerId(publication);
-            if (publicationStorageLayerId.HasValue)
-            {
-                return publicationStorageLayerId;
-            }
-        }
-
-        return snapshot.ResolveStorageLayerId(resource);
-    }
+        => publication is null
+            ? snapshot.ResolveStorageLayerId(resource)
+            : snapshot.ResolveStorageLayerId(publication, resource);
 
     private static bool IsPrimaryPublicationForLayer(
         MetadataV2Publication publication,

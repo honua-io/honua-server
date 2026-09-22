@@ -378,10 +378,12 @@ internal static class StandardErrorResponseFormatter
 
         // PA-070/PA-117: Esri GeoServices REST spec: ALL responses (including errors) use HTTP 200 OK.
         // The error is signalled exclusively through the JSON body {"error":{"code":N,...}}.
+        // The one exception is a caller that opts a specific rejection into its real status
+        // (GeoServicesUseHttpStatus); the body is the same envelope either way.
         return Results.Json(
             apiErrorResponse,
             LimitsEnforcementJsonContext.Default.ApiErrorResponse,
-            statusCode: StatusCodes.Status200OK);
+            statusCode: options.GeoServicesUseHttpStatus ? errorResponse.StatusCode : StatusCodes.Status200OK);
     }
 
     /// <summary>

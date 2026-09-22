@@ -99,8 +99,10 @@ env:
   SOAK_DB_USER: honua
   SOAK_DB_PORT: '5432'
   SOAK_DB_PASSWORD: soak-candidate-db-password
-  SOAK_ADMIN_PASSWORD: 'Capacity-Soak-Admin-Pass1!'
-  SOAK_MASTER_KEY: capacity-soak-master-key-at-least-32-characters-long
+  # Per-run, not a repository literal: a credential checked in here is a public value, and
+  # production startup validation refuses every credential literal this repository ships.
+  SOAK_ADMIN_PASSWORD: 'Capacity-Soak-${{ github.run_id }}-${{ github.run_attempt }}-Aa1!'
+  SOAK_MASTER_KEY: capacity-soak-master-key-${{ github.run_id }}-${{ github.run_attempt }}-padding0000
   SOAK_GP_WORKERS: '1'
   LOCK_PATH: certification/capacity-envelope.v1.json
 

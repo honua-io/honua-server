@@ -14,6 +14,8 @@
 using System.Diagnostics;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.FeatureStore.ReadOnlyProviders;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Validation.Abstractions;
@@ -136,7 +138,14 @@ internal static partial class VectorTileServerEndpoints
             }
 
             var limitsOptions = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value;
-            var response = BuildMetadataResponse(service, visiblePublications, limitsOptions.Tiles.MaxTileZoom);
+            var transformService = context.RequestServices.GetService<ICoordinateTransformService>()
+                ?? new WellKnownCoordinateTransformService();
+            var response = await BuildMetadataResponseAsync(
+                service,
+                visiblePublications,
+                limitsOptions.Tiles.MaxTileZoom,
+                transformService,
+                cancellationToken).ConfigureAwait(false);
 
             stopwatch.Stop();
             scope.SetSuccess(visiblePublications.Length);
@@ -178,17 +187,25 @@ internal static partial class VectorTileServerEndpoints
         return [.. descriptors];
     }
 
-    private static VectorTileServerMetadataResponse BuildMetadataResponse(
+    private static async Task<VectorTileServerMetadataResponse> BuildMetadataResponseAsync(
         MetadataV2Service service,
         IReadOnlyList<VectorTilePublicationDescriptor> publications,
-        int maxTileZoom)
+        int maxTileZoom,
+        ICoordinateTransformService transformService,
+        CancellationToken cancellationToken)
     {
         var tileInfo = VectorTileServerTileInfoBuilder.Build(maxTileZoom);
         var minLod = tileInfo.Lods is { Length: > 0 } lods ? lods[0].Level : 0;
         var maxLod = tileInfo.Lods is { Length: > 0 } maxLods ? maxLods[^1].Level : 0;
 
-        var spatialReference = ResolveServiceSpatialReference(service, publications);
-        var extent = ResolveServiceExtent(publications, spatialReference);
+        // The extent is reported in the tiling scheme's spatial reference, not the service's:
+        // clients discard an extent whose spatial reference differs from tileInfo's (#5015).
+        var extent = await VectorTileServerExtentResolver.ResolveAsync(
+            publications.Select(static publication => publication.Resource),
+            service.SpatialReference,
+            tileInfo.SpatialReference!,
+            transformService,
+            cancellationToken).ConfigureAwait(false);
 
         return new VectorTileServerMetadataResponse
         {
@@ -199,57 +216,6 @@ internal static partial class VectorTileServerEndpoints
             FullExtent = extent,
             InitialExtent = extent
         };
-    }
-
-    private static MetadataV2SpatialReference ResolveServiceSpatialReference(
-        MetadataV2Service service,
-        IReadOnlyList<VectorTilePublicationDescriptor> publications)
-        => service.SpatialReference
-           ?? publications.Select(static publication => publication.Resource.Spatial?.SpatialReference)
-               .FirstOrDefault(static spatialReference => spatialReference is not null)
-           ?? MetadataV2SpatialReference.Wgs84;
-
-    private static VectorTileExtent? ResolveServiceExtent(
-        IReadOnlyList<VectorTilePublicationDescriptor> publications,
-        MetadataV2SpatialReference spatialReference)
-    {
-        double? west = null;
-        double? south = null;
-        double? east = null;
-        double? north = null;
-
-        foreach (var bbox in (publications).Select(publication => publication.Resource.ReadBbox()))
-        {
-            if (bbox is null)
-            {
-                continue;
-            }
-
-            west = west.HasValue ? Math.Min(west.Value, bbox.West) : bbox.West;
-            south = south.HasValue ? Math.Min(south.Value, bbox.South) : bbox.South;
-            east = east.HasValue ? Math.Max(east.Value, bbox.East) : bbox.East;
-            north = north.HasValue ? Math.Max(north.Value, bbox.North) : bbox.North;
-        }
-
-        if (!(west.HasValue && south.HasValue && east.HasValue && north.HasValue))
-        {
-            return null;
-        }
-
-        return new VectorTileExtent
-        {
-            Xmin = west.Value,
-            Ymin = south.Value,
-            Xmax = east.Value,
-            Ymax = north.Value,
-            SpatialReference = ToVectorTileSpatialReference(spatialReference)
-        };
-    }
-
-    private static VectorTileSpatialReference ToVectorTileSpatialReference(MetadataV2SpatialReference spatialReference)
-    {
-        var wkid = spatialReference.ResolveSrid() ?? 4326;
-        return new VectorTileSpatialReference { Wkid = wkid, LatestWkid = wkid };
     }
 
     private static bool TryValidateMetadataFormat(IQueryCollection query, out string? error)

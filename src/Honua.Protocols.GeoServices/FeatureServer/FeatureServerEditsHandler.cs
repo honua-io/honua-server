@@ -484,9 +484,7 @@ internal sealed class FeatureServerEditsHandler(
         MetadataV2GraphSnapshot snapshot,
         MetadataV2Publication publication,
         MetadataV2Resource resource)
-        => snapshot.ResolveStorageLayerId(publication)
-           ?? snapshot.ResolveStorageLayerId(resource)
-           ?? publication.LayerIndex;
+        => snapshot.ResolveStorageLayerId(publication, resource);
 
     /// <summary>
     /// Processes add, update, and delete operations from the request

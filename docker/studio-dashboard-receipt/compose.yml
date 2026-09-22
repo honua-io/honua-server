@@ -76,7 +76,9 @@ services:
       HostValidation__AllowedHosts__0: localhost
       HostValidation__AllowedHosts__1: 127.0.0.1
       PUBLIC_BASE_URL: http://localhost:18080
-      HONUA_ADMIN_PASSWORD: StudioReceiptAdmin123!
+      # Required, not defaulted: this stack boots the Production startup policy, which
+      # refuses every credential literal this repository ships.
+      HONUA_ADMIN_PASSWORD: ${STUDIO_RECEIPT_ADMIN_PASSWORD:?Set STUDIO_RECEIPT_ADMIN_PASSWORD to an admin password you choose}
       # 2026.1 ships unlicensed. Disabled mode grants every entitlement, which is what
       # composes the Redis-backed durable proposal gateway the governed-proposal row needs.
       # Since #4758 it also executes Studio draft composition directly, so this harness
@@ -97,7 +99,7 @@ services:
       Oidc__AdminRoles__0: admin
       Oidc__TokenValidation__ValidIssuers__0: https://studio-receipt.honua.test
       Oidc__TokenValidation__ValidAudiences__0: honua-studio-receipt
-      Oidc__TokenValidation__SymmetricSigningKey: studio-dashboard-receipt-signing-key-2026-1
+      Oidc__TokenValidation__SymmetricSigningKey: ${STUDIO_RECEIPT_SIGNING_KEY:?Set STUDIO_RECEIPT_SIGNING_KEY to an HS256 signing key you choose}
       Operations__SecretChannel__KeyRingCertificatePath: /keyring/operation-keyring.pfx
       Operations__SecretChannel__KeyRingCertificatePassword: StudioReceiptKeyRing
       ConnectionStrings__DefaultConnection: Server=postgres;Port=5432;Database=honua;User Id=honua;Password=studio_receipt_password;
@@ -105,8 +107,8 @@ services:
       ConnectionStrings__Redis: redis:6379
       FileStorage__Provider: Local
       FileStorage__LocalStorage__BasePath: /tmp/honua-storage
-      Security__ConnectionEncryption__MasterKey: studio-receipt-master-key-at-least-32-characters-long
-      Security__ConnectionEncryption__Salt: c3R1ZGlvLXJlY2VpcHQtc2FsdC1mb3ItdGhlLTM0MjktcmVjZWlwdA==
+      Security__ConnectionEncryption__MasterKey: ${STUDIO_RECEIPT_MASTER_KEY:?Set STUDIO_RECEIPT_MASTER_KEY to at least 32 characters}
+      Security__ConnectionEncryption__Salt: ${STUDIO_RECEIPT_SALT:?Set STUDIO_RECEIPT_SALT to a base64 salt you choose}
     volumes:
       - keyring:/keyring:ro
     depends_on:
