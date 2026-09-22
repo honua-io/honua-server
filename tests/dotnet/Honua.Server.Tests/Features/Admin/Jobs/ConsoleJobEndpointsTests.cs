@@ -349,8 +349,14 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
                 body.Should().NotContain(marker, $"an unauthenticated caller must not see '{marker}'");
             }
 
-            response.Headers.Contains("X-Correlation-Id").Should().BeFalse(
-                "the denial must not echo the job's correlation id");
+            // Every response carries a per-request correlation id; the denial must not carry
+            // the JOB's, which would confirm the job exists.
+            if (response.Headers.TryGetValues("X-Correlation-Id", out var correlationIds))
+            {
+                correlationIds.Should().NotContain(
+                    "corr-running",
+                    "the denial must not echo the job's own correlation id");
+            }
 
             // The admin principal reads the same job's steps off the SAME host, so the denial
             // above is a refusal of the caller and not an endpoint broken for everyone.
