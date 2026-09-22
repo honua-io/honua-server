@@ -77,36 +77,65 @@ public sealed class BackpressureContractMatrixTests
         await using var app = await CreateAppAsync(route, pressure, handlerCalls);
         var client = app.GetTestClient();
 
+        long? lastAllowedReset = null;
         if (pressure.Kind == BackpressureKind.Throttled)
         {
             using var allowedRequest = CreateRequest(route);
             using var allowedResponse = await client.SendAsync(allowedRequest);
             allowedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
             handlerCalls.Value.Should().Be(1);
+            lastAllowedReset = ReadRateLimitReset(allowedResponse);
         }
 
-        var callsBeforeDenial = handlerCalls.Value;
-        using var request = CreateRequest(route);
-        using var response = await client.SendAsync(request);
-        var body = await response.Content.ReadAsStringAsync();
-
-        handlerCalls.Value.Should().Be(callsBeforeDenial, "backpressure must terminate before endpoint execution");
-        response.Headers.GetValues("X-Correlation-ID").Should().ContainSingle(CorrelationId);
-        response.Headers.GetValues("Honua-Retryable").Should().ContainSingle("true");
-        var retryAfterSeconds = int.Parse(
-            response.Headers.GetValues("Retry-After").Single(),
-            System.Globalization.CultureInfo.InvariantCulture);
-        if (pressure.Kind == BackpressureKind.Saturated)
+        // The in-memory limiter uses epoch-aligned minute buckets. A second request that
+        // arrives across the boundary is correctly admitted, so prove the reset advanced
+        // before retrying. An admission in the same bucket remains a contract failure.
+        var maxAttempts = pressure.Kind == BackpressureKind.Throttled ? 3 : 1;
+        for (var attempt = 0; attempt < maxAttempts; attempt++)
         {
-            retryAfterSeconds.Should().Be(SaturationDelaySeconds);
-        }
-        else
-        {
-            retryAfterSeconds.Should().BeInRange(0, 60);
+            var callsBeforeDenial = handlerCalls.Value;
+            using var request = CreateRequest(route);
+            using var response = await client.SendAsync(request);
+
+            if (pressure.Kind == BackpressureKind.Throttled &&
+                !response.Headers.Contains("Honua-Retryable"))
+            {
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                handlerCalls.Value.Should().Be(callsBeforeDenial + 1);
+                var reset = ReadRateLimitReset(response);
+                reset.Should().BeGreaterThan(lastAllowedReset!.Value,
+                    "another admitted request is valid only after the rate-limit window advances");
+                lastAllowedReset = reset;
+                continue;
+            }
+
+            var body = await response.Content.ReadAsStringAsync();
+            handlerCalls.Value.Should().Be(callsBeforeDenial, "backpressure must terminate before endpoint execution");
+            response.Headers.GetValues("X-Correlation-ID").Should().ContainSingle(CorrelationId);
+            response.Headers.GetValues("Honua-Retryable").Should().ContainSingle("true");
+            var retryAfterSeconds = int.Parse(
+                response.Headers.GetValues("Retry-After").Single(),
+                System.Globalization.CultureInfo.InvariantCulture);
+            if (pressure.Kind == BackpressureKind.Saturated)
+            {
+                retryAfterSeconds.Should().Be(SaturationDelaySeconds);
+            }
+            else
+            {
+                retryAfterSeconds.Should().BeInRange(0, 60);
+            }
+
+            AssertNativeContract(route, pressure, retryAfterSeconds, response, body);
+            return;
         }
 
-        AssertNativeContract(route, pressure, retryAfterSeconds, response, body);
+        throw new InvalidOperationException("Rate limiting did not deny a request within three consecutive windows.");
     }
+
+    private static long ReadRateLimitReset(HttpResponseMessage response)
+        => long.Parse(
+            response.Headers.GetValues("X-RateLimit-Reset").Single(),
+            System.Globalization.CultureInfo.InvariantCulture);
 
     [UnitTest]
     [Operation(Operations.Infrastructure)]
