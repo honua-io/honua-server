@@ -75,10 +75,27 @@ public sealed class SourceBackedRelationshipStoreIntegrationTests(PostgresFixtur
         result.Items.Should().ContainSingle().Which.Id.Should().Be(85);
     }
 
-    private SourceBackedRelationshipStore CreateStore()
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task QueryRelatedAsync_BooleanKey_MatchesPostgresText(bool key)
+    {
+        await fixture.ExecuteAsync($"""
+            ALTER TABLE {_schema}.parents ALTER COLUMN join_id TYPE boolean USING join_id = 2055;
+            ALTER TABLE {_schema}.children ALTER COLUMN join_id TYPE boolean USING join_id = 2055;
+            """);
+        var result = await CreateStore(MetadataV2FieldType.Boolean).QueryRelatedAsync(13,
+            RelatedQuery.ForObjects([key ? 901 : 903], 14, "join_id", "join_id"));
+
+        result.Items.Select(row => row.Id).Should().BeEquivalentTo(key ? new long[] { 81 } : [82L, 83L, 84L]);
+        result.Items.Should().OnlyContain(row =>
+            ((long[])row.Attributes[RelatedQuery.OriginObjectIdsAttribute]!).SequenceEqual(new long[] { key ? 901 : 903 }));
+    }
+
+    private SourceBackedRelationshipStore CreateStore(MetadataV2FieldType keyType = MetadataV2FieldType.Integer)
     {
         var service = new MetadataV2Service { Metadata = new() { Id = "service" } };
-        var resources = new[] { Resource("parents", 13), Resource("children", 14) };
+        var resources = new[] { Resource("parents", 13, keyType), Resource("children", 14, keyType) };
         var bindings = resources.Select((resource, index) => new MetadataV2StorageBinding
         {
             Metadata = new() { Id = resource.StorageBindingIds[0] },
@@ -125,7 +142,7 @@ public sealed class SourceBackedRelationshipStoreIntegrationTests(PostgresFixtur
         return new SourceBackedRelationshipStore(Substitute.For<IRelationshipStore>(), graph, router, Substitute.For<IFilterExpressionService>());
     }
 
-    private static MetadataV2Resource Resource(string name, int layerId) => new()
+    private static MetadataV2Resource Resource(string name, int layerId, MetadataV2FieldType keyType) => new()
     {
         Metadata = new() { Id = name },
         Type = MetadataV2ResourceType.Table,
@@ -133,7 +150,7 @@ public sealed class SourceBackedRelationshipStoreIntegrationTests(PostgresFixtur
         SchemaFields =
         [
             new() { Name = "objectid", Type = MetadataV2FieldType.BigInteger, SemanticRoles = ["id.primary"] },
-            new() { Name = "join_id", Type = MetadataV2FieldType.Integer },
+            new() { Name = "join_id", Type = keyType },
             new() { Name = "details", Type = MetadataV2FieldType.String }
         ]
     };

@@ -197,7 +197,9 @@ internal sealed class SourceBackedRelationshipStore(
     private static bool TryKey(Feature feature, string field, out string key)
     {
         var value = feature.Attributes.FirstOrDefault(attribute => attribute.Key.Equals(field, StringComparison.OrdinalIgnoreCase)).Value;
-        key = Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
+        key = value is bool boolean
+            ? (boolean ? "true" : "false")
+            : Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
         return value is not null;
     }
 
