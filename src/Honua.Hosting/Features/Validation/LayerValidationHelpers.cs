@@ -286,13 +286,25 @@ internal static class LayerValidationHelpers
     /// Validates a layer index against the V2 graph snapshot using standard error
     /// responses (no protocol-specific formatting).
     /// </summary>
-    public static async Task<MetadataV2ValidationResult> ValidateLayerWithAccessV2Async(
+    public static Task<MetadataV2ValidationResult> ValidateLayerWithAccessV2Async(
         HttpContext context,
         int layerId,
         AccessScope scope = AccessScope.Read,
         string? requiredProtocol = null,
-        CancellationToken cancellationToken = default,
-        AuthorizationOperation? operation = null)
+        CancellationToken cancellationToken = default)
+        => ValidateLayerWithAccessV2Async(context, layerId, AccessPolicyHelpers.DefaultOperationForScope(scope),
+            scope, requiredProtocol, cancellationToken);
+
+    /// <summary>
+    /// Validates a layer using an explicit operation, including metadata administration.
+    /// </summary>
+    public static async Task<MetadataV2ValidationResult> ValidateLayerWithAccessV2Async(
+        HttpContext context,
+        int layerId,
+        AuthorizationOperation operation,
+        AccessScope scope = AccessScope.Read,
+        string? requiredProtocol = null,
+        CancellationToken cancellationToken = default)
     {
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
         var (publication, resource, service) = ResolveV2Triple(context, snapshot, layerId, requiredProtocol);
@@ -305,7 +317,7 @@ internal static class LayerValidationHelpers
         }
 
         var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-            context, resource!, operation ?? AccessPolicyHelpers.DefaultOperationForScope(scope),
+            context, resource!, operation,
             service, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
