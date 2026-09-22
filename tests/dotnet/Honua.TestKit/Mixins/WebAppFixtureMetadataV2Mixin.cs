@@ -286,6 +286,36 @@ internal static class WebAppFixtureMetadataV2Mixin
             };
         }
 
+        for (var i = 0; i < resources.Length; i++)
+        {
+            if (!string.Equals(resources[i].Metadata.Id, "res-layer-1", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            // The mirror of relationship 1, in the destination role: the related key is
+            // the parent layer's object id rather than one of its attributes. Nothing
+            // else in the graph exercises that shape, which is how #5014 shipped - the
+            // reverse relate returned an empty group instead of the parent record.
+            resources[i] = resources[i] with
+            {
+                Relationships =
+                [
+                    new MetadataV2Relationship
+                    {
+                        Id = "3",
+                        Name = "Parent By Object Id",
+                        Description = "Child to parent: the destination key is the object id",
+                        RelatedResourceId = "res-layer-2",
+                        Role = "esriRelRoleDestination",
+                        OriginField = "related_id",
+                        DestinationField = "objectid",
+                        EsriRelationshipId = 3
+                    }
+                ]
+            };
+        }
+
         resources = resources
             .Append(new MetadataV2Resource
             {

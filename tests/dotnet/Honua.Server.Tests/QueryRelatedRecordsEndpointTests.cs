@@ -1020,5 +1020,52 @@ public sealed class QueryRelatedRecordsEndpointTests : IAsyncLifetime
         await response.AssertGeoServicesErrorAsync(405);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.QueryRelatedRecords)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryRelatedRecords")]
+    public async Task QueryRelatedRecords_WhenDestinationKeyIsObjectId_ResolvesParentRecords()
+    {
+        // Regression for #5014. Relationship 3 is the child-to-parent direction: the
+        // destination key is the related layer's object id, not one of its attributes.
+        // That shape used to bind the key name as a JSONB attribute lookup, so every
+        // group came back empty and ArcGIS Pro's related-records pane showed nothing
+        // while the request still reported success.
+        //
+        // Parents 203 and 204 deliberately do NOT repeat their object id inside
+        // attributes, because that is what a real layer looks like - the server injects
+        // objectid at read time. Relating to a parent that does carry the redundant key
+        // passes either way and cannot detect this defect.
+        var response = await GetWithRetryAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/1/queryRelatedRecords"
+            + "?objectIds=105,106&relationshipId=3&outFields=*&returnGeometry=false");
+
+        response.Be200Ok();
+
+        var content = await response.Content.ReadAsStringAsync();
+        using var jsonDoc = JsonDocument.Parse(content);
+        jsonDoc.RootElement.TryGetProperty("relatedRecordGroups", out var groups)
+            .Should().BeTrue($"the reply should be a related-records payload, got: {content}");
+
+        groups.GetArrayLength().Should().Be(2,
+            $"each requested child was asked for its parent, got: {content}");
+
+        var parentsByChild = new Dictionary<long, List<long>>();
+        foreach (var group in groups.EnumerateArray())
+        {
+            var parents = new List<long>();
+            foreach (var record in group.GetProperty("relatedRecords").EnumerateArray())
+            {
+                parents.Add(record.GetProperty("attributes").GetProperty("objectid").GetInt64());
+            }
+
+            parentsByChild[group.GetProperty("objectId").GetInt64()] = parents;
+        }
+
+        // Child 105 carries related_id 203 and child 106 carries related_id 204, so each
+        // must resolve to exactly that parent object id in the related layer.
+        parentsByChild[105L].Should().Equal(203L);
+        parentsByChild[106L].Should().Equal(204L);
+    }
+
     #endregion
 }
