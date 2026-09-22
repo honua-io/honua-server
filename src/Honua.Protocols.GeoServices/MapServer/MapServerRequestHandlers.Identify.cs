@@ -399,6 +399,10 @@ internal static partial class MapServerEndpoints
                 // Resolve a joinTable source's right side into a key-indexed attribute lookup. The
                 // right layer is access-policy gated exactly like the left layer; a denied right
                 // layer fails the whole identify rather than silently dropping the join.
+                // esriFieldTypeDate attributes must serialize as epoch-ms integers uniformly across
+                // rows. JSONB stores dates as either ISO strings (seeds) or epoch-ms longs
+                // (applyEdits); coerce both via the shared GeoServices date convention (matches query).
+                var dateFieldNames = GeoServicesFieldConventions.ResolveDateFieldNames(layer.Resource);
                 DynamicJoinLookup? joinLookup = null;
                 if (renderLayer.Join is { } join)
                 {
@@ -412,6 +416,9 @@ internal static partial class MapServerEndpoints
                         return StandardErrorHelpers.CreateBadRequest(context, joinError ?? "Invalid join source.");
                     }
 
+                    dateFieldNames.UnionWith(GeoServicesFieldConventions.ResolveDateFieldNames(rightLayer!.Resource)
+                        .Select(name => $"{join.RightQualifier}.{name}"));
+
                     joinLookup = await DynamicJoinLookup.BuildAsync(
                         featureReader,
                         rightLayer!.StorageLayerId,
@@ -423,11 +430,6 @@ internal static partial class MapServerEndpoints
 
                 var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer.Resource);
                 var displayField = ResolveDisplayField(layer.Resource, objectIdField);
-                // esriFieldTypeDate attributes must serialize as epoch-ms integers uniformly across
-                // rows. JSONB stores dates as either ISO strings (seeds) or epoch-ms longs
-                // (applyEdits); coerce both via the shared GeoServices date convention (matches query).
-                var dateFieldNames = GeoServicesFieldConventions.ResolveDateFieldNames(layer.Resource);
-
                 foreach (var feature in queryResult.Items)
                 {
                     IReadOnlyDictionary<string, object?> sourceAttributes = feature.Attributes;
