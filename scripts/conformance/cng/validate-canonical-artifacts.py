@@ -768,6 +768,73 @@ def _geoparquet_metadata(geo: dict, feature_count: int, read_covering) -> dict[s
     }
 
 
+def _crs84_as_epsg4326(crs: str | None) -> str | None:
+    """OGC:CRS84 and EPSG:4326 are one datum with GeoParquet's fixed (x, y) storage order."""
+    return "EPSG:4326" if crs == "OGC:CRS84" else crs
+
+
+def _geo_declarations(geo: dict | None) -> dict[str, Any]:
+    """The file-level `geo` declarations a consumer decoded, keyed like the budget profile."""
+    if not isinstance(geo, dict):
+        return {}
+    column = (geo.get("columns") or {}).get(geo.get("primary_column")) or {}
+    declared: dict[str, Any] = {}
+    if geo.get("version") is not None:
+        declared["geo.version"] = geo["version"]
+    if column.get("encoding"):
+        declared["geometry_encoding"] = str(column["encoding"]).upper()
+    return declared
+
+
+def _geopandas_geoparquet_metadata(frame, geo: dict | None) -> dict[str, Any]:
+    """
+    Renders what GeoPandas itself read back from a GeoParquet artifact (#4799).
+
+    Before #4799 the GeoPandas cell only asserted the frame was non-empty, so it
+    reported no `observed_metadata` and `_evaluate_budget` always skipped it however
+    healthy the artifact was. Count, bounds, CRS and the geometry column come from the
+    decoded GeoDataFrame; `geo.version` and the encoding come from the `geo` metadata
+    GeoPandas decoded to build that frame (``geo``), so nothing here is borrowed from
+    the PyArrow cell.
+    """
+    observed: dict[str, Any] = {
+        "primary_column": frame.geometry.name,
+        "crs": _crs84_as_epsg4326(_normalize_crs(frame.crs)),
+        "feature_count": int(len(frame)),
+        "bounds": [float(value) for value in frame.total_bounds],
+    }
+    observed.update(_geo_declarations(geo))
+    return observed
+
+
+def _gdal_geoparquet_metadata(info: dict) -> dict[str, Any]:
+    """
+    Renders what GDAL read back from a GeoParquet artifact, from `ogrinfo -json` (#4799).
+
+    Count, extent, CRS and geometry column name are GDAL's own decode of the layer.
+    `geo.version` and the encoding come from the footer `geo` key GDAL exposes in its
+    `_PARQUET_METADATA_` layer metadata domain (requested with `-mdd`).
+    """
+    layers = info.get("layers") or []
+    if len(layers) != 1:
+        raise ValueError(f"GDAL reported {len(layers)} GeoParquet layers, expected 1")
+    layer = layers[0]
+    fields = layer.get("geometryFields") or []
+    if not fields:
+        raise ValueError("GDAL reported no GeoParquet geometry field")
+    field = fields[0]
+    projjson = (field.get("coordinateSystem") or {}).get("projjson")
+    observed: dict[str, Any] = {
+        "primary_column": field.get("name"),
+        "crs": _crs84_as_epsg4326(_normalize_crs(projjson)) if projjson else None,
+        "feature_count": layer.get("featureCount"),
+        "bounds": [float(value) for value in field.get("extent") or []],
+    }
+    raw_geo = ((layer.get("metadata") or {}).get("_PARQUET_METADATA_") or {}).get("geo")
+    observed.update(_geo_declarations(json.loads(raw_geo) if raw_geo else None))
+    return {key: value for key, value in observed.items() if value not in (None, [])}
+
+
 def validate_geoparquet(path: Path, args: argparse.Namespace) -> list[dict]:
     import geopandas
     import pyarrow
@@ -802,15 +869,34 @@ def validate_geoparquet(path: Path, args: argparse.Namespace) -> list[dict]:
         metadata_seen.update(
             _geoparquet_metadata(json.loads(raw), table.num_rows, read_covering))
 
+    # #4799: each consumer reports what it read itself, never the PyArrow cell's values.
+    geopandas_seen: dict[str, Any] = {}
+    gdal_seen: dict[str, Any] = {}
+
     def geopandas_check() -> None:
         frame = geopandas.read_parquet(path)
         if frame.empty or frame.geometry.isna().any() or frame.crs is None:
             raise ValueError("GeoPandas did not recover non-null geometries and CRS")
+        # The `geo` metadata GeoPandas decodes to build the frame. This helper is
+        # private to the pinned GeoPandas release; if a later release drops it, the
+        # two declaration keys go unobserved and the budget skips naming them.
+        geo = None
+        try:
+            from geopandas.io.arrow import _decode_metadata, _read_parquet_schema_and_metadata
+        except ImportError:
+            pass
+        else:
+            _schema, file_metadata = _read_parquet_schema_and_metadata(path, None)
+            raw = (file_metadata or {}).get(b"geo")
+            geo = _decode_metadata(raw) if raw else None
+        geopandas_seen.update(_geopandas_geoparquet_metadata(frame, geo))
 
     def gdal_check() -> str:
         image = os.getenv("HONUA_CNG_GDAL_IMAGE")
+        ogrinfo = ("ogrinfo", "-json", "-al", "-so", "-mdd", "_PARQUET_METADATA_")
         if not image:
-            _run("ogrinfo", "-al", "-so", str(path))
+            info = _run(*ogrinfo, str(path))
+            gdal_seen.update(_gdal_geoparquet_metadata(json.loads(info.stdout)))
             return _command_version("GDAL", "gdalinfo", "--version")
 
         artifact = path.resolve()
@@ -819,7 +905,8 @@ def validate_geoparquet(path: Path, args: argparse.Namespace) -> list[dict]:
             "docker", "run", "--rm", "--network", "none",
             "--volume", mount, image,
         )
-        _run(*container_prefix, "ogrinfo", "-al", "-so", f"/data/{artifact.name}")
+        info = _run(*container_prefix, *ogrinfo, f"/data/{artifact.name}")
+        gdal_seen.update(_gdal_geoparquet_metadata(json.loads(info.stdout)))
         return _command_version(
             "GDAL", *container_prefix, "gdalinfo", "--version",
             expected_version="3.14.0",
@@ -828,10 +915,13 @@ def validate_geoparquet(path: Path, args: argparse.Namespace) -> list[dict]:
     _collect_client(
         observations, "geoparquet", "feature-read", "PyArrow", "pyarrow-geoparquet", args,
         pyarrow_check, observed_metadata=metadata_seen)
-    _collect_client(observations, "geoparquet", "geometry-read", "GeoPandas", "geopandas-geoparquet", args, geopandas_check)
+    _collect_client(
+        observations, "geoparquet", "geometry-read", "GeoPandas", "geopandas-geoparquet", args,
+        geopandas_check, observed_metadata=geopandas_seen)
     _collect_client(
         observations, "geoparquet", "feature-read", "GDAL", "gdal-geoparquet", args, gdal_check,
         expected_version="3.14.0" if os.getenv("HONUA_CNG_GDAL_IMAGE") else None,
+        observed_metadata=gdal_seen,
     )
     return observations
 
