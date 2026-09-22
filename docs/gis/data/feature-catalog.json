@@ -10427,7 +10427,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryTopFeaturesTests.QueryTopFeatures_WithReturnCountOnly_ReturnsCountNotFeatures",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryTopFeaturesTests.QueryTopFeatures_WithReturnGeometryFalse_OmitsGeometry",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryTopFeaturesTests.QueryTopFeatures_WithReturnIdsOnly_ReturnsObjectIdsNotFeatures",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTopFeaturesTemporalTests.QueryTopFeatures_TemporalAttributes_ReturnEpochMilliseconds"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTopFeaturesTemporalTests.QueryTopFeatures_TemporalAttributes_ReturnCalendarDateAndEpochTimestamp"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
@@ -10543,7 +10543,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.ServiceInfo_CatalogProcessIdMatchingAlias_PublishesNameOnlyOnce",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.ServiceInfo_EveryAliasInTheContract_IsPublishedOnceAndResolves",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.ServiceInfo_PublishedToolIdentifiers_ArePythonSafeAndRoundTrip",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.ServiceInfo_TaskList_PublishesSafeIdAndEsriAliasWithoutDuplicates"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.ServiceInfo_TaskList_PublishesSafeIdAndEsriAliasWithoutDuplicates",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.NetworkAnalysisUtilitiesTaskTests.ServiceInfo_KeepsTheUtilityTasksOutOfTheCallableTaskList"
       ],
       "proof_ledger_surface": "gpserver-adapter",
       "maturity": "implemented",
@@ -10572,7 +10573,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.TaskInfo_ByEsriAlias_EchoesAliasAndPublishesCanonicalParameters",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.TaskInfo_ByInternalProcessIdCaseVariant_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.TaskInfo_CatalogProcessIdMatchingAlias_ResolvesToCatalogProcess",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.TaskInfo_UnknownAlias_ReturnsNotFound"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.TaskInfo_UnknownAlias_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.NetworkAnalysisUtilitiesTaskTests.TaskInfo_DescribesGetTravelModesAsSynchronous"
       ],
       "proof_ledger_surface": "gpserver-adapter",
       "maturity": "implemented",
@@ -10586,7 +10588,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ExecuteGet_SyncEligibleTask_ReturnsInlineResults"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ExecuteGet_SyncEligibleTask_ReturnsInlineResults",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.NetworkAnalysisUtilitiesTaskTests.GetToolInfo_ReturnsTheNetworkDescriptionAndServiceLimits"
       ],
       "proof_ledger_surface": "gpserver-adapter",
       "maturity": "implemented",
@@ -11722,6 +11725,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests.Identify_WithInaccessibleRightLayer_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests.Identify_WithInnerJoinAndNoMatch_DropsUnmatchedLeftFeatures",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests.Identify_WithJoinKeyContainingInjection_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests.Identify_WithJoinedCalendarDate_NormalizesQualifiedValuesAndDefaults",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests.Identify_WithLeftOuterJoin_ReturnsQualifiedJoinedAttributes",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerIdentifyEndpointTests.MapServer_Identify_NonPointGeometryWithinTolerance_ReturnsResults",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerIdentifyEndpointTests.MapServer_Identify_PointLiteralMatchesQuotedJson",
@@ -11986,6 +11990,21 @@
       "capability": "serve.geoservices-mapserver"
     },
     {
+      "id": "get-rest-services-serviceid-naserver",
+      "route": "/rest/services/{serviceId}/NAServer",
+      "method": "GET",
+      "family": "GeoServices REST NAServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerMetadataEndpointTests.ServiceResource_ListsOneAnalysisLayerPerSupportedSolver",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerMetadataEndpointTests.ServiceResource_RejectsAnUnsupportedFormat"
+      ],
+      "proof_ledger_surface": "naserver-routing",
+      "maturity": "implemented",
+      "capability": "routing.solve"
+    },
+    {
       "id": "get-rest-services-serviceid-naserver-route-solve",
       "route": "/rest/services/{serviceId}/NAServer/Route/solve",
       "method": "GET",
@@ -11996,6 +12015,21 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerAnonymousContractTests.RouteSolve_WithoutAnyCredentialAndDevAuthOff_SolvesAndDisclosesNoPublishedData",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.RouteSolve_GetWithInsufficientStops_ReturnsGeoServicesError",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.RouteSolve_GetWithQueryParameters_ReturnsEsriRouteFeatureSet"
+      ],
+      "proof_ledger_surface": "naserver-routing",
+      "maturity": "implemented",
+      "capability": "routing.solve"
+    },
+    {
+      "id": "get-rest-services-serviceid-naserver-layername",
+      "route": "/rest/services/{serviceId}/NAServer/{layerName}",
+      "method": "GET",
+      "family": "GeoServices REST NAServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerMetadataEndpointTests.RouteLayer_DescribesImpedanceTravelModesNetworkAndInputs",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerMetadataEndpointTests.UnknownLayer_IsNotFound"
       ],
       "proof_ledger_surface": "naserver-routing",
       "maturity": "implemented",
@@ -20514,7 +20548,10 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ExecutePost_WithEnvOutSR_HonorsControl",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEndpointTests.ExecutePost_WithEsriResultOptions_TreatsOptionsAsProtocolControls",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.Execute_ByEsriAlias_RunsCanonicalProcessInline",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.Execute_UnknownAlias_ReturnsNotFound"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.Execute_UnknownAlias_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.NetworkAnalysisUtilitiesTaskTests.GetToolInfo_DescribesTheNetworkForAToolNoSolverOwns",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.NetworkAnalysisUtilitiesTaskTests.GetToolInfo_DescribesTheNetworkWhenNoToolIsNamed",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.NetworkAnalysisUtilitiesTaskTests.GetTravelModes_ExecutesAnonymouslyAndReturnsTheEsriRecordSet"
       ],
       "proof_ledger_surface": "gpserver-adapter",
       "maturity": "implemented",
@@ -20582,7 +20619,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.SubmitJob_ByEsriAlias_ResolvesToCanonicalProcess",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.SubmitJob_CatalogProcessIdMatchingAlias_SubmitsCatalogProcess",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.SubmitJob_KeywordParameterAlias_PreservesCanonicalInputAndRejectsConflicts",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.SubmitJob_UnknownAlias_ReturnsNotFound"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerEsriTaskAliasEndpointTests.SubmitJob_UnknownAlias_ReturnsNotFound",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.NetworkAnalysisUtilitiesTaskTests.UtilityTask_HasNoJobForm"
       ],
       "proof_ledger_surface": "gpserver-adapter",
       "maturity": "implemented",
@@ -21255,6 +21293,20 @@
       "capability": "serve.geoservices-mapserver"
     },
     {
+      "id": "post-rest-services-serviceid-naserver",
+      "route": "/rest/services/{serviceId}/NAServer",
+      "method": "POST",
+      "family": "GeoServices REST NAServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerMetadataEndpointTests.ServiceResource_AcceptsTheFormPostArcGisProIssues"
+      ],
+      "proof_ledger_surface": "naserver-routing",
+      "maturity": "implemented",
+      "capability": "routing.solve"
+    },
+    {
       "id": "post-rest-services-serviceid-naserver-closestfacility-solveclosestfacility",
       "route": "/rest/services/{serviceId}/NAServer/ClosestFacility/solveClosestFacility",
       "method": "POST",
@@ -21341,6 +21393,20 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.ServiceArea_ProviderWithoutServiceAreaSupport_ReturnsError",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.ServiceArea_UnsupportedTravelDirection_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.ServiceArea_WithUnsupportedTravelMode_Returns400"
+      ],
+      "proof_ledger_surface": "naserver-routing",
+      "maturity": "implemented",
+      "capability": "routing.solve"
+    },
+    {
+      "id": "post-rest-services-serviceid-naserver-layername",
+      "route": "/rest/services/{serviceId}/NAServer/{layerName}",
+      "method": "POST",
+      "family": "GeoServices REST NAServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerMetadataEndpointTests.ServiceAreaLayer_IsAddressableByFormPost"
       ],
       "proof_ledger_surface": "naserver-routing",
       "maturity": "implemented",

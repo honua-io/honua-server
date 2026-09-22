@@ -5,6 +5,8 @@
  * and other constants used in matrix testing.
  */
 
+import esriFieldTypes from './esri-field-types.json';
+
 // =============================================================================
 // Spatial Relationships
 // =============================================================================
@@ -77,6 +79,17 @@ export const ALL_GEOMETRY_METHODS = [
   'geometryCollection',
   'nullGeometry',
 ] as const;
+
+// =============================================================================
+// Esri Field Types
+// =============================================================================
+
+/**
+ * Esri field types a GeoServices client must accept in layer field metadata. The list lives in
+ * esri-field-types.json so the .NET GeoServicesFieldTypeClientContractTests (which run on every PR)
+ * hold the server's advertised field types to the same contract this suite enforces.
+ */
+export const VALID_ESRI_FIELD_TYPES: readonly string[] = esriFieldTypes.fieldTypes;
 
 // =============================================================================
 // Esri Geometry Types

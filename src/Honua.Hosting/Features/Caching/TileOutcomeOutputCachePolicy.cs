@@ -48,7 +48,8 @@ internal sealed class TileOutcomeOutputCachePolicy : IOutputCachePolicy
 
         var httpContext = context.HttpContext;
         var response = httpContext.Response;
-        if (response.StatusCode is not (StatusCodes.Status204NoContent or StatusCodes.Status413PayloadTooLarge))
+        if (response.StatusCode is not (StatusCodes.Status204NoContent or StatusCodes.Status413PayloadTooLarge)
+            && !IsOverBudgetEnvelope(httpContext))
         {
             return ValueTask.CompletedTask;
         }
@@ -70,4 +71,15 @@ internal sealed class TileOutcomeOutputCachePolicy : IOutputCachePolicy
         context.AllowCacheStorage = true;
         return ValueTask.CompletedTask;
     }
+
+    /// <summary>
+    /// The GeoServices tile routes carry the over-budget refusal as an Esri error envelope with
+    /// body code 413 over HTTP 200. The shared base policy refuses storage for every error
+    /// envelope (honua-server#4980); this refusal is the one deliberate exception, because it is
+    /// as deterministic for the budget-partitioned key as the OGC routes' real 413.
+    /// </summary>
+    private static bool IsOverBudgetEnvelope(HttpContext httpContext)
+        => httpContext.Response.StatusCode == StatusCodes.Status200OK
+            && BypassOutputCacheOnErrorEnvelopePolicy.TryGetErrorEnvelopeCode(httpContext, out var code)
+            && code == StatusCodes.Status413PayloadTooLarge;
 }

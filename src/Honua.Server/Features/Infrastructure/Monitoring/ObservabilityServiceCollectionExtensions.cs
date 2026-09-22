@@ -187,6 +187,15 @@ internal static class ObservabilityServiceCollectionExtensions
                 // for every route, not only the routes that remembered to say so.
                 policy.AddPolicy<BypassOutputCacheOnCredentialedRequestPolicy>();
                 policy.AddPolicy<BypassOutputCacheOnNoStoreResponsePolicy>();
+                // A GeoServices error envelope travels as HTTP 200, so the status-code rule
+                // alone would store it and replay a transient fault for the TTL (#4980).
+                // Deliberately cached tile refusals are re-admitted by TileOutcomeOutputCachePolicy.
+                policy.AddPolicy<BypassOutputCacheOnErrorEnvelopePolicy>();
+                // A Redis output cache outlives the deployment that changes what may be stored,
+                // so entries written by an earlier build — including the error envelopes the
+                // policy above now refuses — would keep being replayed until their TTL expires.
+                // The epoch is part of every cache key, so raising it retires them in one deploy.
+                policy.VaryByValue(static _ => new KeyValuePair<string, string>("cache-epoch", OutputCacheEpoch));
                 policy.VaryByValue(static context => ResolveTenantOutputCacheKey(context));
                 // Metadata responses (service directory, capabilities, collections, STAC,
                 // tiles, styles) are filtered by the process-wide license edition and
@@ -712,6 +721,13 @@ internal static class ObservabilityServiceCollectionExtensions
     private static KeyValuePair<string, string> ResolveTileSizeOutputCacheKey(HttpContext context)
         => new("tile-size-budget", context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>()
             .Value.Tiles.MaxTileSize.ToString(CultureInfo.InvariantCulture));
+
+    /// <summary>
+    /// Cache-key generation for the shared output cache. Raise it whenever a change makes entries
+    /// written by an earlier build unsafe or unwanted to replay, so a persistent (Redis) cache
+    /// cannot serve them after the deployment (#4980). Raising it costs one cold cache.
+    /// </summary>
+    private const string OutputCacheEpoch = "2";
 
     private static KeyValuePair<string, string> ResolveTenantOutputCacheKey(HttpContext context)
         => new("tenant", TenantScopeHelpers.ResolveRequestTenantId(context) ?? "<none>");
