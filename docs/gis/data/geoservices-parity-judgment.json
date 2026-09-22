@@ -2668,6 +2668,14 @@
       },
       "operations": [
         {
+          "name": "Service administration metadata",
+          "status": "partial",
+          "esriPaths": [
+            "/rest/admin/{serviceName}.{serviceType}"
+          ],
+          "notes": "Read-only service metadata for connections without a site segment. GET and POST expose the same principal-filtered service and branch-versioning metadata. This does not implement the ArcGIS Server administration mutation API."
+        },
+        {
           "name": "Catalog (service directory)",
           "status": "implemented",
           "esriPaths": [
