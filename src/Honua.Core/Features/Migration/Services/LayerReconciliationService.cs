@@ -213,9 +213,12 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
     private static FeatureQuery BuildCountQuery(LayerReconciliationLayerInput layer)
     {
         // Filter mirror keeps the count "apples to apples" when the apply step only imported a
-        // subset of source features (e.g. CQL/where snapshot). When no filter was supplied the
-        // probe falls back to the catalog default of "all features".
-        var where = string.IsNullOrWhiteSpace(layer.FilterMirror) ? null : layer.FilterMirror;
+        // subset of source features into a shared target. A dedicated import target is already
+        // scoped to the selected population: re-running the source predicate against it could
+        // hide extra rows or reference source identifiers that were remapped on insert.
+        var where = layer.TargetContainsOnlyImportedFeatures || string.IsNullOrWhiteSpace(layer.FilterMirror)
+            ? null
+            : layer.FilterMirror;
         return where is null ? default : new FeatureQuery { Where = where };
     }
 
@@ -224,7 +227,7 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         var sampleSize = Math.Clamp(options.SampleSize, MinSampleSize, MaxSampleSize);
         return new FeatureQuery
         {
-            Where = string.IsNullOrWhiteSpace(layer.FilterMirror) ? null : layer.FilterMirror,
+            Where = BuildCountQuery(layer).Where,
             Limit = sampleSize
         };
     }
@@ -261,6 +264,22 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         }
 
         var delta = (targetCount ?? 0L) - source.Value;
+        if (layer.TargetContainsOnlyImportedFeatures && delta != 0L)
+        {
+            // Every row in a dedicated target came from the selected source population, so any
+            // difference is lost or extra data; the tolerance bands do not apply.
+            return new MigrationReconciliationCountProbe
+            {
+                SourceCount = source,
+                TargetCount = targetCount,
+                Delta = delta,
+                DeltaRatio = source.Value == 0L ? null : Math.Abs((double)delta) / source.Value,
+                FilterMirror = layer.FilterMirror,
+                Classification = MigrationReconciliationClassifications.Fail,
+                Reason = $"Selected source count {source.Value} differs from the import target count {targetCount}; reject the apply."
+            };
+        }
+
         if (source.Value == 0L)
         {
             return delta == 0L
