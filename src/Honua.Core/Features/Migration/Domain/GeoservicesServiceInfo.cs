@@ -137,6 +137,9 @@ public sealed record GeoservicesLayerInfo
     /// </summary>
     public bool HasAttachments { get; init; }
 
+    /// <summary>Source field declared as the edit-stable GlobalID binding, when present.</summary>
+    public string? GlobalIdField { get; init; }
+
     /// <summary>
     /// Minimum scale at which the layer is visible.
     /// </summary>

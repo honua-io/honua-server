@@ -214,7 +214,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 COALESCE(NULLIF(srid, 0), NULLIF(storage_srid, 0), @catalogSrid) AS layer_srid,
                 COALESCE(storage_options ->> 'managedStore', 'false') = 'true' AS managed_store
             FROM honua.layers
-            WHERE layer_id = @layerId;
+            WHERE layer_id = @layerId
+              AND COALESCE(storage_options->>'managedCopy', 'false') <> 'true';
             """;
 
         await using var command = new NpgsqlCommand(sql, connection);

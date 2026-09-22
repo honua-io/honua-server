@@ -47,6 +47,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     private const int MaxJsonbBuildObjectPairs = 50;
     private static readonly string[] _defaultFormats = ["JSON", "GeoJSON"];
     private static readonly string[] _defaultCapabilities = ["Query", "Extract"];
+    private static readonly string[] _editableCapabilities = ["Query", "Extract", "Create", "Update", "Delete"];
+    private const string ManagedSourceIdField = "honua_source_id";
+    private readonly Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider? _managedConnectionProvider = featureStoreConnections;
+    private readonly string _managedFeaturesTable = string.IsNullOrEmpty(metadataSchema)
+        ? "features"
+        : SchemaSearchPath.QualifyTable("features", metadataSchema);
 
     private readonly ITableDiscoveryService _tableDiscoveryService = tableDiscoveryService;
     private readonly IMetadataV2GraphStore _metadataGraphStore = metadataGraphStore;
@@ -202,8 +208,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         }
 
         var serviceName = NormalizeServiceName(request.ServiceName);
-        var isManagedStore = request.StorageMode == LayerStorageMode.Managed;
-        var publicationCapabilities = ResolvePublicationCapabilities(request.Capabilities, isManagedStore);
+        var isManagedStore = request.StorageMode == LayerStorageMode.Managed || request.CreateEditableCopy;
+        var publicationCapabilities = ResolvePublicationCapabilities(
+            request.Capabilities ?? (request.CreateEditableCopy ? _editableCapabilities : null), isManagedStore);
 
         var validation = await ValidateTableForPublishAsync(
                 connectionString,
@@ -222,7 +229,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 },
                 cancellationToken)
             .ConfigureAwait(false);
-        ThrowIfPublishValidationFailed(validation);
+        ThrowIfPublishValidationFailed(validation, request.CreateEditableCopy);
 
         var tableInfo = await ResolveTableInfoForValidationAsync(connectionString, schema, table, cancellationToken)
             ?? throw new LayerPublishingException(
@@ -280,7 +287,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         }
 
         var primaryKeyName = ResolvePrimaryKeyName(selectedColumns, request.PrimaryKey);
-        if (primaryKeyName is null && !isManagedStore)
+        if (primaryKeyName is null && (!isManagedStore || request.CreateEditableCopy))
         {
             throw new LayerPublishingException(
                 LayerPublishingErrorKind.Validation,
@@ -291,7 +298,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             ? null
             : selectedColumns.FirstOrDefault(col =>
                 string.Equals(col.Name, primaryKeyName, StringComparison.OrdinalIgnoreCase));
-        if (primaryKeyColumn == null && !isManagedStore)
+        if (primaryKeyColumn == null && (!isManagedStore || request.CreateEditableCopy))
         {
             var existsInTable = columns.Any(col =>
                 string.Equals(col.Name, primaryKeyName, StringComparison.OrdinalIgnoreCase));
@@ -303,7 +310,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         // A managed-store layer takes its identity from the managed store, so its source key
         // may be of any type, unselected or absent (honua-server#4859).
-        if (!isManagedStore)
+        if (!isManagedStore || request.CreateEditableCopy)
         {
             var primaryKeyType = MapPostgresType(primaryKeyColumn!.DataType);
             if (primaryKeyType is not MetadataV2FieldType.Integer and not MetadataV2FieldType.BigInteger)
@@ -314,12 +321,23 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             }
         }
 
-        var fields = isManagedStore
+        var fields = isManagedStore && !request.CreateEditableCopy
             ? BuildManagedLayerFields(selectedColumns, primaryKeyColumn, geometryColumn, request.FieldDomains)
             : BuildLayerFields(selectedColumns, primaryKeyColumn!, geometryColumn, request.FieldDomains);
-        var attributeColumns = isManagedStore
+        var attributeColumns = isManagedStore && !request.CreateEditableCopy
             ? SelectManagedAttributeColumns(selectedColumns, primaryKeyColumn, geometryColumn)
             : selectedColumns;
+
+        var managedSchema = request.CreateEditableCopy
+            ? await ValidateManagedCopyTargetAsync(connectionString, fields, cancellationToken).ConfigureAwait(false)
+            : null;
+        if (request.CreateEditableCopy)
+        {
+            var primaryIndex = fields.FindIndex(field => field.Name.Equals(primaryKeyColumn!.Name, StringComparison.OrdinalIgnoreCase));
+            fields[primaryIndex] = fields[primaryIndex] with { Type = MetadataV2FieldType.BigInteger };
+            fields.Add(new LayerFieldInsert(ManagedSourceIdField, MetadataV2FieldType.BigInteger, null, true,
+                "Original source object ID for migration identity mapping; null for newly created features."));
+        }
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -403,6 +421,12 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             cancellationToken);
         Log.LayerMaterialized(_logger, layerId, materializedCount);
 
+        if (managedSchema is not null)
+        {
+            await PrepareManagedCopyAsync(connection, transaction, layerId, managedSchema, primaryKeyColumn!.Name,
+                srid, cancellationToken).ConfigureAwait(false);
+        }
+
         await RefreshLayerExtentAsync(connection, transaction, layerId, cancellationToken);
 
         await EnsureServiceLayerAsync(connection, transaction, serviceName, layerId, cancellationToken);
@@ -421,6 +445,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                     request,
                     layerId,
                     storage,
+                    request.CreateEditableCopy ? primaryKeyColumn!.Name : storage.PrimaryKeyColumn,
+                    request.CreateEditableCopy ? geometryColumn : storage.GeometryColumn,
                     geometryType,
                     srid,
                     fields,

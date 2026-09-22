@@ -113,10 +113,13 @@ internal static class MetadataV2AttributeValidation
                 continue;
             }
 
-            // Non-editable fields are read-only on update. On insert we still
+            // Non-editable fields and the bound GlobalID are read-only on update.
+            // Enforce the binding even for older schemas that mark its field editable.
+            // On insert we still
             // accept supplied values (mirrors the v1 behaviour where Editable
             // didn't gate writes).
-            if (isUpdate && !field.Editable)
+            if (isUpdate && (!field.Editable ||
+                field.Name.Equals(resource.Editing?.GlobalIdField, StringComparison.OrdinalIgnoreCase)))
             {
                 errors.Add($"Field '{field.Name}' is not editable.");
                 continue;

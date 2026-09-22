@@ -81,7 +81,8 @@ internal sealed partial class GeoservicesLayerPublicationService
         DateTimeOffset startedAt,
         int featuresProcessed,
         string connectionString,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool supportsAttachments = false)
     {
         if (_layerPublishingService == null)
         {
@@ -125,6 +126,8 @@ internal sealed partial class GeoservicesLayerPublicationService
                 HasM = layerInfo.HasM,
                 Srid = request.TargetSrid,
                 PrimaryKey = FieldNames.ObjectId,
+                GlobalIdField = ResolveImportedGlobalIdField(layerInfo),
+                SupportsAttachments = supportsAttachments,
                 Fields = [],
                 ServiceName = request.ServiceName,
                 Enabled = true,
@@ -168,6 +171,15 @@ internal sealed partial class GeoservicesLayerPublicationService
             warnings.Add("AutoPublish was requested, but publishing did not complete.");
             return null;
         }
+    }
+
+    private static string? ResolveImportedGlobalIdField(GeoservicesLayerInfo layerInfo)
+    {
+        var declared = layerInfo.GlobalIdField;
+        var field = !string.IsNullOrWhiteSpace(declared)
+            ? layerInfo.Fields.FirstOrDefault(field => field.Name.Equals(declared, StringComparison.OrdinalIgnoreCase))
+            : layerInfo.Fields.FirstOrDefault(field => field.Type.Equals("esriFieldTypeGlobalID", StringComparison.OrdinalIgnoreCase));
+        return field?.Name.SanitizeFieldName();
     }
 
     // Projects the captured per-field Esri domains onto the publish request, keyed

@@ -208,6 +208,7 @@ internal sealed partial class ArcGisRestClient
             Relationships = layerResponse.Relationships ?? [],
             Type = layerResponse.Type,
             HasAttachments = layerResponse.HasAttachments,
+            GlobalIdField = layerResponse.GlobalIdField,
             MinScale = layerResponse.MinScale,
             MaxScale = layerResponse.MaxScale,
             Extent = ParseExtent(layerResponse.Extent),
@@ -1053,6 +1054,9 @@ internal sealed record ArcGisLayerResponse : IArcGisErrorResponse
 
     [JsonPropertyName("hasAttachments")]
     public bool HasAttachments { get; init; }
+
+    [JsonPropertyName("globalIdField")]
+    public string? GlobalIdField { get; init; }
 
     [JsonPropertyName("minScale")]
     public double? MinScale { get; init; }
