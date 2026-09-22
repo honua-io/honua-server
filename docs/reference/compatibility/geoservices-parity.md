@@ -9,6 +9,19 @@ resources:
 ---
 # GeoServices REST parity
 
+## Attribute-only tables
+
+Imported Esri tables publish as canonical Table resources. FeatureServer discovery
+lists them in `tables`; their individual metadata identifies `type: Table` and
+omits geometry type and spatial reference. They retain attribute query, count and
+paging behavior without creating a geometry column or spatial index.
+
+Data reconciliation uses the source's declared geometry capability: geometry and
+extent checks are marked as not applicable for attribute-only sources, while row
+count and attribute checks remain active. An absent geometry on a spatial source
+still fails geometry validation. Importing a table alone does not establish its
+cross-resource relationships; those bindings require separate migration evidence.
+
 Honua provides protocol-level compatibility at Esri GeoServices REST paths for
 selected, operation-scoped workflows. Client support is bounded by this matrix;
 it does not imply blanket compatibility for ArcGIS Pro, ArcGIS SDKs, Esri Leaflet,

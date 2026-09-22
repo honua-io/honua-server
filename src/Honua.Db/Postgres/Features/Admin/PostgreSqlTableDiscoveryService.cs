@@ -83,6 +83,52 @@ internal sealed class PostgreSqlTableDiscoveryService(
         }
     }
 
+    /// <inheritdoc />
+    public async Task<TableInfo?> DiscoverNonSpatialTableAsync(
+        DbConnection connection,
+        string schema,
+        string table,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        var postgres = connection.RequireNpgsqlConnection();
+
+        const string sql = """
+            SELECT table_schema, table_name
+            FROM information_schema.tables AS tables
+            WHERE table_schema = @schema AND table_name = @table
+              AND table_type IN ('BASE TABLE', 'FOREIGN TABLE')
+              AND table_schema <> ALL(@metadataSchemas)
+              AND table_schema <> 'information_schema'
+              AND table_schema !~ '^pg_'
+              AND table_name NOT LIKE '\_\_honua\_wfs\_stage\_%' ESCAPE '\'
+              AND NOT EXISTS (
+                  SELECT 1 FROM information_schema.columns AS columns
+                  WHERE columns.table_schema = tables.table_schema
+                    AND columns.table_name = tables.table_name
+                    AND columns.udt_name IN ('geometry', 'geography'));
+            """;
+        await using (var command = new NpgsqlCommand(sql, postgres))
+        {
+            command.Parameters.AddWithValue("schema", schema);
+            command.Parameters.AddWithValue("table", table);
+            command.Parameters.Add("metadataSchemas", NpgsqlDbType.Array | NpgsqlDbType.Text).Value =
+                _schemaConfiguration.MetadataSchemas.ToArray();
+            if (await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is not string)
+            {
+                return null;
+            }
+        }
+
+        return new TableInfo
+        {
+            Schema = schema,
+            Table = table,
+            EstimatedRows = await GetEstimatedRowCountAsync(postgres, schema, table, cancellationToken).ConfigureAwait(false),
+            Columns = await GetTableColumnsAsync(postgres, schema, table, cancellationToken).ConfigureAwait(false)
+        };
+    }
+
     private async Task<List<TableInfo>> DiscoverPostGisTablesCoreAsync(
         NpgsqlConnection connection,
         CancellationToken cancellationToken)

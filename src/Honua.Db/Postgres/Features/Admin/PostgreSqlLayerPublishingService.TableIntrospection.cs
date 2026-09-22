@@ -73,23 +73,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
 
-        if (!await TableExistsAsync(connection, schema, table, cancellationToken).ConfigureAwait(false))
-        {
-            return null;
-        }
-
-        return new TableInfo
-        {
-            Schema = schema,
-            Table = table,
-            GeometryColumn = null,
-            GeometryType = null,
-            Srid = null,
-            EstimatedRows = await GetEstimatedRowCountAsync(connection, schema, table, cancellationToken)
-                .ConfigureAwait(false),
-            Columns = await GetTableColumnsAsync(connection, schema, table, cancellationToken)
-                .ConfigureAwait(false)
-        };
+        return await _tableDiscoveryService.DiscoverNonSpatialTableAsync(
+            connection, schema, table, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<bool> TableExistsAsync(
@@ -255,7 +240,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private static List<LayerFieldInsert> BuildLayerFields(
         List<ColumnInfo> selectedColumns,
         ColumnInfo primaryKeyColumn,
-        string geometryColumn,
+        string? geometryColumn,
         IReadOnlyDictionary<string, MetadataV2FieldDomain> fieldDomains)
     {
         var fields = new List<LayerFieldInsert>();
@@ -290,7 +275,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             _ = added.Add(column.Name);
         }
 
-        if (!added.Contains(geometryColumn))
+        if (!string.IsNullOrWhiteSpace(geometryColumn) && !added.Contains(geometryColumn))
         {
             fields.Add(new LayerFieldInsert(
                 geometryColumn,

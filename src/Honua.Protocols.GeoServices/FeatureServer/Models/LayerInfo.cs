@@ -1,6 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json.Serialization;
+
 namespace Honua.Protocols.GeoServices.FeatureServer.Models;
 
 /// <summary>
@@ -51,5 +53,6 @@ public sealed class LayerInfo
     /// <summary>
     /// Geometry type
     /// </summary>
-    public required string GeometryType { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public required string? GeometryType { get; init; }
 }

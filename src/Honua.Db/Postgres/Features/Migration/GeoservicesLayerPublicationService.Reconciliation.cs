@@ -148,6 +148,7 @@ internal sealed partial class GeoservicesLayerPublicationService
             SourceLayerName = string.IsNullOrWhiteSpace(layerInfo.Name) ? request.TableName : layerInfo.Name,
             TargetHonuaLayerId = publishedLayer.LayerId,
             SourceFeatureCount = layerInfo.FeatureCount,
+            SourceHasGeometry = !string.IsNullOrEmpty(layerInfo.GeometryType),
             SourceExtent = sourceExtent,
             PlannedTargetSrid = request.TargetSrid,
             SourceFieldNames = sourceFieldNames,
