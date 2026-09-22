@@ -106,13 +106,19 @@ or CLI-based access, prefer `AccountName` plus `CredentialChain`.
 | `GeometryType` | `Point` | Geometry type: `Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Polygon`, `MultiPolygon`. |
 | `Attributes` | `null` | Optional explicit list of attribute column names to expose. When omitted, columns are discovered from the DuckDB schema at startup. |
 
-Attribute column names must be letters, digits or `_`, and may also use `:`, `.` or `-`
-after the first character — the same field-name syntax the query surfaces accept. A
-column whose name falls outside it (for example one containing a space or a quote
-character) is not exposed as an attribute: the layer still loads and serves its other
-columns, and a startup warning names the skipped column. This applies to both discovered
-and explicitly listed columns. Rename the column in the source, or project it to a
-supported name in the view or table the layer reads.
+For attribute names that work across DuckDB query operations, use an ASCII letter or
+`_` first, followed only by ASCII letters, digits or `_` (`[A-Za-z_][A-Za-z0-9_]*`).
+The provider's WHERE filters, grouping, statistics, temporal/bin queries and top filters
+require this narrower syntax.
+
+Discovery and basic feature reads also admit the shared field-name syntax, including
+names containing `:`, `.` or `-` after the first character. Such a name can appear in a
+returned feature, but cannot be used in the filtering and analytical operations above.
+For example, project `eo:cloud_cover` as `eo_cloud_cover` in the source view or table to
+use it across those operations. A name outside the shared syntax (for example one
+containing a space or quote) is omitted from attributes with a startup warning; the layer
+still serves its remaining columns. These rules apply to both discovered and explicitly
+listed columns.
 
 `ExternalSource` settings:
 
