@@ -178,7 +178,7 @@ public static class FeatureCatalog
 
     /// <summary>
     /// Entitlement key for disconnected field operations — form offline policy discovery,
-    /// FieldCollection cursor/change sync, and GeoServices replica/GeoPackage delta sync.
+    /// FieldCollection cursor/change sync, and GeoServices replica delta sync (delivered as Esri JSON).
     /// Online form package reads and submissions remain Community surfaces.
     /// </summary>
     public const string FieldOpsOfflineSyncKey = "fieldops.offline-sync";
@@ -465,7 +465,7 @@ public static class FeatureCatalog
 
         // Field operations — Pro (disconnected/offline sync; online collection remains Community)
         new(FieldOpsOfflineSyncKey, "Offline/Field Sync", Categories.FieldOps,
-            HonuaEdition.Pro, "Use disconnected field sync, form offline policy discovery, GeoServices replica/GeoPackage delta sync, and FieldCollection cursor/change exchange."),
+            HonuaEdition.Pro, "Use disconnected field sync, form offline policy discovery, GeoServices replica delta sync delivered as Esri JSON, and FieldCollection cursor/change exchange."),
 
         // Import — Enterprise
         new("import.geoservices", "GeoServices Import", Categories.Import,
