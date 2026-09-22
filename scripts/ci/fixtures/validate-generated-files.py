@@ -150,6 +150,11 @@ class GeneratedFilesContracts(unittest.TestCase):
             for name in ('generated-files.sh', 'publish-generated-files.sh'):
                 shutil.copy(ROOT / 'scripts/ci' / name, scripts / name)
             paths = run('bash', '-c', 'source scripts/ci/generated-files.sh; printf "%s\\n" "${GENERATED_FILES[@]}"').stdout.splitlines()
+            # Exercise a drift confined to a file inside the generated concept directory.
+            # The publisher must include nested projections through the directory pathspec.
+            paths = ['docs/okf/capabilities/admin.control-plane.md'] + [
+                name for name in paths if name != 'docs/okf/capabilities'
+            ]
             for name in paths:
                 path = repo / name
                 path.parent.mkdir(parents=True, exist_ok=True)
