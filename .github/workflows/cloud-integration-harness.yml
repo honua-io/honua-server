@@ -120,6 +120,7 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Run cloud-integration tests
+        id: run-tests
         env:
           TESTCONTAINERS_RYUK_DISABLED: false
         run: |
@@ -132,6 +133,20 @@ jobs:
             --logger "trx;LogFileName=cloud-integration.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
+
+      # honua-server#4414: every cell here gates cleanly with [SkippableFact] when kind or
+      # LocalStack is unavailable, and `dotnet test` exits 0 either way — so a kind-action failure,
+      # a LocalStack image-pull failure or a fixture regression turned the whole free-tier lane
+      # green without executing anything. Same counts-not-exit-code tripwire as the local-substrate
+      # lane below and the real-AWS lane.
+      - name: Prove the free-tier lane actually executed
+        if: ${{ !cancelled() && steps.run-tests.conclusion != 'skipped' }}
+        run: |
+          python3 scripts/ci/assert-trx-executed.py \
+            --label "Free-tier cloud integration (kind + LocalStack)" \
+            --trx tests/TestResults/cloud-integration.trx \
+            --min-passed 1 \
+            --max-skipped 0
 
       - name: Upload results
         if: ${{ always() }}
@@ -216,38 +231,12 @@ jobs:
       # NotExecuted and on fewer than one Passed.
       - name: Prove the local-substrate lane actually executed
         if: ${{ !cancelled() && steps.run-tests.conclusion != 'skipped' }}
-        shell: bash
         run: |
-          set -euo pipefail
-          trx=./tests/TestResults/local-substrate.trx
-          if [[ ! -f "${trx}" ]]; then
-            echo "::error::no TRX produced for the Category=LocalSubstrate lane"
-            exit 1
-          fi
-          # `|| true` on each grep is load-bearing under `set -euo pipefail`: grep exits 1 when it
-          # matches nothing, and on the healthy path the Failed and NotExecuted counts are zero.
-          count_outcome() {
-            { grep -o "outcome=\"$1\"" "${trx}" || true; } | wc -l | tr -d '[:space:]'
-          }
-          passed=$(count_outcome Passed)
-          failed=$(count_outcome Failed)
-          skipped=$(count_outcome NotExecuted)
-          {
-            echo '### Local-substrate lane coverage'
-            echo
-            echo "- Passed: ${passed}"
-            echo "- Failed: ${failed}"
-            echo "- Skipped: ${skipped}"
-          } >> "${GITHUB_STEP_SUMMARY}"
-          if [[ "${skipped}" -gt 0 ]]; then
-            echo "::error::${skipped} [SkippableFact] case(s) were skipped — Docker/Postgres was unavailable on this runner (or a fixture regressed), and the entire local-substrate lane silently reported nothing"
-            exit 1
-          fi
-          if [[ "${passed}" -lt 1 ]]; then
-            echo "::error::no [SkippableFact] case passed — the Category=LocalSubstrate trait or the cases themselves are gone"
-            exit 1
-          fi
-          echo "OK: ${passed} local-substrate case(s) executed, 0 skipped."
+          python3 scripts/ci/assert-trx-executed.py \
+            --label "Local substrate (YARP rolling + local process + migration gate)" \
+            --trx tests/TestResults/local-substrate.trx \
+            --min-passed 1 \
+            --max-skipped 0
 
       - name: Upload results
         if: ${{ always() }}
