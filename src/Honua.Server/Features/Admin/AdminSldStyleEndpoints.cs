@@ -4,6 +4,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Xml;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
@@ -73,7 +74,8 @@ internal static class AdminSldStyleEndpoints
             context,
             layerId,
             scope: AccessScope.Write,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+            cancellationToken: cancellationToken,
+            operation: AuthorizationOperation.Admin).ConfigureAwait(false);
         if (!layerValidation.IsValid || layerValidation.Resource is null)
         {
             return layerValidation.ErrorResult!;

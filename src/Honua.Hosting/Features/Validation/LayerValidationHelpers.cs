@@ -291,7 +291,8 @@ internal static class LayerValidationHelpers
         int layerId,
         AccessScope scope = AccessScope.Read,
         string? requiredProtocol = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        AuthorizationOperation? operation = null)
     {
         var snapshot = await GetV2SnapshotAsync(context, cancellationToken).ConfigureAwait(false);
         var (publication, resource, service) = ResolveV2Triple(context, snapshot, layerId, requiredProtocol);
@@ -304,7 +305,8 @@ internal static class LayerValidationHelpers
         }
 
         var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
-            context, resource!, service, scope, cancellationToken).ConfigureAwait(false);
+            context, resource!, operation ?? AccessPolicyHelpers.DefaultOperationForScope(scope),
+            service, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return new MetadataV2ValidationResult(false, publication, resource, service, accessError);
