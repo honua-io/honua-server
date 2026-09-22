@@ -213,6 +213,52 @@ public sealed class OidcClaimsMappingEntitlementTests
         Assert.Null(result.FindFirst("permission"));
     }
 
+    [Theory]
+    [InlineData("primary", HonuaEdition.Enterprise)]
+    [InlineData("additional", HonuaEdition.Enterprise)]
+    [InlineData("custom", HonuaEdition.Enterprise)]
+    [InlineData("primary", HonuaEdition.Pro)]
+    [InlineData("additional", HonuaEdition.Pro)]
+    [InlineData("custom", HonuaEdition.Pro)]
+    [Trait("Tier", "Fast")]
+    public async Task TransformAsync_AuthorityClaimAsConfiguredMappingSource_PreservesOnlyEntitledRole(
+        string mappingKind, HonuaEdition edition)
+    {
+        var mapping = new ClaimsMappingOptions();
+        if (mappingKind == "primary")
+        {
+            mapping.RoleClaimType = "permission";
+        }
+        else if (mappingKind == "additional")
+        {
+            mapping.AdditionalRoleClaimTypes = ["permission"];
+        }
+        else
+        {
+            mapping.CustomMappings = new Dictionary<string, string> { ["permission"] = ClaimTypes.Role };
+        }
+
+        using var services = new ServiceCollection()
+            .AddSingleton<ILicenseEntitlementService>(new TestLicenseEntitlementService(edition))
+            .BuildServiceProvider();
+        var transformation = new OidcClaimsTransformation(
+            Options.Create(new OidcAuthenticationOptions { ClaimsMapping = mapping }),
+            NullLogger<OidcClaimsTransformation>.Instance,
+            services);
+        var principal = new ClaimsPrincipal(new ClaimsIdentity(
+            [new Claim("sub", "user-123"), new Claim("permission", "mapped-editor")],
+            "Bearer"));
+
+        var result = await transformation.TransformAsync(principal);
+
+        Assert.Null(result.FindFirst("permission"));
+        Assert.Equal(edition == HonuaEdition.Enterprise, result.IsInRole("mapped-editor"));
+        Assert.Equal(edition == HonuaEdition.Enterprise,
+            result.HasClaim(claim => claim.Type == OidcClaimsTransformation.RolesFromClaimsMappingClaimType));
+        Assert.DoesNotContain(result.FindAll(OidcClaimsTransformation.RolesWithoutClaimsMappingClaimType),
+            claim => claim.Value == "mapped-editor");
+    }
+
     [UnitTest]
     public async Task TransformAsync_CustomMappingTargetingAuthorityClaim_IsSkipped()
     {

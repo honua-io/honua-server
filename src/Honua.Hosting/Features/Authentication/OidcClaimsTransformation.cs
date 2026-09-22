@@ -91,6 +91,12 @@ internal sealed class OidcClaimsTransformation(
         // preserves only claims carrying in-memory framework provenance.
         RemoveUntrustedFrameworkClaims(principal);
 
+        // Strip framework provenance before retaining provider values for configured
+        // mappings. A claim such as `permission` can be a legitimate mapping SOURCE
+        // without being allowed to authorize a request under its original claim type.
+        RemoveReservedProvenanceClaims(principal);
+        var mappingSource = identity.Clone();
+
         // The admin permission grammar, the credential-kind discriminator, the API-key
         // identity and the rate-limit tier are minted by this process's own authentication
         // handlers and read as authoritative by shared authorization. Every handler that
@@ -100,13 +106,6 @@ internal sealed class OidcClaimsTransformation(
         // choose the transformation path either. Configured role mapping is unaffected:
         // it targets role claim types, which are not in this set.
         CanonicalSecurityActor.RemoveUnstampedAuthorityClaims(principal);
-
-        // These markers are framework-owned authorization provenance, not issuer claims. An
-        // OIDC provider must not be able to choose the fallback roles restored after the live
-        // claims-mapping entitlement expires. Remove every externally supplied copy (including
-        // copies on secondary identities), then recompute the exact markers below. Re-running
-        // this transformation is safe because previously computed markers are recomputed too.
-        RemoveReservedProvenanceClaims(principal);
 
         // Skip transformation for API key authenticated users (including
         // layer-scoped write keys, #1637, which must not be granted a default
@@ -141,7 +140,7 @@ internal sealed class OidcClaimsTransformation(
         var transformedClaims = new List<Claim>();
 
         // Normalize user ID claim
-        var userId = FindClaimValue(identity,
+        var userId = FindClaimValue(mappingSource,
             _options.ClaimsMapping.UserIdClaimType,
             ClaimTypes.NameIdentifier,
             "sub",
@@ -153,7 +152,7 @@ internal sealed class OidcClaimsTransformation(
         }
 
         // Normalize name claim
-        var name = FindClaimValue(identity,
+        var name = FindClaimValue(mappingSource,
             _options.ClaimsMapping.NameClaimType,
             ClaimTypes.Name,
             "name",
@@ -166,7 +165,7 @@ internal sealed class OidcClaimsTransformation(
         }
 
         // Normalize email claim
-        var email = FindClaimValue(identity,
+        var email = FindClaimValue(mappingSource,
             _options.ClaimsMapping.EmailClaimType,
             ClaimTypes.Email,
             "email",
@@ -179,7 +178,7 @@ internal sealed class OidcClaimsTransformation(
 
         // Map roles from provider-specific claims
         var rolesWithoutMapping = GetRoleClaims(identity, claimsMappingEntitled: false);
-        var roles = GetRoleClaims(identity, claimsMappingEntitled);
+        var roles = GetRoleClaims(mappingSource, claimsMappingEntitled);
         var fallbackRoles = BuildEffectiveRoles(identity, rolesWithoutMapping);
         var fullRoles = BuildEffectiveRoles(identity, roles);
 
@@ -192,7 +191,7 @@ internal sealed class OidcClaimsTransformation(
                          static mapping => string.Equals(
                              mapping.Value, ClaimTypes.Role, StringComparison.Ordinal)))
             {
-                var sourceValue = identity.FindFirst(mapping.Key)?.Value;
+                var sourceValue = mappingSource.FindFirst(mapping.Key)?.Value;
                 if (!string.IsNullOrEmpty(sourceValue) &&
                     !fullRoles.Contains(sourceValue, StringComparer.OrdinalIgnoreCase))
                 {
@@ -228,7 +227,7 @@ internal sealed class OidcClaimsTransformation(
         // the tenant scope. Marking only role provenance meant an expired entitlement dropped
         // the mapping-derived roles while the mapping-derived TENANT kept authorizing
         // cross-tenant access indefinitely (honua-server#2997 review).
-        var mappedTenantClaimType = ResolveMappedTenantClaimType(identity, claimsMappingEntitled);
+        var mappedTenantClaimType = ResolveMappedTenantClaimType(mappingSource, claimsMappingEntitled);
         foreach (var role in roles.Where(role => !identity.HasClaim(c => c.Type == ClaimTypes.Role && c.Value == role)))
         {
             transformedClaims.Add(new Claim(ClaimTypes.Role, role));
@@ -289,7 +288,7 @@ internal sealed class OidcClaimsTransformation(
                     continue;
                 }
 
-                var sourceValue = identity.FindFirst(mapping.Key)?.Value;
+                var sourceValue = mappingSource.FindFirst(mapping.Key)?.Value;
                 if (!string.IsNullOrEmpty(sourceValue) && !identity.HasClaim(c => c.Type == mapping.Value))
                 {
                     transformedClaims.Add(new Claim(mapping.Value, sourceValue));
