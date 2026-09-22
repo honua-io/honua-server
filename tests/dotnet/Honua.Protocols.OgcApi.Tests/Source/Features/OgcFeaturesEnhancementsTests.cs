@@ -1169,6 +1169,13 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
                 href.GetString()!.Contains("/ogc/maps/map", StringComparison.Ordinal))
             .Should()
             .BeTrue();
+
+        // The dataset tilesets list serves map (PNG) tilesets, so it is linked as tilesets-map.
+        var datasetTilesetsRelations = links
+            .Where(link => new Uri(link.GetProperty("href").GetString()!).AbsolutePath == "/ogc/tiles/tiles")
+            .Select(link => link.GetProperty("rel").GetString())
+            .ToArray();
+        datasetTilesetsRelations.Should().Equal(RelationTypes.TilesetsMap);
     }
 
     [IntegrationTest]

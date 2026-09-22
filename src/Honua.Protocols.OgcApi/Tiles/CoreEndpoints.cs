@@ -82,11 +82,14 @@ internal static class CoreEndpoints
             type: MediaTypes.Json,
             title: "Collections"));
 
+        // The dataset tilesets are map (PNG) tiles unless the dataset resolves to a single
+        // vector-capable collection, so advertise them as tilesets-map. Vector tilesets are per
+        // collection and each collection links them with tilesets-vector (reachable via rel=data).
         links.Add(Link.Create(
             href: $"{baseUrl}/ogc/tiles/tiles",
-            rel: RelationTypes.TilesetsVector,
+            rel: RelationTypes.TilesetsMap,
             type: MediaTypes.Json,
-            title: "Vector tilesets"));
+            title: "Dataset map tilesets"));
 
         links.Add(Link.Create(
             href: $"{baseUrl}/ogc/tiles/tileMatrixSets",

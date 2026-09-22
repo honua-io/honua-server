@@ -56,7 +56,21 @@ public sealed class OgcTilesEndpointTests : IAsyncLifetime
         links.Should().Contain(l => l.Rel == RelationTypes.Self);
         links.Should().Contain(l => l.Rel == RelationTypes.ServiceDesc);
         links.Should().Contain(l => l.Rel == RelationTypes.Conformance);
-        links.Should().Contain(l => l.Rel == RelationTypes.TilesetsVector);
+
+        // The dataset tilesets list must be advertised under the relation that matches the
+        // tilesets it returns.
+        var datasetTilesetsLink = links.Single(l => new Uri(l.Href).AbsolutePath == "/ogc/tiles/tiles");
+        datasetTilesetsLink.Rel.Should().Be(RelationTypes.TilesetsMap);
+
+        var tilesetsResponse = await _fixture.Client.GetAsync(new Uri(datasetTilesetsLink.Href).PathAndQuery);
+        var tilesetsContent = await tilesetsResponse.Content.ReadAsStringAsync();
+        tilesetsResponse.StatusCode.Should().Be(HttpStatusCode.OK, tilesetsContent);
+        using var tilesets = JsonDocument.Parse(tilesetsContent);
+        var dataTypes = tilesets.RootElement.GetProperty("tilesets").EnumerateArray()
+            .Select(tileset => tileset.GetProperty("dataType").GetString())
+            .ToArray();
+        dataTypes.Should().NotBeEmpty();
+        dataTypes.Should().OnlyContain(dataType => dataType == "map");
     }
 
     [IntegrationTest]
