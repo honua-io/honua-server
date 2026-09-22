@@ -803,6 +803,21 @@ internal static partial class MapServerEndpoints
         var candidate = format.Trim().ToLowerInvariant();
         switch (candidate)
         {
+            case "jpgpng":
+                // Esri "jpgpng" means "JPEG where opaque, PNG where transparency is needed".
+                // This handler emits a single concrete encoding, so normalise to png: it
+                // preserves transparency and is the safe lossless choice for the combined
+                // token. ImageServerExportHandler.TryResolveOutputFormat already does
+                // exactly this, and the two services should not disagree about a format
+                // Esri defines identically for both.
+                //
+                // Omitting it was a real interop break, not a style choice: jpgpng is the
+                // Image Encoding QGIS's ArcGIS REST Server connection defaults to, so a
+                // stock QGIS user adding a Honua MapServer got an empty canvas and
+                // "Error 400: Bad Request" while identify, legend and the service document
+                // all worked.
+                normalized = "png";
+                return true;
             case "png":
             case "png8":
             case "png24":
