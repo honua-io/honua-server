@@ -103,7 +103,14 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<IFeatureReader>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
         services.AddScoped<IFeatureWriter>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
         services.AddScoped<ITileProvider>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
-        services.AddScoped<IRelationshipStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
+        // Related-record queries that involve a source-backed resource (e.g. an imported table) are
+        // routed through the storage-bound readers; managed relationships keep the managed store.
+        services.AddScoped<IRelationshipStore>(provider => new SourceBackedRelationshipStore(
+            provider.GetRequiredService<PostgresFeatureStoreRefactored>(),
+            provider.GetService<IMetadataV2GraphProvider>(),
+            provider.GetService<Honua.Core.Features.FeatureStore.Services.FeatureProviderQueryRouter>(),
+            provider.GetService<IFilterExpressionService>(),
+            provider.GetService<Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource>()));
         services.AddScoped<IGeoJsonFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
         services.AddScoped<IGeobufFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
         services.AddScoped<IGmlFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());

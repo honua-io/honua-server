@@ -21,6 +21,7 @@ public static partial class EndpointRegistry
         new("PUT", "/api/v1/admin/metadata/layers/{layerId}/drawing-info"),
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/relationships"),
         new("PUT", "/api/v1/admin/metadata/layers/{layerId}/relationships"),
+        new("PUT", "/api/v1/admin/metadata/layers/relationships/batch"),
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/filter"),
         new("PUT", "/api/v1/admin/metadata/layers/{layerId}/filter"),
         new("GET", "/api/v1/admin/metadata/layers/{layerId}/validation"),

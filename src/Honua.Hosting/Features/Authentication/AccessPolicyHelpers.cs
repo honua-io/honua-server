@@ -317,7 +317,8 @@ internal static class AccessPolicyHelpers
             return AccessDecision.Forbidden(TenantScopeDeniedReason);
         }
 
-        if (ScopeForOperation(operation) == AccessScope.Write && MetadataV2RelationshipEditPolicy.RequiresReadOnly(resource))
+        if (operation is AuthorizationOperation.Insert or AuthorizationOperation.Update or AuthorizationOperation.Delete &&
+            MetadataV2RelationshipEditPolicy.RequiresReadOnly(resource))
         {
             return AccessDecision.Forbidden(MetadataV2RelationshipEditPolicy.ReadOnlyReason);
         }
