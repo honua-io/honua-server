@@ -1231,10 +1231,12 @@ public sealed class GrpcFeatureServiceTests
     public async Task QueryFeaturesStream_WithBatchSizeOne_WritesOneFeaturePerPage()
     {
         var streamBatchSizeOneSut = new HonuaFeatureService(
-            _resourceValidator, _featureReader, _featureWriter, _streamingStore,
+            _resourceValidator, _graphProvider, _featureReader, _featureWriter, _streamingStore,
             new CommonQueryValidator(Options.Create(new LimitsOptions())),
             new SpatialReferenceResolver(_crsDetectionService, _crsRegistry),
-            _featureChangeEventPublisher,
+            new FeatureMutationEventService(
+                _featureChangeEventPublisher,
+                outboxCapabilityProvider: _outboxCapabilityProvider),
             Options.Create(new LimitsOptions()),
             Options.Create(new GrpcOptions { StreamBatchSize = 1 }),
             NullLogger<HonuaFeatureService>.Instance,
