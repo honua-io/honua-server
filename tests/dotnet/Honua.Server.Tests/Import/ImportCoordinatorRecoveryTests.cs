@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Migration;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -29,8 +30,10 @@ public sealed class ImportCoordinatorRecoveryTests
 
         manager.CanAcceptNewJobs.Should().BeTrue();
         await manager.JobQueue.Received(1).GetQueueLengthAsync(Arg.Any<CancellationToken>());
-        await manager.RequestStore.Received(1).GetActiveJobIdsAsync(Arg.Any<CancellationToken>());
-        await manager.ProgressStore.Received(1).GetActiveJobIdsAsync(Arg.Any<CancellationToken>());
+        await ((IProgressStoreRecovery)manager.RequestStore).Received(1).ProbeRecoveryAsync(Arg.Any<CancellationToken>());
+        await manager.RequestStore.DidNotReceive().GetActiveJobIdsAsync(Arg.Any<CancellationToken>());
+        await ((IProgressStoreRecovery)manager.ProgressStore).Received(1).ProbeRecoveryAsync(Arg.Any<CancellationToken>());
+        await manager.ProgressStore.DidNotReceive().GetActiveJobIdsAsync(Arg.Any<CancellationToken>());
         await manager.JobQueue.DidNotReceive().DequeueAsync(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
         await manager.JobQueue.DidNotReceive().RecoverInFlightAsync(Arg.Any<CancellationToken>());
     }
@@ -77,7 +80,8 @@ public sealed class ImportCoordinatorRecoveryTests
         await RunAsync(manager, stop, (_, _) => throw new InvalidOperationException("Unhealthy coordinator must not process jobs"));
 
         manager.CanAcceptNewJobs.Should().BeFalse();
-        await manager.ProgressStore.Received(1).GetActiveJobIdsAsync(Arg.Any<CancellationToken>());
+        await ((IProgressStoreRecovery)manager.ProgressStore).Received(1).ProbeRecoveryAsync(Arg.Any<CancellationToken>());
+        await manager.ProgressStore.DidNotReceive().GetActiveJobIdsAsync(Arg.Any<CancellationToken>());
         await manager.JobQueue.DidNotReceive().DequeueAsync(Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>());
         await manager.JobQueue.DidNotReceive().RecoverInFlightAsync(Arg.Any<CancellationToken>());
     }
@@ -99,15 +103,15 @@ public sealed class ImportCoordinatorRecoveryTests
             queueHealthy = true;
             return Task.FromResult(0L);
         });
-        manager.RequestStore.GetActiveJobIdsAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+        ((IProgressStoreRecovery)manager.RequestStore).ProbeRecoveryAsync(Arg.Any<CancellationToken>()).Returns(_ =>
         {
             requestHealthy = requestStoreRecovers;
-            return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+            return Task.CompletedTask;
         });
-        manager.ProgressStore.GetActiveJobIdsAsync(Arg.Any<CancellationToken>()).Returns(_ =>
+        ((IProgressStoreRecovery)manager.ProgressStore).ProbeRecoveryAsync(Arg.Any<CancellationToken>()).Returns(_ =>
         {
             progressHealthy = true;
-            return Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+            return Task.CompletedTask;
         });
     }
 
@@ -115,8 +119,8 @@ public sealed class ImportCoordinatorRecoveryTests
     {
         public IDistributedJobQueueService JobQueue { get; } = Substitute.For<IDistributedJobQueueService>();
         public IDistributedLeaderElection LeaderElection { get; } = Substitute.For<IDistributedLeaderElection>();
-        public IDistributedProgressStore<object> RequestStore { get; } = Substitute.For<IDistributedProgressStore<object>>();
-        public IDistributedProgressStore<object> ProgressStore { get; } = Substitute.For<IDistributedProgressStore<object>>();
+        public IDistributedProgressStore<object> RequestStore { get; } = Substitute.For<IDistributedProgressStore<object>, IProgressStoreRecovery>();
+        public IDistributedProgressStore<object> ProgressStore { get; } = Substitute.For<IDistributedProgressStore<object>, IProgressStoreRecovery>();
         public Func<bool> IsHealthy { get; set; } = () => false;
         public bool CanAcceptNewJobs => IsHealthy();
     }
