@@ -469,6 +469,66 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         }
     }
 
+    /// <summary>
+    /// #4827 REQ-003: when the import's own database session is lost mid-transfer, the failure-path
+    /// rollback cannot run on that session. The job must still report the originating database
+    /// failure as a specific, redacted reason instead of letting the rollback error replace it, and
+    /// the prior target must be untouched.
+    /// </summary>
+    [Fact]
+    public async Task ImportLayerAsync_WhenImportSessionIsLostMidTransfer_ReportsDatabaseFailureInsteadOfRollbackError()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync("ImportTransferSessionLost");
+        var applicationName = $"import-session-lost-{Guid.NewGuid():N}"[..40];
+        try
+        {
+            await SeedPriorTargetAsync(schemaName);
+            var terminated = 0;
+            var handler = new TransferFeatureServerHandler(["CCC", "DDD"])
+            {
+                SupportsPagination = false,
+                OnObjectIdWindow = objectId =>
+                {
+                    if (objectId == 2)
+                    {
+                        terminated = TerminateSessions(applicationName);
+                    }
+                }
+            };
+
+            var service = CreateService(handler, applicationName);
+            var result = await service.ImportLayerAsync(BuildRequest(schemaName) with { BatchSize = 1 });
+
+            terminated.Should().Be(1, "the test ends exactly the import's own session");
+            result.Success.Should().BeFalse();
+            result.ErrorMessage.Should().StartWith(
+                "ARCGIS_IMPORT_DATABASE_UNAVAILABLE:",
+                "the lost session is the originating failure, not the rollback that could not run on it");
+            result.ErrorMessage.Should().Contain("No imported data was committed");
+            result.ErrorMessage.Should().NotContainAny(
+                "terminating connection",
+                "NpgsqlTransaction",
+                "no longer usable",
+                new NpgsqlConnectionStringBuilder(fixture.ConnectionString).Host!);
+            (await ReadCodesAsync(schemaName)).Should().Equal(["AAA", "BBB"], "the prior target is never touched by a failed replacement");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    // Synchronous on purpose: it runs inside the mock source's request handler, mid-transfer.
+    private int TerminateSessions(string applicationName)
+    {
+        using var connection = fixture.DataSource.OpenConnection();
+        using var command = new NpgsqlCommand(
+            "SELECT count(*) FILTER (WHERE pg_terminate_backend(pid)) FROM pg_stat_activity WHERE application_name = @name",
+            connection);
+        command.Parameters.AddWithValue("name", applicationName);
+        return Convert.ToInt32(command.ExecuteScalar(), System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     private sealed class SynchronousProgress(Action<Honua.Core.Features.Migration.Abstractions.GeoservicesImportProgress> onReport)
         : IProgress<Honua.Core.Features.Migration.Abstractions.GeoservicesImportProgress>
     {
@@ -490,7 +550,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         ImportAttachments = false
     };
 
-    private GeoservicesImportService CreateService(HttpMessageHandler handler)
+    private GeoservicesImportService CreateService(HttpMessageHandler handler, string? applicationName = null)
     {
         var restClient = new ArcGisRestClient(
             new HttpClient(handler),
@@ -499,7 +559,7 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
 
         return new GeoservicesImportService(
             restClient,
-            new FixtureConnectionProvider(fixture),
+            new FixtureConnectionProvider(fixture, applicationName),
             new Mock<ICrsRegistry>(MockBehavior.Loose).Object,
             new EsriConstructCapabilityRegistry(EsriConstructCapabilityRegistry.BuiltInDescriptors),
             NullLogger<GeoservicesImportService>.Instance,
@@ -716,7 +776,13 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
         }
     }
 
-    private sealed class FixtureConnectionProvider(PostgresFixture postgresFixture) : IAdoNetDatabaseConnectionProvider
+    /// <param name="postgresFixture">The shared PostGIS fixture.</param>
+    /// <param name="applicationName">
+    /// When set, connections are opened outside the fixture's pool under this application name, so a
+    /// test can find (and end) exactly the importer's own session.
+    /// </param>
+    private sealed class FixtureConnectionProvider(PostgresFixture postgresFixture, string? applicationName = null)
+        : IAdoNetDatabaseConnectionProvider
     {
         public string GetConnectionString()
             => new NpgsqlConnectionStringBuilder(postgresFixture.ConnectionString)
@@ -725,7 +791,28 @@ public sealed class GeoservicesImportTransferSemanticsTests(PostgresFixture fixt
             }.ConnectionString;
 
         public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
-            => await postgresFixture.DataSource.OpenConnectionAsync(cancellationToken);
+        {
+            if (applicationName is null)
+            {
+                return await postgresFixture.DataSource.OpenConnectionAsync(cancellationToken);
+            }
+
+            var connection = new NpgsqlConnection(new NpgsqlConnectionStringBuilder(postgresFixture.ConnectionString)
+            {
+                ApplicationName = applicationName,
+                Pooling = false
+            }.ConnectionString);
+            try
+            {
+                await connection.OpenAsync(cancellationToken);
+                return connection;
+            }
+            catch
+            {
+                await connection.DisposeAsync();
+                throw;
+            }
+        }
 
         public async Task<(DbConnection Connection, DbTransaction Transaction)> OpenTransactionAsync(
             IsolationLevel isolationLevel = IsolationLevel.RepeatableRead,

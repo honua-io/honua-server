@@ -52,6 +52,21 @@ public static class ImportCompatibilityCodes
     /// <summary>ArcGIS service returned a generic non-auth error response.</summary>
     public const string ArcGisServiceError = "ARCGIS_SERVICE_ERROR";
 
+    /// <summary>ArcGIS import stopped for a reason the importer states (for example no pagination progress).</summary>
+    public const string ArcGisImportAborted = "ARCGIS_IMPORT_ABORTED";
+
+    /// <summary>ArcGIS import failed because the target database rejected a source geometry.</summary>
+    public const string ArcGisImportGeometryRejected = "ARCGIS_IMPORT_GEOMETRY_REJECTED";
+
+    /// <summary>ArcGIS import failed because the target database rejected a statement (reported by SQLSTATE).</summary>
+    public const string ArcGisImportDatabaseError = "ARCGIS_IMPORT_DATABASE_ERROR";
+
+    /// <summary>ArcGIS import failed because the target database connection was lost, refused or out of resources.</summary>
+    public const string ArcGisImportDatabaseUnavailable = "ARCGIS_IMPORT_DATABASE_UNAVAILABLE";
+
+    /// <summary>ArcGIS import failed for a reason that is not classified further; the step that failed is reported.</summary>
+    public const string ArcGisImportFailed = "ARCGIS_IMPORT_FAILED";
+
     /// <summary>ArcGIS coded-value domain exceeded the deterministic capture cap.</summary>
     public const string ArcGisDomainTruncated = "ARCGIS_DOMAIN_TRUNCATED";
 
