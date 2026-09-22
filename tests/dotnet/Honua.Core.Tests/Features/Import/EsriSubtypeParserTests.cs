@@ -181,8 +181,13 @@ public sealed class EsriSubtypeParserTests
             { "typeIdField": "kind", "types": [{ "id": 1, "name": "One",
               "templates": [{ "name": "A" }, { "name": "B" }] }] }
             """);
+
+        // #4824 REQ-002: an editing construct the canonical model cannot represent is
+        // reported as a named finding, not raised as a generic failure that aborts the
+        // whole layer read. Nothing ambiguous is persisted either way.
         var act = () => EsriSubtypeParser.Parse(layer);
-        act.Should().Throw<InvalidOperationException>().WithMessage("*multiple editing templates*");
+        act.Should().NotThrow();
+        EsriSubtypeParser.Parse(layer).Subtypes.Should().BeNull("an ambiguous template set is never silently reduced");
     }
 
     [Fact]
@@ -210,8 +215,22 @@ public sealed class EsriSubtypeParserTests
             { "typeIdField": "kind", "types": [{ "id": 1, "name": "One",
               "domains": { "status": null } }] }
             """);
+
         var act = () => EsriSubtypeParser.Parse(layer);
-        act.Should().Throw<InvalidOperationException>().WithMessage("*clears a domain*");
+        act.Should().NotThrow();
+        EsriSubtypeParser.Parse(layer).Subtypes.Should().BeNull("domain clearing is never silently dropped to inheritance");
+    }
+
+    [Fact]
+    public void Parse_FeatureTypeWithoutUsableIdentity_RejectsWithoutThrowing()
+    {
+        var layer = ParseLayer("""
+            { "typeIdField": "kind", "types": [{ "id": { "nested": true }, "name": "One" }] }
+            """);
+
+        var act = () => EsriSubtypeParser.Parse(layer);
+        act.Should().NotThrow();
+        EsriSubtypeParser.Parse(layer).Subtypes.Should().BeNull();
     }
 
     private static JsonElement ParseLayer(string json)
