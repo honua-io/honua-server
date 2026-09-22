@@ -1,9 +1,8 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Text.Json.Nodes;
 using Honua.Core.Features.AuditLog.Abstractions;
-using Honua.Core.Features.MultiTenancy.Abstractions;
+using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -35,7 +34,18 @@ namespace Honua.Infrastructure.Middleware;
 /// that are not otherwise in the matrix — unless a domain-specific endpoint seam
 /// marked that it already recorded the final authorization denial.
 /// </description></item>
+/// <item><description>
+/// Emits a failure event with the shared exception mapper's status when an audited operation throws, then rethrows so the
+/// global exception handler still shapes the response. Without this the audit trail would
+/// show nothing at all for the one class of admin mutation most worth recording.
+/// </description></item>
 /// </list>
+/// <para>
+/// Policy denials produced by the authorization middleware short-circuit *above* this
+/// middleware and therefore never reach it; those are recorded at the authorization result
+/// handler seam (<c>HonuaAuthorizationMiddlewareResultHandler</c>) using the same shared
+/// event factory, so a denial is audited exactly once wherever it is decided.
+/// </para>
 /// <para>
 /// Destructive feature writes (delete / bulk edit) are emitted by the shared
 /// edit-pipeline decorator rather than here, because protocols like WFS-T and
@@ -53,16 +63,35 @@ internal sealed class AuditLogMiddleware(RequestDelegate next, IAuditActionResol
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        await _next(context).ConfigureAwait(false);
-
-        var auditLog = context.RequestServices.GetService<IAuditLog>();
-        if (auditLog is null)
+        try
         {
-            return;
+            await _next(context).ConfigureAwait(false);
+        }
+        catch (Exception pipelineException) when (ShouldAuditFailure(context, pipelineException))
+        {
+            // The operation failed after it was admitted. Record the failure before the
+            // exception leaves this middleware — the global exception handler runs further up
+            // and maps the response the audit layer would otherwise never see.
+            // The record is written with an independent token so a torn-down request still
+            // leaves the row behind.
+            var faultStatus = ExceptionMapper.Map(pipelineException).StatusCode;
+            var faultDescriptor = ResolveDescriptor(context, faultStatus);
+            if (faultDescriptor is not null)
+            {
+                await TryRecordAsync(
+                    context,
+                    HttpAuditEventFactory.CreateDescriptorEvent(
+                        context,
+                        faultDescriptor,
+                        faultStatus,
+                        DateTimeOffset.UtcNow),
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+
+            throw;
         }
 
         var status = context.Response.StatusCode;
-        var isAuthFailure = status is StatusCodes.Status401Unauthorized or StatusCodes.Status403Forbidden;
 
         // Domain-specific authorization seams can emit a richer, stable denial event (resource,
         // operation, and code) before returning 403. Do not duplicate that decision with a
@@ -73,32 +102,64 @@ internal sealed class AuditLogMiddleware(RequestDelegate next, IAuditActionResol
             return;
         }
 
-        var descriptor = ResolveDescriptor(context);
+        var descriptor = ResolveDescriptor(context, status);
 
         // Nothing to audit: route is not in the matrix and the request did not
         // fail authentication/authorization.
-        if (descriptor is null && !isAuthFailure)
+        if (descriptor is null && !HttpAuditEventFactory.IsAuthRejection(status))
         {
             return;
         }
 
         var auditEvent = descriptor is not null
-            ? BuildMatrixEvent(context, descriptor, status, isAuthFailure)
-            : BuildAuthFailureEvent(context, status);
+            ? HttpAuditEventFactory.CreateDescriptorEvent(context, descriptor, status, DateTimeOffset.UtcNow)
+            : HttpAuditEventFactory.CreateAuthOutcomeEvent(context, status, DateTimeOffset.UtcNow, includeLineage: true);
+
+        await TryRecordAsync(context, auditEvent, context.RequestAborted).ConfigureAwait(false);
+    }
+
+    // Only faults on a route the coverage matrix classifies are recorded: an unclassified
+    // route's exception is already covered by logging/telemetry, and auditing every one of
+    // them would let unauthenticated traffic drive audit volume.
+    private bool ShouldAuditFailure(HttpContext context, Exception exception)
+    {
+        if (exception is OutOfMemoryException)
+        {
+            return false;
+        }
+
+        // A caller that hung up mid-request is not a security-relevant operation failure.
+        if (exception is OperationCanceledException && context.RequestAborted.IsCancellationRequested)
+        {
+            return false;
+        }
+
+        return context.RequestServices.GetService<IAuditLog>() is not null &&
+            ResolveDescriptor(context, ExceptionMapper.Map(exception).StatusCode) is not null;
+    }
+
+    private static async Task TryRecordAsync(HttpContext context, AuditEvent auditEvent, CancellationToken cancellationToken)
+    {
+        var auditLog = context.RequestServices.GetService<IAuditLog>();
+        if (auditLog is null)
+        {
+            return;
+        }
 
         try
         {
-            await auditLog.RecordAsync(auditEvent, context.RequestAborted).ConfigureAwait(false);
+            await auditLog.RecordAsync(auditEvent, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception caughtException) when (caughtException is not OutOfMemoryException)
         {
             // IAuditLog implementations are expected to swallow their own errors;
             // we add a belt-and-braces catch here so the middleware never throws
-            // *after* the response has been written.
+            // *after* the response has been written, and never replaces the
+            // in-flight exception on the fault path.
         }
     }
 
-    private AuditActionDescriptor? ResolveDescriptor(HttpContext context)
+    private AuditActionDescriptor? ResolveDescriptor(HttpContext context, int effectiveStatus)
     {
         var routePattern = ResolveRoutePattern(context);
         if (routePattern is null)
@@ -114,85 +175,13 @@ internal sealed class AuditLogMiddleware(RequestDelegate next, IAuditActionResol
 
         // Honour the descriptor's success policy: read-style descriptors only
         // emit on failure to avoid flooding the sink on every successful request.
-        if (!descriptor.AuditOnSuccess && IsSuccessStatus(context.Response.StatusCode))
+        if (!descriptor.AuditOnSuccess && HttpAuditEventFactory.IsSuccessStatus(effectiveStatus))
         {
             return null;
         }
 
         return descriptor;
     }
-
-    private static AuditEvent BuildMatrixEvent(
-        HttpContext context,
-        AuditActionDescriptor descriptor,
-        int status,
-        bool isAuthFailure)
-    {
-        var outcome = isAuthFailure
-            ? (status == StatusCodes.Status403Forbidden ? AuditOutcome.Denied : AuditOutcome.Failure)
-            : (IsSuccessStatus(status) ? AuditOutcome.Success : AuditOutcome.Failure);
-
-        return new AuditEvent
-        {
-            Timestamp = DateTimeOffset.UtcNow,
-            EventType = descriptor.EventType,
-            Actor = AuditContextResolver.ResolveActor(context, out var actorType),
-            ActorType = actorType,
-            ResourceType = descriptor.ResourceType,
-            ResourceId = context.Request.Path.HasValue ? context.Request.Path.Value : null,
-            Action = descriptor.Action,
-            Outcome = outcome,
-            CorrelationId = AuditContextResolver.ResolveCorrelationId(context),
-            RemoteIp = AuditContextResolver.ResolveRemoteIp(context),
-            UserAgent = AuditContextResolver.ResolveUserAgent(context),
-            Details = BuildDetails(context, status),
-        };
-    }
-
-    private static AuditEvent BuildAuthFailureEvent(HttpContext context, int status)
-        => new()
-        {
-            Timestamp = DateTimeOffset.UtcNow,
-            EventType = status == StatusCodes.Status403Forbidden
-                ? AuditEventType.Authorization
-                : AuditEventType.Authentication,
-            Actor = AuditContextResolver.ResolveActor(context, out var actorType),
-            ActorType = actorType,
-            ResourceType = "http",
-            ResourceId = context.Request.Path.HasValue ? context.Request.Path.Value : null,
-            Action = status == StatusCodes.Status403Forbidden ? "auth.denied" : "auth.failure",
-            Outcome = status == StatusCodes.Status403Forbidden
-                ? AuditOutcome.Denied
-                : AuditOutcome.Failure,
-            CorrelationId = AuditContextResolver.ResolveCorrelationId(context),
-            RemoteIp = AuditContextResolver.ResolveRemoteIp(context),
-            UserAgent = AuditContextResolver.ResolveUserAgent(context),
-            Details = BuildDetails(context, status),
-        };
-
-    private static string BuildDetails(HttpContext context, int status)
-    {
-        var details = new JsonObject
-        {
-            ["status"] = status,
-            ["method"] = context.Request.Method,
-            ["tenantId"] = context.RequestServices.GetService<ITenantContext>()?.TenantId,
-        };
-        AddHeader(details, context, "operationInstanceId", "X-Honua-Operation-Instance-Id");
-        AddHeader(details, context, "acceptedAuditId", "X-Honua-Audit-Id");
-        AddHeader(details, context, "proposalId", "X-Honua-Proposal-Id");
-        return details.ToJsonString();
-    }
-
-    private static void AddHeader(JsonObject details, HttpContext context, string propertyName, string headerName)
-    {
-        if (context.Request.Headers.TryGetValue(headerName, out var values) && values.Count > 0)
-        {
-            details[propertyName] = values[0];
-        }
-    }
-
-    private static bool IsSuccessStatus(int status) => status is >= 200 and < 300;
 
     private static string? ResolveRoutePattern(HttpContext context)
     {
