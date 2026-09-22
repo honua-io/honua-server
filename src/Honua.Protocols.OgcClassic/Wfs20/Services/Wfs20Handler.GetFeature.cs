@@ -319,7 +319,7 @@ internal sealed partial class Wfs20Handler
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
                 exceptionCode,
-                "Invalid WFS parameter value; see logs for details.");
+                DescribeValidationFailure(ex));
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {

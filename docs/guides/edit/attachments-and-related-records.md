@@ -10,7 +10,7 @@ Attach files to individual features, query and download them, and traverse layer
 
 **Prerequisites:** A writable FeatureServer layer and at least one feature in it (see [Edit features](edit-features.md)). Writes honor the same access policy and write-role checks as feature edits, so authenticate the mutation commands if the layer is protected.
 
-Attachments are keyed by integer object IDs (`globalIds` filters are rejected) and are size- and type-limited by `Limits__Attachments__*` (defaults: 5 MB per file, 5 per feature, 50 MB total per feature, MIME allowlist `image/*,application/pdf`).
+Attachments are keyed by integer object IDs (`globalIds` filters are rejected) and are size- and type-limited by `Limits__Attachments__*` (defaults: 5 MB per file, 5 per feature, 50 MB total per feature, MIME allowlist `image/*,application/pdf,text/plain,text/csv,application/json`).
 
 ## Steps
 

@@ -30,6 +30,15 @@ public static class Fes20Parser
     private const int DefaultFallbackSrid = 4326;
 
     /// <summary>
+    /// Longest element or operator name quoted back in a client-facing reason. XML names are
+    /// unbounded, so a longer name is cut rather than echoed whole.
+    /// </summary>
+    internal const int MaxReportedNameLength = 64;
+
+    private const string RootElementReason =
+        "Filter root element must be Filter in the FES 2.0 namespace (" + FesNamespace + ").";
+
+    /// <summary>
     /// Parses a FES 2.0 filter XML element into the shared Filter AST
     /// </summary>
     public static FilterExpression ParseFilter(XElement filterElement)
@@ -44,13 +53,15 @@ public static class Fes20Parser
     {
         if (filterElement.Name.NamespaceName != FesNamespace || filterElement.Name.LocalName != "Filter")
         {
-            throw new Fes20ParseException($"Expected Filter element in namespace {FesNamespace}, got {filterElement.Name}");
+            throw new Fes20ParseException(
+                $"Expected Filter element in namespace {FesNamespace}, got {filterElement.Name}",
+                RootElementReason);
         }
 
         var firstChild = filterElement.Elements().FirstOrDefault();
         if (firstChild == null)
         {
-            throw new Fes20ParseException("Filter element must contain at least one child element");
+            throw Fes20ParseException.Reportable("Filter element must contain at least one child element");
         }
 
         ValidateExpressionDepth(firstChild, depth: 1);
@@ -69,8 +80,45 @@ public static class Fes20Parser
         }
         catch (ArgumentException ex)
         {
-            throw new Fes20ParseException(ex.Message, ex);
+            // The shared guard messages are authored and name only the configured limit.
+            throw Fes20ParseException.Reportable(ex.Message, ex);
         }
+    }
+
+    /// <summary>
+    /// Applies the shared filter-geometry size limit to coordinate text that a protocol adapter
+    /// is about to rewrite into a FES 2.0 geometry literal, before the text is split.
+    /// </summary>
+    /// <param name="coordinateText">The raw coordinate list.</param>
+    /// <exception cref="Fes20ParseException">The text exceeds the limit.</exception>
+    public static void EnsureGeometryTextWithinLimits(string coordinateText)
+        => EnsureWithinGuard(() => FilterParserGeometryGuard.EnsureGeometryTextSize(coordinateText, "Filter geometry"));
+
+    /// <summary>
+    /// Applies the shared filter-geometry vertex limit to a coordinate list that a protocol
+    /// adapter is about to rewrite into a FES 2.0 geometry literal, before it is materialised.
+    /// </summary>
+    /// <param name="coordinateCount">The number of coordinate tuples.</param>
+    /// <exception cref="Fes20ParseException">The count exceeds the limit.</exception>
+    public static void EnsureCoordinateCountWithinLimits(int coordinateCount)
+        => EnsureWithinGuard(() => FilterParserGeometryGuard.EnsureCoordinateCount(coordinateCount, "Filter geometry"));
+
+    // An XML local name is an NCName, so it cannot carry markup, quotes or whitespace; the
+    // namespace URI is arbitrary text and is never quoted back.
+    private static string DescribeElementName(XName name) => DescribeName(name.LocalName);
+
+    internal static string DescribeName(string name)
+    {
+        if (name.Length <= MaxReportedNameLength)
+        {
+            return name;
+        }
+
+        // Never split a surrogate pair: a lone surrogate cannot be written to an XML response.
+        var length = char.IsHighSurrogate(name[MaxReportedNameLength - 1])
+            ? MaxReportedNameLength - 1
+            : MaxReportedNameLength;
+        return string.Concat(name.AsSpan(0, length), "...");
     }
 
     /// <summary>
@@ -98,12 +146,12 @@ public static class Fes20Parser
             // null, so DTDs and external entities (XXE) are blocked before the reader loads.
             using var xmlReader = XmlReader.Create(stringReader, settings);
             var doc = XDocument.Load(xmlReader, LoadOptions.None);
-            var filterElement = doc.Root ?? throw new Fes20ParseException("Invalid XML: no root element");
+            var filterElement = doc.Root ?? throw Fes20ParseException.Reportable("Invalid XML: no root element");
             return ParseFilter(filterElement, defaultSrid);
         }
         catch (XmlException ex)
         {
-            throw new Fes20ParseException($"Invalid filter XML: {ex.Message}", ex);
+            throw new Fes20ParseException($"Invalid filter XML: {ex.Message}", "Filter is not well-formed XML.", ex);
         }
     }
 
@@ -115,7 +163,7 @@ public static class Fes20Parser
         }
         catch (ArgumentException ex)
         {
-            throw new Fes20ParseException(ex.Message, ex);
+            throw Fes20ParseException.Reportable(ex.Message, ex);
         }
 
         foreach (var child in element.Elements().Where(c => c.Name.NamespaceName == FesNamespace))
@@ -131,7 +179,9 @@ public static class Fes20Parser
     {
         if (element.Name.NamespaceName != FesNamespace)
         {
-            throw new Fes20ParseException($"Unexpected namespace: {element.Name.NamespaceName}. Expected {FesNamespace}");
+            throw new Fes20ParseException(
+                $"Unexpected namespace: {element.Name.NamespaceName}. Expected {FesNamespace}",
+                $"Filter element '{DescribeElementName(element.Name)}' is not in the FES 2.0 namespace ({FesNamespace}).");
         }
 
         return element.Name.LocalName switch
@@ -180,7 +230,7 @@ public static class Fes20Parser
             "ValueReference" => new PropertyReference(element.Value.Trim()),
             "Literal" => ParseLiteral(element),
 
-            _ => throw new Fes20ParseException($"Unsupported FES 2.0 element: {element.Name.LocalName}")
+            _ => throw Fes20ParseException.Reportable($"Unsupported filter operator '{DescribeElementName(element.Name)}'.")
         };
     }
 
@@ -192,7 +242,7 @@ public static class Fes20Parser
         var children = element.Elements().ToArray();
         if (children.Length < 2)
         {
-            throw new Fes20ParseException("And element must contain at least 2 child elements");
+            throw Fes20ParseException.Reportable("And element must contain at least 2 child elements");
         }
 
         EnsureWithinGuard(() => FilterParserGuard.EnsureLogicalOperandCount(children.Length));
@@ -214,7 +264,7 @@ public static class Fes20Parser
         var children = element.Elements().ToArray();
         if (children.Length < 2)
         {
-            throw new Fes20ParseException("Or element must contain at least 2 child elements");
+            throw Fes20ParseException.Reportable("Or element must contain at least 2 child elements");
         }
 
         EnsureWithinGuard(() => FilterParserGuard.EnsureLogicalOperandCount(children.Length));
@@ -236,7 +286,7 @@ public static class Fes20Parser
         var child = element.Elements().FirstOrDefault();
         if (child == null)
         {
-            throw new Fes20ParseException("Not element must contain exactly 1 child element");
+            throw Fes20ParseException.Reportable("Not element must contain exactly 1 child element");
         }
 
         return new UnaryExpression(UnaryOperator.Not, ParseExpression(child, defaultSrid));
@@ -250,7 +300,7 @@ public static class Fes20Parser
         var children = element.Elements().ToArray();
         if (children.Length != 2)
         {
-            throw new Fes20ParseException($"{element.Name.LocalName} element must contain exactly 2 child elements");
+            throw Fes20ParseException.Reportable($"{DescribeElementName(element.Name)} element must contain exactly 2 child elements");
         }
 
         var left = ParseExpression(children[0], defaultSrid);
@@ -272,7 +322,7 @@ public static class Fes20Parser
         var children = element.Elements().ToArray();
         if (children.Length != 2)
         {
-            throw new Fes20ParseException("PropertyIsLike element must contain exactly 2 child elements");
+            throw Fes20ParseException.Reportable("PropertyIsLike element must contain exactly 2 child elements");
         }
 
         var propertyRef = ParseExpression(children[0], defaultSrid);
@@ -310,7 +360,7 @@ public static class Fes20Parser
         var child = element.Elements().FirstOrDefault();
         if (child == null)
         {
-            throw new Fes20ParseException("PropertyIsNull element must contain exactly 1 child element");
+            throw Fes20ParseException.Reportable("PropertyIsNull element must contain exactly 1 child element");
         }
 
         var property = ParseExpression(child, defaultSrid);
@@ -328,14 +378,14 @@ public static class Fes20Parser
 
         if (valueRef == null || lowerBoundary == null || upperBoundary == null)
         {
-            throw new Fes20ParseException("PropertyIsBetween element must contain ValueReference, LowerBoundary, and UpperBoundary elements");
+            throw Fes20ParseException.Reportable("PropertyIsBetween element must contain ValueReference, LowerBoundary, and UpperBoundary elements");
         }
 
         var property = ParseExpression(valueRef, defaultSrid);
         var lowerChild = lowerBoundary.Elements().FirstOrDefault()
-            ?? throw new Fes20ParseException("LowerBoundary element must contain a child element");
+            ?? throw Fes20ParseException.Reportable("LowerBoundary element must contain a child element");
         var upperChild = upperBoundary.Elements().FirstOrDefault()
-            ?? throw new Fes20ParseException("UpperBoundary element must contain a child element");
+            ?? throw Fes20ParseException.Reportable("UpperBoundary element must contain a child element");
         var lower = ParseExpression(lowerChild, defaultSrid);
         var upper = ParseExpression(upperChild, defaultSrid);
 
@@ -354,7 +404,7 @@ public static class Fes20Parser
         var children = element.Elements().ToArray();
         if (children.Length is not 1 and not 2)
         {
-            throw new Fes20ParseException("BBOX element must contain an Envelope and an optional ValueReference.");
+            throw Fes20ParseException.Reportable("BBOX element must contain an Envelope and an optional ValueReference.");
         }
 
         XElement envelope;
@@ -371,7 +421,7 @@ public static class Fes20Parser
 
             if (propertyRef.Name.LocalName != "ValueReference")
             {
-                throw new Fes20ParseException("First child of BBOX must be ValueReference when specified.");
+                throw Fes20ParseException.Reportable("First child of BBOX must be ValueReference when specified.");
             }
 
             property = new PropertyReference(propertyRef.Value.Trim());
@@ -390,7 +440,7 @@ public static class Fes20Parser
         var children = element.Elements().ToArray();
         if (children.Length != 2)
         {
-            throw new Fes20ParseException($"{element.Name.LocalName} element must contain exactly 2 child elements");
+            throw Fes20ParseException.Reportable($"{DescribeElementName(element.Name)} element must contain exactly 2 child elements");
         }
 
         var propertyRef = children[0];
@@ -398,7 +448,7 @@ public static class Fes20Parser
 
         if (propertyRef.Name.LocalName != "ValueReference")
         {
-            throw new Fes20ParseException($"First child of {element.Name.LocalName} must be ValueReference");
+            throw Fes20ParseException.Reportable($"First child of {DescribeElementName(element.Name)} must be ValueReference");
         }
 
         var property = new PropertyReference(propertyRef.Value.Trim());
@@ -415,7 +465,7 @@ public static class Fes20Parser
         var children = element.Elements().ToArray();
         if (children.Length != 3)
         {
-            throw new Fes20ParseException("DWithin element must contain exactly 3 child elements");
+            throw Fes20ParseException.Reportable("DWithin element must contain exactly 3 child elements");
         }
 
         var propertyRef = children[0];
@@ -424,12 +474,12 @@ public static class Fes20Parser
 
         if (propertyRef.Name.LocalName != "ValueReference")
         {
-            throw new Fes20ParseException("First child of DWithin must be ValueReference");
+            throw Fes20ParseException.Reportable("First child of DWithin must be ValueReference");
         }
 
         if (distance.Name.LocalName != "Distance")
         {
-            throw new Fes20ParseException("Third child of DWithin must be Distance");
+            throw Fes20ParseException.Reportable("Third child of DWithin must be Distance");
         }
 
         var property = new PropertyReference(propertyRef.Value.Trim());
@@ -450,7 +500,7 @@ public static class Fes20Parser
         var children = element.Elements().ToArray();
         if (children.Length != 3)
         {
-            throw new Fes20ParseException("Beyond element must contain exactly 3 child elements");
+            throw Fes20ParseException.Reportable("Beyond element must contain exactly 3 child elements");
         }
 
         var propertyRef = children[0];
@@ -459,12 +509,12 @@ public static class Fes20Parser
 
         if (propertyRef.Name.LocalName != "ValueReference")
         {
-            throw new Fes20ParseException("First child of Beyond must be ValueReference");
+            throw Fes20ParseException.Reportable("First child of Beyond must be ValueReference");
         }
 
         if (distance.Name.LocalName != "Distance")
         {
-            throw new Fes20ParseException("Third child of Beyond must be Distance");
+            throw Fes20ParseException.Reportable("Third child of Beyond must be Distance");
         }
 
         var property = new PropertyReference(propertyRef.Value.Trim());
@@ -485,12 +535,12 @@ public static class Fes20Parser
         var children = element.Elements().ToArray();
         if (children.Length != 2)
         {
-            throw new Fes20ParseException($"{element.Name.LocalName} element must contain exactly 2 child elements");
+            throw Fes20ParseException.Reportable($"{DescribeElementName(element.Name)} element must contain exactly 2 child elements");
         }
 
         if (children[0].Name.LocalName != "ValueReference")
         {
-            throw new Fes20ParseException($"First child of {element.Name.LocalName} must be ValueReference");
+            throw Fes20ParseException.Reportable($"First child of {DescribeElementName(element.Name)} must be ValueReference");
         }
 
         var property = new PropertyReference(children[0].Value.Trim());
@@ -527,7 +577,7 @@ public static class Fes20Parser
             "TContains" => TemporalOperator.Contains,
             "TEquals" => TemporalOperator.Equals,
             "TOverlaps" => TemporalOperator.Overlaps,
-            _ => throw new Fes20ParseException($"Unsupported temporal operator {operatorName}")
+            _ => throw Fes20ParseException.Reportable($"Unsupported temporal operator '{DescribeName(operatorName)}'.")
         };
 
     /// <summary>
@@ -538,7 +588,7 @@ public static class Fes20Parser
         var rid = element.Attribute("rid")?.Value;
         if (string.IsNullOrEmpty(rid))
         {
-            throw new Fes20ParseException("ResourceId element must have a 'rid' attribute");
+            throw Fes20ParseException.Reportable("ResourceId element must have a 'rid' attribute");
         }
 
         // Convert to property equality: id = 'rid'
@@ -575,7 +625,9 @@ public static class Fes20Parser
             return ParseGmlGeometry(element, defaultSrid);
         }
 
-        throw new Fes20ParseException($"Unsupported geometry element: {element.Name}");
+        throw new Fes20ParseException(
+            $"Unsupported geometry element: {element.Name}",
+            $"Unsupported geometry element '{DescribeElementName(element.Name)}'.");
     }
 
     /// <summary>
@@ -589,7 +641,7 @@ public static class Fes20Parser
 
         if (string.IsNullOrEmpty(lowerCorner) || string.IsNullOrEmpty(upperCorner))
         {
-            throw new Fes20ParseException("Envelope must contain lowerCorner and upperCorner elements");
+            throw Fes20ParseException.Reportable("Envelope must contain lowerCorner and upperCorner elements");
         }
 
         var lowerParts = lowerCorner.Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -597,7 +649,7 @@ public static class Fes20Parser
 
         if (lowerParts.Length < 2 || upperParts.Length < 2)
         {
-            throw new Fes20ParseException("Envelope coordinates must have at least 2 dimensions");
+            throw Fes20ParseException.Reportable("Envelope coordinates must have at least 2 dimensions");
         }
 
         if (!double.TryParse(lowerParts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var minX) ||
@@ -605,7 +657,7 @@ public static class Fes20Parser
             !double.TryParse(upperParts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var maxX) ||
             !double.TryParse(upperParts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var maxY))
         {
-            throw new Fes20ParseException("Invalid envelope coordinates");
+            throw Fes20ParseException.Reportable("Invalid envelope coordinates");
         }
 
         var lower = CreateCoordinate(minX, minY, axisOrder);
@@ -634,7 +686,7 @@ public static class Fes20Parser
             "MultiPoint" => ParseMultiPointGeometry(element, geometryFactory, axisOrder),
             "MultiLineString" or "MultiCurve" => ParseMultiLineStringGeometry(element, geometryFactory, axisOrder),
             "MultiPolygon" or "MultiSurface" => ParseMultiPolygonGeometry(element, geometryFactory, axisOrder),
-            _ => throw new Fes20ParseException($"GML geometry parsing is not yet implemented for {element.Name.LocalName}")
+            _ => throw Fes20ParseException.Reportable($"GML geometry parsing is not yet implemented for {DescribeElementName(element.Name)}")
         };
 
         return new GeometryLiteral(
@@ -655,7 +707,7 @@ public static class Fes20Parser
             .ToArray();
         if (points.Length == 0)
         {
-            throw new Fes20ParseException($"{element.Name.LocalName} must contain at least one point member.");
+            throw Fes20ParseException.Reportable($"{DescribeElementName(element.Name)} must contain at least one point member.");
         }
 
         return geometryFactory.CreateMultiPoint(points);
@@ -673,7 +725,7 @@ public static class Fes20Parser
             .ToArray();
         if (lines.Length == 0)
         {
-            throw new Fes20ParseException($"{element.Name.LocalName} must contain at least one line member.");
+            throw Fes20ParseException.Reportable($"{DescribeElementName(element.Name)} must contain at least one line member.");
         }
 
         return geometryFactory.CreateMultiLineString(lines);
@@ -691,7 +743,7 @@ public static class Fes20Parser
             .ToArray();
         if (polygons.Length == 0)
         {
-            throw new Fes20ParseException($"{element.Name.LocalName} must contain at least one polygon member.");
+            throw Fes20ParseException.Reportable($"{DescribeElementName(element.Name)} must contain at least one polygon member.");
         }
 
         return geometryFactory.CreateMultiPolygon(polygons);
@@ -701,14 +753,16 @@ public static class Fes20Parser
     {
         if (element.Name.NamespaceName != GmlNamespace)
         {
-            throw new Fes20ParseException($"Unsupported temporal operand namespace: {element.Name.NamespaceName}");
+            throw new Fes20ParseException(
+                $"Unsupported temporal operand namespace: {element.Name.NamespaceName}",
+                $"Temporal operand '{DescribeElementName(element.Name)}' must be a GML 3.2 element.");
         }
 
         return element.Name.LocalName switch
         {
             "TimeInstant" => ParseTimeInstant(element),
             "TimePeriod" => ParseTimePeriod(element),
-            _ => throw new Fes20ParseException($"Unsupported temporal operand: {element.Name.LocalName}")
+            _ => throw Fes20ParseException.Reportable($"Unsupported temporal operand: {DescribeElementName(element.Name)}")
         };
     }
 
@@ -720,7 +774,7 @@ public static class Fes20Parser
             ?.Value;
         if (string.IsNullOrWhiteSpace(timePosition))
         {
-            throw new Fes20ParseException("TimeInstant must contain a gml:timePosition element.");
+            throw Fes20ParseException.Reportable("TimeInstant must contain a gml:timePosition element.");
         }
 
         return ParseTemporalPosition(timePosition);
@@ -733,7 +787,7 @@ public static class Fes20Parser
 
         if (string.IsNullOrWhiteSpace(beginPosition) || string.IsNullOrWhiteSpace(endPosition))
         {
-            throw new Fes20ParseException("TimePeriod must contain both begin and end positions.");
+            throw Fes20ParseException.Reportable("TimePeriod must contain both begin and end positions.");
         }
 
         return new IntervalLiteral(
@@ -776,7 +830,7 @@ public static class Fes20Parser
             return new Literal(timestamp, LiteralType.DateTime);
         }
 
-        throw new Fes20ParseException($"Invalid temporal position '{value}'.");
+        throw new Fes20ParseException($"Invalid temporal position '{value}'.", "Invalid temporal position in filter.");
     }
 
     private static Polygon ParsePolygonGeometry(
@@ -787,7 +841,7 @@ public static class Fes20Parser
         var exterior = element.Descendants()
             .FirstOrDefault(candidate => candidate.Name.NamespaceName == GmlNamespace &&
                                          candidate.Name.LocalName == "exterior")
-            ?? throw new Fes20ParseException($"{element.Name.LocalName} must contain an exterior ring.");
+            ?? throw Fes20ParseException.Reportable($"{DescribeElementName(element.Name)} must contain an exterior ring.");
         var shell = geometryFactory.CreateLinearRing(ParseRingCoordinates(exterior, axisOrder));
         var holes = element.Descendants()
             .Where(candidate => candidate.Name.NamespaceName == GmlNamespace &&
@@ -815,7 +869,7 @@ public static class Fes20Parser
             ?.Value;
         if (string.IsNullOrWhiteSpace(pos))
         {
-            throw new Fes20ParseException($"{element.Name.LocalName} must contain a gml:pos element.");
+            throw Fes20ParseException.Reportable($"{DescribeElementName(element.Name)} must contain a gml:pos element.");
         }
 
         return ParseCoordinate(pos, axisOrder);
@@ -839,7 +893,7 @@ public static class Fes20Parser
             .ToArray();
         if (positions.Length == 0)
         {
-            throw new Fes20ParseException($"{element.Name.LocalName} must contain coordinate positions.");
+            throw Fes20ParseException.Reportable($"{DescribeElementName(element.Name)} must contain coordinate positions.");
         }
 
         try
@@ -848,7 +902,7 @@ public static class Fes20Parser
         }
         catch (ArgumentException ex)
         {
-            throw new Fes20ParseException(ex.Message, ex);
+            throw Fes20ParseException.Reportable(ex.Message, ex);
         }
 
         return positions;
@@ -860,7 +914,7 @@ public static class Fes20Parser
             .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (values.Length < 2 || values.Length % 2 != 0)
         {
-            throw new Fes20ParseException("gml:posList must contain an even number of ordinates.");
+            throw Fes20ParseException.Reportable("gml:posList must contain an even number of ordinates.");
         }
 
         try
@@ -869,7 +923,7 @@ public static class Fes20Parser
         }
         catch (ArgumentException ex)
         {
-            throw new Fes20ParseException(ex.Message, ex);
+            throw Fes20ParseException.Reportable(ex.Message, ex);
         }
 
         var coordinates = new Coordinate[values.Length / 2];
@@ -878,7 +932,7 @@ public static class Fes20Parser
             if (!double.TryParse(values[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var first) ||
                 !double.TryParse(values[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out var second))
             {
-                throw new Fes20ParseException("gml:posList contains invalid numeric ordinates.");
+                throw Fes20ParseException.Reportable("gml:posList contains invalid numeric ordinates.");
             }
 
             coordinates[i / 2] = CreateCoordinate(first, second, axisOrder);
@@ -893,20 +947,20 @@ public static class Fes20Parser
             .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (ordinates.Length < 2)
         {
-            throw new Fes20ParseException("Coordinate position must contain at least two ordinates.");
+            throw Fes20ParseException.Reportable("Coordinate position must contain at least two ordinates.");
         }
 
         if (!double.TryParse(ordinates[0], NumberStyles.Float, CultureInfo.InvariantCulture, out var first) ||
             !double.TryParse(ordinates[1], NumberStyles.Float, CultureInfo.InvariantCulture, out var second))
         {
-            throw new Fes20ParseException("Coordinate position contains invalid numeric ordinates.");
+            throw Fes20ParseException.Reportable("Coordinate position contains invalid numeric ordinates.");
         }
 
         // NumberStyles.Float parses "NaN"/"Infinity" and silently returns Infinity on
         // exponent overflow. Either would produce a topologically invalid geometry.
         if (!double.IsFinite(first) || !double.IsFinite(second))
         {
-            throw new Fes20ParseException("Coordinate ordinates must be finite numbers.");
+            throw Fes20ParseException.Reportable("Coordinate ordinates must be finite numbers.");
         }
 
         return CreateCoordinate(first, second, axisOrder);
@@ -1009,7 +1063,7 @@ public static class Fes20Parser
     {
         if (string.IsNullOrEmpty(wildCard) || string.IsNullOrEmpty(singleChar) || string.IsNullOrEmpty(escapeChar))
         {
-            throw new Fes20ParseException("PropertyIsLike wildcard, singleChar, and escapeChar values must be non-empty.");
+            throw Fes20ParseException.Reportable("PropertyIsLike wildcard, singleChar, and escapeChar values must be non-empty.");
         }
 
         var builder = new StringBuilder(pattern.Length * 2);
@@ -1076,7 +1130,7 @@ public static class Fes20Parser
     {
         if (!double.TryParse(distanceElement.Value, NumberStyles.Float, CultureInfo.InvariantCulture, out var distance))
         {
-            throw new Fes20ParseException("Distance element must contain a valid numeric value.");
+            throw Fes20ParseException.Reportable("Distance element must contain a valid numeric value.");
         }
 
         // FES 2.0 §7.8.3 (DistanceBufferType): the uom attribute is mandatory.
@@ -1144,6 +1198,8 @@ public static class Fes20Parser
 
             _ => throw new Fes20ParseException(
                 $"Unrecognised or unsupported distance unit-of-measure '{uom}'. " +
+                "Use a standard linear unit (m, km, ft, mi, NM, yd or an OGC URN/URL equivalent).",
+                "Unrecognised or unsupported distance unit-of-measure. " +
                 "Use a standard linear unit (m, km, ft, mi, NM, yd or an OGC URN/URL equivalent).")
         };
     }
@@ -1181,7 +1237,9 @@ public static class Fes20Parser
     private static int ParseSrid(string srsName)
         => TryParseSrid(srsName, out var srid)
             ? srid
-            : throw new Fes20ParseException($"Unsupported or unrecognized srsName '{srsName}'.");
+            : throw new Fes20ParseException(
+                $"Unsupported or unrecognized srsName '{srsName}'.",
+                "Unsupported or unrecognized srsName on a filter geometry.");
 
     private static bool TryParseSrid(string srsName, out int srid)
     {
@@ -1276,14 +1334,14 @@ public static class Fes20Parser
             (!isGeographic && minX >= maxX) ||
             (isGeographic && Math.Abs(minX - maxX) < CoordinateEpsilon))
         {
-            throw new Fes20ParseException("Invalid envelope coordinates");
+            throw Fes20ParseException.Reportable("Invalid envelope coordinates");
         }
 
         if (isGeographic &&
             (!IsValidLongitude(minX) || !IsValidLongitude(maxX) ||
              !IsValidLatitude(minY) || !IsValidLatitude(maxY)))
         {
-            throw new Fes20ParseException("Invalid envelope coordinates");
+            throw Fes20ParseException.Reportable("Invalid envelope coordinates");
         }
     }
 
@@ -1325,15 +1383,49 @@ public static class Fes20Parser
 public sealed class Fes20ParseException : Exception
 {
     /// <summary>
-    /// Initializes a new exception with the supplied parse error message.
+    /// Initializes a new exception with the supplied parse error message. The message is kept
+    /// for server-side diagnostics only; <see cref="ClientReason"/> is <see langword="null"/>.
     /// </summary>
     /// <param name="message">The parse failure message.</param>
     public Fes20ParseException(string message) : base(message) { }
 
     /// <summary>
     /// Initializes a new exception with the supplied parse error message and inner exception.
+    /// The message is kept for server-side diagnostics only; <see cref="ClientReason"/> is
+    /// <see langword="null"/>.
     /// </summary>
     /// <param name="message">The parse failure message.</param>
     /// <param name="innerException">The underlying parse failure.</param>
     public Fes20ParseException(string message, Exception innerException) : base(message, innerException) { }
+
+    /// <summary>
+    /// Initializes a new exception with a diagnostic message and a separate reason that is safe
+    /// to return to the client.
+    /// </summary>
+    /// <param name="message">The parse failure message, for server-side diagnostics.</param>
+    /// <param name="clientReason">Authored text that echoes no request content beyond a bounded element name.</param>
+    /// <param name="innerException">The underlying parse failure, if any.</param>
+    public Fes20ParseException(string message, string clientReason, Exception? innerException = null)
+        : base(message, innerException)
+    {
+        ClientReason = clientReason;
+    }
+
+    /// <summary>
+    /// A reason that protocol adapters may return to the client verbatim, or
+    /// <see langword="null"/> when the failure detail must stay in server-side diagnostics
+    /// (for example because it quotes literal values, CRS strings or a lower-level exception).
+    /// </summary>
+    public string? ClientReason { get; }
+
+    /// <summary>
+    /// Creates an exception whose message is authored text that is also safe to return to the
+    /// client. Callers must not interpolate request content other than an element or operator
+    /// name, bounded to a short length.
+    /// </summary>
+    /// <param name="reason">The client-safe parse failure reason.</param>
+    /// <param name="innerException">The underlying failure, if any.</param>
+    /// <returns>The exception to throw.</returns>
+    public static Fes20ParseException Reportable(string reason, Exception? innerException = null)
+        => new(reason, reason, innerException);
 }

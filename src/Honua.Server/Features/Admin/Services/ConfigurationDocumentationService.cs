@@ -349,7 +349,7 @@ public sealed class ConfigurationDocumentationService
                 BuildPropertyWithCurrent("Limits:Attachments:MaxTotalAttachmentSize", "Limits__Attachments__MaxTotalAttachmentSize", "integer",
                     "Maximum total attachment size per feature in bytes", FileSizeConstants.OneHundredMB, opts.MaxTotalAttachmentSize, "Range: 10MB-1GB"),
                 BuildPropertyWithCurrent("Limits:Attachments:AllowedMimeTypes", "Limits__Attachments__AllowedMimeTypes", "string",
-                    "Comma-separated allowed MIME types", "image/*,application/pdf", opts.AllowedMimeTypes)
+                    "Comma-separated allowed MIME types", "image/*,application/pdf,text/plain,text/csv,application/json", opts.AllowedMimeTypes)
             ]
         };
     }
