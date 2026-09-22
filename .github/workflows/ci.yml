@@ -2816,6 +2816,9 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
+        with:
+          # TierTraitEnforcementTests compares the baseline with HEAD's first parent.
+          fetch-depth: 2
 
       # Mirror the build job's disk reclaim — the full-solution build can
       # exhaust ubuntu-latest disk once every project writes Release outputs.

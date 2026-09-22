@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Reflection;
 using FluentAssertions;
 using Honua.TestKit.Attributes;
@@ -27,11 +28,11 @@ namespace Honua.Architecture.Tests;
 /// untiered when the guard landed are listed, by fully-qualified name, in the committed
 /// baseline <c>tests/dotnet/Honua.Architecture.Tests/tier-trait-baseline.txt</c>. The list is
 /// a ratchet: adding a tier attribute to a baselined method must also remove its line, and a
-/// stale line fails the guard, so the baseline can only shrink.
+/// stale line fails the guard. The required gate compares the file to the first parent of
+/// its checked-out merge commit, so adding a new bare test and its baseline line also fails.
 /// </para>
 /// <para>
-/// Regenerate the baseline (only when deliberately accepting new untiered methods — normally
-/// you add the tier attribute instead):
+/// Regenerate the baseline after tiering existing methods, then commit the resulting deletions:
 /// <code>
 /// HONUA_EMIT_TIER_TRAIT_BASELINE=1 dotnet test \
 ///   tests/dotnet/Honua.Architecture.Tests/Honua.Architecture.Tests.csproj \
@@ -73,6 +74,60 @@ public sealed class TierTraitEnforcementTests
             "shrink. These entries name methods that are now tiered (or no longer exist), so their " +
             "lines must be deleted from the baseline in the same change:\n" +
             string.Join("\n", stale));
+    }
+
+    [ArchitectureTest]
+    public void TierTraitBaseline_MustNotGrowFromTheCheckedOutBase()
+    {
+        // PR Gate checks out refs/pull/N/merge with fetch-depth 2. Its first parent is the
+        // trusted trunk tip, even when the PR adds a bare [Fact] and its baseline line together.
+        // The first PR introducing this file has no parent baseline and is allowed to seed it.
+        var prior = TierTraitBaseline.ReadFromFirstParent(ArchitectureTestHelpers.ResolveRepositoryRoot());
+        if (prior is null)
+        {
+            return;
+        }
+
+        var added = TierTraitBaseline.AddedEntries(TierTraitBaseline.ReadLines(), prior);
+        added.Should().BeEmpty(
+            "the tier-trait baseline may only shrink from the checked-out base; give every new " +
+            "test a tier-bearing TestKit attribute instead of adding its name to the baseline. " +
+            "Added entries:\n" + string.Join("\n", added));
+    }
+
+    [ArchitectureTest]
+    public void TierTraitBaselineGrowth_RejectsNewFactEvenWhenItsNameIsAddedToTheBaseline()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"honua-tier-baseline-{Guid.NewGuid():N}");
+        var path = Path.Combine(root, TierTraitBaseline.RelativePath);
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            TierTraitBaseline.RunGit(root, "init", "-q");
+            File.WriteAllText(Path.Combine(root, "README"), "initial\n");
+            TierTraitBaseline.RunGit(root, "add", "README");
+            TierTraitBaseline.RunGit(root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "initial");
+
+            File.WriteAllText(path, "Example.ExistingBareFact\n");
+            TierTraitBaseline.RunGit(root, "add", TierTraitBaseline.RelativePath);
+            TierTraitBaseline.RunGit(root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "introduce-baseline");
+            TierTraitBaseline.ReadFromFirstParent(root).Should().BeNull("the first baseline is allowed to be seeded");
+
+            File.AppendAllText(path, "Example.NewBareFact\n");
+            TierTraitBaseline.RunGit(root, "add", TierTraitBaseline.RelativePath);
+            TierTraitBaseline.RunGit(root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "add-untiered-test-and-baseline-line");
+
+            var prior = TierTraitBaseline.ReadFromFirstParent(root)!;
+            TierTraitBaseline.AddedEntries(File.ReadAllLines(path), prior)
+                .Should().ContainSingle().Which.Should().Be("Example.NewBareFact");
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
     }
 
     /// <summary>
@@ -432,6 +487,51 @@ internal static class TierTraitBaseline
 
     public static HashSet<string> Read()
         => new(ReadLines(), StringComparer.Ordinal);
+
+    public static IReadOnlyList<string> AddedEntries(IEnumerable<string> current, IEnumerable<string> prior)
+        => current.Except(prior, StringComparer.Ordinal).OrderBy(name => name, StringComparer.Ordinal).ToArray();
+
+    public static IReadOnlyList<string>? ReadFromFirstParent(string repositoryRoot)
+    {
+        var parent = RunGit(repositoryRoot, "rev-parse", "--verify", "HEAD^1^{commit}").Trim();
+        var path = RunGit(repositoryRoot, "ls-tree", "--name-only", parent, "--", RelativePath);
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        return RunGit(repositoryRoot, "show", $"{parent}:{RelativePath}")
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(line => !line.StartsWith('#'))
+            .ToArray();
+    }
+
+    public static string RunGit(string repositoryRoot, params string[] arguments)
+    {
+        var start = new ProcessStartInfo("git")
+        {
+            WorkingDirectory = repositoryRoot,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        foreach (var argument in arguments)
+        {
+            start.ArgumentList.Add(argument);
+        }
+
+        using var process = Process.Start(start)
+            ?? throw new InvalidOperationException("Could not start git for tier baseline comparison.");
+        var output = process.StandardOutput.ReadToEnd();
+        var error = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+        if (process.ExitCode != 0)
+        {
+            throw new InvalidOperationException($"git {string.Join(' ', arguments)} failed: {error}");
+        }
+
+        return output;
+    }
 
     public static void Write(IReadOnlyCollection<string> names)
     {
