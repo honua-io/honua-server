@@ -250,6 +250,17 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
         => _inner.GetPublicationRequestAsync(itemId, versionId, requestId, cancellationToken);
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Bridged families publish into their native stores (a form publishes through the form
+    /// registry; analysis has no publish-request concept), so only natively persisted
+    /// publication requests govern a Studio route.
+    /// </remarks>
+    public Task<StudioPublicationRequest?> GetActivePublicationRequestByRouteAsync(
+        string route,
+        CancellationToken cancellationToken = default)
+        => _inner.GetActivePublicationRequestByRouteAsync(route, cancellationToken);
+
+    /// <inheritdoc />
     public async Task<StudioRollbackRequest> RollbackAsync(
         Guid itemId,
         Guid targetVersionId,
@@ -292,6 +303,15 @@ public sealed class BridgedStudioPackageStore : IStudioPackageStore
 
         if (!string.IsNullOrWhiteSpace(query.OwnerId) &&
             !string.Equals(item.OwnerId ?? string.Empty, query.OwnerId, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        // Bridged families persist in their own native stores, which record no Studio tenant.
+        // They are therefore treated exactly as a tenant-unassigned Studio row is
+        // (honua-server#4905): enumerable only by a caller whose scope covers the deployment's
+        // default tenant, never by another tenant.
+        if (query.Tenant is { IncludeUnassigned: false })
         {
             return false;
         }

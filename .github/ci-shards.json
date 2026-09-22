@@ -307,6 +307,23 @@
         "GeoServices GPServer and NAServer",
         "GeoServices GPServer Endpoints"
       ]
+    },
+    {
+      "name": "Operator Eval Harness capacity partition",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Eval|FullyQualifiedName~Honua.Server.Tests.Features.Geoprocessing|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc",
+      "children": [
+        "Operator Eval Harness",
+        "gRPC Protocol and Scene"
+      ]
+    },
+    {
+      "name": "OGC API Maps and Tiles capacity partition",
+      "csproj": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Records",
+      "children": [
+        "OGC API Maps Basic and Conformance",
+        "OGC API Maps Rendering and Records"
+      ]
     }
   ],
   "shards": [
@@ -484,6 +501,7 @@
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportFidelityIntegrationTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesServiceUrlValidationTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationPerformanceEvidenceEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/MigrationAdminSdkLifecycleTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationRunAdminEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationScannerEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/OgcApiFeaturesImportEndpointTests.cs",
@@ -901,19 +919,39 @@
       ]
     },
     {
-      "name": "OGC API Maps and Tiles",
-      "shard_name": "OGC API Maps and Tiles",
-      "dispatch_rank": 17.1,
-      "artifact_suffix": "ogc-api-maps-tiles",
-      "log_name": "server-tests-ogc-api-maps-tiles",
+      "name": "OGC API Maps Basic and Conformance",
+      "shard_name": "OGC API Maps Basic and Conformance",
+      "dispatch_rank": 6.0,
+      "artifact_suffix": "ogc-api-maps-basic-conformance",
+      "log_name": "server-tests-ogc-api-maps-basic-conformance",
       "timeout_minutes": 32,
       "test_timeout_minutes": 22,
       "max_cpu_count": "",
       "upload_operator_eval_report": false,
       "upload_odata_evidence": false,
       "csproj": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj",
-      "_comment": "ADR-0037 finer-sharding: narrowed to the Maps + Records namespaces; Tiles, Coverages and Processes were carved into the OGC API Tiles Coverages and Processes shard. The five namespaces are disjoint, so the two shards partition the original suite with no gaps or overlaps.",
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Records",
+      "_comment": "Capacity split #5006: Basic and Conformance took ~360s, the remaining Maps and Records ~407s in run 35164215061 attempt 2. Both retain the original 22m test / 32m job budgets. Maps paths select both children; the exact partition preserves all original classes, including future Maps/Records tests. See docs/internal/ci/shard-rebalance-5006.md.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsConformanceTests",
+      "paths": [
+        "src/Honua.Protocols.OgcApi/Maps/",
+        "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Maps/",
+        "src/Honua.Core/Features/Validation/"
+      ]
+    },
+    {
+      "name": "OGC API Maps Rendering and Records",
+      "shard_name": "OGC API Maps Rendering and Records",
+      "dispatch_rank": 6.8,
+      "artifact_suffix": "ogc-api-maps-rendering-records",
+      "log_name": "server-tests-ogc-api-maps-rendering-records",
+      "timeout_minutes": 32,
+      "test_timeout_minutes": 22,
+      "max_cpu_count": "",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "csproj": "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj",
+      "_comment": "Capacity split #5006: Basic and Conformance took ~360s, the remaining Maps and Records ~407s in run 35164215061 attempt 2. Both retain the original 22m test / 32m job budgets. Maps paths select both children; the exact partition preserves all original classes, including future Maps/Records tests. See docs/internal/ci/shard-rebalance-5006.md.",
+      "filter": "(FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Ogc.Api.Records)&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests&FullyQualifiedName!~Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsConformanceTests",
       "paths": [
         "src/Honua.Protocols.OgcApi/Maps/",
         "src/Honua.Protocols.OgcApi/Records/",
@@ -1215,7 +1253,7 @@
     {
       "name": "Operator Eval Harness",
       "shard_name": "Operator Eval Harness",
-      "dispatch_rank": 17.4,
+      "dispatch_rank": 10.2,
       "artifact_suffix": "operator-eval",
       "log_name": "server-tests-operator-eval",
       "timeout_minutes": 30,
@@ -1223,7 +1261,8 @@
       "max_cpu_count": "1",
       "upload_operator_eval_report": true,
       "upload_odata_evidence": false,
-      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Eval|FullyQualifiedName~Honua.Server.Tests.Features.Geoprocessing|FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc",
+      "_comment": "Selects the Eval and Geoprocessing namespaces. Capacity split 2026-09-14 (trunk red at 8e62f71, run 34816748596): the shard passed at 1196s of its 20m cap at 0c6c424 (99.7%) and then exhausted it at 1201s with no failing test. The Protocols.Grpc namespace (~580s, SceneGrpcIntegrationTests alone ~550s) moved to gRPC Protocol and Scene; this shard keeps ~610s (51%). Budgets are unchanged; see docs/internal/ci/shard-timeout-budgets.md.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Eval|FullyQualifiedName~Honua.Server.Tests.Features.Geoprocessing",
       "paths": [
         "src/Honua.Geoprocessing/Features/Geoprocessing/",
         "src/Honua.Geoprocessing.Cli/",
@@ -1240,10 +1279,30 @@
         "tests/dotnet/Honua.Geoprocessing.Testing.Tests/",
         "tests/dotnet/Honua.Geoprocessing.Cli.Tests/",
         "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Processes/",
-        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/",
         "tests/dotnet/Honua.Server.Tests/Features/Protocols/Mcp/",
         "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/",
         "src/Honua.Core/Features/Validation/"
+      ]
+    },
+    {
+      "name": "gRPC Protocol and Scene",
+      "shard_name": "gRPC Protocol and Scene",
+      "dispatch_rank": 9.7,
+      "artifact_suffix": "grpc-protocol-scene",
+      "log_name": "server-tests-grpc-protocol-scene",
+      "timeout_minutes": 30,
+      "test_timeout_minutes": 20,
+      "max_cpu_count": "1",
+      "upload_operator_eval_report": false,
+      "upload_odata_evidence": false,
+      "_comment": "Capacity split 2026-09-14 from Operator Eval Harness (trunk red at 8e62f71, run 34816748596). The Protocols.Grpc namespace was ~580s of that serial shard's 1196-1201s, and SceneGrpcIntegrationTests alone ~550s, so a whole-namespace move is the smallest one that restores headroom to both halves. Keeps the parent's max_cpu_count and unchanged 20m/30m caps. Ranked just below the parent.",
+      "filter": "FullyQualifiedName~Honua.Server.Tests.Features.Protocols.Grpc",
+      "paths": [
+        "src/Honua.Server/Features/Protocols/Grpc/",
+        "src/Honua.Scene/",
+        "src/Honua.Core/Features/Geoprocessing/",
+        "src/Honua.Geoprocessing/Features/Geoprocessing/",
+        "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/"
       ]
     },
     {
@@ -2305,6 +2364,7 @@
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesImportFidelityIntegrationTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/GeoservicesServiceUrlValidationTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationPerformanceEvidenceEndpointTests.cs",
+        "tests/dotnet/Honua.Server.Tests/Import/MigrationAdminSdkLifecycleTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationRunAdminEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/MigrationScannerEndpointTests.cs",
         "tests/dotnet/Honua.Server.Tests/Import/OgcApiFeaturesImportEndpointTests.cs",

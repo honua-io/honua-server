@@ -128,4 +128,11 @@ internal static partial class OperatorAuthorizationLog
         Message = "Destructive action gated: principal {PrincipalId} for {ResourceType}.{Operation} — policy {PolicyRef}")]
     public static partial void DestructiveActionGated(
         ILogger logger, string? principalId, OperatorResourceType resourceType, OperatorOperation operation, string? policyRef);
+
+    [LoggerMessage(
+        EventId = 4718,
+        Level = LogLevel.Debug,
+        Message = "Operator authorization granted: scoped admin read bypass for principal {PrincipalId} on {ResourceType}.{Operation}")]
+    public static partial void ScopedAdminReadBypassed(
+        ILogger logger, string? principalId, OperatorResourceType resourceType, OperatorOperation operation);
 }

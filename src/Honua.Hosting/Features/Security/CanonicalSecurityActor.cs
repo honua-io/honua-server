@@ -23,6 +23,15 @@ internal static class CanonicalSecurityActor
     internal const string AuthenticationSchemeClaim = "honua:auth_scheme";
     internal const string FrameworkOwnedClaimProperty = "honua:framework_owned";
 
+    // Per-issuance token metadata: lifetime, token id, authentication instant, hash
+    // bindings, and provider-specific per-token identifiers (Entra ID uti/aio/rh). None
+    // of these grants authority, and every one changes when a client refreshes a token.
+    private static readonly HashSet<string> IssuanceClaimTypes = new(StringComparer.Ordinal)
+    {
+        "exp", "iat", "nbf", "jti", "auth_time", ClaimTypes.AuthenticationInstant,
+        "at_hash", "c_hash", "nonce", "uti", "aio", "rh",
+    };
+
     public static CanonicalSecurityActorIdentity? Resolve(ClaimsPrincipal? principal)
     {
         if (principal?.Identity is not ClaimsIdentity { IsAuthenticated: true } identity)
@@ -70,14 +79,55 @@ internal static class CanonicalSecurityActor
         CanonicalSecurityActorIdentity actor,
         string? effectiveTenant,
         ClaimsPrincipal principal,
-        string? credentialFingerprint)
+        string? authorityFingerprint)
     {
         var normalizedTenant = NormalizeValue(effectiveTenant);
         var tenant = normalizedTenant is null ? "none" : $"value:{normalizedTenant}";
         var scopeCeiling = ResolveScopeCeiling(principal);
-        var credential = NormalizeValue(credentialFingerprint) ?? "not-bearer";
-        return $"{actor.ActorId}:tenant:{Encode(tenant)}:scope:{Encode(scopeCeiling)}:credential:{Encode(credential)}";
+        var authority = NormalizeValue(authorityFingerprint) ?? "not-bearer";
+        return $"{actor.ActorId}:tenant:{Encode(tenant)}:scope:{Encode(scopeCeiling)}:authority:{Encode(authority)}";
     }
+
+    /// <summary>
+    /// One-way fingerprint of every authority-bearing claim on a validated principal
+    /// (roles, groups, permissions, workspace scopes, interactive-session evidence and
+    /// any future claim-based grant). Claims that only identify one issuance of a token
+    /// are excluded, so a refreshed access token with identical authority yields the same
+    /// fingerprint while any change to what the caller may do yields a different one
+    /// (honua-server#4909). Request-binding projections stamped after authentication are
+    /// excluded because their dimensions are bound separately.
+    /// </summary>
+    internal static string ResolveAuthorityFingerprint(ClaimsPrincipal principal)
+    {
+        ArgumentNullException.ThrowIfNull(principal);
+        var claims = principal.Claims
+            .Where(static claim => !IsRequestBindingProjection(claim) && !IssuanceClaimTypes.Contains(claim.Type))
+            .Select(static claim => (claim.Type, claim.Value, claim.Issuer))
+            .Order();
+        var canonical = new System.Text.StringBuilder();
+        foreach (var (type, value, issuer) in claims)
+        {
+            // Length-prefix every component so no delimiter inside a claim can make two
+            // different claim sets serialize identically.
+            canonical.Append(type.Length).Append(':').Append(type)
+                .Append(value.Length).Append(':').Append(value)
+                .Append(issuer.Length).Append(':').Append(issuer);
+        }
+
+        var digest = System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(canonical.ToString()));
+        return $"sha256:{Convert.ToHexStringLower(digest)}";
+    }
+
+    /// <summary>
+    /// Whether a claim is a framework-owned request-binding projection (canonical actor,
+    /// effective tenant, scope ceiling, scheme, issuer) added after authentication rather
+    /// than a claim the validated credential carried.
+    /// </summary>
+    internal static bool IsRequestBindingProjection(Claim claim) =>
+        IsFrameworkOwnedClaim(claim)
+        && claim.Type is CanonicalActorClaim or EffectiveTenantClaim or ScopeCeilingClaim
+            or AuthenticationSchemeClaim or "honua:issuer";
 
     internal static string ResolveScopeCeiling(ClaimsPrincipal principal)
     {

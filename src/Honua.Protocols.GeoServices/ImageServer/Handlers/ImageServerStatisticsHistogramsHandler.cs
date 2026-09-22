@@ -80,7 +80,7 @@ internal sealed class ImageServerStatisticsHistogramsHandler
         try
         {
             var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-            if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is not { } resolved)
+            if (ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context) is not { } resolved)
             {
                 ImageServerLog.LayerNotFound(_logger, layerId);
                 return StandardErrorHelpers.CreateNotFound(context, "Layer not found.");
@@ -101,7 +101,8 @@ internal sealed class ImageServerStatisticsHistogramsHandler
             }
 
             // Per ArcGIS ImageServer spec, rasterIds selects raster catalog object IDs (long).
-            // Band selection (1-based) is done via the optional bandIds extension parameter.
+            // Band selection is done via the optional bandIds extension parameter, 0-based like
+            // exportImage bandIds (#4068) and shifted to the raster store's 1-based bands.
             if (!TryParseRasterIds(GetString(values, "rasterIds"), out var rasterIds, out var rasterIdsError))
             {
                 ImageServerLog.InvalidStatisticsHistogramsParameters(_logger, layerId, rasterIdsError ?? "Invalid rasterIds");
@@ -462,7 +463,8 @@ internal sealed class ImageServerStatisticsHistogramsHandler
     }
 
     /// <summary>
-    /// Parses the optional <c>bandIds</c> extension parameter as a list of 1-based band indices.
+    /// Parses the optional <c>bandIds</c> extension parameter as a list of 0-based band indices
+    /// (the same base as <c>exportImage</c>, #4068) and returns them as 1-based raster-store bands.
     /// Accepts CSV or JSON array form.
     /// </summary>
     private static bool TryParseBandIds(string? raw, out int[]? bands, out string? error)
@@ -483,19 +485,20 @@ internal sealed class ImageServerStatisticsHistogramsHandler
                 using var doc = System.Text.Json.JsonDocument.Parse(trimmed);
                 if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array)
                 {
-                    error = "bandIds must be a JSON array of 1-based band indices.";
+                    error = "bandIds must be a JSON array of 0-based band indices.";
                     return false;
                 }
 
                 var values = new List<int>(doc.RootElement.GetArrayLength());
                 foreach (var element in doc.RootElement.EnumerateArray())
                 {
-                    if (element.ValueKind != System.Text.Json.JsonValueKind.Number || !element.TryGetInt32(out var band) || band <= 0)
+                    // int.MaxValue has no 1-based store band: shifting it would wrap negative.
+                    if (element.ValueKind != System.Text.Json.JsonValueKind.Number || !element.TryGetInt32(out var band) || band is < 0 or int.MaxValue)
                     {
-                        error = "bandIds entries must be positive integers.";
+                        error = "bandIds entries must be non-negative 0-based band indices.";
                         return false;
                     }
-                    values.Add(band);
+                    values.Add(band + 1);
                 }
                 bands = values.Count == 0 ? null : values.ToArray();
                 return true;
@@ -511,12 +514,12 @@ internal sealed class ImageServerStatisticsHistogramsHandler
         var parsed = new List<int>(parts.Length);
         foreach (var part in parts)
         {
-            if (!int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var band) || band <= 0)
+            if (!int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var band) || band is < 0 or int.MaxValue)
             {
-                error = "bandIds entries must be positive integers.";
+                error = "bandIds entries must be non-negative 0-based band indices.";
                 return false;
             }
-            parsed.Add(band);
+            parsed.Add(band + 1);
         }
         bands = parsed.Count == 0 ? null : parsed.ToArray();
         return true;

@@ -220,6 +220,67 @@ public class ODataFilterParserTests
             .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
     }
 
+    [Theory]
+    [InlineData("and")]
+    [InlineData("or")]
+    public void Parse_FlatLogicalSequenceBeyondOperandLimit_ThrowsODataFilterParseException(string keyword)
+    {
+        var filter = string.Join($" {keyword} ", Enumerable.Repeat("Name eq 'a'", FilterParserGuard.MaxExpressionDepth + 1));
+
+        var act = () => _parser.Parse(filter);
+
+        act.Should().Throw<ODataFilterParseException>()
+            .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
+    }
+
+    [Fact]
+    public void Parse_FlatLogicalSequenceWithinDepthLimit_ReturnsLeftDeepChain()
+    {
+        // N comparison operands fold into a tree of depth N + 1.
+        var filter = string.Join(" and ", Enumerable.Repeat("Name eq 'a'", FilterParserGuard.MaxExpressionDepth - 1));
+
+        var result = _parser.Parse(filter);
+
+        result.Should().BeOfType<BinaryExpression>().Which.Operator.Should().Be(BinaryOperator.And);
+    }
+
+    [Fact]
+    public void Parse_FlatArithmeticSequenceBeyondDepthLimit_ThrowsODataFilterParseException()
+    {
+        var filter = "Size" + string.Concat(Enumerable.Repeat(" add 1", FilterParserGuard.MaxExpressionDepth + 1)) + " gt 0";
+
+        var act = () => _parser.Parse(filter);
+
+        act.Should().Throw<ODataFilterParseException>()
+            .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
+    }
+
+    [Fact]
+    public void Parse_NestedNullSafeComparisonsBeyondNodeLimit_ThrowsODataFilterParseException()
+    {
+        // Each null-safe 'ne' between two nullable operands references its left operand
+        // three times, so twelve nested comparisons expand to 3^12 visited nodes while
+        // staying inside the nesting-depth limit.
+        var filter = "A";
+        for (var i = 0; i < 12; i++)
+        {
+            filter = $"({filter} ne B)";
+        }
+
+        var act = () => _parser.Parse(filter);
+
+        act.Should().Throw<ODataFilterParseException>()
+            .WithMessage($"*maximum size of {FilterParserGuard.MaxExpressionNodes} nodes*");
+    }
+
+    [Fact]
+    public void Parse_NestedNullSafeComparisonsWithinNodeLimit_Parses()
+    {
+        var result = _parser.Parse("((A ne B) ne C) ne D");
+
+        result.Should().BeOfType<BinaryExpression>().Which.Operator.Should().Be(BinaryOperator.Or);
+    }
+
     #endregion
 
     #region Integer vs Double Literals

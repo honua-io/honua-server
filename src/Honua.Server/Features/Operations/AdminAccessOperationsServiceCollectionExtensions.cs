@@ -24,6 +24,9 @@ internal static class AdminAccessOperationsServiceCollectionExtensions
         services.AddSingleton<AdminAccessOperationRegistrationMarker>();
         services.TryAddEnumerable(ServiceDescriptor.Singleton<IOperationDescriptorProvider,
             AdminAccessOperationDescriptorProvider>());
+        // #3363: the audited Admin projection (the committed manifest rows) publishes over MCP by default.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<IAuditedAdminMcpProjection,
+            AdminAuditedMcpProjection>());
         foreach (var definition in AdminAccessOperationCatalog.Definitions)
         {
             var descriptor = AdminAccessOperationCatalog.Descriptors.Single(

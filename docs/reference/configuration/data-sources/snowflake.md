@@ -1,9 +1,21 @@
 ---
 type: reference
 title: "Snowflake provider"
+description: "Serve native Snowflake GEOGRAPHY and GEOMETRY tables as read-only feature layers in place."
 resource: "honua://capability/provider.snowflake"
 ---
 # Snowflake provider
+
+Honua exposes Snowflake native `GEOGRAPHY` and `GEOMETRY` tables as read-only feature layers
+through the shared `IFeatureDataProvider` seam. Snowflake is a widely deployed cloud data
+warehouse and a common connect-in-place target for analytical spatial data.
+
+This page describes the **read/query slice**. Edits, native MVT, native
+FlatGeobuf/Geobuf/GML, statistics aggregates, top features, bins, and H3 aggregation are
+deliberately out of scope.
+
+Use the [PostGIS provider](README.md) for full read/write, edits, statistics, MVT, and
+analytics. Use the [DuckDB provider](duckdb.md) for analytical Parquet workflows.
 
 ## Protocol routing
 
@@ -14,24 +26,10 @@ This provider is read-only, so OData create/update/delete requests (including `$
 return `501 ProviderWriteNotSupported` instead of dispatching to the primary provider.
 
 OGC API Tiles raster (`f=png`) tile requests resolve this provider per collection the same way,
-through `FeatureProviderQueryRouter`; Honua never falls back to the primary provider for a routed
+through the provider router; Honua never falls back to the primary provider for a routed
 collection's raster tiles. Vector (MVT) tile requests instead return a `501 Not Implemented`
 problem response naming the collection and provider: native MVT generation is a per-provider
-capability that only the PostGIS provider implements today, independent of the routing fix
-delivered under [issue #2962](https://github.com/honua-io/honua-server/issues/2962).
-
-
-Honua exposes Snowflake native `GEOGRAPHY` and `GEOMETRY` tables as read-only feature layers
-through the shared `IFeatureDataProvider` seam. Snowflake is a widely deployed cloud data
-warehouse and a common connect-in-place target for analytical spatial data.
-
-This page describes the **read/query thin slice** delivered under issue
-[#1713](https://github.com/honua-io/honua-server/issues/1713). Edits, native MVT, native
-FlatGeobuf/Geobuf/GML, statistics aggregates, top features, bins, and H3 aggregation are
-deliberately out of scope.
-
-Use the [PostGIS provider](README.md) for full read/write, edits, statistics, MVT, and
-analytics. Use the [DuckDB provider](duckdb.md) for analytical Parquet workflows.
+capability that only the PostGIS provider implements today.
 
 ## Supported Sources
 
@@ -101,7 +99,7 @@ backend; layers are routed to it by their secure connection's provider name, not
 
 | Setting | Default | Description |
 |---|---|---|
-| `Experimental:Features:SnowflakeProvider` | `false` | **Required opt-in (PA-182).** Setting `Snowflake:Enabled=true` without this throws at startup. |
+| `Experimental:Features:SnowflakeProvider` | `false` | **Required opt-in.** Setting `Snowflake:Enabled=true` without this throws at startup. |
 | `Snowflake:Enabled` | `true` | Set to `false` to skip provider registration even if the assembly is referenced. Disable for Native AOT publishing profiles. |
 | `Snowflake:ConnectionString` | _none_ | Default `Snowflake.Data` connection string used when a layer's secure connection is unavailable. Takes precedence over the discrete account/warehouse/database/schema/role fields. Prefer secret-store references in production. |
 | `Snowflake:Account` | _none_ | Account identifier (for example `xy12345.us-east-1`). Documentation field used only when composing a connection string from discrete fields. |
@@ -173,10 +171,3 @@ configure them as `PARCELS`. Configured identifiers are restricted to the regula
 - **No cross-SRID transform.** Filter geometries must already match the layer SRID.
 - **Native AOT incompatible.** `Snowflake.Data` reflection blocks Native AOT; disable the provider
   in AOT-published images.
-
-## Testing
-
-Unit tests for the query builder, SQL dialect, and identifier quoting run in normal CI
-(`tests/dotnet/Honua.Snowflake.Tests`). Integration tests against a live Snowflake account are
-gated behind `HONUA_TEST_SNOWFLAKE=1` plus `HONUA_SNOWFLAKE_TEST_CONNECTION` and are tagged
-`[Trait("Category", "Snowflake")]`; they no-op when those environment variables are absent.

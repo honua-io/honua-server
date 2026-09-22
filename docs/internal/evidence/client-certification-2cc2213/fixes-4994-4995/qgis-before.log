@@ -1,0 +1,10 @@
+QStandardPaths: XDG_RUNTIME_DIR not set, defaulting to '/tmp/runtime-root'
+Traceback (most recent call last):
+  File "/regressions/features_clients.py", line 89, in <module>
+    result = (gdal_checks if args.client == "gdal" else qgis_checks)(args.base_url.rstrip("/"))
+  File "/regressions/features_clients.py", line 78, in qgis_checks
+    filters = check_discovery(requests)
+  File "/regressions/features_clients.py", line 16, in check_discovery
+    assert any(urlsplit(url).path.endswith("/collections/0/queryables") for url in requests), requests
+           ~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ['http://honua:5000/ogc/features', 'http://honua:5000/openapi.json', 'http://honua:5000/ogc/features/collections/0', 'http://honua:5000/ogc/features/conformance', 'http://honua:5000/ogc/features/collections/0/items?limit=10', 'http://honua:5000/ogc/features/collections/0/items?limit=100&crs=http://www.opengis.net/def/crs/EPSG/0/4326']

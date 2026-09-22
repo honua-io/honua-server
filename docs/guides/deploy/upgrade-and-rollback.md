@@ -15,9 +15,9 @@ You'll roll a new Honua version forward safely — preflight first, backward-com
 2. The default recovery is rolling back the application image; the previous version keeps working against the expanded schema.
 3. Database restore is the last resort, only when a destructive migration or data corruption makes the previous version unusable.
 
-### Configuration binding correction (#3055)
+### Configuration binding correction
 
-This release corrects source-generated binding for options that previously used
+Recent releases correct source-generated binding for options that previously used
 `init`-only properties. Explicit values under the following sections now take effect
 instead of silently retaining their defaults: `Alerts` (including delivery channels),
 `AuditLog:ChainVerification`, `AuditLog:Export:Dispatch`, `Deployment`, `Federation`,
@@ -69,13 +69,7 @@ kubectl rollout status deployment/honua-server --namespace honua --timeout=600s
 
 Single-instance Docker is not zero-downtime: pull the new tag, stop the old container, start the new one with the same env and database, and wait for `/healthz/ready`.
 
-3. Verify the rollout.
-
-```bash
-BASE_URL=$HOST ADMIN_API_KEY=$ADMIN_KEY ./scripts/cloud/post-deployment-verification.sh
-```
-
-Use `ADMIN_AUTH_HEADER="Authorization: Bearer ..."` instead of `ADMIN_API_KEY` for OIDC deployments.
+3. Verify the rollout: `/healthz/ready` returns `Ready` on every replica, `GET /api/v1/admin/deploy/preflight` reports no pending migrations, and a known layer queries back with the expected count.
 
 ## Coordinated rollouts via the deploy API
 
@@ -92,11 +86,11 @@ For canary/gated rollouts, Honua's control plane drives the deployment through a
 | `POST /api/v1/admin/deploy/operations/{operationId}/rollback` | Roll the operation back |
 | `POST /api/v1/admin/platform-release/converge` | Actuate the declared platform release across all serving targets in one call |
 
-Deploy targets are configured under `ControlPlane__DeployTargets__*` with a backend per platform: `honua-kubernetes-argo-rollouts` (Argo Rollouts canary), `honua-aws-ecs-alb` (ALB weighted target groups), `honua-gitops-aws-lambda` (alias weights), `honua-azure-container-apps-revision` (revision traffic split), `honua-gitops-azure-functions` (slot swap), plus GitOps passthrough variants. When a target sets `telemetry.connection` (a `ControlPlane__TelemetryConnections` entry, Prometheus or CloudWatch), the reconciler gates promotion on error rate and p95 latency and triggers automatic rollback on breach. Keep environment-specific target metadata in your infrastructure-as-code repository (Honua's Terraform modules are available to customers through support).
+Deploy targets are configured under `ControlPlane__DeployTargets__*` with a backend per platform: `honua-kubernetes-argo-rollouts` (Argo Rollouts canary), `honua-aws-ecs-alb` (ALB weighted target groups), `honua-gitops-aws-lambda` (alias weights), `honua-azure-container-apps-revision` (revision traffic split), `honua-gitops-azure-functions` (slot swap), plus GitOps passthrough variants. When a target sets `telemetry.connection` (a `ControlPlane__TelemetryConnections` entry, Prometheus or CloudWatch), the reconciler gates promotion on error rate and p95 latency and triggers automatic rollback on breach. Keep environment-specific target metadata in your infrastructure-as-code repository; the public [honua-iac](https://github.com/honua-io/honua-iac) modules are the reference.
 
 ### Converge the whole platform release in one call
 
-When you declare a versioned platform release under `ControlPlane__PlatformRelease__*` (a `Version`, a `ServingArtifactReference`, and one or more `Workers`; ADR-0060 WS2), `POST /api/v1/admin/platform-release/converge` actuates the serving plane onto it in a single call — no per-target scripting. It takes **no version argument**: it always converges to the currently declared release, and it validates co-versioning first (a release must bind both planes), returning `400` if the declaration is missing or one-sided.
+When you declare a versioned platform release under `ControlPlane__PlatformRelease__*` (a `Version`, a `ServingArtifactReference`, and one or more `Workers`), `POST /api/v1/admin/platform-release/converge` actuates the serving plane onto it in a single call — no per-target scripting. It takes **no version argument**: it always converges to the currently declared release, and it validates co-versioning first (a release must bind both planes), returning `400` if the declaration is missing or one-sided.
 
 Per-target behaviour follows a fixed divergence contract:
 
@@ -137,6 +131,7 @@ The telemetry gate is validated when a rollout is planned, before anything is su
 - a named preset is not supported, even alongside explicit query overrides;
 - telemetry parameters are set without `telemetry.connection` (outside the `health-only` profile), or the connection is not configured under `ControlPlane__TelemetryConnections`;
 - error-rate or latency signals have no sample floor (`telemetry.sample_count.query` + `telemetry.sample_count.minimum`);
+- `telemetry.max_staleness_seconds` is set on a CloudWatch or Azure Monitor connection. Only Prometheus checks each sample's observation time; the other providers query a fixed 300-second window, so the bound would be ignored;
 - the rollout splits traffic (a canary weight or ramp) but its metrics are aggregate. Set `telemetry.prometheus.canary_selector` or `telemetry.prometheus.canary_job`, a canary preset, or explicit candidate-scoped queries, so the stable revision's traffic cannot mask a failing candidate;
 - probe settings or golden-query expectations are set without their URL, or `telemetry.healthz.failure_threshold` exceeds `telemetry.healthz.samples`;
 - `deployment.promotion_gate` is not `telemetry`, `health`, or `manual`.
@@ -145,7 +140,7 @@ At runtime, a reading only counts as evidence when it is present, finite, non-ne
 
 | Parameter | Default | Purpose |
 |---|---|---|
-| `telemetry.max_staleness_seconds` | `300` | Freshness bound for provider samples, in (0, 3600]. |
+| `telemetry.max_staleness_seconds` | `300` | Freshness bound for Prometheus samples, in (0, 3600]. CloudWatch and Azure Monitor read only the last 300 seconds and reject this key at plan time. |
 | `telemetry.warmup_seconds` | preset (`120` for `honua-http`) | Bake time after the candidate first receives traffic, in (0, 21600]. |
 | `telemetry.evidence_grace_seconds` | `900` | How long missing or invalid evidence (provider outage, unconfigured connection, stale or ambiguous data, unreachable probe) is tolerated after warmup before the rollout is rolled back, in (0, 3600]. |
 | `telemetry.exposure_deadline_seconds` | `1800` | How long a submitted rollout may wait for the candidate to receive traffic. Past it, the rollout is rolled back without the candidate ever being activated. In (0, 7200]. |
@@ -153,6 +148,19 @@ At runtime, a reading only counts as evidence when it is present, finite, non-ne
 Warmup and bake windows start when the backend first reports the candidate serving traffic, not when the operation was created. That exposure time is stored on the operation, so a control-plane restart or lease hand-off resumes the same window rather than restarting it. There is no path on which missing data promotes a rollout: before exposure it holds until the exposure deadline, and after exposure it holds until warmup plus the evidence grace, then rolls back.
 
 The self-hosted rolling backend (`honua-yarp-rolling`) stages the candidate as a standby replica that serves no traffic until the proxy swaps to it, so its exposure starts at the cutover. Before the cutover, only the checks that need no candidate traffic run: the backend's standby health gate, plus `telemetry.healthz.url` and the golden query when you set them (point them at the standby replica). Those checks are bounded by `telemetry.exposure_deadline_seconds`: a standby that has not passed them by the deadline is rolled back without being activated, even if it becomes ready later. Error-rate, latency, and sample-floor metrics are evaluated from the cutover, inside the post-activation observation window below.
+
+### Replica environment and files (self-hosted rolling)
+
+The self-hosted rolling backend launches each replica itself, so anything the image needs at startup has to travel on the deploy operation's parameters:
+
+| Parameter | Effect |
+|---|---|
+| `env.<NAME>` | Sets environment variable `<NAME>` in the replica container to the parameter's value. |
+| `mount.<container-path>` | Mounts the host file or directory named by the parameter's value at `<container-path>` in the replica container, read-only. |
+
+A mount whose host path is missing or empty blocks the plan, so you read the reason instead of watching the standby exit at startup and the rollout fail at the exposure deadline as a health failure.
+
+Reach for `mount.` when the image needs a *file*. A server that connects to Redis outside Development and Test composes the durable operation secret channel and refuses to start until `Operations:SecretChannel:KeyRingCertificatePath` names a PKCS#12 certificate with a private key, which is exactly such a file. Mount the directory holding it, then point the setting at the in-container path: `mount./etc/honua/keyring` = `/srv/honua/keyring` on the host, with `env.Operations__SecretChannel__KeyRingCertificatePath` = `/etc/honua/keyring/operation-keyring.pfx` and `env.Operations__SecretChannel__KeyRingCertificatePassword` set alongside it.
 
 ## Promotion requirements
 
@@ -205,10 +213,6 @@ fails moments after cutover still has something to recover to.
 Application rollback first — whenever readiness fails, errors or latency regress, and migrations were additive:
 
 ```bash
-# Kubernetes helper (verifies health and reruns post-deploy checks)
-ADMIN_API_KEY=$ADMIN_KEY ./scripts/cloud/rollback-deployment.sh
-
-# Or Helm-native
 helm rollback honua --namespace honua
 kubectl rollout status deployment/honua-server --namespace honua --timeout=600s
 ```
@@ -221,7 +225,7 @@ Restore the database only when a destructive migration already ran or data was c
 
 > Open `/healthz/ready` in a browser, then run `GET /api/v1/admin/deploy/preflight` in the authorized [API explorer](../../reference/openapi-and-explorer.md).
 
-Expected: `Ready`, then a preflight payload with `readyForCoordinatedDeploy: true` and no pending migrations. Rehearse rollback/canary behavior before production with `./scripts/scale/scale-test.sh --test rollback` and `--test canary`.
+Expected: `Ready`, then a preflight payload with `readyForCoordinatedDeploy: true` and no pending migrations.
 
 ## Troubleshoot
 

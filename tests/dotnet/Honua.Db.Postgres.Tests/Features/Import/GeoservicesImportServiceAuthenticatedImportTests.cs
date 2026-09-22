@@ -55,16 +55,18 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
                 }
             });
 
-            result.Success.Should().BeTrue();
+            result.Success.Should().BeTrue(result.ErrorMessage);
             result.FeatureCount.Should().Be(2);
             result.SourceServiceUrl.Should().NotContain(accessToken);
             result.SourceServiceUrl.Should().NotContain(secretReference);
             handler.SanitizedPaths.Should().Equal(
                 "/arcgis/rest/services/Private/FeatureServer/0?f=json",
-                "/arcgis/rest/services/Private/FeatureServer/0/query?where=1=1&returnCountOnly=true&f=json",
-                "/arcgis/rest/services/Private/FeatureServer/0/query?f=json&where=1%3D1&outFields=%2A&returnGeometry=true&resultOffset=0&resultRecordCount=1&outSR=4326",
-                "/arcgis/rest/services/Private/FeatureServer/0/query?f=json&where=1%3D1&outFields=%2A&returnGeometry=true&resultOffset=1&resultRecordCount=1&outSR=4326",
-                "/arcgis/rest/services/Private/FeatureServer/0/query?f=json&where=1%3D1&outFields=%2A&returnGeometry=true&resultOffset=2&resultRecordCount=1&outSR=4326");
+                "/arcgis/rest/services/Private/FeatureServer/0/query?where=1%3D1&f=json&returnCountOnly=true",
+                "/arcgis/rest/services/Private/FeatureServer/0/query?where=1%3D1&f=json&outFields=%2A&returnGeometry=true&returnZ=true&returnM=true&resultOffset=0&resultRecordCount=1&outSR=4326",
+                "/arcgis/rest/services/Private/FeatureServer/0/query?where=1%3D1&f=json&outFields=%2A&returnGeometry=true&returnZ=true&returnM=true&resultOffset=1&resultRecordCount=1&outSR=4326",
+                "/arcgis/rest/services/Private/FeatureServer/0/query?where=1%3D1&f=json&outFields=%2A&returnGeometry=true&returnZ=true&returnM=true&resultOffset=2&resultRecordCount=1&outSR=4326",
+                // #4600: the source is re-counted after the last page to detect changes during the transfer.
+                "/arcgis/rest/services/Private/FeatureServer/0/query?where=1%3D1&f=json&returnCountOnly=true");
             handler.SanitizedPaths.Should().NotContain(path => path.Contains(accessToken, StringComparison.Ordinal));
 
             var rows = await ReadImportedRowsAsync(schemaName, tableName);
@@ -209,8 +211,8 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
                       ]
                     }
                     """,
-                "/arcgis/rest/services/Private/FeatureServer/0/query?where=1=1&returnCountOnly=true&f=json" => """{"count":2}""",
-                "/arcgis/rest/services/Private/FeatureServer/0/query?f=json&where=1%3D1&outFields=%2A&returnGeometry=true&resultOffset=0&resultRecordCount=1&outSR=4326" => """
+                "/arcgis/rest/services/Private/FeatureServer/0/query?where=1%3D1&f=json&returnCountOnly=true" => """{"count":2}""",
+                "/arcgis/rest/services/Private/FeatureServer/0/query?where=1%3D1&f=json&outFields=%2A&returnGeometry=true&returnZ=true&returnM=true&resultOffset=0&resultRecordCount=1&outSR=4326" => """
                     {
                       "features": [
                         {
@@ -222,7 +224,7 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
                       "spatialReference": { "wkid": 4326 }
                     }
                     """,
-                "/arcgis/rest/services/Private/FeatureServer/0/query?f=json&where=1%3D1&outFields=%2A&returnGeometry=true&resultOffset=1&resultRecordCount=1&outSR=4326" => """
+                "/arcgis/rest/services/Private/FeatureServer/0/query?where=1%3D1&f=json&outFields=%2A&returnGeometry=true&returnZ=true&returnM=true&resultOffset=1&resultRecordCount=1&outSR=4326" => """
                     {
                       "features": [
                         {
@@ -234,7 +236,7 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
                       "spatialReference": { "wkid": 4326 }
                     }
                     """,
-                "/arcgis/rest/services/Private/FeatureServer/0/query?f=json&where=1%3D1&outFields=%2A&returnGeometry=true&resultOffset=2&resultRecordCount=1&outSR=4326" => """
+                "/arcgis/rest/services/Private/FeatureServer/0/query?where=1%3D1&f=json&outFields=%2A&returnGeometry=true&returnZ=true&returnM=true&resultOffset=2&resultRecordCount=1&outSR=4326" => """
                     {
                       "features": [],
                       "exceededTransferLimit": false,
@@ -295,7 +297,7 @@ public sealed class GeoservicesImportServiceAuthenticatedImportTests(PostgresFix
                         Encoding.UTF8,
                         "application/json")
                 }),
-                "/arcgis/rest/services/Private/FeatureServer/0/query?where=1=1&returnCountOnly=true&f=json" => Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
+                "/arcgis/rest/services/Private/FeatureServer/0/query?where=1%3D1&f=json&returnCountOnly=true" => Task.FromResult<System.Net.Http.HttpResponseMessage>(new Honua.TestKit.CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
                 {
                     Content = new StringContent("""{"count":2}""", Encoding.UTF8, "application/json")
                 }),

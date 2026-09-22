@@ -55,7 +55,7 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
     public async Task DefaultGpService_DrivesRealExecutorToEsriFeatureSetResult(string taskName, bool disjoint)
     {
         var routeTask = taskName == "canonical-geojson" ? "Clip" : taskName;
-        await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+        await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
 
         // A graph containing a service of exactly the seeded shape (name, GPServer
         // protocol, anonymous access) and nothing else — this is what a fresh
@@ -77,7 +77,7 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
                 {
                     configBuilder.AddInMemoryCollection(new Dictionary<string, string?>
                     {
-                        ["ConnectionStrings:redis"] = redis.ConnectionString
+                        ["ConnectionStrings:redis"] = GPServerRedisTestConnection.For(redis)
                     });
                 });
             })
@@ -90,7 +90,7 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
                 services.AddSingleton<IMetadataV2GraphStore>(graphProvider);
 
                 services.RemoveAll<IConnectionMultiplexer>();
-                services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redis.ConnectionString));
+                services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(GPServerRedisTestConnection.For(redis)));
 
                 services.RemoveAll<IExecutionJobStore>();
                 services.AddSingleton<IExecutionJobStore>(sp =>
@@ -259,7 +259,7 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
         finally
         {
             await fixture.DisposeAsync();
-            await DeleteControlPlaneKeysAsync(redis.ConnectionString);
+            await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
         }
     }
 

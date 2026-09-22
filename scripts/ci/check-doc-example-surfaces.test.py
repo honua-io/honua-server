@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -40,7 +41,7 @@ def case(
     commit(root, "base")
     target.write_text(markdown, encoding="utf-8")
     commit(root, "change")
-    return run("python3", str(SCRIPT), "--repo-root", str(root), "--base", "HEAD^", cwd=root)
+    return run(sys.executable, str(SCRIPT), "--repo-root", str(root), "--base", "HEAD^", cwd=root)
 
 
 def main() -> int:

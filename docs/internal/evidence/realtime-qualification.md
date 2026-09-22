@@ -89,6 +89,27 @@ close code `1008` with reason `authorization-ended`. A client reconnects with a 
 credential and its last delivered cursor; subscription filters and tenant visibility are
 evaluated again before replay. A revoked credential never becomes a replacement token.
 
+The WebSocket close is a handshake, not a best-effort write. After sending
+`1008 authorization-ended`, the server waits up to one revalidation interval for the
+client's close reply before it cancels the endpoint. Cancelling a receive that was still
+pending used to abort the socket first, and Kestrel's teardown could then drop the close
+frame, so the client saw `1006` (server#4776). TestServer does not reproduce that teardown,
+so this regression runs against loopback Kestrel.
+
+Expiry is measured against the `expires` value the issuer returned. A portal token
+validates until that instant and fails from it, whichever cache tier answers. Redis keeps
+key lifetimes in whole seconds and rounds down, so the distributed entry is kept past the
+advertised expiry and the explicit expiry check decides (server#4777).
+
+OData reports an ended credential as an authentication failure. A request without a valid
+credential resolves the default tenant, which cannot see another tenant's layer. The shared
+layer validator answers that request `401` with a `WWW-Authenticate` challenge instead of
+`404`, while an authenticated principal of another tenant still receives `404` (server#4778).
+
+These three boundaries were qualified on the 2026.1 candidate 548b7a5 (`sha256:29974ee7…`)
+through the hosted live receipt (20/20) and a boundary replay (17/17). The evidence is in
+[`realtime-live-auth-548b7a5-2026-09-15.md`](realtime-live-auth-548b7a5-2026-09-15.md).
+
 Every `token-expiry`, `token-revocation`, `tenant-isolation`, and `tenant-scope-change` row
 must retain an `authorization` object containing the SHA-256 issuer/configuration fingerprint,
 two distinct `tenantIds`, distinct tenant-qualified layer/datastream `resourceIds`,

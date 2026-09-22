@@ -180,6 +180,24 @@ public static class MetadataV2GraphSnapshotExtensions
     }
 
     /// <summary>
+    /// Returns every routable publication whose backing storage binding resolves to the given
+    /// integer storage-layer handle, across all services. Protocol routes that carry a storage
+    /// layer id (rather than a service-local <see cref="MetadataV2Publication.LayerIndex"/>)
+    /// must bind through this lookup: the two values only coincide for publications whose
+    /// identifier was assigned from the storage id, so matching on <c>LayerIndex</c> binds an
+    /// aliased publication to an unrelated one (#4065).
+    /// </summary>
+    public static IEnumerable<MetadataV2Publication> PublicationsForStorageLayer(
+        this MetadataV2GraphSnapshot snapshot,
+        int storageLayerId)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        return snapshot.Graph.Publications.Where(publication =>
+            snapshot.IsRoutable(publication)
+            && snapshot.ResolveStorageLayerId(publication) == storageLayerId);
+    }
+
+    /// <summary>
     /// Returns the connection backing a storage binding, if any.
     /// </summary>
     public static MetadataV2Connection? ResolveConnection(

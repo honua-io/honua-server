@@ -91,9 +91,16 @@ internal sealed partial class FeatureQueryBuilder
             // storage mode `ST_AsGeoJSON(bytea)` / `ST_Collect(bytea)` would fail at
             // execution; carrying the typed operand through the CTE keeps the output
             // path correct across Geometry / Geography / Bytea storage modes.
+            // Field masks (#1940) are subtracted where the attributes enter the CTE, so
+            // neither the per-feature "attributes" output nor the per-cluster statistics
+            // can observe a masked value. Without masks this is the bare column.
+            var attributesSource = BuildMaskedAttributesColumn(ResolveMaskedFields(query), ref paramIndex, parameters);
+
             sql.Append("WITH src AS (SELECT ");
             sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.ObjectIdColumn}, ");
-            sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.AttributesColumn}, ");
+            sql.Append(attributesSource == DatabaseSchema.AttributesColumn
+                ? $"{DatabaseSchema.AttributesColumn}, "
+                : $"{attributesSource} AS {DatabaseSchema.AttributesColumn}, ");
             sql.Append(CultureInfo.InvariantCulture, $"{geometryOperand} AS geom, ");
             sql.Append(CultureInfo.InvariantCulture, $"{clusterExpression} AS cluster_id");
             sql.Append(CultureInfo.InvariantCulture, $" FROM {_tableName}");

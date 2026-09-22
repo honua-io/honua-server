@@ -94,4 +94,99 @@ public sealed class GeoServicesDocumentationTruthTests
         judgment.Should().Contain("context.outSR/context.processSR are applied as their env:* equivalents (#4030)");
         judgment.Should().Contain("instead of an empty results list (#4034)");
     }
+
+    [ArchitectureTest]
+    public void ParityData_LayerApplyEditsControls_MatchTheServedContract()
+    {
+        // #4105: the parity data once called every Esri applyEdits control "ignored" while the server
+        // answered 400 for them. Each control's disposition is pinned here and proven on the wire by
+        // FeatureServerEndpointTests: ApplyEdits_NoOpEsriClientControl_IsAcceptedAndEditApplies (ignored),
+        // ApplyEdits_UnsupportedEsriControl_IsRejectedInsteadOfDropped (rejected), and
+        // ApplyEdits_ReturnEditMomentTrue_ReportsWhenEditsWereApplied (returnEditMoment implemented).
+        var expected = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["adds"] = "implemented",
+            ["updates"] = "implemented",
+            ["deletes"] = "implemented",
+            ["rollbackOnFailure"] = "implemented",
+            ["returnEditMoment"] = "implemented",
+            ["useGlobalIds"] = "rejected",
+            ["gdbVersion"] = "rejected",
+            ["sessionID"] = "ignored",
+            ["trueCurveClient"] = "ignored",
+            ["usePreviousEditMoment"] = "ignored",
+            ["timeReferenceUnknownClient"] = "ignored",
+            ["returnEditResults"] = "ignored",
+            ["attachments"] = "rejected",
+            ["assetMaps"] = "rejected",
+            ["async"] = "rejected",
+            ["useUniqueIds"] = "rejected",
+            ["editsUploadId"] = "rejected",
+            ["editsUploadFormat"] = "rejected",
+            ["datumTransformation"] = "rejected",
+        };
+
+        var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
+        foreach (var file in new[] { "geoservices-parity-judgment.json", "geoservices-rest-parity.json" })
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(
+                File.ReadAllText(ArchitectureTestHelpers.CombinePath(root, "docs", "gis", "data", file)));
+            var rows = FindProperty(document.RootElement, "layerApplyEdits");
+            rows.Should().NotBeNull($"{file} must classify the layer applyEdits parameters");
+
+            var actual = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var row in rows!.Value.EnumerateArray())
+            {
+                var status = row.GetProperty("status").GetString()!;
+                foreach (var name in row.GetProperty("name").GetString()!.Split(',', StringSplitOptions.TrimEntries))
+                {
+                    actual.Add(name, status);
+                }
+            }
+
+            actual.Should().BeEquivalentTo(expected, $"{file} must describe the applyEdits controls the server serves");
+        }
+
+        // The public compatibility guide must tell clients the same thing as the parity data.
+        var guide = File.ReadAllText(ArchitectureTestHelpers.CombinePath(root, "docs", "reference", "compatibility", "geoservices-parity.md"));
+        guide.Should().Contain("`returnEditMoment=true` adds `editMoment`");
+        guide.Should().Contain("`returnEditResults` are accepted on\nthe query string or in the body and have no effect");
+        guide.Should().Contain("so\nan edit is never silently dropped");
+        guide.Should().NotContain("`returnEditMoment`, and `attachments` are rejected")
+            .And.NotContain("are silently ignored. queryRelatedRecords");
+    }
+
+    private static System.Text.Json.JsonElement? FindProperty(System.Text.Json.JsonElement element, string name)
+    {
+        switch (element.ValueKind)
+        {
+            case System.Text.Json.JsonValueKind.Object:
+                foreach (var property in element.EnumerateObject())
+                {
+                    if (property.NameEquals(name))
+                    {
+                        return property.Value;
+                    }
+
+                    if (FindProperty(property.Value, name) is { } nested)
+                    {
+                        return nested;
+                    }
+                }
+
+                break;
+            case System.Text.Json.JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray())
+                {
+                    if (FindProperty(item, name) is { } nested)
+                    {
+                        return nested;
+                    }
+                }
+
+                break;
+        }
+
+        return null;
+    }
 }

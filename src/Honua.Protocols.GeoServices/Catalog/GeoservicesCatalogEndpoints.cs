@@ -101,22 +101,18 @@ internal static class GeoservicesCatalogEndpoints
             .WithDisplayName("ArcGIS SOAP Services Catalog WSDL")
             .WithName("ArcGisSoapServicesCatalogWsdl")
             .WithSummary("Get the ArcGIS SOAP services catalog WSDL")
-            .WithDescription("Returns the SOAP 1.1 and SOAP 1.2 service-catalog contract when the wsdl query flag is present.")
+            .WithDescription("Returns the SOAP 1.1 and SOAP 1.2 service-catalog contract for both the bare site-root form and the wsdl query flag.")
             .WithTags("GeoServices Catalog")
             .Produces(StatusCodes.Status200OK, contentType: "text/xml")
-            .Produces(StatusCodes.Status404NotFound, contentType: "text/xml")
             .AllowAnonymous();
 
         return endpoints;
     }
 
+    // ArcGIS Pro's site-root connection form probes GET /services before it posts
+    // catalog operations, so the bare form answers with the same contract as ?wsdl.
     private static IResult HandleGetSoapCatalogWsdl(HttpContext context)
     {
-        if (!context.Request.Query.ContainsKey("wsdl"))
-        {
-            return Results.NotFound();
-        }
-
         XNamespace wsdl = "http://schemas.xmlsoap.org/wsdl/";
         XNamespace xs = "http://www.w3.org/2001/XMLSchema";
         XNamespace soap11 = "http://schemas.xmlsoap.org/wsdl/soap/";
@@ -358,7 +354,7 @@ internal static class GeoservicesCatalogEndpoints
                 soap);
         }
 
-        var operation = operations[0];
+        var operation = ArcGisSoapProtocol.BindArgumentsByLocalName(operations[0]);
 
         var operationNamespace = operation.Name.Namespace;
         if (!ArcGisSoapNamespaces.IsSupported(operationNamespace))
@@ -405,13 +401,20 @@ internal static class GeoservicesCatalogEndpoints
                     break;
                 case "GetServiceDescriptionsEx":
                     var arguments = operation.Elements().ToArray();
-                    if (arguments.Length > 1 ||
-                        arguments.Any(argument =>
-                            argument.Name.Namespace != operationNamespace ||
-                            !string.Equals(argument.Name.LocalName, "folderName", StringComparison.OrdinalIgnoreCase)))
+                    var unsupportedArgument = arguments.FirstOrDefault(argument =>
+                        !string.Equals(argument.Name.LocalName, "FolderName", StringComparison.OrdinalIgnoreCase));
+                    if (unsupportedArgument is not null)
                     {
                         return CompleteSoapCatalogOperation(scope, CreateSoapFault(
-                            "GetServiceDescriptionsEx accepts only one folderName argument.",
+                            $"GetServiceDescriptionsEx does not accept the '{unsupportedArgument.Name.LocalName}' argument; its only argument is FolderName.",
+                            StatusCodes.Status400BadRequest,
+                            soap));
+                    }
+
+                    if (arguments.Length > 1)
+                    {
+                        return CompleteSoapCatalogOperation(scope, CreateSoapFault(
+                            "GetServiceDescriptionsEx accepts at most one FolderName argument.",
                             StatusCodes.Status400BadRequest,
                             soap));
                     }

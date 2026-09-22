@@ -147,7 +147,8 @@ internal static class OgcFeaturesUtilities
     {
         var definitions = await GetSupportedCrsDefinitionsAsync(resource, crsRegistry, cancellationToken).ConfigureAwait(false);
         return definitions.Keys
-            .OrderBy(static uri => uri, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(static uri => string.Equals(uri, Crs84Uri, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+            .ThenBy(static uri => uri, StringComparer.OrdinalIgnoreCase)
             .ToImmutableArray();
     }
 

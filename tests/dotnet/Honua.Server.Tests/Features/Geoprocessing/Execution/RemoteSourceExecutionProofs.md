@@ -44,7 +44,7 @@ Run from the repository root on a Docker host with ports 18449 and 18450 free:
 
 ```bash
 tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/qualify-wfs-candidate.sh \
-  ghcr.io/honua-io/honua-server@sha256:54926040d8b543cac746289c601fb77202ef4446e00a22fa5539836e4bedc8bb \
+  ghcr.io/honua-io/honua-server@sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1 \
   /tmp/wfs-candidate-receipt.json
 ```
 
@@ -52,13 +52,21 @@ Each receipt records observed container/image identities, the image's source
 revision, resource limits, child job states, parent workflow terminal state,
 exact decoded output hashes, and the independent duplicate-page rejection.
 
-`wfs-candidate-receipt.json` is the current receipt: the imaged trunk nightly
-Native AOT image `sha256:54926040d8b543cac746289c601fb77202ef4446e00a22fa5539836e4bedc8bb`
-(`nightly-aot-3c52a4b`, source `3c52a4bffa8f9b8621a39a8868f839e0e605de78`,
-which contains the tenant fix below) passes. In both scenarios the child job
-succeeds, the parent workflow reaches `Succeeded` with 1/1 steps, paging stops at
-`[0,1,2,3]` without `numberMatched` and `[0,1,2]` with it, the decoded output
-hash is identical, the duplicate page is rejected, and cleanup passes.
+`wfs-candidate-receipt.json` is the current receipt, on the 2026.1 candidate
+pinned by honua-release trunk `52cc3f2c` (#349): Native AOT index
+`sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1`
+(`nightly-548b7a5`, source `548b7a5263da5a3f2381eb43f232687cdf92b0bf`). The
+unmodified harness (SHA-256 `82f9c167…ec0c`) passes. The running container
+reports that image ID, repo digest and revision label. In both scenarios the
+child job succeeds and the parent workflow reaches `Succeeded` with 1/1 steps.
+Paging stops at `[0,1,2,3]` without `numberMatched` and at `[0,1,2]` with it.
+Both decode to 564 bytes with hash `c8224a97…258ef`, the duplicate page is
+rejected, and cleanup passes.
+
+`wfs-candidate-receipt-3c52a4b.json` keeps the earlier pass on the imaged trunk
+nightly `sha256:54926040d8b543cac746289c601fb77202ef4446e00a22fa5539836e4bedc8bb`
+(`nightly-aot-3c52a4b`), the first image with the tenant fix below. It gives the
+same pages and output hash.
 
 `wfs-candidate-receipt-7ba4226.json` keeps the earlier failure. Both semantic
 cases passed on the then manifest-pinned Native AOT image from

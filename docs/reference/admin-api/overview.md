@@ -22,7 +22,7 @@ All admin endpoints require authentication. Send `X-API-Key` with the admin pass
 | API keys, roles, users, OIDC providers, license | `/api/v1/admin/api-keys`, `/api/v1/admin/roles`, `/api/v1/admin/users`, `/api/v1/admin/oidc`, `/api/v1/admin/license` | [Users, roles, and licensing](users-roles-licensing.md) |
 | Form packages and submissions | `/api/v1/admin/forms`, `/api/v1/forms` | [Forms](forms.md) |
 | Deploy operations and rollback | `/api/v1/admin/deploy` | [Upgrade and rollback](../../guides/deploy/upgrade-and-rollback.md) |
-| Operations, observability, customer alerts (Preview) | `/api/v1/admin/observability`, `/api/v1/admin/alerts` | [Operations](../../guides/deploy/backup-and-restore.md), [Monitoring](../../guides/deploy/monitoring.md) |
+| Operations, observability, customer alerts (Preview) | `/api/v1/admin/observability`, `/api/v1/admin/alerts` | [Monitoring](../../guides/deploy/monitoring.md), [Operating Honua](../../guides/operate/README.md) |
 | 3D scene registry and generation | `/api/v1/admin/scenes` | [Publish 3D scenes](../../guides/publish/publish-3d-scenes.md) |
 | Runtime configuration reference | `/api/v1/admin/config` | [Environment variables](../configuration/environment-variables.md) |
 
@@ -56,9 +56,6 @@ Customer alert zones, rules, evaluation, and delivery channels are Preview in
 existing feature-status log event; this opt-in does not constitute a GA
 availability or support commitment.
 
-The [2026.1 operator ruling](https://github.com/honua-io/honua-release/issues/268)
-does not relax the mandatory [domain-audit integrity](https://github.com/honua-io/honua-server/issues/3865)
-release gates on this Preview surface.
 
 Control-plane SDKs should instead call `GET /api/v1/admin/capabilities` once per session and branch on its `data.compatibility` object (server version, control-plane major, feature flags). The capabilities handshake is readable anonymously so `checkCompatibility()` can run before credentials exist; every other admin endpoint requires authentication.
 

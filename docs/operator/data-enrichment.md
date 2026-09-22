@@ -18,9 +18,9 @@ shared spatial-analytics pipeline.
 | Method | Route | Description |
 |---|---|---|
 | `GET`  | `/api/enrich/catalog` | List the configuration-driven enrichment datasets you may reference (back-compat). |
-| `GET`  | `/api/enrich/datasets` | Discover the managed enrichment-dataset catalog, filtered by your edition (#2280). |
+| `GET`  | `/api/enrich/datasets` | Discover the managed enrichment-dataset catalog, filtered by your edition. |
 | `GET`  | `/api/enrich/datasets/{id}` | Discover a single managed enrichment dataset by id. |
-| `POST` | `/api/enrich/datasets` | **Admin:** register a managed layer as an enrichment dataset (#2280). |
+| `POST` | `/api/enrich/datasets` | **Admin:** register a managed layer as an enrichment dataset. |
 | `PUT`  | `/api/enrich/datasets/{id}` | **Admin:** update a registered enrichment dataset. |
 | `DELETE` | `/api/enrich/datasets/{id}` | **Admin:** deregister an enrichment dataset. |
 | `POST` | `/api/enrich`         | Enrich a registered source layer with attributes from an enrichment dataset. |
@@ -33,7 +33,7 @@ minimum edition is at or below theirs. The admin registration routes require the
 admin authorization policy and are only mapped when the active data provider is
 Postgres (the managed registry table is Postgres-backed).
 
-## Managed enrichment-dataset catalog (#2280)
+## Managed enrichment-dataset catalog
 
 `POST /api/enrich/datasets` designates an existing managed layer as a reusable
 enrichment dataset. Each entry captures: a stable `id` (slug), `title`,
@@ -55,7 +55,7 @@ async batch path) when the source selection exceeds the synchronous input cap.
 ## Async batch enrichment jobs (`enrichment.enrich`)
 
 Large or staged-input enrichment runs as a **canonical geoprocessing job**
-(#2283) through the existing OGC API Processes surface — there is no
+ through the existing OGC API Processes surface — there is no
 enrichment-local job lifecycle:
 
 - **Submit**: `POST /ogc/processes/processes/enrichment.enrich/execution` with
@@ -167,8 +167,7 @@ feature* — the classic "which boundary polygon is my point in?" question — w
 `within` means *the dataset feature sits inside the source feature*. `intersects`
 and `dwithin` are symmetric, so their operand order does not matter. Both the
 synchronous endpoint and the async batch job evaluate the same canonical
-predicates, so a given method returns the same matches on either path
-([#3069](https://github.com/honua-io/honua-server/issues/3069)).
+predicates, so a given method returns the same matches on either path.
 
 ## Enriching features
 
@@ -192,8 +191,7 @@ overrides; when omitted the dataset's registered defaults apply.
 
 ## MVP scope and deferrals
 
-This first increment intentionally keeps a tight scope and defers the
-enterprise/revenue features in the ticket:
+This first increment keeps a deliberately tight scope:
 
 - **Registered layers only.** Enrichment joins your registered source layer to a
   registered reference layer. There is **no bundled or proxied third-party
@@ -206,8 +204,7 @@ enterprise/revenue features in the ticket:
 - **Synchronous spatial-join method only.** The point-in-polygon / within /
   contains / dwithin predicates are served through the shared spatial-join
   pipeline. Nearest-neighbour is available on the async `enrichment.enrich` job
-  path (#2283); buffer+aggregate weighting and intersection area-weighting as
+  path; buffer+aggregate weighting and intersection area-weighting as
   *enrichment methods*, plus CDC-triggered enrichment, are deferred to
   follow-up work.
 
-These deferrals are tracked under [#374](https://github.com/honua-io/honua-server/issues/374).

@@ -1,0 +1,13 @@
+664:honua-server-1  |       Query "query_parquet" executed: "cng"/FeatureServer/1000 in 12.3336 ms
+665:honua-server-1  | {"@t":"2026-09-16T05:04:22.6292358Z","@mt":"Query {Operation} executed: {ServiceId}/FeatureServer/{LayerId} in {ElapsedMilliseconds} ms","@tr":"c98c0f1c23a600ef5d1a929d38bf3b58","@sp":"d3520e14bf85335c","Operation":"query_parquet","ServiceId":"cng","LayerId":1000,"ElapsedMilliseconds":12.3336,"EventId":{"Id":2206,"Name":"QueryExecuted"},"SourceContext":"Honua.Protocols.GeoServices.FeatureServer.FeatureServerQueryHandler","RequestId":"0HNOJLVS91J6O:00000001","RequestPath":"/rest/services/cng/FeatureServer/1000/query","ConnectionId":"0HNOJLVS91J6O","CorrelationId":"00-c98c0f1c23a600ef5d1a929d38bf3b58-d3520e14bf85335c-00","EnvironmentName":"Test","MachineName":"e7115f44b4ad","ThreadId":31,"SpanId":"d3520e14bf85335c","TraceId":"c98c0f1c23a600ef5d1a929d38bf3b58","ParentId":"0000000000000000","Application":"Honua","Version":"2026.1.1.0"}
+673:honua-server-1  |       Request finished "HTTP/1.1" "GET" "http"://"localhost:18926""""/rest/services/cng/FeatureServer/1000/query""[REDACTED]" - 200 4947 "application/vnd.apache.parquet" 29.8874ms
+674:honua-server-1  | {"@t":"2026-09-16T05:04:22.6367615Z","@mt":"Request finished {Protocol} {Method} {Scheme}://{Host}{PathBase}{Path}{QueryString} - {StatusCode} {ContentLength} {ContentType} {ElapsedMilliseconds}ms","@tr":"c98c0f1c23a600ef5d1a929d38bf3b58","@sp":"d3520e14bf85335c","ElapsedMilliseconds":29.8874,"StatusCode":200,"ContentType":"application/vnd.apache.parquet","ContentLength":4947,"Protocol":"HTTP/1.1","Method":"GET","Scheme":"http","Host":"localhost:18926","PathBase":"","Path":"/rest/services/cng/FeatureServer/1000/query","QueryString":"[REDACTED]","EventId":{"Id":2},"SourceContext":"Microsoft.AspNetCore.Hosting.Diagnostics","RequestId":"0HNOJLVS91J6O:00000001","RequestPath":"/rest/services/cng/FeatureServer/1000/query","ConnectionId":"0HNOJLVS91J6O","EnvironmentName":"Test","MachineName":"e7115f44b4ad","ThreadId":31,"SpanId":"d3520e14bf85335c","TraceId":"c98c0f1c23a600ef5d1a929d38bf3b58","ParentId":"0000000000000000","Application":"Honua","Version":"2026.1.1.0"}
+
+# absence check (grep -c over the full container log):
+DllNotFoundException               0
+ParquetRuntimeUnavailable          0
+Reflection-based serialization     0
+Query failed                       0
+libatomic                          0
+Unhandled exception                0
+Read-only file system              0

@@ -187,6 +187,7 @@ internal sealed class ImageServerWmtsHandler(
                 context,
                 layerId,
                 advertisedLayerIdentifier,
+                publicationId,
                 cancellationToken).ConfigureAwait(false);
         }
 
@@ -485,6 +486,7 @@ internal sealed class ImageServerWmtsHandler(
         HttpContext context,
         int layerId,
         string advertisedLayerIdentifier,
+        string? publicationId,
         CancellationToken cancellationToken)
     {
         var query = context.Request.Query;
@@ -590,7 +592,10 @@ internal sealed class ImageServerWmtsHandler(
         // adapting to the same shared raster-store primitives as the identify operation.
         var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         PixelValueResult? pixel = null;
-        if (ImageServerV2Lookups.FindByLayerIndex(snapshot, layerId) is { } resolved)
+        var featureInfoLayer = publicationId is null
+            ? ImageServerV2Lookups.FindByStorageLayerId(snapshot, layerId, context)
+            : ImageServerV2Lookups.FindByPublicationId(snapshot, publicationId);
+        if (featureInfoLayer is { } resolved)
         {
             var mergeStrategy = ImageServerV2Lookups.ResolveMergeStrategy(resolved.Resource, GetQueryString(query, "mosaicRule"));
             var selectionQuery = new RasterSelectionQuery

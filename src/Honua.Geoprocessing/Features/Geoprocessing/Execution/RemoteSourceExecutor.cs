@@ -313,13 +313,7 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
     {
         if (inputs.TryGet(secretRefKey, out var secretReference) && !string.IsNullOrWhiteSpace(secretReference))
         {
-            var resolver = services.GetService<IConnectionSecretResolver>();
-            if (resolver is null)
-            {
-                throw new TransformInputException("a secret reference was supplied but no secret resolver is configured.");
-            }
-
-            return await resolver.ResolveSecretAsync(secretReference!, cancellationToken).ConfigureAwait(false);
+            return await ResolveRequestSecretReferenceAsync(services, secretReference!, cancellationToken).ConfigureAwait(false);
         }
 
         return inputs.TryGet(inlineKey, out var inline) ? inline : null;
@@ -351,13 +345,32 @@ internal sealed partial class RemoteSourceExecutor : IProcessExecutor
             return null;
         }
 
-        var resolver = services.GetService<IConnectionSecretResolver>();
+        return await ResolveRequestSecretReferenceAsync(services, secretReference!, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Step inputs are request-supplied, so their secret references resolve only through the
+    /// operator policy (<see cref="IRequestSecretReferenceResolver"/>).
+    /// </summary>
+    private static async Task<string> ResolveRequestSecretReferenceAsync(
+        IServiceProvider services,
+        string secretReference,
+        CancellationToken cancellationToken)
+    {
+        var resolver = services.GetService<IRequestSecretReferenceResolver>();
         if (resolver is null)
         {
             throw new TransformInputException("a secret reference was supplied but no secret resolver is configured.");
         }
 
-        return await resolver.ResolveSecretAsync(secretReference!, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await resolver.ResolveAsync(secretReference, cancellationToken).ConfigureAwait(false);
+        }
+        catch (RequestSecretReferenceException)
+        {
+            throw new TransformInputException("the secret reference is not permitted or could not be resolved.");
+        }
     }
 
     private static async Task<string?> ResolveSecureConnectionAsync(

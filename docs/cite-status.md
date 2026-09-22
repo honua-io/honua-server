@@ -5,59 +5,40 @@ description: "The authoritative snapshot of Honua's OGC CITE conformance runs."
 ---
 # CITE Status — Authoritative Snapshot
 
-Last reviewed: 2026-09-02
+Last reviewed: 2026-09-15
 Owner: Honua Server platform
 
 This page is the single fixed-path answer to "what is the current OGC CITE
-pass rate for each protocol on `trunk`?" It exists so re-grading agents and
-auditors can find an authoritative number without spelunking workflow artifacts.
+pass rate for each protocol on `trunk`?" It exists so that number has one address.
 
-**Source of truth.** This page is the single canonical snapshot of OGC CITE
-per-suite pass rates. [`docs/contributor/ogc-cite-conformance-evidence.md`](internal/contributor/ogc-cite-conformance-evidence.md)
-is the stable, website-linkable evidence-run narrative (workflow links,
-artifact contents, refresh steps) and links here for the numbers rather than
-restating them — see that page. The `x-honua-cite-compliance` vendor
-extension in `src/Honua.Server/openapi.json` and the other four
-`*-openapi.json` files also declares this page as its `authoritativeSource`,
-and an architecture test
-(`tests/dotnet/Honua.Architecture.Tests/FeatureCatalog/CiteStatusComplianceDriftTests.cs`)
-gates every one of those five files against the table below so they can
-never silently drift from it.
-
-**Local results note.** The per-suite result directories
-(`cite-results/`, `cite-wfs20-results/`, `cite-tiles-results/`,
-`cite-wms-results/`, `cite-wmts-results/`, `cite-gpkg12-results/`,
-`cite-gml32-results/`, `cite-kml22-results/`, and `.tmp-cite/`) are gitignored.
-The authoritative artifacts live in the GitHub Actions
-[`CITE Evidence Report`](https://github.com/honua-io/honua-server/actions/workflows/cite-evidence-report.yml)
-workflow runs. Do not infer the current pass rate from an empty local
-directory — check the workflow.
+Every row is backed by a run of the CITE Evidence Report workflow, which runs
+weekly and fails if any suite regresses or this page goes stale.
 
 ## Current Per-Protocol Status
 
-The latest WFS 2.0 `basic` receipt is
-[run 33583116921](https://github.com/honua-io/honua-server/actions/runs/33583116921)
-on candidate commit `a59e204c75a1b51a433faf45d7511c10840786d7`, completed
-2026-09-02. It reports 167 passed, 0 failed, and 0 skipped. All other rows remain backed by
-[CITE Evidence Report run 33205558805](https://github.com/honua-io/honua-server/actions/runs/33205558805)
-and its `cite-conformance-evidence-13` bundle from 2026-08-28.
+Every row is backed by
+[CITE Evidence Report run 34994919144](https://github.com/honua-io/honua-server/actions/runs/34994919144)
+and its `cite-conformance-evidence-21` bundle, built from source commit
+`b8ea218d07a52fe025d9382063d11b9b2c17c922` and started 2026-09-15. It reports
+1138 passed, 0 failed, 0 skipped, and 0 CantTell across 14 suites
+(`allPassed=true`). OGC API Features includes the complete Part 2 CRS class.
 
 | Suite | Profile | Passed / Total | Pass Rate | Last Evidence Run |
 |---|---|---:|---:|---|
-| OGC API Features 1.0 | `default` | 137 / 137 | 100% | 2026-08-28 |
-| OGC API Tiles 1.0 | `default` | 16 / 16 | 100% | 2026-08-28 |
-| GeoPackage 1.2 | `applicable` | 31 / 31 | 100% | 2026-08-28 |
-| GML 3.2 | `applicable` | 17 / 17 | 100% | 2026-08-28 |
-| KML 2.2 | `applicable` | 42 / 42 | 100% | 2026-08-28 |
-| WFS 1.0 | `basic` | 162 / 162 | 100% | 2026-08-28 |
-| WFS 1.1 | `basic` | 39 / 39 | 100% | 2026-08-28 |
-| WFS 2.0 | `basic` | 167 / 167 | 100% | [2026-09-02](https://github.com/honua-io/honua-server/actions/runs/33583116921) |
-| WFS 2.0 Transactional | `transactional` | 25 / 25 | 100% | 2026-08-28 |
-| WCS 2.0 | `core` | 82 / 82 | 100% | 2026-08-28 |
-| WPS 2.0 | `basic-async` | 21 / 21 | 100% | 2026-08-28 |
-| WMS 1.1.1 | `default` | 126 / 126 | 100% | 2026-08-28 |
-| WMS 1.3 | `default` | 213 / 213 | 100% | 2026-08-28 |
-| WMTS 1.0 | `default` | 60 / 60 | 100% | 2026-08-28 |
+| OGC API Features 1.0 | `default` | 137 / 137 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| OGC API Tiles 1.0 | `default` | 16 / 16 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| GeoPackage 1.2 | `applicable` | 31 / 31 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| GML 3.2 | `applicable` | 17 / 17 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| KML 2.2 | `applicable` | 42 / 42 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| WFS 1.0 | `basic` | 162 / 162 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| WFS 1.1 | `basic` | 39 / 39 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| WFS 2.0 | `basic` | 167 / 167 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| WFS 2.0 Transactional | `transactional` | 25 / 25 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| WCS 2.0 | `core` | 82 / 82 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| WPS 2.0 | `basic-async` | 21 / 21 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| WMS 1.1.1 | `default` | 126 / 126 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| WMS 1.3 | `default` | 213 / 213 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
+| WMTS 1.0 | `default` | 60 / 60 | 100% | [2026-09-15](https://github.com/honua-io/honua-server/actions/runs/34994919144) |
 
 The WFS 2.0 transactional leg (`cite-wfs20-transactional-results`) measures
 TransactionalWFS independently from the `basic` leg; LockFeature is not
@@ -66,36 +47,20 @@ the runner exercises version negotiation, 1.1.1 axis order,
 `WMT_MS_Capabilities`, `application/vnd.ogc.se_xml` exceptions, `X`/`Y`
 GetFeatureInfo, and `application/vnd.ogc.gml` GML FeatureInfo.
 
-### Common Re-Grading Mistakes To Avoid
-
-- **"WFS 2.0 CITE remains at 166/167."** Incorrect. The `basic` profile is
-  167/167 (100%) on run 33583116921; the receipt records zero failures and zero
-  skipped tests.
-- **"No CITE results in the repo, so CITE is unimplemented."** Incorrect.
-  Result directories are gitignored (see `.gitignore`); they only exist as CI
-  artifacts. The workflows, runners, and Docker compositions all live under
-  `.github/workflows/cite-*.yml`, `scripts/conformance/cite/`, and
-  `docker/cite/` and are functional.
-- **"Each `applicable` profile leaves classes skipped, so the suite is
-  incomplete."** Incorrect for the public claim. Honua's public CITE evidence
-  standard requires every reported assertion to pass and skipped/failed/CantTell
-  to be zero in the chosen profile. The skipped counts that the raw ETS
-  `default` profile shows for KML 2.2, GeoPackage 1.2, GML 3.2, etc. are for
-  optional class families that Honua's exported documents do not exercise; the
-  contributor doc explains each per-suite scope.
-
 ## Profile Scope, In One Line Each
 
-- **OGC API Features `default`** — Part 1 Core on the seeded fixture. Part 2,
-  Part 4, and the specialized CQL2 classes are not included in the public
-  conformance declaration until an exact-candidate lane proves their complete
-  classes.
+- **OGC API Features `default`** — Part 1 Core on the seeded fixture, plus the
+  advertised Part 2 CRS class. Part 4 and specialized CQL2 classes remain
+  unadvertised pending complete class evidence.
 - **OGC API building blocks** — the exact-candidate
   `ogc-api-building-block-conformance.yml` lane runs the complete vendored CQL2,
   MVT/TMS 2.0, Maps, and Schemathesis validator set. Its artifact is evidence
-  for the narrower Features Part 3/queryables claim; CQL2/filter probes remain
-  blocking regression coverage but do not certify complete CQL2 classes. It is
-  not folded into the official ETS totals above.
+  for Features Part 3 and CQL2 behavior. The runtime declares queryables,
+  filter, features-filter, basic-cql2, cql2-text and cql2-json so desktop clients
+  can discover server-side filtering. Literal-fixture integration regressions
+  and pinned GDAL/QGIS client probes supplement that lane; these are not an
+  official complete-class CQL2 certification and are not folded into the ETS
+  totals above.
 - **OGC API Tiles `default`** — vector + raster tiles against the seeded tile
   matrix sets.
 - **GeoPackage 1.2 `applicable`** — core and feature classes for Honua's
@@ -153,41 +118,3 @@ WPS 2.0 Basic and Async conformance is included in the authoritative aggregate
 above: 21/21 selected assertions passed, with 22/22 raw assertions passing when
 the unselected Sync class is included. The ETS source is pinned to
 `e2acc691440fad98d32e873a6b7237c9d759b8df`.
-
-## How To Refresh This Page
-
-The
-[`CITE Evidence Report` workflow](https://github.com/honua-io/honua-server/actions/workflows/cite-evidence-report.yml)
-now runs on a weekly schedule (Friday 08:00 UTC, after the Wed/Thu per-suite
-crons) in addition to `workflow_dispatch` (honua-server#2944). A scheduled or
-manual run also asserts this page's "Last reviewed" date is no more than 14
-days old (`scripts/ci/check-cite-status-freshness.sh`) — the workflow fails
-and opens/updates a `cite-evidence` issue when either a suite regresses or
-this page has gone stale, since the automated run does not itself rewrite the
-hand-maintained table below.
-
-1. Trigger the workflow on `trunk` (or wait for the weekly schedule).
-2. Wait for `allPassed=true` (the workflow fails otherwise).
-3. Copy the per-suite totals from the
-   `cite-conformance-evidence-*` artifact's `conformance-summary.md` into the
-   table above.
-4. Update "Last reviewed", the run number, the commit SHA, and the run date.
-5. If a suite regresses, update this page (the canonical numbers), the
-   evidence-run narrative in `docs/contributor/ogc-cite-conformance-evidence.md`,
-   and the `x-honua-cite-compliance` vendor extension in the affected
-   `*-openapi.json` file(s) in the same commit — `CiteStatusComplianceDriftTests`
-   fails the build if any of them disagree. Downgrade the public claim until
-   the regression clears.
-
-## Related Documents
-
-- [`docs/contributor/ogc-cite-conformance-evidence.md`](internal/contributor/ogc-cite-conformance-evidence.md)
-  — stable, website-linkable evidence-run narrative; see this page for the
-  canonical per-suite numbers.
-- [`docs/contributor/cite-runbook.md`](internal/contributor/cite-runbook.md) —
-  per-suite scope, scripts, workflow files, and open issues.
-- [`docs/contributor/ogc-certification-path.md`](internal/contributor/ogc-certification-path.md)
-  — decision record on formal OGC certification posture.
-- [`docs/contributor/CI_QUALITY_GATES.md`](internal/contributor/CI_QUALITY_GATES.md)
-  — gate model that triggers each `cite-*-conformance.yml` workflow.
-- [`docs/evidence/README.md`](internal/evidence/README.md) — top-level evidence index.

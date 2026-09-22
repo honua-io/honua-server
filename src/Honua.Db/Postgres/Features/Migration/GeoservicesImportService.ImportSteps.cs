@@ -45,6 +45,29 @@ internal sealed partial class GeoservicesImportService
         await using var connection = await OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
 
+        // #4600: one import per target table, for the whole job. A retry submitted while the original
+        // job is still running, or two imports aimed at the same table, would otherwise race: the loser
+        // blocks on the winner's uncommitted catalog rows and then fails opaquely, or replaces the table
+        // the winner just committed, or is still publishing, copying attachments into, or reconciling.
+        // The lease is session-level so it survives the data commit; the finally below releases it, and a
+        // dropped connection (a crashed worker) releases it too.
+        if (!await TryAcquireTargetImportLockAsync(connection, targetSchema, request.TableName, cancellationToken))
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            stopwatch.Stop();
+            Log.TargetImportInProgress(_logger, request.TableName);
+            return GeoservicesImportResult.CreateFailure(
+                request.TableName,
+                request.ServiceUrl,
+                request.LayerId,
+                $"Another import is already writing target table '{request.TableName}'; this job did not modify it. "
+                + "Wait for that import to finish, then retry.",
+                stopwatch.Elapsed) with
+            {
+                ServiceName = request.ServiceName
+            };
+        }
+
         try
         {
             // Phase 1: Discover layer metadata
@@ -64,18 +87,43 @@ internal sealed partial class GeoservicesImportService
             var totalFeatures = layerInfo.FeatureCount;
             var batchSize = request.BatchSize ?? layerInfo.MaxRecordCount ?? 1000;
 
-            // #4600: a replacement must never trade a complete prior target for a weaker one. The
-            // DROP below runs inside the import transaction, so rolling back restores the prior table
-            // untouched; remember whether there is one to protect.
-            var replacingExistingTarget = request.OverwriteExisting
-                && await TableExistsAsync(connection, targetSchema, request.TableName, cancellationToken);
+            // #4600: an import that is not a replacement says so instead of failing inside CREATE TABLE.
+            // A job restarted after its data committed lands here too, so the message names that case.
+            var targetExists = await RelationExistsAsync(connection, targetSchema, request.TableName, cancellationToken);
+            if (targetExists && !request.OverwriteExisting)
+            {
+                await transaction.RollbackAsync(CancellationToken.None);
+                stopwatch.Stop();
+                return BuildTargetUnavailableResult(
+                    request,
+                    layerInfo,
+                    $"Target table '{request.TableName}' already exists and overwriteExisting is false, so it was not modified. "
+                    + "Set overwriteExisting to replace it. A job restarted after its data was committed also reports this; "
+                    + "the existing table holds that earlier run's result.",
+                    stopwatch.Elapsed);
+            }
+
+            // #4600: a replacement must never trade a complete prior target for a weaker one. It loads
+            // into a staging table and swaps it in just before commit, so the live target stays readable
+            // and unlocked for the whole transfer. The staging table is created inside the import
+            // transaction: a failure, a refused replacement, a cancellation or a crashed worker all remove
+            // it with the rollback, and the prior target is never touched.
+            var replacingExistingTarget = request.OverwriteExisting && targetExists;
+            var loadTable = replacingExistingTarget
+                ? BuildStagingTableName(request.TableName, jobId)
+                : request.TableName;
+            if (replacingExistingTarget)
+            {
+                // Readers keep the prior rows during the transfer; writers wait for the swap rather than
+                // committing edits the swap would silently discard.
+                await FenceTargetWritesAsync(connection, targetSchema, request.TableName, cancellationToken);
+            }
 
             // Phase 2: Create table
             ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.CreatingTable, request,
                 "Creating PostGIS table", 0, totalFeatures, layerInfo.Name);
 
-            await CreateTableAsync(connection, targetSchema, request.TableName, layerInfo, request.TargetSrid,
-                request.OverwriteExisting, cancellationToken);
+            await CreateTableAsync(connection, targetSchema, loadTable, layerInfo, request.TargetSrid, cancellationToken);
 
             // Phase 3: Retrieve and insert features
             var featuresProcessed = 0;
@@ -102,6 +150,16 @@ internal sealed partial class GeoservicesImportService
                 ? null
                 : sourceObjectIds.Chunk(Math.Max(1, objectIdWindowSize)).ToArray();
             const int maxImportPages = 100_000;
+
+            // #4600: the source population the transfer starts from, with the import's filter applied. It
+            // is compared with the population after the last page, so a source edited mid-transfer is
+            // reported rather than implied to be a snapshot, and it is the baseline a filtered import is
+            // reconciled against (the discovery count is always unfiltered).
+            long? sourceCountBeforeTransfer = sourceObjectIds is not null
+                ? sourceObjectIds.Length
+                : string.IsNullOrWhiteSpace(request.WhereClause)
+                    ? layerInfo.FeatureCount
+                    : await TryCountSourceFeaturesAsync(request, cancellationToken);
 
             while (hasMore && !cancellationToken.IsCancellationRequested &&
                    (objectIdWindows is null || batchNumber < objectIdWindows.Length))
@@ -186,7 +244,7 @@ internal sealed partial class GeoservicesImportService
                     connection,
                     transaction,
                     targetSchema,
-                    request.TableName,
+                    loadTable,
                     layerInfo,
                     newFeatures,
                     request.TargetSrid,
@@ -226,7 +284,8 @@ internal sealed partial class GeoservicesImportService
             if (replacingExistingTarget && failedFeatures > 0)
             {
                 // #4600: refuse the swap. Committing here would replace a complete prior target with
-                // one missing the records that failed to load; the rollback restores the prior table.
+                // one missing the records that failed to load; the rollback discards the staging table
+                // and the prior target was never touched.
                 await transaction.RollbackAsync(CancellationToken.None);
                 stopwatch.Stop();
                 Log.ReplacementRefused(_logger, request.TableName, failedFeatures);
@@ -234,11 +293,36 @@ internal sealed partial class GeoservicesImportService
                     request, layerInfo, featuresProcessed, failedFeatures, warnings, stopwatch.Elapsed);
             }
 
+            // The per-window buffers are finished with. Release them before the source is enumerated
+            // again, so the comparison adds at most one object-ID array to the import's footprint.
+            seenSourceObjectIds.Clear();
+            seenSourceObjectIds.TrimExcess();
+            objectIdWindows = null;
+
+            // #4600: close the bracket around the transfer before committing, so a source that changed
+            // while it was being read is recorded against exactly the data being committed.
+            var sourceSnapshot = await CaptureSourceSnapshotAsync(
+                request,
+                sourceObjectIds,
+                sourceCountBeforeTransfer,
+                cancellationToken);
+
+            if (replacingExistingTarget)
+            {
+                await SwapStagingIntoTargetAsync(connection, targetSchema, loadTable, request.TableName, cancellationToken);
+            }
+
             // Phase 4: Create spatial index
             ReportProgress(progress, jobId, startedAt, GeoservicesImportStatus.Publishing, request,
                 "Creating spatial index", featuresProcessed, totalFeatures, layerInfo.Name);
 
-            await CreateSpatialIndexAsync(connection, targetSchema, request.TableName, cancellationToken);
+            // #4600: a nonspatial ArcGIS table is created without a geom column (BuildCreateTableSql), so
+            // indexing it unconditionally failed every table import with 42703.
+            if (!string.IsNullOrEmpty(layerInfo.GeometryType))
+            {
+                await CreateSpatialIndexAsync(connection, targetSchema, request.TableName, cancellationToken);
+            }
+
             await AnalyzeTableAsync(connection, targetSchema, request.TableName, cancellationToken);
 
             await transaction.CommitSafelyAsync(cancellationToken);
@@ -316,10 +400,19 @@ internal sealed partial class GeoservicesImportService
                     featuresProcessed, featuresProcessed, layerInfo.Name, publishedLayer.LayerId,
                     attachmentsProcessed: attachmentCount, failedAttachments: failedAttachments);
 
+                // #4600 AC6: a filtered import is reconciled against the filtered source. The discovery
+                // count is always unfiltered, so the transfer's filtered baseline stands in for it.
+                var reconciliationSource = string.IsNullOrWhiteSpace(request.WhereClause)
+                    ? layerInfo
+                    : layerInfo with
+                    {
+                        FeatureCount = sourceCountBeforeTransfer is { } filteredCount ? (int)filteredCount : null
+                    };
+
                 reconciliation = await _layerPublicationService.RunReconciliationGateAsync(
                     request,
                     jobId,
-                    layerInfo,
+                    reconciliationSource,
                     publishedLayer,
                     cancellationToken).ConfigureAwait(false);
             }
@@ -339,8 +432,10 @@ internal sealed partial class GeoservicesImportService
                 CatalogReconciliation = reconciliation.CatalogReport,
                 CatalogReconciliationExecuted = reconciliation.CatalogCheckExecuted,
                 PublishedTarget = publishedLayer is not null,
+                PublishRequested = request.AutoPublish,
                 FailedFeatures = failedFeatures,
-                Attachments = attachmentFidelity
+                Attachments = attachmentFidelity,
+                SourceSnapshot = sourceSnapshot
             });
 
             foreach (var difference in fidelity.Differences)
@@ -443,6 +538,19 @@ internal sealed partial class GeoservicesImportService
                 BuildImportFailureMessage(ex),
                 stopwatch.Elapsed);
         }
+        finally
+        {
+            // #4600: every path out of the job ends the target lease, after its transaction has committed
+            // or rolled back. A failure here only means the connection is gone, which releases it anyway.
+            try
+            {
+                await ReleaseTargetImportLockAsync(connection, targetSchema, request.TableName);
+            }
+            catch (Exception ex) when (ex is NpgsqlException or InvalidOperationException)
+            {
+                Log.TargetLeaseReleaseFailed(_logger, request.TableName, ex);
+            }
+        }
     }
 
     private static string BuildImportFailureMessage(Exception exception)
@@ -496,22 +604,123 @@ internal sealed partial class GeoservicesImportService
         };
     }
 
+    private static GeoservicesImportResult BuildTargetUnavailableResult(
+        GeoservicesImportRequest request,
+        GeoservicesLayerInfo layerInfo,
+        string message,
+        TimeSpan duration)
+        => GeoservicesImportResult.CreateFailure(
+            request.TableName,
+            request.ServiceUrl,
+            request.LayerId,
+            message,
+            duration) with
+        {
+            SourceLayerName = layerInfo.Name,
+            ServiceName = request.ServiceName
+        };
+
+    /// <summary>
+    /// Counts the source records matching the import filter, or <c>null</c> when the source cannot
+    /// answer. Cancellation propagates; any other failure only leaves the source snapshot unverified.
+    /// </summary>
+    private async Task<long?> TryCountSourceFeaturesAsync(
+        GeoservicesImportRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _restClient.QueryFeatureCountAsync(
+                request.ServiceUrl,
+                request.LayerId,
+                request.WhereClause,
+                request.RequestTimeoutSeconds,
+                request.MaxRetries,
+                cancellationToken,
+                request.Credentials).ConfigureAwait(false);
+        }
+        // Intentionally generic: an unreadable count is an evidence gap, not an import failure. The
+        // fidelity verdict records it as unverified.
+        catch (Exception ex) when (IsUnreadableSourceFailure(ex, cancellationToken))
+        {
+            Log.SourcePopulationUnavailable(_logger, request.TableName, ex);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Only the caller's own cancellation propagates. A per-request timeout also surfaces as
+    /// <see cref="OperationCanceledException"/> (the REST client's linked <c>CancelAfter</c>) and, like
+    /// any other source failure, only leaves the source snapshot unverified.
+    /// </summary>
+    private static bool IsUnreadableSourceFailure(Exception exception, CancellationToken cancellationToken)
+        => exception is not OutOfMemoryException
+            && !(exception is OperationCanceledException && cancellationToken.IsCancellationRequested);
+
+    /// <summary>
+    /// Reads the source population again after the last page. The object-ID window path compares the
+    /// object-ID sets it enumerated; the paged path compares filtered counts.
+    /// </summary>
+    private async Task<MigrationFidelitySourceSnapshotInput> CaptureSourceSnapshotAsync(
+        GeoservicesImportRequest request,
+        long[]? sourceObjectIds,
+        long? countBeforeTransfer,
+        CancellationToken cancellationToken)
+    {
+        if (sourceObjectIds is null)
+        {
+            return new MigrationFidelitySourceSnapshotInput
+            {
+                CountBeforeTransfer = countBeforeTransfer,
+                CountAfterTransfer = await TryCountSourceFeaturesAsync(request, cancellationToken).ConfigureAwait(false)
+            };
+        }
+
+        long[]? objectIdsAfterTransfer;
+        try
+        {
+            objectIdsAfterTransfer = await _restClient.QueryObjectIdsAsync(
+                request.ServiceUrl,
+                request.LayerId,
+                request.WhereClause,
+                request.RequestTimeoutSeconds,
+                request.MaxRetries,
+                cancellationToken,
+                request.Credentials).ConfigureAwait(false);
+        }
+        // Intentionally generic, as in TryCountSourceFeaturesAsync.
+        catch (Exception ex) when (IsUnreadableSourceFailure(ex, cancellationToken))
+        {
+            Log.SourcePopulationUnavailable(_logger, request.TableName, ex);
+            objectIdsAfterTransfer = null;
+        }
+
+        // Sorted in place and compared span by span, so no set is built over either list. The transfer
+        // windows were cut from copies, so reordering the enumerated source list here is safe.
+        var membershipChanged = false;
+        if (objectIdsAfterTransfer is not null)
+        {
+            Array.Sort(sourceObjectIds);
+            Array.Sort(objectIdsAfterTransfer);
+            membershipChanged = !sourceObjectIds.AsSpan().SequenceEqual(objectIdsAfterTransfer);
+        }
+
+        return new MigrationFidelitySourceSnapshotInput
+        {
+            CountBeforeTransfer = sourceObjectIds.Length,
+            CountAfterTransfer = objectIdsAfterTransfer?.Length,
+            MembershipChanged = membershipChanged
+        };
+    }
+
     private async Task CreateTableAsync(
         NpgsqlConnection connection,
         string schemaName,
         string tableName,
         GeoservicesLayerInfo layerInfo,
         int targetSrid,
-        bool overwriteExisting,
         CancellationToken cancellationToken)
     {
-        if (overwriteExisting)
-        {
-            await using var dropCmd = connection.CreateCommand();
-            dropCmd.CommandText = $"DROP TABLE IF EXISTS {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} CASCADE";
-            await dropCmd.ExecuteNonQueryAsync(cancellationToken);
-        }
-
         var createSql = BuildCreateTableSql(schemaName, tableName, layerInfo, targetSrid);
         await using var createCmd = connection.CreateCommand();
         createCmd.CommandText = createSql;

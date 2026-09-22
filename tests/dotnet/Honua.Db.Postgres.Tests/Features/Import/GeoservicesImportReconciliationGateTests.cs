@@ -68,7 +68,7 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
         {
             var result = await service.ImportLayerAsync(BuildRequest("recon_gate_pass", schemaName), progress);
 
-            result.Success.Should().BeTrue();
+            result.Success.Should().BeTrue(result.ErrorMessage);
             result.NeedsReview.Should().BeFalse();
             result.ReconciliationArtifact.Should().NotBeNull();
             result.ReconciliationArtifact!.Classification.Should().Be(MigrationReconciliationClassifications.Pass);
@@ -80,6 +80,123 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
         finally
         {
             await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    /// <summary>
+    /// #4600 AC6: a filtered import is reconciled against the filtered source. The discovery count is
+    /// always unfiltered (<c>where=1=1</c>), so before this fix the count probe compared the 2 imported
+    /// records with all 3 source records and failed a faithful filtered import.
+    /// </summary>
+    [Fact]
+    public async Task ImportLayerAsync_WithWhereClause_ReconcilesAgainstTheFilteredSourceCount()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(GeoservicesImportReconciliationGateTests) + "_filtered");
+        var reconciliation = new CapturingReconciliationService();
+        var service = CreateService(new FilteredFeatureServerHandler(), publishedLayerId: 102, reconciliation);
+
+        try
+        {
+            var result = await service.ImportLayerAsync(
+                BuildRequest("recon_gate_filtered", schemaName) with { WhereClause = FilteredFeatureServerHandler.Filter });
+
+            result.Success.Should().BeTrue(result.ErrorMessage);
+            result.FeatureCount.Should().Be(2);
+            var request = reconciliation.Requests.Should().ContainSingle().Subject;
+            var layer = request.Layers.Should().ContainSingle().Subject;
+            layer.SourceFeatureCount.Should().Be(2, "the source holds 3 records, of which the filter selects 2");
+            layer.FilterMirror.Should().Be(FilteredFeatureServerHandler.Filter);
+            result.FidelityDifferences.Should().NotContain(
+                d => d.Code == MigrationFidelityDifferenceCodes.SourceChangedDuringTransfer
+                    || d.Code == MigrationFidelityDifferenceCodes.SourceSnapshotUnverified);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    private sealed class CapturingReconciliationService : ILayerReconciliationService
+    {
+        public List<LayerReconciliationRequest> Requests { get; } = [];
+
+        public Task<MigrationReconciliationArtifact> ReconcileAsync(
+            LayerReconciliationRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
+            return new StubReconciliationService(MigrationReconciliationClassifications.Pass, failCount: 0)
+                .ReconcileAsync(request, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Three source records (OBJECTID 1..3). Unfiltered counts report 3; the <see cref="Filter"/> count
+    /// and query select OBJECTIDs 1 and 2.
+    /// </summary>
+    private sealed class FilteredFeatureServerHandler : HttpMessageHandler
+    {
+        public const string Filter = "OBJECTID<3";
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var pathAndQuery = request.RequestUri?.PathAndQuery ?? string.Empty;
+            var filtered = pathAndQuery.Contains("where=" + Uri.EscapeDataString(Filter) + "&", StringComparison.Ordinal);
+
+            string body;
+            if (pathAndQuery == "/arcgis/rest/services/Inspections/FeatureServer/0?f=json")
+            {
+                body = """
+                    {
+                      "id": 0,
+                      "name": "Inspections",
+                      "geometryType": "esriGeometryPoint",
+                      "maxRecordCount": 10,
+                      "hasAttachments": false,
+                      "extent": { "xmin": -158, "ymin": 21, "xmax": -157, "ymax": 22, "spatialReference": { "wkid": 4326 } },
+                      "fields": [
+                        { "name": "OBJECTID", "type": "esriFieldTypeOID", "nullable": false },
+                        { "name": "Name", "type": "esriFieldTypeString", "nullable": true }
+                      ]
+                    }
+                    """;
+            }
+            else if (pathAndQuery.Contains("returnCountOnly=true", StringComparison.Ordinal))
+            {
+                body = filtered
+                    ? """{"count":2}"""
+                    : pathAndQuery.Contains("where=1=1&", StringComparison.Ordinal)
+                        ? """{"count":3}"""
+                        : throw new InvalidOperationException($"Unexpected ArcGIS count request: {pathAndQuery}");
+            }
+            else if (filtered && pathAndQuery.Contains("resultOffset=0&", StringComparison.Ordinal))
+            {
+                body = """
+                    {
+                      "features": [
+                        { "attributes": { "OBJECTID": 1, "Name": "Alpha" }, "geometry": { "x": -157.1, "y": 21.3 } },
+                        { "attributes": { "OBJECTID": 2, "Name": "Beta" }, "geometry": { "x": -157.2, "y": 21.4 } }
+                      ],
+                      "exceededTransferLimit": false,
+                      "spatialReference": { "wkid": 4326 }
+                    }
+                    """;
+            }
+            else if (filtered && pathAndQuery.Contains("resultOffset=", StringComparison.Ordinal))
+            {
+                body = """{ "features": [], "exceededTransferLimit": false, "spatialReference": { "wkid": 4326 } }""";
+            }
+            else
+            {
+                throw new InvalidOperationException($"Unexpected ArcGIS request path: {pathAndQuery}");
+            }
+
+            // Ownership of the HttpResponseMessage transfers to the HttpClient pipeline that invokes
+            // this handler; it is disposed by the caller, not here (cs/local-not-disposed false positive).
+            return Task.FromResult<HttpResponseMessage>(new CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            });
         }
     }
 
@@ -234,9 +351,9 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
                       ]
                     }
                     """)),
-                "/arcgis/rest/services/Inspections/FeatureServer/0/query?where=1=1&returnCountOnly=true&f=json" =>
+                "/arcgis/rest/services/Inspections/FeatureServer/0/query?where=1%3D1&f=json&returnCountOnly=true" =>
                     Task.FromResult(JsonResponse("""{"count":2}""")),
-                "/arcgis/rest/services/Inspections/FeatureServer/0/query?f=json&where=1%3D1&outFields=%2A&returnGeometry=true&resultOffset=0&resultRecordCount=10&outSR=4326" =>
+                "/arcgis/rest/services/Inspections/FeatureServer/0/query?where=1%3D1&f=json&outFields=%2A&returnGeometry=true&returnZ=true&returnM=true&resultOffset=0&resultRecordCount=10&outSR=4326" =>
                     Task.FromResult(JsonResponse("""
                         {
                           "features": [
@@ -247,7 +364,7 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
                           "spatialReference": { "wkid": 4326 }
                         }
                         """)),
-                "/arcgis/rest/services/Inspections/FeatureServer/0/query?f=json&where=1%3D1&outFields=%2A&returnGeometry=true&resultOffset=2&resultRecordCount=10&outSR=4326" =>
+                "/arcgis/rest/services/Inspections/FeatureServer/0/query?where=1%3D1&f=json&outFields=%2A&returnGeometry=true&returnZ=true&returnM=true&resultOffset=2&resultRecordCount=10&outSR=4326" =>
                     Task.FromResult(JsonResponse("""
                         { "features": [], "exceededTransferLimit": false, "spatialReference": { "wkid": 4326 } }
                         """)),

@@ -660,7 +660,7 @@ public sealed class McpPlatformOpsReaderTests
         ProposalId = "deployment-proposal",
     });
 
-    private static OpsFindingsEvaluation DeploymentFindingFixture(string scenario)
+    internal static OpsFindingsEvaluation DeploymentFindingFixture(string scenario)
     {
         // Fixed, independently specified source observations, not a snapshot of runtime output.
         var now = new DateTimeOffset(2026, 9, 6, 12, 0, 0, TimeSpan.Zero);
@@ -748,9 +748,14 @@ public sealed class McpPlatformOpsReaderTests
         IOperationExecutorCatalog? catalog = null,
         IOpsFindingsEvidenceSource? findings = null,
         IHttpContextAccessor? accessor = null,
-        IAdminApiKeyStore? apiKeys = null)
+        IAdminApiKeyStore? apiKeys = null,
+        Honua.Infrastructure.MultiTenancy.TenantContextOptions? tenantOptions = null)
     {
         var services = new ServiceCollection();
+        if (tenantOptions is not null)
+        {
+            services.AddSingleton(Options.Create(tenantOptions));
+        }
         if (accessor is not null)
         {
             services.AddSingleton(accessor);
@@ -811,7 +816,7 @@ public sealed class McpPlatformOpsReaderTests
             ReferenceEquals(context.User, principal) &&
             string.Equals(context.Request.Method, HttpMethods.Get, StringComparison.Ordinal);
 
-    private static ControlPlaneOptions CreateOptions()
+    internal static ControlPlaneOptions CreateOptions()
         => new()
         {
             PlatformRelease = new PlatformReleaseOptions

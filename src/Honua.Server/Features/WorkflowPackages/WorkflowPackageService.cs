@@ -451,22 +451,7 @@ internal sealed class WorkflowPackageService(
             publication.PackageVersion,
             cancellationToken).ConfigureAwait(false);
 
-        var provenance = new Dictionary<string, string>(publication.Provenance, StringComparer.Ordinal);
-        if (request.Parameters is { Count: > 0 } requestParameters)
-        {
-            foreach (var entry in requestParameters)
-            {
-                // Reserved workflow provenance keys are stamped server-side from the
-                // publication. Skip caller-supplied overrides so jobs/runs keep accurate
-                // package/version/hash traceability.
-                if (string.IsNullOrWhiteSpace(entry.Key) || WorkflowPackageMetadataKeys.IsReserved(entry.Key))
-                {
-                    continue;
-                }
-
-                provenance[entry.Key] = entry.Value;
-            }
-        }
+        var provenance = BuildRunProvenance(publication.Provenance, request.Parameters);
 
         // Enforce process-execute authorization for every run path. The console
         // endpoint group already requires admin, but the schedule path must not
@@ -530,6 +515,43 @@ internal sealed class WorkflowPackageService(
             JobId = job.OperationId,
             Provenance = provenance
         };
+    }
+
+    /// <summary>
+    /// Builds the provenance stamped onto a publication run: the publication's own provenance
+    /// plus the run request's parameters, each carried under
+    /// <see cref="WorkflowPackageMetadataKeys.RunParameterPrefix"/>.
+    /// </summary>
+    /// <remarks>
+    /// The provenance becomes job protocol metadata (and so job spec parameters) for job-backed
+    /// runs. Run parameters annotate the run for traceability only, so they are never carried
+    /// under their bare names: every key in the result is inside the adapter-owned
+    /// <c>workflow.</c> namespace, whatever the run request called its parameters.
+    /// </remarks>
+    internal static Dictionary<string, string> BuildRunProvenance(
+        IReadOnlyDictionary<string, string> publicationProvenance,
+        IReadOnlyDictionary<string, string>? requestParameters)
+    {
+        var provenance = new Dictionary<string, string>(publicationProvenance, StringComparer.Ordinal);
+        if (requestParameters is not { Count: > 0 })
+        {
+            return provenance;
+        }
+
+        foreach (var entry in requestParameters)
+        {
+            // Reserved workflow provenance keys are stamped server-side from the
+            // publication. Skip caller-supplied overrides so jobs/runs keep accurate
+            // package/version/hash traceability.
+            if (string.IsNullOrWhiteSpace(entry.Key) || WorkflowPackageMetadataKeys.IsReserved(entry.Key))
+            {
+                continue;
+            }
+
+            provenance[WorkflowPackageMetadataKeys.RunParameterPrefix + entry.Key.Trim()] = entry.Value;
+        }
+
+        return provenance;
     }
 
     private async Task<WorkflowPackageValidationResult> ValidateGraphAsync(

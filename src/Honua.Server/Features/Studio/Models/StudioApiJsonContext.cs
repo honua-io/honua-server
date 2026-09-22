@@ -27,6 +27,7 @@ namespace Honua.Server.Features.Studio.Models;
 [JsonSerializable(typeof(ApiResponse<StudioPublicationRequest>))]
 [JsonSerializable(typeof(ApiResponse<StudioRollbackRequest>))]
 [JsonSerializable(typeof(ApiResponse<StudioDeliverableExportResponse>))]
+[JsonSerializable(typeof(ApiResponse<StudioPublishedArtifact>))]
 [JsonSerializable(typeof(ApiResponse<object>))]
 [JsonSerializable(typeof(ApiResponse<OperationHandle>))]
 [JsonSerializable(typeof(CreateStudioPackageDraftRequest))]

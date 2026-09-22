@@ -70,6 +70,11 @@ internal sealed class WorkspaceRoutingJobExecutionContext : IJobExecutionContext
     /// </summary>
     public async Task PublishArtifactAsync(string artifactReference, CancellationToken cancellationToken = default)
     {
+        await TryPublishArtifactAsync(artifactReference, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<bool> TryPublishArtifactAsync(string artifactReference, CancellationToken cancellationToken = default)
+    {
         var index = _publishedArtifactIndex++;
 
         // A process advertising mutually exclusive output shapes publishes one
@@ -86,21 +91,10 @@ internal sealed class WorkspaceRoutingJobExecutionContext : IJobExecutionContext
         var label = ResolveOutputLabel(_job, slotIndex);
         var kind = ResolveOutputKind(_job, slotIndex);
 
-        // The durable publish is the gate: the real JobExecutionService rechecks
-        // that the job still exists and is still owned, and can no-op/reject the
-        // publish (lost lease, cancellation won). Delegate first so a rejected or
-        // throwing inner publish leaves no workspace ledger entry for output that
-        // was never durably recorded. Only after the inner publish is accepted do
-        // we route the artifact into the requested env:workspace.
-        await _inner.PublishArtifactAsync(artifactReference, cancellationToken).ConfigureAwait(false);
-
-        await _workspaceLifecycle.AddOrReplaceArtifactAsync(
-            _workspaceId,
-            kind,
-            label,
-            _overwrite,
-            uri: artifactReference,
-            cancellationToken: cancellationToken).ConfigureAwait(false);
+        var published = await _workspaceLifecycle.PublishArtifactAsync(
+            new WorkspaceArtifactPublication(_workspaceId, OperationId, slotIndex, kind, label, _overwrite, artifactReference),
+            ct => _inner.TryPublishArtifactAsync(artifactReference, ct), cancellationToken).ConfigureAwait(false);
+        return published is not null;
     }
 
     /// <summary>

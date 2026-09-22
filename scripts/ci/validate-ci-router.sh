@@ -460,7 +460,44 @@ assert_descriptor \
   "src/Honua.Core/Features/Validation/ResourceValidator.cs" \
   "targeted" \
   "false" \
-  "OGC API Maps and Tiles"
+  "OGC API Maps Basic and Conformance"
+
+assert_descriptor \
+  "maps-source-basic" \
+  "src/Honua.Protocols.OgcApi/Maps/OgcMapsEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "OGC API Maps Basic and Conformance"
+assert_descriptor \
+  "maps-source-rendering" \
+  "src/Honua.Protocols.OgcApi/Maps/OgcMapsEndpoints.cs" \
+  "targeted" \
+  "false" \
+  "OGC API Maps Rendering and Records"
+assert_descriptor \
+  "maps-tests-basic" \
+  "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Maps/OgcMapsBasicTests.cs" \
+  "targeted" \
+  "false" \
+  "OGC API Maps Basic and Conformance"
+assert_descriptor \
+  "maps-tests-rendering" \
+  "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Maps/OgcMapsParameterValidationTests.cs" \
+  "targeted" \
+  "false" \
+  "OGC API Maps Rendering and Records"
+assert_descriptor \
+  "records-tests" \
+  "tests/dotnet/Honua.Protocols.OgcApi.Tests/Source/Records/OgcRecordsEndpointTests.cs" \
+  "targeted" \
+  "false" \
+  "OGC API Maps Rendering and Records"
+assert_descriptor \
+  "core-validation-maps-rendering" \
+  "src/Honua.Core/Features/Validation/ResourceValidator.cs" \
+  "targeted" \
+  "false" \
+  "OGC API Maps Rendering and Records"
 
 assert_descriptor \
   "core-validation-targeted-features" \
@@ -684,6 +721,27 @@ assert_descriptor \
   "targeted" \
   "false" \
   "GeoServices GPServer and NAServer"
+# 2026-09-14 capacity split: gRPC source selects both Operator Eval children
+# (GrpcProcessServiceIntegrationTests stays in the parent); Scene tests only
+# run in gRPC Protocol and Scene.
+assert_descriptor \
+  "grpc-source-targets-grpc-protocol-scene" \
+  "src/Honua.Server/Features/Protocols/Grpc/HonuaFeatureService.cs" \
+  "targeted" \
+  "false" \
+  "gRPC Protocol and Scene"
+assert_descriptor \
+  "grpc-source-targets-operator-eval" \
+  "src/Honua.Server/Features/Protocols/Grpc/HonuaFeatureService.cs" \
+  "targeted" \
+  "false" \
+  "Operator Eval Harness"
+assert_descriptor \
+  "grpc-tests-target-grpc-protocol-scene" \
+  "tests/dotnet/Honua.Server.Tests/Features/Protocols/Grpc/SceneGrpcIntegrationTests.cs" \
+  "targeted" \
+  "false" \
+  "gRPC Protocol and Scene"
 assert_descriptor \
   "routing-feature-includes-server-tests-owner" \
   "src/Honua.Routing/Features/Routing/Providers/PgRoutingProvider.cs" \
@@ -1424,6 +1482,22 @@ echo "Checking shard filter/test-class coverage in both directions..."
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.test.py
 "${PYTHON_BIN}" scripts/ci/check-server-test-shard-coverage.py \
   --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests" \
+    "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
+    "OGC API Maps Basic and Conformance" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsConformanceTests" \
+    "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
+    "OGC API Maps Basic and Conformance" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsParameterValidationTests" \
+    "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
+    "OGC API Maps Rendering and Records" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Ogc.Api.Records.OgcRecordsEndpointTests" \
+    "tests/dotnet/Honua.Protocols.OgcApi.Tests/Honua.Protocols.OgcApi.Tests.csproj" \
+    "OGC API Maps Rendering and Records" \
+  --assert-owner \
     "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests" \
     "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Honua.Protocols.OgcClassic.Tests.csproj" \
     "WFS" \
@@ -1573,6 +1647,18 @@ echo "Checking shard filter/test-class coverage in both directions..."
     "Honua.Server.Tests.Features.Protocols.GeoServices.GPServer.GPServerSoapEndpointsTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \
     "GeoServices GPServer and NAServer" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Protocols.Grpc.SceneGrpcIntegrationTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "gRPC Protocol and Scene" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Geoprocessing.GrpcProcessServiceIntegrationTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Operator Eval Harness" \
+  --assert-owner \
+    "Honua.Server.Tests.Features.Eval.EvalHarnessTests" \
+    "tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj" \
+    "Operator Eval Harness" \
   --assert-owner \
     "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerDynamicJoinTests" \
     "tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj" \

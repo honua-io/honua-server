@@ -152,6 +152,60 @@ internal static class McpPromptCatalog
                 + "3. Call honua_plan_analysis to compile the app/dashboard scaffold (if it returns engine=\"fixture\", the plan is a demo — follow its nextSteps to hand-author a plan from honua://catalog/processes), then honua_validate_plan.\n"
                 + "4. Create a Studio draft, then call honua_studio_propose_publication and respect its approval-required outcome.\n"
                 + "Hand back the dashboard layout, the included layers, and the staged package resource URI."),
+
+        new McpPromptDefinition(
+            Name: "setup_and_publish",
+            Title: "Set up and publish",
+            Description:
+                "Take a cold server to a published service and a saved, reopenable map or dashboard "
+                + "with a submitted publication, entirely through MCP tool calls.",
+            Arguments:
+            [
+                new McpPromptArgumentDefinition(
+                    "source",
+                    "The dataset to import: inline CSV or GeoJSON content (up to 4 MB), or a description of it.",
+                    Required: true),
+                new McpPromptArgumentDefinition(
+                    "serviceName",
+                    "The service name to publish the imported data under.",
+                    Required: false),
+                new McpPromptArgumentDefinition(
+                    "deliverable",
+                    "What to compose from the published layers (e.g. \"map\", \"dashboard\").",
+                    Required: false),
+            ],
+            Template:
+                "You are setting up this Honua server and publishing {source} as the service {serviceName}, "
+                + "delivered as a {deliverable}.\n"
+                + "Work only through MCP tool calls; the Console and browser Studio are not required.\n\n"
+                + "Drive the workflow with the honua MCP tools:\n"
+                + "1. Request tools/list with view \"setup\" to receive only this path's tools. Call "
+                + "honua_list_capabilities to confirm what this server exposes and honua_resolve_entity to turn "
+                + "names into canonical identifiers.\n"
+                + "2. Call honua_ingest_dataset with {source} as inline CSV or GeoJSON content (up to 4 MB), its format "
+                + "and a datasetName. The import is synchronous and returns the connection, schema and table to publish; "
+                + "larger files and database connections are loaded by an operator through the Admin CLI.\n"
+                + "3. Call honua_publish_service (honua_publish_result for an analysis output) and respect its "
+                + "governed-operation outcome.\n"
+                + "4. Verify access with honua_list_layers, honua_describe_layer and honua_query_features.\n"
+                + "5. Call honua_get_style and honua_apply_style_preset, then honua_render_map to confirm the result.\n"
+                + "6. For bounded geoprocessing, call honua_plan_analysis, honua_validate_plan, honua_dry_run_plan "
+                + "and honua_execute_plan, and track the job with honua_list_jobs.\n"
+                + "7. Call honua_studio_create_draft, edit it with honua_studio_update_draft, read it back with "
+                + "honua_studio_get_draft, and check it with honua_studio_validate_draft and "
+                + "honua_studio_preview_draft; then call honua_studio_save_version and honua_studio_reopen_version "
+                + "to prove the draft is reopenable.\n"
+                + "8. Call honua_studio_propose_publication and poll honua_supported_operation_kinds for what the "
+                + "server will accept.\n\n"
+                + "Server configuration: the audited Admin operations are published as honua_admin_* tools in the "
+                + "authenticated full catalog (tools/list with view \"full\"), and every call is authorized for your "
+                + "principal. Read-only Admin tools run directly. A protected Admin tool is refused over MCP with an "
+                + "approval-required error and creates no proposal: hand that step to an operator, who runs it through "
+                + "the Admin CLI or API under their own principal. Never try to approve or re-run your own refused "
+                + "request. Operations that create or rotate one-time secrets, accept secret-bearing configuration, or "
+                + "act on a browser session are never published over MCP.\n"
+                + "Report the published service and layer identifiers, the saved draft version, and the publication "
+                + "proposal with its status."),
     ];
 
     private static readonly Dictionary<string, McpPromptDefinition> ByName =

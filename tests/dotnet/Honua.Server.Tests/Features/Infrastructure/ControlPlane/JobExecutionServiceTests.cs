@@ -624,7 +624,7 @@ public sealed class JobExecutionServiceTests
             JobHeartbeatPolicy.Default,
             null, NullLogger.Instance);
 
-        await context.PublishArtifactAsync("s3://bucket/artifact.zip", CancellationToken.None);
+        Assert.False(await context.TryPublishArtifactAsync("s3://bucket/artifact.zip", CancellationToken.None));
 
         await jobStore.DidNotReceive().TrySetAsync(
             Arg.Any<ExecutionJobRecord>(),
@@ -698,7 +698,7 @@ public sealed class JobExecutionServiceTests
             JobHeartbeatPolicy.Default,
             null, NullLogger.Instance);
 
-        await context.PublishArtifactAsync("s3://bucket/artifact.zip", CancellationToken.None);
+        Assert.False(await context.TryPublishArtifactAsync("s3://bucket/artifact.zip", CancellationToken.None));
 
         // One conflicting write, then the terminal re-read stops the retry loop.
         await jobStore.Received(1).TrySetAsync(

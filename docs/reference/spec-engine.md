@@ -1,6 +1,7 @@
 ---
 type: reference
 title: "Spec engine"
+description: "Plan and apply canonical spec documents with Terraform-style semantics: endpoints, cache modes, event stream and diagnostic codes."
 resource: "honua://capability/ai.spec-apply"
 resources:
   - "honua://capability/ai.spec-artifacts"

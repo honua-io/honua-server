@@ -1,9 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Amazon;
 using Amazon.CloudWatch;
 using Amazon.CloudWatch.Model;
+using Honua.Cloud.Aws.Features;
 
 namespace Honua.ControlPlane;
 
@@ -59,8 +59,32 @@ internal sealed class AwsSdkCloudWatchMetricClient : ICloudWatchMetricClient
             },
             cancellationToken).ConfigureAwait(false);
 
-        var result = response.MetricDataResults?.FirstOrDefault();
-        if (result?.Values is { Count: > 0 } values)
+        return SelectSignalValue(response);
+    }
+
+    /// <summary>
+    /// Reads the single signal value out of a <c>GetMetricData</c> response. Visible for testing.
+    /// </summary>
+    internal static double? SelectSignalValue(GetMetricDataResponse response)
+    {
+        var results = response.MetricDataResults;
+        if (results is not { Count: > 0 })
+        {
+            return null;
+        }
+
+        // The request carries one query, so more than one result means the expression resolved to
+        // several time series (a SEARCH or a GROUP BY Metrics Insights query). Reading the first one
+        // would promote or hold a deploy on an arbitrary series (#4617), exactly as for a Prometheus
+        // vector or a Log Analytics table with several rows.
+        if (results.Count > 1)
+        {
+            throw new InvalidOperationException(
+                $"Telemetry query resolved to {results.Count} series; expected exactly one. " +
+                "Aggregate the expression to a single time series.");
+        }
+
+        if (results[0].Values is { Count: > 0 } values)
         {
             // ScanBy.TimestampDescending orders datapoints newest-first. Metric-math over an
             // undefined ratio (for example 0/0) can yield NaN/Infinity; treat that the same as no
@@ -78,18 +102,9 @@ internal sealed class AwsSdkCloudWatchMetricClient : ICloudWatchMetricClient
     {
         var config = new AmazonCloudWatchConfig();
 
-        if (!string.IsNullOrWhiteSpace(region))
-        {
-            config.RegionEndpoint = RegionEndpoint.GetBySystemName(region);
-        }
-
-        // Mirrors AwsS3FileStorage.CreateClient: when an explicit endpoint is supplied it takes
-        // precedence for the actual request URL while the region (when set) still provides the
-        // SigV4 signing region. Unset = default regional endpoint, keeping production behaviour.
-        if (!string.IsNullOrWhiteSpace(serviceUrl))
-        {
-            config.ServiceURL = serviceUrl;
-        }
+        // An explicit endpoint takes precedence for the request URL while the region (when set)
+        // stays the SigV4 signing region. Unset = default regional endpoint.
+        AwsClientEndpoint.Apply(config, region, serviceUrl);
 
         return new AmazonCloudWatchClient(config);
     }
