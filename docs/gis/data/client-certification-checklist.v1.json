@@ -42,16 +42,16 @@
         "fail": 1
       },
       "pyqgis": {
-        "pass": 60,
-        "blocked": 5,
+        "pass": 58,
+        "blocked": 7,
         "fail": 2,
         "n/a-no-client": 27
       }
     },
     "overall": {
       "cells": 376,
-      "closed": 231,
-      "open": 145
+      "closed": 229,
+      "open": 147
     }
   },
   "rows": [
@@ -74,7 +74,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. QgsRasterLayer(wms) built from the capabilities document"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. QgsRasterLayer(wms) built from the capabilities document"
         }
       }
     },
@@ -97,7 +97,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the wms provider drew a 256x256 block"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the wms provider drew a 256x256 block"
         }
       }
     },
@@ -125,7 +125,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the wms provider issued GetFeatureInfo at the fixture centre"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the wms provider issued GetFeatureInfo at the fixture centre"
         }
       }
     },
@@ -152,7 +152,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GetLegendGraphic through the provider's own capabilities URL"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GetLegendGraphic through the provider's own capabilities URL"
         }
       }
     },
@@ -179,7 +179,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the capabilities document the provider parsed advertises named styles"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the capabilities document the provider parsed advertises named styles"
         }
       }
     },
@@ -234,7 +234,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. QgsRasterLayer(wms provider, WMTS mode) built from the WMTS capabilities"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. QgsRasterLayer(wms provider, WMTS mode) built from the WMTS capabilities"
         }
       }
     },
@@ -262,7 +262,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the WMTS provider fetched and drew a tile"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the WMTS provider fetched and drew a tile"
         }
       }
     },
@@ -289,7 +289,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the WMTS capabilities advertise GetFeatureInfo"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the WMTS capabilities advertise GetFeatureInfo"
         }
       }
     },
@@ -316,7 +316,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the WMTS capabilities advertise a RESTful ResourceURL template"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the WMTS capabilities advertise a RESTful ResourceURL template"
         }
       }
     },
@@ -339,7 +339,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the WFS provider built a layer, which requires GetCapabilities"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the WFS provider built a layer, which requires GetCapabilities"
         }
       }
     },
@@ -362,7 +362,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the provider resolved the feature type's fields: ['name', 'objectid']"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the provider resolved the feature type's fields: ['name', 'objectid']"
         }
       }
     },
@@ -385,7 +385,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the provider read 3 feature(s) through GetFeature"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the provider read 3 feature(s) through GetFeature"
         }
       }
     },
@@ -425,7 +425,7 @@
             "state": "blocked",
             "citation": "honua-client-compat/docs/reports/pyqgis-wfs-property-url-2026-09-20.md: stock PyQGIS OGR consumes the exact GetPropertyValue URL as GeoJSON, with numeric/text projection, independent SQL/HTTP and native project reload. The stock WFS provider's request-generation gap does not exclude this native consumer. GUI remains untested."
           },
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GetPropertyValue for the 'name' property of the fixture type"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GetPropertyValue for the 'name' property of the fixture type"
         }
       }
     },
@@ -453,7 +453,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the WFS provider bound wfs_t_insert_scratch and advertises the transaction capability for Insert"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the WFS provider bound wfs_t_insert_scratch and advertises the transaction capability for Insert"
         }
       }
     },
@@ -481,7 +481,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the WFS provider bound wfs_t_update_scratch and advertises the transaction capability for Update"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the WFS provider bound wfs_t_update_scratch and advertises the transaction capability for Update"
         }
       }
     },
@@ -509,7 +509,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the WFS provider bound wfs_t_delete_scratch and advertises the transaction capability for Delete"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the WFS provider bound wfs_t_delete_scratch and advertises the transaction capability for Delete"
         }
       }
     },
@@ -549,7 +549,7 @@
             "state": "blocked",
             "citation": "honua-client-compat/docs/reports/pyqgis-wfs-storedqueries-gmlas-2026-09-20.md: stock GDAL GMLAS and PyQGIS interpret the actual response using the official WFS 2.0 schema. Native query/title/return-type tables and parent keys match independent XML and project reload. This configured native metadata consumer disproves the broad no-client assessment; dedicated WFS-provider request generation and GUI remain untested."
           },
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. ListStoredQueries against the WFS endpoint the provider binds"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. ListStoredQueries against the WFS endpoint the provider binds"
         }
       }
     },
@@ -580,7 +580,7 @@
         },
         "pyqgis": {
           "state": "blocked",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the candidate declines WCS 1.0.0: GetCapabilities on /rest/services/0/ImageServer/WCS answered HTTP 400. The build's capability key is 'serve.wcs / WCS 2.0.1' and honua-server#5020 tracks serving 1.0.0. Server version gap, not a client absence."
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the candidate declines WCS 1.0.0: GetCapabilities on /rest/services/0/ImageServer/WCS answered HTTP 400. The build's capability key is 'serve.wcs / WCS 2.0.1' and honua-server#5020 tracks serving 1.0.0. Server version gap, not a client absence."
         }
       }
     },
@@ -611,7 +611,7 @@
         },
         "pyqgis": {
           "state": "blocked",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the candidate declines WCS 1.0.0: GetCapabilities on /rest/services/0/ImageServer/WCS answered HTTP 400. The build's capability key is 'serve.wcs / WCS 2.0.1' and honua-server#5020 tracks serving 1.0.0. Server version gap, not a client absence."
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the candidate declines WCS 1.0.0: GetCapabilities on /rest/services/0/ImageServer/WCS answered HTTP 400. The build's capability key is 'serve.wcs / WCS 2.0.1' and honua-server#5020 tracks serving 1.0.0. Server version gap, not a client absence."
         }
       }
     },
@@ -642,7 +642,7 @@
         },
         "pyqgis": {
           "state": "blocked",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the candidate declines WCS 1.0.0: GetCapabilities on /rest/services/0/ImageServer/WCS answered HTTP 400. The build's capability key is 'serve.wcs / WCS 2.0.1' and honua-server#5020 tracks serving 1.0.0. Server version gap, not a client absence."
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the candidate declines WCS 1.0.0: GetCapabilities on /rest/services/0/ImageServer/WCS answered HTTP 400. The build's capability key is 'serve.wcs / WCS 2.0.1' and honua-server#5020 tracks serving 1.0.0. Server version gap, not a client absence."
         }
       }
     },
@@ -681,7 +681,7 @@
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The dedicated WCS provider's version limit does not exclude the bundled GDAL provider: a fresh QgsRasterLayer/GDAL WCS 2.0.1 diagnostic loads 64x64 and reads a non-NoData pixel."
           },
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GetCapabilities on /rest/services/0/ImageServer/WCS returned a wcs:Capabilities document (3558 bytes) advertising coverage_0"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GetCapabilities on /rest/services/0/ImageServer/WCS returned a wcs:Capabilities document (3558 bytes) advertising coverage_0"
         }
       }
     },
@@ -786,7 +786,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the landing page the OAPIF provider binds to"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the landing page the OAPIF provider binds to"
         }
       }
     },
@@ -813,7 +813,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the conformance declaration the provider reads"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the conformance declaration the provider reads"
         }
       }
     },
@@ -840,7 +840,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the collections document the provider enumerates"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the collections document the provider enumerates"
         }
       }
     },
@@ -867,7 +867,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the OAPIF provider read 3 item(s)"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the OAPIF provider read 3 item(s)"
         }
       }
     },
@@ -894,7 +894,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the provider resolved a single item from the collection"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the provider resolved a single item from the collection"
         }
       }
     },
@@ -921,7 +921,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. an items request filtered by bbox, the filter the OAPIF provider issues"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. an items request filtered by bbox, the filter the OAPIF provider issues"
         }
       }
     },
@@ -948,7 +948,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the provider negotiated a CRS and reported 'OGC:CRS84'"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the provider negotiated a CRS and reported 'OGC:CRS84'"
         }
       }
     },
@@ -1020,7 +1020,7 @@
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI."
           },
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GET /ogc/tiles"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GET /ogc/tiles"
         }
       }
     },
@@ -1064,7 +1064,7 @@
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI."
           },
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. a single OGC API tile from the fixture collection"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. a single OGC API tile from the fixture collection"
         }
       }
     },
@@ -1094,7 +1094,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GET /stac read by the client's HTTP stack"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GET /stac read by the client's HTTP stack"
         }
       }
     },
@@ -1124,7 +1124,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GET /stac/collections read by the client's HTTP stack"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GET /stac/collections read by the client's HTTP stack"
         }
       }
     },
@@ -1154,7 +1154,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GET /stac/search read by the client's HTTP stack"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GET /stac/search read by the client's HTTP stack"
         }
       }
     },
@@ -1212,7 +1212,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the SensorThings service root's entity-set listing"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the SensorThings service root's entity-set listing"
         }
       }
     },
@@ -1244,7 +1244,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GET /sta/v1.1/Datastreams {'$expand': 'Thing'}"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GET /sta/v1.1/Datastreams {'$expand': 'Thing'}"
         }
       }
     },
@@ -1276,7 +1276,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GET /sta/v1.1/Things {'$top': '1'}"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GET /sta/v1.1/Things {'$top': '1'}"
         }
       }
     },
@@ -1299,7 +1299,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the FeatureServer service document the provider binds through"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the FeatureServer service document the provider binds through"
         }
       }
     },
@@ -1322,7 +1322,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the provider resolved layer fields ['objectid', 'name']"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the provider resolved layer fields ['objectid', 'name']"
         }
       }
     },
@@ -1345,7 +1345,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the provider queried 3 feature(s)"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the provider queried 3 feature(s)"
         }
       }
     },
@@ -1368,7 +1368,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. a spatial query, which is how the provider resolves an identify"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. a spatial query, which is how the provider resolves an identify"
         }
       }
     },
@@ -1495,7 +1495,7 @@
             "citation": "honua-client-compat/docs/reports/pyqgis-featureserver-exclusion-followup-2026-09-20.md at ac9e4dc: native OGR/ESRIJSON consumes a configured outStatistics URL. The AFS provider limitation does not exclude the entire client. PyQGIS ungrouped values and project reload pass; grouped output fails; GUI remains untested."
           },
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. an outStatistics count aggregation"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. an outStatistics count aggregation"
         }
       }
     },
@@ -1517,7 +1517,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the coded-value domain published on /rest/services/test_service/FeatureServer/0, the layer the target names as the domain fixture"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the coded-value domain published on /rest/services/test_service/FeatureServer/0, the layer the target names as the domain fixture"
         }
       }
     },
@@ -1566,7 +1566,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the MapServer service document the provider binds through"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the MapServer service document the provider binds through"
         }
       }
     },
@@ -1589,7 +1589,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the arcgismapserver layer was drawn through a map render job, which is how QGIS issues MapServer /export"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the arcgismapserver layer was drawn through a map render job, which is how QGIS issues MapServer /export"
         }
       }
     },
@@ -1617,7 +1617,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the arcgismapserver provider issued identify at the fixture centre over the fixture extent, trying every identify format it offers"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the arcgismapserver provider issued identify at the fixture centre over the fixture extent, trying every identify format it offers"
         }
       }
     },
@@ -1645,7 +1645,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the MapServer legend resource the provider reads for its symbology"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the MapServer legend resource the provider reads for its symbology"
         }
       }
     },
@@ -1683,7 +1683,7 @@
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI."
           },
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the ImageServer service document"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the ImageServer service document"
         }
       }
     },
@@ -1721,7 +1721,7 @@
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI."
           },
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the provider exported an image and drew it"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the provider exported an image and drew it"
         }
       }
     },
@@ -1775,7 +1775,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the VectorTileServer service document"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the VectorTileServer service document"
         }
       }
     },
@@ -1798,7 +1798,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. QgsVectorTileLayer bound the VectorTileServer tile template"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. QgsVectorTileLayer bound the VectorTileServer tile template"
         }
       }
     },
@@ -1821,7 +1821,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the VectorTileServer style resource"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the VectorTileServer style resource"
         }
       }
     },
@@ -2589,7 +2589,7 @@
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI."
           },
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. an OGC API Maps render of the fixture collection"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. an OGC API Maps render of the fixture collection"
         }
       }
     },
@@ -2674,7 +2674,7 @@
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI."
           },
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GET /ogc/records/collections"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GET /ogc/records/collections"
         }
       }
     },
@@ -2747,7 +2747,7 @@
         },
         "pyqgis": {
           "state": "pass",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GET /ogc/styles"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GET /ogc/styles"
         }
       }
     },
@@ -2814,8 +2814,8 @@
           "evidence": "honua-client-compat/evidence/native-qgis-ui-20260922-frozen/results.json - QGIS 3.44.14-Solothurn windows-computer-use on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a, case UI-OP-PMTILES-ARCHIVE-READ. The client surface exists; the server publishes no archive. Data Source Manager > Vector Tile > New offers 'New Generic Connection...', which is the path a PMTiles archive URL is entered through, alongside the ArcGIS variant used for the vectortileserver cases that passed. The candidate publishes no PMTiles archive: there is no pmtiles route in the server's route registry (EndpointRegistry.*.cs) and /pmtiles returns HTTP 404 with an empty body. The case asks for the published archive to be added from its HTTP URL, and no such URL exists on this build. Blocked on the fixture, not the client."
         },
         "pyqgis": {
-          "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-pmtiles.cert.json - CERT-CONN-01, protocol pmtiles 3, client desktop-qgis 3.44.14-Solothurn, 6 passed 0 failed"
+          "state": "blocked",
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. PMTilesProxyEndpoints serves /api/v1/tiles/pmtiles/{*artifactId} on this build (probing artifact '0' answers HTTP 404, a real artifact lookup rather than an absent route), but the certification fixture publishes no PMTiles artifact for a client to read. Fixture gap, not a capability gap."
         }
       }
     },
@@ -2854,7 +2854,7 @@
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. Stock QgsVectorTileUtils.updateUriSources consumes remote TileJSON through a standard Mapbox GL style source.url; direct XYZ descriptor failure does not establish no client."
           },
-          "evidence": "honua-client-compat/evidence/pyqgis-deep-exclusions-20260920-d/observations.json (retained at commit 046a74c); PyQGIS 3.44.14-Solothurn / GDAL 3.13.3: stock updateUriSources consumes a remote TileJSON URL from a standard Mapbox GL style; exact template and native decoded feature geometry validated within MVT grid tolerance; direct descriptor-as-XYZ still fails; server 25fa17d9cfa72340c9de4a33a743f19ff0911800 / image 0ad6f6c9d81e; Development JIT SDK evidence, no UI credit"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. tile.json 3.0.0 for 'Test Layer' advertises 1 tile template(s); QGIS bound the first one"
         }
       }
     },
@@ -2933,8 +2933,8 @@
           "evidence": "honua-client-compat/evidence/native-qgis-ui-20260922-frozen/results.json - QGIS 3.44.14-Solothurn windows-computer-use on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a, case UI-OP-3DTILES-TILESET. The client surface exists; the server publishes nothing to connect it to. Data Source Manager > Scene > New offers exactly the connection type this case names - 'New Cesium 3D Tiles Connection...' (alongside 'New Quantized Mesh Connection...') - so QGIS 3.44.14 can consume a Cesium 3D Tiles tileset. The candidate publishes none: there is no 3d-tiles route anywhere in the server's own route registry (EndpointRegistry.*.cs), which is the authority used elsewhere in this run to find endpoints the /rest/services catalogue omits. With no published tileset URL there is nothing to enter in the connection dialog. Blocked on the fixture, not the client."
         },
         "pyqgis": {
-          "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-3d-tiles.cert.json - NB-PQG-3DT-01/NB-PQG-3DT-02, protocol 3d-tiles 1.1, client desktop-qgis 3.44.14-Solothurn, 2 passed 0 failed"
+          "state": "blocked",
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. /scenes/{sceneId}/tileset.json is served on this build - an unknown id answers HTTP 404 'Scene was not found' and the seeded cert-auth-scene answers 401 rather than 404, so scenes exist - but no anonymously readable scene is published for a client to open. Fixture gap, not a capability gap."
         }
       }
     },
@@ -2968,7 +2968,7 @@
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. Stock arcgismapserver explicitly supports ImageServer rendering, and stock GDAL AGS reads numeric TIFF pixels. Dynamic 0x0 dimensions and the narrower identify-parser failure do not exclude elevation sampling."
           },
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922d/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GET /elevation/0/value at the fixture centre (-122.425, 37.77) returned elevation=100 (outOfBounds=False); the fixture's known value at that point is 100, so this is compared to the oracle rather than to the status code"
+          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922e/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. GET /elevation/0/value at the fixture centre (-122.425, 37.77) returned elevation=100 (outOfBounds=False); the fixture's known value at that point is 100, so this is compared to the oracle rather than to the status code"
         }
       }
     }
