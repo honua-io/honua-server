@@ -123,11 +123,16 @@ public class OgcMapsRenderingHandlerTests
 
         transformUnavailable.Should().BeFalse();
         extent.Should().NotBeNull();
-        extent!.Value.SpatialReference.Should().Be(4326, "the first resource's CRS anchors the dataset extent");
-        extent.Value.MinX.Should().Be(-10);
-        extent.Value.MinY.Should().Be(0);
-        extent.Value.MaxX.Should().Be(20);
-        extent.Value.MaxY.Should().Be(40);
+        if (extent is not { } combined)
+        {
+            return;
+        }
+
+        combined.SpatialReference.Should().Be(4326, "the first resource's CRS anchors the dataset extent");
+        combined.MinX.Should().Be(-10);
+        combined.MinY.Should().Be(0);
+        combined.MaxX.Should().Be(20);
+        combined.MaxY.Should().Be(40);
     }
 
     [UnitTest]
@@ -154,10 +159,16 @@ public class OgcMapsRenderingHandlerTests
             [west, east], coordinateTransformService: null, CancellationToken.None);
 
         transformUnavailable.Should().BeFalse();
-        extent!.Value.MinX.Should().Be(-10);
-        extent.Value.MinY.Should().Be(-5);
-        extent.Value.MaxX.Should().Be(20);
-        extent.Value.MaxY.Should().Be(10);
+        extent.Should().NotBeNull();
+        if (extent is not { } combined)
+        {
+            return;
+        }
+
+        combined.MinX.Should().Be(-10);
+        combined.MinY.Should().Be(-5);
+        combined.MaxX.Should().Be(20);
+        combined.MaxY.Should().Be(10);
     }
 
     [UnitTest]
