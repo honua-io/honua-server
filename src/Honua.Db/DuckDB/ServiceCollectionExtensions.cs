@@ -86,7 +86,10 @@ internal static class ServiceCollectionExtensions
 
         services.AddSingleton<DuckDBLayerRegistry>(sp =>
         {
-            var mappings = BuildLayerMappings(options, connectionString, sp);
+            var mappings = BuildLayerMappings(
+                options,
+                connectionString,
+                sp.GetRequiredService<ILogger<DuckDBLayerRegistry>>());
             return new DuckDBLayerRegistry(mappings);
         });
 
@@ -133,7 +136,8 @@ internal static class ServiceCollectionExtensions
             sp.GetRequiredService<IFeatureDataAccess>(),
             sp.GetRequiredService<IFeatureCacheManager>(),
             sp.GetService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>(),
-            sp.GetService<Honua.Core.Queries.Filters.IFilterExpressionService>()));
+            sp.GetService<Honua.Core.Queries.Filters.IFilterExpressionService>(),
+            Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp)));
 
         // Register segregated interfaces
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<DuckDBFeatureStore>());
@@ -202,17 +206,23 @@ internal static class ServiceCollectionExtensions
         return services;
     }
 
-    private static List<DuckDBLayerMapping> BuildLayerMappings(
-        DuckDBOptions options, string connectionString, IServiceProvider sp)
+    /// <summary>
+    /// Builds the layer mappings the registry serves from, resolving each layer's attribute
+    /// column set from configuration or automatic schema discovery.
+    /// </summary>
+    internal static List<DuckDBLayerMapping> BuildLayerMappings(
+        DuckDBOptions options, string connectionString, ILogger logger)
     {
         var mappings = new List<DuckDBLayerMapping>(options.Layers.Length);
-        var logger = sp.GetRequiredService<ILogger<DuckDBLayerRegistry>>();
 
         foreach (var layerOpt in options.Layers)
         {
             var (attributeColumns, attributeColumnTypes) = layerOpt.Attributes is { Length: > 0 }
                 ? (layerOpt.Attributes.ToList(), new Dictionary<string, string>())
                 : DiscoverAttributeColumns(connectionString, options, layerOpt, logger);
+
+            (attributeColumns, attributeColumnTypes) =
+                KeepServableAttributeColumns(attributeColumns, attributeColumnTypes, layerOpt, logger);
 
             DuckDbLog.LayerRegistered(
                 logger,
@@ -235,6 +245,47 @@ internal static class ServiceCollectionExtensions
         }
 
         return mappings;
+    }
+
+    /// <summary>
+    /// Drops attribute column names the provider cannot serve as one storage identifier.
+    /// </summary>
+    /// <remarks>
+    /// Automatic discovery reads the names from the backing table or Parquet schema, which is
+    /// data rather than operator configuration, so the shared feature-field name contract is
+    /// applied before a name ever becomes part of a SQL identifier list. A name outside the
+    /// contract is skipped with a warning and the layer still loads — the same treatment the
+    /// provider already gives a column it cannot expose (the geometry and object-id columns are
+    /// dropped from the attribute set, and a discovery failure degrades to an empty set) — and
+    /// such a name was already unusable in a filter, order-by or group-by clause, all of which
+    /// enforce a stricter token shape. The same filter runs over an explicit
+    /// <c>DuckDB:Layers:N:Attributes</c> list so both sources behave identically.
+    /// </remarks>
+    private static (List<string> Names, Dictionary<string, string> Types) KeepServableAttributeColumns(
+        List<string> names,
+        Dictionary<string, string> types,
+        DuckDBLayerOptions layerOpt,
+        ILogger logger)
+    {
+        if (names.TrueForAll(DuckDBExternalSourceSql.IsSupportedAttributeName))
+        {
+            return (names, types);
+        }
+
+        var kept = new List<string>(names.Count);
+        foreach (var name in names)
+        {
+            if (DuckDBExternalSourceSql.IsSupportedAttributeName(name))
+            {
+                kept.Add(name);
+                continue;
+            }
+
+            DuckDbLog.AttributeColumnNotSupported(logger, layerOpt.Id, layerOpt.Table, name);
+            types.Remove(name);
+        }
+
+        return (kept, types);
     }
 
     private static (List<string> Names, Dictionary<string, string> Types) DiscoverAttributeColumns(

@@ -37,10 +37,13 @@ public sealed class StudioAiProxyConfiguration
     public string DefaultProvider { get; set; } = string.Empty;
 
     /// <summary>
-    /// Maximum accepted prompt size across all message content, in UTF-16 characters. Oversized
-    /// requests are rejected before any provider is called.
+    /// Maximum accepted prompt size in UTF-16 characters, counting message content, the system prompt,
+    /// assistant tool-call arguments and every tool definition (re-sent and re-counted each round).
+    /// Oversized requests are rejected before any provider is called. The default admits a setup-view
+    /// Studio map lifecycle (about 17 KB of Studio tool definitions plus a growing transcript) with
+    /// headroom; 32,000 refused it at propose (honua-server#4919).
     /// </summary>
-    public int MaxPromptCharacters { get; set; } = 32_000;
+    public int MaxPromptCharacters { get; set; } = 128_000;
 
     /// <summary>Maximum UTF-8 bytes accepted by the Studio AI chat HTTP route.</summary>
     public int MaxRequestBytes { get; set; } = 1_048_576;

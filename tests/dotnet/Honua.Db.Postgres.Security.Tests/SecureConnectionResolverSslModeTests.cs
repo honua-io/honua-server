@@ -218,33 +218,23 @@ public sealed class SecureConnectionResolverSslModeTests
         public Task<bool> ValidateEncryptionAsync() => Task.FromResult(true);
     }
 
-    private sealed class ThrowingSecretResolver : IConnectionSecretResolver
+    private sealed class ThrowingSecretResolver : IRequestSecretReferenceResolver
     {
-        public string ProviderName => "ThrowingProvider";
+        public RequestSecretReferenceDecision Evaluate(string? reference)
+            => RequestSecretReferenceDecision.Refused("not supported");
 
-        public Task<string?> ResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
-            => Task.FromException<string?>(new NotSupportedException());
-
-        public bool CanResolve(string secretKey)
-            => false;
-
-        public Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
+        public Task<string> ResolveAsync(string reference, CancellationToken cancellationToken = default)
             => Task.FromException<string>(new NotSupportedException());
     }
 
-    private sealed class StubSecretResolver(string resolvedConnectionString) : IConnectionSecretResolver
+    private sealed class StubSecretResolver(string resolvedConnectionString) : IRequestSecretReferenceResolver
     {
         private readonly string _resolvedConnectionString = resolvedConnectionString;
 
-        public string ProviderName => "EnvironmentVariable";
+        public RequestSecretReferenceDecision Evaluate(string? reference)
+            => RequestSecretReferenceDecision.Permitted();
 
-        public Task<string?> ResolveSecretAsync(string secretKey, CancellationToken cancellationToken = default)
-            => Task.FromResult<string?>(_resolvedConnectionString);
-
-        public bool CanResolve(string secretKey)
-            => true;
-
-        public Task<string> ResolveConnectionStringAsync(string connectionStringTemplate, CancellationToken cancellationToken = default)
+        public Task<string> ResolveAsync(string reference, CancellationToken cancellationToken = default)
             => Task.FromResult(_resolvedConnectionString);
     }
 }

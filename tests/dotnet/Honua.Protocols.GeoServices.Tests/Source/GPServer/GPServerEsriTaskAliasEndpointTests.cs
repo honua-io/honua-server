@@ -113,6 +113,46 @@ public sealed class GPServerEsriTaskAliasEndpointTests : IAsyncLifetime
         }
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /rest/services/{serviceId}/GPServer")]
+    public async Task ServiceInfo_EveryAliasInTheContract_IsPublishedOnceAndResolves()
+    {
+        // #4781: the certification harness reads /GPServer?f=json and requires every
+        // canonical id and its alias exactly once. DeleteFeatures and CalculateField were
+        // in the contract but never published, because their processes are protocol-only.
+        // Drive the assertion from the real contract so the two can never disagree again.
+        using var response = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer?f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var catalog = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var names = catalog.RootElement.GetProperty("tasks").EnumerateArray()
+            .Select(item => item.GetString()!).ToArray();
+
+        var contract = Honua.Protocols.GeoServices.GPServer.GPServerEsriTaskAliases.Contract;
+        contract.Should().NotBeEmpty();
+        names.Should().NotContain("DeleteFeatures").And.NotContain("CalculateField");
+
+        foreach (var (processId, alias) in contract)
+        {
+            names.Count(name => string.Equals(name, alias, StringComparison.OrdinalIgnoreCase))
+                .Should().Be(1, "alias '{0}' for process '{1}' must appear exactly once in the task list", alias, processId);
+
+            using var detail = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/{alias}?f=json");
+            detail.StatusCode.Should().Be(HttpStatusCode.OK,
+                "task-info must resolve the published alias '{0}'", alias);
+            using var task = JsonDocument.Parse(await detail.Content.ReadAsStringAsync());
+            task.RootElement.GetProperty("name").GetString().Should().Be(alias);
+        }
+
+        // Protocol-only processes stay in the canonical catalog but are neither published
+        // nor addressable as GP tasks under any spelling.
+        foreach (var unpublished in new[] { "DeleteFeatures", "CalculateField", "data-management.delete-features" })
+        {
+            var missing = await _client.GetAsync($"/rest/services/{ServiceId}/GPServer/{unpublished}?f=json");
+            await missing.AssertGeoServicesErrorAsync(404);
+        }
+    }
+
     [IntegrationTheory]
     [InlineData("from", false)]
     [InlineData("HonuaParameter_66726F6D", false)]

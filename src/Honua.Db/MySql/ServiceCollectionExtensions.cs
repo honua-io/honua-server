@@ -108,7 +108,8 @@ internal static class ServiceCollectionExtensions
             sp.GetRequiredService<IFeatureQueryBuilder>(),
             sp.GetRequiredService<IFeatureDataAccess>(),
             sp.GetService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>(),
-            sp.GetService<Honua.Core.Queries.Filters.IFilterExpressionService>()));
+            sp.GetService<Honua.Core.Queries.Filters.IFilterExpressionService>(),
+            Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp)));
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<MySqlFeatureStore>());
         services.AddScoped<IFeatureReader>(sp => sp.GetRequiredService<MySqlFeatureStore>());
         services.AddScoped<IPagedFeatureReader>(sp => sp.GetRequiredService<MySqlFeatureStore>());

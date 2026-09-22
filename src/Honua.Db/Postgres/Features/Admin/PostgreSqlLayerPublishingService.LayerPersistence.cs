@@ -82,6 +82,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         int storageSrid,
         LayerExtentInsert? extent,
         bool enabled,
+        string storageOptionsJson,
         CancellationToken cancellationToken)
     {
         const string sql = """
@@ -128,7 +129,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         command.Parameters.AddWithValue("@table", table);
         command.Parameters.AddWithValue("@primaryKeyColumn", primaryKeyColumn);
         command.Parameters.AddWithValue("@geometryColumn", geometryColumn);
-        command.Parameters.Add("@storageOptions", NpgsqlDbType.Jsonb).Value = SourceBackedStorageOptionsJson;
+        command.Parameters.Add("@storageOptions", NpgsqlDbType.Jsonb).Value = storageOptionsJson;
         command.Parameters.AddWithValue("@geometryType", geometryType);
         command.Parameters.AddWithValue("@srid", srid);
         command.Parameters.AddWithValue("@storageSrid", storageSrid);
@@ -189,6 +190,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string geometryColumn,
         int srid,
         IReadOnlyList<ColumnInfo> attributeColumns,
+        string? featuresSchema,
         CancellationToken cancellationToken)
     {
         // TODO(honua-server#974): replace this one-time snapshot with the settled
@@ -197,8 +199,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var sourceGeometry = $"src.{QuoteIdentifier(geometryColumn)}";
         var canonicalGeometry = BuildCanonicalGeometryExpression(sourceGeometry);
         var attributesExpression = BuildAttributesExpression(attributeColumns);
-        var featuresTable = await ResolveCanonicalFeaturesTableAsync(connection, transaction, cancellationToken)
-            .ConfigureAwait(false);
+
+        // A managed-store publish names the exact features table its binding reads; the
+        // source snapshot keeps resolving the table through the connection search path.
+        var featuresTable = featuresSchema is null
+            ? await ResolveCanonicalFeaturesTableAsync(connection, transaction, cancellationToken)
+                .ConfigureAwait(false)
+            : $"{QuoteIdentifier(featuresSchema)}.{QuoteIdentifier(ManagedFeaturesTableName)}";
 
         var sql = $"""
             WITH inserted AS (

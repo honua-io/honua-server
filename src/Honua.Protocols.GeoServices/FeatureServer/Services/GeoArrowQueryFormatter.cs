@@ -163,7 +163,8 @@ internal sealed class GeoArrowQueryFormatter
             MetadataV2FieldType.Float => FloatType.Default,
             MetadataV2FieldType.Double => DoubleType.Default,
             MetadataV2FieldType.Boolean => BooleanType.Default,
-            MetadataV2FieldType.DateTime or MetadataV2FieldType.Date => new TimestampType(TimeUnit.Millisecond, "UTC"),
+            MetadataV2FieldType.DateTime => new TimestampType(TimeUnit.Millisecond, "UTC"),
+            MetadataV2FieldType.Date => Date32Type.Default,
             MetadataV2FieldType.Time => new Time64Type(TimeUnit.Microsecond),
             MetadataV2FieldType.Binary => BinaryType.Default,
             _ => StringType.Default
@@ -285,6 +286,48 @@ internal sealed class GeoArrowQueryFormatter
         return builder.Build();
     }
 
+    private static Date32Array BuildDate32Array(IReadOnlyList<Feature> features, string fieldName)
+    {
+        var builder = new Date32Array.Builder();
+        foreach (var feature in features)
+        {
+            var value = GeoParquetQueryFormatter.GetAttributeValue(feature, fieldName);
+            if (value is JsonElement element && element.ValueKind == JsonValueKind.String)
+            {
+                value = element.GetString();
+            }
+
+            if (value is JsonElement number && number.ValueKind == JsonValueKind.Number && number.TryGetInt64(out var epoch))
+            {
+                value = epoch;
+            }
+
+            // Preserve the supplied calendar day, including for offset-bearing values.
+            DateOnly? date = value switch
+            {
+                DateOnly day => day,
+                int milliseconds => DateOnly.FromDateTime(DateTimeOffset.FromUnixTimeMilliseconds(milliseconds).UtcDateTime),
+                long milliseconds when milliseconds is >= -62135596800000 and <= 253402300799999 =>
+                    DateOnly.FromDateTime(DateTimeOffset.FromUnixTimeMilliseconds(milliseconds).UtcDateTime),
+                DateTime timestamp => DateOnly.FromDateTime(timestamp),
+                DateTimeOffset timestamp => DateOnly.FromDateTime(timestamp.DateTime),
+                string text when DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture,
+                    DateTimeStyles.AllowWhiteSpaces, out var parsed) => DateOnly.FromDateTime(parsed.DateTime),
+                _ => null
+            };
+            if (date.HasValue)
+            {
+                builder.Append(date.Value.ToDateTime(TimeOnly.MinValue));
+            }
+            else
+            {
+                builder.AppendNull();
+            }
+        }
+
+        return builder.Build();
+    }
+
     private static TimestampArray BuildTimestampArrayByName(IReadOnlyList<Feature> features, string fieldName)
     {
         var builder = new TimestampArray.Builder(new TimestampType(TimeUnit.Millisecond, "UTC"));
@@ -319,7 +362,8 @@ internal sealed class GeoArrowQueryFormatter
             MetadataV2FieldType.Float => BuildFloatArray(features, field.Name),
             MetadataV2FieldType.Double => BuildDoubleArray(features, field.Name),
             MetadataV2FieldType.Boolean => BuildBooleanArray(features, field.Name),
-            MetadataV2FieldType.DateTime or MetadataV2FieldType.Date => BuildTimestampArray(features, field.Name),
+            MetadataV2FieldType.DateTime => BuildTimestampArray(features, field.Name),
+            MetadataV2FieldType.Date => BuildDate32Array(features, field.Name),
             MetadataV2FieldType.Time => BuildTime64Array(features, field.Name),
             MetadataV2FieldType.Binary => BuildBinaryArray(features, field.Name),
             _ => BuildStringArray(features, field.Name)

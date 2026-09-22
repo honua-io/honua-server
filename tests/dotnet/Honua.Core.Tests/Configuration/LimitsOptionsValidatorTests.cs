@@ -72,6 +72,26 @@ public class LimitsOptionsValidatorTests
     }
 
     [UnitTest]
+    public void Validate_ReplicaMaxChangesPerLayerOutOfRange_ReturnsFail()
+    {
+        // The Replica section carries [Range(100, 1000000)]; it must be validated like every other section.
+        foreach (var maxChangesPerLayer in new[] { 0, 99, 1_000_001 })
+        {
+            var options = new LimitsOptions
+            {
+                Replica = new ReplicaLimits { MaxChangesPerLayer = maxChangesPerLayer }
+            };
+
+            var result = _validator.Validate(null, options);
+
+            Assert.False(result.Succeeded);
+            Assert.Contains(result.Failures ?? Array.Empty<string>(), f => f.Contains("MaxChangesPerLayer"));
+        }
+
+        Assert.True(_validator.Validate(null, new LimitsOptions()).Succeeded);
+    }
+
+    [UnitTest]
     public void Validate_DefaultRecordCountExceedsMaxRecordCount_ReturnsFail()
     {
         // Arrange

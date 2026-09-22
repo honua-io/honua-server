@@ -30,11 +30,11 @@ EXPECTED_PAIRS = json.loads(
 # counts the pinned denominator revision carries. Written out rather than derived
 # so a silent change to the projection filter is a failure, not a new baseline.
 EXPECTED_CLIENT_ROWS = {
-    "QGIS": 23,
-    "GDAL/OGR": 11,
-    "MapLibre GL JS": 10,
-    "GDAL": 8,
-    "OWSLib": 6,
+    "QGIS": 22,
+    "GDAL/OGR": 9,
+    "MapLibre GL JS": 9,
+    "GDAL": 7,
+    "OWSLib": 4,
     "PySTAC-Client": 1,
 }
 
@@ -330,6 +330,20 @@ class ProjectionTests(unittest.TestCase):
         }
         value.update(overrides)
         return value
+
+    def test_explicitly_non_addressable_rows_are_retained_outside_required_cells(self):
+        excluded = self.governed(operation="transactions", addressable_by_client=False,
+                                 addressability_reason="GDAL OAPIF is read-only; release#359")
+        projection = module.project(self.upstream(self.governed(), excluded), "a" * 40, "test.1", ROOT)
+        self.assertEqual([excluded], projection["excludedRequirements"])
+        self.assertEqual(["collections"], [row["operation"] for row in projection["requirements"]])
+
+    def test_absent_addressability_does_not_silently_exclude_a_required_row(self):
+        row = self.governed()
+        del row["addressable_by_client"]
+        projection = module.project(self.upstream(row), "a" * 40, "test.1", ROOT)
+        self.assertEqual(1, len(projection["requirements"]))
+        self.assertEqual([], projection["excludedRequirements"])
 
     def test_rows_outside_the_bounded_roster_are_dropped(self):
         projection = module.project(

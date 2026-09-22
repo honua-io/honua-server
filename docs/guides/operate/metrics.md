@@ -1,16 +1,14 @@
 ---
 type: reference
 title: "Operate metric and evidence inventory"
-description: "Source freshness, coverage, protected-update evidence and metric semantics for the bounded 2026.1 Operate scenario."
+description: "Which signals the Operate loop reads, what makes a source actionable, and which Prometheus series back each concern."
 resource: "honua://capability/ops.observability"
 ---
 # Operate metric and evidence inventory
 
-This inventory separates the signals required by the bounded 2026.1 Operate
-loop from the deeper performance work tracked by #3300. This is a source
-inventory, not an exact-candidate scrape receipt. Instruments that need traffic
-appear only after the corresponding event occurs. Use it with the
-[Operate scenario](scenario.md).
+This inventory lists the signals the 2026.1 Operate loop reads and what makes each
+source actionable. Instruments that need traffic appear only after the
+corresponding event occurs. Use it with the [Operate scenario](scenario.md).
 
 ## Required evidence fields
 
@@ -37,22 +35,17 @@ producer has these distinct sources:
 |---|---|
 | `control_plane` | `configProjection`, `control-plane-options`: describes configuration evaluated now; it does not observe the serving revision at a provider. |
 | `deploy_preflight` | `inProcess`, `deploy-preflight-probe`: describes the in-process preflight; it is not a provider rollback receipt. |
-| `workflow_operations` | `durableStore`, `workflow-operation-store`: the producer currently stamps completeness and clocks from store registration and evaluation time. A `complete` envelope alone does not prove successful collection, backend-loss handling or full target coverage. |
+| `workflow_operations` | `durableStore`, `workflow-operation-store`: derived from the store reads the deployment rules make in that evaluation, not from store registration. Those reads are the active deploy operations and, when a platform release is declared, the last succeeded deploy of each unpinned target. `complete` means every read returned, and `observedAt`/`lastSuccessfulAt` are when the store first answered. If a read fails after an earlier one returned, the source is `partial`: `coverage.expectedComponentIds` lists every intended read and `coverage.includedComponentIds` the ones that returned. If no read returns, the source is `unavailable`, and both clocks keep the last successful collection on that replica (absent if there was none). A later failed evaluation never refreshes them. |
 
 For the deployment source, require the independently observed provider revision
 and collection/coverage evidence described in the [scenario](scenario.md).
-Do not reinterpret evaluation-time clocks as successful provider observations.
-Live partial, unverified and backend-loss producer checks remain unmet in the
-[qualification record](../../internal/contributor/operate-docs-precut-evidence.md).
-Injected-envelope adapter tests prove suppression at that adapter boundary;
-they cannot establish the producer's collection behavior.
+A `complete` store source proves the workflow store answered. It does not observe
+the serving revision at the provider.
 
 For alert backlog evidence, `backlogObservedAt` is the successful collection
 time used by the source envelope. Legacy `lastPollAt` is only a dispatcher
-attempt heartbeat and may advance during a storage outage. The
-[executed outage receipt](evidence/3475-windows-outage.json) preserves the
-last successful observation through the failure and requires a new successful
-collection after recovery; a new response or poll attempt cannot refresh it.
+attempt heartbeat and may advance during a storage outage; a new response or poll
+attempt cannot refresh the observation, only a successful collection can.
 
 ## 2026.1 scenario signals
 
@@ -75,25 +68,13 @@ platform SLI. Until a distributed, all-request, in-band-aware source exists,
 availability target is configured. No platform burn rate or error budget is
 derived from the tail.
 
-The accepted `7ba4226` image still returns schema `1.0`, as the
-[installed read observation](evidence/3302-candidate-read-observation.json)
-records. A missing `nodeLocalRetainedTail` block on that image is a contract
-version mismatch, not evidence of zero traffic. Its legacy advice to derive an
-error budget from the in-process window must not be used for a platform SLO.
-Nightly `ff1a463`, a proposed replacement the manifest does not yet pin, returns
-`1.1` with `slo.configured=false`, `slo.availability=null` and a
-`replica-local`, `isPlatformSli=false` tail
-([read replay](evidence/3302-repin-ff1a463-read-observation.json)).
-Recheck the contract on whichever image the manifest accepts.
-
 The diagnostic reports `scope=replica-local`, `isPlatformSli=false`, retained
 population/capacity, overwritten samples and oldest/newest retained ages. Its
 HTTP-5xx-only success ratio excludes HTTP-2xx protocol error envelopes. Unequal
 replica traffic, overflow and replica replacement change that population;
 averaging these ratios does not produce platform availability. It cannot
 replace the selected update policy's candidate-scoped telemetry or functional
-checks. See the [distributed comparison contract](../deploy/monitoring.md#distributed-comparison-evidence-status)
-for the separate request-ledger/query proof and its qualification limits.
+checks.
 
 ## Protected-update evidence
 
@@ -112,32 +93,3 @@ Missing evidence forbids new changes. An already-approved operation's bound
 policy may require deterministic recovery after missing telemetry exceeds its
 grace period; retain that trigger and the original approval instead of creating
 a new change. Unknown recovery health never establishes successful restoration.
-
-The enabled alerting qualification lane is configured to run Postgres webhook E2E with
-`Alerts__Enabled=true` against an exact candidate SHA. The load/soak lane now
-starts the server under Production policy and drives the real request histograms.
-The existence of those lanes does not prove their latest run passed or make an
-unconfigured local alert source complete. Customer alerting remains Preview in
-2026.1: these qualification receipts prove behavior but do not promote the
-capability to GA or create an availability/performance commitment.
-
-## Not required for the 2026.1 claim
-
-For this deployment/readiness scenario, the required sources are exactly the
-selected finding's `requiredSourceIds`; do not enable Preview alerting merely
-to make an unrelated composite health envelope complete. If the selected rule
-requires an unconfigured source, stop rather than remove that source from the
-denominator. Prometheus counters inform diagnosis; the server-authored envelope
-and typed receipt decide actionability.
-
-Retain `coverage.requestedFrom`/`requestedTo`, `returnedFrom`/`returnedTo`,
-expected/included component IDs and replica coverage when present. A composite
-observation is no fresher than its oldest component. Page cursors, truncation,
-partial results and missing components must remain visible in the receipt.
-Missing metrics are not numeric zero; a new `generatedAt` does not refresh
-their source. Scrape timestamps do not replace source timestamps.
-
-Pool saturation diagnosis, slow-query remediation, tile-cache/cache-seed
-optimization, warehouse depth, raster/3D performance, broad autonomous tuning,
-and hosted-model metrics belong to #3300 or later qualification. They may be
-useful capacity signals, but they must not gate or widen this bounded scenario.

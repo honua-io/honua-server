@@ -114,7 +114,7 @@ public sealed partial class GeoservicesImportSubtypePersistenceTests
                     payload = payload.Replace("\"globalIdField\":\"Stable-ID\",", string.Empty, StringComparison.Ordinal);
                 }
             }
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            return Task.FromResult<HttpResponseMessage>(new CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(payload, Encoding.UTF8, "application/json")
             });

@@ -88,7 +88,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             SET table_schema = @schema, table_name = 'features',
                 primary_key_column = 'objectid', geometry_column = 'geometry',
                 storage_srid = @srid,
-                storage_options = '{"sourceBacked":"false","managedCopy":"true","attributesColumn":"attributes","layerDiscriminatorColumn":"layer_id"}'::jsonb
+                storage_options = '{"sourceBacked":"false","managedCopy":"true","managedStore":"true","attributesColumn":"attributes","layerDiscriminatorColumn":"layer_id"}'::jsonb
             WHERE layer_id = @layerId;
             """;
         await using var command = new NpgsqlCommand(sql, connection, transaction);

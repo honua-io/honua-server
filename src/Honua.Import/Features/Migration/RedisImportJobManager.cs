@@ -852,7 +852,7 @@ internal sealed partial class RedisLeaderElection : IDistributedLeaderElection, 
 /// <summary>
 /// Redis-based progress store using IDistributedCache.
 /// </summary>
-internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<T> where T : class
+internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<T>, IProgressStoreRecovery where T : class
 {
     private const string ActiveIdsKeySuffix = "__active";
     private readonly IDistributedCache? _cache;
@@ -897,6 +897,15 @@ internal sealed partial class RedisProgressStore<T> : IDistributedProgressStore<
     }
 
     internal bool IsUsingFallback => _isUsingFallback;
+
+    public async Task ProbeRecoveryAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_isUsingFallback && ShouldRetryRedis(DateTime.UtcNow))
+        {
+            await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
 
     public async Task SetProgressAsync(string jobId, T progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
     {

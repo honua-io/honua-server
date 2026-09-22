@@ -35,7 +35,7 @@ public sealed partial class LayerPublishingIntegrationTests
             PrimaryKey = "id",
             CreateEditableCopy = true
         }, options: _jsonOptions);
-        var response = await _client.PostAsync($"/api/v1/admin/connections/{_connectionId}/layers", body);
+        using var response = await _client.PostAsync($"/api/v1/admin/connections/{_connectionId}/layers", body);
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, await response.Content.ReadAsStringAsync());
     }
 
@@ -66,7 +66,7 @@ public sealed partial class LayerPublishingIntegrationTests
             ]}
             """;
         using var upload = new MultipartFormDataContent();
-        var file = new StringContent(source, Encoding.UTF8, "application/geo+json");
+        using var file = new StringContent(source, Encoding.UTF8, "application/geo+json");
         file.Headers.ContentDisposition = new ContentDispositionHeaderValue("form-data")
         {
             Name = "file",
@@ -75,7 +75,7 @@ public sealed partial class LayerPublishingIntegrationTests
         upload.Add(file);
         upload.Add(new StringContent($"managed_copy_{Guid.NewGuid():N}"), "TableName");
         upload.Add(new StringContent("4326"), "TargetSrid");
-        var uploadResponse = await _client.PostAsync("/api/v1/admin/import/upload", upload);
+        using var uploadResponse = await _client.PostAsync("/api/v1/admin/import/upload", upload);
         var uploadPayload = await uploadResponse.Content.ReadAsStringAsync();
         uploadResponse.StatusCode.Should().Be(HttpStatusCode.OK, uploadPayload);
         var imported = JsonSerializer.Deserialize<ImportResult>(uploadPayload, _jsonOptions)!;
@@ -133,7 +133,8 @@ public sealed partial class LayerPublishingIntegrationTests
         const string createdBody = """
             {"type":"Feature","geometry":{"type":"Point","coordinates":[-122.3,37.8]},"properties":{"properties":{"name":"Created"}}}
             """;
-        var createdResponse = await _client.PostAsync(collection, new StringContent(createdBody, Encoding.UTF8, "application/geo+json"));
+        using var createdContent = new StringContent(createdBody, Encoding.UTF8, "application/geo+json");
+        using var createdResponse = await _client.PostAsync(collection, createdContent);
         var createdPayload = await createdResponse.Content.ReadAsStringAsync();
         createdResponse.StatusCode.Should().Be(HttpStatusCode.Created, createdPayload);
         createdResponse.Headers.Location.Should().NotBeNull();
@@ -155,7 +156,7 @@ public sealed partial class LayerPublishingIntegrationTests
             }),
             ["rollbackOnFailure"] = "true"
         });
-        var rejectedIdentity = await _client.PostAsync($"{featureServer}/applyEdits", identityMutation);
+        using var rejectedIdentity = await _client.PostAsync($"{featureServer}/applyEdits", identityMutation);
         var rejectedPayload = await rejectedIdentity.Content.ReadAsStringAsync();
         rejectedIdentity.StatusCode.Should().Be(HttpStatusCode.OK, rejectedPayload);
         using var rejected = JsonDocument.Parse(rejectedPayload);
@@ -180,7 +181,7 @@ public sealed partial class LayerPublishingIntegrationTests
             ["updates"] = updates,
             ["rollbackOnFailure"] = "true"
         });
-        var updatedResponse = await _client.PostAsync($"{featureServer}/applyEdits", updateForm);
+        using var updatedResponse = await _client.PostAsync($"{featureServer}/applyEdits", updateForm);
         var updatedPayload = await updatedResponse.Content.ReadAsStringAsync();
         updatedResponse.StatusCode.Should().Be(HttpStatusCode.OK, updatedPayload);
         using var updated = JsonDocument.Parse(updatedPayload);
@@ -190,7 +191,7 @@ public sealed partial class LayerPublishingIntegrationTests
         readback.RootElement.GetProperty("properties").GetProperty("honua_source_id").GetInt64().Should().Be(attributes.GetProperty("honua_source_id").GetInt64());
 
         // The source-snapshot refresh operation must never overwrite managed edits.
-        var refresh = await _client.PostAsync($"/api/v1/admin/connections/{_connectionId}/layers/{_layerId}/features/refresh", null);
+        using var refresh = await _client.PostAsync($"/api/v1/admin/connections/{_connectionId}/layers/{_layerId}/features/refresh", null);
         refresh.StatusCode.Should().Be(HttpStatusCode.NotFound);
         using var afterRefresh = JsonDocument.Parse(await _client.GetStringAsync($"{collection}/{importedTargetId}"));
         afterRefresh.RootElement.GetProperty("properties").GetProperty("properties").GetProperty("name").GetString().Should().Be("Updated imported feature");
@@ -201,12 +202,13 @@ public sealed partial class LayerPublishingIntegrationTests
             ["deletes"] = importedTargetId.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["rollbackOnFailure"] = "true"
         });
-        var deletedResponse = await _client.PostAsync($"{featureServer}/applyEdits", deleteForm);
+        using var deletedResponse = await _client.PostAsync($"{featureServer}/applyEdits", deleteForm);
         var deletedPayload = await deletedResponse.Content.ReadAsStringAsync();
         deletedResponse.StatusCode.Should().Be(HttpStatusCode.OK, deletedPayload);
         using var deleted = JsonDocument.Parse(deletedPayload);
         deleted.RootElement.GetProperty("deleteResults")[0].GetProperty("success").GetBoolean().Should().BeTrue(deletedPayload);
-        (await _client.GetAsync($"{collection}/{importedTargetId}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        using var deletedReadback = await _client.GetAsync($"{collection}/{importedTargetId}");
+        deletedReadback.StatusCode.Should().Be(HttpStatusCode.NotFound);
         using var finalQuery = JsonDocument.Parse(await _client.GetStringAsync($"{featureServer}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true"));
         finalQuery.RootElement.GetProperty("features").GetArrayLength().Should().Be(1);
         finalQuery.RootElement.GetProperty("features")[0].GetProperty("attributes").GetProperty("properties").GetProperty("name").GetString().Should().Be("Created");

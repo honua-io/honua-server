@@ -60,4 +60,11 @@ public readonly record struct ReplicaRecord
     /// Defaults to 0 for replicas that have never uploaded.
     /// </summary>
     public long UploadBaseGeneration { get; init; }
+
+    /// <summary>
+    /// Serialized, protocol-owned data scope captured when the replica was created (per-layer query
+    /// options and where clauses, the filter geometry, and the output spatial reference). Null when
+    /// the replica covers its layers whole in their stored spatial reference.
+    /// </summary>
+    public string? ScopeDefinition { get; init; }
 }

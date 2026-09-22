@@ -1,6 +1,7 @@
 ---
 type: guide
 title: "Run Studio standalone"
+description: "There is no released standalone Studio bundle or container yet; embed from source or drive the server through MCP or an SDK instead."
 ---
 # Run Studio standalone
 

@@ -730,6 +730,57 @@ public sealed class IdentifyResponse
 
     [JsonPropertyName("catalogItems")]
     public CatalogItem[]? CatalogItems { get; init; }
+
+    /// <summary>
+    /// Additive identify entries for native ArcGIS REST raster clients which read
+    /// the MapServer-style envelope. The standard pixel and location remain authoritative.
+    /// </summary>
+    [JsonPropertyName("results")]
+    public ImageServerIdentifyResult[] Results
+    {
+        get
+        {
+            var attributes = Properties is null
+                ? new Dictionary<string, object?>()
+                : new Dictionary<string, object?>(Properties);
+            attributes["Pixel Value"] = Value;
+            return
+            [
+                new ImageServerIdentifyResult
+                {
+                    LayerName = Name,
+                    DisplayFieldName = "Pixel Value",
+                    GeometryType = "esriGeometryPoint",
+                    Geometry = Location,
+                    Attributes = attributes
+                }
+            ];
+        }
+    }
+}
+
+/// <summary>Additive pixel-identify entry for stock ArcGIS REST raster clients.</summary>
+public sealed class ImageServerIdentifyResult
+{
+    /// <summary>Existing raster or mosaic display name.</summary>
+    [JsonPropertyName("layerName")]
+    public string? LayerName { get; init; }
+
+    /// <summary>Name of the pixel-value display attribute.</summary>
+    [JsonPropertyName("displayFieldName")]
+    public required string DisplayFieldName { get; init; }
+
+    /// <summary>Point geometry encoding for the sampled location.</summary>
+    [JsonPropertyName("geometryType")]
+    public required string GeometryType { get; init; }
+
+    /// <summary>The same authoritative location and optional CRS as the standard response.</summary>
+    [JsonPropertyName("geometry")]
+    public required Point Geometry { get; init; }
+
+    /// <summary>Existing pixel properties plus the standard formatted pixel value.</summary>
+    [JsonPropertyName("attributes")]
+    public required Dictionary<string, object?> Attributes { get; init; }
 }
 
 /// <summary>

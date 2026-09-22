@@ -1,0 +1,20 @@
+# Fixture identity — gpserver-4614-4616-server on candidate 8862065
+
+$ docker inspect gpserver-4614-4616-server --format '{{.Image}} {{.Config.Image}} {{.State.Status}} {{.State.Health.Status}}'
+sha256:0b16046533e5330ecdd48255c06b5397e869191299e1e5e8cc7b4b2ded60b388 ghcr.io/honua-io/honua-server@sha256:0b16046533e5330ecdd48255c06b5397e869191299e1e5e8cc7b4b2ded60b388 running healthy
+
+$ docker inspect gpserver-4614-4616-server --format '{{index .Config.Labels "org.opencontainers.image.revision"}} {{index .Config.Labels "honua.runtime.compilation"}}'
+886206527cc97bad1bbaa5fa6358910ebc45e9c0 native-aot
+
+$ docker ps --filter name=gpserver-4614 --format '{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'
+gpserver-4614-4616-server	0b16046533e5	Up 8 minutes (healthy)	127.0.0.1:18164->8080/tcp
+gpserver-4614-548b7a5-redis	redis:7-alpine	Up 8 minutes	6379/tcp
+gpserver-4614-4616-tracer	python:3.12-alpine	Up 7 minutes	
+gpserver-4614-4616-tls	caddy:2	Up 12 minutes	127.0.0.1:18464->8443/tcp
+gpserver-4614-4616-redis	redis:7-alpine	Up 12 minutes	6379/tcp
+gpserver-4614-4616-postgres	postgis/postgis:16-3.4	Up 12 minutes	5432/tcp
+
+# Applied migrations on the fixture catalog copy (dbSchema 119)
+2026-09-16 05:56:31 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.118_AddReplicaScopeDefinition.sql'
+2026-09-16 05:56:31 +00:00 [INF] Executing Database Server script 'Honua.Server.Migrations.119_CreateGeoprocessingWorkspaces.sql'
+Database migrations completed: 2 scripts applied

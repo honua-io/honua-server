@@ -1,0 +1,20 @@
+--- a/certification/bounded-roster/lanes/gdal/gdal_ogc_cells.py
++++ b/certification/bounded-roster/lanes/gdal/gdal_ogc_cells.py
+@@ -99,2 +99,2 @@
+-        with gdalkit.session() as record:
+-            dataset = _open_vector(connection)
++        with gdalkit.session(OSR_DEFAULT_AXIS_MAPPING_STRATEGY="TRADITIONAL_GIS_ORDER") as record:
++            dataset = _open_vector(connection, ["CRS=EPSG:4326"])
+--- a/certification/bounded-roster/lanes/qgis/qgis_cells.py
++++ b/certification/bounded-roster/lanes/qgis/qgis_cells.py
+@@ -2,0 +3,2 @@
++
++from qgis.PyQt.QtCore import QVariant
+@@ -120 +122 @@
+-            fields = {field.name(): field.typeName() for field in layer.fields()}
++            fields = {field.name(): field.type() for field in layer.fields()}
+@@ -126,2 +128,2 @@
+-        expect(geometry == "Point" and fields.get("count", "").lower().startswith(("int", "integer"))
+-               and "date" in fields.get("created_at", "").lower(), (geometry, fields))
++        expect(geometry == "Point" and fields.get("count") == QVariant.LongLong
++               and fields.get("created_at") == QVariant.DateTime, (geometry, fields))

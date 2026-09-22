@@ -98,24 +98,82 @@ manifest carrying only that server entry.
 Both runs removed their containers and network. They are **not accepted-pin
 evidence**: they show what a re-pin must reproduce, and must be replayed once
 the manifest accepts an image. Neither exercises a deployment actuator,
-deployment-source outage, installed CLI/DevOps client or placement.
+deployment-source outage, installed CLI/DevOps client or placement. The
+September 15 replay below reproduces them on the accepted pin.
 
 Two remainders were re-examined against trunk:
 
-- **Producer failure cases** are a code defect, not a documentation gap.
-  `BuildStoreSource` still returns `complete` for `workflow_operations` whenever
-  the store is registered. It is now owned by
-  [#4840](https://github.com/honua-io/honua-server/issues/4840), which requires a
-  real-store complete → unavailable → complete test with zero proposal and
-  actuator calls.
-- **Deployment resource ownership** remains **unmet**. `DeployTargetDefinition`
-  has no owner or tenant attribute. `ProposeFindingAsync` checks only admin
-  policy, operator scope and binding to the finding's target. With
-  `MultiTenancy:Enabled=true` (Preview), a tenant-scoped admin can therefore
-  seal a Deploy proposal for a platform target. The proposal-resource ownership
-  fixture governs access to an existing proposal, not authority to create one.
-  The missing enforcement and its negatives are owned by
-  [#4842](https://github.com/honua-io/honua-server/issues/4842).
+- **Producer failure cases** were a code defect, not a documentation gap:
+  `BuildStoreSource` returned `complete` for `workflow_operations` whenever the
+  store was registered. The
+  [#4840](https://github.com/honua-io/honua-server/issues/4840) fix derives the
+  source from the reads the deployment rules make. A singleton ledger keeps the
+  last successful collection across scoped evaluations. The real-Redis tests are
+  `OpsFindingsWorkflowSourceRedisTests`:
+  - A stop/restart takes the source complete → unavailable (both clocks held at
+    the first collection over two evaluations) → complete.
+  - An ACL-denied per-target index read publishes `partial` with the missing
+    target in coverage.
+
+  While the evidence is not actionable, both tests assert zero gateway and
+  envelope calls from `ProposeAsync` and from the MCP finding proposal. The same
+  finding id reaches the gateway before and after. The fix postdates `548b7a5`, so
+  it counts as accepted-pin evidence only after a re-pin.
+- **Deployment resource ownership** is enforced by rule, not by target owner.
+  `DeployTargetDefinition` has no owner or tenant attribute, so the
+  [#4842](https://github.com/honua-io/honua-server/issues/4842) fix treats
+  deployment targets as platform resources. With `MultiTenancy:Enabled=true`,
+  a tenant-bound principal needs a configured `MultiTenancy:MultiTenantAdminRoles`
+  role (default `multi_tenant_admin`, `platform_admin`) to propose or advance
+  Deploy and platform-release operations. A principal is tenant-bound when it has a
+  `MultiTenancy:TenantClaimTypes` claim or an approved-operation tenant binding.
+  `PlatformDeployAuthority` applies this in the MCP finding, deploy-plan,
+  deploy-operation, rollback and convergence proposals, and in the REST deploy
+  plan/create/submit/promote/rollback and platform-release converge handlers.
+  Denials are MCP `permission_denied` with `studioAuthorizationCode`
+  `platform_admin_required`, or REST 403 with `code` `platform_admin_required`.
+  Single-tenant installations and admins without a tenant binding are unchanged.
+  The fix postdates `548b7a5`, so it counts as accepted-pin evidence only after a
+  re-pin.
+
+## September 15 accepted-pin replay
+
+Release PR [#349](https://github.com/honua-io/honua-release/pull/349) merged as
+`52cc3f2c60ff357bcec03ce1fa3ccd2ff2b81ef1`. Its `platform-manifest.yaml`
+(SHA-256 `02c076be536514622c32a411e492f18413f257e9d4ff3d04c353dea591b89709`)
+pins honua-server `548b7a5263da5a3f2381eb43f232687cdf92b0bf`, image
+`ghcr.io/honua-io/honua-server@sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1`.
+That commit contains #4663, #4726 and every earlier Operate documentation change.
+The unchanged manifest file was passed to each harness, with no temporary
+server-only manifest. Each harness checked the RepoDigest and OCI revision label
+before boot and removed its containers and network afterwards.
+
+- [Staging](../../guides/operate/evidence/3302-accepted-548b7a5-staging.json):
+  `metadata-release-installed.py`, unchanged (SHA-256 `64825397…`), passes all
+  five scenarios. The fixture SHA-256 `83eb29ac…` is the one recorded for
+  `7ba4226` and `ff1a463`. The two recovery scenarios end `RolledBack` with the
+  prior graph and the seeded population edit of 1000007. The three rejected
+  preparations fail with `metadata-release-resource-missing`,
+  `metadata-release-etl-unproven-compensation` and `metadata-release-etl-failed`.
+- [Read observation](../../guides/operate/evidence/3302-accepted-548b7a5-read-observation.json):
+  `operate-read-observation.py --accepted-manifest` records
+  `qualificationStatus=accepted-pin-observation`. Five REST reads, four MCP
+  calls, the fixture assertions and the status `1.1` contract pass. The full
+  view now holds 124 descriptors in 11 pages; the ff1a463 run found 58 in 5.
+  Admin MCP publication ([#4876](https://github.com/honua-io/honua-server/pull/4876))
+  is in `548b7a5` but not `ff1a463`. All five scenario
+  tools are still present, `honua_propose_operation` is absent, and
+  `findingId`/`candidateId` are still required. The harness's boot-only
+  `receipt.json` lists no scenarios; `observation.json` is the receipt.
+- [Approval](../../guides/operate/evidence/3302-accepted-548b7a5-approval.json):
+  `scripts/certification/prove-admin-approve-candidate.py` passes the same five
+  checks as the September 12 `7ba4226` receipt. This is server API approval in
+  Development with a Pro dev grant, joining proposal, operation-instance and
+  draft IDs.
+
+This is accepted-pin evidence for observation, metadata service staging and
+server API approval. It does not exercise a deployment actuator, a deployment
+source outage, the installed CLI/DevOps client, Console or a placement.
 
 ## Acceptance disposition
 
@@ -125,9 +183,9 @@ Two remainders were re-examined against trunk:
 | Freshness, completeness, backend identity and coverage | Documented source envelopes and failure behavior. #3475's executed Windows outage receipt is linked below. The deployment adapter fixtures cover stale, partial, unavailable, unverified and not-configured envelopes; live deployment-source collection remains a distinct evidence obligation. |
 | Generic model proposal-only boundary and negative authorization | Source references below; #3411, #3430, #3431 and #3474 are closed as checked September 5. Their old open-blocker claims were removed. |
 | One joined deployment actuator receipt and convergence window | **Unmet.** The approval receipt below exercises a real Studio draft operation; it does not prove deployment convergence or recovery. |
-| Exact Local Docker and ECS-small route/tool/CLI/rollback replay | **Unmet.** The accepted manifest pin exists and must be tested. The installed service-staging receipt below fails on that pin; missing final release-lock manufacture does not release this criterion. |
+| Exact Local Docker and ECS-small route/tool/CLI/rollback replay | **Partly met.** On the accepted `548b7a5` pin, the REST routes, MCP tools, status contract, installed service staging/recovery and server API approval pass in isolated Docker. The installed CLI/DevOps client, the ECS-small placement and deployment rollback have not been replayed on it. Missing final release-lock manufacture does not release this criterion. |
 | GitBook/docs validation | Local link/anchor, example-surface, OKF bundle, generated capability concepts and `llms.txt` checks pass. Checker regressions (24 links, example surfaces, 17 OKF, 2 Windows package verification) and `scripts/ci/pre-pr-check.sh` pass. The pre-PR selector uses the documentation-only shell/governance path; no managed build is required. Hosted GitBook preview is separately reported by the PR checks. |
-| honua-site #185 links without broadening claims | [Site PR #275](https://github.com/honua-io/honua-site/pull/275) contains both `guides/operate/scenario` and `guides/operate/metrics` links in `operations.html`, verified at `012f8acbbc8aeb427d7326e5f9cc0f6204d5dbcc`. It remains open on September 12; publication is not claimed. |
+| honua-site #185 links without broadening claims | [Site PR #275](https://github.com/honua-io/honua-site/pull/275) contains both `guides/operate/scenario` and `guides/operate/metrics` links in `operations.html`, verified at `012f8acbbc8aeb427d7326e5f9cc0f6204d5dbcc`. It remains open at that head on September 15; publication is not claimed. |
 
 The release promise is the bounded terminal Operate journey in the 2026.1
 quality contract, extended by [protected rollout #319](https://github.com/honua-io/honua-release/issues/319):
@@ -148,11 +206,12 @@ Paths are relative to the repository root.
 | Deployment proposal-path suppression | `tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Monitoring/McpPlatformOpsReaderTests.cs`: `ProposeFinding_IncompleteDeploymentEvidence_BlocksBeforeProposalOrActuation` passes five fixed-time deployment source envelopes through `ProposeFindingAsync`. It asserts literal expected completeness and blocked outcome, retained diagnostic target, null proposal/execution IDs, zero proposal/direct-route calls and zero canonical operation acceptance calls. The source and gateway are test seams: this proves the adapter gate, not live backend collection or durable actuator behavior. |
 | Complete evidence remains proposal-only | In the same file, `ProposeFinding_CompleteDeploymentEvidence_SealsOnlyTheBoundAction` asserts one approval-proposal call, zero direct-route calls, no execution ID, and the independently specified proposer, finding ID, target and desired revision. It does not substitute a recording gateway for the required durable receipt. |
 | Validity and coverage are source-derived | `tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Monitoring/EvidencePostureTests.cs`: fixed-time stale/future/malformed/replica/component fixtures; complete aggregate uses its oldest observation. |
-| Real backend outage and recovery | [Executed Windows receipt](../../guides/operate/evidence/3475-windows-outage.json), source `ee4f744a66491e7aa72e3efd22bf845e11b5869a`, plus [native runner instructions](../../guides/operate/evidence-posture.md#native-windows-receipt). It records complete → unavailable → complete for `honua_ops_findings.alert_dispatch`, independently seeded pending/dead-letter counts of 0/1, REST/MCP outage parity, no new proposals and unchanged dispatch rows. `candidateQualification=false`: it proves that source outage, not deployment-actuator convergence or all incomplete cases. The opt-in `EvidencePostureLiveTests.cs` remains the deployed harness contract. |
+| Real backend outage and recovery | [Executed Windows receipt](../../guides/operate/evidence/3475-windows-outage.json), source `ee4f744a66491e7aa72e3efd22bf845e11b5869a`, plus [native runner instructions](../../guides/operate/evidence-posture.md). It records complete → unavailable → complete for `honua_ops_findings.alert_dispatch`, independently seeded pending/dead-letter counts of 0/1, REST/MCP outage parity, no new proposals and unchanged dispatch rows. `candidateQualification=false`: it proves that source outage, not deployment-actuator convergence or all incomplete cases. The opt-in `EvidencePostureLiveTests.cs` remains the deployed harness contract. |
 | No opaque executable model payload | `tests/dotnet/Honua.Ai.Tests/Source/McpTaxonomyAlignmentTests.cs`: `McpComposition_DoesNotExposeOpaqueOperationProposalPath`; schema-closed tools in `src/Honua.Ai/Features/Protocols/Mcp/Mcp/Tools/PlatformOpsTools.cs`. |
 | Self-approval denied; narrow approval grant | `tests/dotnet/Honua.Server.Tests/Features/Admin/ProposalEndpointsTests.cs`: `ApproveProposal_BySameRequester_IsForbiddenForSeparationOfDuties`, `ApproveScopedKey_CanReadAndApproveButCannotMutateOtherAdminSurfaces`, `ReadOnlyScopedKey_ApproveNamesMissingGrant`. |
 | Same actor cannot bypass tenant ownership | `tests/dotnet/Honua.Server.Tests/Features/Admin/ProposalTenantOwnershipTests.cs`: `ProposalResource_ProposerIdentityDoesNotBypassTenantOwnership`. |
-| Finding-proposal actor, scope and target binding | `McpPlatformOpsReaderTests.ProposeFinding_UnauthorizedDeploymentRequest_CreatesNoProposal` calls the finding proposal itself for denied admin policy, a read-only OAuth scope under the real scope authorizer, and a mismatched deployment target. Every case asserts denial, zero proposal/direct-route calls and zero canonical acceptance. Target equality is not tenant/resource ownership: deployment targets carry no owner/tenant attribute, and a tenant-scoped admin is not denied under multi-tenancy ([#4842](https://github.com/honua-io/honua-server/issues/4842)). That enforcement, its negatives and installed-client replay must also pass. |
+| Finding-proposal actor, scope and target binding | `McpPlatformOpsReaderTests.ProposeFinding_UnauthorizedDeploymentRequest_CreatesNoProposal` calls the finding proposal itself for denied admin policy, a read-only OAuth scope under the real scope authorizer, and a mismatched deployment target. Every case asserts denial, zero proposal/direct-route calls and zero canonical acceptance. Target equality is not tenant/resource ownership; that is the next row. |
+| Deploy proposal creation bound to platform authority ([#4842](https://github.com/honua-io/honua-server/issues/4842)) | `tests/dotnet/Honua.Server.Tests/Features/Admin/DeployControlPlatformAuthorityTests.cs`. `McpProposal_TenantBoundAdminWithMultiTenancy_IsDeniedWithoutProposalRouteOrAcceptance` invokes the real finding, deploy-operation, deploy-plan, rollback and convergence MCP tools. It uses a tenant-claim admin and an approved-operation tenant credential with multi-tenancy enabled. It asserts the `permission_denied`/`platform_admin_required` error and zero proposal, direct-route, canonical acceptance and findings-evaluation calls. `McpProposal_PlatformAdminUnboundAdminOrSingleTenant_SealsApprovalProposal` and `McpDeployPlan_PlatformAdminUnboundAdminOrSingleTenant_ReachesTargetLookup` cover the allowed platform admin, unbound admin and `MultiTenancy:Enabled=false` cases. `RestDeployMutation_TenantBoundAdminWithMultiTenancy_Returns403BeforeAnyDeployCall` and `RestDeployMutation_PlatformAdminUnboundAdminOrSingleTenant_ReachesDeployWorkflow` cover the six REST deploy/platform-release mutation handlers. The admin policy result and the downstream store/gateway are test seams; the authority rule is not. |
 
 Route and operation IDs were checked against
 `docs/developer/api-specs/admin-api.json`; MCP names against
@@ -175,11 +234,12 @@ observed prior revision and protection policy.
 
 ## Candidate receipt requirements
 
-The accepted manifest read on September 12 pins server revision
-`7ba422672e0c751843b17beb36e954a019cc19fb` and image
-`ghcr.io/honua-io/honua-server@sha256:dd50cd81c057e37e73a6144572abdfc90d48de314d7625c54c4ef3b6eb65b0fd`.
-These bytes are available locally and were used for the approval replay below.
-Do not replace this identity with a source build or a proposed repin.
+Since September 15 the accepted manifest pins server revision
+`548b7a5263da5a3f2381eb43f232687cdf92b0bf` and image
+`ghcr.io/honua-io/honua-server@sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1`.
+Remaining receipts must use this identity, not a source build or a proposed
+re-pin. The September 12 receipts below used the previous pin, `7ba4226`
+(`sha256:dd50cd81…`).
 
 ### Executed approval slice
 
@@ -197,7 +257,7 @@ This is server-API approval evidence in Development with a Pro dev grant. It is 
 MCP/CLI, Console, a deployment actuator, production licensing or placement recovery
 qualification. The existing source fixtures still carry their narrower meanings.
 
-### Accepted-pin failure and unresolved dependencies
+### Previous-pin failure and unresolved dependencies
 
 The [installed service-recovery receipt](https://github.com/honua-io/honua-server/blob/68d8d61561f3043abb328280c4f02d7166c46a7d/tests/baselines/metadata-release-installed/2026-09-12/7ba4226.receipt.json)
 retained by [#4737](https://github.com/honua-io/honua-server/pull/4737) is **failed**
@@ -209,19 +269,20 @@ reported failure is `prior identity missing or captured after mutation`.
 That breaks the protected-service promise that preparation leaves the live revision
 intact and recovery binds a known prior revision. No successful recovery is inferred.
 
-The lane's proposed `9f2f16a` receipt passes five installed scenarios, but
-[release #342](https://github.com/honua-io/honua-release/pull/342) must first establish
-an accepted pin containing the fixes; then the required scenario must be replayed
-against that accepted manifest. [Telemetry qualification #4617](https://github.com/honua-io/honua-server/issues/4617)
+Release #349 superseded [release #342](https://github.com/honua-io/honua-release/pull/342)
+and accepted `548b7a5`, which contains the fixes. The required scenarios passed there
+([September 15 accepted-pin replay](#september-15-accepted-pin-replay)). [Telemetry qualification #4617](https://github.com/honua-io/honua-server/issues/4617)
 and [the joined recovery certificate](https://github.com/honua-io/honua-release/issues/321)
 remain distinct obligations. Neither an issue's closed state nor synthetic provider
 coverage substitutes for installed verification.
 
-The deployment finding producer also still builds store completeness from registration
-through `OpsFindingsService.BuildStoreSource`; the adapter's injected-envelope tests
-do not prove actual partial/unverified/backend-loss collection
-([#4840](https://github.com/honua-io/honua-server/issues/4840)). Deploy proposal creation
-is not bound to tenant or platform-admin authority ([#4842](https://github.com/honua-io/honua-server/issues/4842)).
+On `548b7a5` the deployment finding producer still builds store completeness from
+registration through `OpsFindingsService.BuildStoreSource`. The
+[#4840](https://github.com/honua-io/honua-server/issues/4840) fix derives it from
+real store reads and proves backend loss and partial reads against Redis; it
+counts on the manifest only after a re-pin. The
+[#4842](https://github.com/honua-io/honua-server/issues/4842) platform-authority
+binding for deploy proposal creation also counts only after a re-pin.
 Those, accepted-pin replay of the authorization negatives and the joined
 deployment/placement transcript remain unmet, not waived.
 

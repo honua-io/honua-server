@@ -1722,6 +1722,8 @@ sql:
       );
   - "ALTER TABLE honua.replicas ADD COLUMN IF NOT EXISTS owner_id TEXT NULL;"
   - "ALTER TABLE honua.replicas ADD COLUMN IF NOT EXISTS upload_base_generation BIGINT NOT NULL DEFAULT 0;"
+  # Replica data scope from migration 118_AddReplicaScopeDefinition.sql (#4018).
+  - "ALTER TABLE honua.replicas ADD COLUMN IF NOT EXISTS scope_definition JSONB NULL;"
   - |
       CREATE TABLE IF NOT EXISTS honua.feature_changes (
           change_id BIGSERIAL PRIMARY KEY,

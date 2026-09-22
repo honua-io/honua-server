@@ -172,9 +172,25 @@ public sealed class StudioDraftOperationRuntimeTests
 
         handle.Status.Should().Be(OperationHandleStatus.Completed);
         handle.ResourceIds!["versionId"].Should().Be(approved.VersionId.ToString("D"));
+        // honua-server#4907: the intent route is a governed key; activeUrl names the resolver
+        // that serves it, and that resolver resolves the route back to this publication.
+        handle.ResourceIds["route"].Should().Be("/studio/parcels");
+        handle.ResourceIds["activeUrl"].Should().Be("/api/v1/studio/published/studio/parcels");
+        var governing = await lifecycle.GetActivePublicationRequestByRouteAsync("/studio/parcels");
+        governing!.RequestId.ToString("D").Should().Be(handle.ResourceIds["publicationId"]);
         var pointers = await store.GetPointersAsync(approved.ItemId);
         pointers!.PublishedVersionId.Should().Be(approved.VersionId);
         pointers.CurrentVersionId.Should().Be(approved.VersionId);
+    }
+
+    [UnitTest]
+    public void PublishedRoutes_BuildActiveUrl_EncodesSegmentsAndRoundTripsTheRouteKey()
+    {
+        StudioPublishedRoutes.BuildActiveUrl("/maps/parcels").Should().Be("/api/v1/studio/published/maps/parcels");
+        StudioPublishedRoutes.BuildActiveUrl("/maps/parcel map?v=1")
+            .Should().Be("/api/v1/studio/published/maps/parcel%20map%3Fv%3D1");
+        StudioPublishedRoutes.ToRouteKey("maps/parcels").Should().Be("/maps/parcels");
+        StudioPublishedRoutes.ToRouteKey(null).Should().Be("/");
     }
 
     // honua-server#3980 follow-up: OperationDispatcher stops after ValidateAsync for every

@@ -36,7 +36,11 @@ internal static class SharingOAuth2Endpoints
         ArgumentNullException.ThrowIfNull(endpoints);
 
         var oauthGroup = endpoints.MapGroup(string.Empty)
-            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance, CredentialResponseCacheMetadata.Instance);
+            .WithMetadata(TenantIndependentControlPlaneMetadata.Instance, CredentialResponseCacheMetadata.Instance)
+            // NoCache is required (SEC-20): every route in this group either issues or
+            // consumes a caller-bound credential, so none of the responses is a pure
+            // function of the request URL the shared output cache keys on.
+            .CacheOutput(static policy => policy.NoCache());
 
         oauthGroup.MapGet(PortalOAuthRoutes.AuthorizePath, HandleAuthorizeAsync)
             .WithMetadata(new HeadRequestRejectedEndpointMetadata([HttpMethods.Get]))

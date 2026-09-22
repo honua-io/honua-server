@@ -83,6 +83,12 @@ public static class MigrationFidelityDifferenceCodes
     public const string CatalogReconciliationNotExecuted = "fidelity.catalog-reconciliation.not-executed";
 
     /// <summary>
+    /// The import was asked to publish its target layer, but no layer was published, so the migrated data
+    /// is not served and none of the post-publish checks had a target to run against.
+    /// </summary>
+    public const string PublishNotCompleted = "fidelity.publish.not-completed";
+
+    /// <summary>
     /// A layer in a service (batch) import did not complete at full fidelity: it failed, was
     /// cancelled, never ran, or was routed to review with a blocking difference.
     /// </summary>
@@ -111,6 +117,30 @@ public static class MigrationFidelityDifferenceCodes
     /// changes during the copy were never ruled out.
     /// </summary>
     public const string SourceSnapshotUnverified = "fidelity.source.snapshot-unverified";
+
+    /// <summary>
+    /// A service migration had no readable source manifest, so the constructs discovered on the source
+    /// were never accounted for against the selection before apply.
+    /// </summary>
+    public const string ConstructAccountingNotExecuted = "fidelity.construct-accounting.not-executed";
+
+    /// <summary>The source service type is not one the service migration supports.</summary>
+    public const string ServiceTypeUnsupported = "fidelity.service.type-unsupported";
+
+    /// <summary>A layer or table discovered on the source is not in the migration selection.</summary>
+    public const string ServiceResourceUnselected = "fidelity.service.resource-unselected";
+
+    /// <summary>A selected layer or table is not in the source manifest, so its constructs were never accounted.</summary>
+    public const string ServiceResourceUndiscovered = "fidelity.service.resource-undiscovered";
+
+    /// <summary>A selected construct is classified unsupported by the migration.</summary>
+    public const string ConstructUnsupported = "fidelity.construct.unsupported";
+
+    /// <summary>
+    /// A selected construct is carried for operator review (assisted or manual-review) rather than migrated
+    /// and verified automatically.
+    /// </summary>
+    public const string ConstructReviewRequired = "fidelity.construct.review-required";
 }
 
 /// <summary>

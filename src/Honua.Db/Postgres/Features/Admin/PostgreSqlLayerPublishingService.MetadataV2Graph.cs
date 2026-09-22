@@ -47,15 +47,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string serviceName,
         LayerPublishRequest request,
         int layerId,
-        string schema,
-        string table,
-        string primaryKeyColumn,
-        string geometryColumn,
+        PublishedLayerStorage storage,
+        string resourcePrimaryKeyColumn,
+        string resourceGeometryColumn,
         string geometryType,
         int srid,
-        int storageSrid,
         IReadOnlyList<LayerFieldInsert> fields,
         LayerExtentInsert? extent,
+        IReadOnlyList<string> capabilities,
         CancellationToken cancellationToken)
     {
         var (graph, expectedEtag) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
@@ -65,11 +64,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var resource = BuildPublishedResource(
             request,
             layerId,
-            primaryKeyColumn,
-            geometryColumn,
+            resourcePrimaryKeyColumn,
+            resourceGeometryColumn,
             geometryType,
             srid,
-            storageSrid,
+            storage.StorageSrid,
             fields,
             extent,
             now);
@@ -77,11 +76,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             request,
             layerId,
             resource.Metadata.Id,
-            schema,
-            table,
-            primaryKeyColumn,
-            geometryColumn,
-            storageSrid,
+            storage,
             now);
         var featurePublication = BuildPublishedPublication(
             service,
@@ -94,7 +89,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             idPrefix: "pub",
             request.Enabled,
             now,
-            editable: request.CreateEditableCopy);
+            capabilities);
         var stacPublication = BuildPublishedPublication(
             service,
             resource,
@@ -3288,23 +3283,32 @@ internal sealed partial class PostgreSqlLayerPublishingService
         LayerPublishRequest request,
         int layerId,
         string resourceId,
-        string schema,
-        string table,
-        string primaryKeyColumn,
-        string geometryColumn,
-        int storageSrid,
+        PublishedLayerStorage storage,
         DateTimeOffset now)
     {
-        var connectionId = request.CreateEditableCopy ? null : request.ConnectionId?.ToString("D");
-        var options = new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+        var schema = storage.Schema;
+        var table = storage.Table;
+
+        // A managed-store binding is deliberately NOT source-backed and names exactly the
+        // table the managed feature writer writes: no connection of its own (reads use the
+        // server connection the writer uses) and the writer's schema qualification, if any.
+        // That is what lets the storage-routing guard admit edits and makes every accepted
+        // edit readable back (honua-server#4707, #4859).
+        var connectionId = storage.IsManagedStore ? null : request.ConnectionId?.ToString("D");
+        var options = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        if (!storage.IsManagedStore)
         {
-            [FeatureStorageMapping.SourceBackedOption] = BoolOption(!request.CreateEditableCopy),
-            ["schemaName"] = StringOption(schema),
-            ["tableName"] = StringOption(table),
-            ["primaryKeyColumn"] = StringOption(request.CreateEditableCopy ? "objectid" : primaryKeyColumn),
-            ["geometryColumn"] = StringOption(request.CreateEditableCopy ? "geometry" : geometryColumn),
-            ["storageSrid"] = IntOption(storageSrid)
-        };
+            options[FeatureStorageMapping.SourceBackedOption] = BoolOption(true);
+        }
+
+        if (storage.BindingSchemaName is not null)
+        {
+            options["schemaName"] = StringOption(storage.BindingSchemaName);
+        }
+        options["tableName"] = StringOption(table);
+        options["primaryKeyColumn"] = StringOption(storage.PrimaryKeyColumn);
+        options["geometryColumn"] = StringOption(storage.GeometryColumn);
+        options["storageSrid"] = IntOption(storage.StorageSrid);
 
         // Layers published onto the shared Honua 'features' table store their non-key
         // attributes as keys inside the 'features.attributes' JSONB column (not as
@@ -3319,9 +3323,13 @@ internal sealed partial class PostgreSqlLayerPublishingService
         // 'features' in another schema (e.g. public.features) has neither the JSONB
         // 'attributes' column nor 'layer_id', so applying these options there would make
         // the reader emit columns the table lacks and fail with 42703. (honua-server#1238.)
-        if (request.CreateEditableCopy ||
-            (string.Equals(table, DatabaseSchema.FeaturesTable, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(schema, _metadataSchema, StringComparison.OrdinalIgnoreCase)))
+        //
+        // A managed-store layer is bound to the managed features table by construction (its
+        // schema is resolved from the connection, e.g. public.features), so it always gets
+        // both options.
+        if (storage.IsManagedStore
+            || (string.Equals(table, DatabaseSchema.FeaturesTable, StringComparison.OrdinalIgnoreCase)
+                && string.Equals(schema, _metadataSchema, StringComparison.OrdinalIgnoreCase)))
         {
             options["attributesColumn"] = StringOption("attributes");
             options["layerDiscriminatorColumn"] = StringOption(DatabaseSchema.LayerIdColumn);
@@ -3340,22 +3348,25 @@ internal sealed partial class PostgreSqlLayerPublishingService
             ResourceId = resourceId,
             ConnectionId = connectionId,
             StorageType = MetadataV2StorageType.RelationalTable,
-            Locator = $"{schema}.{table}",
+            Locator = storage.BindingSchemaName is null ? table : $"{storage.BindingSchemaName}.{table}",
             StorageLayerId = layerId,
-            Capabilities = request.CreateEditableCopy ?
-            [
-                MetadataV2StorageBindingCapability.Query,
-                MetadataV2StorageBindingCapability.Filter,
-                MetadataV2StorageBindingCapability.Sort,
-                MetadataV2StorageBindingCapability.Aggregate,
-                MetadataV2StorageBindingCapability.Edit
-            ] :
-            [
-                MetadataV2StorageBindingCapability.Query,
-                MetadataV2StorageBindingCapability.Filter,
-                MetadataV2StorageBindingCapability.Sort,
-                MetadataV2StorageBindingCapability.Aggregate
-            ],
+            Capabilities = storage.IsManagedStore
+                ?
+                [
+                    MetadataV2StorageBindingCapability.Query,
+                    MetadataV2StorageBindingCapability.Filter,
+                    MetadataV2StorageBindingCapability.Sort,
+                    MetadataV2StorageBindingCapability.Aggregate,
+                    MetadataV2StorageBindingCapability.Edit,
+                    MetadataV2StorageBindingCapability.Transactions
+                ]
+                :
+                [
+                    MetadataV2StorageBindingCapability.Query,
+                    MetadataV2StorageBindingCapability.Filter,
+                    MetadataV2StorageBindingCapability.Sort,
+                    MetadataV2StorageBindingCapability.Aggregate
+                ],
             Options = options,
             Status = LayerReadyStatus(request.Enabled, now)
         };
@@ -3372,7 +3383,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string idPrefix,
         bool enabled,
         DateTimeOffset now,
-        bool editable = false)
+        IReadOnlyList<string>? capabilities = null)
     {
         return new MetadataV2Publication
         {
@@ -3395,8 +3406,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             },
             IsPrimary = isPrimary,
             SupportedFormats = _defaultFormats,
-            Capabilities = editable && publicationType == MetadataV2PublicationType.EsriFeatureLayer
-                ? _editableCapabilities : _defaultCapabilities,
+            Capabilities = capabilities ?? _defaultCapabilities,
             Status = LayerReadyStatus(enabled, now)
         };
     }

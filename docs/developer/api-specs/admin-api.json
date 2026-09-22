@@ -6800,6 +6800,16 @@
           "400": {
             "$ref": "#/components/responses/BadRequest"
           },
+          "422": {
+            "description": "`requireFullFidelity` was set and construct accounting refused the selection; no run was created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImportMigrationBatchRefusedResponse"
+                }
+              }
+            }
+          },
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
@@ -22923,6 +22933,23 @@
           "serviceName": {
             "type": "string",
             "description": "Service name"
+          },
+          "storageMode": {
+            "type": "string",
+            "enum": [
+              "source",
+              "managed"
+            ],
+            "nullable": true,
+            "description": "Storage the layer was published with. Set on publish responses; null on listings."
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "description": "Capability tokens declared on the layer's feature publication. Set on publish responses; null on listings."
           }
         }
       },
@@ -23022,7 +23049,32 @@
           "createEditableCopy": {
             "type": "boolean",
             "default": false,
-            "description": "Create an independent editable copy in the configured managed feature store. Source rows are unchanged; new target object IDs map to source IDs through the read-only __honua_source_id field. Attachment and relationship migration must use that mapping. The publication connection must resolve the same database and features table as the managed writer."
+            "description": "Create an independent editable copy in the configured managed feature store. Source rows are unchanged; new target object IDs map to source IDs through the read-only honua_source_id field. Attachment and relationship migration must use that mapping. The publication connection must resolve the same database and features table as the managed writer."
+          },
+          "storageMode": {
+            "type": "string",
+            "enum": [
+              "source",
+              "managed"
+            ],
+            "default": "source",
+            "maxLength": 16,
+            "description": "Where the layer's features live. source serves the live source table read-only. managed copies the source rows into the managed feature store, which is then authoritative for the layer and accepts edits; the layer no longer tracks the source table."
+          },
+          "capabilities": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Query",
+                "Extract",
+                "Create",
+                "Update",
+                "Delete",
+                "Editing"
+              ]
+            },
+            "description": "Capability tokens declared on the feature publication (case-insensitive). Omit for the read-only default [\"Query\",\"Extract\"]. Must include Query. Create, Update, Delete and Editing require storageMode managed; otherwise the request is rejected with 400."
           }
         }
       },
@@ -30923,12 +30975,18 @@
           "manifestBody": {
             "type": "string",
             "nullable": true,
-            "description": "Manifest JSON body used for post-publish relationship application."
+            "description": "Scan manifest JSON for the source service. Every construct it discovered is accounted against the selected layers before apply, and its relationship classes are applied after publish when `applyRelationships` is true. Without it, construct accounting does not run and the run cannot prove full fidelity."
           },
           "applyRelationships": {
             "type": "boolean",
             "nullable": true,
             "default": false
+          },
+          "requireFullFidelity": {
+            "type": "boolean",
+            "nullable": true,
+            "default": false,
+            "description": "Refuse the run with 422, before any layer is queued, when construct accounting finds a blocking construct (an unselected or undiscovered layer or table, an unsupported service type or construct) or has no readable manifest to account from."
           }
         }
       },
@@ -31099,6 +31157,158 @@
             "items": {
               "$ref": "#/components/schemas/ImportMigrationFidelityDifference"
             }
+          },
+          "constructAccounting": {
+            "$ref": "#/components/schemas/ImportMigrationConstructAccountingReport"
+          }
+        }
+      },
+      "ImportMigrationConstructAccountingReport": {
+        "type": "object",
+        "description": "Pre-apply accounting of every construct discovered on the source against the run's selection, replayed from the persisted manifest and layers. Its differences fold into `fidelityVerdict` when the run finishes.",
+        "required": [
+          "matrixVersion",
+          "executed",
+          "discoveredResourceCount",
+          "selectedResourceCount",
+          "entries",
+          "differences",
+          "isBlocking"
+        ],
+        "properties": {
+          "matrixVersion": {
+            "type": "string",
+            "description": "Version of the source-to-target construct matrix the accounting ran against.",
+            "example": "2026.1"
+          },
+          "executed": {
+            "type": "boolean",
+            "description": "False when there was no readable ArcGIS scan manifest to account from."
+          },
+          "notExecutedReason": {
+            "type": "string",
+            "nullable": true
+          },
+          "discoveredResourceCount": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Layers and tables the scan discovered."
+          },
+          "selectedResourceCount": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Layers and tables in the selection."
+          },
+          "entries": {
+            "type": "array",
+            "description": "One entry per accounted construct, ordered by source id then construct.",
+            "items": {
+              "$ref": "#/components/schemas/ImportMigrationConstructAccountingEntry"
+            }
+          },
+          "differences": {
+            "type": "array",
+            "description": "Differences the accounting contributes to the verdict, ordered by code then subject.",
+            "items": {
+              "$ref": "#/components/schemas/ImportMigrationFidelityDifference"
+            }
+          },
+          "isBlocking": {
+            "type": "boolean",
+            "description": "True when at least one difference is blocking."
+          }
+        }
+      },
+      "ImportMigrationConstructAccountingEntry": {
+        "type": "object",
+        "description": "One source construct and how the migration disposes of it.",
+        "required": [
+          "construct",
+          "sourceId",
+          "resourceIds",
+          "automationStatus",
+          "codes",
+          "disposition",
+          "verification"
+        ],
+        "properties": {
+          "construct": {
+            "type": "string",
+            "description": "Construct matrix key, e.g. `service.resource`, `resource.geometry`, `resource.relationships` or `unmapped` for a discovered category without a matrix row."
+          },
+          "sourceId": {
+            "type": "string",
+            "description": "Source resource, style, label class or service identifier."
+          },
+          "resourceIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Source layers or tables that own the construct; empty for service-level constructs."
+          },
+          "automationStatus": {
+            "type": "string",
+            "enum": [
+              "automated",
+              "assisted",
+              "manual-review",
+              "unsupported"
+            ]
+          },
+          "codes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "disposition": {
+            "type": "string",
+            "enum": [
+              "migrated",
+              "review",
+              "blocker",
+              "unselected",
+              "undiscovered"
+            ]
+          },
+          "verification": {
+            "type": "string",
+            "enum": [
+              "selection-accounting",
+              "data-reconciliation",
+              "catalog-reconciliation",
+              "attachment-reconciliation",
+              "relationship-apply",
+              "operator-review"
+            ],
+            "description": "The check that verifies the construct on the target after apply."
+          },
+          "targetResourceId": {
+            "type": "string",
+            "nullable": true,
+            "description": "Planned target resource id from the manifest."
+          },
+          "targetTable": {
+            "type": "string",
+            "nullable": true,
+            "description": "Target table the selection imports the owning layer or table into."
+          }
+        }
+      },
+      "ImportMigrationBatchRefusedResponse": {
+        "type": "object",
+        "description": "Returned with 422 when `requireFullFidelity` refuses a selection before any layer is queued.",
+        "required": [
+          "error",
+          "constructAccounting"
+        ],
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "constructAccounting": {
+            "$ref": "#/components/schemas/ImportMigrationConstructAccountingReport"
           }
         }
       },

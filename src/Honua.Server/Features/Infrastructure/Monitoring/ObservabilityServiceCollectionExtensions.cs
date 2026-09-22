@@ -83,11 +83,16 @@ internal static class ObservabilityServiceCollectionExtensions
             .ValidateDataAnnotations()
             .ValidateOnStart();
         services.AddScoped<IOpsHealthSnapshotService, OpsHealthSnapshotService>();
+        // Singleton: the scoped engine must still report a store source's last successful collection
+        // after a failed read in a later scope (#4840).
+        services.AddSingleton<OpsFindingsCollectionLedger>();
         services.AddScoped(sp => new OpsFindingsExtendedSignals
         {
             DatabasePressureSignal = sp.GetService<IOpsDatabasePressureSignal>(),
             AdmissionGate = sp.GetService<Honua.Core.Features.Infrastructure.Abstractions.IRuntimeTunableAdmissionGate>(),
             RollupStore = sp.GetService<IOpsHealthRollupStore>(),
+            CollectionLedger = sp.GetRequiredService<OpsFindingsCollectionLedger>(),
+            TimeProvider = sp.GetService<TimeProvider>(),
         });
         // One scoped instance behind both seams: callers that only need findings keep the domain
         // abstraction, while the read/proposal surfaces resolve the evidence-carrying view.
@@ -160,10 +165,28 @@ internal static class ObservabilityServiceCollectionExtensions
         services.AddOutputCache(options =>
         {
             // Add dynamic tags and restrict caching to anonymous requests only.
+            //
+            // excludeDefaultPolicy (SEC-20): the base policy applies to EVERY matched
+            // endpoint, so composing the framework default into it turns the whole
+            // anonymous GET surface into a 60 s URL-keyed cache whether or not the
+            // route asked for one. That contradicts the repository's caching rule
+            // (exact response caching is opt-in) and the note at the end of this
+            // method, and it is how a response that is not a pure function of its
+            // cache key — one that varies by a request header, or that issues a
+            // credential — ends up stored. Excluding it makes caching opt-in again:
+            // every named policy below is built with the framework default of its
+            // own, and `CacheOutput(...)` on a route still enables caching, so the
+            // intended metadata/tile/style caching is unchanged.
             options.AddBasePolicy(policy =>
             {
                 policy.AddPolicy<RouteTagOutputCachePolicy>();
                 policy.AddPolicy<AnonymousOnlyOutputCachePolicy>();
+                // Safe by construction rather than by opt-out discipline: a request
+                // carrying an application-defined credential, and a response the
+                // handler marked no-store, are both excluded from the shared cache
+                // for every route, not only the routes that remembered to say so.
+                policy.AddPolicy<BypassOutputCacheOnCredentialedRequestPolicy>();
+                policy.AddPolicy<BypassOutputCacheOnNoStoreResponsePolicy>();
                 policy.VaryByValue(static context => ResolveTenantOutputCacheKey(context));
                 // Metadata responses (service directory, capabilities, collections, STAC,
                 // tiles, styles) are filtered by the process-wide license edition and
@@ -179,7 +202,7 @@ internal static class ObservabilityServiceCollectionExtensions
                 {
                     policy.VaryByValue(static context => ResolveTestSchemaOutputCacheKey(context));
                 }
-            });
+            }, excludeDefaultPolicy: true);
 
             // Service metadata caching policy
             options.AddPolicy("ServiceMetadata", policy =>
@@ -484,6 +507,7 @@ internal static class ObservabilityServiceCollectionExtensions
             options.AddPolicy("OgcTilesDatasetTile", policy =>
             {
                 policy.VaryByValue(ResolveTileSizeOutputCacheKey);
+                policy.AddPolicy<TileOutcomeOutputCachePolicy>();
                 policy.Expire(ttl.OgcTilesDatasetTile);
                 policy.SetVaryByRouteValue("tileMatrixSetId", "tileMatrix", "tileRow", "tileCol");
                 policy.SetVaryByQuery("f", "datetime", "subset", "crs", "subset-crs", "collections");
@@ -495,6 +519,7 @@ internal static class ObservabilityServiceCollectionExtensions
             options.AddPolicy("OgcTilesTile", policy =>
             {
                 policy.VaryByValue(ResolveTileSizeOutputCacheKey);
+                policy.AddPolicy<TileOutcomeOutputCachePolicy>();
                 policy.Expire(ttl.OgcTilesTile);
                 policy.SetVaryByRouteValue("collectionId", "tileMatrixSetId", "tileMatrix", "tileRow", "tileCol");
                 policy.SetVaryByQuery("f", "datetime", "subset", "crs", "subset-crs");
@@ -506,6 +531,7 @@ internal static class ObservabilityServiceCollectionExtensions
             options.AddPolicy("MvtTile", policy =>
             {
                 policy.VaryByValue(ResolveTileSizeOutputCacheKey);
+                policy.AddPolicy<TileOutcomeOutputCachePolicy>();
                 policy.Expire(ttl.MvtTile);
                 policy.SetVaryByRouteValue("layerId", "z", "x", "y");
                 // `where` for attribute filtering; `time` for the temporal-animation
@@ -520,6 +546,7 @@ internal static class ObservabilityServiceCollectionExtensions
             options.AddPolicy("H3MvtTile", policy =>
             {
                 policy.VaryByValue(ResolveTileSizeOutputCacheKey);
+                policy.AddPolicy<TileOutcomeOutputCachePolicy>();
                 policy.Expire(ttl.MvtTile);
                 policy.SetVaryByRouteValue("layerId", "z", "x", "y");
                 policy.SetVaryByQuery("where", "resolution");
@@ -646,7 +673,8 @@ internal static class ObservabilityServiceCollectionExtensions
                 policy.Tag("stac-metadata", "metadata");
             });
 
-            // Note: No default base policy - endpoints must explicitly opt into caching for security
+            // Note: No default base policy - endpoints must explicitly opt into caching for
+            // security. Enforced by excludeDefaultPolicy on AddBasePolicy above.
         });
 
         var redisConnectionString = configuration.GetConnectionString("redis")

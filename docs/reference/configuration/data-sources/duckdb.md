@@ -106,6 +106,20 @@ or CLI-based access, prefer `AccountName` plus `CredentialChain`.
 | `GeometryType` | `Point` | Geometry type: `Point`, `MultiPoint`, `LineString`, `MultiLineString`, `Polygon`, `MultiPolygon`. |
 | `Attributes` | `null` | Optional explicit list of attribute column names to expose. When omitted, columns are discovered from the DuckDB schema at startup. |
 
+For attribute names that work across DuckDB query operations, use an ASCII letter or
+`_` first, followed only by ASCII letters, digits or `_` (`[A-Za-z_][A-Za-z0-9_]*`).
+The provider's WHERE filters, grouping, statistics, temporal/bin queries and top filters
+require this narrower syntax.
+
+Discovery and basic feature reads also admit the shared field-name syntax, including
+names containing `:`, `.` or `-` after the first character. Such a name can appear in a
+returned feature, but cannot be used in the filtering and analytical operations above.
+For example, project `eo:cloud_cover` as `eo_cloud_cover` in the source view or table to
+use it across those operations. A name outside the shared syntax (for example one
+containing a space or quote) is omitted from attributes with a startup warning; the layer
+still serves its remaining columns. These rules apply to both discovered and explicitly
+listed columns.
+
 `ExternalSource` settings:
 
 | Setting | Default | Description |
@@ -221,13 +235,9 @@ the `GEOMETRY` type.
 
 ## Testing
 
-`Honua.ProviderSmoke.Tests` boots a full HTTP-stack host with `DataSource:Provider=duckdb`
-against a standalone, file-backed database and asserts real seeded-row correctness — not
-just 200s — through GeoServices FeatureServer, OGC API Features, OData, and tiles
-(TileJSON + a raster PNG tile; vector MVT is out of scope, see below). Runs nightly and on
-demand via
-[`provider-http-smoke.yml`](../../../../.github/workflows/provider-http-smoke.yml); not
-part of standard PR CI.
+The provider is exercised nightly through the full HTTP stack against a file-backed
+database: GeoServices FeatureServer, OGC API Features, OData, and tiles (TileJSON plus a
+raster PNG tile; vector MVT is out of scope, see below).
 
 ## Limitations
 

@@ -19,7 +19,7 @@ The three first-party server SDKs are generated and tested against the same admi
 | Mobile controls (.NET MAUI) | [honua-mobile](https://github.com/honua-io/honua-mobile) | Experimental (Apache-2.0) | .NET MAUI | Reusable SDK and map/control foundation; repo README |
 | Field collection app | [honua-collect](https://github.com/honua-io/honua-collect) | Experimental (ELv2) | .NET MAUI | Full end-user app built on `honua-mobile`; repo README |
 
-The SDK package lines are pre-release. Pin exact versions and validate against your target server before broad rollout. All three SDKs expose a runtime capability handshake (`GET /api/v1/admin/capabilities`) so clients negotiate features instead of inferring them from version numbers.
+The Python and JavaScript lines are still 0.x. Pin exact versions and validate against your target server before broad rollout. All three SDKs expose a runtime capability handshake (`GET /api/v1/admin/capabilities`) so clients negotiate features instead of inferring them from version numbers.
 
 ## Authentication
 
@@ -31,17 +31,25 @@ Every SDK authenticates the same way the server does — see [Authenticate clien
 
 Mint a scoped key once and reuse it across SDKs:
 
-In the authorized [API explorer](../reference/openapi-and-explorer.md), run `POST /api/v1/admin/api-keys` with this body:
+The key-management operation does not yet have a high-level SDK wrapper, so call the endpoint with
+`httpx` (already installed as a `honua-admin` dependency):
 
-```json
-{
-  "name": "sdk-quickstart",
-  "permissions": [],
-  "expiresAt": null
-}
+```python
+import os
+import httpx
+
+response = httpx.post(
+    f"{os.environ['HONUA_BASE_URL']}/api/v1/admin/api-keys",
+    headers={"X-API-Key": os.environ["HONUA_ADMIN_PASSWORD"]},
+    json={"name": "sdk-quickstart", "permissions": [], "expiresAt": None},
+)
+response.raise_for_status()
+print(response.json()["data"]["key"])
 ```
 
 The response's `data.key` is shown once — store it as the API key your SDK client uses.
+`permissions` scopes the key to named admin operations; an empty list grants none, which is
+right for a key that only reads published data.
 
 ## What the SDKs share
 

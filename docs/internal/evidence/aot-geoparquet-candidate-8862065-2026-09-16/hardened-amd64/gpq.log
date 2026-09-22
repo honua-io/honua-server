@@ -1,0 +1,41 @@
+╭────────────────────┬─────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┬────────────┬──────────────┬──────────┬────────────────┬────────┬────────╮
+│ COLUMN             │ TYPE    │ ANNOTATION                                                                                                           │ REPETITION │ COMPRESSION  │ ENCODING │ GEOMETRY TYPES │ BOUNDS │ DETAIL │
+├────────────────────┼─────────┼──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┼────────────┼──────────────┼──────────┼────────────────┼────────┼────────┤
+│ objectid           │ int64   │                                                                                                                      │ 1          │ uncompressed │          │                │        │        │
+│ [1mgeometry[0m           │ binary  │                                                                                                                      │ 0..1       │ uncompressed │ WKB      │ Point          │        │        │
+│ name               │ binary  │ string                                                                                                               │ 0..1       │ uncompressed │          │                │        │        │
+│ category           │ binary  │ string                                                                                                               │ 0..1       │ uncompressed │          │                │        │        │
+│ population         │ int32   │                                                                                                                      │ 0..1       │ uncompressed │          │                │        │        │
+│ ratio              │ double  │                                                                                                                      │ 0..1       │ uncompressed │          │                │        │        │
+│ active             │ boolean │                                                                                                                      │ 0..1       │ uncompressed │          │                │        │        │
+│ observed_at        │ int64   │ timestamp(isadjustedtoutc=true, timeunit=milliseconds, is_from_converted_type=false, force_set_converted_type=false) │ 0..1       │ uncompressed │          │                │        │        │
+│ bbox               │         │ group                                                                                                                │ 0..1       │              │          │                │        │        │
+├────────────────────┼─────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴────────────┴──────────────┴──────────┴────────────────┴────────┴────────┤
+│ Rows               │ 6                                                                                                                                                                                                        │
+│ Row Groups         │ 1                                                                                                                                                                                                        │
+│ GeoParquet Version │ 1.1.0                                                                                                                                                                                                    │
+╰────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
+
+Summary: Passed 20 checks.
+
+ ✓ file must include a "geo" metadata key
+ ✓ metadata must be a JSON object
+ ✓ metadata must include a "version" string
+ ✓ metadata must include a "primary_column" string
+ ✓ metadata must include a "columns" object
+ ✓ column metadata must include the "primary_column" name
+ ✓ column metadata must include a valid "encoding" string
+ ✓ column metadata must include a "geometry_types" list
+ ✓ optional "crs" must be null or a PROJJSON object
+ ✓ optional "orientation" must be a valid string
+ ✓ optional "edges" must be a valid string
+ ✓ optional "bbox" must be an array of 4 or 6 numbers
+ ✓ optional "epoch" must be a number
+ ✓ geometry columns must not be grouped
+ ✓ geometry columns must be stored using the BYTE_ARRAY parquet type
+ ✓ geometry columns must be required or optional, not repeated
+ ✓ all geometry values match the "encoding" metadata
+ ✓ all geometry types must be included in the "geometry_types" metadata (if not empty)
+ ✓ all polygon geometries must follow the "orientation" metadata (if present)
+ ✓ all geometries must fall within the "bbox" metadata (if present)
+

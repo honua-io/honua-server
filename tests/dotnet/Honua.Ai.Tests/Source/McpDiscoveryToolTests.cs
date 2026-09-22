@@ -4,7 +4,9 @@
 using System.Text.Json;
 using System.Security.Claims;
 using FluentAssertions;
+using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Operations.Domain;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp;
 using Honua.Ai.Protocols.Mcp.Discovery;
@@ -168,6 +170,42 @@ public sealed class McpDiscoveryToolTests
     }
 
     [UnitTest]
+    public async Task ListCapabilities_WithRegistry_ReportsCatalogPublishedToolsButNotOrphanRuntimeTools()
+    {
+        // honua-server#3363: capability truth for the published set. A tool projected
+        // from the canonical operation catalog is bound through its operation
+        // descriptor, so the manifest reports it; any other runtime tool without a
+        // registry descriptor is still withheld.
+        var listTool = new ListCapabilitiesTool(_jobService, NullLogger<ListCapabilitiesTool>.Instance);
+        var published = new PublishedOperationTool(AdminReadDescriptor(), "cat-v1", NullLogger.Instance);
+        var orphan = new StubTool("honua_not_in_registry");
+        var surface = new McpDataAccessSurface(
+            [listTool],
+            [],
+            NullLogger<McpDataAccessSurface>.Instance,
+            toolSources: [new FixedToolSource(published, orphan)]);
+        var services = new ServiceCollection();
+        services.AddSingleton<IMetadataV2GraphProvider>(BuildGraphProvider());
+        services.AddSingleton(surface);
+        services.AddSingleton<ICapabilityRegistry>(new CapabilityRegistry());
+        await using var provider = services.BuildServiceProvider();
+        var adminContext = AuthenticatedContext(provider);
+        ((ClaimsIdentity)adminContext.User.Identity!).AddClaim(new Claim(ClaimTypes.Role, "admin"));
+
+        var exported = await surface.DispatchAsync(
+            adminContext,
+            ToolCall("caps-published", ListCapabilitiesTool.ToolName, """{"fullExport":true}"""),
+            CancellationToken.None);
+
+        var content = exported!.Result!.Value.GetProperty("structuredContent");
+        var names = content.GetProperty("tools").EnumerateArray()
+            .Select(tool => tool.GetProperty("name").GetString())
+            .ToArray();
+        names.Should().BeEquivalentTo([ListCapabilitiesTool.ToolName, "honua_admin_test_read"]);
+        content.GetProperty("totalToolCount").GetInt32().Should().Be(2);
+    }
+
+    [UnitTest]
     public void DiscoveryModels_AreResolvableFromSourceGeneratedContext()
     {
         // AOT guard: the discovery DTOs must be source-generated for the explicit
@@ -237,6 +275,33 @@ public sealed class McpDiscoveryToolTests
     {
         using var document = JsonDocument.Parse(json);
         return document.RootElement.Clone();
+    }
+
+    private static OperationDescriptor AdminReadDescriptor() => new()
+    {
+        OperationId = "admin.test.read",
+        ProviderId = "test",
+        Title = "Read test settings",
+        Description = "Read deterministic admin test settings.",
+        Category = "admin",
+        InputSchema = [],
+        OutputSchema = [],
+        ExecutionKind = OperationExecutionKind.Synchronous,
+        ApprovalModel = OperationApprovalModel.None,
+        Policy = new OperationPolicyMetadata
+        {
+            BlastRadiusClass = OperationBlastRadiusClass.None,
+            SideEffectClass = OperationSideEffectClass.ReadOnly,
+            Determinism = OperationDeterminism.Deterministic,
+            SupportsDryRun = false,
+        },
+    };
+
+    /// <summary>A runtime tool source yielding fixed tools.</summary>
+    private sealed class FixedToolSource(params IMcpTool[] tools) : IMcpToolSource
+    {
+        public ValueTask<IReadOnlyList<IMcpTool>> GetToolsAsync(CancellationToken cancellationToken) =>
+            ValueTask.FromResult<IReadOnlyList<IMcpTool>>(tools);
     }
 
     private sealed class StubTool(string name) : IMcpTool

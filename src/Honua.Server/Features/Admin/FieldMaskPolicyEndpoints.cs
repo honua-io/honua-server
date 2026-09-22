@@ -4,6 +4,7 @@
 using System.ComponentModel.DataAnnotations;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Server.Features.Admin.Models;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
@@ -133,10 +134,11 @@ internal static partial class FieldMaskPolicyEndpoints
         }
     }
 
-    private static async Task<Results<Created<ApiResponse<FieldMaskPolicyResponse>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
+    internal static async Task<Results<Created<ApiResponse<FieldMaskPolicyResponse>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleCreatePolicy(
             CreateFieldMaskPolicyRequest request,
             [FromServices] IFieldMaskPolicyStore store,
+            [FromServices] ReadPolicyEnforceabilityChecker enforceability,
             [FromServices] ILogger<FieldMaskPolicyEndpointsLog> logger,
             HttpContext context)
     {
@@ -147,6 +149,19 @@ internal static partial class FieldMaskPolicyEndpoints
             {
                 var errors = string.Join(", ", validationResults.Select(r => r.ErrorMessage));
                 return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {errors}"));
+            }
+
+            // Refuse a policy that a targeted layer's provider cannot enforce; accepting it would
+            // only surface later as refused reads of that layer.
+            var unenforceable = await enforceability.FindUnenforceableTargetAsync(
+                request.Service.Trim(),
+                request.Layer.Trim(),
+                context.RequestAborted);
+            if (unenforceable is not null)
+            {
+                return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                    $"This policy targets layer '{unenforceable.LayerName}', which is served by the '{unenforceable.ProviderName}' provider. " +
+                    "That provider cannot enforce field-mask policies. Scope the policy to layers served by a provider that enforces them."));
             }
 
             var policy = new FieldMaskPolicy

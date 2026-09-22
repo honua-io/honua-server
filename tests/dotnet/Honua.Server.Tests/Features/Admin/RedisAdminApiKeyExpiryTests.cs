@@ -58,6 +58,49 @@ public sealed class RedisAdminApiKeyExpiryTests(RedisFixture redis)
         }
     }
 
+    [IntegrationTheory]
+    [InlineData("created")]
+    [InlineData("validated")]
+    [InlineData("revoked")]
+    public async Task ApprovedCredential_WriteReachingRedisLate_StillEvictsAtExpiry(string operation)
+    {
+        await using var connection = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        // A store clock two seconds behind Redis stands in for a write that reaches Redis two
+        // seconds after its TTL was measured, as under CI load. Eviction must still follow ExpiresAt.
+        var store = new RedisAdminApiKeyStore(connection, new LaggingTimeProvider(TimeSpan.FromSeconds(2)));
+        var expiresAt = DateTimeOffset.UtcNow.AddSeconds(3);
+        var created = await store.CreateAsync("approval-late-write-" + operation,
+            AdminApiKeyPermission.CreateApprovedOperationGrants("PUT", "/api/v1/admin/metadata/layers/1/filter", "tenant-a"),
+            expiresAt, "requester", CancellationToken.None);
+        try
+        {
+            if (operation == "validated")
+            {
+                Assert.NotNull(await store.ValidateAsync(created.Key, CancellationToken.None));
+            }
+            else if (operation == "revoked")
+            {
+                Assert.NotNull(await store.RevokeAsync(created.Record.Id, CancellationToken.None));
+            }
+
+            var delay = expiresAt.AddMilliseconds(250) - DateTimeOffset.UtcNow;
+            if (delay > TimeSpan.Zero)
+            {
+                await Task.Delay(delay);
+            }
+            Assert.Null(await store.GetAsync(created.Record.Id, CancellationToken.None));
+            Assert.Null(await store.ValidateAsync(created.Key, CancellationToken.None));
+        }
+        finally
+        {
+            var database = connection.GetDatabase();
+            await database.KeyDeleteAsync($"honua:auth:admin-api-key:{created.Record.Id:D}");
+            await database.SetRemoveAsync("honua:auth:admin-api-key:ids", created.Record.Id.ToString("D"));
+            await database.SetRemoveAsync("honua:auth:admin-api-key:active-ids", created.Record.Id.ToString("D"));
+            await database.SetRemoveAsync("honua:auth:admin-api-key:seen-ids", created.Record.Id.ToString("D"));
+        }
+    }
+
     [IntegrationTest]
     public async Task LegacyRegistry_WithoutCandidateIndex_StillAuthenticatesAndSeedsIt()
     {
@@ -122,5 +165,10 @@ public sealed class RedisAdminApiKeyExpiryTests(RedisFixture redis)
             await database.SetRemoveAsync("honua:auth:admin-api-key:active-ids", created.Record.Id.ToString("D"));
             await database.SetRemoveAsync("honua:auth:admin-api-key:seen-ids", created.Record.Id.ToString("D"));
         }
+    }
+
+    private sealed class LaggingTimeProvider(TimeSpan lag) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => System.GetUtcNow() - lag;
     }
 }

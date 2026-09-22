@@ -46,13 +46,14 @@ public sealed class CompositeRelationshipWritePolicyTests
                 [new Claim(ClaimTypes.NameIdentifier, "operator"), new Claim("roles", "grant-role")], "Test"))
         };
         var service = new MetadataV2Service { Metadata = new MetadataV2ObjectMetadata { Id = "svc", Name = "Summary" } };
-        foreach (var role in new[] { "esriRelRoleOrigin", "esriRelRoleDestination" })
-        {
-            var resource = new MetadataV2Resource
+        var resources = new[] { "esriRelRoleOrigin", "esriRelRoleDestination" }
+            .Select(role => new MetadataV2Resource
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = role, Name = role },
                 Relationships = [new MetadataV2Relationship { Id = "summary", Composite = true, Role = role }]
-            };
+            });
+        foreach (var resource in resources)
+        {
             var read = await AccessPolicyHelpers.EvaluateResourceAccessAsync(context, resource, service, AuthorizationOperation.Query);
             read.IsAllowed.Should().BeTrue();
             foreach (var operation in new[] { AuthorizationOperation.Insert, AuthorizationOperation.Update, AuthorizationOperation.Delete })

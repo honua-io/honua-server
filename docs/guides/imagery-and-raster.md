@@ -1,12 +1,12 @@
 ---
 type: guide
 title: "Imagery and raster: shipped state"
-description: "This page is the 2026.1 truth map for imagery, raster, and multidimensional coverage."
+description: "What ships for imagery, raster and multidimensional coverage in 2026.1: the serving paths that work, the registrations that only record metadata, and what needs a worker."
 resource: "honua://capability/serve.geoservices-imageserver"
 ---
 # Imagery and raster: shipped state
 
-This page is the 2026.1 truth map for imagery, raster, and multidimensional
+This page is the 2026.1 status map for imagery, raster, and multidimensional
 coverage. It distinguishes working serving paths from registrations and
 optional worker paths. The detailed workflow is in
 [Publish rasters](publish/publish-rasters.md).
@@ -43,8 +43,7 @@ use the authorized [API explorer](../reference/openapi-and-explorer.md) for
 
 ## Not a 2026.1 claim
 
-The following remain 2026.2 depth work and are not prerequisites for the
-truthful 2026.1 page:
+The following remain 2026.2 work:
 
 - a restart-durable, multi-replica Zarr registration store;
 - broader file ingestion and compression/codec coverage;

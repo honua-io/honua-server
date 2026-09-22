@@ -12,6 +12,54 @@ namespace Honua.Core.Tests.Queries.Filters;
 public sealed class FilterExpressionNormalizerTests
 {
     [UnitTest]
+    public void EnsureWithinBounds_NodeCountWithinCap_DoesNotThrow()
+    {
+        // One array node plus four elements.
+        var expression = new ArrayLiteral(Literals(4));
+
+        var act = () => FilterExpressionNormalizer.EnsureWithinBounds(expression, maxNodes: 5);
+
+        act.Should().NotThrow();
+    }
+
+    [UnitTest]
+    public void EnsureWithinBounds_WideNodeBeyondCap_StopsQueuingChildrenAtTheCap()
+    {
+        var elements = new CountingList(Literals(1_000));
+        var expression = new ArrayLiteral(elements);
+
+        var act = () => FilterExpressionNormalizer.EnsureWithinBounds(expression, maxNodes: 5);
+
+        act.Should().Throw<ArgumentException>().WithMessage("*maximum size of 5 nodes*");
+        elements.Enumerated.Should().BeLessThanOrEqualTo(5);
+    }
+
+    private static FilterExpression[] Literals(int count)
+        => Enumerable.Range(0, count)
+            .Select(static i => (FilterExpression)new Literal(i, LiteralType.Number))
+            .ToArray();
+
+    private sealed class CountingList(IReadOnlyList<FilterExpression> inner) : IReadOnlyList<FilterExpression>
+    {
+        public int Enumerated { get; private set; }
+
+        public int Count => inner.Count;
+
+        public FilterExpression this[int index] => inner[index];
+
+        public IEnumerator<FilterExpression> GetEnumerator()
+        {
+            foreach (var item in inner)
+            {
+                Enumerated++;
+                yield return item;
+            }
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
+
+    [UnitTest]
     public void Normalize_DateTimeTextWithoutOffset_AssumesUtc()
     {
         var resource = new MetadataV2Resource

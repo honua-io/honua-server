@@ -1,0 +1,67 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/qgis/ogc/OGC-OP-OGC-API-FEATURES-ITEM",
+  "canonical_client": "QGIS",
+  "client_lane": "desktop-qgis",
+  "client_version": "3.44.13-Solothurn",
+  "client_version_detail": "QGIS 3.44.13-Solothurn (PyQGIS, qgis/qgis:3.44.13)",
+  "surface": "ogc",
+  "operation": "OGC-OP-OGC-API-FEATURES-ITEM",
+  "protocol_version": "OGC API - Features 1.0",
+  "protocol_profile": "core+geojson+crs",
+  "started_at": "2026-09-21T09:58:45.884376Z",
+  "finished_at": "2026-09-21T09:58:47.819619Z",
+  "duration_ms": 1935,
+  "status": "pass",
+  "exercised_capabilities": [
+    "positive",
+    "negative",
+    "auth",
+    "crs-axis",
+    "media-schema"
+  ],
+  "summary": "all 5 checks passed across 5 governed facets",
+  "primary_request_url": "http://honua:5000/ogc/features/collections/11/items/42",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "read a single item resource back from the server",
+      "outcome": "pass",
+      "detail": "created 201; read back http://honua:5000/ogc/features/collections/11/items/42 -> (-122.405, 37.775); probe removed; exchanges ['GET http://honua:5000/ogc/features -> 200 application/json', 'GET http://honua:5000/openapi.json -> 200 application/vnd.oai.openapi+json; version=3.0', 'GET http://honua:5000/ogc/features/collections/11 -> 200 application/json', 'GET http://honua:5000/ogc/features/conformance -> 200 application/json', 'GET http://honua:5000/ogc/features/collections/11/queryables -> 200 application/schema+json', 'GET http://honua:5000/ogc/features/collections/11/items?limit=10 -> 200 application/geo+json', 'GET http://honua:5000/ogc/features/collections/11/schema -> 200 application/schema+json', 'CUSTOM http://honua:5000/ogc/features/collections/11/items -> 405']",
+      "request_url": null,
+      "duration_ms": 561
+    },
+    {
+      "facet": "negative",
+      "name": "an unknown collection yields an invalid layer from a 404",
+      "outcome": "pass",
+      "detail": "layer valid=False; server answered [('GET', 404), ('GET', 404)]",
+      "request_url": null,
+      "duration_ms": 128
+    },
+    {
+      "facet": "auth",
+      "name": "protected collection 2011 through QGIS authcfg APIHeader configurations",
+      "outcome": "pass",
+      "detail": "(features, statuses) {'anonymous': ('invalid', [401]), 'wrong-api-key': ('invalid', [401]), 'expired-bearer': ('invalid', [401]), 'api-key': (10, [200, 405]), 'oidc-bearer': (10, [200, 405])}",
+      "request_url": null,
+      "duration_ms": 780
+    },
+    {
+      "facet": "crs-axis",
+      "name": "lon/lat geometry, EPSG:3857 request and bbox window agree with the fixture",
+      "outcome": "pass",
+      "detail": "layer OGC:CRS84; alpha (-122.49, 37.71); bbox window ['delta', 'gamma']; EPSG:3857 alpha (-13635524.427268, 4538539.153413) via limit=100&crs=http://www.opengis.net/def/crs/EPSG/0/3857",
+      "request_url": null,
+      "duration_ms": 277
+    },
+    {
+      "facet": "media-schema",
+      "name": "GeoJSON items negotiate their media type and decode to typed fields",
+      "outcome": "pass",
+      "detail": "geometry Point; fields {'objectid': 4, 'name': 10, 'description': 10, 'status': 10, 'count': 4, 'ratio': 6, 'active': 1, 'created_at': 16, 'event_date': 14, 'event_time': 10, 'uid': 10, 'tags': 10, 'numbers': 10, 'eo:cloud_cover': 6}; items served application/geo+json",
+      "request_url": null,
+      "duration_ms": 182
+    }
+  ]
+}

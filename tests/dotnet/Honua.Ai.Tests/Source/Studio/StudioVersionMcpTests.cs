@@ -168,8 +168,8 @@ public sealed class StudioVersionMcpTests
         var authorization = Substitute.For<IStudioAuthorizationService>();
         authorization.ResolveCallerId(Arg.Any<System.Security.Claims.ClaimsPrincipal>()).Returns("test-user");
         authorization.AuthorizeAsync(Arg.Any<System.Security.Claims.ClaimsPrincipal>(), Arg.Any<string?>(),
-            StudioAuthorizationOperation.CreateVersion, Arg.Any<string?>(), false, Arg.Any<string?>(), Arg.Any<CancellationToken>())
-            .Returns(call => call.ArgAt<string?>(5) == draft.DraftId.ToString("D")
+            StudioAuthorizationOperation.CreateVersion, Arg.Any<string?>(), Arg.Any<string?>(), false, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(call => call.ArgAt<string?>(6) == draft.DraftId.ToString("D")
                 ? StudioAuthorizationDecision.Allow()
                 : StudioAuthorizationDecision.Deny("studio_authorization/owner_required", "Parent item is owned by another caller."));
         var runtime = Substitute.For<IStudioDraftMutationRuntime>();
@@ -199,7 +199,7 @@ public sealed class StudioVersionMcpTests
         var authorization = Substitute.For<IStudioAuthorizationService>();
         authorization.ResolveCallerId(Arg.Any<System.Security.Claims.ClaimsPrincipal>()).Returns("other-user");
         authorization.AuthorizeAsync(Arg.Any<System.Security.Claims.ClaimsPrincipal>(), Arg.Any<string?>(),
-            StudioAuthorizationOperation.ReopenVersion, Arg.Any<string?>(), false, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            StudioAuthorizationOperation.ReopenVersion, Arg.Any<string?>(), Arg.Any<string?>(), false, Arg.Any<string?>(), Arg.Any<CancellationToken>())
             .Returns(StudioAuthorizationDecision.Deny("studio_authorization/owner_required", "Saved version belongs to another caller."));
         var runtime = Substitute.For<IStudioDraftMutationRuntime>();
         var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
