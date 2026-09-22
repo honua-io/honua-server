@@ -211,6 +211,33 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
     }
 
     [IntegrationTest]
+    public async Task ExportMosaicAsync_WithEqualAreaAnisotropicInputs_PreservesFinestScaleOnEachAxis()
+    {
+        var schemaName = await CreateSchemaAsync();
+        try
+        {
+            // Neither input dominates the other by area: 0.5x2 and 1x1. The shared grid must
+            // combine the finest directional scales instead of choosing one input by area.
+            var narrow = await InsertConstantRasterAsync(
+                schemaName, "narrow", 0, 2, 0.5, 10, Day(1), pixelSizeY: 2);
+            var square = await InsertConstantRasterAsync(schemaName, "square", 4, 2, 1, 20, Day(2));
+            _schemaName = schemaName;
+
+            var result = await CreateStore(schemaName).ExportMosaicAsync(
+                LayerId, [narrow, square], RasterMergeStrategy.Newest,
+                new RasterQuery { OutputFormat = RasterFormat.TIFF });
+            var probe = await ProbeAsync(result.Data);
+
+            probe.ScaleX.Should().BeApproximately(0.5, 1e-9);
+            probe.ScaleY.Should().BeApproximately(-1, 1e-9);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
     public async Task MosaicOperations_WithUnsignedZeroAndMixedPixelTypes_PreserveValuesInEitherUnionOrder()
     {
         foreach (var (pixelType, maximum) in new[] { ("8BUI", 255d), ("32BUI", 4294967295d) })
@@ -359,7 +386,8 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
         double value,
         DateTimeOffset acquisition,
         double skewX = 0,
-        double skewY = 0)
+        double skewY = 0,
+        double? pixelSizeY = null)
     {
         await using var connection = await fixture.GetConnectionAsync(schemaName);
         await using var command = connection.CreateCommand();
@@ -368,7 +396,7 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
             SELECT @layerId,
                    @name,
                    ST_AddBand(
-                       ST_MakeEmptyRaster(2, 2, @upperLeftX, @upperLeftY, @pixelSize, -@pixelSize,
+                       ST_MakeEmptyRaster(2, 2, @upperLeftX, @upperLeftY, @pixelSize, -@pixelSizeY,
                                           @skewX, @skewY, 4326),
                        '32BF'::text,
                        @value,
@@ -383,6 +411,7 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
         command.Parameters.AddWithValue("upperLeftX", upperLeftX);
         command.Parameters.AddWithValue("upperLeftY", upperLeftY);
         command.Parameters.AddWithValue("pixelSize", pixelSize);
+        command.Parameters.AddWithValue("pixelSizeY", pixelSizeY ?? pixelSize);
         command.Parameters.AddWithValue("skewX", skewX);
         command.Parameters.AddWithValue("skewY", skewY);
         command.Parameters.AddWithValue("value", value);

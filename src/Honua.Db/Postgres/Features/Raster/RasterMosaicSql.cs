@@ -77,8 +77,14 @@ internal static class RasterMosaicSql
     /// dataset map renderer applies before its union (honua-server#2487).
     /// </para>
     /// <para>
-    /// The reference is the source raster with the smallest affine pixel area (ties broken by <c>id</c>),
-    /// so no input is coarsened and the mosaic keeps the finest native resolution the layer has.
+    /// For axis-aligned inputs, the shared grid uses the smallest absolute X and Y pixel scales
+    /// found in the source set, so an anisotropic raster cannot be coarsened along either axis
+    /// merely because another raster has an equal or smaller affine area. Its origin comes from
+    /// the lowest-id source so the grid remains deterministic. This can produce a finer synthetic
+    /// grid than every one input raster, which is required when the finest X and Y scales occur in
+    /// different rasters. For skewed inputs, the smallest-area source affine transform is retained
+    /// as the reference; skew terms cannot be combined independently without changing the grid's
+    /// orientation.
     /// Inputs are resampled with nearest-neighbour, which invents no pixel values. An aligned
     /// layer passes through untouched, so its mosaics are byte-identical to the pre-#4792 result.
     /// The reference lookup is an uncorrelated scalar subquery evaluated once per statement;
@@ -102,12 +108,34 @@ internal static class RasterMosaicSql
     internal static string CreateAlignedRasterExpression(string sourceCte)
     {
         var reference = $"""
-            (SELECT align_ref.rast
-             FROM {sourceCte} AS align_ref
-             WHERE align_ref.rast IS NOT NULL AND NOT ST_IsEmpty(align_ref.rast)
-             ORDER BY abs(ST_ScaleX(align_ref.rast) * ST_ScaleY(align_ref.rast)
-                        - ST_SkewX(align_ref.rast) * ST_SkewY(align_ref.rast)) ASC, align_ref.id ASC
-             LIMIT 1)
+            (SELECT CASE WHEN skew.has_skew THEN anchor.rast ELSE ST_MakeEmptyRaster(
+                        ST_Width(anchor.rast), ST_Height(anchor.rast),
+                        ST_UpperLeftX(anchor.rast), ST_UpperLeftY(anchor.rast),
+                        CASE WHEN ST_ScaleX(anchor.rast) < 0 THEN -axes.scale_x ELSE axes.scale_x END,
+                        CASE WHEN ST_ScaleY(anchor.rast) < 0 THEN -axes.scale_y ELSE axes.scale_y END,
+                        0, 0, ST_SRID(anchor.rast)) END
+             FROM (
+                 SELECT align_anchor.rast
+                 FROM {sourceCte} AS align_anchor
+                 WHERE align_anchor.rast IS NOT NULL AND NOT ST_IsEmpty(align_anchor.rast)
+                 ORDER BY abs(ST_ScaleX(align_anchor.rast) * ST_ScaleY(align_anchor.rast)
+                            - ST_SkewX(align_anchor.rast) * ST_SkewY(align_anchor.rast)) ASC,
+                          align_anchor.id ASC
+                 LIMIT 1
+             ) AS anchor
+             CROSS JOIN LATERAL (
+                 SELECT min(abs(ST_ScaleX(align_axes.rast))) AS scale_x,
+                        min(abs(ST_ScaleY(align_axes.rast))) AS scale_y
+                 FROM {sourceCte} AS align_axes
+                 WHERE align_axes.rast IS NOT NULL AND NOT ST_IsEmpty(align_axes.rast)
+             ) AS axes
+             CROSS JOIN LATERAL (
+                 SELECT EXISTS (
+                     SELECT 1 FROM {sourceCte} AS skew_candidate
+                     WHERE skew_candidate.rast IS NOT NULL AND NOT ST_IsEmpty(skew_candidate.rast)
+                       AND (ST_SkewX(skew_candidate.rast) <> 0 OR ST_SkewY(skew_candidate.rast) <> 0)
+                 ) AS has_skew
+             ) AS skew)
             """;
 
         // The pixel type's default NoData value, i.e. the value PostGIS fills the snapped-out
