@@ -3,6 +3,7 @@
 
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Configuration;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.TestKit.Attributes;
@@ -64,5 +65,21 @@ public sealed class CompositeRelationshipMetadataTests
         FeatureServerEndpoints.BuildServiceCapabilitiesV2(service,
                 [(publication, composite), (new MetadataV2Publication(), new MetadataV2Resource())])
             .Should().Contain("Create").And.Contain("Update").And.Contain("Delete");
+
+        var snapshot = new MetadataV2GraphSnapshot(new MetadataV2Graph(), "test", DateTimeOffset.UnixEpoch);
+        var layer = FeatureServerEndpoints.MapLayerToResponseV2(
+            service, composite, publication, snapshot, new QueryLimits(),
+            null, null, null, null, false, false, false);
+        layer.AllowGeometryUpdates.Should().BeFalse();
+        layer.SupportsRollbackOnFailureParameter.Should().BeFalse();
+        layer.EditingInfo.Should().BeNull();
+
+        var readOnlyService = FeatureServerEndpoints.MapServiceToResponseV2(
+            service, [(publication, composite)], snapshot, new QueryLimits(), false, false, false, false);
+        readOnlyService.AllowGeometryUpdates.Should().BeFalse();
+        var mixedService = FeatureServerEndpoints.MapServiceToResponseV2(
+            service, [(publication, composite), (new MetadataV2Publication(), new MetadataV2Resource())],
+            snapshot, new QueryLimits(), false, false, false, false);
+        mixedService.AllowGeometryUpdates.Should().BeTrue();
     }
 }

@@ -47,7 +47,7 @@ internal static partial class FeatureServerEndpoints
     /// <param name="supportsAttachmentUploads">Whether attachment uploads are wired up.</param>
     /// <param name="branchVersioningEnabled">Whether branch versioning is available (Postgres + Pro entitlement).</param>
     /// <param name="offlineSyncEnabled">Whether disconnected-sync routes are enabled by lifecycle configuration.</param>
-    private static FeatureServerResponse MapServiceToResponseV2(
+    internal static FeatureServerResponse MapServiceToResponseV2(
         MetadataV2Service service,
         IReadOnlyList<(MetadataV2Publication Publication, MetadataV2Resource Resource)> publications,
         MetadataV2GraphSnapshot snapshot,
@@ -117,7 +117,7 @@ internal static partial class FeatureServerEndpoints
     /// <summary>
     /// Builds a GeoServices layer response from a Metadata V2 resource publication.
     /// </summary>
-    private static LayerResponse MapLayerToResponseV2(
+    internal static LayerResponse MapLayerToResponseV2(
         MetadataV2Service service,
         MetadataV2Resource resource,
         MetadataV2Publication publication,
@@ -145,7 +145,8 @@ internal static partial class FeatureServerEndpoints
         var supportsOrderBy = supportsAdvancedQueries;
         var supportsDistinct = supportsAdvancedQueries;
         var supportsPagination = supportsAdvancedQueries;
-        var supportsEditing = ServiceSupportsEditingV2(service, publication);
+        var supportsEditing = !MetadataV2RelationshipEditPolicy.RequiresReadOnly(resource) &&
+            ServiceSupportsEditingV2(service, publication);
         var supportsAttachments = ResourceSupportsAttachmentsV2(resource);
         var supportsReturningGeometryCentroid = supportsAdvancedQueries && IsPolygonalGeometryTypeV2(resource.ReadGeometryType());
         // The layer advertises queryAttachments only when it declares attachment
@@ -918,9 +919,8 @@ internal static partial class FeatureServerEndpoints
         => publications.Count == 0
             ? ServiceSupportsEditingV2(service)
             : publications.Any(pair =>
-                ServiceSupportsOperationV2(service, "Create", pair.Publication) ||
-                ServiceSupportsOperationV2(service, "Update", pair.Publication) ||
-                ServiceSupportsOperationV2(service, "Delete", pair.Publication));
+                !MetadataV2RelationshipEditPolicy.RequiresReadOnly(pair.Resource) &&
+                ServiceSupportsEditingV2(service, pair.Publication));
 
     private static bool ServiceSupportsEditingV2(MetadataV2Service service, MetadataV2Publication publication)
         => ServiceSupportsOperationV2(service, "Create", publication) ||
