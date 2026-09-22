@@ -656,13 +656,20 @@ internal sealed partial class GeoservicesImportService
             ImportFailureStage.Committing => "committing the imported table",
             _ => "publishing the imported layer"
         };
+        // A command-level ERROR acknowledges rejection. Session loss and PostgreSQL's
+        // explicit unknown-completion states cannot establish the durable outcome.
+        var databaseFailure = UnwrapDatabaseFailure(exception);
+        var commitRejected = databaseFailure is PostgresException postgresFailure
+            && postgresFailure.InvariantSeverity == "ERROR"
+            && !postgresFailure.SqlState.StartsWith("08", StringComparison.Ordinal)
+            && postgresFailure.SqlState != "40003";
         var outcome = stage switch
         {
             ImportFailureStage.AfterCommit =>
                 "Imported rows were already committed; check the target table and its publication before retrying.",
             // Cancellation-safe commit prevents caller cancellation from interrupting the round-trip,
             // but a connection failure can still hide a successful server-side commit.
-            ImportFailureStage.Committing =>
+            ImportFailureStage.Committing when !commitRejected =>
                 "The commit outcome could not be confirmed; check the target table and its publication before retrying.",
             _ => "No imported data was committed, and any existing target table was left unchanged."
         };
@@ -670,7 +677,7 @@ internal sealed partial class GeoservicesImportService
         // A lost or broken session surfaces as an ObjectDisposedException/InvalidOperationException from
         // Npgsql that wraps the server's own error, so classify on the first database exception in the
         // chain rather than on the wrapper the cleanup path produced.
-        return UnwrapDatabaseFailure(exception) switch
+        return databaseFailure switch
         {
             PostgresException postgres when IsGeometryRejection(postgres) =>
                 $"{ImportCompatibilityCodes.ArcGisImportGeometryRejected}: The target database rejected a source geometry while {step} "

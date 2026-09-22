@@ -151,4 +151,42 @@ public sealed class GeoservicesImportFailureMessageTests
         message.Should().Contain("Imported rows were already committed");
         message.Should().NotContain("No imported data was committed");
     }
+
+    [Theory]
+    [InlineData("23503")]
+    [InlineData("40001")]
+    [InlineData("53200")]
+    public void BuildImportFailureMessage_CommitRejectedByDatabase_ReportsNoCommittedData(string sqlState)
+    {
+        var exception = new ObjectDisposedException("NpgsqlTransaction",
+            new PostgresException($"COMMIT rejected: {Secret}", "ERROR", "ERROR", sqlState));
+
+        var message = GeoservicesImportService.BuildImportFailureMessage(
+            exception, GeoservicesImportService.ImportFailureStage.Committing);
+
+        message.Should().Contain($"SQLSTATE {sqlState}");
+        message.Should().Contain("No imported data was committed");
+        message.Should().Contain("any existing target table was left unchanged");
+        message.Should().NotContain("commit outcome could not be confirmed");
+        message.Should().NotContain("Imported rows were already committed");
+        message.Should().NotContain(Secret);
+    }
+
+    [Theory]
+    [InlineData("57P01", "FATAL")]
+    [InlineData("08007", "ERROR")]
+    [InlineData("40003", "ERROR")]
+    public void BuildImportFailureMessage_CommitSessionOrCompletionUnknown_DoesNotClaimRollback(
+        string sqlState, string severity)
+    {
+        var exception = new PostgresException($"Database detail: {Secret}", severity, severity, sqlState);
+
+        var message = GeoservicesImportService.BuildImportFailureMessage(
+            exception, GeoservicesImportService.ImportFailureStage.Committing);
+
+        message.Should().Contain("commit outcome could not be confirmed");
+        message.Should().NotContain("No imported data was committed");
+        message.Should().NotContain("Imported rows were already committed");
+        message.Should().NotContain(Secret);
+    }
 }
