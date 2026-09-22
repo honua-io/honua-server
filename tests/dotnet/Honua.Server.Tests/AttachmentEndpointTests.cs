@@ -679,6 +679,20 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
             .Should().BeEquivalentTo(viaGet!.AttachmentInfos.Select(static info => info.Id));
     }
 
+    [IntegrationTheory]
+    [InlineData("")]
+    [InlineData("?f=json")]
+    [Operation(Operations.DownloadAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments")]
+    public async Task AttachmentInfos_WithUnsupportedFormFormat_ReturnsValidationError(string query)
+    {
+        using var form = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "geojson")]);
+        using var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments{query}", form);
+
+        await response.AssertGeoServicesErrorAsync(400);
+    }
+
     [IntegrationTest]
     [Operation(Operations.DownloadAttachment)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments/{attachmentId}")]

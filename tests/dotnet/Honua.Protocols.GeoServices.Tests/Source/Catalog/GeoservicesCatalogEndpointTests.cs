@@ -117,6 +117,22 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
         payload.RootElement.GetProperty("services").ValueKind.Should().Be(JsonValueKind.Array);
     }
 
+    [IntegrationTheory]
+    [InlineData("/rest/services")]
+    [InlineData("/rest/info")]
+    [InlineData("/rest/services?f=json")]
+    [InlineData("/rest/info?f=json")]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("POST /rest/services")]
+    [Endpoint("POST /rest/info")]
+    public async Task PostCatalog_WithUnsupportedFormFormat_ReturnsValidationError(string route)
+    {
+        using var form = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "xml")]);
+        using var response = await _fixture.Client.PostAsync(route, form);
+
+        await response.AssertGeoServicesErrorAsync(400);
+    }
+
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("POST /rest/info")]

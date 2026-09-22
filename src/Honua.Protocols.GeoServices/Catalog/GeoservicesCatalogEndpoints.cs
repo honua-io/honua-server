@@ -858,6 +858,8 @@ internal static class GeoservicesCatalogEndpoints
         [FromServices] ILicenseStatusProvider licenseStatusProvider,
         [FromServices] ILogger<GeoservicesCatalogLog> logger)
     {
+        f = await GeoServicesRequestValueHelpers.ReadFormValueOrDefaultAsync(
+            context.Request, "f", f, context.RequestAborted).ConfigureAwait(false);
         if (!IsSupportedFormat(f))
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");
@@ -884,11 +886,13 @@ internal static class GeoservicesCatalogEndpoints
         return Results.Json(response, GeoservicesCatalogJsonContext.Default.ServicesDirectoryResponse, contentType: JsonContentType);
     }
 
-    private static IResult HandleGetRestInfo(
+    private static async Task<IResult> HandleGetRestInfo(
         HttpContext context,
         string? f,
         [FromServices] IOptions<PortalTokenAuthenticationOptions> tokenOptions)
     {
+        f = await GeoServicesRequestValueHelpers.ReadFormValueOrDefaultAsync(
+            context.Request, "f", f, context.RequestAborted).ConfigureAwait(false);
         if (!IsSupportedFormat(f))
         {
             return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");

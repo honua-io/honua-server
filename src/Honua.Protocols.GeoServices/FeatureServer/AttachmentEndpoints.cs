@@ -604,6 +604,8 @@ internal static partial class AttachmentEndpoints
         var requestedFormat = context.Request.Query.TryGetValue("f", out var formatValue)
             ? formatValue.ToString()
             : null;
+        requestedFormat = await GeoServicesRequestValueHelpers.ReadFormValueOrDefaultAsync(
+            context.Request, "f", requestedFormat, context.RequestAborted).ConfigureAwait(false);
         if (!FeatureServerEndpoints.TryValidateOutputFormat(
                 requestedFormat,
                 FeatureServerEndpoints.JsonOnlyFormats,
