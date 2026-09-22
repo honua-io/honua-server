@@ -3,6 +3,7 @@
 
 using System.ComponentModel.DataAnnotations;
 using Honua.Core.Features.Admin.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
 
 namespace Honua.Server.Features.Admin.Models;
 
@@ -77,6 +78,12 @@ public sealed class PublishLayerRequest
     [StringLength(64)]
     public string? GeometryType { get; init; }
 
+    /// <summary>Whether the source geometries carry elevation (Z) ordinates.</summary>
+    public bool HasZ { get; init; }
+
+    /// <summary>Whether the source geometries carry measure (M) ordinates.</summary>
+    public bool HasM { get; init; }
+
     /// <summary>
     /// Spatial reference identifier.
     /// </summary>
@@ -100,6 +107,24 @@ public sealed class PublishLayerRequest
     /// Selected attribute fields to publish (empty means include all).
     /// </summary>
     public IReadOnlyList<string> Fields { get; init; } = Array.Empty<string>();
+
+    /// <summary>
+    /// Captured source value domains keyed by field name. Held to the import capture caps
+    /// (<see cref="LayerPublishSourceMetadataBounds"/>); fields without an entry publish without a domain.
+    /// </summary>
+    public IReadOnlyDictionary<string, MetadataV2FieldDomain>? FieldDomains { get; init; }
+
+    /// <summary>
+    /// Captured source subtype set. Held to the import capture caps
+    /// (<see cref="LayerPublishSourceMetadataBounds"/>); attached only when its subtype field is published.
+    /// </summary>
+    public MetadataV2Subtypes? Subtypes { get; init; }
+
+    /// <summary>
+    /// Captured source calculation, constraint and validation rules. Held to the import capture caps
+    /// (<see cref="LayerPublishSourceMetadataBounds"/>); calculation rules on unpublished fields are dropped.
+    /// </summary>
+    public IReadOnlyList<MetadataV2AttributeRule>? AttributeRules { get; init; }
 
     /// <summary>
     /// Optional service name (defaults to "default").
