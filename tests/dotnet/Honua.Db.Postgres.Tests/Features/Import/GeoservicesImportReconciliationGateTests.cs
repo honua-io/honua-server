@@ -29,6 +29,49 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 [Collection("Database")]
 public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fixture)
 {
+    [Theory]
+    [InlineData("[{\"id\":0,\"relatedTableId\":1,\"keyField\":\"Name\",\"composite\":false}]", 1, false)]
+    [InlineData("[{\"id\":0,\"relatedTableId\":1,\"keyField\":\"Name\",\"composite\":true}]", 1, false)]
+    [InlineData("[null,{}]", 2, false)]
+    [InlineData("[{\"id\":0,\"relatedTableId\":1,\"keyField\":\"Name\",\"composite\":false}]", 0, true)]
+    [InlineData("[{\"id\":0,\"relatedTableId\":1,\"keyField\":\"Name\",\"composite\":true}]", 0, true)]
+    public async Task ImportLayerAsync_WithUnappliedRelationships_PreservesRowsButRequiresReview(
+        string relationshipsJson, int expectedOmissions, bool deferToBatch)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync("UnappliedRelationships");
+        var reconciliation = new StubReconciliationService(MigrationReconciliationClassifications.Pass, failCount: 0);
+        var progress = new RecordingProgress();
+        var service = CreateService(new SimpleFeatureServerHandler(relationshipsJson), publishedLayerId: 103, reconciliation);
+
+        try
+        {
+            var result = await service.ImportLayerAsync(BuildRequest("relationship_rows", schemaName) with { DeferRelationshipApplyToBatch = deferToBatch }, progress);
+
+            result.NeedsReview.Should().Be(!deferToBatch);
+            result.FidelityVerdict.Should().Be(deferToBatch ? MigrationFidelityVerdicts.Unverified : MigrationFidelityVerdicts.Incomplete);
+            var relationshipDifferences = result.FidelityDifferences
+                .Where(difference => difference.Code == MigrationFidelityDifferenceCodes.RelationshipOmitted)
+                .ToArray();
+            relationshipDifferences.Should().HaveCount(expectedOmissions);
+            if (expectedOmissions > 0)
+            {
+                relationshipDifferences.Should().OnlyContain(difference =>
+                    difference.Severity == MigrationFidelityDifferenceSeverities.Blocking
+                    && difference.Summary.Contains("reviewed relationship manifest", StringComparison.Ordinal));
+            }
+            progress.Statuses.Should().Contain(deferToBatch ? GeoservicesImportStatus.Completed : GeoservicesImportStatus.NeedsReview);
+            progress.Statuses.Should().NotContain(deferToBatch ? GeoservicesImportStatus.NeedsReview : GeoservicesImportStatus.Completed);
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT COUNT(*) FROM \"{schemaName}\".relationship_rows";
+            (await command.ExecuteScalarAsync()).Should().Be(2L);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
     [Fact]
     public async Task ImportLayerAsync_WhenReconciliationReportsFail_RoutesToNeedsReviewAndBlocksCompleted()
     {
@@ -332,17 +375,18 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
             => Task.FromResult<IReadOnlyList<MaterializedFeatureRefreshResult>>([]);
     }
 
-    private sealed class SimpleFeatureServerHandler : HttpMessageHandler
+    private sealed class SimpleFeatureServerHandler(string relationshipsJson = "[]") : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var pathAndQuery = request.RequestUri?.PathAndQuery ?? string.Empty;
             return pathAndQuery switch
             {
-                "/arcgis/rest/services/Inspections/FeatureServer/0?f=json" => Task.FromResult(JsonResponse("""
+                "/arcgis/rest/services/Inspections/FeatureServer/0?f=json" => Task.FromResult(JsonResponse($$"""
                     {
                       "id": 0,
                       "name": "Inspections",
+                      "relationships": {{relationshipsJson}},
                       "geometryType": "esriGeometryPoint",
                       "maxRecordCount": 10,
                       "hasAttachments": false,
