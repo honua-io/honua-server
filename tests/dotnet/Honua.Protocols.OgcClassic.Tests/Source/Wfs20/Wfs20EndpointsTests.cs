@@ -1045,6 +1045,85 @@ public sealed class Wfs20EndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    public async Task Wfs_GetFeature_OgcFilterEncoding_MatchesEquivalentFesFilter()
+    {
+        const string fesFilter = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
+              <fes:PropertyIsEqualTo><fes:ValueReference>category</fes:ValueReference><fes:Literal>test</fes:Literal></fes:PropertyIsEqualTo>
+            </fes:Filter>
+            """;
+        const string ogcFilter = """
+            <ogc:Filter xmlns:ogc="http://www.opengis.net/ogc">
+              <ogc:PropertyIsEqualTo><ogc:PropertyName>category</ogc:PropertyName><ogc:Literal>test</ogc:Literal></ogc:PropertyIsEqualTo>
+            </ogc:Filter>
+            """;
+
+        var fesMatched = await GetMatchedCountAsync(fesFilter);
+        var ogcMatched = await GetMatchedCountAsync(ogcFilter);
+        var unfilteredMatched = await GetMatchedCountAsync(filter: null);
+
+        fesMatched.Should().BePositive();
+        fesMatched.Should().BeLessThan(unfilteredMatched, "the filter must be applied by the server");
+        ogcMatched.Should().Be(fesMatched);
+
+        async Task<int> GetMatchedCountAsync(string? filter)
+        {
+            var filterParameter = filter is null ? string.Empty : $"&FILTER={Uri.EscapeDataString(filter)}";
+            var response = await _fixture.Client.GetAsync(
+                $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&RESULTTYPE=hits{filterParameter}");
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+            var numberMatched = XDocument.Parse(content).Root!.Attribute("numberMatched")!.Value;
+            return int.Parse(numberMatched, System.Globalization.CultureInfo.InvariantCulture);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /wfs")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
+    [InterfaceOperation(TestProtocols.Wfs20, "GetPropertyValue")]
+    public async Task Wfs_UnsupportedFilterOperator_ReportsOperatorWithoutEchoingInput()
+    {
+        const string fesFilter = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
+              <fes:PropertyIsSimilarTo><fes:ValueReference>name</fes:ValueReference><fes:Literal>value-not-reported</fes:Literal></fes:PropertyIsSimilarTo>
+            </fes:Filter>
+            """;
+        const string ogcFilter = """
+            <ogc:Filter xmlns:ogc="http://www.opengis.net/ogc">
+              <ogc:PropertyIsSimilarTo><ogc:PropertyName>name</ogc:PropertyName><ogc:Literal>value-not-reported</ogc:Literal></ogc:PropertyIsSimilarTo>
+            </ogc:Filter>
+            """;
+        var requests = new[]
+        {
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&FILTER={Uri.EscapeDataString(fesFilter)}",
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=2.0.0&TYPENAMES=test_layer&FILTER={Uri.EscapeDataString(ogcFilter)}",
+            $"/wfs?SERVICE=WFS&REQUEST=GetPropertyValue&VERSION=2.0.0&TYPENAMES=test_layer&VALUEREFERENCE=name&FILTER={Uri.EscapeDataString(fesFilter)}",
+            $"/wfs?SERVICE=WFS&REQUEST=GetFeature&VERSION=1.1.0&TYPENAME=test_layer&FILTER={Uri.EscapeDataString(ogcFilter)}",
+        };
+
+        foreach (var requestUri in requests)
+        {
+            var response = await _fixture.Client.GetAsync(requestUri);
+            var content = await response.Content.ReadAsStringAsync();
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, $"{requestUri}: {content}");
+            content.Should().Contain("exceptionCode=\"InvalidParameterValue\"", requestUri);
+            var exceptionText = XDocument.Parse(content)
+                .Descendants()
+                .Single(element => element.Name.LocalName == "ExceptionText")
+                .Value;
+            exceptionText.Should().Be("Unsupported filter operator 'PropertyIsSimilarTo'.", requestUri);
+            content.Should().NotContain("value-not-reported", requestUri);
+            content.Should().NotContain("see logs", requestUri);
+        }
+    }
+
+    [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /wfs")]
     [InterfaceOperation(TestProtocols.Wfs20, "GetFeature")]
