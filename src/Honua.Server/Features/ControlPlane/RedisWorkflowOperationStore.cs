@@ -288,6 +288,53 @@ internal sealed partial class RedisWorkflowOperationStore(
         return null;
     }
 
+    public async Task<bool?> HasLaterDeployOfTargetAsync(
+        WorkflowOperationRecord operation,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (operation.Kind != WorkflowOperationKind.Deploy || string.IsNullOrWhiteSpace(operation.Deploy?.TargetId))
+        {
+            return null;
+        }
+
+        var targetId = operation.Deploy.TargetId;
+        var key = GetDeployCreatedTargetKey(targetId);
+        // Only TryCreate writes this index. A legacy operation absent from it cannot prove that
+        // later failed/rolled-back deploys were captured, even when the succeeded index is empty.
+        if (await _database.SortedSetScoreAsync(key, operation.OperationId).ConfigureAwait(false) is null)
+        {
+            return null;
+        }
+
+        var ids = await _database.SortedSetRangeByRankAsync(key, 0, -1, Order.Descending).ConfigureAwait(false);
+        var incomplete = ids.Length >= DeployCreatedTargetCap;
+        foreach (var id in ids)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!id.HasValue || string.Equals(id.ToString(), operation.OperationId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var candidate = await GetAsync(id.ToString(), cancellationToken).ConfigureAwait(false);
+            if (candidate is null)
+            {
+                // An expired later record may have moved the target; absence is not proof of safety.
+                incomplete = true;
+            }
+            else if (candidate.Kind == WorkflowOperationKind.Deploy
+                && string.Equals(candidate.Deploy?.TargetId, targetId, StringComparison.Ordinal)
+                && candidate.CreatedAt > operation.CreatedAt)
+            {
+                return true;
+            }
+        }
+
+        return incomplete ? null : false;
+    }
+
     private async Task CollectCandidateAsync(
         RedisValue operationId,
         List<WorkflowOperationRecord> records,
@@ -367,6 +414,13 @@ internal sealed partial class RedisWorkflowOperationStore(
         var writeTask = transaction.StringSetAsync(operationKey, payload, retention);
         QueueMetadataPackageIndexUpdate(transaction, operation, retention, createOnly);
         QueueActiveIndexUpdates(transaction, operation);
+        if (createOnly && operation.Kind == WorkflowOperationKind.Deploy
+            && operation.Deploy is { TargetId: { Length: > 0 } targetId })
+        {
+            var targetKey = GetDeployCreatedTargetKey(targetId);
+            _ = transaction.SortedSetAddAsync(targetKey, operation.OperationId, operation.CreatedAt.ToUnixTimeMilliseconds());
+            _ = transaction.SortedSetRemoveRangeByRankAsync(targetKey, 0, -(DeployCreatedTargetCap + 1));
+        }
 
         var committed = await transaction.ExecuteAsync().ConfigureAwait(false);
         if (!committed)
@@ -494,6 +548,9 @@ internal sealed partial class RedisWorkflowOperationStore(
     private static string GetDeploySucceededTargetKey(string targetId)
         => $"controlplane:workflow:deploy-succeeded:{targetId}";
 
+    private static string GetDeployCreatedTargetKey(string targetId)
+        => $"controlplane:workflow:deploy-created:{targetId}";
+
     private const string ActiveOperationsKey = "controlplane:workflow:active";
     private const string TerminalOperationsKey = "controlplane:workflow:terminal";
     private const int DefaultPageSize = 50;
@@ -501,6 +558,7 @@ internal sealed partial class RedisWorkflowOperationStore(
     private const int MaterializationCap = 1000;
     private const int TerminalIndexCap = 5000;
     private const int DeploySucceededTargetCap = 50;
+    private const int DeployCreatedTargetCap = 50;
 
     private static partial class Log
     {

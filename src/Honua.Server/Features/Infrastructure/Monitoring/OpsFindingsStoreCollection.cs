@@ -89,6 +89,13 @@ internal sealed class OpsFindingsStoreCollection(
     }
 
     /// <summary>
+    /// Records a coverage component the pass deliberately left unread, such as the remainder of a
+    /// bounded paged read, so the source publishes <c>partial</c> rather than <c>complete</c>.
+    /// </summary>
+    /// <param name="componentId">Stable, secret-free id of what was not read.</param>
+    public void ExpectUncollected(string componentId) => _expected.Add(componentId);
+
+    /// <summary>
     /// Publishes the source envelope for this pass and advances the ledger only when the store
     /// returned valid observations. Every read succeeded: <c>complete</c>. Some reads succeeded
     /// before a later one failed: <c>partial</c>, with the missing components in coverage. No read
