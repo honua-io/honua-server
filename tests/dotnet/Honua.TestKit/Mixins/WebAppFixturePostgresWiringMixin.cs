@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Cryptography;
 using Honua.Core.Features.Admin.Abstractions;
 using Honua.Core.Features.Attachments.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -37,10 +38,12 @@ namespace Honua.TestKit.Mixins;
 internal static class WebAppFixturePostgresWiringMixin
 {
     private const string StableTestGeocodingBaseUrl = "https://8.8.8.8/nominatim";
-    private const string TestEncryptionMasterKey =
-        "test-master-key-that-is-at-least-32-characters-long-for-security";
-    private const string TestEncryptionSalt =
-        "dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=";
+    // Keep material stable for this test process, including host restart proofs, but
+    // do not feed shipped example credentials to fixtures running as Production.
+    private static readonly string _testEncryptionMasterKey =
+        Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
+    private static readonly string _testEncryptionSalt =
+        Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 
     /// <summary>
     /// Applies the auth-bypass and migration-skip <c>UseSetting</c> flags that both the
@@ -83,8 +86,8 @@ internal static class WebAppFixturePostgresWiringMixin
             ["Limits:Query:QueryTimeout"] = "00:02:00",
             ["FileStorage:Provider"] = "Local",
             ["FileStorage:LocalStorage:BasePath"] = attachmentsPath,
-            ["Security:ConnectionEncryption:MasterKey"] = TestEncryptionMasterKey,
-            ["Security:ConnectionEncryption:Salt"] = TestEncryptionSalt,
+            ["Security:ConnectionEncryption:MasterKey"] = _testEncryptionMasterKey,
+            ["Security:ConnectionEncryption:Salt"] = _testEncryptionSalt,
             // Request-supplied secret references are refused unless an operator permits them;
             // integration tests name variables under this prefix.
             ["Security:RequestSecretReferences:AllowedEnvironmentVariablePrefixes:0"] = "HONUA_TEST_",
@@ -195,8 +198,8 @@ internal static class WebAppFixturePostgresWiringMixin
             ["HONUA_TEST_SCHEMA_HEADERS"] = "true",
             ["Limits:Connections:RequestTimeout"] = "00:05:00",
             ["Limits:Query:QueryTimeout"] = "00:02:00",
-            ["Security:ConnectionEncryption:MasterKey"] = TestEncryptionMasterKey,
-            ["Security:ConnectionEncryption:Salt"] = TestEncryptionSalt,
+            ["Security:ConnectionEncryption:MasterKey"] = _testEncryptionMasterKey,
+            ["Security:ConnectionEncryption:Salt"] = _testEncryptionSalt,
         };
 
         if (extraSettings is not null)
