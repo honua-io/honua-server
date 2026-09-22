@@ -88,9 +88,18 @@ public sealed record LayerReconciliationLayerInput
     /// <summary>
     /// Optional secret-safe filter mirror applied at apply time (e.g. CQL or GeoServices
     /// <c>where</c>) so the count probe can be filter-mirrored. <c>null</c> means the apply
-    /// imported all features and the probe issues an unfiltered count.
+    /// imported all features and the probe issues an unfiltered count. For a dedicated
+    /// import target, this is provenance only; see <see cref="TargetContainsOnlyImportedFeatures"/>.
     /// </summary>
     public string? FilterMirror { get; init; }
+
+    /// <summary>
+    /// The target is a dedicated import table containing only the selected source population.
+    /// In this scope, <see cref="FilterMirror"/> is source provenance and must not be executed
+    /// against the target: source identifiers may be remapped, and filtering can conceal extra rows.
+    /// Every target row participates in reconciliation, and any count mismatch fails.
+    /// </summary>
+    public bool TargetContainsOnlyImportedFeatures { get; init; }
 }
 
 /// <summary>

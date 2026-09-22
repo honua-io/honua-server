@@ -151,8 +151,9 @@ internal sealed partial class GeoservicesLayerPublicationService
             SourceExtent = sourceExtent,
             PlannedTargetSrid = request.TargetSrid,
             SourceFieldNames = sourceFieldNames,
-            // The where-clause supplied to the import is mirrored onto the reconciliation count
-            // probe so a partial import (subset of source features) is reconciled apples-to-apples.
+            // Metadata discovery counts with the import's source predicate. The target table
+            // contains that population only; retain the predicate as provenance, not target SQL.
+            TargetContainsOnlyImportedFeatures = true,
             FilterMirror = string.IsNullOrWhiteSpace(request.WhereClause) ? null : request.WhereClause
         };
 

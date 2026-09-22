@@ -129,7 +129,8 @@ internal sealed partial class ArcGisRestClient
     }
 
     /// <summary>
-    /// Get detailed metadata for a specific layer.
+    /// Get detailed metadata for a specific layer. The optional filter scopes the
+    /// feature-count snapshot; advertised schema and extent remain layer-wide.
     /// </summary>
     public async Task<GeoservicesLayerInfo> GetLayerInfoAsync(
         string serviceUrl,
@@ -137,7 +138,8 @@ internal sealed partial class ArcGisRestClient
         int timeoutSeconds,
         int maxRetries,
         CancellationToken cancellationToken,
-        GeoservicesCredentialDescriptor? credentials = null)
+        GeoservicesCredentialDescriptor? credentials = null,
+        string? countWhereClause = null)
     {
         var normalizedUrl = NormalizeServiceUrl(serviceUrl);
         var layerUrl = $"{normalizedUrl}/{layerId}?f=json";
@@ -154,7 +156,10 @@ internal sealed partial class ArcGisRestClient
         int? featureCount = null;
         try
         {
-            var countUrl = $"{normalizedUrl}/{layerId}/query?where=1=1&returnCountOnly=true&f=json";
+            var countWhere = string.IsNullOrWhiteSpace(countWhereClause)
+                ? "1=1"
+                : Uri.EscapeDataString(countWhereClause);
+            var countUrl = $"{normalizedUrl}/{layerId}/query?where={countWhere}&returnCountOnly=true&f=json";
             var countResponse = await GetJsonAsync(
                 countUrl,
                 ArcGisJsonContext.Default.ArcGisCountResponse,

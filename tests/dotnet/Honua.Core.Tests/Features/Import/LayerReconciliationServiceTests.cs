@@ -109,6 +109,35 @@ public sealed class LayerReconciliationServiceTests
     private static LayerReconciliationService NewService(IFeatureReader reader)
         => new(reader, TimeProvider.System, NullLogger<LayerReconciliationService>.Instance);
 
+    [Theory]
+    [InlineData(99, "fail")]
+    [InlineData(100, "pass")]
+    [InlineData(101, "fail")]
+    public async Task Reconcile_DedicatedImportTarget_CountsEveryRowWithoutSourcePredicate(long targetCount, string expected)
+    {
+        const string sourceFilter = "DateOfFlight = DATE '2025-01-11' AND OBJECTID > 1000";
+        var reader = new StubFeatureReader
+        {
+            Count = targetCount,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildSample(("OBJECTID", "NAME"), validGeometry: true, rows: 5)
+        };
+        var request = BuildRequest(100, BoundingBox.Create(0, 0, 10, 10, 4326), ["OBJECTID", "NAME"]);
+        request = request with
+        {
+            Layers = [request.Layers[0] with { FilterMirror = sourceFilter, TargetContainsOnlyImportedFeatures = true }]
+        };
+
+        var result = await NewService(reader).ReconcileAsync(request);
+
+        result.Layers[0].Count.Classification.Should().Be(expected);
+        result.Layers[0].Count.FilterMirror.Should().Be(sourceFilter);
+        result.Layers[0].Count.TargetCount.Should().Be(targetCount);
+        reader.CountQueries.Should().ContainSingle().Which.Where.Should().BeNull();
+        reader.ExtentQueries.Should().ContainSingle().Which!.Value.Where.Should().BeNull();
+        reader.SampleQueries.Should().ContainSingle().Which.Where.Should().BeNull();
+    }
+
     private static LayerReconciliationRequest BuildRequest(
         long sourceCount,
         BoundingBox sourceExtent,
@@ -204,10 +233,15 @@ public sealed class LayerReconciliationServiceTests
         public FeatureExtent? Extent { get; init; }
         public FeatureExtent? ComparisonExtent { get; init; }
         public List<FeatureQuery?> ExtentQueries { get; } = [];
+        public List<FeatureQuery> CountQueries { get; } = [];
+        public List<FeatureQuery> SampleQueries { get; } = [];
         public QueryResult<Feature> Sample { get; init; } = QueryResult<Feature>.Empty();
 
         public Task<long> CountAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
-            => Task.FromResult(Count);
+        {
+            CountQueries.Add(query);
+            return Task.FromResult(Count);
+        }
 
         public Task<FeatureExtent?> GetExtentAsync(int layerId, FeatureQuery? query = null, CancellationToken cancellationToken = default)
         {
@@ -216,7 +250,10 @@ public sealed class LayerReconciliationServiceTests
         }
 
         public Task<QueryResult<Feature>> QueryAsync(int layerId, FeatureQuery query, CancellationToken cancellationToken = default)
-            => Task.FromResult(Sample);
+        {
+            SampleQueries.Add(query);
+            return Task.FromResult(Sample);
+        }
 
         public Task<Feature?> GetAsync(int layerId, long featureId, CancellationToken cancellationToken = default)
             => throw new NotImplementedException();

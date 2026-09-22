@@ -83,6 +83,33 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
         }
     }
 
+    [Fact]
+    public async Task ImportLayerAsync_FilteredImport_ReconcilesSelectedCountAgainstWholeTarget()
+    {
+        const string sourceFilter = "OBJECTID IN (42, 99)";
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(GeoservicesImportReconciliationGateTests) + "_subset");
+        var reconciliation = new StubReconciliationService(MigrationReconciliationClassifications.Pass, failCount: 0);
+        using var handler = new SimpleFeatureServerHandler(sourceFilter);
+        var service = CreateService(handler, publishedLayerId: 102, reconciliation);
+
+        try
+        {
+            var result = await service.ImportLayerAsync(
+                BuildRequest("recon_gate_subset", schemaName) with { WhereClause = sourceFilter }, null);
+
+            result.FeatureCount.Should().Be(2);
+            reconciliation.Request.Should().NotBeNull();
+            var layer = reconciliation.Request!.Layers.Should().ContainSingle().Which;
+            layer.SourceFeatureCount.Should().Be(2, "the full source has 100 rows but only two were selected");
+            layer.FilterMirror.Should().Be(sourceFilter);
+            layer.TargetContainsOnlyImportedFeatures.Should().BeTrue();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
     private static GeoservicesImportRequest BuildRequest(string tableName, string schemaName) => new()
     {
         ServiceUrl = "https://example.com/arcgis/rest/services/Inspections/FeatureServer",
@@ -124,10 +151,13 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
 
     private sealed class StubReconciliationService(string classification, int failCount) : ILayerReconciliationService
     {
+        public LayerReconciliationRequest? Request { get; private set; }
+
         public Task<MigrationReconciliationArtifact> ReconcileAsync(
             LayerReconciliationRequest request,
             CancellationToken cancellationToken = default)
         {
+            Request = request;
             var artifact = new MigrationReconciliationArtifact
             {
                 RunId = request.RunId,
@@ -213,11 +243,21 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
             => Task.FromResult<IReadOnlyList<MaterializedFeatureRefreshResult>>([]);
     }
 
-    private sealed class SimpleFeatureServerHandler : HttpMessageHandler
+    private sealed class SimpleFeatureServerHandler(string? sourceFilter = null) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var pathAndQuery = request.RequestUri?.PathAndQuery ?? string.Empty;
+            if (sourceFilter is not null)
+            {
+                if (pathAndQuery.Contains("returnCountOnly=true", StringComparison.Ordinal))
+                {
+                    var selected = pathAndQuery.Contains($"where={Uri.EscapeDataString(sourceFilter)}&", StringComparison.Ordinal);
+                    return Task.FromResult(JsonResponse(selected ? "{\"count\":2}" : "{\"count\":100}"));
+                }
+
+                pathAndQuery = pathAndQuery.Replace(Uri.EscapeDataString(sourceFilter), "1%3D1", StringComparison.Ordinal);
+            }
             return pathAndQuery switch
             {
                 "/arcgis/rest/services/Inspections/FeatureServer/0?f=json" => Task.FromResult(JsonResponse("""
@@ -236,18 +276,18 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
                     """)),
                 "/arcgis/rest/services/Inspections/FeatureServer/0/query?where=1=1&returnCountOnly=true&f=json" =>
                     Task.FromResult(JsonResponse("""{"count":2}""")),
-                "/arcgis/rest/services/Inspections/FeatureServer/0/query?f=json&where=1%3D1&outFields=%2A&returnGeometry=true&resultOffset=0&resultRecordCount=10&outSR=4326" =>
+                "/arcgis/rest/services/Inspections/FeatureServer/0/query?f=json&where=1%3D1&outFields=%2A&returnGeometry=true&returnZ=true&returnM=true&resultOffset=0&resultRecordCount=10&outSR=4326" =>
                     Task.FromResult(JsonResponse("""
                         {
                           "features": [
-                            { "attributes": { "OBJECTID": 1, "Name": "Alpha" }, "geometry": { "x": -157.1, "y": 21.3 } },
-                            { "attributes": { "OBJECTID": 2, "Name": "Beta" }, "geometry": { "x": -157.2, "y": 21.4 } }
+                            { "attributes": { "OBJECTID": 42, "Name": "Alpha" }, "geometry": { "x": -157.1, "y": 21.3 } },
+                            { "attributes": { "OBJECTID": 99, "Name": "Beta" }, "geometry": { "x": -157.2, "y": 21.4 } }
                           ],
                           "exceededTransferLimit": false,
                           "spatialReference": { "wkid": 4326 }
                         }
                         """)),
-                "/arcgis/rest/services/Inspections/FeatureServer/0/query?f=json&where=1%3D1&outFields=%2A&returnGeometry=true&resultOffset=2&resultRecordCount=10&outSR=4326" =>
+                "/arcgis/rest/services/Inspections/FeatureServer/0/query?f=json&where=1%3D1&outFields=%2A&returnGeometry=true&returnZ=true&returnM=true&resultOffset=2&resultRecordCount=10&outSR=4326" =>
                     Task.FromResult(JsonResponse("""
                         { "features": [], "exceededTransferLimit": false, "spatialReference": { "wkid": 4326 } }
                         """)),

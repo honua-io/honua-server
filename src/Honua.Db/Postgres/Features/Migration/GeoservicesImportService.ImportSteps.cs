@@ -57,7 +57,8 @@ internal sealed partial class GeoservicesImportService
                 request.RequestTimeoutSeconds,
                 request.MaxRetries,
                 cancellationToken,
-                request.Credentials);
+                request.Credentials,
+                countWhereClause: request.WhereClause);
 
             Log.LayerDiscovered(_logger, layerInfo.Name, layerInfo.Fields.Length, layerInfo.FeatureCount);
 
