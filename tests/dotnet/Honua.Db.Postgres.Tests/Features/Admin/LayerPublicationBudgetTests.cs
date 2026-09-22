@@ -28,7 +28,8 @@ public sealed class LayerPublicationBudgetTests(PostgresFixture fixture)
     public async Task SnapshotCommand_UsesWorkloadBudgetBeyondOrdinaryCommandTimeout()
     {
         await using var connection = await fixture.GetConnectionAsync();
-        await using var command = new NpgsqlCommand("SELECT 7 FROM pg_sleep(1.2)", connection)
+        await using var transaction = await connection.BeginTransactionAsync();
+        await using var command = new NpgsqlCommand("SELECT 7 FROM pg_sleep(1.2)", connection, transaction)
         {
             CommandTimeout = 1
         };
@@ -37,6 +38,26 @@ public sealed class LayerPublicationBudgetTests(PostgresFixture fixture)
 
         result.Should().Be(7);
         command.CommandTimeout.Should().Be(5 + PostgreSqlLayerPublishingService.SnapshotCommandTimeoutGraceSeconds);
+    }
+
+    [Fact]
+    public async Task SnapshotCommand_OverridesServerTimeoutOnlyWithinPublicationTransaction()
+    {
+        await using var connection = await fixture.GetConnectionAsync();
+        await using var configure = new NpgsqlCommand("SET statement_timeout = '100ms'", connection);
+        await configure.ExecuteNonQueryAsync();
+
+        await using (var transaction = await connection.BeginTransactionAsync())
+        {
+            await using var command = new NpgsqlCommand("SELECT 7 FROM pg_sleep(1.2)", connection, transaction);
+            var result = await CreateService(5).ExecuteSnapshotCommandAsync(command, CancellationToken.None);
+            result.Should().Be(7);
+            await transaction.CommitAsync();
+        }
+
+        await using var verify = new NpgsqlCommand("SHOW statement_timeout", connection);
+        (await verify.ExecuteScalarAsync()).Should().Be("100ms",
+            "the publication budget must not change the connection's ordinary server timeout");
     }
 
     [Fact]
@@ -72,7 +93,8 @@ public sealed class LayerPublicationBudgetTests(PostgresFixture fixture)
     public async Task SnapshotCommand_PropagatesCallerCancellation()
     {
         await using var connection = await fixture.GetConnectionAsync();
-        await using var command = new NpgsqlCommand("SELECT 1 FROM pg_sleep(10)", connection);
+        await using var transaction = await connection.BeginTransactionAsync();
+        await using var command = new NpgsqlCommand("SELECT 1 FROM pg_sleep(10)", connection, transaction);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100));
 
         var execute = () => CreateService(5).ExecuteSnapshotCommandAsync(command, cancellation.Token);

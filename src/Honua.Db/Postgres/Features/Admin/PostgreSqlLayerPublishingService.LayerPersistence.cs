@@ -242,6 +242,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
     /// </summary>
     internal async Task<object?> ExecuteSnapshotCommandAsync(NpgsqlCommand command, CancellationToken cancellationToken)
     {
+        if (command.Transaction is null)
+        {
+            throw new InvalidOperationException("Snapshot commands require a publication transaction.");
+        }
+
         // The wall-clock budget below is the bound. The driver's read timeout is only a backstop,
         // set past the budget so expiry surfaces as a cooperative cancellation (connection stays
         // usable for the rollback) rather than a driver timeout that may break the connection.
@@ -251,6 +256,16 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         try
         {
+            // Startup options may impose a shorter server timeout even when the driver's
+            // timeout is extended. Keep the override local to the publication transaction.
+            await using var serverTimeout = new NpgsqlCommand(
+                "SELECT set_config('statement_timeout', @timeout, true)", command.Connection, command.Transaction)
+            {
+                CommandTimeout = command.CommandTimeout
+            };
+            serverTimeout.Parameters.AddWithValue("timeout",
+                FormattableString.Invariant($"{command.CommandTimeout}s"));
+            await serverTimeout.ExecuteScalarAsync(budget.Token).ConfigureAwait(false);
             return await command.ExecuteScalarAsync(budget.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested && budget.IsCancellationRequested)
