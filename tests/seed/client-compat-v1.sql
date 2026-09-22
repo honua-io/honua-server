@@ -137,6 +137,9 @@ CREATE TABLE IF NOT EXISTS honua.raster_data (
     pixel_type VARCHAR(10) GENERATED ALWAYS AS (ST_BandPixelType(raster, 1)) STORED,
     srid INTEGER GENERATED ALWAYS AS (ST_SRID(raster)) STORED
 );
+-- Migration-owned storage policy (055_SetRasterDataExternalStorage.sql); the core schema
+-- guard rejects a raster table without it on the next server boot (#4889).
+ALTER TABLE honua.raster_data ALTER COLUMN raster SET STORAGE EXTERNAL;
 
 CREATE TABLE IF NOT EXISTS honua.raster_statistics (
     id BIGSERIAL PRIMARY KEY,
@@ -163,6 +166,7 @@ CREATE TABLE IF NOT EXISTS honua.raster_tiles (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT raster_tiles_unique_tile UNIQUE (raster_data_id, zoom_level, tile_x, tile_y)
 );
+ALTER TABLE honua.raster_tiles ALTER COLUMN tile_data SET STORAGE EXTERNAL;
 
 CREATE TABLE IF NOT EXISTS honua.attachments (
     id BIGSERIAL PRIMARY KEY,
