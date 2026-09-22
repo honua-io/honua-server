@@ -29,8 +29,9 @@ printf '%s' "$HONUA_SCRAPE_KEY" > ./honua-scrape-key
 
 Do not reuse `HONUA_ADMIN_PASSWORD` as the scrape credential: it carries full admin
 write authority and a scrape only needs to read. Create the file before starting the
-stack — Docker creates a *directory* at a bind-mount source that does not exist yet, and
-Prometheus then fails to read the header.
+stack — Docker creates a *directory* at a bind-mount source that does not exist yet.
+The compose bundle copies the file into a named volume with Prometheus' UID and
+read-only `0440` mode, so the host copy can remain `0600`.
 
 **2. Start the stack.** Both variables are required — the bundle refuses to start
 without them, rather than falling back to a shipped default:
@@ -47,9 +48,9 @@ Then open:
   Prometheus datasource and three curated dashboards are provisioned automatically.
 - **Prometheus** — http://127.0.0.1:9090.
 
-Prometheus reads the key from the mounted file at scrape time and sends it in the
-`X-API-Key` header; nothing in `prometheus/prometheus.yml` holds a credential. Edit
-that file to change the scrape target (the default is `host.docker.internal:8080`).
+Prometheus reads the key from the private named-volume file at scrape time and sends it
+in the `X-API-Key` header; nothing in `prometheus/prometheus.yml` holds a credential.
+Edit that file to change the scrape target (the default is `host.docker.internal:8080`).
 
 **Reaching the server.** `host.docker.internal` resolves to the Docker host's bridge
 gateway, so the default target only works when the server publishes on an interface that

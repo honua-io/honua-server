@@ -252,7 +252,20 @@ services:
     ports:
       - "${HONUA_BIND_ADDRESS:-127.0.0.1}:3000:3000"
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: "${HONUA_SCALE_TEST_GRAFANA_PASSWORD:?Set HONUA_SCALE_TEST_GRAFANA_PASSWORD to the Grafana administrator password}"
+      # Keep the base model loadable without the monitoring-only credential. The
+      # container refuses to start if the monitoring profile is actually enabled
+      # without it.
+      GF_SECURITY_ADMIN_PASSWORD: "${HONUA_SCALE_TEST_GRAFANA_PASSWORD:-}"
+    entrypoint:
+      - /bin/sh
+      - -ec
+    command:
+      - >-
+        test -n "$${GF_SECURITY_ADMIN_PASSWORD}" || {
+        echo 'Set HONUA_SCALE_TEST_GRAFANA_PASSWORD for the monitoring profile' >&2;
+        exit 1;
+        };
+        exec /run.sh
     volumes:
       - grafana_data:/var/lib/grafana
       - ../monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro

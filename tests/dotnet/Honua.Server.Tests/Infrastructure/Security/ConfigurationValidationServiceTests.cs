@@ -159,6 +159,10 @@ public sealed class ConfigurationValidationServiceTests
     [InlineData("Security:ConnectionEncryption:MasterKey", "honua-compose-dev-master-key-0123456789")]
     [InlineData("Security:ConnectionEncryption:MasterKey", "test-master-key-that-is-at-least-32-characters-long-for-security")]
     [InlineData("Security:ConnectionEncryption:Salt", "aG9udWEtY29tcG9zZS1kZXYtc2FsdC0yMDI2")]
+    [InlineData("ConnectionStrings:DefaultConnection", "Host=postgres;Database=honua;Username=honua;Password=studio_receipt_password")]
+    [InlineData("ConnectionStrings:honua", "Host=postgres;Database=honua;Username=honua;Password=studio_receipt_password")]
+    [InlineData("Operations:SecretChannel:KeyRingCertificatePassword", "StudioReceiptKeyRing")]
+    [InlineData("Oidc:TokenValidation:SymmetricSigningKey", "studio-dashboard-receipt-signing-key-2026-1")]
     public void ValidateConfiguration_NonDevelopment_WithShippedSecretLiteral_ReturnsError(string path, string literal)
     {
         var configuration = BuildConfiguration(new Dictionary<string, string?>

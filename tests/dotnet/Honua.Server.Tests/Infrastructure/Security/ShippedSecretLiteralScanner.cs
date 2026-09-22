@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Text.RegularExpressions;
+using System.Data.Common;
 
 namespace Honua.Server.Tests.Infrastructure.Security;
 
@@ -76,16 +77,57 @@ internal static partial class ShippedSecretLiteralScanner
                     continue;
                 }
 
-                if (!IsCredentialKey(key) || !TryReadLiteral(value, out var literal))
+                if (IsCredentialKey(key) && TryReadLiteral(value, out var literal))
                 {
-                    continue;
+                    findings.Add(new Finding(literal, key, $"{relative}:{index + 1}"));
                 }
 
-                findings.Add(new Finding(literal, key, $"{relative}:{index + 1}"));
+                foreach (var (compoundKey, compoundLiteral) in ReadCompoundCredentialLiterals(key, value))
+                {
+                    findings.Add(new Finding(compoundLiteral, $"{key}:{compoundKey}", $"{relative}:{index + 1}"));
+                }
             }
         }
 
         return findings;
+    }
+
+    private static IEnumerable<(string Key, string Value)> ReadCompoundCredentialLiterals(string key, string raw)
+    {
+        if (!key.Contains("connectionstring", StringComparison.OrdinalIgnoreCase))
+        {
+            yield break;
+        }
+
+        var value = raw.Trim();
+        if (value.Length >= 2 && value[0] == '"' && value[^1] == '"')
+        {
+            value = value[1..^1];
+        }
+
+        DbConnectionStringBuilder builder = new();
+        try
+        {
+            builder.ConnectionString = value;
+        }
+        catch (ArgumentException)
+        {
+            yield break;
+        }
+
+        foreach (string compoundKey in builder.Keys)
+        {
+            if (!IsCredentialKey(compoundKey))
+            {
+                continue;
+            }
+
+            var compoundValue = builder[compoundKey]?.ToString();
+            if (!string.IsNullOrWhiteSpace(compoundValue) && TryReadLiteral(compoundValue, out var literal))
+            {
+                yield return (compoundKey, literal);
+            }
+        }
     }
 
     private static IEnumerable<string> EnumerateShippedFiles(string repositoryRoot)

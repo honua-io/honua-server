@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Frozen;
+using System.Data.Common;
 using Honua.Core.Configuration;
 using Honua.Core.Features.Capabilities;
 using Honua.Infrastructure.Helpers;
@@ -397,7 +398,8 @@ internal static class ConfigurationValidationService
             }
 
             var value = configuration[path];
-            if (string.IsNullOrWhiteSpace(value) || !KnownPlaceholderSecrets.Contains(value.Trim()))
+            if (string.IsNullOrWhiteSpace(value) ||
+                !GetSecretCandidates(path, value).Any(candidate => KnownPlaceholderSecrets.Contains(candidate)))
             {
                 continue;
             }
@@ -406,6 +408,54 @@ internal static class ConfigurationValidationService
                 $"'{path.Replace(":", "__", StringComparison.Ordinal)}' is set to a placeholder value that ships in this " +
                 "repository's example and harness files. Set a unique secret before deploying to production.");
         }
+    }
+
+    private static IEnumerable<string> GetSecretCandidates(string path, string value)
+    {
+        yield return value.Trim();
+
+        if (!path.Contains("ConnectionString", StringComparison.OrdinalIgnoreCase))
+        {
+            yield break;
+        }
+
+        DbConnectionStringBuilder builder = new();
+        try
+        {
+            builder.ConnectionString = value;
+        }
+        catch (ArgumentException)
+        {
+            yield break;
+        }
+
+        foreach (string key in builder.Keys)
+        {
+            if (!IsCompoundSecretKey(key))
+            {
+                continue;
+            }
+
+            var candidate = builder[key]?.ToString();
+            if (!string.IsNullOrWhiteSpace(candidate))
+            {
+                yield return candidate.Trim();
+            }
+        }
+    }
+
+    private static bool IsCompoundSecretKey(string key)
+    {
+        return key.Contains("password", StringComparison.OrdinalIgnoreCase) ||
+            key.Equals("pwd", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("secret", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("apikey", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("api_key", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("accesskey", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("access_key", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("signingkey", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("signing_key", StringComparison.OrdinalIgnoreCase) ||
+            key.Contains("salt", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void ValidateConnectionEncryptionConfiguration(
@@ -652,13 +702,18 @@ internal static class ConfigurationValidationService
             ["HONUA_ADMIN_PASSWORD"] = _connectionSecretPrefixes,
             ["Security:ConnectionEncryption:MasterKey"] = _connectionSecretPrefixes,
             ["ConnectionStrings:DefaultConnection"] = _connectionSecretPrefixes,
+            ["ConnectionStrings:honua"] = _connectionSecretPrefixes,
             ["ConnectionStrings:redis"] = _envOnlyPrefixes,
             ["Oidc:AzureAd:ClientSecret"] = _envOnlyPrefixes,
             ["Oidc:Google:ClientSecret"] = _envOnlyPrefixes,
             ["Oidc:Generic:ClientSecret"] = _envOnlyPrefixes,
+            ["Oidc:Okta:ClientSecret"] = _envOnlyPrefixes,
+            ["Oidc:Auth0:ClientSecret"] = _envOnlyPrefixes,
+            ["Oidc:TokenValidation:SymmetricSigningKey"] = _envOnlyPrefixes,
             ["FileStorage:AwsS3:AccessKeyId"] = _envOnlyPrefixes,
             ["FileStorage:AwsS3:SecretAccessKey"] = _envOnlyPrefixes,
             ["FileStorage:AzureBlob:ConnectionString"] = _envOnlyPrefixes,
+            ["Operations:SecretChannel:KeyRingCertificatePassword"] = _envOnlyPrefixes,
             ["Monitoring:IntelligentAlerting:NotificationChannels:Email:Password"] = _envOnlyPrefixes,
             ["Monitoring:IntelligentAlerting:NotificationChannels:Slack:WebhookUrl"] = _envOnlyPrefixes,
             ["Monitoring:IntelligentAlerting:NotificationChannels:Webhook:Url"] = _envOnlyPrefixes,

@@ -21,6 +21,21 @@
 name: honua-monitoring
 
 services:
+  prometheus-secret-init:
+    image: alpine:3.20
+    user: "0:0"
+    entrypoint:
+      - /bin/sh
+      - -ec
+    command: >-
+      test -s /run/source/honua-scrape-key;
+      cp /run/source/honua-scrape-key /run/destination/honua-scrape-key;
+      chown 65534:65534 /run/destination/honua-scrape-key;
+      chmod 0440 /run/destination/honua-scrape-key
+    volumes:
+      - "${HONUA_METRICS_SCRAPE_KEY_FILE:?Set HONUA_METRICS_SCRAPE_KEY_FILE to a file holding a read-only (admin:read) Honua API key for the /metrics scrape}:/run/source/honua-scrape-key:ro"
+      - prometheus_secrets:/run/destination
+
   prometheus:
     image: prom/prometheus:v3.1.0
     ports:
@@ -28,8 +43,9 @@ services:
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./prometheus/alerts.yml:/etc/prometheus/alerts/alerts.yml:ro
-      # The scrape credential is mounted, never baked into the scrape config.
-      - "${HONUA_METRICS_SCRAPE_KEY_FILE:?Set HONUA_METRICS_SCRAPE_KEY_FILE to a file holding a read-only (admin:read) Honua API key for the /metrics scrape}:/etc/prometheus/secrets/honua-scrape-key:ro"
+      # The scrape credential is copied into a named volume with Prometheus' UID and
+      # read-only group mode, never baked into the scrape config.
+      - prometheus_secrets:/etc/prometheus/secrets:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -38,6 +54,9 @@ services:
     extra_hosts:
       # Lets the honua scrape target reach the Docker host on Linux engines too.
       - "host.docker.internal:host-gateway"
+    depends_on:
+      prometheus-secret-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   grafana:
@@ -59,4 +78,5 @@ services:
 
 volumes:
   prometheus_data:
+  prometheus_secrets:
   grafana_data:
