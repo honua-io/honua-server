@@ -227,8 +227,9 @@ internal static class LayerPublishingEndpoints
                 GlobalIdField = request.GlobalIdField,
                 SupportsAttachments = request.SupportsAttachments,
                 Fields = request.Fields ?? Array.Empty<string>(),
-                FieldDomains = request.FieldDomains
-                    ?? new Dictionary<string, MetadataV2FieldDomain>(StringComparer.OrdinalIgnoreCase),
+                FieldDomains = request.FieldDomains is { } fieldDomains
+                    ? new Dictionary<string, MetadataV2FieldDomain>(fieldDomains, StringComparer.OrdinalIgnoreCase)
+                    : new Dictionary<string, MetadataV2FieldDomain>(StringComparer.OrdinalIgnoreCase),
                 Subtypes = request.Subtypes,
                 AttributeRules = request.AttributeRules,
                 ServiceName = request.ServiceName,

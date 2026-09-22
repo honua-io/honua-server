@@ -71,11 +71,17 @@ public static class LayerPublishSourceMetadataBounds
             return null;
         }
 
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (fieldName, domain) in fieldDomains)
         {
             if (string.IsNullOrWhiteSpace(fieldName))
             {
                 return "fieldDomains keys must be field names.";
+            }
+
+            if (!names.Add(fieldName))
+            {
+                return "fieldDomains keys must be unique ignoring case.";
             }
 
             if (ValidateDomain(domain, "fieldDomains") is { } domainError)
@@ -164,7 +170,7 @@ public static class LayerPublishSourceMetadataBounds
 
             if (subtype.FieldOverrides is null)
             {
-                continue;
+                return "subtypes fieldOverrides must not be null.";
             }
 
             foreach (var (fieldName, fieldOverride) in subtype.FieldOverrides)
@@ -225,7 +231,12 @@ public static class LayerPublishSourceMetadataBounds
                 return "attributeRules calculation rules need a fieldName.";
             }
 
-            if (rule.TriggeringEvents is { } events && events.Any(string.IsNullOrWhiteSpace))
+            if (rule.TriggeringEvents is null)
+            {
+                return "attributeRules triggeringEvents must not be null.";
+            }
+
+            if (rule.TriggeringEvents.Any(string.IsNullOrWhiteSpace))
             {
                 return "attributeRules triggeringEvents must not be blank.";
             }

@@ -94,6 +94,9 @@ public sealed partial class LayerPublishingIntegrationTests
     [InlineData("codedValues", "fieldDomains coded-value domains are limited to 100 coded values.")]
     [InlineData("subtypes", "subtypes are limited to 100 per layer.")]
     [InlineData("attributeRules", "attributeRules are limited to 200 per layer.")]
+    [InlineData("nullFieldOverrides", "subtypes fieldOverrides must not be null.")]
+    [InlineData("nullTriggeringEvents", "attributeRules triggeringEvents must not be null.")]
+    [InlineData("duplicateDomainKeys", "fieldDomains keys must be unique ignoring case.")]
     [Operation(Operations.Create)]
     [Operation(Operations.Query)]
     [Endpoint("POST /api/v1/admin/connections/{id}/layers")]
@@ -124,6 +127,17 @@ public sealed partial class LayerPublishingIntegrationTests
             "attributeRules" => CopyWith(baseline, attributeRules: Enumerable.Range(1, LayerPublishSourceMetadataBounds.MaxAttributeRules + 1)
                 .Select(index => baseline.AttributeRules![0] with { Name = $"rule-{index}" })
                 .ToArray()),
+            "nullFieldOverrides" => CopyWith(baseline, subtypes: baseline.Subtypes! with
+            {
+                Subtypes = [baseline.Subtypes.Subtypes[0] with { FieldOverrides = null! }]
+            }),
+            "nullTriggeringEvents" => CopyWith(baseline, attributeRules:
+                [baseline.AttributeRules![0] with { TriggeringEvents = null! }]),
+            "duplicateDomainKeys" => CopyWith(baseline, fieldDomains: new Dictionary<string, MetadataV2FieldDomain>
+            {
+                ["population"] = baseline.FieldDomains!["Population"],
+                ["Population"] = baseline.FieldDomains["Population"]
+            }),
             _ => throw new ArgumentOutOfRangeException(nameof(oversized), oversized, null)
         };
 
@@ -175,7 +189,7 @@ public sealed partial class LayerPublishingIntegrationTests
             ServiceName = _serviceName,
             FieldDomains = new Dictionary<string, MetadataV2FieldDomain>
             {
-                ["population"] = new()
+                ["Population"] = new()
                 {
                     Name = domainName,
                     Type = "codedValue",
