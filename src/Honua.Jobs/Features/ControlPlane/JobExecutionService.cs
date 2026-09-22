@@ -27,6 +27,8 @@ internal sealed partial class JobExecutionService(
     ILicenseOperationPolicy? licensePolicy = null) : BackgroundService
 {
     private const string SafeExecutionFailureMessage = "Job execution failed.";
+    private const int PreDispatchRecoveryAttempts = 2;
+
     /// <summary>
     /// Delay before the claim loop polls the queue again after finding it empty. A submitted job
     /// can wait up to one interval before a worker claims it; there is no wake-up signal.
@@ -217,6 +219,75 @@ internal sealed partial class JobExecutionService(
 
     private async Task ProcessJobAsync(string operationId, string workerId, CancellationToken stoppingToken)
     {
+        var dispatch = new DispatchProgress();
+        try
+        {
+            await ProcessClaimedJobAsync(operationId, workerId, dispatch, stoppingToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (!dispatch.ExecutorStarted
+            && ex is not OutOfMemoryException
+            && !(ex is OperationCanceledException && stoppingToken.IsCancellationRequested))
+        {
+            // Deliberately broad: any fault between the claim and executor dispatch (the re-read,
+            // the Running transition, the partition-lease acquire, or a cleanup write on an early
+            // exit) would otherwise leave the claim with no executor and no heartbeat until
+            // heartbeat-expiry reconciliation. Shutdown keeps its own force-requeue in ExecuteAsync.
+            Log.PreDispatchFault(logger, operationId, ex);
+            await ReleaseFaultedClaimAsync(operationId, workerId).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Hands a claim whose pre-dispatch sequence faulted back to the queue: re-reads the record and,
+    /// while this worker still owns it, abandons the attempt through the retry policy with no backoff
+    /// (the attempt counts, as a heartbeat-expiry requeue would count it, so a persistent fault ends
+    /// in a terminal failure rather than an endless requeue). Safe to repeat: a record that is
+    /// already terminal, requeued or reclaimed is left alone. If the store is still failing, the
+    /// fault is logged and reconciliation recovers the job. The per-job token registration is
+    /// always dropped.
+    /// </summary>
+    private async Task ReleaseFaultedClaimAsync(string operationId, string workerId)
+    {
+        try
+        {
+            // A concurrent write (an operator cancellation, say) can make the abandon's own CAS lose,
+            // which leaves the record claimed. Re-read and resolve the new state once before giving
+            // the job to reconciliation; the second pass honours a durable cancellation signal.
+            for (var attempt = 0; attempt < PreDispatchRecoveryAttempts; attempt++)
+            {
+                var job = await jobStore.GetAsync(operationId, CancellationToken.None).ConfigureAwait(false);
+                if (job == null || IsTerminalOrNotOwnedBy(job, workerId))
+                {
+                    break;
+                }
+
+                await AbandonJobAsync(
+                        job,
+                        workerId,
+                        "Job store fault before execution started.",
+                        CancellationToken.None,
+                        requeueDelayOverride: TimeSpan.Zero)
+                    .ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // Deliberately broad: best-effort recovery for one claimed job must not escape into the
+            // claim loop; the stale-claim reconciler recovers the job if this cleanup fails.
+            Log.PreDispatchRequeueFailed(logger, operationId, ex);
+        }
+        finally
+        {
+            cancellationTokens.Remove(operationId, workerId);
+        }
+    }
+
+    private async Task ProcessClaimedJobAsync(
+        string operationId,
+        string workerId,
+        DispatchProgress dispatch,
+        CancellationToken stoppingToken)
+    {
         var job = await jobStore.GetAsync(operationId, stoppingToken).ConfigureAwait(false);
         if (job == null)
         {
@@ -325,8 +396,13 @@ internal sealed partial class JobExecutionService(
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
+                // A faulted acquire is a store fault, not contention: it takes the same pre-dispatch
+                // recovery as the re-read and the Running transition. The acquire may have landed
+                // before the reply was lost, so release it (owner-fenced) first.
                 Log.PartitionLeaseAcquisitionFailed(logger, operationId, partitionKey!, ex);
-                partitionLeaseAcquired = false;
+                await ReleasePartitionLeaseAsync(operationId, partitionKey!, partitionLeaseId, partitionLeaseOwner!)
+                    .ConfigureAwait(false);
+                throw;
             }
         }
 
@@ -345,6 +421,9 @@ internal sealed partial class JobExecutionService(
             cancellationTokens.Remove(operationId, workerId);
             return;
         }
+
+        // From here on the execution phase owns cleanup (its try/finally below).
+        dispatch.ExecutorStarted = true;
 
         using var partitionLeaseLostCts = new CancellationTokenSource();
         using var partitionLeaseRenewalCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
@@ -612,23 +691,33 @@ internal sealed partial class JobExecutionService(
 
             if (partitionLeaseId is not null)
             {
-                try
-                {
-                    await jobStore.ReleaseLeaseAsync(
-                            partitionLeaseId,
-                            partitionLeaseOwner!,
-                            CancellationToken.None)
-                        .ConfigureAwait(false);
-                }
-                catch (Exception ex) when (ex is not OutOfMemoryException)
-                {
-                    // The lease is bounded by _partitionLeaseDuration, so a failed best-effort
-                    // release cannot strand the partition indefinitely.
-                    Log.PartitionLeaseReleaseFailed(logger, operationId, partitionKey!, ex);
-                }
+                await ReleasePartitionLeaseAsync(operationId, partitionKey!, partitionLeaseId, partitionLeaseOwner!)
+                    .ConfigureAwait(false);
             }
 
             cancellationTokens.Remove(operationId, workerId);
+        }
+    }
+
+    private async Task ReleasePartitionLeaseAsync(
+        string operationId,
+        string partitionKey,
+        string partitionLeaseId,
+        string partitionLeaseOwner)
+    {
+        try
+        {
+            await jobStore.ReleaseLeaseAsync(
+                    partitionLeaseId,
+                    partitionLeaseOwner,
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            // The lease is bounded by _partitionLeaseDuration, so a failed best-effort
+            // release cannot strand the partition indefinitely.
+            Log.PartitionLeaseReleaseFailed(logger, operationId, partitionKey, ex);
         }
     }
 
@@ -1185,6 +1274,12 @@ internal sealed partial class JobExecutionService(
         return $"{prefix}-{guid}";
     }
 
+    /// <summary>Marks the point after which the execution phase owns cleanup for a claimed job.</summary>
+    private sealed class DispatchProgress
+    {
+        public bool ExecutorStarted { get; set; }
+    }
+
     private static partial class Log
     {
         [LoggerMessage(9050, LogLevel.Information, "Job execution worker started: {WorkerId}")]
@@ -1234,6 +1329,12 @@ internal sealed partial class JobExecutionService(
 
         [LoggerMessage(9066, LogLevel.Error, "Failed to requeue job {OperationId} during pre-execution shutdown; stale-claim reconciliation will recover")]
         public static partial void PreExecShutdownCleanupFailed(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(9097, LogLevel.Warning, "Job store fault before executor dispatch for job {OperationId}; returning the claim to the queue")]
+        public static partial void PreDispatchFault(ILogger logger, string operationId, Exception exception);
+
+        [LoggerMessage(9098, LogLevel.Error, "Failed to return job {OperationId} to the queue after a pre-dispatch store fault; stale-claim reconciliation will recover")]
+        public static partial void PreDispatchRequeueFailed(ILogger logger, string operationId, Exception exception);
 
         [LoggerMessage(9068, LogLevel.Information, "Abandon honoured durable cancellation signal for job {OperationId}")]
         public static partial void AbandonHonouredDurableCancellation(ILogger logger, string operationId);

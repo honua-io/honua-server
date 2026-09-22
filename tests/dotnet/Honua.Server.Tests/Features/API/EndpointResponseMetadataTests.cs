@@ -9,6 +9,7 @@ using Honua.Protocols.Ogc.Api.Processes;
 using Honua.TestKit;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Metadata;
+using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -104,6 +105,33 @@ public sealed class EndpointResponseMetadataTests : IDisposable
 
         GetResponseMetadata("POST", "/rest/services/{serviceId}/FeatureServer/createReplica", StatusCodes.Status503ServiceUnavailable)
             .Should().NotBeEmpty();
+    }
+
+    [Fact]
+    [Trait("Category", "Architecture")]
+    public void ImageServerExportImageEndpoints_DeclareNoOutputCachePolicy()
+    {
+        using var _ = _factory.CreateClient();
+
+        // honua-server#4980: exportImage answers provider faults with an HTTP 200 error
+        // envelope and is keyed by an ad hoc bbox, so it must stay outside the output cache;
+        // with no named policy only the base policy applies, and that never stores a route.
+        var exportImageEndpoints = _factory.Services
+            .GetServices<EndpointDataSource>()
+            .SelectMany(source => source.Endpoints)
+            .OfType<RouteEndpoint>()
+            .Where(endpoint => (endpoint.RoutePattern.RawText ?? string.Empty)
+                .EndsWith("/ImageServer/exportImage", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        exportImageEndpoints.Should().NotBeEmpty();
+        foreach (var endpoint in exportImageEndpoints)
+        {
+            endpoint.Metadata.GetMetadata<OutputCacheAttribute>().Should().BeNull(
+                $"{endpoint.RoutePattern.RawText} must not opt into a named output-cache policy");
+            endpoint.Metadata.GetMetadata<IOutputCachePolicy>().Should().BeNull(
+                $"{endpoint.RoutePattern.RawText} must not declare an inline output-cache policy");
+        }
     }
 
     [Fact]

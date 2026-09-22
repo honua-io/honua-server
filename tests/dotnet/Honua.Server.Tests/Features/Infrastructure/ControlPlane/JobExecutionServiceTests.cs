@@ -2556,6 +2556,479 @@ public sealed class JobExecutionServiceTests
     }
 
     /// <summary>
+    /// A store fault at any step between the claim and executor dispatch must hand the
+    /// claimed attempt back to the queue at once (no heartbeat-expiry wait), release the
+    /// per-job cancellation registration, and let the next claim run the job to success.
+    /// </summary>
+    [Theory]
+    [InlineData(PreDispatchFaultStore.InitialRead)]
+    [InlineData(PreDispatchFaultStore.ReRead)]
+    [InlineData(PreDispatchFaultStore.RunningTransitionLost)]
+    [InlineData(PreDispatchFaultStore.RunningTransitionLanded)]
+    [InlineData(PreDispatchFaultStore.PartitionLeaseAcquire)]
+    [Trait("Tier", "Fast")]
+    public async Task ExecuteAsync_RequeuesAndRunsClaimedJob_WhenStoreFaultsBeforeDispatch(string faultPoint)
+    {
+        var queued = CreateQueuedJob(withPartitionLease: faultPoint == PreDispatchFaultStore.PartitionLeaseAcquire);
+        var store = new PreDispatchFaultStore(queued, faultPoint);
+        var queue = new SingleJobQueue(store, queued.OperationId);
+        var executor = new CountingSuccessExecutor();
+        var callback = new CompletionTerminalCallback();
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+        using var stoppingCts = new CancellationTokenSource();
+
+        using var service = new JobExecutionService(
+            queue, store, [executor], cancellationTokens, [callback], null,
+            NullLogger<JobExecutionService>.Instance,
+            partitionLeaseDuration: TimeSpan.FromMinutes(1),
+            partitionLeaseRenewInterval: TimeSpan.FromSeconds(20),
+            partitionLeaseContentionDelay: TimeSpan.FromMinutes(5));
+
+        await service.StartAsync(stoppingCts.Token);
+        ExecutionJobRecord terminal;
+        try
+        {
+            terminal = await callback.Completed.Task.WaitAsync(TimeSpan.FromSeconds(15));
+        }
+        finally
+        {
+            await stoppingCts.CancelAsync();
+            await service.StopAsync(CancellationToken.None);
+        }
+
+        Assert.True(store.FaultInjected);
+        Assert.Equal(ExecutionJobStatus.Succeeded, terminal.Status);
+        Assert.Equal(1, executor.Calls);
+        Assert.Equal(2, queue.Claims);
+        Assert.Equal(1, queue.Requeues);
+        Assert.Null(queue.FirstRequeueDelay);
+        // The faulted attempt counts against the retry budget, like a heartbeat-expiry requeue.
+        Assert.Equal(2, terminal.AttemptCount);
+        Assert.False(cancellationTokens.Cancel(queued.OperationId));
+        if (faultPoint == PreDispatchFaultStore.PartitionLeaseAcquire)
+        {
+            // The acquire may have landed before the fault surfaced; it is released before requeue.
+            Assert.True(store.ReleasesBeforeSecondClaim >= 1);
+        }
+    }
+
+    /// <summary>
+    /// When the store stays unavailable, the best-effort requeue after a pre-dispatch fault
+    /// also fails. That must be absorbed (reconciliation recovers the job), must not
+    /// escape into the claim loop, and must still drop the per-job cancellation entry.
+    /// </summary>
+    [Theory]
+    [InlineData(PreDispatchFaultStore.InitialRead)]
+    [InlineData(PreDispatchFaultStore.ReRead)]
+    [InlineData(PreDispatchFaultStore.RunningTransitionLost)]
+    [InlineData(PreDispatchFaultStore.RunningTransitionLanded)]
+    [InlineData(PreDispatchFaultStore.PartitionLeaseAcquire)]
+    [Trait("Tier", "Fast")]
+    public async Task ProcessJob_LeavesJobToReconciliation_WhenRequeueAfterPreDispatchFaultAlsoFails(string faultPoint)
+    {
+        var provisioning = CreateProvisioningJob() with
+        {
+            Concurrency = faultPoint == PreDispatchFaultStore.PartitionLeaseAcquire
+                ? new OperationConcurrencyPolicy { PartitionKey = "tilecache:svc:default", RequiresExclusiveLease = true }
+                : new OperationConcurrencyPolicy()
+        };
+        var store = new PreDispatchFaultStore(provisioning, faultPoint) { FailAfterFirstFault = true };
+        var queue = Substitute.For<IJobQueue>();
+        var executor = new CountingSuccessExecutor();
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+        using var service = new JobExecutionService(
+            queue, store, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        Assert.True(store.FaultInjected);
+        Assert.Equal(0, executor.Calls);
+        Assert.False(cancellationTokens.Cancel(provisioning.OperationId));
+        await queue.DidNotReceive().RequeueAsync(
+            Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// A pre-dispatch store fault consumes the claimed attempt, so a job whose retry budget
+    /// is spent fails terminally instead of cycling through requeues.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_FailsJob_WhenStoreFaultsBeforeDispatchWithRetryBudgetSpent()
+    {
+        var provisioning = CreateProvisioningJob() with { RetryPolicy = JobRetryPolicy.None };
+        var store = new PreDispatchFaultStore(provisioning, PreDispatchFaultStore.RunningTransitionLost);
+        var queue = Substitute.For<IJobQueue>();
+        var executor = new CountingSuccessExecutor();
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+        using var service = new JobExecutionService(
+            queue, store, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        Assert.True(store.FaultInjected);
+        Assert.Equal(0, executor.Calls);
+        Assert.Equal(ExecutionJobStatus.Failed, store.Current.Status);
+        Assert.False(cancellationTokens.Cancel(provisioning.OperationId));
+        await queue.Received(1).RemoveAsync(provisioning.OperationId, Arg.Any<CancellationToken>());
+        await queue.DidNotReceive().RequeueAsync(
+            Arg.Any<string>(), Arg.Any<OperationPriority>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+    }
+
+    /// <summary>
+    /// A write that lands between the recovery's re-read and its requeue makes that requeue's CAS
+    /// lose. The claim must still be resolved on the spot — here the durable cancellation signal that
+    /// caused the conflict is honoured — rather than left for heartbeat-expiry reconciliation.
+    /// </summary>
+    [UnitTest]
+    public async Task ProcessJob_ResolvesClaim_WhenRequeueAfterPreDispatchFaultLosesTheCas()
+    {
+        var provisioning = CreateProvisioningJob();
+        var store = new PreDispatchFaultStore(provisioning, PreDispatchFaultStore.RunningTransitionLost)
+        {
+            CancelOnFirstRequeue = true,
+        };
+        var queue = Substitute.For<IJobQueue>();
+        var executor = new CountingSuccessExecutor();
+        var cancellationTokens = new ExecutionJobCancellationTokens();
+        using var service = new JobExecutionService(
+            queue, store, [executor], cancellationTokens, Array.Empty<IJobTerminalCallback>(), null,
+            NullLogger<JobExecutionService>.Instance);
+
+        await InvokeProcessJobAsync(service, provisioning.OperationId, provisioning.ClaimedBy!);
+
+        Assert.True(store.FaultInjected);
+        Assert.Equal(0, executor.Calls);
+        Assert.Equal(ExecutionJobStatus.Cancelled, store.Current.Status);
+        Assert.False(cancellationTokens.Cancel(provisioning.OperationId));
+    }
+
+    private static ExecutionJobRecord CreateQueuedJob(bool withPartitionLease)
+        => CreateProvisioningJob(operationId: $"job-{Guid.NewGuid():N}") with
+        {
+            Status = ExecutionJobStatus.Queued,
+            ClaimedBy = null,
+            ClaimedAt = null,
+            LastHeartbeatAt = null,
+            AttemptCount = 0,
+            Concurrency = withPartitionLease
+                ? new OperationConcurrencyPolicy { PartitionKey = "tilecache:svc:default", RequiresExclusiveLease = true }
+                : new OperationConcurrencyPolicy()
+        };
+
+    /// <summary>
+    /// Single-record job store that throws once at a chosen step of the worker's
+    /// pre-dispatch sequence, optionally failing every later call too.
+    /// </summary>
+    private sealed class PreDispatchFaultStore(ExecutionJobRecord initial, string faultPoint) : IExecutionJobStore
+    {
+        public const string InitialRead = "initial-read";
+        public const string ReRead = "re-read";
+        public const string RunningTransitionLost = "running-transition-lost";
+        public const string RunningTransitionLanded = "running-transition-landed";
+        public const string PartitionLeaseAcquire = "partition-lease-acquire";
+
+        private readonly Lock _gate = new();
+        private readonly Dictionary<string, string> _leases = new(StringComparer.Ordinal);
+        private ExecutionJobRecord _job = initial;
+        private int _getCalls;
+        private int _releases;
+        private bool _cancelStamped;
+
+        public bool FailAfterFirstFault { get; init; }
+
+        /// <summary>
+        /// Makes the first requeue write lose its CAS the way a concurrent operator cancellation
+        /// would: the durable signal is stamped on the record and the write is rejected.
+        /// </summary>
+        public bool CancelOnFirstRequeue { get; init; }
+
+        public bool FaultInjected { get; private set; }
+
+        public int ReleasesBeforeSecondClaim { get; private set; } = -1;
+
+        public ExecutionJobRecord Current
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _job;
+                }
+            }
+        }
+
+        public void Claim(string workerId, int claimNumber)
+        {
+            lock (_gate)
+            {
+                if (claimNumber == 2)
+                {
+                    ReleasesBeforeSecondClaim = _releases;
+                }
+
+                var now = DateTimeOffset.UtcNow;
+                _job = _job with
+                {
+                    Status = ExecutionJobStatus.Provisioning,
+                    ClaimedBy = workerId,
+                    ClaimedAt = now,
+                    LastHeartbeatAt = now,
+                    AttemptCount = _job.AttemptCount + 1,
+                    UpdatedAt = now,
+                    CurrentPhase = "Claimed",
+                    NextRetryAt = null
+                };
+            }
+        }
+
+        private void ThrowIfFailingAfterFault()
+        {
+            if (FaultInjected && FailAfterFirstFault)
+            {
+                throw new TimeoutException("Store unavailable.");
+            }
+        }
+
+        private void InjectFault()
+        {
+            FaultInjected = true;
+            throw new TimeoutException("Store timeout.");
+        }
+
+        public Task<ExecutionJobRecord?> GetAsync(string operationId, CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                ThrowIfFailingAfterFault();
+                _getCalls++;
+                if (!FaultInjected
+                    && ((faultPoint == InitialRead && _getCalls == 1) || (faultPoint == ReRead && _getCalls == 2)))
+                {
+                    InjectFault();
+                }
+
+                return Task.FromResult<ExecutionJobRecord?>(_job);
+            }
+        }
+
+        public Task<bool> TrySetAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                ThrowIfFailingAfterFault();
+                if (!FaultInjected
+                    && job.Status == ExecutionJobStatus.Running
+                    && faultPoint is RunningTransitionLost or RunningTransitionLanded)
+                {
+                    if (faultPoint == RunningTransitionLanded)
+                    {
+                        _job = job;
+                    }
+
+                    InjectFault();
+                }
+
+                if (CancelOnFirstRequeue && !_cancelStamped && job.Status == ExecutionJobStatus.Queued)
+                {
+                    _cancelStamped = true;
+                    _job = _job with { CancellationRequestedAt = DateTimeOffset.UtcNow };
+                    return Task.FromResult(false);
+                }
+
+                _job = job;
+                return Task.FromResult(true);
+            }
+        }
+
+        public Task<bool> TrySetIfLeaseOwnedAsync(
+            ExecutionJobRecord job,
+            string leaseOperationId,
+            string leaseOwnerId,
+            TimeSpan? ttl = null,
+            CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                ThrowIfFailingAfterFault();
+                if (!_leases.TryGetValue(leaseOperationId, out var owner) || owner != leaseOwnerId)
+                {
+                    return Task.FromResult(false);
+                }
+
+                _job = job;
+                return Task.FromResult(true);
+            }
+        }
+
+        public Task<bool> TryAcquireLeaseAsync(
+            string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                ThrowIfFailingAfterFault();
+                if (_leases.ContainsKey(operationId))
+                {
+                    return Task.FromResult(false);
+                }
+
+                _leases[operationId] = ownerId;
+                if (!FaultInjected && faultPoint == PartitionLeaseAcquire)
+                {
+                    // The acquire lands, but the reply is lost.
+                    InjectFault();
+                }
+
+                return Task.FromResult(true);
+            }
+        }
+
+        public Task<bool> RenewLeaseAsync(
+            string operationId, string ownerId, TimeSpan leaseDuration, CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                ThrowIfFailingAfterFault();
+                return Task.FromResult(_leases.TryGetValue(operationId, out var owner) && owner == ownerId);
+            }
+        }
+
+        public Task ReleaseLeaseAsync(string operationId, string ownerId, CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                ThrowIfFailingAfterFault();
+                if (_leases.TryGetValue(operationId, out var owner) && owner == ownerId)
+                {
+                    _leases.Remove(operationId);
+                    _releases++;
+                }
+
+                return Task.CompletedTask;
+            }
+        }
+
+        public Task SetAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<bool> TryCreateAsync(ExecutionJobRecord job, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<ExecutionJobPage> QueryAsync(ExecutionJobQuery query, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+
+        public Task<IReadOnlyList<ExecutionJobRecord>> ListActiveAsync(
+            ExecutionJobKind? kind = null, int? limit = null, CancellationToken cancellationToken = default)
+            => throw new NotSupportedException();
+    }
+
+    /// <summary>Queue holding one job id; a claim stamps the store record like the real queue does.</summary>
+    private sealed class SingleJobQueue(PreDispatchFaultStore store, string operationId) : IJobQueue
+    {
+        private readonly Lock _gate = new();
+        private bool _pending = true;
+
+        public int Claims { get; private set; }
+
+        public int Requeues { get; private set; }
+
+        public TimeSpan? FirstRequeueDelay { get; private set; }
+
+        public Task<string?> TryClaimAsync(
+            string workerId,
+            IReadOnlySet<ExecutionJobKind>? acceptedKinds = null,
+            IReadOnlySet<string>? acceptedRuntimeProfiles = null,
+            CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                if (!_pending)
+                {
+                    return Task.FromResult<string?>(null);
+                }
+
+                _pending = false;
+                Claims++;
+                store.Claim(workerId, Claims);
+                return Task.FromResult<string?>(operationId);
+            }
+        }
+
+        public Task RequeueAsync(
+            string id, OperationPriority priority = OperationPriority.Normal, TimeSpan? visibleAfter = null,
+            CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                if (Requeues == 0)
+                {
+                    FirstRequeueDelay = visibleAfter;
+                }
+
+                Requeues++;
+                _pending = true;
+                return Task.CompletedTask;
+            }
+        }
+
+        public Task EnqueueAsync(
+            string id, OperationPriority priority = OperationPriority.Normal, CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                _pending = true;
+                return Task.CompletedTask;
+            }
+        }
+
+        public Task RemoveAsync(string id, CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                _pending = false;
+                return Task.CompletedTask;
+            }
+        }
+
+        public Task<long> GetQueueDepthAsync(CancellationToken cancellationToken = default)
+        {
+            lock (_gate)
+            {
+                return Task.FromResult(_pending ? 1L : 0L);
+            }
+        }
+    }
+
+    private sealed class CountingSuccessExecutor : IJobExecutor
+    {
+        private int _calls;
+
+        public int Calls => Volatile.Read(ref _calls);
+
+        public ExecutionJobKind Kind => ExecutionJobKind.Geoprocessing;
+
+        public Task<JobExecutionResult> ExecuteAsync(
+            ExecutionJobRecord job, IJobExecutionContext context, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _calls);
+            return Task.FromResult(JobExecutionResult.Succeeded());
+        }
+    }
+
+    private sealed class CompletionTerminalCallback : IJobTerminalCallback
+    {
+        public TaskCompletionSource<ExecutionJobRecord> Completed { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public ValueTask OnTerminalAsync(ExecutionJobRecord job, CancellationToken cancellationToken)
+        {
+            Completed.TrySetResult(job);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    /// <summary>
     /// Default executor: does not override <see cref="IJobExecutor.AcceptedRuntimeProfiles"/>,
     /// so it inherits the managed/default-only fence.
     /// </summary>

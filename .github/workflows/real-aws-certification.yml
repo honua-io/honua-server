@@ -120,6 +120,7 @@ jobs:
           role-session-name: honua-real-aws-certification
 
       - name: Run real-AWS certification tests
+        id: certify
         if: ${{ vars.REALAWS_CERT_ROLE_ARN != '' }}
         env:
           # Master switch the RealAwsCertificationFixture reads; only set when creds are present.
@@ -154,7 +155,63 @@ jobs:
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
 
+      # honua-server#4414 defect 1. `dotnet test` exits 0 whether every cell ran or every cell
+      # skipped, and EVERY cell here is designed to skip: AwsEcsAlbRealCertificationTests and
+      # AwsEcsAlbRollbackFailureRealCertificationTests both Skip.IfNot(...), and CloudTestAttribute
+      # sets Skip rather than failing. So an all-skipped run and an all-passed run were
+      # indistinguishable from the workflow's exit status, and nothing parsed the TRX this lane has
+      # always produced. Parse it and fail on zero executed, naming the cells that skipped — the
+      # 2026-09-04 test-evidence review, item 7: "skipped required cells are non-passing evidence".
+      # Skips are reported but tolerated above the floor, because the lane is deliberately
+      # cell-by-cell dormant: each cell lights up only when its stack-output variable is set.
+      - name: Prove the certification lane actually executed
+        if: ${{ !cancelled() && steps.certify.conclusion != 'skipped' }}
+        run: |
+          python3 scripts/ci/assert-trx-executed.py \
+            --label "Real-AWS certification" \
+            --trx tests/TestResults/real-aws-certification.trx \
+            --min-passed "${{ vars.REALAWS_CERT_MIN_PASSED || 1 }}"
+
+      # honua-server#4414 defect 3. The ECS service under the certification ALB is
+      # public.ecr.aws/nginx/nginx:stable-alpine (honua-iac examples/aws-cert), so the weighted-cutover
+      # cell has never sent one HTTP request through the data path. Its control-plane assertions are
+      # correct and stay; what was missing is any evidence that HONUA serves behind that ALB. Set
+      # vars.REALAWS_CERT_ALB_BASE_URL once the cert substrate runs a Honua image and this certifies
+      # identity, readiness, a GeoServices response, a row count and an authorization denial through
+      # the real data path — and fails loudly, naming the placeholder, if nginx is still there.
+      - name: Certify Honua serving through the certification ALB
+        id: serving
+        if: ${{ vars.REALAWS_CERT_ROLE_ARN != '' && vars.REALAWS_CERT_ALB_BASE_URL != '' }}
+        env:
+          HONUA_REALAWS_CERT_ALB_BASE_URL: ${{ vars.REALAWS_CERT_ALB_BASE_URL }}
+          HONUA_REALAWS_CERT_ALB_ADMIN_API_KEY: ${{ secrets.REALAWS_CERT_ALB_ADMIN_API_KEY }}
+          HONUA_REALAWS_CERT_ALB_QUERY_PATH: ${{ vars.REALAWS_CERT_ALB_QUERY_PATH }}
+          HONUA_REALAWS_CERT_ALB_EXPECTED_COUNT: ${{ vars.REALAWS_CERT_ALB_EXPECTED_COUNT }}
+        run: scripts/cloud/certify-ecs-alb-serving.sh
+
+      # The other half of defect 3: when no Honua service is reachable, say so in the run's own
+      # evidence instead of letting a green "Real AWS Certification" run be read as satisfying a
+      # cloud-qualification claim (release#129). This never fails the lane — it labels it.
+      - name: Record what this run actually certified
+        if: ${{ always() && vars.REALAWS_CERT_ROLE_ARN != '' && vars.REALAWS_CERT_ALB_BASE_URL == '' }}
+        run: |
+          {
+            echo '### Scope of this certification run'
+            echo
+            echo '> [!IMPORTANT]'
+            echo '> This run certified **weighted-cutover, convergence and rollback mechanics against a'
+            echo '> placeholder service** — NOT Honua serving on ECS. The ECS service behind the'
+            echo '> certification ALB is a third-party placeholder image, so no HTTP request reached'
+            echo '> Honua: there is no row count, no write round-trip and no authorization denial in'
+            echo '> this evidence. Do not record it as an "ECS certification" or as satisfying a cloud'
+            echo '> qualification gate. Set `vars.REALAWS_CERT_ALB_BASE_URL` once the cert substrate'
+            echo '> runs a Honua image to add the serving certification.'
+            echo
+          } >> "${GITHUB_STEP_SUMMARY}"
+          echo "::warning::This run certified control-plane mechanics against a placeholder service, not Honua serving on ECS."
+
       - name: Reap crash-orphaned certification resources
+        id: reap
         # always(): run even if a cell above failed, so a broken run still cleans up. Gated on the
         # same OIDC-role variable and enabled flag so it stays dormant on forks / unconfigured repos.
         if: ${{ always() && vars.REALAWS_CERT_ROLE_ARN != '' }}
@@ -172,6 +229,17 @@ jobs:
             --logger "trx;LogFileName=real-aws-certification-reaper.trx" \
             --logger "console;verbosity=minimal" \
             --results-directory ./tests/TestResults
+
+      # A reaper that silently skipped leaves crash-orphaned job definitions and S3 objects to
+      # accumulate while the run still reports green, so it gets the same counts tripwire.
+      - name: Prove the reaper actually executed
+        if: ${{ !cancelled() && steps.reap.conclusion != 'skipped' }}
+        run: |
+          python3 scripts/ci/assert-trx-executed.py \
+            --label "Real-AWS certification reaper" \
+            --trx tests/TestResults/real-aws-certification-reaper.trx \
+            --min-passed 1 \
+            --max-skipped 0
 
       - name: Lane dormant (no OIDC role configured)
         if: ${{ vars.REALAWS_CERT_ROLE_ARN == '' }}

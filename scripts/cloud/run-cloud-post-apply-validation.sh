@@ -35,6 +35,7 @@ Environment variables:
   HONUA_CLOUD_TEST_PUBLISH_DB_PASSWORD         Required for the live import publish/query round-trip when import mutation checks are enabled.
   HONUA_CLOUD_TEST_PUBLISH_DB_SSL_MODE         Optional DB SSL mode for the live import publish/query round-trip.
   HONUA_CLOUD_TEST_PUBLISH_DB_SSL_REQUIRED     Optional DB SSL-required flag for the live import publish/query round-trip.
+  HONUA_CLOUD_TEST_RESULTS_DIR                 Optional directory for the TRX counts evidence (default ./tests/TestResults).
 
 Optional scale validation environment variables:
   INCLUDE_SCALE_TESTS=true                     Enables existing multi-node scale tests.
@@ -235,9 +236,20 @@ chmod +x scripts/cloud/run-cloud-post-apply-validation.sh
 
 scripts/cloud/post-deployment-verification.sh
 
+# honua-server#4414: emit a TRX so a caller can prove the Category=Cloud cells
+# actually EXECUTED. Every one of them is a [CloudTest], which SKIPS rather than
+# fails when its inputs are absent, and `dotnet test` exits 0 either way — so
+# without counts, a run that validated nothing is indistinguishable from a run
+# that validated everything. `scripts/ci/assert-trx-executed.py` reads these.
+RESULTS_DIR="${HONUA_CLOUD_TEST_RESULTS_DIR:-./tests/TestResults}"
+mkdir -p "$RESULTS_DIR"
+
 dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
     -p:RunAnalyzers=false \
-    --filter "Category=Cloud"
+    --filter "Category=Cloud" \
+    --logger "trx;LogFileName=cloud-post-apply-validation.trx" \
+    --logger "console;verbosity=minimal" \
+    --results-directory "$RESULTS_DIR"
 
 if [[ "$INCLUDE_SCALE_TESTS" == "true" ]]; then
     if [[ -z "${HONUA_SCALE_TEST_BASE_URL:-}" ]]; then
@@ -248,7 +260,10 @@ if [[ "$INCLUDE_SCALE_TESTS" == "true" ]]; then
     echo "Running scale validation against ${HONUA_SCALE_TEST_BASE_URL}"
     dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
         -p:RunAnalyzers=false \
-        --filter "Category=Scale"
+        --filter "Category=Scale" \
+        --logger "trx;LogFileName=cloud-post-apply-scale.trx" \
+        --logger "console;verbosity=minimal" \
+        --results-directory "$RESULTS_DIR"
 fi
 
 echo "Cloud post-apply validation completed successfully."
