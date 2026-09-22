@@ -10417,7 +10417,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryTopFeaturesTests.QueryTopFeatures_WithPbf_ReturnsProtobuf",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryTopFeaturesTests.QueryTopFeatures_WithReturnCountOnly_ReturnsCountNotFeatures",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryTopFeaturesTests.QueryTopFeatures_WithReturnGeometryFalse_OmitsGeometry",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryTopFeaturesTests.QueryTopFeatures_WithReturnIdsOnly_ReturnsObjectIdsNotFeatures"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerQueryTopFeaturesTests.QueryTopFeatures_WithReturnIdsOnly_ReturnsObjectIdsNotFeatures",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerTopFeaturesTemporalTests.QueryTopFeatures_TemporalAttributes_ReturnEpochMilliseconds"
       ],
       "proof_ledger_surface": "feature-server",
       "maturity": "implemented",
