@@ -14,6 +14,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Queries.Filters;
 using Honua.TestKit;
 using Microsoft.Extensions.ObjectPool;
 using Npgsql;
@@ -186,7 +187,8 @@ public sealed class SourceBackedRelationshipStoreIntegrationTests(PostgresFixtur
         });
         var router = new FeatureProviderQueryRouter(Substitute.For<ISecureConnectionRegistry>(), new FeatureDataProviderRegistry([provider]));
         return new SourceBackedRelationshipStore(Substitute.For<IRelationshipStore>(), graph, router,
-            Substitute.For<IFilterExpressionService>(), fieldMasks);
+            new FilterExpressionService(new FilterExpressionTranslator(new PostgresSqlFilterTranslator(useJsonAttributes: true))),
+            fieldMasks);
     }
 
     private static MetadataV2Resource Resource(string name, int layerId, MetadataV2FieldType keyType) => new()

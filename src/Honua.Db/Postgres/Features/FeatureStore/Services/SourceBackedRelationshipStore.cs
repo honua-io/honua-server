@@ -49,11 +49,19 @@ internal sealed class SourceBackedRelationshipStore(
             throw new InvalidOperationException("Both relationship resources must resolve to storage bindings.");
         }
 
-        // GeoServices carries both canonical WHERE and its translated SQL. Use the
-        // canonical form when they are equivalent so each bound provider translates it.
-        // Independently supplied SQL retains its original precedence and restrictions.
-        if (query.SqlFilter is not null && !string.IsNullOrWhiteSpace(query.Where) && filters is not null)
+        var originReader = await ResolveReaderAsync(snapshot, origin, layerId, cancellationToken).ConfigureAwait(false);
+        var destinationReader = await ResolveReaderAsync(snapshot, destination, query.RelatedLayerId!.Value, cancellationToken).ConfigureAwait(false);
+        // PostgreSQL supports native filters; other providers translate canonical WHERE.
+        // GeoServices supplies both forms, so discard its native form only when equivalent.
+        if (!string.IsNullOrWhiteSpace(query.Where) &&
+            (destinationReader.IsPostgres && query.SqlFilter is null ||
+             !destinationReader.IsPostgres && query.SqlFilter is not null))
         {
+            if (filters is null)
+            {
+                throw new ArgumentException("Related query filter translation is unavailable.");
+            }
+
             var parsed = filters.Parse(FilterLanguage.ArcGisSql, query.Where);
             if (!parsed.IsSuccess || parsed.Expression is null)
             {
@@ -66,7 +74,11 @@ internal sealed class SourceBackedRelationshipStore(
                 throw new ArgumentException("Unsupported related query filter.");
             }
 
-            if (query.SqlFilter.Sql == translated.SqlFilter.Sql &&
+            if (destinationReader.IsPostgres)
+            {
+                query = query with { SqlFilter = translated.SqlFilter };
+            }
+            else if (query.SqlFilter!.Sql == translated.SqlFilter.Sql &&
                 query.SqlFilter.Parameters.SequenceEqual(translated.SqlFilter.Parameters))
             {
                 query = query with { SqlFilter = null };
@@ -77,10 +89,8 @@ internal sealed class SourceBackedRelationshipStore(
             await fieldMasks.ResolveAsync(origin.Resource, cancellationToken).ConfigureAwait(false);
         ImmutableArray<string>? destinationMasks = fieldMasks is null ? null :
             await fieldMasks.ResolveAsync(destination.Resource, cancellationToken).ConfigureAwait(false);
-        var originReader = await ResolveReaderAsync(snapshot, origin, layerId, cancellationToken).ConfigureAwait(false);
-        var destinationReader = await ResolveReaderAsync(snapshot, destination, query.RelatedLayerId!.Value, cancellationToken).ConfigureAwait(false);
-        return await QueryReadersAsync(originReader, destinationReader, layerId, query, cancellationToken,
-            originMasks, destinationMasks).ConfigureAwait(false);
+        return await QueryReadersAsync(originReader.Reader, destinationReader.Reader, layerId, query, cancellationToken,
+            originMasks, destinationMasks, destinationReader.IsPostgres).ConfigureAwait(false);
     }
 
     private static BoundResource? FindMapping(MetadataV2GraphSnapshot snapshot, int layerId)
@@ -94,7 +104,7 @@ internal sealed class SourceBackedRelationshipStore(
         return new BoundResource(resource, binding, FeatureStorageMapping.FromMetadata(resource, binding));
     }
 
-    private Task<IFeatureReader> ResolveReaderAsync(MetadataV2GraphSnapshot snapshot, BoundResource resource, int layerId, CancellationToken cancellationToken)
+    private async Task<(IFeatureReader Reader, bool IsPostgres)> ResolveReaderAsync(MetadataV2GraphSnapshot snapshot, BoundResource resource, int layerId, CancellationToken cancellationToken)
     {
         // The lookup yields an empty sequence for a resource without publications.
         var publication = snapshot.Index.PublicationsByResource[resource.Resource.Metadata.Id]
@@ -105,7 +115,12 @@ internal sealed class SourceBackedRelationshipStore(
             throw new InvalidOperationException("Relationship publication has no service.");
         }
 
-        return router!.ResolveReaderAsync(snapshot, service, resource.Resource, publication, layerId, FeatureProviderReadOperation.Query, cancellationToken);
+        var binding = await router!.ResolveBindingAsync(snapshot, service, resource.Resource, publication, layerId,
+            FeatureProviderReadOperation.Query, cancellationToken).ConfigureAwait(false);
+        var reader = binding.Provider is IBindableFeatureDataProvider bindable
+            ? bindable.CreateReaderForBinding(binding)
+            : binding.Provider.Reader;
+        return (reader, DataProviderNames.Normalize(binding.Provider.ProviderName) == DataProviderNames.Postgis);
     }
 
     /// <summary>
@@ -119,7 +134,8 @@ internal sealed class SourceBackedRelationshipStore(
         RelatedQuery query,
         CancellationToken cancellationToken,
         ImmutableArray<string>? originMasks = null,
-        ImmutableArray<string>? destinationMasks = null)
+        ImmutableArray<string>? destinationMasks = null,
+        bool usePostgresJoin = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(query.OriginForeignKeyField);
         ArgumentException.ThrowIfNullOrWhiteSpace(query.DestinationForeignKeyField);
@@ -178,7 +194,7 @@ internal sealed class SourceBackedRelationshipStore(
 
         var joinWhere = $"\"{query.DestinationForeignKeyField}\" IN ({string.Join(",", literalsByKey.Values)})";
         SqlFragment? sqlFilter = null;
-        if (query.SqlFilter is not null)
+        if (usePostgresJoin || query.SqlFilter is not null)
         {
             var parameters = idsByKey.Keys.Cast<object?>().ToArray();
             var placeholders = Enumerable.Range(0, parameters.Length).Select(index => "@p" + index.ToString(CultureInfo.InvariantCulture));
