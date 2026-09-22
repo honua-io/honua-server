@@ -329,7 +329,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy.conversion.WFSToFeatureClass bound https://host.docker.internal:18443/wfs and materialised 'browser_points'; the tool cannot resolve a feature type without first reading and parsing GetCapabilities."
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922i/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy.conversion.WFSToFeatureClass bound https://host.docker.internal:18443/wfs and materialised 'browser_points'; the tool cannot resolve a feature type without first reading and parsing GetCapabilities."
         },
         "qgis-ui": {
           "state": "pass",
@@ -352,7 +352,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the feature class arcpy built carries the type's fields ['OBJECTID_1', 'GmlID', 'Shape', 'objectid', 'name'], which are the DescribeFeatureType response mapped onto a schema."
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922i/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the feature class arcpy built carries the type's fields ['OBJECTID_1', 'GmlID', 'Shape', 'objectid', 'name'], which are the DescribeFeatureType response mapped onto a schema."
         },
         "qgis-ui": {
           "state": "pass",
@@ -375,7 +375,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy read 3 feature(s) through GetFeature into a file geodatabase."
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922i/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy read 3 feature(s) through GetFeature into a file geodatabase."
         },
         "qgis-ui": {
           "state": "pass",
@@ -402,7 +402,7 @@
             "state": "n/a-no-client",
             "citation": "arcpy 3.7.1 module probe, 2026-09-18: the only WFS entry point is arcpy.conversion.WFSToFeatureClass, and GetParameterInfo lists exactly input_WFS_server, WFS_feature_type, out_path, out_name, out_feature_class, is_complex, out_gdb, max_features, expose_metadata, swap_xy and page_size. It reads a feature type into a feature class: no transaction, no property-value projection, no stored-query parameter, so WFS-T, GetPropertyValue and ListStoredQueries have no arcpy caller."
           },
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy.conversion.WFSToFeatureClass read 'browser_points' (from namespaced 'honua:browser_points') at https://host.docker.internal:18443/wfs into a file geodatabase: 3 feature(s), fields ['OBJECTID_1', 'GmlID', 'Shape', 'objectid', 'name']. Property values are reached through those fields; arcpy issues no separate GetPropertyValue request."
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922i/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy.conversion.WFSToFeatureClass read 'browser_points' (from namespaced 'honua:browser_points') at https://host.docker.internal:18443/wfs into a file geodatabase: 3 feature(s), fields ['OBJECTID_1', 'GmlID', 'Shape', 'objectid', 'name']. Property values are reached through those fields; arcpy issues no separate GetPropertyValue request."
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -577,8 +577,8 @@
           "evidence": "honua-client-compat/evidence/native-qgis-ui-20260922-frozen/results.json - QGIS 3.44.14-Solothurn windows-computer-use on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a, case UI-OP-WCS-GETCAPABILITIES. Attempted and blocked on the server, not the client. A WCS connection 'honua-wcs' to rest/services/browser_compat/MapServer/WCS was created and Connect issued a correct request - QGIS's own dialog reports the tried URL as '...?SERVICE=WCS&REQUEST=GetCapabilities&AcceptVersions=1.1.0,1.0.0'. The server answered with a JSON Esri error envelope, {\"error\":{\"code\":404,\"message\":\"Not Found\",...}}, so QGIS raised a Dom Exception: 'Could not get WCS capabilities: error occurred while parsing element at line 1 column 1'. This candidate serves no WCS - the capability lives on the withdrawn feat/wcs-10-serving branch - so there is nothing for the client to read. Recorded blocked rather than fail: the client behaved correctly and the cell stays in the denominator. This one client attempt covers both advertised versions."
         },
         "pyqgis": {
-          "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wcs.cert.json - protocol wcs 1.0.0, client desktop-qgis 3.44.14-Solothurn, 8 passed 0 failed"
+          "state": "blocked",
+          "evidence": "Demoted from pass on sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a: the candidate serves no WCS: GetCapabilities returns HTTP 404 with an OWS ExceptionReport on browser_compat/ImageServer/WCS and test_service/ImageServer/WCS at both 1.0.0 and 2.0.1, and on /ogc/services/{service}/wcs. WCS 1.0.0 serving was withdrawn with #5027 by 45fdbed07. The operation is not available on this candidate, so no client can certify it here and this is a server capability gap, not a client absence - the cell stays in the coverage denominator rather than becoming n/a. PRIOR CITATION, preserved and not withdrawn as a record of what was measured on an earlier build: tests/baselines/client-compat/pyqgis/desktop-qgis-wcs.cert.json - protocol wcs 1.0.0, client desktop-qgis 3.44.14-Solothurn, 8 passed 0 failed"
         }
       }
     },
@@ -608,8 +608,8 @@
           "evidence": "honua-client-compat/evidence/native-qgis-ui-20260922-frozen/results.json - QGIS 3.44.14-Solothurn windows-computer-use on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a, case UI-OP-WCS-DESCRIBECOVERAGE. Attempted and blocked on the server, not the client. A WCS connection 'honua-wcs' to rest/services/browser_compat/MapServer/WCS was created and Connect issued a correct request - QGIS's own dialog reports the tried URL as '...?SERVICE=WCS&REQUEST=GetCapabilities&AcceptVersions=1.1.0,1.0.0'. The server answered with a JSON Esri error envelope, {\"error\":{\"code\":404,\"message\":\"Not Found\",...}}, so QGIS raised a Dom Exception: 'Could not get WCS capabilities: error occurred while parsing element at line 1 column 1'. This candidate serves no WCS - the capability lives on the withdrawn feat/wcs-10-serving branch - so there is nothing for the client to read. Recorded blocked rather than fail: the client behaved correctly and the cell stays in the denominator. This one client attempt covers both advertised versions."
         },
         "pyqgis": {
-          "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wcs.cert.json - protocol wcs 1.0.0, client desktop-qgis 3.44.14-Solothurn, 8 passed 0 failed"
+          "state": "blocked",
+          "evidence": "Demoted from pass on sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a: the candidate serves no WCS; see wcs.GetCapabilities - there is no capabilities document to describe a coverage from. The operation is not available on this candidate, so no client can certify it here and this is a server capability gap, not a client absence - the cell stays in the coverage denominator rather than becoming n/a. PRIOR CITATION, preserved and not withdrawn as a record of what was measured on an earlier build: tests/baselines/client-compat/pyqgis/desktop-qgis-wcs.cert.json - protocol wcs 1.0.0, client desktop-qgis 3.44.14-Solothurn, 8 passed 0 failed"
         }
       }
     },
@@ -639,8 +639,8 @@
           "evidence": "honua-client-compat/evidence/native-qgis-ui-20260922-frozen/results.json - QGIS 3.44.14-Solothurn windows-computer-use on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a, case UI-OP-WCS-GETCOVERAGE. Attempted and blocked on the server, not the client. A WCS connection 'honua-wcs' to rest/services/browser_compat/MapServer/WCS was created and Connect issued a correct request - QGIS's own dialog reports the tried URL as '...?SERVICE=WCS&REQUEST=GetCapabilities&AcceptVersions=1.1.0,1.0.0'. The server answered with a JSON Esri error envelope, {\"error\":{\"code\":404,\"message\":\"Not Found\",...}}, so QGIS raised a Dom Exception: 'Could not get WCS capabilities: error occurred while parsing element at line 1 column 1'. This candidate serves no WCS - the capability lives on the withdrawn feat/wcs-10-serving branch - so there is nothing for the client to read. Recorded blocked rather than fail: the client behaved correctly and the cell stays in the denominator. This one client attempt covers both advertised versions."
         },
         "pyqgis": {
-          "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-wcs.cert.json - protocol wcs 1.0.0, client desktop-qgis 3.44.14-Solothurn, 8 passed 0 failed"
+          "state": "blocked",
+          "evidence": "Demoted from pass on sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a: the candidate serves no WCS; see wcs.GetCapabilities - there is no coverage to get. The operation is not available on this candidate, so no client can certify it here and this is a server capability gap, not a client absence - the cell stays in the coverage denominator rather than becoming n/a. PRIOR CITATION, preserved and not withdrawn as a record of what was measured on an earlier build: tests/baselines/client-compat/pyqgis/desktop-qgis-wcs.cert.json - protocol wcs 1.0.0, client desktop-qgis 3.44.14-Solothurn, 8 passed 0 failed"
         }
       }
     },
@@ -670,7 +670,7 @@
           "evidence": "honua-client-compat/evidence/native-qgis-ui-20260922-frozen/results.json - QGIS 3.44.14-Solothurn windows-computer-use on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a, case UI-OP-WCS-GETCAPABILITIES. Attempted and blocked on the server, not the client. A WCS connection 'honua-wcs' to rest/services/browser_compat/MapServer/WCS was created and Connect issued a correct request - QGIS's own dialog reports the tried URL as '...?SERVICE=WCS&REQUEST=GetCapabilities&AcceptVersions=1.1.0,1.0.0'. The server answered with a JSON Esri error envelope, {\"error\":{\"code\":404,\"message\":\"Not Found\",...}}, so QGIS raised a Dom Exception: 'Could not get WCS capabilities: error occurred while parsing element at line 1 column 1'. This candidate serves no WCS - the capability lives on the withdrawn feat/wcs-10-serving branch - so there is nothing for the client to read. Recorded blocked rather than fail: the client behaved correctly and the cell stays in the denominator. This one client attempt covers both advertised versions."
         },
         "pyqgis": {
-          "state": "pass",
+          "state": "blocked",
           "previous_exclusion": {
             "state": "n/a-superseded",
             "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
@@ -679,7 +679,7 @@
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The dedicated WCS provider's version limit does not exclude the bundled GDAL provider: a fresh QgsRasterLayer/GDAL WCS 2.0.1 diagnostic loads 64x64 and reads a non-NoData pixel."
           },
-          "evidence": "honua-client-compat/evidence/pyqgis-sdk-roundtrip-20260920-i/observations.json (retained at honua-client-compat commit 2452daa); GetCapabilities, stock PyQGIS 3.44.14-Solothurn / GDAL 3.13.3: fresh native capabilities and description caches, four-corner pixel reads before/after QgsProject reload, separate full/subset TIFF grid controls against SQL; server 25fa17d9cfa72340c9de4a33a743f19ff0911800 / image 0ad6f6c9d81e; Development JIT SDK evidence, no UI credit"
+          "evidence": "Demoted from pass on sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a: the candidate serves no WCS: GetCapabilities returns HTTP 404 with an OWS ExceptionReport on browser_compat/ImageServer/WCS and test_service/ImageServer/WCS at both 1.0.0 and 2.0.1, and on /ogc/services/{service}/wcs. WCS 1.0.0 serving was withdrawn with #5027 by 45fdbed07. The operation is not available on this candidate, so no client can certify it here and this is a server capability gap, not a client absence - the cell stays in the coverage denominator rather than becoming n/a. PRIOR CITATION, preserved and not withdrawn as a record of what was measured on an earlier build: honua-client-compat/evidence/pyqgis-sdk-roundtrip-20260920-i/observations.json (retained at honua-client-compat commit 2452daa); GetCapabilities, stock PyQGIS 3.44.14-Solothurn / GDAL 3.13.3: fresh native capabilities and description caches, four-corner pixel reads before/after QgsProject reload, separate full/subset TIFF grid controls against SQL; server 25fa17d9cfa72340c9de4a33a743f19ff0911800 / image 0ad6f6c9d81e; Development JIT SDK evidence, no UI credit"
         }
       }
     },
@@ -709,7 +709,7 @@
           "evidence": "honua-client-compat/evidence/native-qgis-ui-20260922-frozen/results.json - QGIS 3.44.14-Solothurn windows-computer-use on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a, case UI-OP-WCS-DESCRIBECOVERAGE. Attempted and blocked on the server, not the client. A WCS connection 'honua-wcs' to rest/services/browser_compat/MapServer/WCS was created and Connect issued a correct request - QGIS's own dialog reports the tried URL as '...?SERVICE=WCS&REQUEST=GetCapabilities&AcceptVersions=1.1.0,1.0.0'. The server answered with a JSON Esri error envelope, {\"error\":{\"code\":404,\"message\":\"Not Found\",...}}, so QGIS raised a Dom Exception: 'Could not get WCS capabilities: error occurred while parsing element at line 1 column 1'. This candidate serves no WCS - the capability lives on the withdrawn feat/wcs-10-serving branch - so there is nothing for the client to read. Recorded blocked rather than fail: the client behaved correctly and the cell stays in the denominator. This one client attempt covers both advertised versions."
         },
         "pyqgis": {
-          "state": "pass",
+          "state": "blocked",
           "previous_exclusion": {
             "state": "n/a-superseded",
             "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
@@ -718,7 +718,7 @@
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The dedicated WCS provider's version limit does not exclude the bundled GDAL provider: a fresh QgsRasterLayer/GDAL WCS 2.0.1 diagnostic loads 64x64 and reads a non-NoData pixel."
           },
-          "evidence": "honua-client-compat/evidence/pyqgis-sdk-roundtrip-20260920-i/observations.json (retained at honua-client-compat commit 2452daa); DescribeCoverage, stock PyQGIS 3.44.14-Solothurn / GDAL 3.13.3: fresh native capabilities and description caches, four-corner pixel reads before/after QgsProject reload, separate full/subset TIFF grid controls against SQL; server 25fa17d9cfa72340c9de4a33a743f19ff0911800 / image 0ad6f6c9d81e; Development JIT SDK evidence, no UI credit"
+          "evidence": "Demoted from pass on sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a: the candidate serves no WCS; see wcs.GetCapabilities - there is no capabilities document to describe a coverage from. The operation is not available on this candidate, so no client can certify it here and this is a server capability gap, not a client absence - the cell stays in the coverage denominator rather than becoming n/a. PRIOR CITATION, preserved and not withdrawn as a record of what was measured on an earlier build: honua-client-compat/evidence/pyqgis-sdk-roundtrip-20260920-i/observations.json (retained at honua-client-compat commit 2452daa); DescribeCoverage, stock PyQGIS 3.44.14-Solothurn / GDAL 3.13.3: fresh native capabilities and description caches, four-corner pixel reads before/after QgsProject reload, separate full/subset TIFF grid controls against SQL; server 25fa17d9cfa72340c9de4a33a743f19ff0911800 / image 0ad6f6c9d81e; Development JIT SDK evidence, no UI credit"
         }
       }
     },
@@ -748,7 +748,7 @@
           "evidence": "honua-client-compat/evidence/native-qgis-ui-20260922-frozen/results.json - QGIS 3.44.14-Solothurn windows-computer-use on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a, case UI-OP-WCS-GETCOVERAGE. Attempted and blocked on the server, not the client. A WCS connection 'honua-wcs' to rest/services/browser_compat/MapServer/WCS was created and Connect issued a correct request - QGIS's own dialog reports the tried URL as '...?SERVICE=WCS&REQUEST=GetCapabilities&AcceptVersions=1.1.0,1.0.0'. The server answered with a JSON Esri error envelope, {\"error\":{\"code\":404,\"message\":\"Not Found\",...}}, so QGIS raised a Dom Exception: 'Could not get WCS capabilities: error occurred while parsing element at line 1 column 1'. This candidate serves no WCS - the capability lives on the withdrawn feat/wcs-10-serving branch - so there is nothing for the client to read. Recorded blocked rather than fail: the client behaved correctly and the cell stays in the denominator. This one client attempt covers both advertised versions."
         },
         "pyqgis": {
-          "state": "pass",
+          "state": "blocked",
           "previous_exclusion": {
             "state": "n/a-superseded",
             "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
@@ -757,7 +757,7 @@
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The dedicated WCS provider's version limit does not exclude the bundled GDAL provider: a fresh QgsRasterLayer/GDAL WCS 2.0.1 diagnostic loads 64x64 and reads a non-NoData pixel."
           },
-          "evidence": "honua-client-compat/evidence/pyqgis-sdk-roundtrip-20260920-i/observations.json (retained at honua-client-compat commit 2452daa); GetCoverage, stock PyQGIS 3.44.14-Solothurn / GDAL 3.13.3: fresh native capabilities and description caches, four-corner pixel reads before/after QgsProject reload, separate full/subset TIFF grid controls against SQL; server 25fa17d9cfa72340c9de4a33a743f19ff0911800 / image 0ad6f6c9d81e; Development JIT SDK evidence, no UI credit"
+          "evidence": "Demoted from pass on sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a: the candidate serves no WCS; see wcs.GetCapabilities - there is no coverage to get. The operation is not available on this candidate, so no client can certify it here and this is a server capability gap, not a client absence - the cell stays in the coverage denominator rather than becoming n/a. PRIOR CITATION, preserved and not withdrawn as a record of what was measured on an earlier build: honua-client-compat/evidence/pyqgis-sdk-roundtrip-20260920-i/observations.json (retained at honua-client-compat commit 2452daa); GetCoverage, stock PyQGIS 3.44.14-Solothurn / GDAL 3.13.3: fresh native capabilities and description caches, four-corner pixel reads before/after QgsProject reload, separate full/subset TIFF grid controls against SQL; server 25fa17d9cfa72340c9de4a33a743f19ff0911800 / image 0ad6f6c9d81e; Development JIT SDK evidence, no UI credit"
         }
       }
     },
@@ -1084,7 +1084,7 @@
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS."
           },
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy's Python reached stac and the document carries 'stac_version'; this is the catalogue CreateSTACConnectionFile binds (honua_stac.astac, 423 bytes)"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922i/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy's Python reached stac and the document carries 'stac_version'; this is the catalogue CreateSTACConnectionFile binds (honua_stac.astac, 423 bytes)"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1114,7 +1114,7 @@
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS."
           },
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy's Python reached stac/collections and the document carries 'collections'; this is the catalogue CreateSTACConnectionFile binds (honua_stac.astac, 423 bytes)"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922i/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy's Python reached stac/collections and the document carries 'collections'; this is the catalogue CreateSTACConnectionFile binds (honua_stac.astac, 423 bytes)"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1144,7 +1144,7 @@
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS."
           },
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy's Python reached stac/search and the document carries 'features'; this is the catalogue CreateSTACConnectionFile binds (honua_stac.astac, 423 bytes)"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922i/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy's Python reached stac/search and the document carries 'features'; this is the catalogue CreateSTACConnectionFile binds (honua_stac.astac, 423 bytes)"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1177,8 +1177,8 @@
           "evidence": "honua-client-compat/evidence/native-qgis-ui-20260922-frozen/results.json - QGIS 3.44.14-Solothurn windows-computer-use on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a, case UI-OP-STAC-ASSET-DOWNLOAD. Attempted and blocked on the fixture, not the client. With the STAC search returning the fixture's items and item 1/0 selected in the results list, the Add button stays disabled - QGIS finds the item but has no asset it can add. That matches what the server publishes: StacMappingService builds exactly one asset per item, keyed 'geojson', whose href points back into OGC Features (application/geo+json), and a /stac/search of five items returns that as the only asset type present. QGIS's STAC integration adds raster and vector data assets, not a GeoJSON link to another API. Nothing is downloadable here, so the operation cannot be exercised until the catalogue publishes a real data asset. Recorded blocked rather than fail: the client searched correctly and correctly declined to offer an add."
         },
         "pyqgis": {
-          "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-stac.cert.json - CERT-RNDR-URL-01, protocol stac 1.0.0, client desktop-qgis 3.44.14-Solothurn, 4 passed 0 failed"
+          "state": "blocked",
+          "evidence": "Demoted from pass on sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a: the catalogue publishes no downloadable data asset: StacMappingService builds exactly one asset per item, keyed 'geojson', whose href points back into OGC Features, and the only asset type across the fixture's items is application/geo+json. The operation is not available on this candidate, so no client can certify it here and this is a server capability gap, not a client absence - the cell stays in the coverage denominator rather than becoming n/a. PRIOR CITATION, preserved and not withdrawn as a record of what was measured on an earlier build: tests/baselines/client-compat/pyqgis/desktop-qgis-stac.cert.json - CERT-RNDR-URL-01, protocol stac 1.0.0, client desktop-qgis 3.44.14-Solothurn, 4 passed 0 failed"
         }
       }
     },
@@ -1289,7 +1289,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'initialextent': Describe.extent=(-122.44,37.76).."
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922i/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'initialextent': Describe.extent=(-122.44,37.76).."
         },
         "qgis-ui": {
           "state": "pass",
@@ -1312,7 +1312,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'fields': ListFields -> 3 field(s): ['Shape', 'name', 'objectid']"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922i/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'fields': ListFields -> 3 field(s): ['Shape', 'name', 'objectid']"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1335,7 +1335,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'outfields': field projection via SearchCursor(['objectid']) -> 3 row(s)"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922i/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'outfields': field projection via SearchCursor(['objectid']) -> 3 row(s)"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1358,7 +1358,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'spatialrel': spatialRel via SelectLayerByLocation(INTERSECT extent) -> 3 selected"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922i/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'spatialrel': spatialRel via SelectLayerByLocation(INTERSECT extent) -> 3 selected"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1471,7 +1471,7 @@
             "citation": "docs/gis/arcpy-local-calculation-verdict-audit-2026-09-20.md: Historical receipt counts SearchCursor rows locally; it does not prove a native outStatistics/groupByFieldsForStatistics request. Fresh remote aggregate evidence and independent result assertions are required."
           },
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'outstatistics': outStatistics (count) computed over the cursor -> 3"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922i/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'outstatistics': outStatistics (count) computed over the cursor -> 3"
         },
         "qgis-ui": {
           "state": "blocked",
@@ -1507,7 +1507,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'domains': arcpy ListFields on test_service/FeatureServer/0 reports domain(s) on ['status']: ['StatusDomain']"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922i/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.feature_server rule 'domains': arcpy ListFields on test_service/FeatureServer/0 reports domain(s) on ['status']: ['StatusDomain']"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1556,7 +1556,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.map_server rule 'service metadata': ms-load layer added and loaded in ArcGIS Pro (2 layer(s) in map)"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922i/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.map_server rule 'service metadata': ms-load layer added and loaded in ArcGIS Pro (2 layer(s) in map)"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1579,7 +1579,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.map_server rule 'export map': added ms-export layer and exported a drawn PNG (5697 bytes)"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922i/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.map_server rule 'export map': added ms-export layer and exported a drawn PNG (5697 bytes)"
         },
         "qgis-ui": {
           "state": "fail",
@@ -1657,7 +1657,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.image_server rule 'service metadata': arcpy Describe(ImageServer) -> dataType=RasterLayer"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922i/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.image_server rule 'service metadata': arcpy Describe(ImageServer) -> dataType=RasterLayer"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1695,7 +1695,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.image_server rule 'export image': arcpy.Raster(ImageServer) opened (width=64)"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922i/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.image_server rule 'export image': arcpy.Raster(ImageServer) opened (width=64)"
         },
         "qgis-ui": {
           "state": "pass",
@@ -1833,7 +1833,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.gp_server rule '': arcpy.ImportToolbox resolved https://host.docker.internal:18443/arcgis/services;test_service and published task 'Buffer' as arcpy.Buffer_testservice"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922i/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.gp_server rule '': arcpy.ImportToolbox resolved https://host.docker.internal:18443/arcgis/services;test_service and published task 'Buffer' as arcpy.Buffer_testservice"
         },
         "qgis-ui": {
           "state": "blocked",
@@ -1864,7 +1864,7 @@
         },
         "arcpy": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.gp_server rule 'task info': task 'Buffer' publishes signature 'Buffer_testservice(wkb, srid, distance, {geodesic})' and 3 typed parameter(s): wkb (String):; srid (Long):; distance (Double):"
+          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922i/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.gp_server rule 'task info': task 'Buffer' publishes signature 'Buffer_testservice(wkb, srid, distance, {geodesic})' and 3 typed parameter(s): wkb (String):; srid (Long):; distance (Double):"
         },
         "qgis-ui": {
           "state": "blocked",
@@ -2865,16 +2865,16 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260919-f-edit/certification/20260919T162438Z-desktop-arcgis-cog.cert.json - CERT-CONN-01, CERT-DISC-01, CERT-DISC-02, CERT-RNDR-01, ArcGIS Pro/arcpy 3.7.1.1904: HEAD 200 image/tiff, arcpy.Raster describes the published COG as 64x64/1 band over the fixture extent, HEAD length stable and Range 0-3 -> 206 with the TIFF magic after an unranged warm-up, RasterToNumPyArray at (-122.42, 37.77) = 100 == ImageServer identify"
+          "state": "blocked",
+          "evidence": "Demoted from pass on sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a: the candidate publishes no COG: 16e3ba0bc added POST /api/v1/admin/raster-artifacts/cog and GET /api/v1/rasters/cog/{artifactId}, and 45fdbed07 (the #5027 withdrawal) deleted the endpoints, service, models, seed and tests. 16e3ba0bc is not an ancestor of the candidate. Nothing substitutes: ImageServer and WCS render on demand and stamp Accept-Ranges: none, and ImageServer/{rasterId}/rasterFile is a capability-honest 404. The operation is not available on this candidate, so no client can certify it here and this is a server capability gap, not a client absence - the cell stays in the coverage denominator rather than becoming n/a. PRIOR CITATION, preserved and not withdrawn as a record of what was measured on an earlier build: honua-esri-compat/evidence/arcpy-client-compat-20260919-f-edit/certification/20260919T162438Z-desktop-arcgis-cog.cert.json - CERT-CONN-01, CERT-DISC-01, CERT-DISC-02, CERT-RNDR-01, ArcGIS Pro/arcpy 3.7.1.1904: HEAD 200 image/tiff, arcpy.Raster describes the published COG as 64x64/1 band over the fixture extent, HEAD length stable and Range 0-3 -> 206 with the TIFF magic after an unranged warm-up, RasterToNumPyArray at (-122.42, 37.77) = 100 == ImageServer identify"
         },
         "qgis-ui": {
-          "state": "pass",
-          "evidence": "honua-client-compat/evidence/native-qgis-cog-20260919-a/results.json - UI-OP-COG-RANGE-READ, QGIS 3.44.14-Solothurn (windows-computer-use receipt: Data Source Manager > Raster > Protocol HTTP/HTTPS/FTP added /api/v1/rasters/cog/cog/0/1.tif through the gdal provider, Layer Properties 64x64 Float32 EPSG:4326, Identify Band 1 = 100 == ImageServer identify; server log shows GDAL/3.13.3 HEAD 200 and Range GET 206), pass"
+          "state": "blocked",
+          "evidence": "Demoted from pass on sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a: the candidate publishes no COG: 16e3ba0bc added POST /api/v1/admin/raster-artifacts/cog and GET /api/v1/rasters/cog/{artifactId}, and 45fdbed07 (the #5027 withdrawal) deleted the endpoints, service, models, seed and tests. 16e3ba0bc is not an ancestor of the candidate. Nothing substitutes: ImageServer and WCS render on demand and stamp Accept-Ranges: none, and ImageServer/{rasterId}/rasterFile is a capability-honest 404. The operation is not available on this candidate, so no client can certify it here and this is a server capability gap, not a client absence - the cell stays in the coverage denominator rather than becoming n/a. PRIOR CITATION, preserved and not withdrawn as a record of what was measured on an earlier build: honua-client-compat/evidence/native-qgis-cog-20260919-a/results.json - UI-OP-COG-RANGE-READ, QGIS 3.44.14-Solothurn (windows-computer-use receipt: Data Source Manager > Raster > Protocol HTTP/HTTPS/FTP added /api/v1/rasters/cog/cog/0/1.tif through the gdal provider, Layer Properties 64x64 Float32 EPSG:4326, Identify Band 1 = 100 == ImageServer identify; server log shows GDAL/3.13.3 HEAD 200 and Range GET 206), pass"
         },
         "pyqgis": {
-          "state": "pass",
-          "evidence": "tests/baselines/client-compat/pyqgis/desktop-qgis-cog.cert.json - CERT-RNDR-01, protocol cog GeoTIFF, client desktop-qgis 3.44.14-Solothurn, 4 passed 0 failed"
+          "state": "blocked",
+          "evidence": "Demoted from pass on sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a: the candidate publishes no COG: 16e3ba0bc added POST /api/v1/admin/raster-artifacts/cog and GET /api/v1/rasters/cog/{artifactId}, and 45fdbed07 (the #5027 withdrawal) deleted the endpoints, service, models, seed and tests. 16e3ba0bc is not an ancestor of the candidate. Nothing substitutes: ImageServer and WCS render on demand and stamp Accept-Ranges: none, and ImageServer/{rasterId}/rasterFile is a capability-honest 404. The operation is not available on this candidate, so no client can certify it here and this is a server capability gap, not a client absence - the cell stays in the coverage denominator rather than becoming n/a. PRIOR CITATION, preserved and not withdrawn as a record of what was measured on an earlier build: tests/baselines/client-compat/pyqgis/desktop-qgis-cog.cert.json - CERT-RNDR-01, protocol cog GeoTIFF, client desktop-qgis 3.44.14-Solothurn, 4 passed 0 failed"
         }
       }
     },
