@@ -755,6 +755,11 @@ class PostGISFixture:
                     """
                 )
 
+                # Migration-owned storage policy (055_SetRasterDataExternalStorage.sql); the core
+                # schema guard rejects a raster table without it on the next server boot (#4889).
+                conn.execute("ALTER TABLE honua.raster_data ALTER COLUMN raster SET STORAGE EXTERNAL;")
+                conn.execute("ALTER TABLE honua.raster_tiles ALTER COLUMN tile_data SET STORAGE EXTERNAL;")
+
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_service_layers_service_name ON honua.service_layers(service_name);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_service_layers_layer_id ON honua.service_layers(layer_id);")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_layer_fields_layer_id ON honua.layer_fields(layer_id);")
