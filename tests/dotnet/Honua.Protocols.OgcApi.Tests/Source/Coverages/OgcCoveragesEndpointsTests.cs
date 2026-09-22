@@ -8,6 +8,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -221,6 +222,23 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
         resolutionQuery.PixelSize!.Value.Width.Should().BeApproximately(0.003125, 0.000000001);
         resolutionQuery.PixelSize!.Value.Height.Should().BeApproximately(0.003125, 0.000000001);
 
+        // The clip is measured in metres. A fixture that intersects it with the native
+        // longitude/latitude ordinates produces an inverted, meaningless response bbox.
+        response.Headers.TryGetValues("Content-Bbox", out var projectedBboxes).Should().BeTrue();
+        var projectedBbox = projectedBboxes!.Single()
+            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Select(value => double.Parse(value, CultureInfo.InvariantCulture))
+            .ToArray();
+        var (nativeWest, nativeSouth) = WebMercatorMath.LonLatToWebMercator(NativeExtent.XMin, NativeExtent.YMin);
+        var (nativeEast, nativeNorth) = WebMercatorMath.LonLatToWebMercator(NativeExtent.XMax, NativeExtent.YMax);
+        projectedBbox.Should().HaveCount(4);
+        projectedBbox[0].Should().BeApproximately(Math.Max(nativeWest, -13_650_000), 1e-6);
+        projectedBbox[1].Should().BeApproximately(Math.Max(nativeSouth, 4_530_000), 1e-6);
+        projectedBbox[2].Should().BeApproximately(Math.Min(nativeEast, -13_600_000), 1e-6);
+        projectedBbox[3].Should().BeApproximately(Math.Min(nativeNorth, 4_570_000), 1e-6);
+        projectedBbox[0].Should().BeLessThan(projectedBbox[2]);
+        projectedBbox[1].Should().BeLessThan(projectedBbox[3]);
+
         _exportQueries.Clear();
         response = await _fixture.Client.GetAsync(
             $"/ogc/coverages/collections/{WebAppFixture.TestLayerId}/coverage?bbox=-13650000,4530000,-13600000,4570000&bbox-crs=EPSG:3857&scale-factor=1");
@@ -400,18 +418,49 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
     /// </summary>
     internal static RasterExtent ClippedExtent(RasterQuery query, int srid)
     {
-        if (query.ClipRegion is not { } clip)
+        var extent = NativeExtent;
+        if (query.ClipRegion is { } clip)
         {
-            return NativeExtent with { Srid = srid };
+            var clipSrid = clip.Srid ?? NativeExtent.Srid!.Value;
+            var footprint = TransformExtent(NativeExtent, clipSrid);
+            var envelope = new WKBReader().Read(clip.Geometry).EnvelopeInternal;
+            extent = new RasterExtent
+            {
+                XMin = Math.Max(footprint.XMin, envelope.MinX),
+                YMin = Math.Max(footprint.YMin, envelope.MinY),
+                XMax = Math.Min(footprint.XMax, envelope.MaxX),
+                YMax = Math.Min(footprint.YMax, envelope.MaxY),
+                Srid = clipSrid
+            };
         }
 
-        var envelope = new WKBReader().Read(clip.Geometry).EnvelopeInternal;
+        return TransformExtent(extent, srid);
+    }
+
+    private static RasterExtent TransformExtent(RasterExtent extent, int srid)
+    {
+        if (extent.Srid == srid)
+        {
+            return extent;
+        }
+
+        // The fixture's native CRS is 4326 and its projected requests use 3857.
+        // Use the same shared projection math as the provider instead of comparing
+        // degree and metre ordinates directly.
+        Func<double, double, (double X, double Y)> transform = (extent.Srid, srid) switch
+        {
+            (4326, 3857) => WebMercatorMath.LonLatToWebMercator,
+            (3857, 4326) => WebMercatorMath.WebMercatorToLonLat,
+            _ => throw new NotSupportedException($"Fixture cannot transform {extent.Srid} to {srid}.")
+        };
+        var (minX, minY, maxX, maxY) = WebMercatorMath.TransformSampledExtent(
+            extent.XMin, extent.YMin, extent.XMax, extent.YMax, transform, sampleSegmentsPerEdge: 4);
         return new RasterExtent
         {
-            XMin = Math.Max(NativeExtent.XMin, envelope.MinX),
-            YMin = Math.Max(NativeExtent.YMin, envelope.MinY),
-            XMax = Math.Min(NativeExtent.XMax, envelope.MaxX),
-            YMax = Math.Min(NativeExtent.YMax, envelope.MaxY),
+            XMin = minX,
+            YMin = minY,
+            XMax = maxX,
+            YMax = maxY,
             Srid = srid
         };
     }
