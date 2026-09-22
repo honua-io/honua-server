@@ -16,9 +16,9 @@ Discover the GeoServices REST catalog root and service-directory info.
 | Capability key | `serve.geoservices-root` |
 | Category | Serve |
 | Edition | Community |
-| Surface maturity | 4 implemented |
-| Registry entries | 4 |
-| Proving tests | 49 |
+| Surface maturity | 6 implemented |
+| Registry entries | 6 |
+| Proving tests | 51 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
