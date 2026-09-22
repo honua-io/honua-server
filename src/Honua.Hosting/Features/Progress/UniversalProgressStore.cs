@@ -29,7 +29,7 @@ namespace Honua.Migration;
 /// Redis-based universal progress store with fallback to in-memory storage.
 /// Supports any operation type implementing IOperationProgress.
 /// </summary>
-internal sealed partial class UniversalProgressStore : IUniversalProgressStore
+internal sealed partial class UniversalProgressStore : IUniversalProgressStore, IProgressStoreRecovery
 {
     private readonly IDistributedCache? _cache;
     private readonly IConnectionMultiplexer? _redis;
@@ -72,6 +72,15 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
     }
 
     internal bool IsUsingFallback => _isUsingFallback;
+
+    public async Task ProbeRecoveryAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_isUsingFallback && ShouldRetryRedis(DateTime.UtcNow))
+        {
+            await TryRestoreRedisAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
 
     public async Task SetProgressAsync(string operationId, IOperationProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
     {
@@ -803,7 +812,7 @@ internal sealed partial class UniversalProgressStore : IUniversalProgressStore
 /// This allows existing code using typed progress stores to work with the unified system.
 /// Note: This only works for types that implement IOperationProgress.
 /// </summary>
-internal sealed class DistributedProgressStoreAdapter<TProgress> : IDistributedProgressStore<TProgress>
+internal sealed class DistributedProgressStoreAdapter<TProgress> : IDistributedProgressStore<TProgress>, IProgressStoreRecovery
     where TProgress : class, IOperationProgress
 {
     private readonly IUniversalProgressStore _universalStore;
@@ -812,6 +821,11 @@ internal sealed class DistributedProgressStoreAdapter<TProgress> : IDistributedP
     {
         _universalStore = universalStore;
     }
+
+    public Task ProbeRecoveryAsync(CancellationToken cancellationToken = default)
+        => _universalStore is IProgressStoreRecovery recovery
+            ? recovery.ProbeRecoveryAsync(cancellationToken)
+            : Task.CompletedTask;
 
     public async Task SetProgressAsync(string jobId, TProgress progress, TimeSpan? ttl = null, CancellationToken cancellationToken = default)
     {

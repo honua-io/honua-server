@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Import.Abstractions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Import.Domain;
@@ -71,6 +72,24 @@ internal static class ImportBackgroundServiceCoordinator
         {
             try
             {
+                if (!jobManager.CanAcceptNewJobs)
+                {
+                    // Admission is based on cached per-component durability flags.
+                    // These bounded probes run each component's throttled recovery;
+                    // waiting on the flags first would prevent their recovery forever.
+                    // Probe before leader election so non-leader HTTP nodes recover
+                    // admission too. No job is dequeued and no local work is accepted.
+                    _ = await jobManager.JobQueue.GetQueueLengthAsync(stoppingToken).ConfigureAwait(false);
+                    if (jobManager.RequestStore is IProgressStoreRecovery requestRecovery)
+                    {
+                        await requestRecovery.ProbeRecoveryAsync(stoppingToken).ConfigureAwait(false);
+                    }
+                    if (jobManager.ProgressStore is IProgressStoreRecovery progressRecovery)
+                    {
+                        await progressRecovery.ProbeRecoveryAsync(stoppingToken).ConfigureAwait(false);
+                    }
+                }
+
                 var isLeader = await jobManager.LeaderElection.TryAcquireLeadershipAsync(stoppingToken).ConfigureAwait(false);
                 if (!isLeader)
                 {
