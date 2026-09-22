@@ -1,7 +1,7 @@
 ---
 type: capability
 title: "Offline/Field Sync"
-description: "Use disconnected field sync, form offline policy discovery, GeoServices replica/GeoPackage delta sync, and FieldCollection cursor/change exchange."
+description: "Use disconnected field sync, form offline policy discovery, GeoServices replica delta sync delivered as Esri JSON, and FieldCollection cursor/change exchange."
 resource: "honua://capability/fieldops.offline-sync"
 tags: [capability, fieldops, pro]
 ---
@@ -9,7 +9,7 @@ tags: [capability, fieldops, pro]
 
 # Offline/Field Sync
 
-Use disconnected field sync, form offline policy discovery, GeoServices replica/GeoPackage delta sync, and FieldCollection cursor/change exchange.
+Use disconnected field sync, form offline policy discovery, GeoServices replica delta sync delivered as Esri JSON, and FieldCollection cursor/change exchange.
 
 | | |
 | --- | --- |
