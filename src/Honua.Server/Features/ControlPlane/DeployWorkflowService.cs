@@ -173,10 +173,30 @@ internal sealed partial class DeployWorkflowService
         DeployOperationSpec spec,
         CancellationToken cancellationToken)
     {
+        var (blocks, warnings) = await DescribeProbeUrlFindingsAsync(spec, cancellationToken).ConfigureAwait(false);
+        if (blocks.Count == 0 && warnings.Count == 0)
+        {
+            return plan;
+        }
+
+        return plan with
+        {
+            IsReadyToSubmit = plan.IsReadyToSubmit && blocks.Count == 0,
+            BlockingReasons = [.. plan.BlockingReasons, .. blocks],
+            Warnings = [.. plan.Warnings, .. warnings]
+        };
+    }
+
+    private static async Task<(List<string> Blocks, List<string> Warnings)> DescribeProbeUrlFindingsAsync(
+        DeployOperationSpec spec,
+        CancellationToken cancellationToken)
+    {
+        var blocks = new List<string>();
+        var warnings = new List<string>();
         var policy = DeployTelemetryPolicy.Parse(spec);
         if (policy is not { IsValid: true })
         {
-            return plan;
+            return (blocks, warnings);
         }
 
         foreach (var (key, url) in new[]
@@ -198,26 +218,16 @@ internal sealed partial class DeployWorkflowService
 
             if (validation.IsHostResolutionUnavailable)
             {
-                plan = plan with
-                {
-                    Warnings = [.. plan.Warnings, $"{key} {validation.ErrorMessage} The probe re-checks it on every cycle."]
-                };
+                warnings.Add($"{key} {validation.ErrorMessage} The probe re-checks it on every cycle.");
                 continue;
             }
 
-            plan = plan with
-            {
-                IsReadyToSubmit = false,
-                BlockingReasons =
-                [
-                    .. plan.BlockingReasons,
-                    $"Telemetry gate configuration rejected: {key} {validation.ErrorMessage} " +
-                    "Deploy probes only reach public HTTPS endpoints, so this gate could never be evaluated."
-                ]
-            };
+            blocks.Add(
+                $"Telemetry gate configuration rejected: {key} {validation.ErrorMessage} " +
+                "Deploy probes only reach public HTTPS endpoints, so this gate could never be evaluated.");
         }
 
-        return plan;
+        return (blocks, warnings);
     }
 
     private string? DescribeTelemetryGateBlock(DeployOperationSpec spec)
@@ -494,6 +504,15 @@ internal sealed partial class DeployWorkflowService
         {
             throw new ResourceConflictException(
                 $"Deploy operation '{operation.OperationId}' cannot be submitted: {gateBlock}");
+        }
+
+        // A probe host can resolve differently at submit time than it did at plan time (for example
+        // after an approval wait), so the probe destination rule is re-applied before any mutation (#4988).
+        var (probeBlocks, _) = await DescribeProbeUrlFindingsAsync(operation.Deploy, cancellationToken).ConfigureAwait(false);
+        if (probeBlocks.Count > 0)
+        {
+            throw new ResourceConflictException(
+                $"Deploy operation '{operation.OperationId}' cannot be submitted: {string.Join(" ", probeBlocks)}");
         }
 
         var target = await _targetRegistry.GetAsync(operation.Deploy.TargetId, cancellationToken).ConfigureAwait(false);

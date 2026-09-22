@@ -1129,6 +1129,32 @@ public sealed class DeployWorkflowServiceTests
     }
 
     [Fact]
+    public async Task SubmitAsync_SavedPlanWithProbeUrlTheRuntimeProbeRefuses_RefusesBeforeMutation()
+    {
+        // A saved plan is submitted later (e.g. after approval); the probe destination is re-checked then,
+        // before the operation is claimed or the backend is started.
+        var store = new TestWorkflowOperationStore();
+        var backend = new ImmediateDeployBackend();
+        var service = CreateService(store, backend);
+        var operation = CreateOperationRecord(
+            WorkflowOperationStatus.Planned,
+            parameters: new Dictionary<string, string>
+            {
+                ["telemetry.policy"] = "health-only",
+                ["telemetry.golden_query.url"] = "https://10.0.0.12:19182/golden",
+                ["telemetry.golden_query.expected_contains"] = "candidate-b"
+            });
+        await store.TryCreateAsync(operation);
+
+        var submit = () => service.SubmitAsync(operation.OperationId, "alice", "ship");
+
+        (await submit.Should().ThrowAsync<ResourceConflictException>())
+            .WithMessage("*telemetry.golden_query.url*");
+        backend.StartCount.Should().Be(0);
+        (await store.GetAsync(operation.OperationId))!.Status.Should().Be(WorkflowOperationStatus.Planned);
+    }
+
+    [Fact]
     public async Task PlanAsync_WithPublicHttpsProbeUrls_AdmitsTheGate()
     {
         var service = CreateService(new TestWorkflowOperationStore(), new ImmediateDeployBackend());
