@@ -72,6 +72,27 @@ public sealed class BranchVersioningMetadataTests(ITestOutputHelper output) : IA
     public Task UnsupportedProvider_DoesNotAdvertiseBranchVersioning()
         => AssertMetadataAsync(HonuaEdition.Enterprise, experimentalEnabled: true, providerSupported: false, expectedData: false, expectedManagement: false);
 
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/admin/{serviceName}.{serviceType}")]
+    [Endpoint("POST /rest/admin/{serviceName}.{serviceType}")]
+    public async Task SitelessAdminService_GetAndPostReturnTheSameBranchMetadata()
+    {
+        await AssertMetadataAsync(HonuaEdition.Enterprise, experimentalEnabled: true,
+            providerSupported: true, expectedData: true, expectedManagement: true);
+        var fixture = _fixture ?? throw new InvalidOperationException("The metadata fixture was not initialized.");
+        var url = $"/rest/admin/{BranchVersioningPublicationFixture.ServiceName}.MapServer";
+        using var get = await fixture.Client.GetAsync($"{url}?f=json");
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json" });
+        using var post = await fixture.Client.PostAsync(url, form);
+        get.StatusCode.Should().Be(HttpStatusCode.OK);
+        post.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var getPayload = JsonDocument.Parse(await get.Content.ReadAsStringAsync());
+        using var postPayload = JsonDocument.Parse(await post.Content.ReadAsStringAsync());
+        getPayload.RootElement.GetProperty("properties").GetProperty("isBranchVersioned").GetString().Should().Be("true");
+        postPayload.RootElement.GetRawText().Should().Be(getPayload.RootElement.GetRawText());
+    }
+
     private async Task AssertMetadataAsync(
         HonuaEdition edition, bool experimentalEnabled, bool providerSupported, bool expectedData, bool expectedManagement)
     {

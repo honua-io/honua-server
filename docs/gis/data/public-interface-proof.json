@@ -1594,14 +1594,15 @@
       "displayName": "GeoServices REST catalog",
       "surfaceKind": "http-route-family",
       "protocol": "GeoServices REST",
-      "canonicalIdentifier": "/rest/services + /rest/info + SOAP POST /services",
+      "canonicalIdentifier": "/rest/services + /rest/info + SOAP POST /services + /rest/admin/{serviceName}.{serviceType}",
       "parentSurfaceId": null,
       "endpointPrefixes": [
         "/rest/info"
       ],
       "endpointExactMatches": [
         "/rest/services",
-        "/services"
+        "/services",
+        "/rest/admin/{serviceName}.{serviceType}"
       ],
       "endpointContains": [],
       "operationKeys": [
@@ -1630,10 +1631,11 @@
         },
         {
           "proofClass": "scenario-depth",
-          "proofMechanism": "SOAP 1.1 and 1.2 catalog requests cover the root and service-scoped routes, WSDL Result wrappers for all seven catalog operations, malformed and ambiguous body rejection, and service scoping.",
+          "proofMechanism": "SOAP 1.1 and 1.2 catalog requests cover the root and service-scoped routes, WSDL Result wrappers for all seven catalog operations, malformed and ambiguous body rejection, and service scoping. The siteless ArcGIS Pro admin alias returns identical GET/POST service metadata with the configured branch-versioning policy.",
           "executionLane": "ci:test-all",
           "evidenceLocations": [
-            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogEndpointTests.cs"
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/Catalog/GeoservicesCatalogEndpointTests.cs",
+            "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/VersionManagementServer/BranchVersioningMetadataTests.cs"
           ],
           "ownerRepo": "honua-server",
           "status": "implemented",
