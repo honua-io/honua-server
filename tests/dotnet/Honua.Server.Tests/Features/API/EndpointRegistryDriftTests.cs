@@ -167,6 +167,22 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
 
     [Fact]
     [Trait("Category", "Architecture")]
+    public void NonConditionalRegisteredEndpoints_AreIncludedInDriftComparison()
+    {
+        var excluded = EndpointRegistry.All
+            .Select(endpoint => NormalizeEndpointKey($"{endpoint.Method} {endpoint.Path}"))
+            .Where(endpoint => !_conditionallyMappedRegistryPatterns.Contains(endpoint))
+            .Where(IsExcluded)
+            .OrderBy(endpoint => endpoint)
+            .ToArray();
+
+        excluded.Should().BeEmpty(
+            "the deployed-route selector must include every non-conditional registry entry, " +
+            "otherwise a deployed endpoint is removed before the comparison and falsely reported as stale");
+    }
+
+    [Fact]
+    [Trait("Category", "Architecture")]
     public void MetadataOpaqueRegistryEntries_AreCoveredByEndpointLevelIntegrationTests()
     {
         var testedEndpoints = CollectEndpointLevelIntegrationTestEndpoints(_conditionallyMappedRegistryPatterns);
@@ -361,6 +377,9 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
                path.Equals("/docs", StringComparison.OrdinalIgnoreCase) ||
                path.Equals("/mcp", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) ||
+               // ArcGIS Server Admin API workspace discovery is a public compatibility
+               // surface, distinct from Honua's /api/v1/admin control plane (#5036).
+               path.StartsWith("/admin/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/healthz/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/odata", StringComparison.OrdinalIgnoreCase) ||
                path.Equals("/edr", StringComparison.OrdinalIgnoreCase) ||
@@ -373,6 +392,10 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
                path.Equals("/stac", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/stac/", StringComparison.OrdinalIgnoreCase) ||
                path.StartsWith("/sta/", StringComparison.OrdinalIgnoreCase) ||
+               // /sensorthings/v1.1 is the discoverability alias of /sta/v1.1 (#4202); it is
+               // deployed with the STA surface and tracked in the registry, so it has to be
+               // in the comparison or its registry rows read as stale.
+               path.StartsWith("/sensorthings/", StringComparison.OrdinalIgnoreCase) ||
                // Enterprise identity provisioning + SSO surfaces (#510 SCIM 2.0, #508 SAML 2.0).
                // These routes are mapped unconditionally in Program.cs and tracked in
                // EndpointRegistry.All, so the drift comparison must include them.

@@ -72,6 +72,10 @@ internal sealed partial class Wfs20Handler
                     "request");
             }
 
+            // A WFS 1.0.0 / 1.1.0 Transaction (what QGIS sends) is rewritten into the 2.0
+            // shape and answered in its own version's response shape; see the Legacy partial.
+            var legacyVersion = TryNormaliseLegacyTransaction(document);
+            root = document.Root!;
             var rollbackOnFailure = ResolveRollbackOnFailure(context.Request, root);
             var prepared = await PrepareTransactionAsync(
                 context,
@@ -89,7 +93,7 @@ internal sealed partial class Wfs20Handler
                 {
                     // All actions matched zero features — ISO 19142 §15.2.5.3 no-op: return
                     // a valid TransactionResponse with all counts at zero rather than an error.
-                    var emptyResponse = BuildTransactionResponseXml(prepared, FeatureEditResult.Success(0, 0, 0));
+                    var emptyResponse = BuildTransactionResponseXml(prepared, FeatureEditResult.Success(0, 0, 0), legacyVersion);
                     return Results.Content(emptyResponse, "application/xml", Encoding.UTF8);
                 }
 
@@ -158,7 +162,7 @@ internal sealed partial class Wfs20Handler
             Wfs20Log.TransactionReturned(_logger, editResult.CreatedCount, editResult.UpdatedCount, editResult.DeletedCount);
             HonuaTelemetry.SetSuccess(activity, committedChangeCount);
 
-            var responseXml = BuildTransactionResponseXml(prepared, editResult);
+            var responseXml = BuildTransactionResponseXml(prepared, editResult, legacyVersion);
             return Results.Content(responseXml, "application/xml", Encoding.UTF8);
         }
         catch (InvalidDataException ex)
@@ -2224,7 +2228,8 @@ internal sealed partial class Wfs20Handler
 
     private static string BuildTransactionResponseXml(
         TransactionPreparationResult prepared,
-        FeatureEditResult editResult)
+        FeatureEditResult editResult,
+        string? legacyVersion = null)
     {
         var inserted = new List<(PreparedTransactionOperation Operation, EditOperationResult Result)>();
         var replaced = new List<(PreparedTransactionOperation Operation, EditOperationResult Result)>();
@@ -2296,6 +2301,11 @@ internal sealed partial class Wfs20Handler
                         break;
                     }
             }
+        }
+
+        if (legacyVersion is not null)
+        {
+            return BuildLegacyTransactionResponseXml(legacyVersion, inserted, receipts, updatedCount, deletedCount);
         }
 
         return WriteXmlDocument(writer =>

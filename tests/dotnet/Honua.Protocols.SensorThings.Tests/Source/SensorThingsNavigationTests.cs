@@ -213,4 +213,43 @@ public sealed class SensorThingsNavigationTests : IAsyncLifetime
         using var unsupported = await _fixture.Client.GetAsync("/sta/v1.1/Things(1)/Datastreams?$expand=Observations($select=result)");
         unsupported.StatusCode.Should().Be(HttpStatusCode.NotImplemented);
     }
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /sensorthings/v1.1")]
+    [Endpoint("GET /sensorthings/v1.1/{*staPath}")]
+    public async Task SensorThingsAlias_RedirectsToTheCanonicalRoot()
+    {
+        // The SensorThings spec leaves the service root prefix to the deployment,
+        // and the common implementations serve a bare /v1.1, so nothing makes
+        // /sta discoverable - it is also one character from the unrelated /stac
+        // surface. honua-server#4202 was filed as "service root returns 404"
+        // against /sensorthings, and the same wrong guess was made again during
+        // client certification, so the guess resolves via a 308.
+        using var client = _fixture.CreateClient(allowAutoRedirect: false);
+
+        foreach (var (alias, canonical) in new[]
+        {
+            ("/sensorthings/v1.1", "/sta/v1.1"),
+            ("/sensorthings/v1.1/Things", "/sta/v1.1/Things"),
+            ("/sensorthings/v1.1/Things(1)", "/sta/v1.1/Things(1)"),
+        })
+        {
+            using var response = await client.GetAsync(alias);
+
+            // 308 rather than 302: it preserves the method and body, so the alias
+            // keeps working if the write surface is ever aliased too.
+            response.StatusCode.Should().Be(HttpStatusCode.PermanentRedirect,
+                "{0} must redirect to the canonical root", alias);
+            response.Headers.Location!.ToString().Should().Be(canonical);
+        }
+
+        // Following it has to actually arrive, and the document it returns must
+        // advertise the canonical paths rather than the alias.
+        using var followed = await _fixture.Client.GetAsync("/sensorthings/v1.1");
+        followed.StatusCode.Should().Be(HttpStatusCode.OK);
+        var document = await followed.Content.ReadAsStringAsync();
+        document.Should().Contain("/sta/v1.1/Things");
+        document.Should().NotContain("/sensorthings/v1.1");
+    }
 }

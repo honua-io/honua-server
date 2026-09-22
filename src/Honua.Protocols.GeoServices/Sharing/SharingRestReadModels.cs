@@ -73,8 +73,62 @@ internal sealed record PortalSelfResponse
     [JsonPropertyName("user")]
     public PortalUser? User { get; init; }
 
+    /// <summary>
+    /// The utility services this portal offers its clients (#5035). ArcGIS Pro and
+    /// arcpy.nax bind routing through <c>helperServices.route</c> and friends after
+    /// signing in; without the block Pro reports "Cannot use ... for network analysis".
+    /// </summary>
+    [JsonPropertyName("helperServices")]
+    public PortalHelperServices? HelperServices { get; init; }
+
     // No ArcGIS Portal version (currentVersion) is advertised — Honua does not impersonate a
     // specific ArcGIS Portal release (guarded by NoArcGisServerVersionTests).
+}
+
+/// <summary>
+/// The <c>helperServices</c> block of <c>portals/self</c>: one entry per routing
+/// solver the configured provider supports, plus the NetworkAnalysisUtilities GP
+/// service the clients call for travel modes and tool limits.
+/// </summary>
+internal sealed record PortalHelperServices
+{
+    [JsonPropertyName("route")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PortalHelperService? Route { get; init; }
+
+    [JsonPropertyName("serviceArea")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PortalHelperService? ServiceArea { get; init; }
+
+    [JsonPropertyName("closestFacility")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PortalHelperService? ClosestFacility { get; init; }
+
+    [JsonPropertyName("odCostMatrix")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PortalHelperService? OdCostMatrix { get; init; }
+
+    [JsonPropertyName("routingUtilities")]
+    public required PortalHelperService RoutingUtilities { get; init; }
+
+    // No asyncRoute/asyncServiceArea/... entries: those name Esri's asynchronous
+    // routing web tools (FindRoutes, GenerateServiceAreas, ...), which Honua does
+    // not publish. arcpy.nax binds a portal only through those web tools ("Portal
+    // is not configured with the Route web tool", Pro 3.7.1, 2026-09-19); pointing
+    // the entries at a GP service without the tools only moved that failure into
+    // a SOAP toolbox import. The synchronous NAServer layers above are what the
+    // Pro user interface consumes.
+}
+
+/// <summary>One helper service: its URL and, for solvers, the default travel mode id.</summary>
+internal sealed record PortalHelperService
+{
+    [JsonPropertyName("url")]
+    public required string Url { get; init; }
+
+    [JsonPropertyName("defaultTravelMode")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? DefaultTravelMode { get; init; }
 }
 
 /// <summary>
@@ -94,6 +148,10 @@ internal sealed record CommunitySelfResponse
     /// <summary>Roles granted to the calling principal.</summary>
     [JsonPropertyName("role")]
     public string Role { get; init; } = "org_user";
+
+    /// <summary>Portal privilege strings the principal holds (see <see cref="PortalUser.Privileges"/>).</summary>
+    [JsonPropertyName("privileges")]
+    public string[] Privileges { get; init; } = [];
 }
 
 /// <summary>
@@ -112,6 +170,13 @@ internal sealed record PortalUser
     /// <summary>Coarse role string for the calling principal.</summary>
     [JsonPropertyName("role")]
     public string Role { get; init; } = "org_user";
+
+    /// <summary>
+    /// Portal privilege strings the principal holds. ArcGIS Pro and arcpy.nax gate
+    /// network analysis on <c>premium:user:networkanalysis*</c> (#5035).
+    /// </summary>
+    [JsonPropertyName("privileges")]
+    public string[] Privileges { get; init; } = [];
 }
 
 /// <summary>

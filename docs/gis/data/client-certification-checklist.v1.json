@@ -31,7 +31,8 @@
       },
       "arcpy": {
         "pass": 36,
-        "blocked": 56,
+        "n/a-no-client": 37,
+        "blocked": 19,
         "fail": 2
       },
       "qgis-ui": {
@@ -40,15 +41,15 @@
         "n/a-no-client": 3
       },
       "pyqgis": {
-        "pass": 64,
+        "pass": 65,
         "n/a-no-client": 3,
-        "blocked": 27
+        "blocked": 26
       }
     },
     "overall": {
       "cells": 376,
-      "closed": 183,
-      "open": 193
+      "closed": 221,
+      "open": 155
     }
   },
   "rows": [
@@ -108,12 +109,13 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904, UI-SERVICE-WMS: Explore pop-up on the WMS layer returned the text/plain GetFeatureInfo body 'Layer=UI Points, category=A, name=ui-point-07, objectid=10, value=60', matching the service and the server-side GetFeatureInfo in all three advertised formats"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. Missing MakeWMSLayer and module-level identify names do not cover factory-returned mapping objects; the exact GetFeatureInfo request path needs review.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "arcpy 3.7.1 module probe, 2026-09-18: arcpy exposes no MakeWMSLayer or MakeWMTSLayer and no identify call against a WMS layer. A WMS is consumed by adding it to a map, which draws it; GetFeatureInfo is issued by Pro's Identify tool in the UI, not by arcpy."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no wms consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['wms'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "pass",
@@ -134,12 +136,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no wms consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['wms'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "pass",
@@ -160,12 +163,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no wms consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['wms'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "pass",
@@ -186,12 +190,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no wms consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['wms'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "pass",
@@ -213,12 +218,13 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. Failure through one addDataFromPath method does not exclude saved layers, connection files or geoprocessing tools.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "arcpy 3.7.1.1904 probe, 2026-09-18: the only arcpy path that consumes a web service is arcpy.mp Map.addDataFromPath, and its own validation names the complete set of service kinds it accepts - \"Invalid value for web_service_type: 'WMTS' (choices are: ['AUTOMATIC', 'ARCGIS_SERVER_WEB', 'KML', 'VECTOR_TILE', 'WMS'])\". AUTOMATIC against the WMTS endpoint fails with \"AUTOMATIC failed, a more specific web_service_type may need to be provided\", and the same probe added the WMS endpoint and exported a drawn PNG, so the boundary is the client's, not the fixture's. WMTS, WCS, 3D Tiles and the OGC APIs have no arcpy entry point; ArcGIS Pro's own UI adds them, which is the pro-ui lane."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no wmts consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['wmts'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "pass",
@@ -240,12 +246,13 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. Failure through one addDataFromPath method does not exclude saved layers, connection files or geoprocessing tools.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "arcpy 3.7.1.1904 probe, 2026-09-18: the only arcpy path that consumes a web service is arcpy.mp Map.addDataFromPath, and its own validation names the complete set of service kinds it accepts - \"Invalid value for web_service_type: 'WMTS' (choices are: ['AUTOMATIC', 'ARCGIS_SERVER_WEB', 'KML', 'VECTOR_TILE', 'WMS'])\". AUTOMATIC against the WMTS endpoint fails with \"AUTOMATIC failed, a more specific web_service_type may need to be provided\", and the same probe added the WMS endpoint and exported a drawn PNG, so the boundary is the client's, not the fixture's. WMTS, WCS, 3D Tiles and the OGC APIs have no arcpy entry point; ArcGIS Pro's own UI adds them, which is the pro-ui lane."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no wmts consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['wmts'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "pass",
@@ -266,12 +273,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no wmts consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['wmts'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "pass",
@@ -292,12 +300,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no wmts consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['wmts'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "pass",
@@ -751,12 +760,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no ogc-api-features consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['ogcapi', 'ogcfeature'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "pass",
@@ -777,12 +787,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no ogc-api-features consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['ogcapi', 'ogcfeature'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "pass",
@@ -803,12 +814,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no ogc-api-features consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['ogcapi', 'ogcfeature'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "pass",
@@ -829,12 +841,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no ogc-api-features consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['ogcapi', 'ogcfeature'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "pass",
@@ -855,12 +868,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no ogc-api-features consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['ogcapi', 'ogcfeature'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "pass",
@@ -881,12 +895,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no ogc-api-features consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['ogcapi', 'ogcfeature'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "pass",
@@ -907,12 +922,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no ogc-api-features consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['ogcapi', 'ogcfeature'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "pass",
@@ -934,12 +950,13 @@
           "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/use-ogc-api-services.html: \"Since the OGC API Features layer is not editable, you cannot make edits to the data or schema through ArcGIS Pro.\" (fetched 2026-09-19)"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no ogc-api-features consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['ogcapi', 'ogcfeature'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "pass",
@@ -965,12 +982,13 @@
           }
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no ogc-api-tiles consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['ogcapi'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -1008,12 +1026,13 @@
           }
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no ogc-api-tiles consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['ogcapi'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -1167,12 +1186,13 @@
           }
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no sensorthings consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['sensorthings'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "pass",
@@ -1198,12 +1218,13 @@
           }
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no sensorthings consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['sensorthings'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "pass",
@@ -1229,12 +1250,13 @@
           }
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no sensorthings consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['sensorthings'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "pass",
@@ -2111,12 +2133,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. Module-name matching is not a complete native client inventory. Review concrete native tools and requests; local geometry calculations alone cannot certify remote GeometryServer operations.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "arcpy 3.7.1 module probe, 2026-09-18: no attribute in arcpy or any server-facing submodule matches 'geometryserver' or 'geometryservice'. Every geometry entry point is local computation - Buffer_analysis, Project_management, arcpy.Geometry.projectAs - so a GeometryServer request is never issued. ArcPy cannot certify this protocol however the server behaves; Pro's own UI is the client that would."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no geometryserver consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['geometryserver'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -2145,12 +2168,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. Module-name matching is not a complete native client inventory. Review concrete native tools and requests; local geometry calculations alone cannot certify remote GeometryServer operations.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "arcpy 3.7.1 module probe, 2026-09-18: no attribute in arcpy or any server-facing submodule matches 'geometryserver' or 'geometryservice'. Every geometry entry point is local computation - Buffer_analysis, Project_management, arcpy.Geometry.projectAs - so a GeometryServer request is never issued. ArcPy cannot certify this protocol however the server behaves; Pro's own UI is the client that would."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no geometryserver consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['geometryserver'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -2179,12 +2203,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. Module-name matching is not a complete native client inventory. Review concrete native tools and requests; local geometry calculations alone cannot certify remote GeometryServer operations.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "arcpy 3.7.1 module probe, 2026-09-18: no attribute in arcpy or any server-facing submodule matches 'geometryserver' or 'geometryservice'. Every geometry entry point is local computation - Buffer_analysis, Project_management, arcpy.Geometry.projectAs - so a GeometryServer request is never issued. ArcPy cannot certify this protocol however the server behaves; Pro's own UI is the client that would."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no geometryserver consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['geometryserver'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -2213,12 +2238,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. Module-name matching is not a complete native client inventory. Review concrete native tools and requests; local geometry calculations alone cannot certify remote GeometryServer operations.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "arcpy 3.7.1 module probe, 2026-09-18: no attribute in arcpy or any server-facing submodule matches 'geometryserver' or 'geometryservice'. Every geometry entry point is local computation - Buffer_analysis, Project_management, arcpy.Geometry.projectAs - so a GeometryServer request is never issued. ArcPy cannot certify this protocol however the server behaves; Pro's own UI is the client that would."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no geometryserver consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['geometryserver'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -2377,12 +2403,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The broad REST-only premise conflicts with the existing ArcPy GP SOAP workflow; catalog discovery needs a specific probe.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "arcpy 3.7.1 module probe, 2026-09-18: no attribute matches 'soap' or 'wsdl'. arcpy speaks the REST surface only, so the GeoServices SOAP catalog has no arcpy caller."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no geoservices-soap consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['soap'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -2416,12 +2443,13 @@
           }
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no odata consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['odata'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -2455,12 +2483,13 @@
           }
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no odata consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['odata'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -2494,12 +2523,13 @@
           }
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no ogc-api-maps consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['ogcapi'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -2537,12 +2567,13 @@
           }
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no ogc-api-coverages consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['ogcapi'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -2576,12 +2607,13 @@
           }
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no ogc-api-records consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['ogcapi'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -2592,12 +2624,16 @@
           }
         },
         "pyqgis": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "state": "pass",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
-          }
+          },
+          "previous_review": {
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI."
+          },
+          "evidence": "honua-client-compat/evidence/pyqgis-ogc-records-native-20260920-a/receipt.json (honua-client-compat commit 5805b4854d28f944ea3cb36c2a96fb010f8c1cf7; SHA-256 15a7d73a879725288c7bc95d1ea8798b142fbcb3f42ac7cc862d2a03560399af): PyQGIS 3.44.14-Solothurn / GDAL 3.13.3 stock OGR GeoJSON configured HTTPS URL reads all 11 catalog records and repeats the read after QGS reload in a distinct fresh process. IDs, titles, types, resource types and null geometries match independent before/after HTTP; exact remote URI retained, both workers exit0. Verified TLS, unchanged SQL feature/raster fixture and runtime, source 8b7aea9f6c73504d968560227926e3b8b4c5ddd0 / image 28d09586daf7. Configured-URL membership and selected metadata only; no catalog chooser, provider-generated search, filtering/pagination, nested metadata, native wire trace or full Records conformance claim. Development JIT SDK evidence, zero UI credit"
         }
       }
     },
@@ -2615,12 +2651,13 @@
           }
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no ogc-api-processes consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['ogcapi'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -2654,12 +2691,13 @@
           }
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no ogc-api-styles consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['ogcapi'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "pass",
@@ -2685,12 +2723,13 @@
           }
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no ogc-api-edr consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['ogcapi'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -2719,12 +2758,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no pmtiles consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['pmtiles'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "pass",
@@ -2745,12 +2785,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no tilejson consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['tilejson'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -2835,12 +2876,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. Failure through one addDataFromPath method does not exclude saved layers, connection files or geoprocessing tools.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "arcpy 3.7.1.1904 probe, 2026-09-18: the only arcpy path that consumes a web service is arcpy.mp Map.addDataFromPath, and its own validation names the complete set of service kinds it accepts - \"Invalid value for web_service_type: 'WMTS' (choices are: ['AUTOMATIC', 'ARCGIS_SERVER_WEB', 'KML', 'VECTOR_TILE', 'WMS'])\". AUTOMATIC against the WMTS endpoint fails with \"AUTOMATIC failed, a more specific web_service_type may need to be provided\", and the same probe added the WMS endpoint and exported a drawn PNG, so the boundary is the client's, not the fixture's. WMTS, WCS, 3D Tiles and the OGC APIs have no arcpy entry point; ArcGIS Pro's own UI adds them, which is the pro-ui lane."
-          }
+          },
+          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no 3d-tiles consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['3dtiles'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
           "state": "pass",

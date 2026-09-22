@@ -685,6 +685,41 @@ public sealed class QueryFormatterTests
         return new WKBWriter().Write(collection);
     }
 
+    [Theory]
+    [InlineData("""["red","blue"]""")]
+    [InlineData("""{"a":1,"b":[2,3]}""")]
+    public async Task FormatQueryResultAsync_JsonField_IsAStringInTheEsriShape(string json)
+    {
+        // The layer document advertises a Json field as esriFieldTypeString, so the
+        // value must be a string: left as a nested array it made ArcGIS Pro's
+        // feature-service reader drop every row that projected the field.
+        var limitsOptions = Options.Create(new LimitsOptions());
+        var formatter = new QueryFormatter(limitsOptions, new PbfQueryFormatter(limitsOptions),
+            NullLogger<QueryFormatter>.Instance);
+        using var document = JsonDocument.Parse(json);
+        var feature = Feature.Create(7, geometry: null,
+            ImmutableDictionary<string, object?>.Empty.Add("tags", document.RootElement.Clone()));
+        var layer = CreatePointResource(
+            "json-field-layer",
+            new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+            new MetadataV2Field { Name = "tags", Type = MetadataV2FieldType.Json });
+
+        var (response, _) = await formatter.FormatQueryResultAsync(
+            QueryResult<Feature>.Create(1, [feature]), layer,
+            format: "json", returnGeometry: false, outputSrid: null, returnZ: false, returnM: false,
+            geometryPrecision: null, maxAllowableOffset: null);
+
+        var result = response.Should().BeOfType<QueryResponse>().Subject;
+        var tags = result.Fields.Should().Contain(field => field.Name == "tags").Subject;
+        tags.Type.Should().Be("esriFieldTypeString");
+        tags.Length.Should().BeGreaterThan(0,
+            "an Esri client maps a null string length to 0 and then discards every row that projects the field");
+        var value = result.Features.Should().ContainSingle().Subject.Attributes["tags"];
+        value.Should().BeOfType<string>("the advertised field type is string, so the value must be one");
+        JsonDocument.Parse((string)value!).RootElement.ValueKind.Should().Be(document.RootElement.ValueKind,
+            "the string is the value's own JSON text, not a lossy rendering of it");
+    }
+
     private static MetadataV2Resource CreatePointLayer()
         => CreatePointResource(
             "test-layer",

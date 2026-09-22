@@ -114,5 +114,9 @@ public static partial class EndpointRegistry
         // Durable PMTiles publish range proxy (#845).
         new("GET", "/api/v1/tiles/pmtiles/{*artifactId}"),
         new("HEAD", "/api/v1/tiles/pmtiles/{*artifactId}"),
+
+        // Published Cloud Optimized GeoTIFF range proxy (client certification cog/range-read).
+        new("GET", "/api/v1/rasters/cog/{*artifactId}"),
+        new("HEAD", "/api/v1/rasters/cog/{*artifactId}"),
     ];
 }

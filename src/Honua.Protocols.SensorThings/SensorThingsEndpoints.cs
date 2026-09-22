@@ -54,6 +54,33 @@ internal static partial class SensorThingsEndpoints
             .WithTags("SensorThings")
             .Produces<StaServiceDocument>(200, "application/json");
 
+        // /sensorthings/v1.1 is an alias, not a second implementation: it
+        // redirects to the canonical /sta/v1.1 above. The spec leaves the root
+        // prefix to the deployment - FROST-Server and SensorUp both serve a bare
+        // /v1.1 - so nothing makes /sta discoverable, and it is one character from
+        // the unrelated /stac surface. #4202 was filed as "service root returns
+        // 404" against /sensorthings, and the same wrong guess was made again
+        // during the client-certification audit, so the guess now resolves.
+        //
+        // A redirect rather than twenty duplicate routes keeps one canonical path,
+        // leaves @iot.selfLinks pointing at /sta, and keeps the OpenAPI surface and
+        // the endpoint registry single. 308 preserves method and body.
+        endpoints.MapGet("/sensorthings/v1.1", static () =>
+                Results.Redirect("/sta/v1.1", permanent: true, preserveMethod: true))
+            .WithDisplayName("STA Service Document (alias)")
+            .WithName("StaServiceDocumentAlias")
+            .WithSummary("Redirect to the canonical SensorThings service root")
+            .WithTags("SensorThings")
+            .ExcludeFromDescription();
+
+        endpoints.MapGet("/sensorthings/v1.1/{*staPath}", static (string staPath) =>
+                Results.Redirect($"/sta/v1.1/{staPath}", permanent: true, preserveMethod: true))
+            .WithDisplayName("STA Resource (alias)")
+            .WithName("StaResourceAlias")
+            .WithSummary("Redirect to the canonical SensorThings resource path")
+            .WithTags("SensorThings")
+            .ExcludeFromDescription();
+
         // Each route is a literal first argument to MapGet so the source-scan
         // governance can anchor every EndpointRegistry entry to a concrete
         // MapGet call; the typed {id:long} constraint normalises to {id}.

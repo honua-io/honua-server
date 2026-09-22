@@ -15,6 +15,7 @@ using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.GeoServices.GPServer.Models;
+using Honua.Protocols.GeoServices.NAServer;
 using Honua.ServiceDefaults;
 
 namespace Honua.Protocols.GeoServices.GPServer;
@@ -228,7 +229,10 @@ internal static partial class GPServerEndpoints
             // with a documented Esri GP tool equivalent are ALSO published under that
             // Esri-conventional name, so an unmodified ArcGIS client browsing the task
             // list can find the tool it's looking for either way.
-            Tasks = [.. BuildPublishedTaskNames(processCatalog)]
+            // The NetworkAnalysisUtilities tasks ride along on every GP service (#5035):
+            // ArcGIS Pro / arcpy.nax execute GetTravelModes and GetToolInfo on the
+            // "utilityUrl" GP service before binding the NAServer next to it.
+            Tasks = [.. BuildPublishedTaskNames(processCatalog), .. NAServerMetadata.UtilityTaskNames]
         };
 
         return Results.Json(
@@ -248,6 +252,14 @@ internal static partial class GPServerEndpoints
         if (formatError != null)
         {
             return formatError;
+        }
+
+        // The utility tasks answer for every service id, like the NAServer solves they
+        // describe: the portal's helperServices point at the Routing service id, which
+        // publishes no catalog tasks of its own.
+        if (NAServerMetadata.IsUtilityTask(taskName))
+        {
+            return HandleNetworkAnalysisUtilityTaskInfo(context, taskName);
         }
 
         var serviceValidation = await ValidateServiceAsync(context, serviceId, logger, ct);
@@ -290,6 +302,17 @@ internal static partial class GPServerEndpoints
 
         try
         {
+            if (readSoapParameters is null && NAServerMetadata.IsUtilityTask(taskName))
+            {
+                // The utility tasks are synchronous by contract (Esri publishes them as
+                // esriExecutionTypeSynchronous); there is no job to enqueue.
+                return SetSpanErrorAndReturn(
+                    StandardErrorHelpers.CreateBadRequest(
+                        context,
+                        $"Task '{taskName}' is synchronous. Use the execute route."),
+                    "Utility task has no job form");
+            }
+
             var serviceValidation = await ValidateServiceAsync(context, serviceId, logger, ct);
             if (!serviceValidation.IsValid)
             {
@@ -414,6 +437,14 @@ internal static partial class GPServerEndpoints
 
         try
         {
+            if (readSoapParameters is null && NAServerMetadata.IsUtilityTask(taskName))
+            {
+                // Read-only projection of the routing provider: no job, no job
+                // authorization, anonymous like the NAServer solves it describes, and
+                // answered for every service id like them (#5035).
+                return await HandleNetworkAnalysisUtilityExecuteAsync(context, taskName, ct).ConfigureAwait(false);
+            }
+
             var serviceValidation = await ValidateServiceAsync(context, serviceId, logger, ct);
             if (!serviceValidation.IsValid)
             {

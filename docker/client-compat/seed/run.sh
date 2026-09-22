@@ -30,6 +30,19 @@ done
 echo "Applying base seed: tests/seed/client-compat-v1.sql"
 psql -v ON_ERROR_STOP=1 -f tests/seed/client-compat-v1.sql
 
+# Coverage fixture: the base seed declares a service advertising ImageServer,
+# Wcs and OGC-API-Coverages bound to layer 0, but seeds no raster there, so
+# every coverage surface resolved a service and then found nothing. Applied
+# right after the base seed because it references honua.layers(layer_id) = 0.
+echo "Applying raster coverage seed: tests/seed/client-compat-raster-v1.sql"
+psql -v ON_ERROR_STOP=1 -f tests/seed/client-compat-raster-v1.sql
+
+# Routing fixture: pgRouting is installed and the server registers the default
+# network dataset, but no edges were seeded, so NAServer Route/ServiceArea
+# solves answered "No route could be solved". A small street grid closes that.
+echo "Applying routing grid seed: tests/seed/client-compat-routing-v1.sql"
+psql -v ON_ERROR_STOP=1 -f tests/seed/client-compat-routing-v1.sql
+
 echo "Applying browser-compat YAML seed: tests/seed/browser-compat.yaml"
 bash tests/seed/apply-yaml-seed.sh tests/seed/browser-compat.yaml
 
@@ -43,5 +56,35 @@ bash tests/seed/apply-yaml-seed.sh tests/seed/client-compat-auth-wave1.yaml
 # the Portal item projector reads includes the tiered services.
 echo "Applying portal-compat YAML seed: tests/seed/portal-compat.yaml"
 bash tests/seed/apply-yaml-seed.sh tests/seed/portal-compat.yaml
+
+# PMTiles archive for the pmtiles/archive-read certification cell. Published
+# through the running server: LocalFileStorage indexes its objects once at
+# construction, so an archive written to disk afterwards is invisible to the tile
+# proxy.
+#
+# Explicitly non-fatal. Every SQL seed above has already applied by this point,
+# and every lane gates on this container exiting 0, so aborting here would take
+# out the whole matrix for one optional artifact. A failure is not hidden either:
+# the pmtiles cell's own test fails on the 404 rather than skipping.
+echo "Publishing PMTiles archive for test_service/0"
+if python3 /usr/local/bin/publish-pmtiles.py; then
+    :
+else
+    echo "WARNING: PMTiles publish did not complete; the pmtiles certification cell will fail on a 404." >&2
+fi
+
+echo "Publishing the Cloud Optimized GeoTIFF for test_service/0"
+if python3 /usr/local/bin/publish-cog.py; then
+    :
+else
+    echo "WARNING: COG publish did not complete; the cog certification cells will fail on a 404." >&2
+fi
+
+echo "Generating the 3D Tiles / I3S scene from browser_compat/2002"
+if python3 /usr/local/bin/publish-scene.py; then
+    :
+else
+    echo "WARNING: scene generation did not complete; the 3d-tiles and i3s certification cells will fail on a 404." >&2
+fi
 
 echo "Seed complete."

@@ -156,6 +156,21 @@ public sealed class GeoServicesParityMatrixDriftTests
             + "dropped route is an operation the join can never require a judgement for.");
     }
 
+    /// <summary>The two workspace-discovery spellings are one operation, with no lost routes.</summary>
+    [ArchitectureTest]
+    public void AdminServiceResource_RetainsBothAliasesAndMethods()
+    {
+        var operation = SharedJoin.Value.Roster.Operations.Should()
+            .ContainSingle(operation => operation.EsriPath == "/admin/services/{serviceName}.{serviceType}").Which;
+
+        operation.ServiceType.Should().Be(GeoServicesRouteRoster.CatalogServiceType);
+        operation.HonuaEndpoints.Should().BeEquivalentTo(
+            "GET /admin/services/{serviceName}.{serviceType}",
+            "POST /admin/services/{serviceName}.{serviceType}",
+            "GET /rest/admin/{serviceName}.{serviceType}",
+            "POST /rest/admin/{serviceName}.{serviceType}");
+    }
+
     /// <summary>
     /// A scope exclusion must still describe something real. An exclusion that matches
     /// nothing is either a typo silently widening the matrix's blind spot, or a stale

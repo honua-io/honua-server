@@ -21,6 +21,14 @@ public static partial class EndpointRegistry
         new("GET", "/sharing/rest/content/items/{id}"),
         new("GET", "/sharing/rest/content/items/{id}/data"),
 
+        // ArcGIS Server Admin API service resource, read-only projection; arcpy's
+        // branch-versioning tools validate a feature-service workspace through it (#5036).
+        new("GET", "/admin/services/{serviceName}.{serviceType}"),
+        new("POST", "/admin/services/{serviceName}.{serviceType}"),
+        // The same resource as ArcGIS Pro spells it from a connection with no site segment.
+        new("GET", "/rest/admin/{serviceName}.{serviceType}"),
+        new("POST", "/rest/admin/{serviceName}.{serviceType}"),
+
         // ArcGIS Portal OAuth2 named-user bridge (#1242).
         new("GET", "/sharing/rest/oauth2/authorize"),
         new("GET", "/sharing/rest/oauth2/callback"),

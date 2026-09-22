@@ -257,6 +257,31 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.QueryAttachments)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/attachments")]
+    public async Task AttachmentInfos_WithFormPost_ReturnsTheSameListAsGet()
+    {
+        // ArcGIS Pro's Attributes pane lists a feature's attachments with a form POST
+        // (f=json) to the per-feature attachments resource. A 405 envelope here read as
+        // "Attachments (0)" in Pro right after a successful addAttachment.
+        var getResponse = await _fixture.Client.GetAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments?f=json");
+        getResponse.BeSuccessful();
+        var viaGet = JsonSerializer.Deserialize(
+            await getResponse.Content.ReadAsStringAsync(), FeatureServerJsonContext.Default.AttachmentInfosResponse);
+
+        using var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json" });
+        var postResponse = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/attachments", form);
+        postResponse.BeSuccessful();
+        var postContent = await postResponse.Content.ReadAsStringAsync();
+        postContent.Should().NotContain("\"code\":405");
+        var viaPost = JsonSerializer.Deserialize(postContent, FeatureServerJsonContext.Default.AttachmentInfosResponse);
+
+        viaPost!.AttachmentInfos.Select(a => a.Id).Should().Equal(viaGet!.AttachmentInfos.Select(a => a.Id));
+    }
+
+    [IntegrationTest]
     [Operation(Operations.AddAttachment)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
     public async Task AddAttachment_WithCanonicalFeatureRoute_ReturnsSuccess()

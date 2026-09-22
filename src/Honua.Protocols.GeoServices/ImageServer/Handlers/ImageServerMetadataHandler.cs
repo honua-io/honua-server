@@ -6,6 +6,7 @@ using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Protocols.GeoServices.ImageServer.Models;
@@ -168,6 +169,21 @@ internal sealed class ImageServerMetadataHandler
                 ? ImageServerTileInfoBuilder.Build(tileMetadataOptions.MaxLevel)
                 : null;
 
+            // serviceDataType was the literal esriImageServiceDataTypeGeneric for every
+            // image service. Esri clients key elevation behaviour on this field: ArcGIS
+            // Pro only offers an image service as a ground/elevation source, and only
+            // routes getSamples/identify through its elevation tooling, when the service
+            // says esriImageServiceDataTypeElevation. Honua's own /elevation surface was
+            // therefore reachable but invisible to every Esri client. The Elevation
+            // protocol on the owning service is the operator's declaration that the
+            // raster is a height field, so it is the source of truth here.
+            var owningService = snapshot.Index.ServicesById.TryGetValue(resolved.Publication.ServiceId, out var service)
+                ? service
+                : null;
+            var serviceDataType = ServiceProtocols.IsProtocolEnabled(owningService, ServiceProtocols.Elevation)
+                ? "esriImageServiceDataTypeElevation"
+                : "esriImageServiceDataTypeGeneric";
+
             // Build service info response
             var serviceInfo = new ImageServerServiceInfo
             {
@@ -202,7 +218,7 @@ internal sealed class ImageServerMetadataHandler
                 MinPixelSize = MinPixelSize,
                 MaxPixelSize = MaxPixelSize,
                 CopyrightText = resolved.Description ?? "",
-                ServiceDataType = "esriImageServiceDataTypeGeneric",
+                ServiceDataType = serviceDataType,
                 MinValues = statistics.Select(s => s.MinValue ?? 0).ToArray(),
                 MaxValues = statistics.Select(s => s.MaxValue ?? 0).ToArray(),
                 MeanValues = statistics.Select(s => s.MeanValue ?? 0).ToArray(),

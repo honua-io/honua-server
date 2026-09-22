@@ -19,6 +19,7 @@ import hashlib
 import json
 import os
 import subprocess
+import urllib.parse
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from pathlib import Path
@@ -99,6 +100,31 @@ class PyQgisCompatibilityRuntime:
 # ---------------------------------------------------------------------------
 # Certification evidence writer (envelope-based)
 # ---------------------------------------------------------------------------
+
+# The protocol version each lane certifies against. WCS is 1.0.0 rather than the
+# server's newer 2.0.1 because the stock QGIS provider speaks 1.0/1.1 only and
+# rejects 2.0.1 outright (honua-server#5020), so 1.0.0 is the only version this
+# client can be certified on.
+_PROTOCOL_VERSIONS = {
+    "wfs": "2.0.0",
+    "ogc-features": "1.0",
+    "wcs": "1.0.0",
+    "wms": "1.3.0",
+    "wmts": "1.0.0",
+    # The GeoServices REST surfaces report currentVersion 10.8 from /rest/info,
+    # which is what a client negotiates against.
+    "featureserver": "10.8",
+    "mapserver": "10.8",
+    "vectortileserver": "10.8",
+    "stac": "1.0.0",
+    "sensorthings": "1.1",
+    "pmtiles": "3",
+    "ogc-api-styles": "1.0",
+    "cog": "GeoTIFF",
+    # The generator stamps asset.version 1.1 on every tileset it publishes.
+    "3d-tiles": "1.1",
+}
+
 
 @dataclass
 class _CertResult:
@@ -204,7 +230,7 @@ class CertificationEvidenceCollector:
             "client_lane": "desktop-qgis",
             "client_version": self.client_version,
             "protocol": self.protocol,
-            "protocol_version": "2.0.0" if self.protocol == "wfs" else "1.0",
+            "protocol_version": _PROTOCOL_VERSIONS.get(self.protocol, "1.0"),
             "environment": env,
             "results": [
                 {
@@ -329,6 +355,18 @@ def _discover_wfs_typename(base_url: str) -> str | None:
 
 _oapif_evidence: CertificationEvidenceCollector | None = None
 _wfs_evidence: CertificationEvidenceCollector | None = None
+_wcs_evidence: CertificationEvidenceCollector | None = None
+_wms_evidence: CertificationEvidenceCollector | None = None
+_wmts_evidence: CertificationEvidenceCollector | None = None
+_featureserver_evidence: CertificationEvidenceCollector | None = None
+_mapserver_evidence: CertificationEvidenceCollector | None = None
+_vectortileserver_evidence: CertificationEvidenceCollector | None = None
+_stac_evidence: CertificationEvidenceCollector | None = None
+_sensorthings_evidence: CertificationEvidenceCollector | None = None
+_pmtiles_evidence: CertificationEvidenceCollector | None = None
+_ogcstyles_evidence: CertificationEvidenceCollector | None = None
+_cog_evidence: CertificationEvidenceCollector | None = None
+_tiles3d_evidence: CertificationEvidenceCollector | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -361,6 +399,41 @@ def qgis_app():
     app.initQgis()
     yield app
     app.exitQgis()
+
+
+@pytest.fixture(scope="session")
+def api_header_authcfg(qgis_app) -> str | None:
+    """An API-header authentication config the providers will use on writes.
+
+    QGIS sends credentials on the WFS-T and OGC API Features Part 4 write paths
+    only from an entry in its authentication database referenced as
+    ``authcfg=<id>``; inline URI credentials never reach a Transaction. The lane
+    therefore provisions the entry itself, in the session's own auth database,
+    from the credential named by the environment at call time. The key is
+    never written anywhere: it lives in the in-process auth manager and dies
+    with the session.
+
+    Returns ``None`` when no credential is configured, so the write-path cases
+    can skip with that exact reason rather than report a server defect.
+    """
+    key = os.environ.get("HONUA_ADMIN_PASSWORD")
+    if not key:
+        return None
+    from qgis.core import QgsApplication, QgsAuthMethodConfig
+
+    manager = QgsApplication.authManager()
+    if not manager.masterPasswordIsSet():
+        # Ephemeral session database; the password protects nothing that
+        # outlives the process and is not itself a fixture credential.
+        assert manager.setMasterPassword("pyqgis-client-compat-session", True), (
+            "QGIS refused to initialise its authentication database, so no "
+            "authcfg can be stored")
+    config = QgsAuthMethodConfig("APIHeader")
+    config.setName("honua-client-compat-api-key")
+    config.setConfig("X-API-Key", key)
+    assert manager.storeAuthenticationConfig(config), (
+        "QGIS refused to store the API-header authentication config")
+    return config.id()
 
 
 @pytest.fixture(autouse=True)
@@ -473,6 +546,167 @@ def wfs_evidence(
 
 
 @pytest.fixture(scope="session")
+def wcs_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped WCS certification evidence collector."""
+    global _wcs_evidence
+    if _wcs_evidence is None:
+        _wcs_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "wcs"
+        )
+    return _wcs_evidence
+
+
+@pytest.fixture(scope="session")
+def wms_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped WMS certification evidence collector."""
+    global _wms_evidence
+    if _wms_evidence is None:
+        _wms_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "wms"
+        )
+    return _wms_evidence
+
+
+@pytest.fixture(scope="session")
+def wmts_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped WMTS certification evidence collector."""
+    global _wmts_evidence
+    if _wmts_evidence is None:
+        _wmts_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "wmts"
+        )
+    return _wmts_evidence
+
+
+@pytest.fixture(scope="session")
+def featureserver_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped featureserver certification evidence collector."""
+    global _featureserver_evidence
+    if _featureserver_evidence is None:
+        _featureserver_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "featureserver"
+        )
+    return _featureserver_evidence
+
+@pytest.fixture(scope="session")
+def mapserver_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped mapserver certification evidence collector."""
+    global _mapserver_evidence
+    if _mapserver_evidence is None:
+        _mapserver_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "mapserver"
+        )
+    return _mapserver_evidence
+
+@pytest.fixture(scope="session")
+def vectortileserver_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped vectortileserver certification evidence collector."""
+    global _vectortileserver_evidence
+    if _vectortileserver_evidence is None:
+        _vectortileserver_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "vectortileserver"
+        )
+    return _vectortileserver_evidence
+
+@pytest.fixture(scope="session")
+def stac_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped stac certification evidence collector."""
+    global _stac_evidence
+    if _stac_evidence is None:
+        _stac_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "stac"
+        )
+    return _stac_evidence
+
+@pytest.fixture(scope="session")
+def sensorthings_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped sensorthings certification evidence collector."""
+    global _sensorthings_evidence
+    if _sensorthings_evidence is None:
+        _sensorthings_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "sensorthings"
+        )
+    return _sensorthings_evidence
+
+
+@pytest.fixture(scope="session")
+def pmtiles_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped pmtiles certification evidence collector."""
+    global _pmtiles_evidence
+    if _pmtiles_evidence is None:
+        _pmtiles_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "pmtiles"
+        )
+    return _pmtiles_evidence
+
+@pytest.fixture(scope="session")
+def ogcstyles_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped ogc-api-styles certification evidence collector."""
+    global _ogcstyles_evidence
+    if _ogcstyles_evidence is None:
+        _ogcstyles_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "ogc-api-styles"
+        )
+    return _ogcstyles_evidence
+
+@pytest.fixture(scope="session")
+def cog_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped cog certification evidence collector."""
+    global _cog_evidence
+    if _cog_evidence is None:
+        _cog_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "cog"
+        )
+    return _cog_evidence
+
+@pytest.fixture(scope="session")
+def tiles3d_evidence(
+    pyqgis_runtime: PyQgisCompatibilityRuntime,
+    qgis_version: str,
+) -> CertificationEvidenceCollector:
+    """Session-scoped 3D Tiles certification evidence collector."""
+    global _tiles3d_evidence
+    if _tiles3d_evidence is None:
+        _tiles3d_evidence = CertificationEvidenceCollector(
+            pyqgis_runtime, qgis_version, "3d-tiles"
+        )
+    return _tiles3d_evidence
+
+
+@pytest.fixture(scope="session")
 def wfs_typename(base_url: str) -> str:
     """Discover and cache the first WFS type name from GetCapabilities.
 
@@ -545,6 +779,95 @@ def make_wfs_layer(base_url: str, typename: str, *, extra_params: str = ""):
     if extra_params:
         uri = f"{uri} {extra_params}"
     return QgsVectorLayer(uri, "wfs_test", "WFS")
+
+
+def make_wcs_layer(
+    base_url: str,
+    service_id: str,
+    coverage: str,
+    *,
+    crs: str = "EPSG:4326",
+    image_format: str = "GeoTIFF",
+):
+    """Construct a QGIS raster layer via the stock WCS provider.
+
+    The provider negotiates the version itself and speaks 1.0/1.1 only, so no
+    VERSION is passed: it will ask for 1.0.0 and the server must answer in the
+    1.0.0 encoding (honua-server#5020).
+    """
+    from qgis.core import QgsRasterLayer
+
+    uri = (
+        f"url={base_url}/ogc/services/{service_id}/wcs"
+        f"&identifier={coverage}"
+        f"&crs={crs}"
+        f"&format={image_format}"
+        "&cache=AlwaysNetwork"
+    )
+    return QgsRasterLayer(uri, "wcs_test", "wcs")
+
+
+def make_wms_layer(
+    base_url: str,
+    service_id: str,
+    layer: str,
+    *,
+    crs: str = "EPSG:4326",
+    image_format: str = "image/png",
+    styles: str = "",
+    extra: str = "",
+):
+    """Construct a QGIS raster layer via the stock WMS provider."""
+    from qgis.core import QgsRasterLayer
+
+    wms_url = f"{base_url}/rest/services/{service_id}/MapServer/WMS"
+    uri = (
+        f"crs={crs}&format={image_format}&layers={layer}&styles={styles}"
+        f"&url={wms_url}"
+    )
+    if extra:
+        uri = f"{uri}&{extra}"
+    return QgsRasterLayer(uri, "wms_test", "wms")
+
+
+def make_wmts_layer(
+    base_url: str,
+    service_id: str,
+    layer: str,
+    *,
+    tile_matrix_set: str = "WebMercatorQuad",
+    crs: str = "EPSG:3857",
+    image_format: str = "image/png",
+    styles: str = "default",
+):
+    """Construct a QGIS raster layer via the WMTS side of the wms provider.
+
+    QGIS serves WMTS through the same `wms` provider; the presence of
+    `tileMatrixSet` is what selects the tiled path.
+    """
+    from qgis.core import QgsRasterLayer
+
+    # `url` must carry the full KVP GetCapabilities request, percent-encoded.
+    # Two things force this. A provider URI is itself an &-delimited key=value
+    # list, so an unencoded query would have REQUEST and VERSION parsed as
+    # sibling URI keys. And a bare endpoint does not work either: given no
+    # query, QGIS's wms provider appends its own WMS-flavoured capabilities
+    # parameters, which this WMTS endpoint rightly rejects with 400, and the
+    # layer then fails with only "Download of capabilities failed". Encoding the
+    # whole capabilities URL is how QGIS itself stores a WMTS connection.
+    #
+    # REQUEST=GetCapabilities is load-bearing; VERSION is not, but is sent
+    # because a real client sends it.
+    endpoint = f"{base_url}/rest/services/{service_id}/MapServer/WMTS"
+    capabilities_url = endpoint + "?" + urllib.parse.urlencode(
+        {"SERVICE": "WMTS", "REQUEST": "GetCapabilities", "VERSION": "1.0.0"}
+    )
+    uri = (
+        f"crs={crs}&format={image_format}&layers={layer}&styles={styles}"
+        f"&tileMatrixSet={tile_matrix_set}"
+        f"&url={urllib.parse.quote(capabilities_url, safe='')}"
+    )
+    return QgsRasterLayer(uri, "wmts_test", "wms")
 
 
 def render_layer_headless(layer, width: int = 256, height: int = 256) -> bytes:
@@ -692,6 +1015,18 @@ def render_layer_headless_with_symbol(
 def _write_cert_evidence(
     oapif_evidence: CertificationEvidenceCollector,
     wfs_evidence: CertificationEvidenceCollector,
+    wcs_evidence: CertificationEvidenceCollector,
+    wms_evidence: CertificationEvidenceCollector,
+    wmts_evidence: CertificationEvidenceCollector,
+    featureserver_evidence: CertificationEvidenceCollector,
+    mapserver_evidence: CertificationEvidenceCollector,
+    vectortileserver_evidence: CertificationEvidenceCollector,
+    stac_evidence: CertificationEvidenceCollector,
+    sensorthings_evidence: CertificationEvidenceCollector,
+    pmtiles_evidence: CertificationEvidenceCollector,
+    ogcstyles_evidence: CertificationEvidenceCollector,
+    cog_evidence: CertificationEvidenceCollector,
+    tiles3d_evidence: CertificationEvidenceCollector,
 ) -> Generator[None, None, None]:
     """Persist .cert.json envelopes at session teardown.
 
@@ -714,6 +1049,54 @@ def _write_cert_evidence(
     if wfs_evidence.has_records:
         path = results_dir / f"{run_id}-desktop-qgis-wfs{suffix}.cert.json"
         wfs_evidence.write_envelope(path)
+
+    if wcs_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-wcs{suffix}.cert.json"
+        wcs_evidence.write_envelope(path)
+
+    if wms_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-wms{suffix}.cert.json"
+        wms_evidence.write_envelope(path)
+
+    if wmts_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-wmts{suffix}.cert.json"
+        wmts_evidence.write_envelope(path)
+
+    if featureserver_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-featureserver{suffix}.cert.json"
+        featureserver_evidence.write_envelope(path)
+
+    if mapserver_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-mapserver{suffix}.cert.json"
+        mapserver_evidence.write_envelope(path)
+
+    if vectortileserver_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-vectortileserver{suffix}.cert.json"
+        vectortileserver_evidence.write_envelope(path)
+
+    if stac_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-stac{suffix}.cert.json"
+        stac_evidence.write_envelope(path)
+
+    if sensorthings_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-sensorthings{suffix}.cert.json"
+        sensorthings_evidence.write_envelope(path)
+
+    if pmtiles_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-pmtiles{suffix}.cert.json"
+        pmtiles_evidence.write_envelope(path)
+
+    if ogcstyles_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-ogc-api-styles{suffix}.cert.json"
+        ogcstyles_evidence.write_envelope(path)
+
+    if cog_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-cog{suffix}.cert.json"
+        cog_evidence.write_envelope(path)
+
+    if tiles3d_evidence.has_records:
+        path = results_dir / f"{run_id}-desktop-qgis-3d-tiles{suffix}.cert.json"
+        tiles3d_evidence.write_envelope(path)
 
 
 # ---------------------------------------------------------------------------
@@ -751,9 +1134,47 @@ def _collector_for_item(item: pytest.Item) -> CertificationEvidenceCollector | N
     module = Path(item.fspath).stem
     if "oapif" in module or "render" in module:
         return _oapif_evidence
+    if "wcs" in module:
+        return _wcs_evidence
+    # wmts first: "wms" is not a substring of "wmts", but ordering the more
+    # specific name first keeps the intent obvious if either is renamed.
+    if "wmts" in module:
+        return _wmts_evidence
+    if "wms" in module:
+        return _wms_evidence
     if "wfs" in module:
         return _wfs_evidence
-    return None
+    if "featureserver" in module:
+        return _featureserver_evidence
+    if "vectortileserver" in module:
+        return _vectortileserver_evidence
+    if "mapserver" in module:
+        return _mapserver_evidence
+    if "sensorthings" in module:
+        return _sensorthings_evidence
+    if "pmtiles" in module:
+        return _pmtiles_evidence
+    if "ogcstyles" in module:
+        return _ogcstyles_evidence
+    if "cog" in module:
+        return _cog_evidence
+    if "3dtiles" in module:
+        return _tiles3d_evidence
+    if "stac" in module:
+        return _stac_evidence
+
+    # Fail loudly rather than silently recording nothing. An unmapped module's
+    # results never reach a collector, so no envelope is written for it, and a
+    # protocol lane that fails wholesale then reads as success downstream - which
+    # is exactly how 6 of 7 failing WCS cases were reported as exit=0 when this
+    # lane was first added. docker/client-compat/pyqgis/run.sh now decides from
+    # the JUnit report, so a failure is caught there too, but an envelope that is
+    # never written still leaves a protocol silently uncertified.
+    raise RuntimeError(
+        f"pyqgis test module '{module}' has no evidence collector. Add it to "
+        "_collector_for_item and give it a collector in conftest, or its results "
+        "will be silently discarded and the lane will report success while failing."
+    )
 
 
 def _extract_cert_id(item: pytest.Item) -> str | None:

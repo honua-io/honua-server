@@ -1,0 +1,115 @@
+{
+  "schema_version": "1.0",
+  "run_id": "20260918T230324Z",
+  "run_date": "2026-09-18T23:03:24.621511+00:00",
+  "server_version": "unknown",
+  "server_commit": "",
+  "fixture_revision": "sha256:7cf9f0e0c2ba2de6aadef788b86e0371762627dfdb4fe5f1e4088cc993ba62d4",
+  "server_config_revision": "sha256:3eb71252f241546d4fa9fc23799296de3a75592f189449f056dadf103313998f",
+  "client_lane": "desktop-qgis",
+  "client_version": "3.44.14-Solothurn",
+  "protocol": "featureserver",
+  "protocol_version": "10.8",
+  "environment": "local",
+  "results": [
+    {
+      "test_case_id": "CERT-DISC-01",
+      "status": "pass",
+      "duration_ms": 74,
+      "measured_count": 4,
+      "measured_delta": null,
+      "notes": "AFS data item provider read /rest/services and /test_service/FeatureServer?f=json and enumerated ['Test Layer', 'WFS-T Insert Scratch', 'WFS-T Update Scratch', 'WFS-T Delete Scratch'].",
+      "evidence_ref": "http://honua:5000/rest/services/test_service/FeatureServer"
+    },
+    {
+      "test_case_id": "CERT-SCHM-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 14,
+      "measured_delta": null,
+      "notes": "Layer document parsed: 14 fields, esriGeometryPoint -> point, wkid 4326, extent honoured; an unpublished layer id yielded an invalid layer.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-QFLT-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 5,
+      "measured_delta": null,
+      "notes": "Subset string \"status = 'active'\" was pushed down as a where= query parameter and returned 5 of 10 features.",
+      "evidence_ref": "GET /rest/services/test_service/FeatureServer/0/query?f=json&where=status = 'active'&returnIdsOnly=true"
+    },
+    {
+      "test_case_id": "CERT-GEOM-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 1,
+      "measured_delta": null,
+      "notes": "Envelope query identified 'pt-alpha' via esriGeometryEnvelope/esriSpatialRelEnvelopeIntersects; an empty envelope correctly returned nothing.",
+      "evidence_ref": "GET /rest/services/browser_compat/FeatureServer/2000/query?f=json&where=1=1&returnIdsOnly=true&geometry=-122.420000,37.774300,-122.418800,37.775500&geometryType=esriGeometryEnvelope&spatialRel=esriSpa"
+    },
+    {
+      "test_case_id": "CERT-QFLT-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": 4,
+      "measured_delta": null,
+      "notes": "No client path: the server answers outStatistics correctly, but the arcgisfeatureserver provider computed min/max/unique/Sum locally from a full outFields=* download across 4 captured requests and never issued outStatistics. QGIS 3.44 manual 11.1.7.3 documents no statistics support.",
+      "evidence_ref": "https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html"
+    },
+    {
+      "test_case_id": "CERT-DISC-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "No client path: the arcgisfeatureserver provider exposes no queryRelatedRecords or relationship API and discoverRelations() returns []; QGIS 3.44 manual 11.1.7.3 documents none. The fixture also publishes relationships=[] and supportsQueryRelated=False.",
+      "evidence_ref": "QgsVectorDataProvider.discoverRelations() -> []"
+    },
+    {
+      "test_case_id": "CERT-CONN-02",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "No client path: neither QgsVectorLayer nor the arcgisfeatureserver provider exposes any attachment API, and QGIS 3.44 manual 11.1.7.3 documents none. The fixture also publishes hasAttachments=False and supportsQueryAttachments=False.",
+      "evidence_ref": "dir(QgsVectorLayer)+dir(provider): no *attachment* member"
+    },
+    {
+      "test_case_id": "CERT-CONN-01",
+      "status": "not-applicable",
+      "duration_ms": null,
+      "measured_count": null,
+      "measured_delta": null,
+      "notes": "No client path: the arcgisfeatureserver provider exposes no createReplica or synchronizeReplica API - QGIS implements offline work through its own Offline Editing plugin, which copies features rather than creating a server replica - and QGIS 3.44 manual 11.1.7.3 documents no sync support. The fixture also publishes syncEnabled=True.",
+      "evidence_ref": "dir(provider): no *replica*/*synchroniz* member"
+    },
+    {
+      "test_case_id": "CERT-SCHM-02",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 3,
+      "measured_delta": null,
+      "notes": "coded-value domain StatusDomain on test_service/0.status reached QGIS as a ValueMap widget offering exactly the 3 published codes; queryDomains answers the same domain.",
+      "evidence_ref": ""
+    },
+    {
+      "test_case_id": "CERT-AUTH-01",
+      "status": "pass",
+      "duration_ms": null,
+      "measured_count": 1,
+      "measured_delta": null,
+      "notes": "applyEdits insert from the QGIS arcgisfeatureserver provider landed and was assigned objectid 48, confirmed by an independent query; the request carried the explicit \"objectid\": null QGIS always sends on insert. Authenticated with an EsriToken authcfg; the omitted-objectid sibling passed as the control.",
+      "evidence_ref": ""
+    }
+  ],
+  "summary": {
+    "total": 10,
+    "passed": 6,
+    "failed": 0,
+    "skipped": 0,
+    "not_applicable": 4
+  },
+  "cite_results": null,
+  "extensions": []
+}

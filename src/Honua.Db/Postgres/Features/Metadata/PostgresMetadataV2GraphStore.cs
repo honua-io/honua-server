@@ -134,11 +134,8 @@ internal sealed class PostgresMetadataV2GraphStore : IMetadataV2GraphStore, IMet
         NpgsqlTransaction? transaction,
         CancellationToken cancellationToken)
     {
-        // Read the V1 catalog from the same schema the store qualifies its v2 tables
-        // with (validated + quoted to keep it injection-safe).
-        var catalogSchema = Infrastructure.SchemaSearchPath.ValidateAndQuote(_schemaName);
-        var sql = MetadataV2CompatSnapshotSql.BuildDocumentFromV1Catalog
-            .Replace(MetadataV2CompatSnapshotSql.CatalogSchemaPlaceholder, catalogSchema, StringComparison.Ordinal);
+        var sql = await MetadataV2CompatSnapshotSql.BuildQueryAsync(
+            connection, transaction, _schemaName, cancellationToken).ConfigureAwait(false);
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@environment", _environment);

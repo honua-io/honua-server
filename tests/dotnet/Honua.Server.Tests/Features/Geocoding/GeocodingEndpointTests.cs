@@ -306,6 +306,34 @@ public sealed class GeocodingEndpointTests
 
     [IntegrationTest]
     [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/GeocodeServer/reverseGeocode")]
+    [Endpoint("POST /rest/services/GeocodeServer/suggest")]
+    public async Task ReverseGeocodeAndSuggest_FormPost_AreServedOnTheUnnamedLocator()
+    {
+        // arcpy's Locator.reverseGeocode POSTs its location as a form body to whichever
+        // GeocodeServer path it was given; the unnamed alias must take POST like the named one.
+        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
+            SupportsSuggest: true,
+            SupportsBatch: false,
+            SupportsStructuredInput: false,
+            SupportsBiasing: true)));
+        using var client = factory.CreateClient();
+
+        using var reverseForm = new FormUrlEncodedContent([new("location", "-77.03655,38.89768"), new("f", "json")]);
+        using var reverseResponse = await client.PostAsync("/rest/services/GeocodeServer/reverseGeocode", reverseForm);
+        Assert.Equal(HttpStatusCode.OK, reverseResponse.StatusCode);
+        using var reversePayload = JsonDocument.Parse(await reverseResponse.Content.ReadAsStringAsync());
+        Assert.Equal("1600 Pennsylvania Ave NW", reversePayload.RootElement.GetProperty("address").GetProperty("Match_addr").GetString());
+
+        using var suggestForm = new FormUrlEncodedContent([new("text", "hon"), new("provider", "fake"), new("f", "json")]);
+        using var suggestResponse = await client.PostAsync("/rest/services/GeocodeServer/suggest", suggestForm);
+        Assert.Equal(HttpStatusCode.OK, suggestResponse.StatusCode);
+        using var suggestPayload = JsonDocument.Parse(await suggestResponse.Content.ReadAsStringAsync());
+        Assert.True(suggestPayload.RootElement.TryGetProperty("suggestions", out _));
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/suggest")]
     [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/suggest")]
     [Endpoint("GET /rest/services/GeocodeServer/suggest")]
@@ -410,6 +438,36 @@ public sealed class GeocodingEndpointTests
         Assert.True(root.TryGetProperty("suggestions", out var suggestions));
         Assert.Equal(JsonValueKind.Array, suggestions.ValueKind);
         Assert.True(suggestions.GetArrayLength() > 0);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
+    [Endpoint("POST /rest/services/GeocodeServer/geocodeAddresses")]
+    public async Task BatchGeocode_FormPost_IsServedOnTheNamedAndUnnamedLocator()
+    {
+        // Esri clients POST the operations whose parameters are structured; the unnamed
+        // alias has to take the same form body the named locator does.
+        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
+            SupportsSuggest: true,
+            SupportsBatch: true,
+            SupportsStructuredInput: false,
+            SupportsBiasing: true)), grantEnterpriseForBatch: true);
+        using var client = factory.CreateClient();
+
+        var records = """[{"attributes":{"SingleLine":"1600 Pennsylvania Ave NW"}},{"attributes":{"SingleLine":"350 Fifth Avenue, New York"}}]""";
+        using var namedForm = new FormUrlEncodedContent([new("records", records), new("f", "json")]);
+        using var aliasForm = new FormUrlEncodedContent([new("records", records), new("f", "json")]);
+
+        using var response = await client.PostAsync("/rest/services/World/GeocodeServer/geocodeAddresses", namedForm);
+        using var aliasResponse = await client.PostAsync("/rest/services/GeocodeServer/geocodeAddresses", aliasForm);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.OK, aliasResponse.StatusCode);
+
+        using var payload = JsonDocument.Parse(await aliasResponse.Content.ReadAsStringAsync());
+        Assert.True(payload.RootElement.TryGetProperty("locations", out var locations));
+        Assert.Equal(2, locations.GetArrayLength());
     }
 
     [IntegrationTest]

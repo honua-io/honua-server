@@ -238,6 +238,9 @@ public static class RasterFormatExtensions
         RasterFormat.JPEG => "JPEG",
         RasterFormat.TIFF => "GTiff",
         RasterFormat.COG => "COG",
+        // Raw samples: GDAL's ESRI .hdr labelled driver, whose primary file is the bare
+        // sample buffer in the band's native type. See RasterInterleave for the layout.
+        RasterFormat.Raw => "EHdr",
         _ => "PNG"
     };
 

@@ -17,7 +17,7 @@ Honua serves the classic OGC KVP/XML web services for clients that have not move
 | --- | --- | --- |
 | WMS | 1.3.0, 1.1.1 | Version negotiated per request; 1.3.0 is default. |
 | WFS | 2.0.0, 1.1.0, 1.0.0 | Single dispatcher endpoint; version negotiated via `VERSION`/`ACCEPTVERSIONS`. Legacy versions serve GML rather than the 2.0 encodings: **1.1.0 → GML 3.1.1**, **1.0.0 → GML 2.1.2**. |
-| WCS | 2.0.1 | KVP only. |
+| WCS | 2.0.1, 1.0.0 | KVP only; version negotiated via `VERSION`/`ACCEPTVERSIONS`, defaulting to 2.0.1. 1.0.0 exists because stock QGIS ships a WCS 1.0/1.1 client only and cannot open a 2.0.1 coverage; it serves the legacy `WCS_Capabilities`/`CoverageDescription` encodings and reports errors as an OGC `ServiceExceptionReport` rather than an `ows:ExceptionReport`. |
 | WMTS | 1.0.0 | KVP and RESTful tile paths. |
 
 ## Base endpoints
@@ -29,9 +29,9 @@ Honua serves the classic OGC KVP/XML web services for clients that have not move
 | GET | `/rest/services/{serviceId}/MapServer/WMS` | WMS alias on the GeoServices route. |
 | GET | `/ogc/services/{serviceId}/wmts` | WMTS KVP. |
 | GET | `/rest/services/{serviceId}/MapServer/WMTS`, `.../WMTS/{**restPath}` | WMTS KVP + RESTful tile paths. |
-| GET | `/ogc/services/{serviceId}/wcs` | WCS 2.0.1, scoped to one service. |
-| GET | `/ogc/wcs/{serviceId}` | The same service-scoped WCS 2.0.1 without a `services` segment. Use this form in ArcGIS Pro. |
-| GET | `/rest/services/{serviceId}/ImageServer/WCS` | WCS 2.0.1, layer-scoped (`COVERAGEID` is the bare integer layer id). |
+| GET | `/ogc/services/{serviceId}/wcs` | WCS 2.0.1 or 1.0.0, scoped to one service. |
+| GET | `/ogc/wcs/{serviceId}` | The same service-scoped WCS without a `services` segment. Use this form in ArcGIS Pro. |
+| GET | `/rest/services/{serviceId}/ImageServer/WCS` | WCS layer-scoped (2.0.1 `COVERAGEID` / 1.0.0 `COVERAGE`, each the bare integer layer id or `coverage_<id>`). |
 
 ### Why WFS has no `/ogc/services/{serviceId}/wfs`
 
