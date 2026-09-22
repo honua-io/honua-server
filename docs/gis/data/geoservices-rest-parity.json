@@ -3324,7 +3324,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Returns task metadata projected from the built-in IProcessCatalog, including parameter descriptions and Esri data types. Implemented in #723."
+            "notes": "Returns task metadata projected from the built-in IProcessCatalog, including parameter descriptions and Esri data types. Implemented in #723. Every GP service also resolves the NetworkAnalysisUtilities tasks GetTravelModes and GetToolInfo by name (synchronous, anonymous projections of the routing provider, deliberately absent from the task list because they have no SOAP or job form) so ArcGIS Pro and arcpy can bind the NAServer next to it (#5035)."
           },
           {
             "name": "Execute Task (generic, sync)",
@@ -3690,17 +3690,35 @@
       "evidence": {
         "code": [
           "src/Honua.Protocols.GeoServices/NAServer/NAServerEndpoints.cs",
+          "src/Honua.Protocols.GeoServices/NAServer/NAServerMetadata.cs",
           "src/Honua.Protocols.GeoServices/NAServer/NAServerParameterTranslation.cs",
           "src/Honua.Protocols.GeoServices/NAServer/NAServerResultMapping.cs",
           "src/Honua.Routing/Features/Routing/Abstractions/IRoutingProvider.cs"
         ],
         "tests": [
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerEndpointTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerTranslationUnitTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerTranslationUnitTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerMetadataEndpointTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/NetworkAnalysisUtilitiesTaskTests.cs"
         ]
       },
       "operations": {
         "implemented": [
+          {
+            "name": "Service resource",
+            "status": "implemented",
+            "esriPaths": [
+              "/NAServer"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/NAServer",
+              "POST /rest/services/{serviceId}/NAServer"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "GET and POST return the Esri network service resource: one analysis layer name per solver the configured IRoutingProvider advertises (routeLayers, serviceAreaLayers, closestFacilityLayers, odCostMatrixLayers, locationAllocationLayers) (#5035)."
+          },
           {
             "name": "ClosestFacility solveClosestFacility",
             "status": "implemented",
@@ -3743,6 +3761,21 @@
               "implemented"
             ],
             "notes": "Parses facilities, defaultBreaks, inSR/outSR, travelDirection, barriers/polylineBarriers/polygonBarriers, and travelMode, validates provider-advertised travel-direction/barrier/mode support, and returns Esri saPolygons."
+          },
+          {
+            "name": "Analysis layer resource",
+            "status": "implemented",
+            "esriPaths": [
+              "/NAServer/{layerName}"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{serviceId}/NAServer/{layerName}",
+              "POST /rest/services/{serviceId}/NAServer/{layerName}"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "GET and POST return the Esri network analysis layer resource for Route, ServiceArea, ClosestFacility, ODCostMatrix and LocationAllocation: impedance and travel modes projected from the active network dataset\u0027s travel profiles, network attributes and sources, input network classes and the configured service limits. Unknown or unsupported layers answer 404. Together with the GetTravelModes/GetToolInfo utility tasks every GPServer resolves, this is the stand-alone binding surface ArcGIS Pro and arcpy read (#5035); a native Pro replay is still pending."
           }
         ],
         "partial": [
