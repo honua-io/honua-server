@@ -282,6 +282,20 @@ internal sealed partial class Wfs20Handler
     }
 
 
+    /// <summary>
+    /// Client-facing text for a request validation failure. A filter parse failure carries an
+    /// authored reason (for example the unsupported operator's name), which is returned as is.
+    /// Other validation exceptions can originate deeper in the stack, so their message stays in
+    /// the server log and the client gets fixed text.
+    /// </summary>
+    internal static string DescribeValidationFailure(Exception exception)
+        => exception switch
+        {
+            Fes20ParseException { ClientReason: { } reason } => reason,
+            Fes20ParseException => UnreportableFilterErrorMessage,
+            _ => GeneralizedValidationErrorMessage,
+        };
+
     private SqlFragment? TranslateFesFilter(MetadataV2Resource resource, string? filter)
     {
         if (string.IsNullOrWhiteSpace(filter))
@@ -316,6 +330,7 @@ internal sealed partial class Wfs20Handler
         string? filter,
         string? resourceId)
     {
+        filter = NormalizeOgcFilterEncoding(filter);
         if (!TryExtractStandaloneResourceIds(filter, out var normalizedFilter, out var filterResourceIds))
         {
             return (filter, resourceId);

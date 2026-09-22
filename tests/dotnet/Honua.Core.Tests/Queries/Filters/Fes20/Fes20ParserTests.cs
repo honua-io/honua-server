@@ -472,4 +472,121 @@ public sealed class Fes20ParserTests
         literal.Value.Should().BeOfType<DateTimeOffset>()
             .Which.Should().Be(new DateTimeOffset(2024, 2, 16, 10, 0, 0, TimeSpan.FromHours(-5)));
     }
+
+    [UnitTest]
+    public void ParseFilter_UnsupportedOperator_ClientReasonNamesTheOperator()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
+              <fes:PropertyIsSimilarTo>
+                <fes:ValueReference>name</fes:ValueReference>
+                <fes:Literal>value-not-reported</fes:Literal>
+              </fes:PropertyIsSimilarTo>
+            </fes:Filter>
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>()
+            .Which.ClientReason.Should().Be("Unsupported filter operator 'PropertyIsSimilarTo'.");
+    }
+
+    [UnitTest]
+    public void ParseFilter_UnexpectedRootNamespace_ClientReasonNamesExpectedNamespaceOnly()
+    {
+        const string filterXml = """
+            <Filter xmlns="http://example.invalid/root-namespace-not-reported">
+              <PropertyIsEqualTo><ValueReference>name</ValueReference><Literal>A</Literal></PropertyIsEqualTo>
+            </Filter>
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        var reason = act.Should().Throw<Fes20ParseException>().Which.ClientReason;
+        reason.Should().Contain("http://www.opengis.net/fes/2.0");
+        reason.Should().NotContain("root-namespace-not-reported");
+    }
+
+    [UnitTest]
+    public void ParseFilter_MalformedXml_ClientReasonDoesNotQuoteTheInput()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0"><fes:PropertyIsEqualTo>value-not-reported
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        var exception = act.Should().Throw<Fes20ParseException>().Which;
+        exception.ClientReason.Should().Be("Filter is not well-formed XML.");
+        exception.Message.Should().StartWith("Invalid filter XML:");
+    }
+
+    [UnitTest]
+    public void ParseFilter_OverlongOperatorName_ClientReasonIsBounded()
+    {
+        var operatorName = "Op" + new string('x', 500);
+        var filterXml =
+            $"<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\"><fes:{operatorName}/></fes:Filter>";
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        var reason = act.Should().Throw<Fes20ParseException>().Which.ClientReason;
+        reason.Should().NotBeNull();
+        reason!.Should().NotContain(operatorName);
+        reason.Length.Should().BeLessThan(Fes20Parser.MaxReportedNameLength + 40);
+    }
+
+    [UnitTest]
+    public void ParseFilter_UnrecognisedSrsName_ClientReasonDoesNotQuoteTheValue()
+    {
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0" xmlns:gml="http://www.opengis.net/gml/3.2">
+              <fes:BBOX>
+                <fes:ValueReference>geom</fes:ValueReference>
+                <gml:Envelope srsName="urn:value-not-reported">
+                  <gml:lowerCorner>0 0</gml:lowerCorner>
+                  <gml:upperCorner>1 1</gml:upperCorner>
+                </gml:Envelope>
+              </fes:BBOX>
+            </fes:Filter>
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        var exception = act.Should().Throw<Fes20ParseException>().Which;
+        exception.ClientReason.Should().NotBeNull();
+        exception.ClientReason.Should().NotContain("value-not-reported");
+    }
+
+    [UnitTest]
+    public void ParseFilter_NestingBeyondDepthLimit_ClientReasonNamesTheLimit()
+    {
+        var nested = string.Concat(Enumerable.Repeat("<fes:Not>", FilterParserGuard.MaxExpressionDepth + 1)) +
+            "<fes:PropertyIsNull><fes:ValueReference>name</fes:ValueReference></fes:PropertyIsNull>" +
+            string.Concat(Enumerable.Repeat("</fes:Not>", FilterParserGuard.MaxExpressionDepth + 1));
+        var filterXml = $"<fes:Filter xmlns:fes=\"http://www.opengis.net/fes/2.0\">{nested}</fes:Filter>";
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>()
+            .Which.ClientReason.Should().Contain($"maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}");
+    }
+
+    [UnitTest]
+    public void ParseFilter_UnparseableTypedLiteral_HasNoClientReason()
+    {
+        // Literal conversion failures quote the value, so they stay in diagnostics only.
+        const string filterXml = """
+            <fes:Filter xmlns:fes="http://www.opengis.net/fes/2.0">
+              <fes:PropertyIsEqualTo>
+                <fes:ValueReference>count</fes:ValueReference>
+                <fes:Literal type="xs:int">value-not-reported</fes:Literal>
+              </fes:PropertyIsEqualTo>
+            </fes:Filter>
+            """;
+
+        var act = () => Fes20Parser.ParseFilter(filterXml);
+
+        act.Should().Throw<Fes20ParseException>().Which.ClientReason.Should().BeNull();
+    }
 }

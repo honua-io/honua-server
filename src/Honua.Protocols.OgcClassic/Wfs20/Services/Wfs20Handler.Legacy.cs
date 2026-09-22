@@ -10,6 +10,7 @@ using System.Xml.Linq;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Queries.Filters;
 using Honua.Core.Queries.Filters.Fes20;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Services;
@@ -168,7 +169,7 @@ internal sealed partial class Wfs20Handler
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or Fes20ParseException)
         {
             Wfs20Log.ParameterValidationFailed(_logger, ex.Message);
-            return CreateLegacyWfsException(version, "InvalidParameterValue", "Invalid WFS parameter value; see logs for details.");
+            return CreateLegacyWfsException(version, "InvalidParameterValue", DescribeValidationFailure(ex));
         }
         catch (WfsQueryException ex)
         {
@@ -1099,6 +1100,50 @@ internal sealed partial class Wfs20Handler
 </xsd:schema>
 """;
 
+    /// <summary>
+    /// XML nesting allowed while rewriting a Filter Encoding 1.1 filter. The rewrite runs before
+    /// <see cref="Fes20Parser"/> applies the shared expression-depth guard, so it is bounded here:
+    /// the shared expression limit plus room for GML geometry nested inside a spatial operand.
+    /// </summary>
+    private const int MaxLegacyFilterElementDepth = FilterExpressionNormalizer.MaxExpressionDepth + 16;
+
+    /// <summary>
+    /// Rewrites a WFS 2.0 FILTER that uses the Filter Encoding 1.1 <c>ogc:Filter</c> encoding
+    /// into FES 2.0, using the same rewrite as the WFS 1.x endpoints. Many clients keep sending
+    /// that encoding after negotiating WFS 2.0.0. Any other filter is returned unchanged, so FES
+    /// 2.0 input and malformed XML still reach <see cref="Fes20Parser"/> as before.
+    /// </summary>
+    private static string? NormalizeOgcFilterEncoding(string? filter)
+    {
+        // Cheap pre-check: an element can only be in the ogc namespace if the namespace URI
+        // appears in the text, so FES 2.0 filters are not parsed an extra time.
+        if (string.IsNullOrWhiteSpace(filter) ||
+            !filter.Contains(OgcFilterNamespace, StringComparison.Ordinal))
+        {
+            return filter;
+        }
+
+        XDocument document;
+        try
+        {
+            document = SecureXmlDocumentParser.Parse(filter, LoadOptions.PreserveWhitespace);
+        }
+        catch (XmlException)
+        {
+            return filter;
+        }
+
+        var root = document.Root;
+        if (root is null ||
+            !string.Equals(root.Name.NamespaceName, OgcFilterNamespace, StringComparison.Ordinal) ||
+            !string.Equals(root.Name.LocalName, "Filter", StringComparison.Ordinal))
+        {
+            return filter;
+        }
+
+        return NormalizeLegacyFilterElement(root).ToString(SaveOptions.DisableFormatting);
+    }
+
     private static string? NormalizeLegacyFilterXml(string? filter)
     {
         if (string.IsNullOrWhiteSpace(filter))
@@ -1109,17 +1154,23 @@ internal sealed partial class Wfs20Handler
         try
         {
             var document = SecureXmlDocumentParser.Parse(filter, LoadOptions.PreserveWhitespace);
-            var root = document.Root ?? throw new Fes20ParseException("FILTER must contain a root element.");
+            var root = document.Root ?? throw Fes20ParseException.Reportable("FILTER must contain a root element.");
             return NormalizeLegacyFilterElement(root).ToString(SaveOptions.DisableFormatting);
         }
         catch (XmlException ex)
         {
-            throw new Fes20ParseException("Invalid legacy WFS FILTER XML.", ex);
+            throw Fes20ParseException.Reportable("FILTER is not well-formed XML.", ex);
         }
     }
 
-    private static XElement NormalizeLegacyFilterElement(XElement element)
+    private static XElement NormalizeLegacyFilterElement(XElement element, int depth = 1)
     {
+        if (depth > MaxLegacyFilterElementDepth)
+        {
+            throw Fes20ParseException.Reportable(
+                $"Filter exceeds the maximum XML nesting depth of {MaxLegacyFilterElementDepth} elements.");
+        }
+
         if (TryCreateLegacyCoordinateGeometry(element, out var normalizedGeometry))
         {
             return normalizedGeometry;
@@ -1133,7 +1184,7 @@ internal sealed partial class Wfs20Handler
             switch (node)
             {
                 case XElement child:
-                    normalized.Add(NormalizeLegacyFilterElement(child));
+                    normalized.Add(NormalizeLegacyFilterElement(child, depth + 1));
                     break;
                 case XCData cdata:
                     normalized.Add(new XCData(cdata.Value));
@@ -1240,7 +1291,7 @@ internal sealed partial class Wfs20Handler
     {
         if (!TryReadLegacyCoordinateTuples(box, out var coordinates) || coordinates.Length < 2)
         {
-            throw new Fes20ParseException("GML Box must contain at least two coordinate tuples.");
+            throw Fes20ParseException.Reportable("GML Box must contain at least two coordinate tuples.");
         }
 
         var envelope = CreateNormalizedGmlElement(box, "Envelope");
@@ -1291,7 +1342,7 @@ internal sealed partial class Wfs20Handler
         var tuples = SplitLegacyCoordinateTuples(coordinatesElement.Value, tupleSeparator);
         if (tuples.Length == 0)
         {
-            throw new Fes20ParseException("GML coordinates must contain at least one coordinate tuple.");
+            throw Fes20ParseException.Reportable("GML coordinates must contain at least one coordinate tuple.");
         }
 
         var coordinates = new Coordinate[tuples.Length];
@@ -1302,7 +1353,7 @@ internal sealed partial class Wfs20Handler
                 StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             if (ordinates.Length < 2)
             {
-                throw new Fes20ParseException("GML coordinate tuple must contain at least two ordinates.");
+                throw Fes20ParseException.Reportable("GML coordinate tuple must contain at least two ordinates.");
             }
 
             coordinates[index] = new Coordinate(
@@ -1335,7 +1386,7 @@ internal sealed partial class Wfs20Handler
             ?.Value;
         if (string.IsNullOrWhiteSpace(x) || string.IsNullOrWhiteSpace(y))
         {
-            throw new Fes20ParseException("GML coord must contain X and Y ordinates.");
+            throw Fes20ParseException.Reportable("GML coord must contain X and Y ordinates.");
         }
 
         return new Coordinate(ParseLegacyOrdinate(x, "."), ParseLegacyOrdinate(y, "."));
@@ -1351,7 +1402,7 @@ internal sealed partial class Wfs20Handler
         if (!double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out var ordinate) ||
             !double.IsFinite(ordinate))
         {
-            throw new Fes20ParseException("GML coordinate ordinate must be a finite number.");
+            throw Fes20ParseException.Reportable("GML coordinate ordinate must be a finite number.");
         }
 
         return ordinate;

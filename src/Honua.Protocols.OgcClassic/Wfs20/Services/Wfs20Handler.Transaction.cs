@@ -46,7 +46,10 @@ internal sealed partial class Wfs20Handler
     // Fixed client-facing text for untyped validation exceptions, matching the
     // GetFeature path so both surfaces expose error detail identically (real
     // message stays in the logs).
-    private const string GeneralizedValidationErrorMessage = "Invalid WFS parameter value; see logs for details.";
+    private const string GeneralizedValidationErrorMessage = "Invalid WFS parameter value.";
+
+    // Client-facing text for a filter parse failure whose detail quotes request content.
+    private const string UnreportableFilterErrorMessage = "FILTER could not be parsed.";
 
     public async Task<IResult> HandleTransactionAsync(
         HttpContext context,
@@ -218,7 +221,7 @@ internal sealed partial class Wfs20Handler
             return Wfs20ErrorResults.CreateBadRequest(
                 context,
                 "InvalidParameterValue",
-                GeneralizedValidationErrorMessage,
+                DescribeValidationFailure(ex),
                 "filter");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
