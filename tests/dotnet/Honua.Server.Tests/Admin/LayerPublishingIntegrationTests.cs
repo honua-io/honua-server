@@ -1195,6 +1195,28 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task RefreshMaterializedFeaturesForSourceTable_WithoutSchema_RebuildsPublishedSnapshot()
     {
+        // A same-named nonspatial publication sorts first. Skipping it must not
+        // terminate the refresh scan before the later spatial publication.
+        var nonSpatialSchema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Test schema was not initialized.");
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync())
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = $"""
+                CREATE TABLE "{nonSpatialSchema}"."{_tableName}" (id integer PRIMARY KEY, name text);
+                INSERT INTO "{nonSpatialSchema}"."{_tableName}" VALUES (1, 'Attribute-only parent');
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+        var nonSpatial = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = nonSpatialSchema,
+            Table = _tableName,
+            LayerName = $"Table {_tableName}",
+            PrimaryKey = "id",
+            Fields = ["id", "name"],
+            ServiceName = _serviceName,
+            Enabled = true
+        });
         var publishedLayer = await PublishLayerAsync(new PublishLayerRequest
         {
             Schema = _schema,
@@ -1222,6 +1244,8 @@ public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
             schema: null,
             _tableName);
 
+        nonSpatial.LayerId.Should().BeLessThan(layerId);
+        refreshed.Should().NotContain(result => result.LayerId == nonSpatial.LayerId);
         refreshed.Should().ContainSingle(result =>
             result.LayerId == layerId && result.MaterializedFeatureCount == 2);
         (await GetCanonicalSnapshotCountAsync(layerId)).Should().Be(2);
