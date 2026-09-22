@@ -156,7 +156,68 @@ internal sealed partial class DeployWorkflowService
             };
         }
 
+        plan = await ApplyProbeUrlValidationAsync(plan, spec, cancellationToken).ConfigureAwait(false);
+
         return new DeployWorkflowPlanResult(target, spec, plan, capabilities, canonicalApproval);
+    }
+
+    /// <summary>
+    /// Refuses a synthetic health-probe or golden-query URL that the runtime probe would refuse
+    /// (honua-server#4988). Otherwise the rollout is admitted, the gate reports itself misconfigured
+    /// on every cycle, and a correct candidate is failed at its exposure deadline. A URL whose host
+    /// cannot be resolved right now is only a warning: that condition is transient, and the runtime
+    /// probe re-validates it on every cycle.
+    /// </summary>
+    private static async Task<DeployPlan> ApplyProbeUrlValidationAsync(
+        DeployPlan plan,
+        DeployOperationSpec spec,
+        CancellationToken cancellationToken)
+    {
+        var policy = DeployTelemetryPolicy.Parse(spec);
+        if (policy is not { IsValid: true })
+        {
+            return plan;
+        }
+
+        foreach (var (key, url) in new[]
+                 {
+                     ("telemetry.healthz.url", policy.HealthProbeUrl),
+                     ("telemetry.golden_query.url", policy.GoldenQueryUrl)
+                 })
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                continue;
+            }
+
+            var validation = await DeployProbeUrlPolicy.ValidateAsync(url, cancellationToken).ConfigureAwait(false);
+            if (validation.IsValid)
+            {
+                continue;
+            }
+
+            if (validation.IsHostResolutionUnavailable)
+            {
+                plan = plan with
+                {
+                    Warnings = [.. plan.Warnings, $"{key} {validation.ErrorMessage} The probe re-checks it on every cycle."]
+                };
+                continue;
+            }
+
+            plan = plan with
+            {
+                IsReadyToSubmit = false,
+                BlockingReasons =
+                [
+                    .. plan.BlockingReasons,
+                    $"Telemetry gate configuration rejected: {key} {validation.ErrorMessage} " +
+                    "Deploy probes only reach public HTTPS endpoints, so this gate could never be evaluated."
+                ]
+            };
+        }
+
+        return plan;
     }
 
     private string? DescribeTelemetryGateBlock(DeployOperationSpec spec)

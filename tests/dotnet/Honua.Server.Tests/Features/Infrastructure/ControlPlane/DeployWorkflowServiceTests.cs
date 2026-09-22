@@ -11,6 +11,7 @@ using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
+using Honua.Core.Features.Infrastructure.Validation;
 using Honua.ControlPlane;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -1093,6 +1094,89 @@ public sealed class DeployWorkflowServiceTests
 
         plan!.Plan.IsReadyToSubmit.Should().BeTrue("the explicit health-only profile needs no metrics connection");
         plan.Plan.BlockingReasons.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData("telemetry.golden_query.url", "http://host.docker.internal:19182/golden")]
+    [InlineData("telemetry.golden_query.url", "https://10.0.0.12:19182/golden")]
+    [InlineData("telemetry.healthz.url", "https://127.0.0.1:19182/healthz/ready")]
+    [InlineData("telemetry.healthz.url", "http://192.168.1.20/healthz/ready")]
+    public async Task PlanAsync_WithProbeUrlTheRuntimeProbeRefuses_BlocksSubmission(string key, string url)
+    {
+        // honua-server#4988: a probe URL the runtime probe always refuses must not be admitted at plan
+        // time; otherwise the gate reports itself misconfigured and fails a correct candidate at the
+        // exposure deadline.
+        var backend = new ImmediateDeployBackend();
+        var service = CreateService(new TestWorkflowOperationStore(), backend);
+        var parameters = new Dictionary<string, string>
+        {
+            ["telemetry.policy"] = "health-only",
+            [key] = url
+        };
+        if (key == "telemetry.golden_query.url")
+        {
+            parameters["telemetry.golden_query.expected_contains"] = "candidate-b";
+        }
+
+        var plan = await service.PlanAsync("prod-api", "sha256:abc123", "sha256:old", parameterOverrides: parameters);
+
+        plan!.Plan.IsReadyToSubmit.Should().BeFalse();
+        plan.Plan.BlockingReasons.Should().ContainSingle(reason => reason.Contains(key, StringComparison.Ordinal))
+            .Which.Should().StartWith("Telemetry gate configuration rejected");
+        var runtimeVerdict = await OutboundHttpUrlValidator.ValidateAsync(url, CancellationToken.None);
+        runtimeVerdict.IsValid.Should().BeFalse("the plan must refuse exactly what the runtime probe refuses");
+        backend.StartCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task PlanAsync_WithPublicHttpsProbeUrls_AdmitsTheGate()
+    {
+        var service = CreateService(new TestWorkflowOperationStore(), new ImmediateDeployBackend());
+
+        var plan = await service.PlanAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            parameterOverrides: new Dictionary<string, string>
+            {
+                ["telemetry.policy"] = "health-only",
+                ["telemetry.healthz.url"] = "https://93.184.215.14/healthz/ready",
+                ["telemetry.golden_query.url"] = "https://93.184.215.14/golden",
+                ["telemetry.golden_query.expected_contains"] = "candidate-b"
+            });
+
+        plan!.Plan.IsReadyToSubmit.Should().BeTrue();
+        plan.Plan.BlockingReasons.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CreateAsync_SubmitImmediately_WithPrivateGoldenQueryUrl_NeverMutatesBackend()
+    {
+        var store = new TestWorkflowOperationStore();
+        var backend = new ImmediateDeployBackend();
+        var service = CreateService(store, backend);
+
+        var operation = await service.CreateAsync(
+            "prod-api",
+            "sha256:abc123",
+            "sha256:old",
+            "alice",
+            "Ship it",
+            "golden-private",
+            "corr-golden-private",
+            OperationPriority.Normal,
+            submitImmediately: true,
+            parameterOverrides: new Dictionary<string, string>
+            {
+                ["telemetry.policy"] = "health-only",
+                ["telemetry.golden_query.url"] = "http://host.docker.internal:19182/golden",
+                ["telemetry.golden_query.expected_contains"] = "candidate-b"
+            });
+
+        operation.Should().NotBeNull();
+        operation!.Status.Should().Be(WorkflowOperationStatus.Planned);
+        operation.BlockingReasons.Should().Contain(reason => reason.Contains("telemetry.golden_query.url", StringComparison.Ordinal));
+        backend.StartCount.Should().Be(0);
     }
 
     [Fact]
