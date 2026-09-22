@@ -74,6 +74,79 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task ExportImageAsync_FramedBboxSelectingNoRasters_ReturnsEmptyImage()
+    {
+        // A tiling client asks for a grid of adjacent extents, so the tiles beyond the layer's
+        // footprint select no raster. Esri answers those with an empty image; returning an error
+        // body instead fails the tile in the client (QGIS's arcgismapserver provider paints
+        // nothing and logs a failure for every off-footprint tile).
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
+        RasterQuery? capturedQuery = null;
+        _rasterStore.ExportEmptyExtentAsync(1, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedQuery = callInfo.ArgAt<RasterQuery>(1);
+                return CreateTestRasterResult();
+            });
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(bbox: "-123,37,-122.9,37.1", size: 256, responseFormat: "image");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<FileContentHttpResult>();
+        ((FileContentHttpResult)result).FileContents.ToArray().Should().Equal(CreateTestRasterResult().Data);
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Value.CoverClipExtent.Should().BeTrue();
+        capturedQuery.Value.ClipRegion.Should().NotBeNull();
+        capturedQuery.Value.OutputWidth.Should().Be(256);
+        capturedQuery.Value.OutputHeight.Should().Be(256);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_FramedBboxOnLayerWithoutRasters_ReturnsNotFound()
+    {
+        // A layer holding no raster at all has no band layout to copy, so there is no empty image
+        // to describe and the request still reports not-found rather than inventing a shape.
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
+        _rasterStore.ExportEmptyExtentAsync(1, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = Array.Empty<byte>(),
+                ContentType = "image/png",
+                Width = 0,
+                Height = 0
+            });
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(bbox: "-123,37,-122.9,37.1", size: 256, responseFormat: "image");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_NoRastersWithoutFramedBbox_DoesNotRenderEmptyImage()
+    {
+        // Without a bbox and an output size there is no canvas to draw, so the not-found answer
+        // is unchanged and no empty-extent render is attempted.
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(responseFormat: "image");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
+        await _rasterStore.DidNotReceiveWithAnyArgs()
+            .ExportEmptyExtentAsync(default, default, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ExportImageAsync_InvalidBbox_ReturnsBadRequest()
     {
         SetupLayerAndRasters();

@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -294,16 +295,21 @@ internal static partial class MapServerEndpoints
                 layersParam,
                 dynamicLayers,
                 scaleDenominator);
-            var identifyAccessError = AccessPolicyHelpers.RequireAnyResourceAccess(
+            var identifyAccess = await AccessPolicyHelpers.EvaluateResourceAccessSetAsync(
                 context,
-                identifyAccessCandidates.Select(static layer => layer.Resource),
-                service);
+                publishedLayers.Select(static layer => layer.Resource)
+                    .Concat(identifyAccessCandidates.Select(static layer => layer.Resource)),
+                service,
+                AuthorizationOperation.Query,
+                cancellationToken).ConfigureAwait(false);
+            var identifyAccessError = identifyAccess.RequireAny(
+                identifyAccessCandidates.Select(static layer => layer.Resource));
             if (identifyAccessError != null)
             {
                 return identifyAccessError;
             }
 
-            var identifySelection = ResolveIdentifyLayers(publishedLayers, service, layersParam, dynamicLayers, context, scaleDenominator);
+            var identifySelection = ResolveIdentifyLayers(publishedLayers, identifyAccess, layersParam, dynamicLayers, scaleDenominator);
 
             var searchTolerance = CoordinateTransformer.PixelToMapUnits(tolerance, mapExtent, imageWidth);
             if (!TryBuildIdentifySpatialFilter(
@@ -393,19 +399,25 @@ internal static partial class MapServerEndpoints
                 // Resolve a joinTable source's right side into a key-indexed attribute lookup. The
                 // right layer is access-policy gated exactly like the left layer; a denied right
                 // layer fails the whole identify rather than silently dropping the join.
+                // esriFieldTypeDate attributes must serialize as epoch-ms integers uniformly across
+                // rows. JSONB stores dates as either ISO strings (seeds) or epoch-ms longs
+                // (applyEdits); coerce both via the shared GeoServices date convention (matches query).
+                var dateFieldNames = GeoServicesFieldConventions.ResolveDateFieldNames(layer.Resource);
                 DynamicJoinLookup? joinLookup = null;
                 if (renderLayer.Join is { } join)
                 {
                     if (!TryResolveIdentifyJoinRightLayer(
                             publishedLayers,
-                            service,
-                            context,
+                            identifyAccess,
                             join,
                             out var rightLayer,
                             out var joinError))
                     {
                         return StandardErrorHelpers.CreateBadRequest(context, joinError ?? "Invalid join source.");
                     }
+
+                    dateFieldNames.UnionWith(GeoServicesFieldConventions.ResolveDateFieldNames(rightLayer!.Resource)
+                        .Select(name => $"{join.RightQualifier}.{name}"));
 
                     joinLookup = await DynamicJoinLookup.BuildAsync(
                         featureReader,
@@ -418,11 +430,6 @@ internal static partial class MapServerEndpoints
 
                 var objectIdField = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(layer.Resource);
                 var displayField = ResolveDisplayField(layer.Resource, objectIdField);
-                // esriFieldTypeDate attributes must serialize as epoch-ms integers uniformly across
-                // rows. JSONB stores dates as either ISO strings (seeds) or epoch-ms longs
-                // (applyEdits); coerce both via the shared GeoServices date convention (matches query).
-                var dateFieldNames = GeoServicesFieldConventions.ResolveDateFieldNames(layer.Resource);
-
                 foreach (var feature in queryResult.Items)
                 {
                     IReadOnlyDictionary<string, object?> sourceAttributes = feature.Attributes;
@@ -673,7 +680,7 @@ internal static partial class MapServerEndpoints
 
         if (string.Equals(geometryType, "esriGeometryPoint", StringComparison.OrdinalIgnoreCase) &&
             (TryParsePointPair(geometryValue, out var pairX, out var pairY) ||
-             TryParsePointLiteral(geometryValue, out pairX, out pairY)))
+             GeoServicesPointGeometryParser.TryParsePointLiteral(geometryValue, out pairX, out pairY)))
         {
             geometry = new IdentifyGeometryInput(
                 geometryValue,
@@ -761,55 +768,6 @@ internal static partial class MapServerEndpoints
 
         return double.TryParse(parts[0], NumberStyles.Float, CultureInfo.InvariantCulture, out x) &&
                double.TryParse(parts[1], NumberStyles.Float, CultureInfo.InvariantCulture, out y);
-    }
-
-    private static bool TryParsePointLiteral(string value, out double x, out double y)
-    {
-        // Esri's Identify wire examples and native QGIS use {x: number, y: number}.
-        // Accept only those two finite coordinates, then use the existing point
-        // validation/CRS pipeline. Do not relax the general GeoServices JSON parser.
-        x = 0;
-        y = 0;
-        var literal = value.AsSpan().Trim();
-        if (literal.Length < 2 || literal[0] != '{' || literal[^1] != '}')
-        {
-            return false;
-        }
-
-        var members = literal[1..^1];
-        var comma = members.IndexOf(',');
-        if (comma < 0 ||
-            !TryParsePointLiteralMember(members[..comma], out var firstKey, out var firstValue) ||
-            !TryParsePointLiteralMember(members[(comma + 1)..], out var secondKey, out var secondValue) ||
-            firstKey == secondKey)
-        {
-            return false;
-        }
-
-        x = firstKey == 'x' ? firstValue : secondValue;
-        y = firstKey == 'y' ? firstValue : secondValue;
-        return true;
-    }
-
-    private static bool TryParsePointLiteralMember(ReadOnlySpan<char> member, out char key, out double value)
-    {
-        key = default;
-        value = default;
-        var colon = member.IndexOf(':');
-        if (colon < 0)
-        {
-            return false;
-        }
-
-        var name = member[..colon].Trim();
-        if (name.Length != 1 || name[0] is not ('x' or 'y'))
-        {
-            return false;
-        }
-
-        key = name[0];
-        return double.TryParse(member[(colon + 1)..], NumberStyles.Float, CultureInfo.InvariantCulture, out value) &&
-               double.IsFinite(value);
     }
 
     private static double? TryGetDouble(JsonElement obj, string propertyName)
@@ -1056,14 +1014,13 @@ internal static partial class MapServerEndpoints
 
     private static IdentifyLayerSelection ResolveIdentifyLayers(
         IReadOnlyList<IdentifyLayerDescriptor> publishedLayers,
-        MetadataV2Service service,
+        ResourceAccessSet access,
         string? layersParam,
         IReadOnlyList<DynamicLayerDefinition> dynamicLayers,
-        HttpContext context,
         double scaleDenominator)
     {
         var accessibleLayers = publishedLayers
-            .Where(l => AccessPolicyHelpers.IsResourceAccessible(context, l.Resource, service))
+            .Where(l => access.IsAccessible(l.Resource))
             .ToArray();
 
         IdentifyLayerMode mode = IdentifyLayerMode.Top;
@@ -1113,7 +1070,7 @@ internal static partial class MapServerEndpoints
                     continue;
                 }
 
-                if (!AccessPolicyHelpers.IsResourceAccessible(context, layer.Resource, service))
+                if (!access.IsAccessible(layer.Resource))
                 {
                     continue;
                 }
@@ -1506,8 +1463,7 @@ internal static partial class MapServerEndpoints
     /// </summary>
     private static bool TryResolveIdentifyJoinRightLayer(
         IReadOnlyList<IdentifyLayerDescriptor> publishedLayers,
-        MetadataV2Service service,
-        HttpContext context,
+        ResourceAccessSet access,
         DynamicLayerJoinDefinition join,
         out IdentifyLayerDescriptor? rightLayer,
         out string? error)
@@ -1522,7 +1478,7 @@ internal static partial class MapServerEndpoints
             return false;
         }
 
-        if (!AccessPolicyHelpers.IsResourceAccessible(context, rightLayer.Resource, service))
+        if (!access.IsAccessible(rightLayer.Resource))
         {
             error = "dynamicLayers join references an inaccessible right layer.";
             return false;

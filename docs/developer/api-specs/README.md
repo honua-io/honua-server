@@ -97,43 +97,14 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 **Runtime OpenAPI Endpoint**: `https://your-honua-server.com/api/v1/admin/openapi.json`
 **Authentication**: API Key, OIDC bearer token, or optional HTTP Basic compatibility mode
 
-> **Contract scope — curated, not a full mirror**: `admin-api.json` documents a
-> curated subset of the routes `EndpointRegistry` registers under `/api/v1/admin`.
-> The subset is **declared, not implied**. A registered admin route that the bundle
-> does not document is legitimate in exactly two ways:
->
-> - **Derived** — a route registered only to answer `405 Method Not Allowed` for a
->   non-primary verb is never an OpenAPI operation. These are *computed* from their
->   `MapMethods(route, NonGetMethods, HandleGetMethodNotAllowed)` registrations by
->   `derive_method_not_allowed_routes`, so they need no hand maintenance
->   ([#3063](https://github.com/honua-io/honua-server/issues/3063)).
-> - **Declared** — everything else must be listed in
->   [`admin-api.undocumented.json`](admin-api.undocumented.json) with a reason code:
->   - `non-production-fixture` — registered only behind a Development/Test-only flag
->     whose options validator fails host startup outside those environments, so a
->     Production host never serves it. Permanent.
->   - `undocumented-backlog` — a live, supported route the bundle does not describe
->     yet. **Zero entries**: the backlog was burned down in
->     [#3063](https://github.com/honua-io/honua-server/issues/3063). The code is kept so
->     a future route can be parked deliberately rather than silently.
->
-> As of the #3063 burn-down the admin surface accounts for all **458** registered
-> routes: **395** documented, **3** declared, **60** derived.
->
-> `scripts/ci/openapi-drift-check.py` enforces this in both directions and runs in
-> the required PR Gate. A registered admin route that is neither documented, derived,
-> nor declared fails the gate (`missing-in-spec`); a declaration for a route that has
-> since been removed or documented also fails it (`stale-exemption`); and a
-> documented path with no registered endpoint fails it (`missing-in-code`).
-> **Adding a route under `/api/v1/admin` therefore forces an explicit choice:
-> document it, or declare why not.** See honua-server#3051.
+> **Contract scope**: `admin-api.json` documents a curated subset of the routes registered
+> under `/api/v1/admin`. A drift gate keeps the document and the registered routes in step, so a
+> route that is absent here is absent deliberately.
 
 > **Note**: The runtime admin OpenAPI endpoint serves this bundled `admin-api.json` contract snapshot.
 > Use the [Server Management API guide](../../reference/admin-api/overview.md) and `/api/v1/admin/config` for operational guidance.
 > The saved-query and analysis-package content surface lives beside the admin
-> API under `/api/v1/analysis/**`; its current markdown contract is
-> [Analysis Content](../../internal/admin-api/analysis-content.md) until it is promoted
-> into the generated control-plane OpenAPI snapshot.
+> API under `/api/v1/analysis/**` and is not yet part of this snapshot.
 >
 > **Migration scanner note**: `POST /api/v1/admin/import/scan` returns the inventory artifact itself, not the usual admin envelope, and a `200` response can still carry `scanCompleteness.status = "failed"`.
 > Request aliases normalize `sourceKind` to `geoserver-rest` or `arcgis-geoservices-rest`, and dependency addresses plus secret-like metadata are sanitized for planning-safe export.
@@ -144,16 +115,7 @@ Use the capability manifest when Console, MCP, QGIS plugins, native hosts, or SD
 > **Sibling control-plane surfaces**: Console (`/api/v1/console/**`) and Studio
 > (`/api/v1/studio/**`) require the same admin authorization posture but are not
 > part of this `/api/v1/admin` OpenAPI snapshot. The Studio surface is published
-> independently in [studio-api.json](studio-api.json), with bidirectional route
-> drift enforcement against `EndpointRegistry`. Console workflow package
-> contracts are maintained in
-> [Console Workflow Packages](../../internal/admin-api/console-workflow-packages.md),
-> the Studio package lifecycle guide is maintained in
-> [Studio Package Lifecycle API](../../internal/admin-api/studio-package-lifecycle.md),
-> and the map/dashboard/report/generated-app publication route contract is
-> maintained in
-> [Content Publication Registry API](../../internal/admin-api/content-publication-registry.md)
-> until a dedicated Console OpenAPI document is published.
+> independently in [studio-api.json](studio-api.json).
 >
 > **Runtime capability discovery**: `GET /api/v1/capabilities/manifest` is a
 > public, request-scoped discovery contract outside the admin OpenAPI snapshot.
@@ -221,10 +183,8 @@ Studio route without updating the document fails the OpenAPI drift gate.
 > `sync-cursor` GET/POST, `changes` GET/POST) back the `honua-mobile`
 > offline sync clients. The pull endpoint is a pure read; the per-client
 > cursor is advanced only by an explicit `POST /sync-cursor` after local
-> persistence succeeds. The contract is documented in
-> [FieldCollection Mobile Sync API](../../internal/developer/fieldcollection-mobile-sync-api.md) and
-> registered in the [public interface proof](../../gis/data/public-interface-proof.json)
-> under the `fieldcollection-mobile-sync` surface.
+> persistence succeeds. The endpoints are part of the
+> supported public interface.
 
 ## Form Package API
 
@@ -258,22 +218,12 @@ openapi-generator generate \
   -i https://your-honua-server.com/openapi.json \
   -g python \
   -o ./honua-python-client
-
-# Generate control-plane SDK artifacts (TypeScript + Python + .NET)
-./scripts/ci/validate-openapi-contracts.sh
-./scripts/sdk/generate-control-plane-sdks.sh
 ```
-
-Control-plane SDK governance and contract diff checks:
-- `.github/workflows/openapi-contract-governance.yml`
-- `.github/workflows/control-plane-sdk-governance.yml`
 
 ## Related Documentation
 
 - [**Geospatial Data APIs**](../../concepts/protocols.md) - Protocol overview and selection guide
 - [**Server Management API**](../../reference/admin-api/overview.md) - Admin API guide and key workflows
-- [**Console Job Observability**](../../internal/admin-api/console-job-observability.md) - Durable job viewer contract for Console and admin integrations
-- [**Analysis Content**](../../internal/admin-api/analysis-content.md) - Saved-query and analysis-package versions, preview artifacts, runs/reruns, artifact bindings, and safe failed-job diagnostics
 - [**Control Plane Versioning Policy**](../../reference/versioning-and-support.md) - Breaking-change and deprecation lifecycle
 - [**Control Plane Migration Guide**](../../reference/control-plane-migration-guide.md) - SDK quickstart and upgrade steps
 - [**API Examples**](../../guides/query-analyze/query-features.md) - Code examples for the major shipped protocols

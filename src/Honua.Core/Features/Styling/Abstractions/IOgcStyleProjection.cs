@@ -14,9 +14,12 @@ namespace Honua.Core.Features.Styling.Abstractions;
 public interface IOgcStyleProjection
 {
     /// <summary>
-    /// Lists the styles available through the OGC API - Styles surface. In Phase 1 this
-    /// enumerates the collections (data resources) that have a stored, non-null MapLibre
-    /// style; each styled collection projects to exactly one OGC style.
+    /// Lists the styles available through the OGC API - Styles surface: every storage-bound
+    /// feature collection projects to exactly one OGC style — its stored MapLibre style, or the
+    /// layer default it renders with until one is stored — other storage-bound resources project
+    /// only when a MapLibre style is stored, plus the standalone catalog styles. These are the
+    /// styles OGC API Features collections advertise as <c>rel=stylesheet</c>, so each one
+    /// resolves through <see cref="GetPublishedStylesheetAsync"/>.
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The styled-collection summaries, ordered by style identifier.</returns>
@@ -31,8 +34,27 @@ public interface IOgcStyleProjection
     /// <param name="styleId">Stable style identifier (the collection's resource name).</param>
     /// <param name="encoding">Requested stylesheet encoding.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The stylesheet document, or <c>null</c> when no such styled collection exists.</returns>
+    /// <returns>
+    /// The stylesheet document, or <c>null</c> when no such styled collection exists. A collection
+    /// without a stored style returns <c>null</c> so renderers fall back to their own defaults; the
+    /// OGC API - Styles surface reads <see cref="GetPublishedStylesheetAsync"/> instead.
+    /// </returns>
     Task<OgcStylesheet?> GetStylesheetAsync(
+        string styleId,
+        OgcStyleEncoding encoding,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets the stylesheet the OGC API - Styles surface publishes for <paramref name="styleId"/>:
+    /// the same document as <see cref="GetStylesheetAsync"/>, except that a storage-bound
+    /// feature collection without a stored style serves the layer default it renders with, so
+    /// every style listed by <see cref="ListStylesAsync"/> resolves.
+    /// </summary>
+    /// <param name="styleId">Stable style identifier (the collection's resource name, or a standalone style id).</param>
+    /// <param name="encoding">Requested stylesheet encoding.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>The stylesheet document, or <c>null</c> when no such style exists.</returns>
+    Task<OgcStylesheet?> GetPublishedStylesheetAsync(
         string styleId,
         OgcStyleEncoding encoding,
         CancellationToken cancellationToken = default);
@@ -58,7 +80,7 @@ public interface IOgcStyleProjection
     /// </summary>
     /// <param name="styleId">Stable style identifier (the collection's resource name).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    /// <returns>The style metadata, or <c>null</c> when no such styled collection exists.</returns>
+    /// <returns>The style metadata (for a collection's layer default, without a version), or <c>null</c> when no such style exists.</returns>
     Task<OgcStyleMetadata?> GetStyleMetadataAsync(
         string styleId,
         CancellationToken cancellationToken = default);

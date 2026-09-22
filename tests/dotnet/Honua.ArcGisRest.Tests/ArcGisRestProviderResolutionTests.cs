@@ -234,6 +234,128 @@ public class ArcGisRestProviderResolutionTests
         Assert.Contains(ServiceUrl, client.LastCountUrl!, StringComparison.Ordinal);
     }
 
+    public static TheoryData<string, string> RefusedReads
+    {
+        get
+        {
+            var data = new TheoryData<string, string>();
+            foreach (var policy in new[] { "row-level security", "field-mask", "permanent" })
+            {
+                foreach (var operation in new[] { "get", "query", "ids", "count", "extent", "estimates" })
+                {
+                    data.Add(policy, operation);
+                }
+            }
+
+            return data;
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(RefusedReads))]
+    public async Task BoundReader_WithUnenforceableReadPolicy_RefusesReadBeforeCallingUpstream(string policy, string operation)
+    {
+        var client = new RecordingArcGisRestFeatureClient();
+        var readSecurity = new LayerReadSecurityResolver(
+            v2Provider: null,
+            filterExpressionService: null,
+            new StubRowFilterSource(policy == "row-level security"
+                ? new Honua.Core.Queries.Filters.SqlFragment("region = @p0", ["west"])
+                : null),
+            new StubFieldMaskSource(policy == "field-mask" ? ["NAME"] : []));
+        var reader = CreateBoundReader(client, readSecurity, policy == "permanent" ? "STATE = 'WA'" : null);
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(() => InvokeReadAsync(reader, operation));
+
+        Assert.Contains(policy, exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ArcGIS REST", exception.Message, StringComparison.Ordinal);
+        Assert.Null(client.LastQueryUrl);
+        Assert.Null(client.LastCountUrl);
+        Assert.Null(client.LastExtentUrl);
+        Assert.Null(client.LastObjectIdsUrl);
+    }
+
+    [Fact]
+    public async Task BoundReader_WithNoPolicyResolved_SendsSameUpstreamRequestAsWithoutResolver()
+    {
+        var baseline = new RecordingArcGisRestFeatureClient();
+        await CreateBoundReader(baseline, readSecurity: null, permanentFilterExpression: null)
+            .CountAsync(LayerId, FeatureQuery.WithWhere("STATE = 'WA'"));
+
+        var withResolver = new RecordingArcGisRestFeatureClient();
+        var readSecurity = new LayerReadSecurityResolver(
+            v2Provider: null,
+            filterExpressionService: null,
+            new StubRowFilterSource(null),
+            new StubFieldMaskSource([]));
+        await CreateBoundReader(withResolver, readSecurity, permanentFilterExpression: null)
+            .CountAsync(LayerId, FeatureQuery.WithWhere("STATE = 'WA'"));
+
+        Assert.NotNull(baseline.LastCountUrl);
+        Assert.Equal(baseline.LastCountUrl, withResolver.LastCountUrl);
+    }
+
+    private static IFeatureReader CreateBoundReader(
+        IArcGisRestFeatureClient client,
+        LayerReadSecurityResolver? readSecurity,
+        string? permanentFilterExpression)
+    {
+        var provider = new ArcGisRestFeatureStore(client, NullLogger<ArcGisRestFeatureStore>.Instance, readSecurity);
+        var binding = CreateBinding(provider, CreateConnection());
+        if (permanentFilterExpression is not null)
+        {
+            binding = binding with
+            {
+                Resource = binding.Resource with
+                {
+                    PermanentFilter = new MetadataV2PermanentFilter
+                    {
+                        Expression = permanentFilterExpression,
+                        Language = MetadataV2PermanentFilterLanguages.ArcGisSql
+                    }
+                }
+            };
+        }
+
+        return ((IBindableFeatureDataProvider)provider).CreateReaderForBinding(binding);
+    }
+
+    private static Task InvokeReadAsync(IFeatureReader reader, string operation) => operation switch
+    {
+        "get" => reader.GetAsync(LayerId, 1),
+        "query" => reader.QueryAsync(LayerId, new FeatureQuery()),
+        "ids" => reader.QueryObjectIdsAsync(LayerId, new FeatureQuery()),
+        "count" => reader.CountAsync(LayerId, new FeatureQuery()),
+        "extent" => reader.GetExtentAsync(LayerId),
+        "estimates" => reader.GetEstimatesAsync(LayerId),
+        _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null)
+    };
+
+    private sealed class StubRowFilterSource(Honua.Core.Queries.Filters.SqlFragment? fragment) :
+        Honua.Core.Features.Authorization.Abstractions.IRowLevelSecurityFilterSource
+    {
+        public string? LastResourceId { get; private set; }
+
+        public Task<Honua.Core.Queries.Filters.SqlFragment?> ResolveAsync(MetadataV2Resource resource, CancellationToken cancellationToken = default)
+        {
+            LastResourceId = resource.Metadata.Id;
+            return Task.FromResult(fragment);
+        }
+    }
+
+    private sealed class StubFieldMaskSource(string[] maskedFields) :
+        Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource
+    {
+        public string? LastResourceId { get; private set; }
+
+        public Task<System.Collections.Immutable.ImmutableArray<string>> ResolveAsync(
+            MetadataV2Resource resource, CancellationToken cancellationToken = default)
+        {
+            LastResourceId = resource.Metadata.Id;
+            return Task.FromResult(System.Collections.Immutable.ImmutableArray.Create(maskedFields));
+        }
+    }
+
     private static ArcGisRestFeatureStore CreateProvider()
         => new(new RecordingArcGisRestFeatureClient(), NullLogger<ArcGisRestFeatureStore>.Instance);
 

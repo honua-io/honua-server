@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -109,7 +110,8 @@ internal static partial class FeatureServerEndpoints
         var service = validationResult.Service!;
         var publication = validationResult.Publication!;
         var resource = validationResult.Resource!;
-        var accessError = AccessPolicyHelpers.RequireResourceAccess(context, resource, service);
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, resource, AuthorizationOperation.Query, service, cancellationToken).ConfigureAwait(false);
         if (accessError != null)
         {
             return accessError;
@@ -291,18 +293,24 @@ internal static partial class FeatureServerEndpoints
             return Results.Bytes(pbfPayload, pbfContentType);
         }
 
-        var responseFeatures = result.Items.Select(feature => new GeoServicesFeature
+        var dateFieldNames = GeoServicesFieldConventions.ResolveDateFieldNames(resource);
+        var responseFeatures = result.Items.Select(feature =>
         {
-            Attributes = feature.Attributes
+            var attributes = feature.Attributes
                 .Where(kvp => !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
-                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
-            Geometry = returnGeometry
-                ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
-                    feature.Geometry, null, null, false, false)
-                : null,
-            // returnGeometry=false must omit the geometry property entirely (not emit
-            // null), matching the normal query operation (#1906).
-            IncludeGeometry = returnGeometry
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+            GeoServicesFieldConventions.CoerceDateAttributes(attributes, dateFieldNames);
+            return new GeoServicesFeature
+            {
+                Attributes = attributes,
+                Geometry = returnGeometry
+                    ? GeoServicesGeometryConverter.ConvertWkbToGeoServicesGeometry(
+                        feature.Geometry, null, null, false, false)
+                    : null,
+                // returnGeometry=false must omit the geometry property entirely (not emit
+                // null), matching the normal query operation (#1906).
+                IncludeGeometry = returnGeometry
+            };
         }).ToArray();
 
         var geometryType = resource.Spatial?.GeometryType ?? MetadataV2GeometryType.None;

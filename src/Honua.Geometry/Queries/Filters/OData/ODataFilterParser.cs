@@ -53,7 +53,22 @@ public sealed class ODataFilterParser
                 position: 0);
         }
 
+        EnsureWithinGuard(() => FilterParserGuard.EnsureExpressionTree(expression), position: 0);
         return expression;
+    }
+
+    // Surfaces shared guard failures as the parser's own exception type so every
+    // rejection from this parser carries a position and maps to the same response.
+    private static void EnsureWithinGuard(Action guard, int position)
+    {
+        try
+        {
+            guard();
+        }
+        catch (ArgumentException ex) when (ex is not ODataFilterParseException)
+        {
+            throw new ODataFilterParseException(ex.Message, position);
+        }
     }
 
     private FilterExpression ParseExpression()
@@ -62,9 +77,12 @@ public sealed class ODataFilterParser
     private FilterExpression ParseOrExpression()
     {
         var expression = ParseAndExpression();
+        var operands = 1;
 
         while (Match(ODataFilterTokenType.Or))
         {
+            var count = ++operands;
+            EnsureWithinGuard(() => FilterParserGuard.EnsureLogicalOperandCount(count), Previous().Position);
             var right = ParseAndExpression();
             expression = new BinaryExpression(expression, BinaryOperator.Or, right);
         }
@@ -75,9 +93,12 @@ public sealed class ODataFilterParser
     private FilterExpression ParseAndExpression()
     {
         var expression = ParseComparisonExpression();
+        var operands = 1;
 
         while (Match(ODataFilterTokenType.And))
         {
+            var count = ++operands;
+            EnsureWithinGuard(() => FilterParserGuard.EnsureLogicalOperandCount(count), Previous().Position);
             var right = ParseComparisonExpression();
             expression = new BinaryExpression(expression, BinaryOperator.And, right);
         }

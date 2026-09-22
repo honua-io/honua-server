@@ -450,6 +450,15 @@ internal sealed class ImageServerIdentifyHandler
             }
         }
 
+        // The native ArcGIS REST raster provider sends a two-key point literal.
+        // Reuse MapServer's finite-coordinate parser without relaxing general JSON.
+        if ((string.IsNullOrWhiteSpace(request.GeometryType) ||
+             request.GeometryType.Equals(PointGeometryType, StringComparison.OrdinalIgnoreCase)) &&
+            GeoServicesPointGeometryParser.TryParsePointLiteral(request.Geometry, out var literalX, out var literalY))
+        {
+            return (literalX, literalY, srid);
+        }
+
         // Handle JSON geometry: point ({x,y}), envelope, or polygon (rings). For area
         // geometries the centroid of the bounding envelope is the representative identify
         // location. ImageServerGeometryHelpers centralises the Esri-JSON envelope math so the

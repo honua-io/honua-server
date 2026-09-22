@@ -140,6 +140,7 @@ internal static class CollaborationCheckpointEndpoints
             context,
             StudioAuthorizationOperation.CreateVersion,
             draft.OwnerId,
+            draft.TenantId,
             resourceType: "studio-package-draft",
             resourceId: draftId.ToString("D")).ConfigureAwait(false);
         if (!draftDecision.IsAllowed)
@@ -158,6 +159,7 @@ internal static class CollaborationCheckpointEndpoints
             context,
             StudioAuthorizationOperation.CreateVersion,
             pointers.OwnerId,
+            pointers.TenantId,
             resourceType: "studio-content-item",
             resourceId: draft.ItemId.ToString("D")).ConfigureAwait(false);
         if (!itemDecision.IsAllowed)

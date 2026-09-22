@@ -9,12 +9,11 @@ resource: "honua://capability/dr.backup-automation"
 Inventory the deployment's durable state, take a PostGIS backup, and plan a
 restore that accounts for Redis and referenced file/object bytes as well.
 
-> **2026.1 qualification boundary:** Full-platform recovery for a topology with
-> durable Redis jobs/workflows is **not qualified in 2026.1** until a matching
-> candidate-bound destructive-restore receipt is linked below. The PostgreSQL
-> and file-storage commands on this page are component procedures, not proof
-> of complete platform recovery. AOF/reconnection and same-container restart
-> tests do not establish recovery after primary Redis storage is destroyed.
+> **2026.1 boundary:** Full-platform recovery for a topology with durable Redis
+> jobs/workflows is **not a qualified procedure in 2026.1**. The PostgreSQL and
+> file-storage commands on this page are component procedures, not proof of
+> complete platform recovery, and a same-container restart test does not
+> establish recovery after primary Redis storage is destroyed.
 
 **Prerequisites:** `pg_dump`/`pg_restore` matching your server's PostgreSQL major version, and credentials for the Honua database.
 
@@ -70,8 +69,8 @@ neighbors. Enabled Preview features still count when they store durable state.
 5. Verify independent backup access, then rehearse restoration into isolated
    replacement stores with production writers fenced out. Keep the original
    recovery set immutable. A backup listing or successful snapshot command is
-   insufficient; retain the destructive-restore and application-value assertions
-   in the [qualification receipt](#recovery-qualification-and-receipts).
+   insufficient; record the destructive-restore and application-value assertions
+   with the backup evidence.
 
 This is the required consistency plan, not a certified Redis restore recipe for
 every provider. If the selected provider has no supported recoverable backup,
@@ -179,26 +178,9 @@ The transient-restart contract below applies only while the original durable
 records survive. It does not promise no lost jobs, exactly-once side effects,
 or reconstruction after destruction of the primary state.
 
-### Recovery qualification and receipts
-
-**Current full-platform receipt: none linked; not qualified in 2026.1 for
-durable Redis topologies.** [Release #257](https://github.com/honua-io/honua-release/issues/257)
-tracks restore-evidence substrate coverage; a tracker or a green validator is
-not itself an executed restore receipt.
-
-Before publishing a recovery guarantee, link an immutable receipt bound to
-the exact candidate lock/image/worker digests, placement and enabled-store
-inventory. It must identify independent backups, destructive loss of primary
-state, per-store restore points, the executed restore procedure, expected and
-actual application values, job/output/outbox reconciliation, and measured
-loss/recovery times. Every enabled durable store must be accounted for; skipped,
-missing or PostgreSQL-only cells cannot certify full-platform recovery. Keep
-PostgreSQL-only evidence explicitly scoped to PostgreSQL. No RTO/RPO guarantee
-is established by this guide or by a same-container restart test.
-
 ### Upgrading an older Compose quickstart
 
-Compose versions before #2624 stored local files under the container's
+Earlier Compose quickstarts stored local files under the container's
 `/tmp/honua-storage` and did not mount that directory. Before replacing the old
 container, quiesce writes at the edge or through a maintenance window, then copy
 any surviving files from the still-running container before stopping it:
@@ -238,8 +220,7 @@ Honua Server is a replaceable application tier when all durable state is on
 the declared PostgreSQL, Redis and file/object stores. Recreating replicas does
 not reconstruct lost backing-store data. **Disaster recovery
 (backup automation, failover, and RTO/RPO reporting) is owned by the deployment's
-infrastructure/managed-database layer, not implemented inside this server** (#2946
-re-grade of #356/ADR-0024):
+infrastructure/managed-database layer, not implemented inside this server**:
 
 | Capability key | What actually gates it today |
 |---|---|
@@ -253,17 +234,8 @@ every enabled store, including Redis and file/object storage. Its managed
 database covers only the database portion; infrastructure ownership does not
 waive the full-platform consistency and qualification requirements in any edition.
 
-These four keys are catalogued in `docs/gis/data/capability-keys.v1.json` (Enterprise
-edition) for sales/roadmap visibility, but carry no HTTP route and are recorded with an
-`infra-owned` reason in
-[`capability-no-surface-allowlist.v1.json`](../../gis/data/capability-no-surface-allowlist.v1.json)
-rather than silently omitted. `Honua.Core`'s `Features/DisasterRecovery` domain still
-holds reusable, pure vocabulary types (`RecoveryObjectives`, `BackupRecord`,
-`BackupSchedule`, `RecoveryReadiness`, `IBackupStatusProvider`) that a future concrete
-backup-status provider could implement; a prior pure `FailoverDecisionEvaluator` /
-`RecoveryReadinessEvaluator` pair and their supporting types had zero callers anywhere
-in the codebase and were removed as dead code in #2946 (recoverable from git history if
-that work resumes).
+These four keys are catalogued as Enterprise capabilities, but carry no HTTP route: they
+record where the responsibility sits rather than a server feature.
 
 ### Recovery objectives (RTO/RPO) as vocabulary
 
@@ -272,10 +244,9 @@ that work resumes).
 - **Recovery Point Objective (RPO)** — the maximum tolerable data loss, measured as the age
   of the most recent restorable point.
 
-`RecoveryObjectives.Default` (1 hour RTO / 5 minute RPO) exists in `Honua.Core` as a shared
-default for whoever computes these numbers — today that is the infrastructure layer's backup
-drills, not a Honua Server endpoint. Those vocabulary defaults are not published
-recovery guarantees for any deployment.
+The server ships a shared default of 1 hour RTO / 5 minute RPO for whoever computes these
+numbers — today that is the infrastructure layer's backup drills, not a Honua Server endpoint.
+Those defaults are not published recovery guarantees for any deployment.
 
 ## Redis durable-job loss contract
 
@@ -289,7 +260,7 @@ mid-execution **and its durable state survives**:
   broadly around every Redis call for the same reason: one failed Redis operation must not take
   down the worker process.
 - The server's Redis connection is configured with `AbortOnConnectFail = false` and an
-  exponential reconnect policy (`src/Honua.Server/Program.cs`), so a transient Redis restart is
+  exponential reconnect policy, so a transient Redis restart is
   followed by automatic reconnection rather than a permanent failure.
 - If a job's heartbeat goes stale (the owning worker never recovers in time), the reconciliation
   sweep detects the expired heartbeat and — depending on the job's retry policy — either
@@ -297,15 +268,6 @@ mid-execution **and its durable state survives**:
   worker) or fails it terminally. Either outcome is loud (a status transition + log line) and
   re-submittable; there is no silent loss and no permanent wedge in `Running` with nobody able
   to observe or recover it.
-- This is proven end-to-end against a real Redis container stop/restart (not just a hand-set
-  stale timestamp) by
-  `RedisJobExecutionResilienceTests.JobExecutionService_WhenRedisRestartsMidJob_JobSurvivesWithNoSilentLossOrPermanentWedge`
-  (`tests/dotnet/Honua.Server.Tests/Features/Infrastructure/ControlPlane/`), which starts a job,
-  stops the Redis container while it is `Running`, restarts it, and asserts the job still
-  completes; the complementary "owning worker never comes back" half of the contract (stale
-  heartbeat → reconciler requeues for retry) was already covered by
-  `RedisExecutionSubstrateIntegrationTests.JobReconciliationService_WithRedis_RequeuesHeartbeatExpiredJobForRetry`
-  in the same directory.
 
 ## Next steps
 

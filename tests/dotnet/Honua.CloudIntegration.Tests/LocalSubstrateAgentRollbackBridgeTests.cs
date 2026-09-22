@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
@@ -9,6 +10,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.ControlPlane;
+using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Observability.Domain;
@@ -127,6 +129,18 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
             .Should()
             .Contain(title => title.StartsWith("Deploy submitted", StringComparison.Ordinal))
             .And.Contain(title => title.StartsWith("Deploy promoted", StringComparison.Ordinal));
+
+        var proposalAudit = env.AuditLog.Events
+            .Where(e => e.AuditEvent.ResourceType == "operation_proposal" && e.AuditEvent.ResourceId == proposalId)
+            .ToArray();
+        proposalAudit.Select(e => e.AuditEvent.Action)
+            .Should()
+            .ContainInOrder(
+                ["operation.proposed", "operation.applied"],
+                "the agent proposal and its approved application must each leave an audit record");
+        proposalAudit.Should().OnlyContain(
+            e => !string.IsNullOrWhiteSpace(e.AuditId),
+            "every proposal audit record must carry the identity the durable sink assigned");
     }
 
     private static async Task<string?> ResolveReachableRedisConnectionStringAsync()
@@ -256,7 +270,10 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
             .Should().BeFalse("the real MCP rollback call must succeed before its proposal receipt is inspected");
         result.TryGetProperty("structuredContent", out var structured).Should().BeTrue();
 
-        structured.GetProperty("outcome").GetString().Should().Be("ProposalCreated");
+        structured.GetProperty("outcome").GetString().Should().Be(
+            "ProposalCreated",
+            "the rollback proposal must be durably created (message: {0})",
+            structured.TryGetProperty("message", out var message) ? message.GetString() : "<none>");
         structured.GetProperty("requiresApproval").GetBoolean().Should().BeTrue();
         structured.GetProperty("supportedKinds")
             .EnumerateArray()
@@ -388,6 +405,7 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
             EnvironmentVariableScope environmentScope,
             WebApplication proxy,
             WebApplicationFactory<Program> factory,
+            RecordingAuditLog auditLog,
             string suffix,
             string targetId,
             string proxyBaseUrl,
@@ -398,6 +416,7 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
             _environmentScope = environmentScope;
             _proxy = proxy;
             Factory = factory;
+            AuditLog = auditLog;
             Suffix = suffix;
             TargetId = targetId;
             ProxyBaseUrl = proxyBaseUrl;
@@ -407,6 +426,8 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
         }
 
         public WebApplicationFactory<Program> Factory { get; }
+
+        public RecordingAuditLog AuditLog { get; }
 
         public string Suffix { get; }
 
@@ -536,6 +557,7 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
                 var proxyBaseUrl = proxy.Urls.First().TrimEnd('/');
 
                 environmentScope = EnvironmentVariableScope.Apply(settings);
+                var auditLog = new RecordingAuditLog();
                 var factory = new TestWebApplicationFactory()
                     .WithWebHostBuilder(builder =>
                     {
@@ -548,6 +570,13 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
                         {
                             services.RemoveAll<IProxyStateSwapper>();
                             services.AddSingleton<IProxyStateSwapper>(swapper);
+
+                            // TestWebApplicationFactory runs without a migrated database, so the host
+                            // would fall back to NullAuditLog. Since #3411 a proposal fails closed
+                            // without a durable audit identity, so this cell supplies an identity-
+                            // assigning sink and asserts the trail it records.
+                            services.RemoveAll<IAuditLog>();
+                            services.AddSingleton<IAuditLog>(auditLog);
                         });
                     });
 
@@ -556,6 +585,7 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
                     environmentScope,
                     proxy,
                     factory,
+                    auditLog,
                     suffix,
                     targetId,
                     proxyBaseUrl,
@@ -869,4 +899,23 @@ public sealed class LocalSubstrateAgentRollbackBridgeTests : IClassFixture<Local
     }
 
     private sealed record RequestLoopResult(int Total, int Failures, bool SawV1, bool SawV2, string? LastBody);
+
+    private sealed record RecordedAuditEvent(string AuditId, AuditEvent AuditEvent);
+
+    /// <summary>Identity-assigning audit sink that retains every event for assertion.</summary>
+    private sealed class RecordingAuditLog : IAuditLog
+    {
+        private readonly ConcurrentQueue<RecordedAuditEvent> _events = new();
+
+        public IReadOnlyCollection<RecordedAuditEvent> Events => _events.ToArray();
+
+        public Task<string?> RecordAsync(AuditEvent auditEvent, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(auditEvent);
+            cancellationToken.ThrowIfCancellationRequested();
+            var auditId = $"audit-local-substrate-{Guid.NewGuid():N}";
+            _events.Enqueue(new RecordedAuditEvent(auditId, auditEvent));
+            return Task.FromResult<string?>(auditId);
+        }
+    }
 }

@@ -169,7 +169,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && deadline.IsCancellationRequested)
         {
-            return JobExecutionResult.Failed(
+            return LayerComputationBudget.Refusal(
                 $"{HandledProcessId} exceeded Geoprocessing:Executors:MaxLayerExecutionSeconds={seconds}; " +
                 "narrow the selection or simplify the input, then resubmit.");
         }
@@ -195,7 +195,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         var hasInline = inputs.TryGet("input", out var inlineUri);
         if (hasLayerId == hasInline)
         {
-            return JobExecutionResult.Failed(
+            return LayerComputationBudget.Refusal(
                 $"Invalid {HandledProcessId} inputs: supply exactly one source — 'layerId' (registered source layer) "
                 + "or 'input' (staged FeatureCollection data URI).");
         }
@@ -208,7 +208,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         // as layer-source-only, so the combination is refused rather than quietly ignored.
         if (hasInline && FindLayerOnlySourceFilter(inputs) is { } layerOnlyFilter)
         {
-            return JobExecutionResult.Failed(
+            return LayerComputationBudget.Refusal(
                 $"Invalid {HandledProcessId} inputs: '{layerOnlyFilter}' windows the registered source layer read "
                 + "and is only valid with 'layerId'; a staged 'input' FeatureCollection is enriched verbatim. "
                 + $"Remove '{layerOnlyFilter}', or filter the staged collection before submitting it.");
@@ -216,7 +216,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
 
         if (!inputs.TryGetRequired("datasetId", out var datasetId, out var missingDataset))
         {
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {missingDataset}.");
+            return LayerComputationBudget.Refusal($"Invalid {HandledProcessId} inputs: {missingDataset}.");
         }
 
         using var scope = _serviceScopeFactory.CreateScope();
@@ -237,7 +237,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         var dataset = await resolver.ResolveAsync(datasetId, cancellationToken).ConfigureAwait(false);
         if (dataset is null)
         {
-            return JobExecutionResult.Failed(
+            return LayerComputationBudget.Refusal(
                 $"Unknown enrichment dataset '{datasetId}': no managed or configured dataset matches this id.");
         }
 
@@ -265,7 +265,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         }
         catch (TransformInputException ex)
         {
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {ex.PublicMessage}");
+            return LayerComputationBudget.Refusal($"Invalid {HandledProcessId} inputs: {ex.PublicMessage}");
         }
 
         var source = ResolveHonuaLayerSource(services);
@@ -310,7 +310,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         }
         catch (TransformInputException ex)
         {
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {ex.PublicMessage}");
+            return LayerComputationBudget.Refusal($"Invalid {HandledProcessId} inputs: {ex.PublicMessage}");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -347,7 +347,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
             // The cumulative match budget surfaces here with concrete remedies (narrow
             // where/bbox, carry fewer outputFields, use a less permissive method), so it
             // must reach the caller verbatim rather than collapsing to a type name.
-            return JobExecutionResult.Failed($"Invalid {HandledProcessId} inputs: {ex.PublicMessage}");
+            return LayerComputationBudget.Refusal($"Invalid {HandledProcessId} inputs: {ex.PublicMessage}");
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
@@ -367,7 +367,7 @@ internal sealed partial class EnrichmentJobExecutor : IProcessExecutor
         }
         catch (TransformInputException ex)
         {
-            return JobExecutionResult.Failed($"{HandledProcessId} {ex.PublicMessage}");
+            return LayerComputationBudget.Refusal($"{HandledProcessId} {ex.PublicMessage}");
         }
 
         await context.PublishArtifactAsync(FeatureCollectionArtifact.BuildDataUri(payload), cancellationToken)

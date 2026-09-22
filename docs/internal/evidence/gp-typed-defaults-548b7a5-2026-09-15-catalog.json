@@ -1,0 +1,76 @@
+{
+  "issue": "honua-io/honua-server#4634",
+  "at": "2026-09-15T05:24:11.317633+00:00",
+  "revision": "548b7a5263da5a3f2381eb43f232687cdf92b0bf",
+  "image": "sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1",
+  "service": "browser_compat",
+  "route": "GET /rest/services/{service}/GPServer/{task}?f=json",
+  "task_count": 119,
+  "parameter_default_kinds": {
+    "GPBoolean:bool": 10,
+    "GPDouble:float": 1,
+    "GPDouble:int": 18,
+    "GPDouble:null": 57,
+    "GPFeatureRecordSetLayer:null": 134,
+    "GPLong:int": 13,
+    "GPLong:null": 43,
+    "GPMultiValue:GPString:null": 2,
+    "GPRasterDataLayer:null": 37,
+    "GPRecordSet:null": 12,
+    "GPString:null": 322,
+    "GPString:str": 39
+  },
+  "parameters_missing_defaultValue_key": [],
+  "mistyped_defaults": [],
+  "sample_typed_defaults": {
+    "Honua_67656F6D657472792E627566666572/geodesic": {
+      "dataType": "GPBoolean",
+      "defaultValue": false
+    },
+    "Buffer/geodesic": {
+      "dataType": "GPBoolean",
+      "defaultValue": false
+    },
+    "Honua_67656F6D657472792E73696D706C696679/preserveTopology": {
+      "dataType": "GPBoolean",
+      "defaultValue": true
+    },
+    "Honua_616E616C79746963732E6275666665722D6167677265676174652D6D616E61676564/dissolve": {
+      "dataType": "GPBoolean",
+      "defaultValue": true
+    },
+    "Honua_656E726963686D656E742E656E72696368/maxInputFeatures": {
+      "dataType": "GPLong",
+      "defaultValue": 250000
+    },
+    "Honua_656E726963686D656E742E656E72696368/maxCarriedMatchValues": {
+      "dataType": "GPLong",
+      "defaultValue": 20000000
+    },
+    "EnrichLayer/maxInputFeatures": {
+      "dataType": "GPLong",
+      "defaultValue": 250000
+    },
+    "EnrichLayer/maxCarriedMatchValues": {
+      "dataType": "GPLong",
+      "defaultValue": 20000000
+    },
+    "Honua_616E616C79746963732E6275666665722D616767726567617465/dissolve": {
+      "dataType": "GPBoolean",
+      "defaultValue": true
+    },
+    "Honua_737572666163652E736C6F7065/zFactor": {
+      "dataType": "GPDouble",
+      "defaultValue": 1
+    },
+    "Slope/zFactor": {
+      "dataType": "GPDouble",
+      "defaultValue": 1
+    },
+    "Honua_737572666163652E68696C6C7368616465/azimuth": {
+      "dataType": "GPDouble",
+      "defaultValue": 315
+    }
+  },
+  "rule": "GPBoolean->JSON boolean, GPLong->JSON integer, GPDouble->JSON number, GPString->JSON string, absent->explicit null"
+}

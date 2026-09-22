@@ -1157,7 +1157,8 @@ public sealed class DemoStacSeedPostgresTests(PostgresFixture fixture)
             created_at TIMESTAMPTZ NOT NULL,
             last_sync_time TIMESTAMPTZ NOT NULL,
             last_sync_generation BIGINT NOT NULL DEFAULT 0,
-            upload_base_generation BIGINT NOT NULL DEFAULT 0
+            upload_base_generation BIGINT NOT NULL DEFAULT 0,
+            scope_definition JSONB NULL
         );
         CREATE TABLE honua.feature_changes (
             change_id BIGSERIAL PRIMARY KEY,

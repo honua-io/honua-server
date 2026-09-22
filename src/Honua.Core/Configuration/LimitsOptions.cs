@@ -97,6 +97,29 @@ public class LimitsOptions
     /// Elevation query and profile API limits.
     /// </summary>
     public ElevationLimits Elevation { get; set; } = new();
+
+    /// <summary>
+    /// Offline replica delivery limits (createReplica, extractChanges, synchronizeReplica).
+    /// </summary>
+    public ReplicaLimits Replica { get; set; } = new();
+}
+
+/// <summary>
+/// Limits for offline replica data delivery.
+/// </summary>
+public class ReplicaLimits
+{
+    /// <summary>
+    /// Maximum adds, updates, or deletes delivered for one layer in a single replica response. A
+    /// larger backlog is not rejected: it is delivered in consecutive change-generation windows, each
+    /// response setting <c>exceededTransferLimit</c> and reporting the generation it reached so the
+    /// client continues from there. A single committed generation is never split, so one generation
+    /// holding more changes than this (for example a pre-change-tracking baseline) is delivered whole.
+    /// Feature payloads are read in pages of <see cref="QueryLimits.MaxRecordCount"/>, so this limit is
+    /// independent of the query response cap.
+    /// </summary>
+    [Range(100, 1000000)]
+    public int MaxChangesPerLayer { get; set; } = 50000;
 }
 
 /// <summary>

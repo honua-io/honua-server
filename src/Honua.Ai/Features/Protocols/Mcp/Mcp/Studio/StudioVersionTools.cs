@@ -69,7 +69,7 @@ internal sealed class SaveStudioVersionTool(IGeoprocessingJobService jobService,
             ?? throw new GeoprocessingNotFoundException("Studio content item was not found.");
         // Saving advances the parent item's pointer, so both owners must authorize it.
         await EnsureStudioAuthorizedAsync(httpContext, authorization, principal, StudioAuthorizationOperation.CreateVersion,
-            pointers.OwnerId, draft.ItemId.ToString("D"), "studio-content-item", OperatorOperation.Create,
+            pointers.OwnerId, pointers.TenantId, draft.ItemId.ToString("D"), "studio-content-item", OperatorOperation.Create,
             cancellationToken).ConfigureAwait(false);
         RequireAuthorizedGeneration(draft, argument.Generation);
         var actor = ActorIdFor(authorization, principal);
@@ -121,7 +121,7 @@ internal sealed class ReopenStudioVersionTool(IGeoprocessingJobService jobServic
         var version = await lifecycle.GetVersionAsync(argument.ItemId, argument.VersionId, cancellationToken).ConfigureAwait(false)
             ?? throw new GeoprocessingNotFoundException("Studio content version was not found.");
         await EnsureStudioAuthorizedAsync(httpContext, authorization, principal, StudioAuthorizationOperation.ReopenVersion,
-            version.OwnerId, argument.ItemId.ToString("D"), "studio-content-item", OperatorOperation.Create,
+            version.OwnerId, version.TenantId, argument.ItemId.ToString("D"), "studio-content-item", OperatorOperation.Create,
             cancellationToken).ConfigureAwait(false);
         var actor = ActorIdFor(authorization, principal);
         var receipt = await RequireMutationRuntime(httpContext).ReopenVersionAsync(argument.ItemId, argument.VersionId,

@@ -34,6 +34,48 @@ public class Cql2JsonParserTests
         ((Literal)binary.Right).Value.Should().Be("Test");
     }
 
+    [Theory]
+    [InlineData("and")]
+    [InlineData("or")]
+    public void Parse_FlatLogicalOperatorBeyondOperandLimit_ThrowsArgumentException(string op)
+    {
+        var act = () => _parser.Parse(FlatLogicalJson(op, FilterParserGuard.MaxExpressionDepth + 1));
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
+    }
+
+    [Fact]
+    public void Parse_FlatLogicalOperatorWithinDepthLimit_ReturnsLeftDeepChain()
+    {
+        // N comparison operands fold into a tree of depth N + 1.
+        var result = _parser.Parse(FlatLogicalJson("and", FilterParserGuard.MaxExpressionDepth - 1));
+
+        result.Should().BeOfType<BinaryExpression>().Which.Operator.Should().Be(BinaryOperator.And);
+    }
+
+    [Fact]
+    public void Parse_FlatLogicalOperatorUnderNegationsBeyondDepthLimit_ThrowsArgumentException()
+    {
+        // Operand count and JSON nesting are each within their limits; the folded tree is not.
+        const int negations = 10;
+        var json = FlatLogicalJson("and", FilterParserGuard.MaxExpressionDepth - negations);
+        for (var i = 0; i < negations; i++)
+        {
+            json = $$"""{"op":"not","args":[{{json}}]}""";
+        }
+
+        var act = () => _parser.Parse(json);
+
+        act.Should().Throw<ArgumentException>()
+            .WithMessage($"*maximum nesting depth of {FilterParserGuard.MaxExpressionDepth}*");
+    }
+
+    private static string FlatLogicalJson(string op, int operandCount)
+        => $$"""{"op":"{{op}}","args":[""" +
+           string.Join(",", Enumerable.Repeat("""{"op":"=","args":[{"property":"name"},"a"]}""", operandCount)) +
+           "]}";
+
     [Fact]
     public void Parse_SpatialPredicate_ReturnsSpatialPredicate()
     {

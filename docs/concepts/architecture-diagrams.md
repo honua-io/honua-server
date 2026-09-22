@@ -560,8 +560,3 @@ graph TB
 | ERD | Show data model | Database design |
 
 ---
-
-## See Also
-
-- [Architecture (contributor notes)](../internal/contributor/ARCHITECTURE.md) - Detailed architecture prose
-- [ADRs](../internal/contributor/adr/README.md) - Architecture Decision Records

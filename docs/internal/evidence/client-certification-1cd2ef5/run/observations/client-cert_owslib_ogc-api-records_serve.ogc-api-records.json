@@ -1,0 +1,76 @@
+{
+  "schema": "honua.bounded-roster-observation/v1",
+  "test_case_id": "client-cert/owslib/ogc-api-records/serve.ogc-api-records",
+  "canonical_client": "OWSLib",
+  "client_lane": "py-owslib",
+  "client_version": "0.36.0",
+  "client_version_detail": "OWSLib==0.36.0",
+  "surface": "ogc-api-records",
+  "operation": "serve.ogc-api-records",
+  "protocol_version": "OGC API - Records 1.0",
+  "protocol_profile": "core+geojson",
+  "started_at": "2026-09-21T09:58:16.733065Z",
+  "finished_at": "2026-09-21T09:58:16.947446Z",
+  "duration_ms": 214,
+  "status": "pass",
+  "exercised_capabilities": [
+    "positive",
+    "negative",
+    "auth",
+    "pagination",
+    "limit",
+    "media-schema"
+  ],
+  "summary": "all 6 checks passed across 6 governed facets",
+  "primary_request_url": "http://honua:5000/ogc/records/collections/honua-catalog/items",
+  "checks": [
+    {
+      "facet": "positive",
+      "name": "discover the catalogue and read a record",
+      "outcome": "pass",
+      "detail": "collections ['honua-catalog']; record service:browser_compat titled 'browser_compat'",
+      "request_url": null,
+      "duration_ms": 32
+    },
+    {
+      "facet": "pagination",
+      "name": "next links enumerate every record exactly once",
+      "outcome": "pass",
+      "detail": "19 records over 7 pages of 3; numberMatched 19; no duplicates",
+      "request_url": null,
+      "duration_ms": 63
+    },
+    {
+      "facet": "limit",
+      "name": "limit bounds the page and numberReturned reports it",
+      "outcome": "pass",
+      "detail": "page sizes {1: 1, 2: 2, 5: 5}; limit=0 -> 400 application/problem+json",
+      "request_url": null,
+      "duration_ms": 29
+    },
+    {
+      "facet": "negative",
+      "name": "unknown record and unknown catalogue are 404 problems",
+      "outcome": "pass",
+      "detail": "{'unknown-record': 404, 'unknown-collection': 404}",
+      "request_url": null,
+      "duration_ms": 19
+    },
+    {
+      "facet": "auth",
+      "name": "protected services' records are visible only to authenticated principals",
+      "outcome": "pass",
+      "detail": "anonymous 19 records, api-key 31, oidc-bearer 31, wrong key 19; the protected records appear only with a valid credential",
+      "request_url": null,
+      "duration_ms": 60
+    },
+    {
+      "facet": "media-schema",
+      "name": "items are GeoJSON record features with record properties",
+      "outcome": "pass",
+      "detail": "application/geo+json; 5 Feature records with type/title/links",
+      "request_url": null,
+      "duration_ms": 10
+    }
+  ]
+}

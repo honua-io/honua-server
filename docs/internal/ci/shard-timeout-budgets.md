@@ -54,6 +54,26 @@ Each `Honua.Server.Tests` shard carries two timeouts:
    per-PR shard execution, which #2865 deliberately removed; re-introducing it
    is out of scope for this guard.
 
+   **Contract: advisory, never a gate (#4790).** `ci.yml` runs the guard with
+   `--advisory`, which emits `::warning::HONUA_SHARD_OVER_MAX_UTILIZATION` and
+   exits 0. Before #4790 the step printed `::error::` and exited 1, and only
+   `continue-on-error` kept the job green. On 2026-09-13 that error annotation
+   sat next to the shard runner's own `HONUA_SHARD_CAPACITY_EXHAUSTED` and was
+   quoted as the cause of two trunk reds. A guard that failed the job would red
+   trunk on a passing shard whenever a runner was slow, which is a flake rather
+   than a signal. The capacity bands are therefore:
+
+   | Utilization of the test cap | Signal | Effect |
+   |---|---|---|
+   | >= 80% (`warn_utilization`) | `::warning::HONUA_SHARD_LOW_HEADROOM` from `run-server-test-shard.sh` | none; schedule a split |
+   | > 85% last run | `::warning::HONUA_SHARD_OVER_MAX_UTILIZATION` from this guard | none; split before the next test lands |
+   | 100%, still producing output | `::error::HONUA_SHARD_CAPACITY_EXHAUSTED` | the only hard band: job fails, merge train treats it as terminal |
+
+   The per-run report is the headroom table in each shard's job summary. The
+   multi-run trend is the p90 re-basing audit under "Re-basing the budgets".
+   `--max-utilization` without `--advisory` still exits 1, for a caller that
+   deliberately wants a gate.
+
    In guard mode the audit deliberately stops printing its "recommended cap"
    re-basing advice, so CI never tells an operator to raise the budget this
    policy forbids. That recommendation is still emitted (and still on the JSON
@@ -1095,3 +1115,36 @@ original class surface with exactly one owner per class.
 
 These are single-run estimates. The first trunk matrix after landing replaces
 them with measured `*.timing.json` values.
+
+### Measured after landing (#4790)
+
+Five consecutive trunk matrix runs after #4849, taken from each shard's
+`*.timing.json` (`duration_seconds` of the test step against the unchanged 20m
+cap). Every record is `capacity_status: ok`. Both shards stay well under the 70%
+target, and the split is close to additive: about 7.6m plus 7.0m, against 20m
+before.
+
+| Run | Trunk head | Operator Eval Harness | gRPC Protocol and Scene |
+|---|---|---:|---:|
+| [34855086953](https://github.com/honua-io/honua-server/actions/runs/34855086953) | `06b083e` | 495s (41%) | 456s (38%) |
+| [34863445411](https://github.com/honua-io/honua-server/actions/runs/34863445411) | `c0ceceaa` | 471s (39%) | 381s (32%) |
+| [34864599181](https://github.com/honua-io/honua-server/actions/runs/34864599181) | `379f3f3` | 435s (36%) | 396s (33%) |
+| [34899117403](https://github.com/honua-io/honua-server/actions/runs/34899117403) | `548b7a5` | 456s (38%) | 435s (36%) |
+| [34903538540](https://github.com/honua-io/honua-server/actions/runs/34903538540) | `927af8f` | 420s (35%) | 455s (38%) |
+
+The two 2026-09-13 reds cited in #4790 (runs 34760673875 and 34769265361) were
+this shard at `HONUA_SHARD_CAPACITY_EXHAUSTED` (100.1%, exit 124) on their first
+attempts. The `HONUA_SHARD_OVER_MAX_UTILIZATION` error quoted there came from the
+advisory step, which never failed the job; see the advisory contract under
+policy 4.
+
+## OGC API Maps capacity split (#5006)
+
+`OGC API Maps and Tiles` exhausted its 22-minute test cap on
+[35164215061 attempt 1](https://github.com/honua-io/honua-server/actions/runs/35164215061/attempts/1)
+while still producing output seven seconds earlier. Its current filter selects
+Maps and Records; Tiles was already split out. The successful retry's TRX
+supports a whole-class split of about 360s / 407s into `OGC API Maps Basic and
+Conformance` and `OGC API Maps Rendering and Records`. Both keep the **22m test /
+32m job caps**, with an exact-partition contract preserving the original suite.
+See [the rebalance evidence and registration details](shard-rebalance-5006.md).

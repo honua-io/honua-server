@@ -53,33 +53,6 @@ Durable proposal evidence stores bounded `evidence:<sourceId>:<observedAt>:<comp
 
 `evidencePosture` is additive and nullable. Existing clients that do not read it are unaffected, and every legacy top-level field (`generatedAt`, `detectedAt`, `partialResult`, `sourceErrors`, `available`, `hasMore`, `nextCursor`, `clusterReplicaCount`) keeps its previous meaning and remains truthful during the transition.
 
-## Live outage/recovery proof
-
-`EvidencePostureLiveTests` is the opt-in deployed-environment contract. It reads a known actionable finding through the real MCP HTTP transport, asks an environment-owned harness to interrupt one telemetry backend, waits for that exact source to report `unavailable`, and verifies the finding proposal is blocked with `evidencePostureNotActionable`. It then restores the backend and waits for the MCP posture to return to complete and fresh. The recovery control is also invoked from test cleanup so a failed assertion does not intentionally leave the backend offline.
-
-The harness supplies these variables only in an isolated live-test environment:
-
-- `HONUA_LIVE_EVIDENCE_BASE_URL`: deployed Honua base URL.
-- `HONUA_LIVE_EVIDENCE_API_KEY`: admin API key, sent only as `X-API-Key` and never logged by the test.
-- `HONUA_LIVE_EVIDENCE_SOURCE_ID`: source envelope whose backend the harness controls.
-- `HONUA_LIVE_EVIDENCE_FINDING_ID`: stable active finding that requires that source.
-- `HONUA_LIVE_EVIDENCE_OUTAGE_URL`: idempotent harness-owned POST control that returns success after the backend is unavailable.
-- `HONUA_LIVE_EVIDENCE_RECOVERY_URL`: idempotent harness-owned POST control that returns success after the backend is restored.
-
-The outage and recovery controls are external test-harness endpoints, not Honua server routes. They must target only the isolated telemetry backend represented by `HONUA_LIVE_EVIDENCE_SOURCE_ID`; the Honua process and MCP transport remain online throughout the run.
-
-### Native Windows receipt
-
-`scripts/qualification/start_evidence_windows.ps1` starts an isolated native .NET server and disposable Docker Desktop Postgres/Redis containers on loopback ports 18475, 55475 and 56375. It explicitly opts into Preview alerting for this test only. The credentials in that launcher are public disposable fixture values. Run it from a clean checkout with the Windows .NET 10 SDK and Docker Desktop available. Existing containers with the harness names cause startup to fail; the launcher never replaces them.
-
-```powershell
-./scripts/qualification/start_evidence_windows.ps1
-$env:HONUA_LIVE_EVIDENCE_API_KEY = 'local-evidence-admin-only'
-python scripts/qualification/evidence_outage_windows.py --source-sha (git rev-parse HEAD) --server-assembly src/Honua.Server/bin/Release/net10.0/Honua.Server.dll --receipt TestResults/evidence-live/receipt.json --allow-isolated-outage
-```
-
-Wait for server startup before invoking the proof. The runner seeds exactly one dead-letter row, reads the real MCP finding, interrupts only `honua.alert_dispatch`, and checks the unavailable envelope, blocked proposal, unchanged Redis proposal set and unchanged dispatch rows. It restores the relation in `finally` and verifies recovery to complete/fresh. The receipt records the source revision and server-assembly SHA-256; it explicitly does not claim exact-candidate qualification. After the run, stop the PID recorded in `TestResults/evidence-live/server.pid` and remove only `honua-3475-postgres` and `honua-3475-redis`. Stop the server before rebuilding on Windows to release its assembly locks. To resume with the harness-owned running containers, use `-ReuseContainers`; the launcher verifies their ownership labels.
-
-The [2026-09-05 executed Windows receipt](evidence/3475-windows-outage.json) records complete → unavailable → complete source posture, REST/MCP parity during the outage, independently seeded backlog values (zero pending, one dead-letter dispatch), and zero new proposals or dispatch-row mutations. It is implementation evidence; the release candidate must be qualified separately with its immutable artifact identity.
+## Alert backlog evidence
 
 Alert evidence uses `backlogObservedAt`, the successful collection time of the represented backlog. The legacy `lastPollAt` field is the dispatcher attempt heartbeat and may advance during a storage outage; neither `observedAt` nor `lastSuccessfulAt` uses it. Failed reads retain the last successfully collected observation, and both findings and ops-health mark the source unavailable. Recovery requires a successful backlog collection.

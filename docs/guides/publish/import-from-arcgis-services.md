@@ -106,6 +106,7 @@ Supported modes are `token`, `oauth`, and `basic` (`username` + `passwordSecretR
 - **ArcGIS authentication required/expired (401) or denied (403)** — supply or refresh source credentials; discovery preserves these statuses and does not misreport them as a connectivity failure.
 - **`Distributed import coordination is unavailable. Retry when Redis is healthy.` (503)** — queued GeoServices imports need the Redis-backed job manager; check Redis connectivity.
 - **Plaintext credential rejected on start** — queued jobs only accept `accessTokenSecretReference`/`passwordSecretReference`; store the secret and reference it.
+- **Secret reference refused (400) or not resolved** — a reference must be a whole `provider:identifier` value permitted under `Security__RequestSecretReferences__*` ([References supplied in a request](../deploy/configuration.md#references-supplied-in-a-request)). Nothing is permitted by default.
 - **Import completed but the layer is missing** — confirm `autoPublish` was not set to `false`; otherwise publish the imported table manually ([Publish layers](publish-layers.md)).
 
 More help: [troubleshooting](../deploy/troubleshooting.md).

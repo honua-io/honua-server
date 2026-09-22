@@ -89,7 +89,11 @@ internal static class GPServerSoapEndpoints
                     break;
                 case "GetToolInfo":
                     var arguments = operation.Elements().ToArray();
-                    if (arguments.Length != 1 || arguments[0].Name != XName.Get("ToolName") || arguments[0].HasElements)
+                    if (arguments.FirstOrDefault(argument => argument.Name != XName.Get("ToolName")) is { } unsupported)
+                    {
+                        return Complete(scope, CreateSoapFault($"GetToolInfo does not accept the '{unsupported.Name.LocalName}' argument; its only argument is ToolName.", StatusCodes.Status400BadRequest, soap));
+                    }
+                    if (arguments.Length != 1 || arguments[0].HasElements)
                     {
                         return Complete(scope, CreateSoapFault("GetToolInfo requires one ToolName argument.", StatusCodes.Status400BadRequest, soap));
                     }

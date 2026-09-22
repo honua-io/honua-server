@@ -41,8 +41,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private readonly DataConnection? _connection;
     private readonly IConnectionEncryptionService? _connectionEncryptionService;
     private readonly IFilterExpressionService? _filterExpressionService;
-    private readonly IRowLevelSecurityFilterSource? _rlsFilterSource;
-    private readonly IFieldMaskSource? _fieldMaskSource;
+    private readonly LayerReadSecurityResolver _readSecurity;
     private readonly ILogger _logger;
     private readonly string _qualifiedTableName;
     private readonly string _primaryKeyColumn;
@@ -71,8 +70,13 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         _connection = connection;
         _connectionEncryptionService = connectionEncryptionService;
         _filterExpressionService = filterExpressionService;
-        _rlsFilterSource = rlsFilterSource;
-        _fieldMaskSource = fieldMaskSource;
+        // The reader is bound to its resource, so the shared resolver needs no layer-id lookup
+        // (and therefore no graph provider); it resolves the policy from the resource directly.
+        _readSecurity = new LayerReadSecurityResolver(
+            v2Provider: null,
+            filterExpressionService,
+            rlsFilterSource,
+            fieldMaskSource);
         _logger = logger ?? NullLogger.Instance;
         _qualifiedTableName = QuoteQualifiedTableName(_mapping);
         _primaryKeyColumn = ValidateAndQuoteIdentifier(_mapping.PrimaryKeyColumn);
@@ -677,14 +681,13 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             string.Join(" AND ", conditions.Select(static condition => $"({condition})")));
     }
 
-    private async Task<FeatureQuery> ApplyReadSecurityAsync(
+    // Resolution and validation live in the shared LayerReadSecurityResolver (resource-keyed
+    // overload) so this reader enforces exactly what the layer-id keyed feature store does.
+    private Task<FeatureQuery> ApplyReadSecurityAsync(
         FeatureQuery query,
         CancellationToken cancellationToken)
     {
-        var needsFilter = query.EnforcedSqlFilter is null;
-        var needsFieldMask = query.EnforcedMaskedFields is null;
-
-        if (needsFilter &&
+        if (query.EnforcedSqlFilter is null &&
             _resource.PermanentFilter is { Expression: { Length: > 0 } } &&
             _filterExpressionService is null)
         {
@@ -692,32 +695,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 $"Permanent filter enforcement is unavailable for source-backed resource '{_resource.Metadata.Id}'.");
         }
 
-        if (needsFilter)
-        {
-            var permanentFilter = PermanentFilterResolver.Resolve(_resource, _filterExpressionService);
-            var rlsFilter = _rlsFilterSource is null
-                ? null
-                : await _rlsFilterSource.ResolveAsync(_resource, cancellationToken).ConfigureAwait(false);
-            var enforcedFilter = SqlFragmentHelpers.CombineSqlFilters(permanentFilter, rlsFilter);
-            if (enforcedFilter != null)
-            {
-                query = query with { EnforcedSqlFilter = enforcedFilter };
-            }
-        }
-
-        if (needsFieldMask)
-        {
-            var maskedFields = _fieldMaskSource is null
-                ? ImmutableArray<string>.Empty
-                : await _fieldMaskSource.ResolveAsync(_resource, cancellationToken).ConfigureAwait(false);
-            if (!maskedFields.IsDefaultOrEmpty)
-            {
-                query = query with { EnforcedMaskedFields = maskedFields };
-            }
-        }
-
-        FeatureQuerySecurity.Validate(query);
-        return query;
+        return _readSecurity.ApplyAsync(_resource, query, cancellationToken);
     }
 
     // OGC API Features `datetime` (and any temporal query) lands here as a

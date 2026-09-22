@@ -1,0 +1,127 @@
+# Deployment harness for the honua-server#3429 dashboard lifecycle receipt.
+#
+# scripts/studio/dashboard_lifecycle_receipt.py judges the remaining #3429 acceptance
+# criteria on a deployed image rather than in-process, so the stack it runs against is
+# itself evidence: it must be the manifest-pinned candidate image, started under the
+# Production startup policy, with the durable audit log, control-plane operation runtime,
+# tenant resolution and OAuth bearer validation the release ships rather than Test
+# substitutes. Three lanes reconstructed that stack by hand before this file existed; it is
+# committed so the release program can replay the receipt against a re-pinned digest.
+#
+#   HONUA_IMAGE=ghcr.io/honua-io/honua-server@sha256:<digest> \
+#     docker compose -f docker/studio-dashboard-receipt/compose.yml -p studio-receipt up -d
+#
+# See ./README.md for the full driver invocation.
+
+services:
+  # Production composes the durable operation secret channel, which refuses to start unless
+  # an operator-supplied certificate encrypts the data-protection key ring at rest. Minting
+  # it here keeps the harness self-contained and the key material out of the repository.
+  keyring:
+    image: alpine/openssl:latest
+    container_name: studio-receipt-keyring
+    entrypoint: ["/bin/sh", "-c"]
+    # The server runs as a non-root uid, so the PFX must be world-readable.
+    command:
+      - |
+        set -e
+        if [ -f /keyring/operation-keyring.pfx ]; then exit 0; fi
+        openssl req -x509 -newkey rsa:2048 -nodes -days 30 -keyout /tmp/k.key -out /tmp/k.crt -subj "/CN=studio-receipt-keyring"
+        openssl pkcs12 -export -out /keyring/operation-keyring.pfx -inkey /tmp/k.key -in /tmp/k.crt -passout pass:StudioReceiptKeyRing
+        chmod 444 /keyring/operation-keyring.pfx
+    volumes:
+      - keyring:/keyring
+
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: studio-receipt-postgres
+    environment:
+      POSTGRES_DB: honua
+      POSTGRES_USER: honua
+      POSTGRES_PASSWORD: studio_receipt_password
+      POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL
+    healthcheck:
+      # Probe over TCP, not the local socket: during first-boot initialisation the entrypoint
+      # runs a temporary server on the unix socket only, so a socket probe reports ready while
+      # the port the server connects to still refuses connections.
+      test: ["CMD-SHELL", "pg_isready -U honua -d honua -h 127.0.0.1 -p 5432"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: studio-receipt-redis
+    # The control-plane operation instances the receipt joins against are durable state,
+    # so Redis runs under the same append-only, no-eviction contract as production.
+    command: redis-server --appendonly yes --appendfsync always --maxmemory-policy noeviction
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  honua:
+    image: ${HONUA_IMAGE:?Set HONUA_IMAGE to the manifest-pinned candidate digest}
+    container_name: studio-receipt-honua
+    ports:
+      - "127.0.0.1:18080:8080"
+    environment:
+      # The image already sets ASPNETCORE_ENVIRONMENT=Production; naming it here keeps the
+      # startup policy under test explicit rather than inherited.
+      ASPNETCORE_ENVIRONMENT: Production
+      Kestrel__Endpoints__Http__Url: http://+:8080
+      Kestrel__Endpoints__Http__Protocols: Http1
+      AllowedHosts: "localhost;127.0.0.1;honua"
+      HostValidation__AllowedHosts__0: localhost
+      HostValidation__AllowedHosts__1: 127.0.0.1
+      PUBLIC_BASE_URL: http://localhost:18080
+      HONUA_ADMIN_PASSWORD: StudioReceiptAdmin123!
+      # 2026.1 ships unlicensed. Disabled mode grants every entitlement, which is what
+      # composes the Redis-backed durable proposal gateway the governed-proposal row needs.
+      # Since #4758 it also executes Studio draft composition directly, so this harness
+      # needs no Guardrails__Overrides__StudioDraftMutation escape hatch: the built-in
+      # studio.publication_proposal floor still routes agent proposals to approval.
+      Licensing__Mode: Disabled
+      # Studio package lifecycle is admin-only until end-user authoring is switched on.
+      # Without this the driver's first call, create_draft, is denied with
+      # studio_authorization/end_user_mode_disabled and no journey runs at all.
+      Studio__EndUserAuthorization__Enabled: "true"
+      # Deterministic local resource server. No external IdP is contacted: the driver mints
+      # short-lived HS256 tokens against this issuer/audience/signing-key tuple, one per
+      # request, so the production token-replay default stays on.
+      Oidc__Enabled: "true"
+      Oidc__Generic__Enabled: "true"
+      Oidc__Generic__Authority: https://studio-receipt.honua.test
+      Oidc__Generic__ClientId: honua-studio-receipt
+      Oidc__AdminRoles__0: admin
+      Oidc__TokenValidation__ValidIssuers__0: https://studio-receipt.honua.test
+      Oidc__TokenValidation__ValidAudiences__0: honua-studio-receipt
+      Oidc__TokenValidation__SymmetricSigningKey: studio-dashboard-receipt-signing-key-2026-1
+      Operations__SecretChannel__KeyRingCertificatePath: /keyring/operation-keyring.pfx
+      Operations__SecretChannel__KeyRingCertificatePassword: StudioReceiptKeyRing
+      ConnectionStrings__DefaultConnection: Server=postgres;Port=5432;Database=honua;User Id=honua;Password=studio_receipt_password;
+      ConnectionStrings__honua: Server=postgres;Port=5432;Database=honua;User Id=honua;Password=studio_receipt_password;
+      ConnectionStrings__Redis: redis:6379
+      FileStorage__Provider: Local
+      FileStorage__LocalStorage__BasePath: /tmp/honua-storage
+      Security__ConnectionEncryption__MasterKey: studio-receipt-master-key-at-least-32-characters-long
+      Security__ConnectionEncryption__Salt: c3R1ZGlvLXJlY2VpcHQtc2FsdC1mb3ItdGhlLTM0MjktcmVjZWlwdA==
+    volumes:
+      - keyring:/keyring:ro
+    depends_on:
+      keyring:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--output-document=/dev/null", "http://localhost:8080/healthz/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+
+volumes:
+  keyring:

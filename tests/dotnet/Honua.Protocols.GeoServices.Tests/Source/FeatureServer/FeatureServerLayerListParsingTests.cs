@@ -6,6 +6,7 @@ using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Infrastructure.Authentication;
+using Honua.Infrastructure.Validation;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
@@ -287,9 +288,8 @@ public sealed class FeatureServerLayerListParsingTests
             DateTimeOffset.UtcNow);
 
         var visible = FeatureServerEndpoints.FilterAccessibleLayersV2(
-            context,
+            new ResourceAccessSet(context, service, AccessScope.Read, new(ReferenceEqualityComparer.Instance)),
             snapshot,
-            service,
             [
                 (activePublication, activeResource),
                 (retiredPublication, activeResource),
