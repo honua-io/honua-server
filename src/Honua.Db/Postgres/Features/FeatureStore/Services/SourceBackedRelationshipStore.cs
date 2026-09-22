@@ -3,6 +3,7 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -22,7 +23,8 @@ internal sealed class SourceBackedRelationshipStore(
     IRelationshipStore managedStore,
     IMetadataV2GraphProvider? metadata,
     FeatureProviderQueryRouter? router,
-    IFilterExpressionService? filters) : IRelationshipStore
+    IFilterExpressionService? filters,
+    IFieldMaskSource? fieldMasks = null) : IRelationshipStore
 {
     /// <inheritdoc />
     public async Task<QueryResult<Feature>> QueryRelatedAsync(int layerId, RelatedQuery query, CancellationToken cancellationToken = default)
@@ -47,16 +49,11 @@ internal sealed class SourceBackedRelationshipStore(
             throw new InvalidOperationException("Both relationship resources must resolve to storage bindings.");
         }
 
-        // Translate a raw caller filter before adding the join predicate: the bound reader gives a
-        // SqlFilter precedence over Where, so adding the join as a SqlFilter would otherwise
-        // silently discard the caller's filter.
-        if (query.SqlFilter is null && !string.IsNullOrWhiteSpace(query.Where))
+        // GeoServices carries both canonical WHERE and its translated SQL. Use the
+        // canonical form when they are equivalent so each bound provider translates it.
+        // Independently supplied SQL retains its original precedence and restrictions.
+        if (query.SqlFilter is not null && !string.IsNullOrWhiteSpace(query.Where) && filters is not null)
         {
-            if (filters is null)
-            {
-                throw new ArgumentException("Related query filters are not supported for this relationship.");
-            }
-
             var parsed = filters.Parse(FilterLanguage.ArcGisSql, query.Where);
             if (!parsed.IsSuccess || parsed.Expression is null)
             {
@@ -69,12 +66,21 @@ internal sealed class SourceBackedRelationshipStore(
                 throw new ArgumentException("Unsupported related query filter.");
             }
 
-            query = query with { SqlFilter = translated.SqlFilter };
+            if (query.SqlFilter.Sql == translated.SqlFilter.Sql &&
+                query.SqlFilter.Parameters.SequenceEqual(translated.SqlFilter.Parameters))
+            {
+                query = query with { SqlFilter = null };
+            }
         }
 
+        ImmutableArray<string>? originMasks = fieldMasks is null ? null :
+            await fieldMasks.ResolveAsync(origin.Resource, cancellationToken).ConfigureAwait(false);
+        ImmutableArray<string>? destinationMasks = fieldMasks is null ? null :
+            await fieldMasks.ResolveAsync(destination.Resource, cancellationToken).ConfigureAwait(false);
         var originReader = await ResolveReaderAsync(snapshot, origin, layerId, cancellationToken).ConfigureAwait(false);
         var destinationReader = await ResolveReaderAsync(snapshot, destination, query.RelatedLayerId!.Value, cancellationToken).ConfigureAwait(false);
-        return await QueryReadersAsync(originReader, destinationReader, layerId, query, cancellationToken).ConfigureAwait(false);
+        return await QueryReadersAsync(originReader, destinationReader, layerId, query, cancellationToken,
+            originMasks, destinationMasks).ConfigureAwait(false);
     }
 
     private static BoundResource? FindMapping(MetadataV2GraphSnapshot snapshot, int layerId)
@@ -111,7 +117,9 @@ internal sealed class SourceBackedRelationshipStore(
         IFeatureReader destinationReader,
         int layerId,
         RelatedQuery query,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ImmutableArray<string>? originMasks = null,
+        ImmutableArray<string>? destinationMasks = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(query.OriginForeignKeyField);
         ArgumentException.ThrowIfNullOrWhiteSpace(query.DestinationForeignKeyField);
@@ -127,17 +135,28 @@ internal sealed class SourceBackedRelationshipStore(
             return QueryResult<Feature>.Empty();
         }
 
+        // Validate caller predicates against the full mask set before allowing a join
+        // key through the internal projection. Only relationship matching gets access.
+        FeatureQuerySecurity.Validate(new FeatureQuery
+        {
+            Where = query.Where,
+            SqlFilter = query.SqlFilter,
+            EnforcedMaskedFields = destinationMasks
+        });
+
         // The origin reader enforces the origin layer's row visibility, so a hidden origin row
         // never contributes a join key.
         var origins = await originReader.QueryAsync(layerId, new FeatureQuery
         {
             ObjectIds = query.ObjectIds.ToImmutableArray(),
-            OutFields = [query.OriginForeignKeyField]
+            OutFields = [query.OriginForeignKeyField],
+            EnforcedMaskedFields = InternalJoinMasks(originMasks, query.OriginForeignKeyField)
         }, cancellationToken).ConfigureAwait(false);
         var idsByKey = new Dictionary<string, List<long>>(StringComparer.Ordinal);
+        var literalsByKey = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var origin in origins.Items)
         {
-            if (!TryKey(origin, query.OriginForeignKeyField, out var key))
+            if (!TryKey(origin, query.OriginForeignKeyField, out var key, out var value))
             {
                 continue;
             }
@@ -146,6 +165,7 @@ internal sealed class SourceBackedRelationshipStore(
             {
                 ids = [];
                 idsByKey[key] = ids;
+                literalsByKey[key] = FormatJoinLiteral(value!, key);
             }
 
             ids.Add(origin.Id);
@@ -156,20 +176,30 @@ internal sealed class SourceBackedRelationshipStore(
             return QueryResult<Feature>.Empty();
         }
 
-        var parameters = idsByKey.Keys.Cast<object?>().ToArray();
-        var placeholders = Enumerable.Range(0, parameters.Length).Select(index => "@p" + index.ToString(CultureInfo.InvariantCulture));
-        var join = new SqlFragment($"attributes->>'{query.DestinationForeignKeyField}' IN ({string.Join(",", placeholders)})", parameters);
+        var joinWhere = $"\"{query.DestinationForeignKeyField}\" IN ({string.Join(",", literalsByKey.Values)})";
+        SqlFragment? sqlFilter = null;
+        if (query.SqlFilter is not null)
+        {
+            var parameters = idsByKey.Keys.Cast<object?>().ToArray();
+            var placeholders = Enumerable.Range(0, parameters.Length).Select(index => "@p" + index.ToString(CultureInfo.InvariantCulture));
+            var join = new SqlFragment($"attributes->>'{query.DestinationForeignKeyField}' IN ({string.Join(",", placeholders)})", parameters);
+            sqlFilter = SqlFragmentHelpers.CombineSqlFilters(query.SqlFilter, join);
+        }
         var outFields = query.OutFields;
-        var removeJoinField = outFields is { IsDefaultOrEmpty: false } projection &&
+        var addJoinField = outFields is { IsDefaultOrEmpty: false } projection &&
             !projection.Contains(query.DestinationForeignKeyField, StringComparer.OrdinalIgnoreCase);
-        if (removeJoinField)
+        var removeJoinField = addJoinField || destinationMasks is { IsDefaultOrEmpty: false } masks &&
+            masks.Contains(query.DestinationForeignKeyField, StringComparer.OrdinalIgnoreCase);
+        if (addJoinField)
         {
             outFields = outFields!.Value.Add(query.DestinationForeignKeyField);
         }
 
         var children = await destinationReader.QueryAsync(relatedLayerId, new FeatureQuery
         {
-            SqlFilter = SqlFragmentHelpers.CombineSqlFilters(query.SqlFilter, join),
+            Where = string.IsNullOrWhiteSpace(query.Where) ? joinWhere : $"({query.Where}) AND ({joinWhere})",
+            SqlFilter = sqlFilter,
+            EnforcedMaskedFields = InternalJoinMasks(destinationMasks, query.DestinationForeignKeyField),
             OutFields = outFields,
             Limit = query.Limit,
             Offset = query.Offset
@@ -177,7 +207,7 @@ internal sealed class SourceBackedRelationshipStore(
         var matched = ImmutableArray.CreateBuilder<Feature>(children.Items.Length);
         foreach (var child in children.Items)
         {
-            if (!TryKey(child, query.DestinationForeignKeyField, out var key) || !idsByKey.TryGetValue(key, out var ids))
+            if (!TryKey(child, query.DestinationForeignKeyField, out var key, out _) || !idsByKey.TryGetValue(key, out var ids))
             {
                 continue;
             }
@@ -194,9 +224,24 @@ internal sealed class SourceBackedRelationshipStore(
         return children with { Items = matched.ToImmutable() };
     }
 
-    private static bool TryKey(Feature feature, string field, out string key)
+    private static ImmutableArray<string>? InternalJoinMasks(ImmutableArray<string>? masks, string key)
+        => masks is { } resolved && !resolved.IsDefault
+            ? resolved.Where(field => !field.Equals(key, StringComparison.OrdinalIgnoreCase)).ToImmutableArray()
+            : masks;
+
+    private static string FormatJoinLiteral(object value, string key)
+        => value switch
+        {
+            bool boolean => boolean ? "TRUE" : "FALSE",
+            byte or sbyte or short or ushort or int or uint or long or ulong or decimal => key,
+            float number when float.IsFinite(number) => number.ToString("R", CultureInfo.InvariantCulture),
+            double number when double.IsFinite(number) => number.ToString("R", CultureInfo.InvariantCulture),
+            _ => "'" + key.Replace("'", "''", StringComparison.Ordinal) + "'"
+        };
+
+    private static bool TryKey(Feature feature, string field, out string key, out object? value)
     {
-        var value = feature.Attributes.FirstOrDefault(attribute => attribute.Key.Equals(field, StringComparison.OrdinalIgnoreCase)).Value;
+        value = feature.Attributes.FirstOrDefault(attribute => attribute.Key.Equals(field, StringComparison.OrdinalIgnoreCase)).Value;
         key = value is bool boolean
             ? (boolean ? "true" : "false")
             : Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;

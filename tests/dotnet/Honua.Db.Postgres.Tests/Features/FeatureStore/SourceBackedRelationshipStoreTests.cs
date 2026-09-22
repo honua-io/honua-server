@@ -16,6 +16,28 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 public sealed class SourceBackedRelationshipStoreTests
 {
+    [Theory]
+    [InlineData(2055, "2055")]
+    [InlineData(true, "TRUE")]
+    [InlineData("O'Brien", "'O''Brien'")]
+    public async Task QueryAsync_CanonicalPredicate_UsesProviderNeutralJoin(object key, string literal)
+    {
+        var origins = Substitute.For<IFeatureReader>();
+        var children = Substitute.For<IFeatureReader>();
+        origins.QueryAsync(13, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1, [Row(901, key)]));
+        children.QueryAsync(14, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>())
+            .Returns(QueryResult<Feature>.Create(1, [Row(81, key)]));
+
+        var result = await SourceBackedRelationshipStore.QueryReadersAsync(origins, children, 13,
+            RelatedQuery.ForObjects([901], 14, "join_id", "join_id") with { Where = "details = 'low'" },
+            CancellationToken.None);
+
+        result.Items.Should().ContainSingle();
+        await children.Received(1).QueryAsync(14, Arg.Is<FeatureQuery>(q => q.SqlFilter == null &&
+            q.Where == "(details = 'low') AND (\"join_id\" IN (" + literal + "))"), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task QueryAsync_NonObjectIdKeys_PreservesSharedParentsAndProjection()
     {
@@ -86,6 +108,6 @@ public sealed class SourceBackedRelationshipStoreTests
         await managed.Received(1).QueryRelatedAsync(13, Arg.Is<RelatedQuery>(q => q.RelatedLayerId == 14 && q.ObjectIds.SequenceEqual(query.ObjectIds)), Arg.Any<CancellationToken>());
     }
 
-    private static Feature Row(long id, int key) => Feature.Create(id, null,
+    private static Feature Row(long id, object key) => Feature.Create(id, null,
         new Dictionary<string, object?> { ["join_id"] = key, ["details"] = "flying low" }.ToImmutableDictionary());
 }

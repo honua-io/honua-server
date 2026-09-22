@@ -109,7 +109,8 @@ internal static class ServiceCollectionExtensions
             provider.GetRequiredService<PostgresFeatureStoreRefactored>(),
             provider.GetService<IMetadataV2GraphProvider>(),
             provider.GetService<Honua.Core.Features.FeatureStore.Services.FeatureProviderQueryRouter>(),
-            provider.GetService<IFilterExpressionService>()));
+            provider.GetService<IFilterExpressionService>(),
+            provider.GetService<Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource>()));
         services.AddScoped<IGeoJsonFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
         services.AddScoped<IGeobufFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());
         services.AddScoped<IGmlFeatureStore>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());

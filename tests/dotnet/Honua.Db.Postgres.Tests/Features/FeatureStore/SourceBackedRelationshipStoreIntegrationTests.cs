@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Data.Common;
 using System.Text.Json;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
@@ -92,7 +94,50 @@ public sealed class SourceBackedRelationshipStoreIntegrationTests(PostgresFixtur
             ((long[])row.Attributes[RelatedQuery.OriginObjectIdsAttribute]!).SequenceEqual(new long[] { key ? 901 : 903 }));
     }
 
-    private SourceBackedRelationshipStore CreateStore(MetadataV2FieldType keyType = MetadataV2FieldType.Integer)
+    [Fact]
+    public async Task QueryRelatedAsync_CanonicalWhere_PreservesCallerPredicate()
+    {
+        var result = await CreateStore().QueryRelatedAsync(13,
+            RelatedQuery.ForObjects([901, 903], 14, "join_id", "join_id") with { Where = "details = 'low'" });
+
+        result.Items.Select(row => row.Id).Should().BeEquivalentTo([81L, 83L]);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task QueryRelatedAsync_MaskedJoinKeys_MatchesWithoutExposingMaskedAttributes(bool explicitProjection)
+    {
+        var masks = Substitute.For<IFieldMaskSource>();
+        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray.Create("join_id", "details"));
+        var result = await CreateStore(fieldMasks: masks).QueryRelatedAsync(13,
+            RelatedQuery.ForObjects([901, 902, 903], 14, "join_id", "join_id") with
+            {
+                OutFields = explicitProjection ? ["objectid", "join_id", "details"] : null
+            });
+
+        result.Items.Select(row => row.Id).Should().BeEquivalentTo([81L, 82L, 83L]);
+        result.Items.Single(row => row.Id == 81).Attributes[RelatedQuery.OriginObjectIdsAttribute]
+            .Should().BeEquivalentTo(new long[] { 901, 902 });
+        result.Items.Should().OnlyContain(row => !row.Attributes.ContainsKey("join_id") &&
+            !row.Attributes.ContainsKey("details"));
+    }
+
+    [Fact]
+    public async Task QueryRelatedAsync_CallerPredicateOnMaskedJoinKey_IsRejected()
+    {
+        var masks = Substitute.For<IFieldMaskSource>();
+        masks.ResolveAsync(Arg.Any<MetadataV2Resource>(), Arg.Any<CancellationToken>())
+            .Returns(ImmutableArray.Create("join_id"));
+        var action = () => CreateStore(fieldMasks: masks).QueryRelatedAsync(13,
+            RelatedQuery.ForObjects([901], 14, "join_id", "join_id") with { Where = "join_id = 2055" });
+
+        await action.Should().ThrowAsync<ArgumentException>();
+    }
+
+    private SourceBackedRelationshipStore CreateStore(MetadataV2FieldType keyType = MetadataV2FieldType.Integer,
+        IFieldMaskSource? fieldMasks = null)
     {
         var service = new MetadataV2Service { Metadata = new() { Id = "service" } };
         var resources = new[] { Resource("parents", 13, keyType), Resource("children", 14, keyType) };
@@ -136,10 +181,12 @@ public sealed class SourceBackedRelationshipStoreIntegrationTests(PostgresFixtur
         ((IBindableFeatureDataProvider)provider).CreateReaderForBinding(Arg.Any<FeatureProviderBinding>()).Returns(call =>
         {
             var binding = call.Arg<FeatureProviderBinding>();
-            return new PostgresStorageMappedFeatureReader(connections, pool, binding.Resource, binding.StorageMapping, null, null);
+            return new PostgresStorageMappedFeatureReader(connections, pool, binding.Resource, binding.StorageMapping, null, null,
+                fieldMaskSource: fieldMasks);
         });
         var router = new FeatureProviderQueryRouter(Substitute.For<ISecureConnectionRegistry>(), new FeatureDataProviderRegistry([provider]));
-        return new SourceBackedRelationshipStore(Substitute.For<IRelationshipStore>(), graph, router, Substitute.For<IFilterExpressionService>());
+        return new SourceBackedRelationshipStore(Substitute.For<IRelationshipStore>(), graph, router,
+            Substitute.For<IFilterExpressionService>(), fieldMasks);
     }
 
     private static MetadataV2Resource Resource(string name, int layerId, MetadataV2FieldType keyType) => new()
