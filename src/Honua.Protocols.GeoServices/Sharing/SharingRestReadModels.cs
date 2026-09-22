@@ -73,6 +73,20 @@ internal sealed record PortalSelfResponse
     [JsonPropertyName("user")]
     public PortalUser? User { get; init; }
 
+    /// <summary>
+    /// Utility services this portal offers, keyed the way Esri clients expect.
+    /// <see langword="null"/> when none are available, so the property is omitted rather
+    /// than advertised empty.
+    ///
+    /// Esri clients discover routing through this document: <c>arcpy.nax</c> and ArcGIS
+    /// Pro's Network Analyst pane resolve a signed-in portal to a solver by reading
+    /// <c>helperServices.route</c>. Without it they report "Cannot use &lt;portal&gt; for
+    /// network analysis" even when the NAServer endpoints answer correctly, which is what
+    /// the 2026-09-21 certification run measured.
+    /// </summary>
+    [JsonPropertyName("helperServices")]
+    public PortalHelperServices? HelperServices { get; init; }
+
     // No ArcGIS Portal version (currentVersion) is advertised — Honua does not impersonate a
     // specific ArcGIS Portal release (guarded by NoArcGisServerVersionTests).
 }
@@ -147,4 +161,34 @@ internal sealed record SearchResponse
     /// <summary>The projected, access-filtered items in this page.</summary>
     [JsonPropertyName("results")]
     public IReadOnlyList<PortalItem> Results { get; init; } = Array.Empty<PortalItem>();
+}
+
+/// <summary>
+/// The <c>helperServices</c> block of <c>/sharing/rest/portals/self</c>. Each entry is
+/// advertised only when the backing capability is genuinely available, so a client is
+/// never pointed at a utility this deployment cannot perform.
+/// </summary>
+internal sealed record PortalHelperServices
+{
+    /// <summary>Route solver, or <see langword="null"/> when routing is unavailable.</summary>
+    [JsonPropertyName("route")]
+    public PortalHelperService? Route { get; init; }
+
+    /// <summary>Service-area solver, or <see langword="null"/> when unavailable.</summary>
+    [JsonPropertyName("serviceArea")]
+    public PortalHelperService? ServiceArea { get; init; }
+
+    /// <summary>Closest-facility solver, or <see langword="null"/> when unavailable.</summary>
+    [JsonPropertyName("closestFacility")]
+    public PortalHelperService? ClosestFacility { get; init; }
+}
+
+/// <summary>
+/// A single advertised utility service.
+/// </summary>
+internal sealed record PortalHelperService
+{
+    /// <summary>Absolute URL of the service.</summary>
+    [JsonPropertyName("url")]
+    public required string Url { get; init; }
 }

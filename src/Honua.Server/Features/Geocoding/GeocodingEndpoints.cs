@@ -128,17 +128,46 @@ internal static class GeocodingEndpoints
             .WithName("ReverseGeocodeAlias")
             .WithTags("GeocodeServer");
 
+        // POST on the root-locator alias. The scoped {locatorName} routes already map
+        // both verbs and findAddressCandidates maps both here, but reverseGeocode,
+        // suggest and geocodeAddresses were GET-only, so a POST fell through to the
+        // catch-all and answered the Esri envelope "405 Method Not Allowed". arcpy's
+        // arcpy.geocoding.Locator POSTs these operations, which is how the 2026-09-21
+        // certification run measured reverseGeocode as failing against a locator whose
+        // GET form returned a correct address.
+        endpoints.MapPost("/rest/services/GeocodeServer/reverseGeocode", static (HttpContext context, GeocodingHandler handler) =>
+                handler.HandleReverseGeocodeAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
+            .WithDisplayName("Reverse Geocode (Alias, POST)")
+            .WithName("ReverseGeocodeAliasPost")
+            .WithTags("GeocodeServer")
+            .AllowAnonymous();
+
         endpoints.MapGet("/rest/services/GeocodeServer/suggest", static (HttpContext context, GeocodingHandler handler) =>
                 handler.HandleSuggestAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
             .WithDisplayName("Suggest Addresses (Alias)")
             .WithName("SuggestAddressesAlias")
             .WithTags("GeocodeServer");
 
+        endpoints.MapPost("/rest/services/GeocodeServer/suggest", static (HttpContext context, GeocodingHandler handler) =>
+                handler.HandleSuggestAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
+            .WithDisplayName("Suggest Addresses (Alias, POST)")
+            .WithName("SuggestAddressesAliasPost")
+            .WithTags("GeocodeServer")
+            .AllowAnonymous();
+
         endpoints.MapGet("/rest/services/GeocodeServer/geocodeAddresses", static (HttpContext context, GeocodingHandler handler) =>
                 handler.HandleBatchGeocodeAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
             .WithDisplayName("Batch Geocode Addresses (Alias)")
             .WithName("BatchGeocodeAddressesAlias")
             .WithTags("GeocodeServer")
+            .AddEndpointFilter(RequireBatchGeocodingEntitlement);
+
+        endpoints.MapPost("/rest/services/GeocodeServer/geocodeAddresses", static (HttpContext context, GeocodingHandler handler) =>
+                handler.HandleBatchGeocodeAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
+            .WithDisplayName("Batch Geocode Addresses (Alias, POST)")
+            .WithName("BatchGeocodeAddressesAliasPost")
+            .WithTags("GeocodeServer")
+            .AllowAnonymous()
             .AddEndpointFilter(RequireBatchGeocodingEntitlement);
 
         return endpoints;

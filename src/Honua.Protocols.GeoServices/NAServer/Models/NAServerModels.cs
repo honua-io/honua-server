@@ -510,3 +510,88 @@ internal sealed class NAServerMessage
     /// <summary>Human-readable message description.</summary>
     public string Description { get; init; } = string.Empty;
 }
+
+/// <summary>
+/// A single network-analysis layer advertised by the NAServer service root.
+/// </summary>
+internal sealed class NAServerLayerDescription
+{
+    /// <summary>Layer name as Esri clients address it (for example <c>Route</c>).</summary>
+    public string LayerName { get; init; } = string.Empty;
+
+    /// <summary>Layer type, for example <c>esriNAServerRouteLayer</c>.</summary>
+    public string LayerType { get; init; } = string.Empty;
+
+    /// <summary>Impedance attribute the solver minimises.</summary>
+    public string ImpedanceAttributeName { get; init; } = string.Empty;
+}
+
+/// <summary>
+/// Response body for the NAServer service root
+/// (<c>/rest/services/{serviceId}/NAServer</c>).
+///
+/// Esri desktop clients resolve a network-analysis service by requesting this root
+/// before any solve: arcpy's <c>arcpy.nax</c> solvers and ArcGIS Pro's Network Analyst
+/// pane both read it to discover which layers exist. Without it a client reports
+/// "Cannot use &lt;url&gt; for network analysis" even though every solve endpoint works,
+/// which is exactly what the 2026-09-21 certification run measured.
+///
+/// Every advertised layer is gated on the live <c>IRoutingProvider</c> capabilities, so
+/// the root never advertises a solve the configured engine cannot perform.
+/// </summary>
+internal sealed class NAServerServiceInfoResponse
+{
+    /// <summary>GeoServices REST version this adapter speaks.</summary>
+    public double CurrentVersion { get; init; }
+
+    /// <summary>Human-readable service description.</summary>
+    public string ServiceDescription { get; init; } = string.Empty;
+
+    /// <summary>Route layers, present only when the provider supports route solves.</summary>
+    public IReadOnlyList<NAServerLayerDescription> RouteLayers { get; init; } = [];
+
+    /// <summary>Service-area layers, present only when the provider supports them.</summary>
+    public IReadOnlyList<NAServerLayerDescription> ServiceAreaLayers { get; init; } = [];
+
+    /// <summary>Closest-facility layers, present only when the provider supports them.</summary>
+    public IReadOnlyList<NAServerLayerDescription> ClosestFacilityLayers { get; init; } = [];
+
+    /// <summary>OD cost-matrix layers, present only when the provider supports them.</summary>
+    public IReadOnlyList<NAServerLayerDescription> ODCostMatrixLayers { get; init; } = [];
+
+    /// <summary>Location-allocation layers, present only when the provider supports them.</summary>
+    public IReadOnlyList<NAServerLayerDescription> LocationAllocationLayers { get; init; } = [];
+
+    /// <summary>Travel modes the provider advertises; empty when it declares none.</summary>
+    public IReadOnlyList<string> SupportedTravelModes { get; init; } = [];
+}
+
+/// <summary>
+/// Response body for a NAServer analysis layer
+/// (<c>/rest/services/{serviceId}/NAServer/{layerName}</c>).
+///
+/// The service root lists the layers; Esri clients then request the layer itself before
+/// solving. arcpy resolves a signed-in portal's <c>helperServices.route.url</c> straight
+/// to this endpoint, so a 404 here makes it reject the whole portal with "Cannot use
+/// &lt;portal&gt; for network analysis" even though the solve endpoint works.
+/// </summary>
+internal sealed class NAServerLayerInfoResponse
+{
+    /// <summary>GeoServices REST version this adapter speaks.</summary>
+    public double CurrentVersion { get; init; }
+
+    /// <summary>Layer name as addressed in the URL.</summary>
+    public string LayerName { get; init; } = string.Empty;
+
+    /// <summary>Esri layer type, for example <c>esriNAServerRouteLayer</c>.</summary>
+    public string LayerType { get; init; } = string.Empty;
+
+    /// <summary>Impedance attribute the solver minimises.</summary>
+    public string ImpedanceAttributeName { get; init; } = string.Empty;
+
+    /// <summary>Travel modes the provider advertises.</summary>
+    public IReadOnlyList<string> SupportedTravelModes { get; init; } = [];
+
+    /// <summary>Whether the solver accepts barrier inputs.</summary>
+    public bool SupportsBarriers { get; init; }
+}

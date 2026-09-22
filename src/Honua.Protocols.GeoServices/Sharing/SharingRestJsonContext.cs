@@ -9,6 +9,8 @@ namespace Honua.Protocols.GeoServices.Sharing;
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.Unspecified)]
 [JsonSerializable(typeof(GenerateTokenResponse))]
 [JsonSerializable(typeof(SharingInfoResponse))]
+[JsonSerializable(typeof(PortalHelperServices))]
+[JsonSerializable(typeof(PortalHelperService))]
 [JsonSerializable(typeof(PortalSelfResponse))]
 [JsonSerializable(typeof(CommunitySelfResponse))]
 [JsonSerializable(typeof(SearchResponse))]

@@ -45,6 +45,39 @@ internal static class NAServerEndpoints
         // service to RBAC-gate. This mirrors the GeometryService buffer/simplify/project
         // compute endpoints, which are AllowAnonymous for the same reason. Marked
         // AllowAnonymous so the audit guard records the intentional decision.
+        // The NAServer service root. Esri desktop clients resolve a network-analysis
+        // service by requesting this before any solve - arcpy.nax and ArcGIS Pro's
+        // Network Analyst pane both read it to discover the available layers. Without
+        // it they report "Cannot use <url> for network analysis" while every solve
+        // endpoint below works, which is what the 2026-09-21 certification run measured
+        // against this adapter. AllowAnonymous for the same reason the solves are.
+        endpoints.MapGet(RouteBase,
+                static (HttpContext context, IRoutingProvider routing, CancellationToken ct)
+                    => HandleServiceInfo(context, routing, ct))
+            .WithDisplayName("NAServer Service Info")
+            .WithName("NAServerServiceInfo")
+            .WithSummary("Describe the NAServer network-analysis service")
+            .WithDescription("Returns the NAServer service description, advertising only the analysis layers the configured routing provider actually supports.")
+            .WithTags("NAServer")
+            .Produces<NAServerServiceInfoResponse>(StatusCodes.Status200OK, JsonContentType)
+            .AllowAnonymous();
+
+        // A NAServer analysis layer. The root lists the layers and Esri clients then
+        // request the layer itself; arcpy resolves a portal's helperServices.route.url
+        // directly to this path, so a 404 here makes it refuse the portal outright.
+        // Declared after the root and before the solve routes: "{layerName}" is a single
+        // segment and cannot shadow the two-segment "{layer}/solve*" routes.
+        endpoints.MapGet($"{RouteBase}/{{layerName}}",
+                static (HttpContext context, string layerName, IRoutingProvider routing, CancellationToken ct)
+                    => HandleLayerInfo(context, layerName, routing, ct))
+            .WithDisplayName("NAServer Layer Info")
+            .WithName("NAServerLayerInfo")
+            .WithSummary("Describe a NAServer analysis layer")
+            .WithDescription("Returns the layer description for a supported NAServer analysis layer, or a GeoServices 404 envelope when the configured routing provider does not support it.")
+            .WithTags("NAServer")
+            .Produces<NAServerLayerInfoResponse>(StatusCodes.Status200OK, JsonContentType)
+            .AllowAnonymous();
+
         endpoints.MapGet($"{RouteBase}/Route/solve",
                 static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
                     => HandleRouteSolve(context, routing, options.Value, ct))
@@ -114,6 +147,92 @@ internal static class NAServerEndpoints
             .AllowAnonymous();
 
         return endpoints;
+    }
+
+    private static async Task<IResult> HandleServiceInfo(
+        HttpContext context,
+        IRoutingProvider routing,
+        CancellationToken ct)
+    {
+        EnrichActivity("ServiceInfo");
+
+        // Read the request parameters the same way the solves do, so f=pjson formats the
+        // service root identically to every other NAServer response.
+        var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
+
+        // Read capabilities from the same provider the solves use, so the root can only
+        // advertise a layer whose solve would actually run. A provider that declares no
+        // route support yields an empty routeLayers array rather than a false promise.
+        var capabilities = await routing.GetCapabilitiesAsync(ct).ConfigureAwait(false);
+
+        static NAServerLayerDescription[] Layer(bool supported, string name, string type) =>
+            supported
+                ? [new NAServerLayerDescription
+                    {
+                        LayerName = name,
+                        LayerType = type,
+                        ImpedanceAttributeName = "TravelTime",
+                    }]
+                : [];
+
+        var response = new NAServerServiceInfoResponse
+        {
+            CurrentVersion = 10.8,
+            ServiceDescription = "Honua network analysis service",
+            RouteLayers = Layer(capabilities.SupportsRoute, "Route", "esriNAServerRouteLayer"),
+            ServiceAreaLayers = Layer(capabilities.SupportsServiceArea, "ServiceArea", "esriNAServerServiceAreaLayer"),
+            ClosestFacilityLayers = Layer(capabilities.SupportsClosestFacility, "ClosestFacility", "esriNAServerClosestFacilityLayer"),
+            ODCostMatrixLayers = Layer(capabilities.SupportsOdCostMatrix, "ODCostMatrix", "esriNAServerODCostMatrixLayer"),
+            LocationAllocationLayers = Layer(capabilities.SupportsLocationAllocation, "LocationAllocation", "esriNAServerLocationAllocationLayer"),
+            SupportedTravelModes = [.. capabilities.SupportedTravelModes],
+        };
+
+        return WriteResponse(context, parameters, response, NAServerJsonContext.Default.NAServerServiceInfoResponse);
+    }
+
+    private static async Task<IResult> HandleLayerInfo(
+        HttpContext context,
+        string layerName,
+        IRoutingProvider routing,
+        CancellationToken ct)
+    {
+        EnrichActivity("LayerInfo");
+
+        var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
+        var capabilities = await routing.GetCapabilitiesAsync(ct).ConfigureAwait(false);
+
+        // Only a layer the provider can actually solve is described; anything else is a
+        // genuine 404 rather than an empty description that would strand a client.
+        var (supported, layerType) = layerName switch
+        {
+            "Route" => (capabilities.SupportsRoute, "esriNAServerRouteLayer"),
+            "ServiceArea" => (capabilities.SupportsServiceArea, "esriNAServerServiceAreaLayer"),
+            "ClosestFacility" => (capabilities.SupportsClosestFacility, "esriNAServerClosestFacilityLayer"),
+            "ODCostMatrix" => (capabilities.SupportsOdCostMatrix, "esriNAServerODCostMatrixLayer"),
+            "LocationAllocation" => (capabilities.SupportsLocationAllocation, "esriNAServerLocationAllocationLayer"),
+            _ => (false, string.Empty),
+        };
+
+        if (!supported)
+        {
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateNotFound(
+                    context,
+                    $"NAServer layer '{layerName}' is not available on this service."),
+                "NAServer layer unavailable");
+        }
+
+        var response = new NAServerLayerInfoResponse
+        {
+            CurrentVersion = 10.8,
+            LayerName = layerName,
+            LayerType = layerType,
+            ImpedanceAttributeName = "TravelTime",
+            SupportedTravelModes = [.. capabilities.SupportedTravelModes],
+            SupportsBarriers = capabilities.SupportsBarriers,
+        };
+
+        return WriteResponse(context, parameters, response, NAServerJsonContext.Default.NAServerLayerInfoResponse);
     }
 
     private static async Task<IResult> HandleRouteSolve(

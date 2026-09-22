@@ -10,6 +10,10 @@ public static partial class EndpointRegistry
     private static IReadOnlyList<EndpointDefinition> NetworkAnalystEndpoints =>
     [
         // NAServer minimal mobile routing compatibility (#366)
+        // Service root: Esri desktop clients read it to discover the analysis
+        // layers before any solve; without it they refuse the service outright.
+        new("GET", "/rest/services/{serviceId}/NAServer"),
+        new("GET", "/rest/services/{serviceId}/NAServer/{layerName}"),
         new("GET", "/rest/services/{serviceId}/NAServer/Route/solve"),
         new("POST", "/rest/services/{serviceId}/NAServer/Route/solve"),
         new("POST", "/rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea"),

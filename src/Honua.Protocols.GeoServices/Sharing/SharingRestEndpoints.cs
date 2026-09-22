@@ -20,6 +20,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Honua.Routing.Features.Routing.Domain;
+using Honua.Routing.Features.Routing.Abstractions;
 
 namespace Honua.Protocols.GeoServices.Sharing;
 
@@ -334,7 +336,7 @@ public static class SharingRestEndpoints
         return Results.Json(response, SharingRestJsonContext.Default.SharingInfoResponse, contentType: JsonContentType);
     }
 
-    private static IResult HandlePortalSelfAsync(
+    private static async Task<IResult> HandlePortalSelfAsync(
         HttpContext context,
         string? f,
         [FromServices] ILogger<SharingRestLog> logger)
@@ -359,9 +361,75 @@ public static class SharingRestEndpoints
             Id = "0123456789ABCDEF",
             Name = "Honua",
             User = user,
+            HelperServices = await BuildHelperServicesAsync(context).ConfigureAwait(false),
         };
 
         return Results.Json(response, SharingRestJsonContext.Default.PortalSelfResponse, contentType: JsonContentType);
+    }
+
+
+    /// <summary>
+    /// Advertises the utility services Esri clients discover through
+    /// <c>helperServices</c>, gated on what this deployment can actually perform.
+    ///
+    /// Routing is resolved from the live <see cref="IRoutingProvider"/> so a solver is
+    /// only advertised when its capability is on: a client that follows one of these
+    /// URLs reaches a working NAServer operation. When routing is unregistered or
+    /// advertises nothing, the whole block is omitted rather than published empty,
+    /// which keeps the document honest for deployments without a routing engine.
+    /// </summary>
+    /// <summary>
+    /// Service segment the advertised NAServer utility URLs carry. The NAServer
+    /// adapter solves through the shared routing provider rather than a published
+    /// per-service network dataset, so this segment only has to address the adapter;
+    /// it is deliberately a neutral name and not any one deployment's service id.
+    /// Overridable with GeoServices:Routing:ServiceId for a deployment that
+    /// publishes its routing under a different name.
+    /// </summary>
+    private const string DefaultRoutingServiceId = "Routing";
+
+    private static async Task<PortalHelperServices?> BuildHelperServicesAsync(HttpContext context)
+    {
+        var routing = context.RequestServices.GetService<IRoutingProvider>();
+        if (routing is null)
+        {
+            return null;
+        }
+
+        RoutingProviderCapabilities capabilities;
+        try
+        {
+            capabilities = await routing.GetCapabilitiesAsync(context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (Exception) when (!context.RequestAborted.IsCancellationRequested)
+        {
+            // A capability probe failure must not fail portals/self: every Esri client
+            // reads this document on sign-in, so degrade to "no utilities advertised".
+            return null;
+        }
+
+        var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
+
+        // NAServer is published per service; the certification fixture's routing service
+        // is the one the NAServer adapter serves.
+        static PortalHelperService? Service(bool supported, string url) =>
+            supported ? new PortalHelperService { Url = url } : null;
+
+        var serviceId = context.RequestServices.GetService<IConfiguration>()?
+                    ["GeoServices:Routing:ServiceId"] is { Length: > 0 } configured
+                ? configured
+                : DefaultRoutingServiceId;
+        var naBase = $"{baseUrl}/rest/services/{serviceId}/NAServer";
+        var helpers = new PortalHelperServices
+        {
+            Route = Service(capabilities.SupportsRoute, $"{naBase}/Route"),
+            ServiceArea = Service(capabilities.SupportsServiceArea, $"{naBase}/ServiceArea"),
+            ClosestFacility = Service(capabilities.SupportsClosestFacility, $"{naBase}/ClosestFacility"),
+        };
+
+        return helpers.Route is null && helpers.ServiceArea is null && helpers.ClosestFacility is null
+            ? null
+            : helpers;
     }
 
     private static IResult HandleCommunitySelfAsync(

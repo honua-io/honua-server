@@ -8,6 +8,9 @@ namespace Honua.Protocols.GeoServices.NAServer.Models;
 /// <summary>
 /// AOT-compatible JSON serialization context for the NAServer wire-format models.
 /// </summary>
+[JsonSerializable(typeof(NAServerLayerInfoResponse))]
+[JsonSerializable(typeof(NAServerServiceInfoResponse))]
+[JsonSerializable(typeof(NAServerLayerDescription))]
 [JsonSerializable(typeof(NAServerRouteSolveResponse))]
 [JsonSerializable(typeof(NAServerClosestFacilityResponse))]
 [JsonSerializable(typeof(NAServerServiceAreaResponse))]
