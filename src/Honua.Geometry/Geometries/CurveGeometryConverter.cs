@@ -66,7 +66,35 @@ public static class CurveGeometryConverter
         ArgumentOutOfRangeException.ThrowIfNegative(maxVertices);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var output = new VertexBuffer(Math.Min(part.Length, maxVertices), maxVertices, cancellationToken);
+        var output = new VertexBuffer(Math.Min(part.Length, maxVertices), maxVertices, true, cancellationToken);
+        ProcessPart(part, output, cancellationToken);
+        return output.ToArray();
+    }
+
+    /// <summary>
+    /// Validates and counts the vertices produced by densifying a single path/ring without retaining
+    /// the expanded coordinate array. This is used by request admission checks; the canonical
+    /// conversion path still performs the one required allocation when dispatching the query.
+    /// </summary>
+    public static int CountDensifiedVertices(
+        JsonElement[] part,
+        int maxVertices,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(part);
+        ArgumentOutOfRangeException.ThrowIfNegative(maxVertices);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var output = new VertexBuffer(0, maxVertices, false, cancellationToken);
+        ProcessPart(part, output, cancellationToken);
+        return output.Count;
+    }
+
+    private static void ProcessPart(
+        JsonElement[] part,
+        VertexBuffer output,
+        CancellationToken cancellationToken)
+    {
         double[]? current = null;
 
         foreach (var element in part)
@@ -95,8 +123,6 @@ public static class CurveGeometryConverter
                         $"Invalid true-curve element of kind '{element.ValueKind}'; expected a vertex array or a segment object.");
             }
         }
-
-        return output.ToArray();
     }
 
     private static void DensifySegment(
@@ -537,14 +563,20 @@ public static class CurveGeometryConverter
         return coords;
     }
 
-    private sealed class VertexBuffer(int capacity, int maxVertices, CancellationToken cancellationToken)
+    private sealed class VertexBuffer(
+        int capacity,
+        int maxVertices,
+        bool collect,
+        CancellationToken cancellationToken)
     {
-        private readonly List<double[]> _vertices = new(capacity);
+        private readonly List<double[]>? _vertices = collect ? new(capacity) : null;
+
+        public int Count { get; private set; }
 
         public void Add(double[] vertex)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (_vertices.Count >= maxVertices)
+            if (Count >= maxVertices)
             {
                 throw new ArgumentException($"True-curve densification exceeds the remaining budget of {maxVertices} vertices.");
             }
@@ -552,10 +584,12 @@ public static class CurveGeometryConverter
             {
                 throw new ArgumentException("True-curve densification produced a non-finite ordinate.");
             }
-            _vertices.Add(vertex);
+            Count++;
+            _vertices?.Add(vertex);
         }
 
-        public double[][] ToArray() => _vertices.ToArray();
+        public double[][] ToArray() => _vertices?.ToArray()
+            ?? throw new InvalidOperationException("This vertex buffer does not collect coordinates.");
     }
 
 }
