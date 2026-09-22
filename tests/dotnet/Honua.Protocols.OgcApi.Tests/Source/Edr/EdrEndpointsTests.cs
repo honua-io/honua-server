@@ -90,7 +90,8 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
             .Should().Equal("2026-06-20T00:00:00.4Z");
 
         var range = doc.RootElement.GetProperty("ranges").GetProperty("band_1");
-        range.GetProperty("values").EnumerateArray().First().GetDouble().Should().Be(11.0);
+        range.GetProperty("values").EnumerateArray().First().GetDouble()
+            .Should().BeApproximately(ExpectedBandValue(1, -122.4, 37.8), 1e-6);
 
         // Sub-second precision decides intersection (#4151): the whole second and an interval
         // ending 300 ms before the acquisition instant both select no data.
@@ -154,7 +155,8 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
         doc.RootElement.GetProperty("parameters").EnumerateObject().Select(p => p.Name).Should().Equal("band_2");
         var ranges = doc.RootElement.GetProperty("ranges");
         ranges.EnumerateObject().Select(p => p.Name).Should().Equal("band_2");
-        ranges.GetProperty("band_2").GetProperty("values").EnumerateArray().First().GetDouble().Should().Be(12.0);
+        ranges.GetProperty("band_2").GetProperty("values").EnumerateArray().First().GetDouble()
+            .Should().BeApproximately(ExpectedBandValue(2, -122.4, 37.8), 1e-6);
     }
 
     [IntegrationTest]
@@ -167,8 +169,7 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
 
         var ranges = doc.RootElement.GetProperty("ranges");
         ranges.EnumerateObject().Select(p => p.Name).Should().BeEquivalentTo("band_1", "band_3");
-        ranges.GetProperty("band_3").GetProperty("values").EnumerateArray()
-            .Select(v => v.GetDouble()).Should().AllBeEquivalentTo(13.0);
+        AssertCubeValuesDerivedFromDomain(doc.RootElement, band: 3, "band_3");
     }
 
     // #3184: an unknown parameter-name previously fell back to band_1, returning a different
@@ -298,7 +299,8 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
                    $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords=POINT(-122.4 37.8)"))
         {
             positionDoc.RootElement.GetProperty("ranges").GetProperty("band_1").GetProperty("values")
-                .EnumerateArray().First().GetDouble().Should().Be(11.0);
+                .EnumerateArray().First().GetDouble()
+                .Should().BeApproximately(ExpectedBandValue(1, -122.4, 37.8), 1e-6);
         }
 
         await _rasterStore.Received().IdentifyAsync(
@@ -349,7 +351,8 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
         using var positionDoc = await GetJsonAsync(
             $"/edr/collections/{WebAppFixture.TestLayerId}/position?coords=POINT(-122.4 37.8)");
         positionDoc.RootElement.GetProperty("ranges").GetProperty("band_1").GetProperty("values")
-            .EnumerateArray().First().GetDouble().Should().Be(11.0);
+            .EnumerateArray().First().GetDouble()
+            .Should().BeApproximately(ExpectedBandValue(1, -122.4, 37.8), 1e-6);
     }
 
     [IntegrationTest]
@@ -586,7 +589,11 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
         rasterStore.GetExtentAsync(WebAppFixture.TestLayerId, TestRasterId, Arg.Any<CancellationToken>())
             .Returns(Task.FromResult<RasterExtent?>(raster.Extent));
 
-        // Deterministic point-sample: band_n returns 10 + n at every coordinate.
+        // #4424: the sample is a function of the requested coordinate, not a constant.
+        // A constant made every value assertion a tautology — the suite passed for
+        // POINT(0 0), for transposed lat/lon and for a handler that ignored `coords`
+        // entirely. ExpectedBandValue weights x and y differently, so a transposition,
+        // a datum shift or an off-by-one-pixel read all change the answer.
         rasterStore.IdentifyAsync(
                 WebAppFixture.TestLayerId,
                 TestRasterId,
@@ -595,14 +602,75 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
                 Arg.Any<int?>(),
                 Arg.Any<RasterIdentifyRendering?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(call => Task.FromResult(new PixelValueResult
+            .Returns(call =>
             {
-                X = call.ArgAt<double>(2),
-                Y = call.ArgAt<double>(3),
-                Srid = 4326,
-                HasData = true,
-                BandValues = new Dictionary<int, object?> { [1] = 11.0, [2] = 12.0, [3] = 13.0 }
-            }));
+                var x = call.ArgAt<double>(2);
+                var y = call.ArgAt<double>(3);
+                return Task.FromResult(new PixelValueResult
+                {
+                    X = x,
+                    Y = y,
+                    Srid = 4326,
+                    HasData = true,
+                    BandValues = new Dictionary<int, object?>
+                    {
+                        [1] = ExpectedBandValue(1, x, y),
+                        [2] = ExpectedBandValue(2, x, y),
+                        [3] = ExpectedBandValue(3, x, y)
+                    }
+                });
+            });
+    }
+
+    /// <summary>
+    /// The fixture raster's synthetic pixel function, mirroring the derivable-oracle pattern
+    /// of <c>ImageServerZarrTestFixture</c>. Band index, longitude and latitude each carry a
+    /// different weight so no two distinct (band, x, y) triples collide within the fixture's
+    /// bbox, and swapping x with y always changes the result.
+    /// </summary>
+    internal static double ExpectedBandValue(int band, double x, double y)
+        => (band * 1000.0) + (Math.Round(x, 6) * 10.0) + Math.Round(y, 6);
+
+    /// <summary>
+    /// Asserts that every value of <paramref name="parameterName"/> in a cube response is the
+    /// pixel function evaluated at one of the grid coordinates the response itself advertises,
+    /// and that the whole grid is covered exactly once. A handler that sampled the wrong
+    /// coordinates, transposed the axes or reused one sample for the whole cube fails here.
+    /// </summary>
+    private static void AssertCubeValuesDerivedFromDomain(
+        JsonElement root,
+        int band,
+        string parameterName)
+    {
+        var axes = root.GetProperty("domain").GetProperty("axes");
+        var xValues = axes.GetProperty("x").GetProperty("values").EnumerateArray()
+            .Select(value => value.GetDouble()).ToArray();
+        var yValues = axes.GetProperty("y").GetProperty("values").EnumerateArray()
+            .Select(value => value.GetDouble()).ToArray();
+
+        var expected = (from y in yValues
+                        from x in xValues
+                        select ExpectedBandValue(band, x, y))
+            .OrderBy(value => value)
+            .ToArray();
+
+        var actual = root.GetProperty("ranges").GetProperty(parameterName).GetProperty("values")
+            .EnumerateArray()
+            .Select(value => value.GetDouble())
+            .OrderBy(value => value)
+            .ToArray();
+
+        actual.Should().HaveCount(
+            expected.Length,
+            $"'{parameterName}' must carry one sample per advertised grid cell");
+
+        for (var i = 0; i < expected.Length; i++)
+        {
+            actual[i].Should().BeApproximately(
+                expected[i],
+                1e-6,
+                $"'{parameterName}' cell {i} must be the pixel function at an advertised grid coordinate");
+        }
     }
 
     private static RasterInfo CreateRasterInfo()
