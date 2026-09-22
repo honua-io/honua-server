@@ -764,28 +764,13 @@ internal sealed partial class ODataSearchService
             foreach (var feature in relatedResult.Items)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                // Try to get the origin key from the related feature's attributes
-                if (!feature.Attributes.TryGetValue(relationship.DestinationField, out var originKeyValue))
-                {
-                    continue;
-                }
-
-                // Convert the origin key to long if possible
-                long? originId = originKeyValue switch
-                {
-                    long l => l,
-                    int i => i,
-                    string s when long.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => parsed,
-                    System.Text.Json.JsonElement je when je.ValueKind == System.Text.Json.JsonValueKind.Number => je.GetInt64(),
-                    _ => (long?)null
-                };
-
-                if (!originId.HasValue)
-                {
-                    continue;
-                }
-
-                if (!requestedIds.Contains(originId.Value))
+                // Storage resolves foreign keys to actual parent IDs, including shared keys.
+                var originIds = feature.Attributes.TryGetValue(RelatedQuery.OriginObjectIdsAttribute, out var stamped)
+                    && stamped is IEnumerable<long> ids
+                    ? ids
+                    : ReadLegacyOriginIds(feature, relationship.DestinationField);
+                var matchingIds = originIds.Where(requestedIds.Contains).Distinct().ToArray();
+                if (matchingIds.Length == 0)
                 {
                     continue;
                 }
@@ -796,7 +781,7 @@ internal sealed partial class ODataSearchService
                     related.Resource.ReadSrid() ?? 4326,
                     relatedAxisOrder);
 
-                var relatedAttributes = ODataAttributeSerializer.Serialize(feature.Attributes);
+                var relatedAttributes = ODataAttributeSerializer.Serialize(feature.Attributes.Remove(RelatedQuery.OriginObjectIdsAttribute));
                 var relatedFeatureDict = ODataUtilityService.BuildFeaturePayload(
                     related.PublicLayerId,
                     feature,
@@ -809,13 +794,16 @@ internal sealed partial class ODataSearchService
                         string.Join(",", selectedFields));
                 }
 
-                if (!childGroups.TryGetValue(originId.Value, out var children))
+                foreach (var originId in matchingIds)
                 {
-                    children = new List<object?>();
-                    childGroups.Add(originId.Value, children);
-                }
+                    if (!childGroups.TryGetValue(originId, out var children))
+                    {
+                        children = new List<object?>();
+                        childGroups.Add(originId, children);
+                    }
 
-                children.Add(relatedFeatureDict);
+                    children.Add(relatedFeatureDict);
+                }
             }
 
             foreach (var (originId, children) in childGroups)
@@ -826,6 +814,19 @@ internal sealed partial class ODataSearchService
         }
 
         return result;
+    }
+
+    private static long[] ReadLegacyOriginIds(Feature feature, string destinationField)
+    {
+        feature.Attributes.TryGetValue(destinationField, out var value);
+        return value switch
+        {
+            long id => [id],
+            int id => [id],
+            string text when long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id) => [id],
+            JsonElement element when element.ValueKind == JsonValueKind.Number && element.TryGetInt64(out var id) => [id],
+            _ => []
+        };
     }
 
     private sealed record ExpandRelationshipOptions(string Name, HashSet<string>? SelectFields);
