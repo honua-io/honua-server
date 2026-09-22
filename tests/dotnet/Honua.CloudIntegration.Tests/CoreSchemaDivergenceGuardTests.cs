@@ -245,6 +245,18 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         "src/Honua.Server/Migrations/064_CreateRasterFootprints.sql",
     ];
 
+    private async Task<string> CreateUnpooledSeedDatabaseAsync()
+    {
+        // These table-driven cases each own a database. Keeping idle pools for every case
+        // exhausts the shared fixture's connection limit before the existing scenarios run.
+        var connectionString = new NpgsqlConnectionStringBuilder(await postgres.CreateFreshDatabaseAsync())
+        {
+            Pooling = false,
+        }.ConnectionString;
+        await ExecuteAsync(connectionString, "CREATE EXTENSION postgis; CREATE EXTENSION postgis_raster;");
+        return connectionString;
+    }
+
     private static async Task CreateCanonicalSeedAsync(string connectionString, string schema = "honua")
     {
         foreach (var path in SeedCreationScripts)
@@ -261,7 +273,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
     public async Task SeedAdoptionContract_MatchesEveryCreationMigrationDefinition(string schema)
     {
         Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the seeded-schema lane.");
-        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGisRaster: true);
+        var connectionString = await CreateUnpooledSeedDatabaseAsync();
         await CreateCanonicalSeedAsync(connectionString, schema);
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
@@ -295,7 +307,7 @@ public sealed class CoreSchemaDivergenceGuardTests(LocalSubstratePostgresFixture
         string drift, string table, string schema = "honua")
     {
         Skip.IfNot(postgres.Available, "Docker/PostgreSQL is not available for the seeded-schema lane.");
-        var connectionString = await postgres.CreateFreshDatabaseAsync(enablePostGisRaster: true);
+        var connectionString = await CreateUnpooledSeedDatabaseAsync();
         await CreateCanonicalSeedAsync(connectionString);
         await ExecuteAsync(connectionString, drift);
         await using var connection = new NpgsqlConnection(connectionString);
