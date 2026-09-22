@@ -21,7 +21,16 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.GPServer;
 /// </remarks>
 internal static class GPServerRedisTestConnection
 {
-    private const string StallTolerantTimeouts = ",syncTimeout=30000,asyncTimeout=30000";
+    /// <summary>
+    /// Longest single Redis call the test hosts wait out. Job waits and HTTP client timeouts in
+    /// <see cref="GPServerJobWait"/> are derived from it, so a stall the host tolerates can never
+    /// exhaust the test's own deadline first.
+    /// </summary>
+    public static readonly TimeSpan StallTolerance = TimeSpan.FromSeconds(30);
+
+    private static readonly string StallTolerantTimeouts = string.Create(
+        System.Globalization.CultureInfo.InvariantCulture,
+        $",syncTimeout={(int)StallTolerance.TotalMilliseconds},asyncTimeout={(int)StallTolerance.TotalMilliseconds}");
 
     public static string For(RedisFixture redis) => redis.ConnectionString + StallTolerantTimeouts;
 }

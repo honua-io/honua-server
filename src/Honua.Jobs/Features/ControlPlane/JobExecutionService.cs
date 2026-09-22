@@ -27,7 +27,11 @@ internal sealed partial class JobExecutionService(
     ILicenseOperationPolicy? licensePolicy = null) : BackgroundService
 {
     private const string SafeExecutionFailureMessage = "Job execution failed.";
-    private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
+    /// <summary>
+    /// Delay before the claim loop polls the queue again after finding it empty. A submitted job
+    /// can wait up to one interval before a worker claims it; there is no wake-up signal.
+    /// </summary>
+    internal static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan LogRetention = TimeSpan.FromDays(7);
     private static readonly TimeSpan DefaultPartitionLeaseDuration = TimeSpan.FromMinutes(1);
     private static readonly TimeSpan DefaultPartitionLeaseRenewInterval = TimeSpan.FromSeconds(20);

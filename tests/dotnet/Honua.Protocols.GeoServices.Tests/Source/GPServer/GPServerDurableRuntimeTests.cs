@@ -55,7 +55,7 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
         try
         {
             using var client = fixture.CreateAdminClient();
-            client.Timeout = TimeSpan.FromSeconds(30);
+            client.Timeout = GPServerJobWait.RequestTimeout;
             using var content = new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["f"] = "json",
@@ -74,7 +74,11 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
             jobId.Should().NotBeNullOrWhiteSpace();
             submitDoc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
 
-            var terminalStatus = await PollUntilSucceededAsync(client, jobId!);
+            using var terminalStatus = await GPServerJobWait.UntilRestSucceededAsync(
+                client,
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/jobs/{jobId}?f=json",
+                jobId!,
+                fixture.GetService<IExecutionJobStore>());
             var results = terminalStatus.RootElement.GetProperty("results");
             results.GetProperty("outputFeatureLayer").GetProperty("paramUrl").GetString()
                 .Should().Be("results/outputFeatureLayer");
@@ -122,7 +126,7 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
         try
         {
             using var client = fixture.CreateAdminClient();
-            client.Timeout = TimeSpan.FromSeconds(30);
+            client.Timeout = GPServerJobWait.RequestTimeout;
             using var content = new FormUrlEncodedContent(new Dictionary<string, string>
             {
                 ["f"] = "json",
@@ -138,24 +142,12 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
             var jobId = submitted.RootElement.GetProperty("jobId").GetString();
             jobId.Should().NotBeNullOrWhiteSpace();
 
-            string? terminalStatus = null;
-            var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
-            while (DateTimeOffset.UtcNow < deadline)
-            {
-                using var response = await client.GetAsync(
-                    $"/rest/services/{ServiceId}/GPServer/geometry.buffer/jobs/{jobId}?f=json");
-                response.StatusCode.Should().Be(HttpStatusCode.OK);
-                using var status = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-                terminalStatus = status.RootElement.GetProperty("jobStatus").GetString();
-                if (terminalStatus is "esriJobFailed" or "esriJobSucceeded" or "esriJobCancelled")
-                {
-                    break;
-                }
-
-                await Task.Delay(TimeSpan.FromMilliseconds(100));
-            }
-
-            terminalStatus.Should().Be("esriJobFailed");
+            using var terminal = await GPServerJobWait.UntilRestTerminalAsync(
+                client,
+                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/jobs/{jobId}?f=json",
+                jobId!,
+                fixture.GetService<IExecutionJobStore>());
+            terminal.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobFailed");
             var durableJob = await fixture.GetService<IExecutionJobStore>().GetAsync(jobId!);
             durableJob.Should().NotBeNull();
             durableJob!.Status.Should().Be(ExecutionJobStatus.Failed);
@@ -234,7 +226,7 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
             async Task RunAreaAsync(double width, bool overwrite, bool expectSuccess)
             {
                 using var client = fixture.CreateAdminClient();
-                client.Timeout = TimeSpan.FromSeconds(45);
+                client.Timeout = GPServerJobWait.RequestTimeout;
                 using var content = new FormUrlEncodedContent(new Dictionary<string, string>
                 {
                     ["f"] = "json",
@@ -262,30 +254,24 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
                     return;
                 }
                 var jobId = submitted.RootElement.GetProperty("jobId").GetString();
-                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(35));
-                while (true)
+                using var status = await GPServerJobWait.UntilRestTerminalAsync(
+                    client,
+                    $"/rest/services/{ServiceId}/GPServer/geometry.area/jobs/{jobId}?f=json",
+                    jobId!,
+                    fixture.GetService<IExecutionJobStore>());
+                status.RootElement.GetProperty("jobStatus").GetString()
+                    .Should().Be(expectSuccess ? "esriJobSucceeded" : "esriJobFailed", status.RootElement.GetRawText());
+                var durable = await fixture.GetService<IExecutionJobStore>().GetAsync(jobId!);
+                durable!.AttemptCount.Should().Be(1);
+                if (!expectSuccess)
                 {
-                    using var statusResponse = await client.GetAsync($"/rest/services/{ServiceId}/GPServer/geometry.area/jobs/{jobId}?f=json", timeout.Token);
-                    using var status = JsonDocument.Parse(await statusResponse.Content.ReadAsStringAsync(timeout.Token));
-                    var state = status.RootElement.GetProperty("jobStatus").GetString();
-                    if (state is "esriJobSucceeded" or "esriJobFailed" or "esriJobCancelled")
-                    {
-                        state.Should().Be(expectSuccess ? "esriJobSucceeded" : "esriJobFailed", status.RootElement.GetRawText());
-                        var durable = await fixture.GetService<IExecutionJobStore>().GetAsync(jobId!);
-                        durable!.AttemptCount.Should().Be(1);
-                        if (!expectSuccess)
-                        {
-                            durable.ErrorMessage.Should().Contain("already exists");
-                        }
-                        if (expectSuccess)
-                        {
-                            using var outputResponse = await client.GetAsync($"/rest/services/{ServiceId}/GPServer/geometry.area/jobs/{jobId}/results/outputScalar?f=json", timeout.Token);
-                            using var output = JsonDocument.Parse(await outputResponse.Content.ReadAsStringAsync(timeout.Token));
-                            AssertArea(output.RootElement.GetProperty("value").GetString()!, width * 4);
-                        }
-                        break;
-                    }
-                    await Task.Delay(100, timeout.Token);
+                    durable.ErrorMessage.Should().Contain("already exists");
+                }
+                if (expectSuccess)
+                {
+                    using var outputResponse = await client.GetAsync($"/rest/services/{ServiceId}/GPServer/geometry.area/jobs/{jobId}/results/outputScalar?f=json");
+                    using var output = JsonDocument.Parse(await outputResponse.Content.ReadAsStringAsync());
+                    AssertArea(output.RootElement.GetProperty("value").GetString()!, width * 4);
                 }
             }
         }
@@ -329,30 +315,6 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
             decoded.RootElement.GetProperty("processId").GetString().Should().Be("geometry.area");
             decoded.RootElement.GetProperty("inputSrid").GetInt32().Should().Be(3857);
         }
-    }
-
-    private static async Task<JsonDocument> PollUntilSucceededAsync(HttpClient client, string jobId)
-    {
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            using var response = await client.GetAsync(
-                $"/rest/services/{ServiceId}/GPServer/geometry.buffer/jobs/{jobId}?f=json");
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-            var body = await response.Content.ReadAsStringAsync();
-            using var doc = JsonDocument.Parse(body);
-            var status = doc.RootElement.GetProperty("jobStatus").GetString();
-            if (status == "esriJobSucceeded")
-            {
-                return JsonDocument.Parse(body);
-            }
-
-            status.Should().NotBe("esriJobFailed", "the configured durable runtime should complete the bounded test job");
-            await Task.Delay(TimeSpan.FromMilliseconds(250));
-        }
-
-        throw new TimeoutException($"Timed out waiting for GPServer job '{jobId}' to succeed.");
     }
 
     private static async Task DeleteControlPlaneKeysAsync(string redisConnectionString)
@@ -407,7 +369,7 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
         try
         {
             using var client = fixture.CreateAdminClient();
-            client.Timeout = TimeSpan.FromSeconds(45);
+            client.Timeout = GPServerJobWait.RequestTimeout;
             // Independent OGC WKB encoding of a literal 3 by 4 rectangle.
             // The expected area is width * height, never copied from NTS output.
             using var bytes = new MemoryStream();
@@ -433,17 +395,7 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
             if (operation == "SubmitJob")
             {
                 var jobId = result.Value;
-                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-                while (true)
-                {
-                    var status = await SendSoapAsync(client, "GetJobStatus", $"<JobID>{jobId}</JobID>");
-                    if (status.Value == "esriJobSucceeded")
-                    {
-                        break;
-                    }
-                    status.Value.Should().NotBe("esriJobFailed").And.NotBe("esriJobCancelled");
-                    await Task.Delay(100, timeout.Token);
-                }
+                await WaitForSoapJobSucceededAsync(client, jobId, fixture.GetService<IExecutionJobStore>());
                 result = await SendSoapAsync(client, "GetJobResult", $"<JobID>{jobId}</JobID><ParameterNames><String>outputScalar</String></ParameterNames>");
             }
             var scalar = result.Element("Values")!.Elements("GPValue").Should().ContainSingle().Subject;
@@ -480,7 +432,7 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
         try
         {
             using var client = fixture.CreateAdminClient();
-            client.Timeout = TimeSpan.FromSeconds(45);
+            client.Timeout = GPServerJobWait.RequestTimeout;
             var result = await SubmitSoapAndReadResultAsync(client, "Honua_67656F6D657472792E627566666572", $"""
                 <GPValue xsi:type="tns:GPString"><Value>{PolygonWkb((0, 0), (3, 0), (3, 4), (0, 4), (0, 0))}</Value></GPValue>
                 <GPValue xsi:type="tns:GPLong"><Value>3857</Value></GPValue>
@@ -524,7 +476,7 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
         try
         {
             using var client = fixture.CreateAdminClient();
-            client.Timeout = TimeSpan.FromSeconds(45);
+            client.Timeout = GPServerJobWait.RequestTimeout;
             var result = await SubmitSoapAndReadResultAsync(client, "Honua_67656F6D657472792E756E696F6E", $"""
                 <GPValue xsi:type="tns:GPMultiValue"><MemberDataType>GPString</MemberDataType><Values xsi:type="tns:GPValues">
                 <GPValue xsi:type="tns:GPString"><Value>{PolygonWkb((0, 0), (3, 0), (3, 4), (0, 4), (0, 0))}</Value></GPValue>
@@ -593,16 +545,16 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
         {
             using var owner = fixture.CreateClient(client => client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, "alice"));
             using var other = fixture.CreateClient(client => client.DefaultRequestHeaders.Add(TestAuthHandler.UserHeader, "bob"));
-            owner.Timeout = TimeSpan.FromSeconds(45);
-            other.Timeout = TimeSpan.FromSeconds(45);
+            owner.Timeout = GPServerJobWait.RequestTimeout;
+            other.Timeout = GPServerJobWait.RequestTimeout;
             var submitted = await SendSoapAsync(owner, "SubmitJob",
                 "<ToolName>Honua_67656F6D657472792E61726561</ToolName><Values xsi:type=\"tns:GPValues\">" +
                 $"<GPValue xsi:type=\"tns:GPString\"><Value>{PolygonWkb((0, 0), (3, 0), (3, 4), (0, 4), (0, 0))}</Value></GPValue>" +
                 "<GPValue xsi:type=\"tns:GPLong\"><Value>3857</Value></GPValue></Values>" +
                 GPServerSoapRequestFixtures.ArcPyDefaultControls);
             var jobId = submitted.Value;
-            await WaitForSoapJobSucceededAsync(owner, jobId);
             var jobStore = fixture.GetService<IExecutionJobStore>();
+            await WaitForSoapJobSucceededAsync(owner, jobId, jobStore);
             (await jobStore.GetAsync(jobId))!.Audit.RequestedBy.Should().Be("alice");
 
             var outputNames = "<ParameterNames><String>outputScalar</String></ParameterNames>";
@@ -666,15 +618,15 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
                     client.DefaultRequestHeaders.Add("Authorization", "Bearer honua-test-" + Guid.NewGuid().ToString("N"));
                 }
             });
-            owner.Timeout = TimeSpan.FromSeconds(45);
-            denied.Timeout = TimeSpan.FromSeconds(45);
+            owner.Timeout = GPServerJobWait.RequestTimeout;
+            denied.Timeout = GPServerJobWait.RequestTimeout;
             var area = "<ToolName>Honua_67656F6D657472792E61726561</ToolName><Values xsi:type=\"tns:GPValues\">" +
                 $"<GPValue xsi:type=\"tns:GPString\"><Value>{PolygonWkb((0, 0), (3, 0), (3, 4), (0, 4), (0, 0))}</Value></GPValue>" +
                 "<GPValue xsi:type=\"tns:GPLong\"><Value>3857</Value></GPValue></Values>" +
                 GPServerSoapRequestFixtures.ArcPyDefaultControls;
             var jobId = (await SendSoapAsync(owner, "SubmitJob", area)).Value;
-            await WaitForSoapJobSucceededAsync(owner, jobId);
             var jobStore = fixture.GetService<IExecutionJobStore>();
+            await WaitForSoapJobSucceededAsync(owner, jobId, jobStore);
             var jobsBefore = (await jobStore.QueryAsync(new ExecutionJobQuery())).Items.Count;
 
             var outputNames = "<ParameterNames><String>outputScalar</String></ParameterNames>";
@@ -728,20 +680,11 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
             $"<JobID>{jobId}</JobID><ParameterNames><String>{outputName}</String></ParameterNames>");
     }
 
-    private static async Task WaitForSoapJobSucceededAsync(HttpClient client, string jobId)
-    {
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        while (true)
-        {
-            var status = await SendSoapAsync(client, "GetJobStatus", $"<JobID>{jobId}</JobID>");
-            if (status.Value == "esriJobSucceeded")
-            {
-                return;
-            }
-            status.Value.Should().NotBe("esriJobFailed").And.NotBe("esriJobCancelled");
-            await Task.Delay(100, timeout.Token);
-        }
-    }
+    private static Task WaitForSoapJobSucceededAsync(HttpClient client, string jobId, IExecutionJobStore? jobStore = null)
+        => GPServerJobWait.UntilSoapSucceededAsync(
+            async () => (await SendSoapAsync(client, "GetJobStatus", $"<JobID>{jobId}</JobID>")).Value,
+            jobId,
+            jobStore);
 
     private static (double X, double Y)[] ReadSingleRing(XElement result, out string wkid)
     {
