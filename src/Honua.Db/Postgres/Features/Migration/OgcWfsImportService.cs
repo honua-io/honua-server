@@ -810,7 +810,7 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
             command.Transaction = transaction;
             command.CommandText = $"DROP TABLE IF EXISTS {QuoteIdentifier(schemaName)}.{QuoteIdentifier(targetTableName)} CASCADE; " +
                                   $"ALTER TABLE {QuoteIdentifier(schemaName)}.{QuoteIdentifier(stagingTableName)} RENAME TO {QuoteIdentifier(targetTableName)}; " +
-                                  $"ALTER INDEX {QuoteIdentifier(schemaName)}.{QuoteIdentifier(stagingTableName + "_geom_idx")} RENAME TO {QuoteIdentifier(targetTableName + "_geom_idx")}";
+                                  $"ALTER INDEX {QuoteIdentifier(schemaName)}.{QuoteIdentifier(BuildSpatialIndexName(stagingTableName))} RENAME TO {QuoteIdentifier(BuildSpatialIndexName(targetTableName))}";
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
         }
@@ -834,9 +834,20 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
     private static async Task CreateSpatialIndexAsync(NpgsqlConnection connection, string schemaName, string tableName, CancellationToken cancellationToken)
     {
         await using var cmd = connection.CreateCommand();
-        cmd.CommandText = $"CREATE INDEX IF NOT EXISTS {QuoteIdentifier(tableName + "_geom_idx")} ON {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} USING GIST (geom)";
+        cmd.CommandText = $"CREATE INDEX IF NOT EXISTS {QuoteIdentifier(BuildSpatialIndexName(tableName))} ON {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} USING GIST (geom)";
         await cmd.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// The spatial index name. A plain <c>&lt;table&gt;_geom_idx</c> is truncated to 63 bytes, which for a
+    /// long table name collides with another relation in the schema (for a 63-byte table, with the table
+    /// itself), so <c>CREATE INDEX IF NOT EXISTS</c> would silently skip the index. Table names up to 54
+    /// bytes keep <c>&lt;table&gt;_geom_idx</c> unchanged; longer ones are shortened and disambiguated by a
+    /// hash of the full name, so two targets sharing a prefix still get their own index. Staging creation
+    /// and promotion both derive the name this way.
+    /// </summary>
+    internal static string BuildSpatialIndexName(string tableName)
+        => PostgresDerivedRelationNames.BuildUnique(tableName, "geom_idx");
 
     private static MigrationInventoryResource[] SelectResources(
         MigrationSourceInventoryArtifact inventory,
