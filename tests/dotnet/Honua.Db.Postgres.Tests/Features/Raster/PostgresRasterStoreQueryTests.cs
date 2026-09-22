@@ -1110,6 +1110,56 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ExportImageAsync_WithRotatedRaster_RetainsPixelsTouchingTheFrame(bool mosaic)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            long rasterId;
+            await using (var connection = await fixture.GetConnectionAsync(schemaName))
+            await using (var command = connection.CreateCommand())
+            {
+                // Forty-five-degree rotation with unequal pixel dimensions: columns
+                // span (1,1), rows (10,-10). The bbox is inside pixels in the first row
+                // and columns 5/6, whose centres have X=9.5/10.5. Expanding the bbox's
+                // X range by ST_PixelWidth (sqrt(2)) discards both required pixels.
+                command.CommandText = """
+                    INSERT INTO raster_data (layer_id, name, raster, acquisition_date, created_at)
+                    VALUES (@layerId, 'rotated',
+                        ST_AddBand(ST_MakeEmptyRaster(10, 5, 0, 20, 1, -10, 10, 1, 4326),
+                            '8BUI'::text, 42, 255), NOW(), NOW())
+                    RETURNING id;
+                    """;
+                command.Parameters.AddWithValue("layerId", LayerId);
+                rasterId = (long)(await command.ExecuteScalarAsync())!;
+            }
+
+            var store = CreateStore(schemaName);
+            var query = CreateCoverClipQuery(5.8, 23.8, 6.2, 24.2, width: 10, height: 20);
+            var result = mosaic
+                ? await store.ExportMosaicAsync(LayerId, [rasterId], RasterMergeStrategy.Newest, query, RasterMosaicOrdering.AcquisitionNewest)
+                : await store.ExportImageAsync(LayerId, rasterId, query);
+
+            result.Width.Should().Be(10);
+            result.Height.Should().Be(20);
+            var probe = await ProbeExportedRasterAsync(schemaName, result.Data, 4326, (5.82, 24.18), (6.18, 23.82));
+            probe.XMin.Should().BeApproximately(5.8, 1e-9);
+            probe.YMin.Should().BeApproximately(23.8, 1e-9);
+            probe.XMax.Should().BeApproximately(6.2, 1e-9);
+            probe.YMax.Should().BeApproximately(24.2, 1e-9);
+            probe.ValidPixels.Should().Be(200, "the requested frame lies entirely inside the rotated raster");
+            probe.Values.Should().Equal(42, 42);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
     // #4061: an Esri start,end time extent selects the newest acquisition batch inside the window.
     [IntegrationTest]
     public async Task QueryRastersAsync_WithTimeExtent_SelectsNewestBatchInsideWindow()

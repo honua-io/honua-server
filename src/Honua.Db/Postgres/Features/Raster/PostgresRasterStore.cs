@@ -1449,11 +1449,12 @@ internal sealed class PostgresRasterStore : IRasterStore
         // ST_Clip keeps only pixels whose centre lies inside the mask, so a pixel that the clip edge
         // cuts through is dropped. When the caller frames the result onto the clip envelope itself
         // (keepEdgePixels), the mask is grown by one source pixel so those edge pixels still feed the
-        // frame; the frame crops the output back to the exact envelope.
+        // frame; the frame crops the output back to the exact envelope. Expand each world axis by
+        // the projections of both pixel vectors: their lengths alone under-pad rotated rasters.
         var maskGeom = clip.Inverted
             ? $"ST_Difference(ST_Envelope({rasterColumnExpr}), {clipGeom})"
             : keepEdgePixels
-                ? $"ST_Expand({clipGeom}, ST_PixelWidth({rasterColumnExpr}), ST_PixelHeight({rasterColumnExpr}))"
+                ? $"ST_Expand({clipGeom}, abs(ST_ScaleX({rasterColumnExpr})) + abs(ST_SkewX({rasterColumnExpr})), abs(ST_ScaleY({rasterColumnExpr})) + abs(ST_SkewY({rasterColumnExpr})))"
                 : clipGeom;
 
         return $"ST_Clip({rasterExpr}, {maskGeom})";
