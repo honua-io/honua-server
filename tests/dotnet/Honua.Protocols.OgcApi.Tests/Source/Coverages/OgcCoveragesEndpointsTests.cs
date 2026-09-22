@@ -437,7 +437,7 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
 
         payload.AddRange(BitConverter.GetBytes(width));
         payload.AddRange(BitConverter.GetBytes(height));
-        payload.AddRange(BitConverter.GetBytes(extent.Srid));
+        payload.AddRange(BitConverter.GetBytes(extent.Srid ?? 0));
         return [.. payload];
     }
 

@@ -164,12 +164,28 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
             .Should().NotStartWith("image/", "a non-existent layer must not render a tile");
 
         var body = await response.Content.ReadAsByteArrayAsync();
-        body.Should().NotStartWith(
-            [(byte)0x89, (byte)0x50, (byte)0x4E, (byte)0x47],
+        StartsWith(body, [0x89, 0x50, 0x4E, 0x47]).Should().BeFalse(
             "a non-existent layer must not return a PNG");
-        body.Should().NotStartWith(
-            [(byte)0xFF, (byte)0xD8, (byte)0xFF],
+        StartsWith(body, [0xFF, 0xD8, 0xFF]).Should().BeFalse(
             "a non-existent layer must not return a JPEG");
+    }
+
+    private static bool StartsWith(byte[] body, byte[] signature)
+    {
+        if (body.Length < signature.Length)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < signature.Length; i++)
+        {
+            if (body[i] != signature[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     #endregion

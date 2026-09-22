@@ -468,7 +468,10 @@ internal static class CoverageDepthRasterStore
                 // reporting the raster's full 20000 x 20000 native footprint, so a narrow
                 // bbox that the handler failed to apply is now distinguishable from one it
                 // applied correctly.
-                var extent = ClippedExtent(raster.Extent, query, srid);
+                var extent = ClippedExtent(
+                    raster.Extent ?? OgcCoveragesEndpointsTests.NativeExtent,
+                    query,
+                    srid);
                 return Task.FromResult(new RasterResult
                 {
                     Data = isEmpty
