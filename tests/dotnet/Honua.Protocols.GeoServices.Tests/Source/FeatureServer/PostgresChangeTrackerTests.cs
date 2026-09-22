@@ -14,6 +14,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 [Collection("Database")]
 public sealed class PostgresChangeTrackerTests : IClassFixture<WebAppFixture>
 {
+    private static readonly long[] PreImageWindowIds = [1L, 2L, 3L, 4L];
     private readonly WebAppFixture _fixture;
 
     public PostgresChangeTrackerTests(WebAppFixture fixture)
@@ -272,14 +273,14 @@ public sealed class PostgresChangeTrackerTests : IClassFixture<WebAppFixture>
         await RecordAsync(otherLayerId, 4, 2, "{}");
 
         var changes = await tracker.GetChangesSinceAsync(baseline, [layerId]);
-        changes.Select(change => change.ObjectId).Should().BeEquivalentTo(new[] { 1L, 2L, 3L, 4L });
+        changes.Select(change => change.ObjectId).Should().BeEquivalentTo(PreImageWindowIds);
         changes.Should().OnlyContain(change => change.LayerId == layerId);
         changes.Single(change => change.ObjectId == 1).Should().Match<FeatureChange>(change =>
-            change.Operation == FeatureChangeOperation.Insert && change.PreImageChangeId is null);
+            change.Operation == FeatureChangeOperation.Insert && change.PreImageChangeId == null);
         changes.Single(change => change.ObjectId == 2).Should().Match<FeatureChange>(change =>
             change.Operation == FeatureChangeOperation.Update && change.PreImageChangeId == firstDelete);
         changes.Single(change => change.ObjectId == 3).Should().Match<FeatureChange>(change =>
-            change.Operation == FeatureChangeOperation.Update && change.PreImageChangeId is null);
+            change.Operation == FeatureChangeOperation.Update && change.PreImageChangeId == null);
         changes.Single(change => change.ObjectId == 4).Should().Match<FeatureChange>(change =>
             change.Operation == FeatureChangeOperation.Delete && change.PreImageChangeId == firstUpdate);
     }
