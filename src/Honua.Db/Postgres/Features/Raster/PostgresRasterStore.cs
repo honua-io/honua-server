@@ -742,11 +742,18 @@ internal sealed class PostgresRasterStore : IRasterStore
         // Build raster expression with chained transformations
         var rasterExpr = "raster";
         var extraParams = new List<(string Name, object Value)>();
+        var hasOutputDimensions = query.OutputWidth is > 0 && query.OutputHeight is > 0;
+
+        // When the output must cover the clip envelope (Esri exportImage bbox, #4060), steps 3 and 4
+        // are replaced by the frame CTEs below, which warp the pipeline output onto a grid spanning
+        // the envelope in the output SRID at the exact requested size.
+        var frameClipExtent = ShouldFrameClipExtent(query, hasOutputDimensions);
 
         // 1. Clip to region if specified
         if (query.ClipRegion is { } clip)
         {
-            rasterExpr = BuildClipExpression(rasterExpr, clip, "raster", "@clipGeom", "@clipSrid", extraParams);
+            rasterExpr = BuildClipExpression(
+                rasterExpr, clip, "raster", "@clipGeom", "@clipSrid", extraParams, keepEdgePixels: frameClipExtent);
         }
 
         // 1a. Second clip from a renderingRule Clip raster function (area-of-interest mask).
@@ -806,7 +813,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         // dimensions were not requested. This stays before reprojection so the pixel size is
         // honoured in the source CRS units. Explicit output dimensions are applied as the final
         // step below so the produced image is exactly OutputWidth x OutputHeight.
-        var hasOutputDimensions = query.OutputWidth is > 0 && query.OutputHeight is > 0;
         if (!hasOutputDimensions && query.PixelSize is { } pixelSize)
         {
             var algorithm = ResolveResamplingAlgorithm(query.ResamplingAlgorithm);
@@ -815,11 +821,6 @@ internal sealed class PostgresRasterStore : IRasterStore
             extraParams.Add(("@pixelW", pixelSize.Width));
             extraParams.Add(("@pixelH", pixelSize.Height));
         }
-
-        // When the output must cover the clip envelope (Esri exportImage bbox, #4060), steps 3 and 4
-        // are replaced by the frame CTEs below, which warp the pipeline output onto a grid spanning
-        // the envelope in the output SRID at the exact requested size.
-        var frameClipExtent = ShouldFrameClipExtent(query, hasOutputDimensions);
 
         // 3. Reproject output if requested.
         if (query.OutputSrid.HasValue && query.OutputSrid.Value > 0)
@@ -1339,6 +1340,10 @@ internal sealed class PostgresRasterStore : IRasterStore
     // output SRID, warp the pipeline output onto it with one grid-aligned ST_Transform, and union
     // that over an all-NoData canvas carrying the same bands, so the image covers exactly the
     // requested envelope with NoData wherever the raster has no pixels.
+    // The grid-aligned ST_Transform keeps the extent of its whole-pixel source, which reaches past
+    // the envelope wherever the clip edge cuts a source pixel (a bbox inside the raster, #4890), and
+    // the union would widen to it. The union is therefore cropped back to the frame grid; both share
+    // its alignment, so the crop removes whole pixels and the output is exactly the frame.
 
     private static bool ShouldFrameClipExtent(RasterQuery query, bool hasOutputDimensions)
         => query.CoverClipExtent && hasOutputDimensions && query.ClipRegion is { Inverted: false };
@@ -1389,13 +1394,17 @@ internal sealed class PostgresRasterStore : IRasterStore
                            ORDER BY n)) AS rast
                 FROM frame_grid g, frame_data d
             ),
-            transformed AS (
+            frame_union AS (
                 SELECT ST_Union(layers.rast, 'LAST' ORDER BY layers.layer_order) AS rast
                 FROM (
                     SELECT rast, 1 AS layer_order FROM frame_canvas
                     UNION ALL
                     SELECT rast, 2 AS layer_order FROM frame_data
                 ) layers
+            ),
+            transformed AS (
+                SELECT ST_Clip(u.rast, ST_Envelope(g.rast), TRUE) AS rast
+                FROM frame_union u, frame_grid g
             )
             """;
     }
@@ -1419,7 +1428,8 @@ internal sealed class PostgresRasterStore : IRasterStore
         string rasterColumnExpr,
         string geomParam,
         string sridParam,
-        List<(string Name, object Value)> extraParams)
+        List<(string Name, object Value)> extraParams,
+        bool keepEdgePixels = false)
     {
         var sridExpr = $"ST_SRID({rasterColumnExpr})";
         string clipGeom;
@@ -1436,9 +1446,15 @@ internal sealed class PostgresRasterStore : IRasterStore
         extraParams.Add((geomParam, clip.Geometry));
 
         // Inverted clip ("keep outside"): mask to the raster envelope minus the clip geometry.
+        // ST_Clip keeps only pixels whose centre lies inside the mask, so a pixel that the clip edge
+        // cuts through is dropped. When the caller frames the result onto the clip envelope itself
+        // (keepEdgePixels), the mask is grown by one source pixel so those edge pixels still feed the
+        // frame; the frame crops the output back to the exact envelope.
         var maskGeom = clip.Inverted
             ? $"ST_Difference(ST_Envelope({rasterColumnExpr}), {clipGeom})"
-            : clipGeom;
+            : keepEdgePixels
+                ? $"ST_Expand({clipGeom}, ST_PixelWidth({rasterColumnExpr}), ST_PixelHeight({rasterColumnExpr}))"
+                : clipGeom;
 
         return $"ST_Clip({rasterExpr}, {maskGeom})";
     }
@@ -2032,9 +2048,15 @@ internal sealed class PostgresRasterStore : IRasterStore
             ("@rasterIds", rasterIds)
         };
 
+        // Covering the clip envelope (Esri exportImage bbox, #4060) replaces the in-place
+        // reprojection and resize with the frame CTEs, exactly as on the single-raster path.
+        var hasOutputDimensions = query.OutputWidth is > 0 && query.OutputHeight is > 0;
+        var frameClipExtent = ShouldFrameClipExtent(query, hasOutputDimensions);
+
         if (query.ClipRegion is { } clip)
         {
-            sourceRasterExpr = BuildClipExpression(sourceRasterExpr, clip, "raster", "@clipGeom", "@clipSrid", extraParams);
+            sourceRasterExpr = BuildClipExpression(
+                sourceRasterExpr, clip, "raster", "@clipGeom", "@clipSrid", extraParams, keepEdgePixels: frameClipExtent);
         }
 
         // Second clip from a renderingRule Clip raster function (area-of-interest mask).
@@ -2081,7 +2103,6 @@ internal sealed class PostgresRasterStore : IRasterStore
         // Rescale by pixel size only when explicit output dimensions were not requested; it stays
         // before reprojection so the pixel size is honoured in the source CRS units. Explicit
         // output dimensions are applied as the final step below.
-        var hasOutputDimensions = query.OutputWidth is > 0 && query.OutputHeight is > 0;
         if (!hasOutputDimensions && query.PixelSize is { } pixelSize)
         {
             var algorithm = ResolveResamplingAlgorithm(query.ResamplingAlgorithm);
@@ -2090,10 +2111,6 @@ internal sealed class PostgresRasterStore : IRasterStore
             extraParams.Add(("@pixelW", pixelSize.Width));
             extraParams.Add(("@pixelH", pixelSize.Height));
         }
-
-        // Covering the clip envelope (Esri exportImage bbox, #4060) replaces the in-place
-        // reprojection and resize with the frame CTEs, exactly as on the single-raster path.
-        var frameClipExtent = ShouldFrameClipExtent(query, hasOutputDimensions);
 
         if (query.OutputSrid.HasValue && query.OutputSrid.Value > 0)
         {

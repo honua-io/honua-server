@@ -1020,6 +1020,96 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         }
     }
 
+    // #4890: a bbox strictly inside the raster must still come back at exactly the requested size and
+    // extent, fully covered. Fixture: the 2x2 quadrant raster over x[0,10] y[0,10] (5-degree pixels,
+    // 1 2 / 3 4). bbox [3,9] at 12x12 gives 0.5-degree output pixels. Every edge of the bbox cuts
+    // through a source pixel, and only the upper-right source pixel has its centre inside the bbox.
+    [IntegrationTest]
+    public async Task ExportImageAsync_WithCoverClipExtentInsideRaster_ReturnsRequestedSizeAndExtentFullyCovered()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            var rasterId = await InsertQuadrantRasterAsync(schemaName);
+            var store = CreateStore(schemaName);
+
+            var result = await store.ExportImageAsync(
+                    LayerId, rasterId, CreateCoverClipQuery(3, 3, 9, 9, width: 12, height: 12))
+                .ConfigureAwait(false);
+
+            result.Width.Should().Be(12);
+            result.Height.Should().Be(12);
+            result.Extent.Should().NotBeNull();
+            result.Extent!.Value.XMin.Should().BeApproximately(3, 1e-9);
+            result.Extent.Value.YMin.Should().BeApproximately(3, 1e-9);
+            result.Extent.Value.XMax.Should().BeApproximately(9, 1e-9);
+            result.Extent.Value.YMax.Should().BeApproximately(9, 1e-9);
+
+            var probe = await ProbeExportedRasterAsync(
+                schemaName,
+                result.Data,
+                srid: 4326,
+                (3.25, 8.75), (8.75, 8.75), (3.25, 3.25), (8.75, 3.25));
+
+            probe.Width.Should().Be(12);
+            probe.Height.Should().Be(12);
+            probe.XMin.Should().BeApproximately(3, 1e-9);
+            probe.YMin.Should().BeApproximately(3, 1e-9);
+            probe.XMax.Should().BeApproximately(9, 1e-9);
+            probe.YMax.Should().BeApproximately(9, 1e-9);
+            probe.ValidPixels.Should().Be(12 * 12, "the bbox lies inside the raster, so no output pixel is NoData");
+            probe.Values.Should().Equal(1, 2, 3, 4);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    // #4890 on the mosaic path: west x[0,2] = 20, overlap-newest x[1,3] = 5 (newest), east x[2,4] = 40,
+    // all y[0,2] with 1-degree pixels. bbox [0.6,0.6,3.4,1.4] at 28x8 gives 0.1-degree pixels. No source
+    // pixel centre lies inside the bbox vertically, yet the bbox is fully covered by data.
+    [IntegrationTest]
+    public async Task ExportMosaicAsync_WithCoverClipExtentInsideRasters_ReturnsRequestedSizeAndExtentFullyCovered()
+    {
+        var (schemaName, ids) = await SeedMosaicStackAsync();
+        try
+        {
+            var store = CreateStore(schemaName);
+
+            var result = await store.ExportMosaicAsync(
+                    LayerId,
+                    [ids.West, ids.OverlapNewest, ids.East],
+                    RasterMergeStrategy.Newest,
+                    CreateCoverClipQuery(0.6, 0.6, 3.4, 1.4, width: 28, height: 8),
+                    RasterMosaicOrdering.AcquisitionNewest)
+                .ConfigureAwait(false);
+
+            result.Width.Should().Be(28);
+            result.Height.Should().Be(8);
+
+            var probe = await ProbeExportedRasterAsync(
+                schemaName,
+                result.Data,
+                srid: 4326,
+                (0.65, 1.05), (1.55, 1.05), (2.55, 0.65), (3.35, 1.35));
+
+            probe.Width.Should().Be(28);
+            probe.Height.Should().Be(8);
+            probe.XMin.Should().BeApproximately(0.6, 1e-9);
+            probe.YMin.Should().BeApproximately(0.6, 1e-9);
+            probe.XMax.Should().BeApproximately(3.4, 1e-9);
+            probe.YMax.Should().BeApproximately(1.4, 1e-9);
+            probe.ValidPixels.Should().Be(28 * 8, "the bbox lies inside the mosaic, so no output pixel is NoData");
+            probe.Values.Should().Equal(20, 5, 5, 40);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
     // #4061: an Esri start,end time extent selects the newest acquisition batch inside the window.
     [IntegrationTest]
     public async Task QueryRastersAsync_WithTimeExtent_SelectsNewestBatchInsideWindow()
