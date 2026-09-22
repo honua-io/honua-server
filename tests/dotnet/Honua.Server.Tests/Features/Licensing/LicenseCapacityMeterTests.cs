@@ -8,6 +8,8 @@ using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using NSubstitute;
+using StackExchange.Redis;
 
 namespace Honua.Server.Tests.Features.Licensing;
 
@@ -96,7 +98,82 @@ public sealed class LicenseCapacityMeterTests
         Assert.Equal(13.5m, state.Surge.RemainingDaysThisYear);
     }
 
-    private static LicenseCapacityMeter CreateMeter(decimal maxSustainedUnits, TimeProvider? timeProvider = null)
+    [UnitTest]
+    public async Task ExecuteAsync_WhenRedisConnectionIsTornDownMidRead_KeepsHeartbeatLoopRunning()
+    {
+        // honua-server#4815: a Redis latency window ended with the client surfacing a torn-down
+        // connection as InvalidOperationException rather than a RedisException. The heartbeat loop
+        // must degrade to local metering and keep running; a fault out of ExecuteAsync stops the host.
+        var redis = CreateTornDownRedis(out var database);
+        var meter = CreateMeter(
+            maxSustainedUnits: 4m,
+            redis: redis,
+            registrationEnabled: true,
+            heartbeatInterval: TimeSpan.FromMilliseconds(20));
+
+        await meter.StartAsync(CancellationToken.None);
+        try
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (database.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(IDatabase.SetMembersAsync)) < 3 &&
+                   DateTime.UtcNow < deadline)
+            {
+                Assert.False(meter.ExecuteTask!.IsCompleted, $"heartbeat loop ended: {meter.ExecuteTask.Exception?.GetBaseException().Message}");
+                await Task.Delay(20);
+            }
+
+            Assert.False(meter.ExecuteTask!.IsCompleted, $"heartbeat loop ended: {meter.ExecuteTask.Exception?.GetBaseException().Message}");
+            Assert.True(
+                database.ReceivedCalls().Count(call => call.GetMethodInfo().Name == nameof(IDatabase.SetMembersAsync)) >= 3,
+                "the heartbeat loop should keep retrying the coordinated meter");
+        }
+        finally
+        {
+            await meter.StopAsync(CancellationToken.None);
+        }
+
+        Assert.False(meter.ExecuteTask!.IsFaulted, "stopping the meter after a Redis outage must not surface a fault");
+    }
+
+    [UnitTest]
+    public async Task GetCapacityState_WhenRedisConnectionIsTornDownMidRead_ReportsMeteringGap()
+    {
+        var meter = CreateMeter(maxSustainedUnits: 4m, redis: CreateTornDownRedis(out _));
+
+        var state = await meter.GetCapacityStateAsync();
+
+        Assert.True(state.MeteringGap);
+        Assert.False(state.RedisCoordinated);
+        Assert.Equal(LicenseCapacityBandState.MeteringGap, state.State);
+    }
+
+    private static IConnectionMultiplexer CreateTornDownRedis(out IDatabase database)
+    {
+        // The shape StackExchange.Redis surfaces when its socket pipe was completed under a
+        // pending read during a timeout window.
+        static Task<T> TornDown<T>() => Task.FromException<T>(
+            new InvalidOperationException("Reading is not allowed after reader was completed."));
+
+        database = Substitute.For<IDatabase>();
+        database.SetMembersAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(_ => TornDown<RedisValue[]>());
+        database.StringGetAsync(Arg.Any<RedisKey>(), Arg.Any<CommandFlags>())
+            .Returns(_ => TornDown<RedisValue>());
+        database.ScriptEvaluateAsync(Arg.Any<string>(), Arg.Any<RedisKey[]?>(), Arg.Any<RedisValue[]?>(), Arg.Any<CommandFlags>())
+            .Returns(_ => TornDown<RedisResult>());
+
+        var redis = Substitute.For<IConnectionMultiplexer>();
+        redis.IsConnected.Returns(true);
+        redis.GetDatabase(Arg.Any<int>(), Arg.Any<object?>()).Returns(database);
+        return redis;
+    }
+
+    private static LicenseCapacityMeter CreateMeter(
+        decimal maxSustainedUnits,
+        TimeProvider? timeProvider = null,
+        IConnectionMultiplexer? redis = null,
+        bool registrationEnabled = false,
+        TimeSpan? heartbeatInterval = null)
     {
         var license = new TestLicenseEntitlementService(
             HonuaEdition.Enterprise,
@@ -110,12 +187,14 @@ public sealed class LicenseCapacityMeterTests
             license,
             Options.Create(new LicenseCapacityOptions
             {
-                RegistrationEnabled = false,
+                RegistrationEnabled = registrationEnabled,
                 InstanceId = "local-test",
-                ServingUnits = 1m
+                ServingUnits = 1m,
+                HeartbeatInterval = heartbeatInterval ?? TimeSpan.FromSeconds(15)
             }),
             timeProvider ?? TimeProvider.System,
-            NullLogger<LicenseCapacityMeter>.Instance);
+            NullLogger<LicenseCapacityMeter>.Instance,
+            redis);
     }
 
     private sealed class MutableTimeProvider(DateTimeOffset utcNow) : TimeProvider
