@@ -2067,6 +2067,12 @@
       "path": "/metadata/layers/{layerId}/relationships"
     },
     {
+      "operationId": "setAdminLayerRelationshipsBatch",
+      "catalogOperationId": null,
+      "method": "PUT",
+      "path": "/metadata/layers/relationships/batch"
+    },
+    {
       "operationId": "setAlertRuleEnabled",
       "catalogOperationId": null,
       "method": "PUT",

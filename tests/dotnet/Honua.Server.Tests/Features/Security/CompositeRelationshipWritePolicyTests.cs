@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Security;
 public sealed class CompositeRelationshipWritePolicyTests
 {
     [UnitTest]
-    public async Task CompositeResources_RemainReadableButDenyEveryWriteDespiteWildcardGrant()
+    public async Task CompositeResources_AllowMetadataAdministrationButDenyDataEditsDespiteWildcardGrant()
     {
         var roles = new Mock<IRoleStore>();
         roles.Setup(store => store.GetEffectivePermissionsAsync(It.IsAny<string>(),
@@ -56,6 +56,8 @@ public sealed class CompositeRelationshipWritePolicyTests
         {
             var read = await AccessPolicyHelpers.EvaluateResourceAccessAsync(context, resource, service, AuthorizationOperation.Query);
             read.IsAllowed.Should().BeTrue();
+            var admin = await AccessPolicyHelpers.EvaluateResourceAccessAsync(context, resource, service, AuthorizationOperation.Admin);
+            admin.IsAllowed.Should().BeTrue("metadata administration cannot cause relationship ownership edits");
             foreach (var operation in new[] { AuthorizationOperation.Insert, AuthorizationOperation.Update, AuthorizationOperation.Delete })
             {
                 var unbound = resource with { Relationships = [] };

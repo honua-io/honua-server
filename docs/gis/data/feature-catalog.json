@@ -22472,6 +22472,27 @@
       "capability": "import.file"
     },
     {
+      "id": "put-api-v1-admin-metadata-layers-relationships-batch",
+      "route": "/api/v1/admin/metadata/layers/relationships/batch",
+      "method": "PUT",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutRelationshipBatch_AmbiguousStorageHandle_IsRejected",
+        "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutRelationshipBatch_CompositePair_CommitsTogetherAndRepeatsWithoutDuplicates",
+        "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutRelationshipBatch_DuplicateLayer_IsRejected",
+        "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutRelationshipBatch_EditableComposite_IsRejectedWithoutChangingCapabilities",
+        "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutRelationshipBatch_InvalidSecondSet_DoesNotPersistFirstSet",
+        "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutRelationshipBatch_OneSidedComposite_IsRejectedThroughBothAuthoringRoutes",
+        "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutRelationshipBatch_RetiredTarget_IsRejectedWithoutPartialMapping",
+        "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutRelationshipBatch_UsesStorageIdsWhenServiceLocalIdsDiffer"
+      ],
+      "proof_ledger_surface": "control-plane-admin",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "put-api-v1-admin-metadata-layers-layerid-drawing-info",
       "route": "/api/v1/admin/metadata/layers/{layerId}/drawing-info",
       "method": "PUT",
@@ -22541,6 +22562,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutRelationshipBatch_OneSidedComposite_IsRejectedThroughBothAuthoringRoutes",
         "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutRelationships_ThenGet_RoundTripsRelationship",
         "Honua.Server.Tests.Features.Admin.AdminLayerAuthoringEndpointsTests.PutRelationships_WithUnknownOriginField_ReturnsBadRequest"
       ],
@@ -22768,8 +22790,12 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.LegacyLayer_WithoutSourceGovernance_OmitsOptionalProjectionFields",
+        "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_AdminCannotEnableCompositeOwnershipEdits",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_GovernancePatch_ClearsUnmanagedCanonicalLinks",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_GovernancePatch_ReconcilesRelationsAndRefreshesLicenseTitle",
+        "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_RejectsInvalidGlobalIdWithoutPartialPolicyChange",
+        "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_RejectsWriteEnablementOnReadOnlyStorageAtomically",
+        "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_RepairsAttachmentBindingWithoutChangingStorageOrPublicationPolicy",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_UnrelatedPatch_ReturnsUnmanagedCanonicalLinks",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_WhenFeatureLayerIsRelinked_DoesNotMutateEitherResource",
         "Honua.Server.Tests.Features.Admin.ServiceSettingsEndpointsTests.UpdateLayerMetadata_WhenStorageBindingRetiresDuringUpdate_ReturnsNotFound",
