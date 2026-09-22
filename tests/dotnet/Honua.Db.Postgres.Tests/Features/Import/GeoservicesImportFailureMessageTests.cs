@@ -123,6 +123,24 @@ public sealed class GeoservicesImportFailureMessageTests
     }
 
     [Fact]
+    public void BuildImportFailureMessage_ConnectionLostDuringCommit_DoesNotClaimRollbackOrCommit()
+    {
+        var exception = new NpgsqlException(
+            $"Connection lost after sending COMMIT; Password={Secret}", new IOException("Connection reset"));
+
+        var message = GeoservicesImportService.BuildImportFailureMessage(
+            exception, GeoservicesImportService.ImportFailureStage.Committing);
+
+        message.Should().StartWith("ARCGIS_IMPORT_DATABASE_UNAVAILABLE:");
+        message.Should().Contain("while committing the imported table");
+        message.Should().Contain("commit outcome could not be confirmed");
+        message.Should().Contain("check the target table and its publication before retrying");
+        message.Should().NotContain("No imported data was committed");
+        message.Should().NotContain("Imported rows were already committed");
+        message.Should().NotContain(Secret).And.NotContain("Connection reset");
+    }
+
+    [Fact]
     public void BuildImportFailureMessage_FailureAfterCommit_SaysTheDataWasCommitted()
     {
         var exception = new PostgresException("publish failed", "ERROR", "ERROR", "23505");

@@ -336,6 +336,7 @@ internal sealed partial class GeoservicesImportService
 
             await AnalyzeTableAsync(connection, targetSchema, request.TableName, cancellationToken);
 
+            stage = ImportFailureStage.Committing;
             await transaction.CommitSafelyAsync(cancellationToken);
             stage = ImportFailureStage.AfterCommit;
 
@@ -586,8 +587,11 @@ internal sealed partial class GeoservicesImportService
         /// <summary>Reading source pages and inserting them.</summary>
         TransferringFeatures,
 
-        /// <summary>Re-reading the source population, swapping, indexing and committing.</summary>
+        /// <summary>Re-reading the source population, swapping and indexing.</summary>
         Finalizing,
+
+        /// <summary>Sending COMMIT; a lost acknowledgement leaves the durable outcome unknown.</summary>
+        Committing,
 
         /// <summary>After the data commit: publication, attachments and reconciliation.</summary>
         AfterCommit
@@ -648,12 +652,20 @@ internal sealed partial class GeoservicesImportService
             ImportFailureStage.DiscoveringLayer => "discovering source layer metadata",
             ImportFailureStage.CreatingTable => "creating the target table",
             ImportFailureStage.TransferringFeatures => "transferring source features",
-            ImportFailureStage.Finalizing => "indexing and committing the imported table",
+            ImportFailureStage.Finalizing => "finalizing the imported table",
+            ImportFailureStage.Committing => "committing the imported table",
             _ => "publishing the imported layer"
         };
-        var outcome = stage == ImportFailureStage.AfterCommit
-            ? "Imported rows were already committed; check the target table and its publication before retrying."
-            : "No imported data was committed, and any existing target table was left unchanged.";
+        var outcome = stage switch
+        {
+            ImportFailureStage.AfterCommit =>
+                "Imported rows were already committed; check the target table and its publication before retrying.",
+            // Cancellation-safe commit prevents caller cancellation from interrupting the round-trip,
+            // but a connection failure can still hide a successful server-side commit.
+            ImportFailureStage.Committing =>
+                "The commit outcome could not be confirmed; check the target table and its publication before retrying.",
+            _ => "No imported data was committed, and any existing target table was left unchanged."
+        };
 
         // A lost or broken session surfaces as an ObjectDisposedException/InvalidOperationException from
         // Npgsql that wraps the server's own error, so classify on the first database exception in the
