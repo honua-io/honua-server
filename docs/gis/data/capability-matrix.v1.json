@@ -1353,7 +1353,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 15,
-      "provingTestCount": 149,
+      "provingTestCount": 156,
       "maturity": {
         "implemented": 15
       },
@@ -1560,10 +1560,10 @@
       "category": "Routing",
       "edition": "Pro",
       "status": null,
-      "entryCount": 19,
-      "provingTestCount": 78,
+      "entryCount": 23,
+      "provingTestCount": 84,
       "maturity": {
-        "implemented": 19
+        "implemented": 23
       },
       "noSurface": null,
       "cite": [],
