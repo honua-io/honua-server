@@ -95,6 +95,11 @@ internal static partial class SceneEndpoints
                 + "Honua scene metadata and source references without converting 3D Tiles "
                 + "geometry into native USD geometry.")
             .WithTags(ScenesTag)
+            // Explicit no-cache decision (SEC-20), unlike its tileset/asset siblings:
+            // this route never opted into a named output-cache policy, so it also never
+            // picked up the range/no-store/access-token bypasses those policies carry.
+            // Declare the decision rather than inherit one from the shared base policy.
+            .CacheOutput(static policy => policy.NoCache())
             .Produces(StatusCodes.Status200OK, contentType: SceneContentTypes.OpenUsdStageContentType)
             .Produces(StatusCodes.Status400BadRequest)
             .Produces(StatusCodes.Status401Unauthorized)

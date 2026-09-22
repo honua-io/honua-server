@@ -2334,12 +2334,29 @@ public sealed class GeoprocessingJobServiceTests
         job.Spec.Parameters.Should().NotContainKey("batch.ephemeral_gib");
     }
 
-    private GeoprocessingJobService BuildBatchWorkloadService(out IBatchComputeBackend backend)
+    private GeoprocessingJobService BuildBatchWorkloadService(
+        out IBatchComputeBackend backend,
+        IReadOnlyDictionary<string, string>? extraWorkloadParameters = null,
+        IExecutionAdmissionEvaluator? admissionEvaluator = null)
     {
         var workloadRegistry = Substitute.For<IExecutionJobDefinitionRegistry>();
         backend = Substitute.For<IBatchComputeBackend>();
         backend.BackendName.Returns("honua-aws-batch");
         backend.TargetKind.Returns(BatchComputeTargetKind.AwsBatch);
+        var workloadParameters = new Dictionary<string, string>
+        {
+            ["batch.job_queue_arn"] = "arn:aws:batch:us-east-1:123:job-queue/honua-gp",
+            ["batch.region"] = "us-east-1",
+            ["batch.job_definition_arn.s"] = "arn:aws:batch:us-east-1:123:job-definition/honua-gp-s:1",
+            ["batch.job_definition_arn.m"] = "arn:aws:batch:us-east-1:123:job-definition/honua-gp-m:1",
+            ["batch.job_definition_arn.l"] = "arn:aws:batch:us-east-1:123:job-definition/honua-gp-l:1",
+            ["batch.job_definition_arn.xl"] = "arn:aws:batch:us-east-1:123:job-definition/honua-gp-xl:1",
+        };
+        foreach (var extra in extraWorkloadParameters ?? new Dictionary<string, string>())
+        {
+            workloadParameters[extra.Key] = extra.Value;
+        }
+
         workloadRegistry.ListAsync(Arg.Any<CancellationToken>()).Returns(new[]
         {
             new ExecutionJobDefinition
@@ -2349,15 +2366,7 @@ public sealed class GeoprocessingJobServiceTests
                 TargetKind = BatchComputeTargetKind.AwsBatch,
                 Backend = "honua-aws-batch",
                 WorkloadName = "Geoprocessing (AWS Batch)",
-                Parameters = new Dictionary<string, string>
-                {
-                    ["batch.job_queue_arn"] = "arn:aws:batch:us-east-1:123:job-queue/honua-gp",
-                    ["batch.region"] = "us-east-1",
-                    ["batch.job_definition_arn.s"] = "arn:aws:batch:us-east-1:123:job-definition/honua-gp-s:1",
-                    ["batch.job_definition_arn.m"] = "arn:aws:batch:us-east-1:123:job-definition/honua-gp-m:1",
-                    ["batch.job_definition_arn.l"] = "arn:aws:batch:us-east-1:123:job-definition/honua-gp-l:1",
-                    ["batch.job_definition_arn.xl"] = "arn:aws:batch:us-east-1:123:job-definition/honua-gp-xl:1",
-                },
+                Parameters = workloadParameters,
             },
         });
         backend.StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>())
@@ -2381,7 +2390,8 @@ public sealed class GeoprocessingJobServiceTests
             _jobStore,
             _jobQueue,
             workloadRegistry: workloadRegistry,
-            backends: [backend]);
+            backends: [backend],
+            admissionEvaluator: admissionEvaluator);
     }
 
     [UnitTest]
@@ -4439,12 +4449,13 @@ public sealed class GeoprocessingJobServiceTests
             _jobStore,
             admissionEvaluator: admission);
 
+        // The admission.* keys themselves are refused outright with the rest of the reserved
+        // namespaces (see SubmitJob_RequestMetadataInReservedNamespace_IsRejectedBeforePersistence);
+        // tenant-looking keys outside those namespaces are carried but never consulted.
         var callerMetadata = new Dictionary<string, string>
         {
-            [ExecutionAdmissionEvaluator.PartitionKeyParameterKey] = "attacker-partition",
-            [ExecutionAdmissionEvaluator.CostWeightParameterKey] = "0.0001",
-            ["workspace.id"] = "attacker-workspace",
-            ["tenant.id"] = "attacker-tenant"
+            ["workspace.id"] = "other-workspace",
+            ["tenant.id"] = "other-tenant"
         };
 
         var tenantJob = await sut.SubmitJobAsync(
@@ -4461,6 +4472,158 @@ public sealed class GeoprocessingJobServiceTests
         observed[1].PartitionKey.Should().BeNull();
         defaultJob.Spec.Parameters.Should().NotContainKey(ExecutionAdmissionEvaluator.PartitionKeyParameterKey);
         defaultJob.Spec.Parameters[ExecutionAdmissionEvaluator.CostWeightParameterKey].Should().Be("1");
+    }
+
+    [Theory]
+    [Trait("Category", "Unit")]
+    [Trait("Tier", "Fast")]
+    [InlineData("process.executable")]
+    [InlineData("process.arg.0")]
+    [InlineData("process.working_dir")]
+    [InlineData("env.SAMPLE_SETTING")]
+    [InlineData("ENV.SAMPLE_SETTING")]
+    [InlineData("batch.job_queue_arn")]
+    [InlineData("batch.vcpus")]
+    [InlineData("k8s.image")]
+    [InlineData("azure.batch.container_image")]
+    [InlineData("admission.partitionKey")]
+    [InlineData("admission.costWeight")]
+    [InlineData("admission.priority")]
+    [InlineData("customcode.output_prefix")]
+    [InlineData("gp.resource.unrecognised")]
+    [InlineData("orchestration.runId")]
+    [InlineData("honua.job.queue")]
+    [InlineData("honua.geoprocessing.plan_id")]
+    public async Task SubmitJob_RequestMetadataInReservedNamespace_IsRejectedBeforePersistence(string key)
+    {
+        // Parameter namespaces owned by the server, the operator's workload definition or the
+        // compute backends are not part of the request contract on any adapter: the shared submit
+        // path refuses them instead of carrying them into the durable job spec.
+        var sut = BuildBatchWorkloadService(out var backend);
+
+        var exception = await Assert.ThrowsAsync<GeoprocessingValidationException>(() =>
+            sut.SubmitJobAsync(
+                CreateValidPlan(),
+                null,
+                CreatePrincipal(),
+                new Dictionary<string, string>
+                {
+                    ["submittedVia"] = "unit-test",
+                    [key] = "request-value"
+                }));
+
+        exception.Message.Should().Contain(key);
+        await _jobStore.DidNotReceive().TryCreateAsync(
+            Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>());
+        await backend.DidNotReceive().StartAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_WorkloadParameters_AreAuthoritativeOverRequestMetadata()
+    {
+        // The operator's workload definition owns its parameters. They reach the spec unchanged,
+        // and a request metadata key of the same name does not replace the workload's value.
+        var sut = BuildBatchWorkloadService(
+            out _,
+            new Dictionary<string, string>
+            {
+                ["process.executable"] = "/opt/honua/gp-worker",
+                ["process.arg.0"] = "--run",
+                ["env.WORKER_MODE"] = "standard",
+                ["worker.profile"] = "standard"
+            });
+
+        var job = await sut.SubmitJobAsync(CreateValidPlan(), null, CreatePrincipal(), new Dictionary<string, string>
+        {
+            ["submittedVia"] = "unit-test",
+            ["worker.profile"] = "requested"
+        });
+
+        job.Spec.Parameters.Should().Contain("process.executable", "/opt/honua/gp-worker");
+        job.Spec.Parameters.Should().Contain("process.arg.0", "--run");
+        job.Spec.Parameters.Should().Contain("env.WORKER_MODE", "standard");
+        job.Spec.Parameters.Should().Contain("batch.job_queue_arn", "arn:aws:batch:us-east-1:123:job-queue/honua-gp");
+        job.Spec.Parameters.Should().Contain("batch.region", "us-east-1");
+        job.Spec.Parameters.Should().Contain("worker.profile", "standard");
+        job.Spec.Parameters.Should().Contain("submittedVia", "unit-test");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /rest/services/{serviceId}/GPServer/{taskName}/submitJob")]
+    public async Task SubmitJob_ServerStampedAndAdapterParameters_StillReachSpec()
+    {
+        var admission = Substitute.For<IExecutionAdmissionEvaluator>();
+        admission.EvaluateAsync(Arg.Any<ExecutionAdmissionRequest>(), Arg.Any<CancellationToken>())
+            .Returns(ExecutionAdmissionDecision.Admitted(new ExecutionAdmissionSnapshot()));
+        // A workload baseline for a sizing key must not displace the per-job profile the server
+        // projects (explicit request > per-job derived profile > workload baseline).
+        var sut = BuildBatchWorkloadService(
+            out _,
+            new Dictionary<string, string> { ["batch.vcpus"] = "2" },
+            admission);
+        var plan = CreateValidPlan();
+
+        var job = await sut.SubmitJobAsync(plan, null, CreateTenantPrincipal("tenant-42"), new Dictionary<string, string>
+        {
+            ["submittedVia"] = "unit-test",
+            // Output bindings stamped by the GPServer / OGC API Processes adapters.
+            [GeoprocessingProtocolMetadataKeys.OutputNamePrefix + "0"] = "result",
+            // The documented per-job sizing request keys.
+            ["gp.resource.vcpus"] = "8"
+        });
+
+        job.Spec.Parameters.Should().Contain("submittedVia", "unit-test");
+        job.Spec.Parameters.Should().Contain(GeoprocessingProtocolMetadataKeys.OutputNamePrefix + "0", "result");
+        job.Spec.Parameters.Should().Contain("batch.vcpus", "8");
+        job.Spec.Parameters.Should().Contain("batch.memory_mib", "2048");
+        job.Spec.Parameters.Should().Contain(ExecutionAdmissionEvaluator.PartitionKeyParameterKey, "tenant-42");
+        job.Spec.Parameters.Should().ContainKey(ExecutionAdmissionEvaluator.CostWeightParameterKey);
+        job.Spec.Parameters.Should().Contain("honua.geoprocessing.plan_id", plan.PlanId);
+    }
+
+    [UnitTest]
+    public async Task SubmitJobWithSecurityContext_OrchestrationMetadata_ReachesSpec()
+    {
+        // The orchestration engine stamps its own step metadata on the inherited-submitter lane.
+        _jobStore.TryCreateAsync(Arg.Any<ExecutionJobRecord>(), Arg.Any<TimeSpan?>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var job = await _sut.SubmitJobWithSecurityContextAsync(
+            CreateValidPlan(),
+            null,
+            CreatePrincipal(),
+            new Dictionary<string, string>
+            {
+                ["orchestration.runId"] = "run-1",
+                ["orchestration.stepId"] = "step-1",
+                ["orchestration.attempt"] = "1"
+            },
+            CreateSubmitterSecurityContext());
+
+        job.Spec.Parameters.Should().Contain("orchestration.runId", "run-1");
+        job.Spec.Parameters.Should().Contain("orchestration.stepId", "step-1");
+        job.Spec.Parameters.Should().Contain("orchestration.attempt", "1");
+    }
+
+    [UnitTest]
+    public async Task SubmitJobWithSecurityContext_BackendOwnedMetadataKey_IsStillRejected()
+    {
+        var exception = await Assert.ThrowsAsync<GeoprocessingValidationException>(() =>
+            _sut.SubmitJobWithSecurityContextAsync(
+                CreateValidPlan(),
+                null,
+                CreatePrincipal(),
+                new Dictionary<string, string>
+                {
+                    ["orchestration.runId"] = "run-1",
+                    ["env.SAMPLE_SETTING"] = "request-value"
+                },
+                CreateSubmitterSecurityContext()));
+
+        exception.Message.Should().Contain("env.SAMPLE_SETTING");
     }
 
     // -----------------------------------------------------------------------

@@ -373,6 +373,16 @@ from revision 3 to 4 and exposed `owner_email` during preparation while its
 operation still had no captured prior revision. Re-run against the accepted manifest when
 the release owner advances the candidate.
 
+The 2026-09-15 qualification ran the unchanged harness against the accepted re-pin from
+[honua-release#349](https://github.com/honua-io/honua-release/pull/349): server
+`548b7a5263da5a3f2381eb43f232687cdf92b0bf`, OCI digest
+`sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1`, manifest
+SHA-256 `02c076be536514622c32a411e492f18413f257e9d4ff3d04c353dea591b89709`. All five
+installed scenarios passed: the operation captured prior revision 3 and its ETag while the
+live graph stayed on revision 3 without `owner_email` until activation of candidate
+revision 4. Its [receipt and compressed log](../../../../tests/baselines/metadata-release-installed/2026-09-15/)
+qualify the accepted 2026.1 candidate; the 2026-09-12 receipts remain as history.
+
 ## Review Output
 
 For a Metadata v2 release candidate, capture:

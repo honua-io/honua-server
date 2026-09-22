@@ -1,0 +1,7 @@
+# The ETS has no API-key transport. Supply the fixture's configured credential
+# at its client boundary; the server still enforces ordinary authentication.
+:8080 {
+    reverse_proxy honua-server:8080 {
+        header_up X-API-Key {env.HONUA_CITE_API_KEY}
+    }
+}

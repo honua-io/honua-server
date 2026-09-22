@@ -231,23 +231,60 @@ public sealed class McpAuthorizationHelperTests
     }
 
     [UnitTest]
-    public void ResolveSessionBindingKey_SameClaimsWithDifferentBearerCredentials_DoNotCollide()
+    public void ResolveSessionBindingKey_RefreshedBearerWithSameAuthority_KeepsBinding()
     {
-        var first = CreateBearerContext(
+        // honua-server#4909: a client that refreshes its access token presents a new
+        // credential whose per-issuance metadata differs but whose authority does not.
+        var original = CreateBearerContext(
             "same-subject",
             "https://issuer.example",
             "tenant-a",
-            new Claim("roles", "admin"));
-        var second = CreateBearerContext(
+            new Claim("roles", "admin"),
+            new Claim("groups", "workspace-a"),
+            new Claim("jti", "token-1"),
+            new Claim("iat", "1790000000"),
+            new Claim("exp", "1790003600"),
+            new Claim("uti", "issuance-1"));
+        var refreshed = CreateBearerContext(
             "same-subject",
             "https://issuer.example",
             "tenant-a",
-            new Claim("roles", "admin"));
-        first.Request.Headers.Authorization = "Bearer credential-a";
-        second.Request.Headers.Authorization = "Bearer credential-b";
+            new Claim("roles", "admin"),
+            new Claim("groups", "workspace-a"),
+            new Claim("jti", "token-2"),
+            new Claim("iat", "1790003000"),
+            new Claim("exp", "1790006600"),
+            new Claim("uti", "issuance-2"));
+        original.Request.Headers.Authorization = "Bearer credential-a";
+        refreshed.Request.Headers.Authorization = "Bearer credential-b";
 
-        McpAuthorizationHelper.ResolveSessionBindingKey(first)
-            .Should().NotBe(McpAuthorizationHelper.ResolveSessionBindingKey(second));
+        var originalKey = McpAuthorizationHelper.ResolveSessionBindingKey(original);
+        originalKey.Should().NotBeNull()
+            .And.Be(McpAuthorizationHelper.ResolveSessionBindingKey(refreshed));
+    }
+
+    [UnitTest]
+    public void ResolveSessionBindingKey_SameActorWithDifferentAuthorityClaims_DoNotCollide()
+    {
+        var owner = CreateBearerContext(
+            "same-subject", "https://issuer.example", "tenant-a",
+            new Claim("roles", "admin"), new Claim("groups", "workspace-a"));
+        var lowerRole = CreateBearerContext(
+            "same-subject", "https://issuer.example", "tenant-a",
+            new Claim("roles", "user"), new Claim("groups", "workspace-a"));
+        var otherGroup = CreateBearerContext(
+            "same-subject", "https://issuer.example", "tenant-a",
+            new Claim("roles", "admin"), new Claim("groups", "workspace-b"));
+        var additionalGrant = CreateBearerContext(
+            "same-subject", "https://issuer.example", "tenant-a",
+            new Claim("roles", "admin"), new Claim("groups", "workspace-a"), new Claim("permissions", "services:write"));
+
+        var keys = new[] { owner, lowerRole, otherGroup, additionalGrant }
+            .Select(McpAuthorizationHelper.ResolveSessionBindingKey)
+            .ToArray();
+
+        keys.Should().NotContainNulls().And.OnlyHaveUniqueItems(
+            "any change to what the validated credential authorizes must not ride the owner's session");
     }
 
     [UnitTest]

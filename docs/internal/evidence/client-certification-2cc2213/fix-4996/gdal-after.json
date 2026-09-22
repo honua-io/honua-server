@@ -1,0 +1,63 @@
+{
+  "result": "pass",
+  "fixture": "coverage-fixture.sql",
+  "client": "GDAL 3.8.4",
+  "window_values": [
+    11.0,
+    -9999.0,
+    21.0,
+    22.0
+  ],
+  "trims": [
+    {
+      "size": [
+        2,
+        2
+      ],
+      "values": [
+        11.0,
+        -9999.0,
+        21.0,
+        22.0
+      ],
+      "nodata": -9999.0,
+      "geotransform": [
+        -123.0,
+        1.0,
+        0.0,
+        39.0,
+        0.0,
+        -1.0
+      ],
+      "srid": 4326
+    },
+    {
+      "size": [
+        2,
+        2
+      ],
+      "values": [
+        11.0,
+        -9999.0,
+        21.0,
+        22.0
+      ],
+      "nodata": -9999.0,
+      "geotransform": [
+        -123.0,
+        1.0,
+        0.0,
+        39.0,
+        0.0,
+        -1.0
+      ],
+      "srid": 4326
+    }
+  ],
+  "requests": [
+    "http://honua:5000/ogc/coverages/collections/2496)",
+    "http://honua:5000/ogc/coverages/collections/2496",
+    "http://honua:5000/ogc/coverages/collections/2496/coverage?subset=Lon(-124:-120),Lat(36:40)&scaleSize=Lon(4),Lat(4)",
+    "http://honua:5000/ogc/coverages/collections/2496/coverage?subset=Lon(-124:-120),Lat(36:40)&scaleSize=Lon(4),Lat(4)"
+  ]
+}

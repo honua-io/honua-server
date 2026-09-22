@@ -138,10 +138,11 @@
   <ItemGroup>
     <PackageReference Include="NetTopologySuite" />
     <PackageReference Include="SkiaSharp" />
-    <!-- The distro-linked asset remains the default for long-running Linux hosts. Lambda's
-         Debian runtime uses the self-contained asset instead: the distro-linked arm64 binary
-         ships an unresolved FreeType relocation and can terminate the process on first render
-         (FT_Get_BDF_Property). -->
+    <!-- The distro-linked asset remains the default for JIT hosts and local development. The
+         published native-AOT images (docker/Dockerfile.aot, docker/Dockerfile.lambda.aot) use
+         the self-contained asset instead: the distro-linked linux-arm64 binary references
+         uuid_* and FT_Get_BDF_Property without declaring the libraries that define them, so it
+         fails `ldd -r` and can terminate the process on first render (#4949). -->
     <PackageReference Include="SkiaSharp.NativeAssets.Linux"
                       Condition="'$(HonuaUseSkiaNoDependencies)' != 'true'" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies"

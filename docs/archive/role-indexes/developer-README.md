@@ -15,7 +15,6 @@ Build applications and integrations with Honua APIs and SDKs.
 - [Operate Observability Fixtures (Admin API)](../../internal/admin-api/operate-observability-fixtures.md) — Development/Test seed profile for Console Testcontainers against a real server and PostgreSQL
 - [Studio Package Lifecycle API](../../internal/admin-api/studio-package-lifecycle.md) — shared package draft, immutable version, publish, reopen, compare, rollback, and SDK projection contract under `/api/v1/studio/**`
 - [Scene Dataset Registry (Admin API)](../../internal/admin-api/scene-dataset-registry.md) — Register, list, update, deactivate, and resolve hosted 3D scene datasets
-- [NVIDIA Construction Demo Fixture](../../internal/demo/nvidia-construction.md) — Local-first 3D Tiles + observations sidecar fixture for the NVIDIA demo (no AWS, Azure, or Cesium ion)
 - [Form Package API](../../reference/admin-api/forms.md) — Versioned form package drafts, validation, immutable publishing, offline policy discovery, and field submission contracts
 - [FieldCollection Mobile Sync API](../../internal/developer/fieldcollection-mobile-sync-api.md) — Generation, sync-cursor, pull, and push endpoints under `/api/v1/fieldcollection/` consumed by the `honua-mobile` offline sync clients
 - [Package Review API](../../internal/developer/package-review-api.md) — Shared validation and read-only preview planning contract for publish/execute candidates across HTTP, MCP, SDK, CI, and generated-app clients

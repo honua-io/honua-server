@@ -7,21 +7,21 @@
     "capabilities": "docs/gis/data/feature-catalog.json"
   },
   "summary": {
-    "operationCount": 492,
+    "operationCount": 494,
     "unresolvedCount": 0,
     "capabilityCount": 23,
     "perSpec": {
       "admin-api": 402,
       "ogc-api-coverages": 8,
       "ogc-api-features": 19,
-      "ogc-api-maps": 8,
+      "ogc-api-maps": 9,
       "ogc-api-processes": 10,
       "ogc-api-tiles": 13,
       "stac-api": 10,
-      "studio-api": 22
+      "studio-api": 23
     },
     "perCapability": {
-      "admin.control-plane": 283,
+      "admin.control-plane": 284,
       "admin.multi-tenancy": 7,
       "alerts.evaluation": 18,
       "analytics.h3": 1,
@@ -41,7 +41,7 @@
       "scene.pointcloud-ingest": 1,
       "serve.ogc-api-coverages": 8,
       "serve.ogc-api-features": 18,
-      "serve.ogc-api-maps": 8,
+      "serve.ogc-api-maps": 9,
       "serve.ogc-api-tiles": 13,
       "serve.stac": 10
     }
@@ -4350,6 +4350,16 @@
     {
       "spec": "ogc-api-maps",
       "method": "GET",
+      "path": "/ogc/maps/collections/{collectionId}",
+      "operationId": null,
+      "capability": "serve.ogc-api-maps",
+      "family": "OGC API Maps",
+      "maturity": "implemented",
+      "catalogEntryId": "get-ogc-maps-collections-collectionid"
+    },
+    {
+      "spec": "ogc-api-maps",
+      "method": "GET",
       "path": "/ogc/maps/collections/{collectionId}/map",
       "operationId": null,
       "capability": "serve.ogc-api-maps",
@@ -4956,6 +4966,16 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "get-api-v1-studio-package-families"
+    },
+    {
+      "spec": "studio-api",
+      "method": "GET",
+      "path": "/api/v1/studio/published/{route}",
+      "operationId": "getStudioPublishedRoute",
+      "capability": "admin.control-plane",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "get-api-v1-studio-published-route"
     },
     {
       "spec": "studio-api",

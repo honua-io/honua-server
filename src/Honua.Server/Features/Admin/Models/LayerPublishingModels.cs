@@ -104,6 +104,21 @@ public sealed class PublishLayerRequest
     /// Whether to enable the layer after publishing.
     /// </summary>
     public bool Enabled { get; init; } = true;
+
+    /// <summary>
+    /// Where the layer's features live: <c>source</c> (default) serves the live source
+    /// table read-only; <c>managed</c> copies the rows into the managed feature store, which
+    /// accepts edits.
+    /// </summary>
+    [StringLength(16)]
+    public string? StorageMode { get; init; }
+
+    /// <summary>
+    /// Capability tokens to declare on the feature publication. Omit for the read-only
+    /// default <c>["Query","Extract"]</c>. <c>Create</c>, <c>Update</c>, <c>Delete</c> and
+    /// <c>Editing</c> require <c>storageMode</c> <c>managed</c>.
+    /// </summary>
+    public IReadOnlyList<string>? Capabilities { get; init; }
 }
 
 /// <summary>

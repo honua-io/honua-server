@@ -390,34 +390,16 @@ internal sealed partial class GeoServerImportBackgroundService : BackgroundServi
         };
     }
 
-    private static async Task<string> ResolveRequiredSecretAsync(
+    private static Task<string> ResolveRequiredSecretAsync(
         IServiceProvider serviceProvider,
         string secretReference,
         string secretDescription,
         CancellationToken cancellationToken)
-    {
-        if (SecretReferenceResolver.IsEnvironmentReference(secretReference))
-        {
-            var resolvedEnvironmentValue = SecretReferenceResolver.ResolveEnvironmentReference(secretReference, secretDescription);
-            if (string.IsNullOrWhiteSpace(resolvedEnvironmentValue))
-            {
-                throw new SecretNotFoundException(secretReference, $"{secretDescription} secret reference could not be resolved.");
-            }
-
-            return resolvedEnvironmentValue;
-        }
-
-        var secretProvider = serviceProvider.GetService<ISecretProvider>()
-            ?? throw new InvalidOperationException("GeoServer import secret references require secret provider services.");
-
-        var resolved = await secretProvider.GetSecretAsync(secretReference, cancellationToken).ConfigureAwait(false);
-        if (string.IsNullOrWhiteSpace(resolved))
-        {
-            throw new SecretNotFoundException(secretReference, $"{secretDescription} secret reference could not be resolved.");
-        }
-
-        return resolved;
-    }
+        => RequestSecretReferenceValidation.ResolveRequiredAsync(
+            serviceProvider,
+            secretReference,
+            secretDescription,
+            cancellationToken);
 
     private static bool IsTerminalStatus(GeoServerImportStatus status)
         => status is GeoServerImportStatus.Completed or GeoServerImportStatus.Failed or GeoServerImportStatus.Cancelled;

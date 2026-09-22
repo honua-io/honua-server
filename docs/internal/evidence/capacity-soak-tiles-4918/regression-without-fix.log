@@ -1,0 +1,40 @@
+  Error Message:
+   Expected state.Invocations to be 1 because an empty tile is a pure function of the cache key, so the second request must not re-run the encode, but found 2.
+  Stack Trace:
+     at FluentAssertions.Execution.LateBoundTestFramework.Throw(String message)
+   at FluentAssertions.Execution.TestFrameworkProvider.Throw(String message)
+   at FluentAssertions.Execution.DefaultAssertionStrategy.HandleFailure(String message)
+   at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+   at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+   at FluentAssertions.Execution.AssertionScope.FailWith(String message, Object[] args)
+   at FluentAssertions.Numeric.NumericAssertions`2.Be(T expected, String because, Object[] becauseArgs)
+   at Honua.Server.Tests.Features.Infrastructure.Rendering.TileOutcomeOutputCacheTests.EmptyTile_IsServedFromTheOutputCache(String policy, String path) in C:\Users\mike\honua-io\wt-4918\tests\dotnet\Honua.Server.Tests\Features\Infrastructure\Rendering\TileOutcomeOutputCacheTests.cs:line 58
+--- End of stack trace from previous location ---
+  Failed EmptyTile IsServedFromTheOutputCache(policy: "H3MvtTile", path: "/rest/services/test/FeatureServer/0/tiles/0/0/0.pb"···) [18 ms]
+  Error Message:
+   Expected state.Invocations to be 1 because an empty tile is a pure function of the cache key, so the second request must not re-run the encode, but found 2.
+  Stack Trace:
+     at FluentAssertions.Execution.LateBoundTestFramework.Throw(String message)
+   at FluentAssertions.Execution.TestFrameworkProvider.Throw(String message)
+   at FluentAssertions.Execution.DefaultAssertionStrategy.HandleFailure(String message)
+   at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+   at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+   at FluentAssertions.Execution.AssertionScope.FailWith(String message, Object[] args)
+   at FluentAssertions.Numeric.NumericAssertions`2.Be(T expected, String because, Object[] becauseArgs)
+   at Honua.Server.Tests.Features.Infrastructure.Rendering.TileOutcomeOutputCacheTests.EmptyTile_IsServedFromTheOutputCache(String policy, String path) in C:\Users\mike\honua-io\wt-4918\tests\dotnet\Honua.Server.Tests\Features\Infrastructure\Rendering\TileOutcomeOutputCacheTests.cs:line 58
+--- End of stack trace from previous location ---
+  Failed EmptyTile IsServedFromTheOutputCache(policy: "OgcTilesTile", path: "/ogc/tiles/collections/0/tiles/WebMercatorQuad/0/0"···) [28 ms]
+  Error Message:
+   Expected state.Invocations to be 1 because an empty tile is a pure function of the cache key, so the second request must not re-run the encode, but found 2.
+  Stack Trace:
+     at FluentAssertions.Execution.LateBoundTestFramework.Throw(String message)
+   at FluentAssertions.Execution.TestFrameworkProvider.Throw(String message)
+   at FluentAssertions.Execution.DefaultAssertionStrategy.HandleFailure(String message)
+   at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+   at FluentAssertions.Execution.AssertionScope.FailWith(Func`1 failReasonFunc)
+   at FluentAssertions.Execution.AssertionScope.FailWith(String message, Object[] args)
+   at FluentAssertions.Numeric.NumericAssertions`2.Be(T expected, String because, Object[] becauseArgs)
+   at Honua.Server.Tests.Features.Infrastructure.Rendering.TileOutcomeOutputCacheTests.EmptyTile_IsServedFromTheOutputCache(String policy, String path) in C:\Users\mike\honua-io\wt-4918\tests\dotnet\Honua.Server.Tests\Features\Infrastructure\Rendering\TileOutcomeOutputCacheTests.cs:line 58
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     6, Passed:     5, Skipped:     0, Total:    11, Duration: 3 s - Honua.Server.Tests.dll (net10.0)

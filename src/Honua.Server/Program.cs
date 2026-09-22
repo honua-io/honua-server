@@ -825,6 +825,19 @@ builder.Services.TryAddScoped<Honua.Core.Features.Authorization.Abstractions.IFi
     Honua.Server.Features.Admin.Services.InMemoryFieldMaskPolicyStore>();
 builder.Services.AddScoped<Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource,
     Honua.Infrastructure.Authentication.FieldMaskSource>();
+// The feature providers take the two request-scoped policy sources above as optional services.
+// Outside Development/Test, refuse to start when a policy store is registered without its source,
+// so a wiring regression cannot leave stored policies unapplied without an error.
+if (!builder.Environment.IsDevelopment() && !builder.Environment.IsEnvironment("Test"))
+{
+    builder.Services.AddHostedService<Honua.Server.Features.Admin.Services.ReadPolicyWiringStartupValidator>();
+}
+// Policy administration refuses a row-level security / field-mask policy that targets a layer
+// served by a provider that cannot enforce it (such a policy would only surface as refused reads).
+builder.Services.AddScoped(static sp => new Honua.Core.Features.FeatureStore.Services.ReadPolicyEnforceabilityChecker(
+    sp.GetService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>(),
+    sp.GetService<Honua.Core.Features.FeatureStore.Services.FeatureProviderQueryRouter>(),
+    sp.GetService<Honua.Core.Features.FeatureStore.Abstractions.IFeatureDataProviderRegistry>()));
 builder.Services.AddSingleton<Honua.Infrastructure.Authentication.IAdminApiKeyStore>(sp =>
     sp.GetService<StackExchange.Redis.IConnectionMultiplexer>() is { } redis
         ? new Honua.Infrastructure.Authentication.RedisAdminApiKeyStore(redis, sp.GetService<TimeProvider>())
@@ -917,8 +930,11 @@ builder.Services.AddWorkflowPackages();
 builder.Services.AddOperationsToolset(builder.Configuration, builder.Environment);
 builder.Services.AddAdminAccessOperations();
 // #2483 (ADR-0056 Increment 4): publish validated operations-toolset descriptors as
-// first-class MCP tools. Off unless Mcp:PublishOperations:Enabled=true; wired after the
-// operations toolset so the tool source can resolve the canonical IOperationCatalog.
+// first-class MCP tools. The audited Admin projection publishes by default (#3363;
+// Mcp:PublishOperations:AdminProjection=false withholds it); the full operations catalog
+// stays opt-in via Mcp:PublishOperations:Enabled=true. Audited secret/session Admin
+// operations never publish. Wired after the operations toolset so the tool source can
+// resolve the canonical IOperationCatalog.
 Honua.Ai.Protocols.Mcp.McpServiceCollectionExtensions.AddMcpPublishedOperationTools(
     builder.Services, builder.Configuration);
 builder.Services.AddAdminRealtime(builder.Configuration);
@@ -1728,6 +1744,7 @@ app.MapConsoleSharePublicEndpoints();
 app.MapConsoleOpenDataEndpoints();
 app.MapConsoleOpenDataPublicEndpoints();
 app.MapStudioPackageEndpoints();
+app.MapStudioPublishedRouteEndpoints();
 app.MapStudioMapCollaborationEndpoints();
 app.MapWorkflowPackageEndpoints();
 Honua.Server.Features.Studio.Ai.StudioAiProxyEndpoints.MapStudioAiProxyEndpoints(app);

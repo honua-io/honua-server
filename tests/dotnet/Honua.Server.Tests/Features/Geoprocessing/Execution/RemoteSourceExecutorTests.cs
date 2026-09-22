@@ -11,6 +11,7 @@ using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
+using Honua.Core.Features.Security.Abstractions;
 using Honua.Geoprocessing;
 using Honua.Geoprocessing.Execution;
 using Honua.ControlPlane;
@@ -94,6 +95,66 @@ public sealed class RemoteSourceExecutorTests
         var geometry = ReadFeatures(uri).Single().Geometry;
         geometry.Coordinate.X.Should().Be(12);
         geometry.Coordinate.Y.Should().Be(34);
+    }
+
+    [UnitTest]
+    public async Task RemoteSource_PermittedPasswordSecretReference_PassesTheResolvedValueToTheSource()
+    {
+        var fake = new FakeDagFeatureSource("source.ogc-features", []);
+        var references = new StubRequestSecretReferenceResolver("HONUA_TEST_SOURCE_PASSWORD", "resolved-source-password");
+        var executor = BuildExecutor(
+            fake.SourceId,
+            fake,
+            services => services.AddSingleton<IRequestSecretReferenceResolver>(references));
+
+        var (status, _, _) = await RunExecutorAsync(
+            executor,
+            fake.SourceId,
+            ("serviceUrl", "https://example.com/ogc"),
+            ("collectionId", "buildings"),
+            ("username", "reader"),
+            ("passwordSecretReference", "env:HONUA_TEST_SOURCE_PASSWORD"));
+
+        status.Should().Be(ExecutionJobStatus.Succeeded);
+        fake.LastRequest!.Password.Should().Be("resolved-source-password");
+    }
+
+    [UnitTest]
+    public async Task RemoteSource_PasswordSecretReferenceOutsideThePolicy_FailsBeforeReadingTheSource()
+    {
+        var fake = new FakeDagFeatureSource("source.ogc-features", []);
+        var references = new StubRequestSecretReferenceResolver("HONUA_TEST_SOURCE_PASSWORD", "resolved-source-password");
+        var executor = BuildExecutor(
+            fake.SourceId,
+            fake,
+            services => services.AddSingleton<IRequestSecretReferenceResolver>(references));
+
+        var (status, _, _) = await RunExecutorAsync(
+            executor,
+            fake.SourceId,
+            ("serviceUrl", "https://example.com/ogc"),
+            ("collectionId", "buildings"),
+            ("username", "reader"),
+            ("passwordSecretReference", "env:HONUA_TEST_OTHER_VALUE"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        fake.LastRequest.Should().BeNull();
+    }
+
+    [UnitTest]
+    public async Task RemoteSource_SecretReferenceWithoutRequestReferenceServices_FailsBeforeReadingTheSource()
+    {
+        var fake = new FakeDagFeatureSource("source.ogc-features", []);
+
+        var (status, _, captured) = await RunAsync(
+            fake,
+            ("serviceUrl", "https://example.com/ogc"),
+            ("collectionId", "buildings"),
+            ("username", "reader"),
+            ("passwordSecretReference", "env:HONUA_TEST_SOURCE_PASSWORD"));
+
+        status.Should().Be(ExecutionJobStatus.Failed);
+        captured.Should().BeNull();
     }
 
     [UnitTest]
@@ -272,6 +333,20 @@ public sealed class RemoteSourceExecutorTests
         var bytes = Convert.FromBase64String(dataUri[DataUriPrefix.Length..]);
         var json = Encoding.UTF8.GetString(bytes);
         return new GeoJsonReader().Read<FeatureCollection>(json).ToList();
+    }
+
+    private sealed class StubRequestSecretReferenceResolver(string permittedVariable, string value)
+        : IRequestSecretReferenceResolver
+    {
+        public RequestSecretReferenceDecision Evaluate(string? reference)
+            => string.Equals(reference, $"env:{permittedVariable}", StringComparison.Ordinal)
+                ? RequestSecretReferenceDecision.Permitted()
+                : RequestSecretReferenceDecision.Refused(RequestSecretReferenceException.ClientSafeMessage);
+
+        public Task<string> ResolveAsync(string reference, CancellationToken cancellationToken = default)
+            => Evaluate(reference).IsPermitted
+                ? Task.FromResult(value)
+                : Task.FromException<string>(new RequestSecretReferenceException());
     }
 
     private sealed class FakeDagFeatureSource : IDagFeatureSource

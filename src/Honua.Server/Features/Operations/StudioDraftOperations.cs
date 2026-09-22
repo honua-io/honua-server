@@ -536,7 +536,10 @@ internal sealed class StudioCreatePublicationRequestExecutor(
         };
         if (!string.IsNullOrWhiteSpace(result.Intent?.Route))
         {
-            resources["activeUrl"] = result.Intent.Route;
+            // honua-server#4907: the intent route is the governed key, not a path the host
+            // serves; activeUrl names the resolver that serves the item's Active version there.
+            resources["route"] = result.Intent.Route;
+            resources["activeUrl"] = StudioPublishedRoutes.BuildActiveUrl(result.Intent.Route);
         }
 
         return resources;

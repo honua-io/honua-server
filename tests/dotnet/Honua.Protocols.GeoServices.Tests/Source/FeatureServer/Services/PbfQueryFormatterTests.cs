@@ -66,6 +66,30 @@ public sealed class PbfQueryFormatterTests
         }
     }
 
+    [Theory]
+    [InlineData(MetadataV2FieldType.Date)]
+    [InlineData(MetadataV2FieldType.DateTime)]
+    public void FormatAsPbf_TemporalValues_UseInt64Epoch(MetadataV2FieldType type)
+    {
+        var layer = CreatePointLayer() with
+        {
+            SchemaFields = [new MetadataV2Field { Name = "day", Type = type }]
+        };
+        object?[] values = ["1970-01-01", new DateOnly(1970, 1, 1),
+            System.Text.Json.JsonSerializer.SerializeToElement("1970-01-01T01:00:00+01:00"), 0L, null];
+        foreach (var value in values)
+        {
+            var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty.Add("day", value));
+            var (payload, _) = _sut.FormatAsPbf(QueryResult<Feature>.Create(1, [feature]), layer,
+                returnGeometry: false, outputSrid: null, returnZ: false, returnM: false,
+                geometryPrecision: null, maxAllowableOffset: null, outFields: ["day"]);
+            var result = GetFirstLengthDelimitedField(GetFirstLengthDelimitedField(payload, 2), 1);
+            var attribute = GetFirstLengthDelimitedField(GetFirstLengthDelimitedField(result, 15), 1);
+            GetFirstVarintField(GetFirstLengthDelimitedField(result, 13), 2).Should().Be(5);
+            GetFirstVarintField(attribute, value is null ? 10 : 6).Should().Be(value is null ? 1UL : 0UL);
+        }
+    }
+
     // ── Basic response structure ───────────────────────────────
 
     [Fact]

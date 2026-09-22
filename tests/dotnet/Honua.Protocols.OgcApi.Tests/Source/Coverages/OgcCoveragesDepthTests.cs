@@ -318,6 +318,42 @@ public sealed class OgcCoveragesOversizeDepthTests : IClassFixture<OgcCoveragesO
     [IntegrationTest]
     [Operation(Operations.ErrorHandling)]
     [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
+    public async Task Coverage_NativeSubset_EnforcesClippedGridCapBeforeExport()
+    {
+        // The authored fixture is 20,000 x 20,000 over 0.2 x 0.2 degrees.
+        // A full-width trim is therefore over the 8192 cap in either axis order.
+        _fixture.ExportQueries.Clear();
+        foreach (var subset in new[]
+        {
+            "Lon(-122.5:-122.3),Lat(37.7:37.9)",
+            "Lat(37.7:37.9),Lon(-122.5:-122.3)",
+            "Lon(-122.41:-122.39)",
+            "x(-122.5:-122.3),y(37.7:37.9)",
+        })
+        {
+            var response = await _fixture.App.Client.GetAsync($"{CoveragePath}?subset={Uri.EscapeDataString(subset)}");
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await response.Content.ReadAsStringAsync()).Should().Contain("8192");
+        }
+        _fixture.ExportQueries.Should().BeEmpty();
+
+        // 0.02 / 0.00001 = 2000 pixels per axis; this native window is safe.
+        var bounded = await _fixture.App.Client.GetAsync(
+            $"{CoveragePath}?subset=Lon(-122.41:-122.39),Lat(37.79:37.81)");
+        bounded.StatusCode.Should().Be(HttpStatusCode.OK, await bounded.Content.ReadAsStringAsync());
+        _fixture.ExportQueries.Should().ContainSingle();
+
+        // Explicit dimensions bound even the full-raster subset.
+        var scaled = await _fixture.App.Client.GetAsync(
+            $"{CoveragePath}?subset=Lon(-122.5:-122.3),Lat(37.7:37.9)&scaleSize=Lat(64),Lon(128)");
+        scaled.StatusCode.Should().Be(HttpStatusCode.OK, await scaled.Content.ReadAsStringAsync());
+        _fixture.ExportQueries.Last().OutputWidth.Should().Be(128);
+        _fixture.ExportQueries.Last().OutputHeight.Should().Be(64);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("GET /ogc/coverages/collections/{collectionId}/coverage")]
     public async Task Coverage_EmptyExportResult_ReturnsNotFound()
     {
         // The fixture's raster store returns an empty payload when only band 2 is

@@ -12,6 +12,7 @@ public static partial class EndpointRegistry
         new("GET", "/ogc/maps"),
         new("GET", "/ogc/maps/conformance"),
         new("GET", "/ogc/maps/openapi.json"),
+        new("GET", "/ogc/maps/collections/{collectionId}"),
         new("GET", "/ogc/maps/collections/{collectionId}/map"),
         new("GET", "/ogc/maps/collections/{collectionId}/styles/{styleId}/map"),
         new("GET", "/ogc/maps/collections/{collectionId}/map/tiles"),

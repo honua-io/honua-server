@@ -1,0 +1,53 @@
+{
+  "issue": "honua-io/honua-server#4974",
+  "label": "pinned candidate 87966c3, index sha256:069f196bfa5c7201223d4d89868934242c4ace8805a6e48c122a88d84fa6eb1a (pre-fix control)",
+  "recordedAt": "2026-09-16T18:54:43+00:00",
+  "requests": {
+    "GET /services?wsdl": {
+      "status": 200,
+      "contentType": "text/xml; charset=utf-8",
+      "bodySha256": "f5f58dafe4cb78bd03c4cec294ef7f2249b93885803d1b15373ab04170a5a2d2",
+      "bodyBytes": 10416,
+      "root": "{http://schemas.xmlsoap.org/wsdl/}definitions",
+      "wsdlOperations": [
+        "GetFolders",
+        "GetMessageFormats",
+        "GetMessageVersion",
+        "GetServiceDescriptions",
+        "GetServiceDescriptionsEx",
+        "GetTokenServiceURL",
+        "RequiresTokens"
+      ]
+    },
+    "GET /services": {
+      "status": 404,
+      "contentType": null,
+      "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bodyBytes": 0,
+      "root": null
+    },
+    "GET /services/": {
+      "status": 404,
+      "contentType": null,
+      "bodySha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bodyBytes": 0,
+      "root": null
+    },
+    "POST /services GetMessageVersion (9.0 namespace)": {
+      "status": 200,
+      "contentType": "text/xml; charset=utf-8",
+      "hasMessageVersion": true
+    }
+  },
+  "checks": {
+    "wsdlForm200": true,
+    "siteRoot200": false,
+    "siteRootServesCatalogWsdl": false,
+    "siteRootTrailingSlashServesCatalogWsdl": false,
+    "soapCatalogStillNegotiates": true
+  },
+  "summary": {
+    "total": 5,
+    "passed": 2
+  }
+}

@@ -101,6 +101,11 @@ services:
       # Alerting stays Preview/off; single-tenant context resolution keeps its default.
       FileStorage__Provider: Local
       FileStorage__LocalStorage__BasePath: /var/lib/honua/storage
+      # Production composes the Redis-backed durable operation secret channel and will not boot
+      # unless an operator certificate encrypts its data-protection key ring (#4722, #4885). The
+      # workflow mints a throwaway PKCS#12 per run; no key material lives in this repository.
+      Operations__SecretChannel__KeyRingCertificatePath: /keyring/operation-keyring.pfx
+      Operations__SecretChannel__KeyRingCertificatePassword: ${SOAK_KEYRING_PASSWORD:?Set SOAK_KEYRING_PASSWORD}
     depends_on:
       postgres:
         condition: service_healthy
@@ -108,6 +113,7 @@ services:
         condition: service_healthy
     volumes:
       - honua_storage:/var/lib/honua/storage
+      - ${SOAK_KEYRING_CERTIFICATE:?Set SOAK_KEYRING_CERTIFICATE to the per-run key-ring PKCS#12}:/keyring/operation-keyring.pfx:ro
     restart: "no"
     # Bounded, rotated logs. At the declared 1,000 active subscriptions this server writes about a
     # megabyte of Information records per second (honua-server#4711: one "Replaying 0 events" line

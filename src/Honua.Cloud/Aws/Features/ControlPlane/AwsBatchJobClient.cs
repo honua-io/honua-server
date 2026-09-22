@@ -1,9 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using Amazon;
 using Amazon.Batch;
 using Amazon.Batch.Model;
+using Honua.Cloud.Aws.Features;
 
 namespace Honua.ControlPlane;
 
@@ -334,18 +334,9 @@ internal sealed class AwsSdkBatchJobClient : IAwsBatchJobClient
     {
         var config = new AmazonBatchConfig();
 
-        if (!string.IsNullOrWhiteSpace(region))
-        {
-            config.RegionEndpoint = RegionEndpoint.GetBySystemName(region);
-        }
-
-        // Mirrors AwsS3FileStorage.CreateClient: when an explicit endpoint is supplied it takes
-        // precedence for the actual request URL while the region (when set) still provides the
-        // SigV4 signing region. Unset = default regional endpoint, keeping production behaviour.
-        if (!string.IsNullOrWhiteSpace(serviceUrl))
-        {
-            config.ServiceURL = serviceUrl;
-        }
+        // An explicit endpoint takes precedence for the request URL while the region (when set)
+        // stays the SigV4 signing region. Unset = default regional endpoint.
+        AwsClientEndpoint.Apply(config, region, serviceUrl);
 
         return new AmazonBatchClient(config);
     }

@@ -1,0 +1,604 @@
+{
+  "schema": "honua.metadata-release-installed/v1",
+  "candidate": {
+    "sha": "548b7a5263da5a3f2381eb43f232687cdf92b0bf",
+    "image": "ghcr.io/honua-io/honua-server:nightly-548b7a5",
+    "digest": "sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1",
+    "reference": "ghcr.io/honua-io/honua-server@sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1",
+    "manifestSha256": "02c076be536514622c32a411e492f18413f257e9d4ff3d04c353dea591b89709"
+  },
+  "createdAt": "2026-09-15T00:54:44.209798+00:00",
+  "fixtureSha256": "83eb29ac38a3fb54914c1252b273dbb7f7f4d651a8204aafb4108d14d6d23727",
+  "scenarios": [
+    {
+      "name": "staged-crash-post-activation-recovery",
+      "status": "passed",
+      "operation": {
+        "operationId": "metadata-release-staged-crash-recovery",
+        "kind": 3,
+        "status": "RolledBack",
+        "version": 9,
+        "priority": 1,
+        "createdAt": "2026-09-15T00:56:16.5164096+00:00",
+        "updatedAt": "2026-09-15T00:57:50.2137024+00:00",
+        "completedAt": "2026-09-15T00:57:50.2137024+00:00",
+        "currentPhase": "Reversible rollback complete (ScriptRollback): Reactivated prior revision 3 while candidate revision 4 was still current. Recovered revision 3 verified: Queried the recovered revision 3 of 'res-cng-1000' through the canonical provider path: 6 row(s) on layer 1000; schema, bindings, rendering references and authorization verified.",
+        "warnings": [],
+        "blockingReasons": [],
+        "audit": {
+          "requestedBy": "admin",
+          "idempotencyKey": "staged-crash-recovery",
+          "requestFingerprint": "bf3b007d1025b702737048e86a8aba98f2176312b3d282e7e64252010ec02502",
+          "approvalReasonCodes": []
+        },
+        "concurrency": {
+          "partitionKey": "staging:metadata-release:res-cng-1000",
+          "requiresExclusiveLease": true
+        },
+        "metadataRelease": {
+          "packageId": "installed-staged-crash-recovery",
+          "desiredRevision": "installed-staged-crash-recovery",
+          "targetEnvironment": "staging",
+          "jobIds": [],
+          "evidenceRefs": [
+            {
+              "kind": "smoke-candidate",
+              "refId": "smoke-candidate:metadata-release-staged-crash-recovery",
+              "at": "2026-09-15T00:57:08.856456+00:00"
+            },
+            {
+              "kind": "smoke",
+              "refId": "smoke:metadata-release-staged-crash-recovery",
+              "at": "2026-09-15T00:57:39.6004771+00:00"
+            },
+            {
+              "kind": "smoke-recovered",
+              "refId": "smoke-recovered:metadata-release-staged-crash-recovery",
+              "at": "2026-09-15T00:57:50.213702+00:00"
+            }
+          ],
+          "currentStage": "RollbackRequested",
+          "rollbackPlan": {
+            "class": 3,
+            "isDataAffecting": true,
+            "requiresExplicitApproval": false,
+            "steps": [
+              "Reactivate the prior revision while the candidate is still current; otherwise revert only this release's owned fields on top of later updates.",
+              "Leave physical data and committed feature edits untouched.",
+              "Verify the recovered revision (schema, bindings, authorization, canonical query) before reporting RolledBack."
+            ],
+            "evidenceRequired": []
+          },
+          "executionPlan": {
+            "packageId": "installed-staged-crash-recovery",
+            "targetEnvironment": "staging",
+            "resourceSemanticId": "res-cng-1000",
+            "newFieldName": "owner_email",
+            "script": {
+              "scriptId": "add-owner_email",
+              "reversible": true,
+              "forwardOperations": [
+                {
+                  "kind": 0,
+                  "resourceSemanticId": "res-cng-1000",
+                  "fieldName": "owner_email",
+                  "fieldType": "String",
+                  "nullable": true
+                }
+              ],
+              "inverseOperations": []
+            },
+            "dataPopulateFields": []
+          },
+          "priorRevision": 3,
+          "priorEtag": "\"96ffa470946fdbd98e81b71473a23d5acb711bbbd571755d88b2a3b3b709bd41\"",
+          "candidateRevision": 4,
+          "candidateEtag": "\"3a4c3467d43705e9cb2a6c70f8d9c13c4ed8935f7dce51dbe56acec6db7a32f7\"",
+          "ownedOperations": [
+            {
+              "kind": 0,
+              "resourceSemanticId": "res-cng-1000",
+              "fieldName": "owner_email",
+              "fieldType": "String",
+              "nullable": true
+            }
+          ],
+          "activatedAt": "2026-09-15T00:57:24.3564796+00:00",
+          "rebaseCount": 0,
+          "blockers": [],
+          "warnings": []
+        }
+      },
+      "functionalAssertions": {
+        "rowCount": 6,
+        "srid": 4326,
+        "coordinatesAndValuesVerified": true,
+        "newFieldAbsent": true,
+        "anonymousAdminDenied": true
+      }
+    },
+    {
+      "name": "etag-rebase-and-owned-only-recovery",
+      "status": "passed",
+      "operation": {
+        "operationId": "metadata-release-concurrent-services",
+        "kind": 3,
+        "status": "RolledBack",
+        "version": 13,
+        "priority": 1,
+        "createdAt": "2026-09-15T00:57:58.3436988+00:00",
+        "updatedAt": "2026-09-15T01:00:28.836372+00:00",
+        "completedAt": "2026-09-15T01:00:28.836372+00:00",
+        "currentPhase": "Reversible rollback complete (ScriptRollback): Reverted 1 owned field change(s) on top of revision 8 as revision 9, preserving later updates. Recovered revision 9 verified: Queried the recovered revision 9 of 'res-cng-1000' through the canonical provider path: 6 row(s) on layer 1000; schema, bindings, rendering references and authorization verified.",
+        "warnings": [],
+        "blockingReasons": [],
+        "audit": {
+          "requestedBy": "admin",
+          "idempotencyKey": "concurrent-services",
+          "requestFingerprint": "805a761351944f7336173678a896e890946a6713b04a55873b0db150fafc0caa",
+          "approvalReasonCodes": []
+        },
+        "concurrency": {
+          "partitionKey": "staging:metadata-release:res-cng-1000",
+          "requiresExclusiveLease": true
+        },
+        "metadataRelease": {
+          "packageId": "installed-concurrent-services",
+          "desiredRevision": "installed-concurrent-services",
+          "targetEnvironment": "staging",
+          "jobIds": [],
+          "evidenceRefs": [
+            {
+              "kind": "smoke-candidate",
+              "refId": "smoke-candidate:metadata-release-concurrent-services",
+              "at": "2026-09-15T00:58:41.4441462+00:00"
+            },
+            {
+              "kind": "smoke-candidate",
+              "refId": "smoke-candidate:metadata-release-concurrent-services",
+              "at": "2026-09-15T00:59:57.687002+00:00"
+            },
+            {
+              "kind": "smoke",
+              "refId": "smoke:metadata-release-concurrent-services",
+              "at": "2026-09-15T01:00:18.307414+00:00"
+            },
+            {
+              "kind": "smoke-recovered",
+              "refId": "smoke-recovered:metadata-release-concurrent-services",
+              "at": "2026-09-15T01:00:28.8363713+00:00"
+            }
+          ],
+          "currentStage": "RollbackRequested",
+          "rollbackPlan": {
+            "class": 3,
+            "isDataAffecting": true,
+            "requiresExplicitApproval": false,
+            "steps": [
+              "Reactivate the prior revision while the candidate is still current; otherwise revert only this release's owned fields on top of later updates.",
+              "Leave physical data and committed feature edits untouched.",
+              "Verify the recovered revision (schema, bindings, authorization, canonical query) before reporting RolledBack."
+            ],
+            "evidenceRequired": []
+          },
+          "executionPlan": {
+            "packageId": "installed-concurrent-services",
+            "targetEnvironment": "staging",
+            "resourceSemanticId": "res-cng-1000",
+            "newFieldName": "owner_email",
+            "script": {
+              "scriptId": "add-owner_email",
+              "reversible": true,
+              "forwardOperations": [
+                {
+                  "kind": 0,
+                  "resourceSemanticId": "res-cng-1000",
+                  "fieldName": "owner_email",
+                  "fieldType": "String",
+                  "nullable": true
+                }
+              ],
+              "inverseOperations": []
+            },
+            "dataPopulateFields": []
+          },
+          "priorRevision": 6,
+          "priorEtag": "\"b304c22ba9c548a1d1369cc7446c1608654928aed33c30f7c07af56b21bf3331\"",
+          "candidateRevision": 7,
+          "candidateEtag": "\"bc668789a5e5c002fd744daebf2f57b2ef12ab6e14c38b391cf31e84b9d432ba\"",
+          "ownedOperations": [
+            {
+              "kind": 0,
+              "resourceSemanticId": "res-cng-1000",
+              "fieldName": "owner_email",
+              "fieldType": "String",
+              "nullable": true
+            }
+          ],
+          "activatedAt": "2026-09-15T01:00:08.0689243+00:00",
+          "rebaseCount": 1,
+          "blockers": [],
+          "warnings": [
+            "Rebased from revision 3 onto concurrent revision 6 before activation."
+          ]
+        }
+      },
+      "functionalAssertions": {
+        "rowCount": 6,
+        "srid": 4326,
+        "coordinatesAndValuesVerified": true,
+        "newFieldAbsent": true,
+        "anonymousAdminDenied": true
+      }
+    },
+    {
+      "name": "preparation-failure",
+      "status": "passed",
+      "operation": {
+        "operationId": "metadata-release-missing-resource",
+        "kind": 3,
+        "status": "Failed",
+        "version": 4,
+        "priority": 1,
+        "createdAt": "2026-09-15T01:00:37.9184673+00:00",
+        "updatedAt": "2026-09-15T01:01:04.3037885+00:00",
+        "completedAt": "2026-09-15T01:01:04.3037885+00:00",
+        "currentPhase": "Candidate preparation failed; the live catalog is unchanged at revision 9: Resource 'missing-resource' was not found in the prior revision; the candidate cannot be prepared.",
+        "errorMessage": "Candidate preparation failed; the live catalog is unchanged at revision 9: Resource 'missing-resource' was not found in the prior revision; the candidate cannot be prepared.",
+        "warnings": [],
+        "blockingReasons": [
+          "metadata-release-resource-missing"
+        ],
+        "audit": {
+          "requestedBy": "admin",
+          "idempotencyKey": "missing-resource",
+          "requestFingerprint": "d7ff50b55a37c1a28978c136f2a874cbcf5672ae71494bde342670a418404cc1",
+          "approvalReasonCodes": []
+        },
+        "concurrency": {
+          "partitionKey": "staging:metadata-release:missing-resource",
+          "requiresExclusiveLease": true
+        },
+        "metadataRelease": {
+          "packageId": "installed-missing-resource",
+          "desiredRevision": "installed-missing-resource",
+          "targetEnvironment": "staging",
+          "jobIds": [],
+          "evidenceRefs": [],
+          "currentStage": "Failed",
+          "rollbackPlan": {
+            "class": 3,
+            "isDataAffecting": true,
+            "requiresExplicitApproval": false,
+            "steps": [
+              "Reactivate the prior revision while the candidate is still current; otherwise revert only this release's owned fields on top of later updates.",
+              "Leave physical data and committed feature edits untouched.",
+              "Verify the recovered revision (schema, bindings, authorization, canonical query) before reporting RolledBack."
+            ],
+            "evidenceRequired": []
+          },
+          "executionPlan": {
+            "packageId": "installed-missing-resource",
+            "targetEnvironment": "staging",
+            "resourceSemanticId": "missing-resource",
+            "newFieldName": "owner_email",
+            "script": {
+              "scriptId": "add-owner_email",
+              "reversible": true,
+              "forwardOperations": [
+                {
+                  "kind": 0,
+                  "resourceSemanticId": "missing-resource",
+                  "fieldName": "owner_email",
+                  "fieldType": "String",
+                  "nullable": true
+                }
+              ],
+              "inverseOperations": []
+            },
+            "dataPopulateFields": []
+          },
+          "priorRevision": 9,
+          "priorEtag": "\"5285d563997f2e48366b2d02bc37902836742edb536b41071c4b0c0fef0b22db\"",
+          "ownedOperations": [],
+          "rebaseCount": 0,
+          "blockers": [
+            "metadata-release-resource-missing"
+          ],
+          "warnings": []
+        }
+      }
+    },
+    {
+      "name": "unsafe-etl-rejected",
+      "status": "passed",
+      "operation": {
+        "operationId": "metadata-release-unsafe-etl-rejected",
+        "kind": 3,
+        "status": "Failed",
+        "version": 2,
+        "priority": 1,
+        "createdAt": "2026-09-15T01:01:10.3492309+00:00",
+        "updatedAt": "2026-09-15T01:01:14.3678374+00:00",
+        "completedAt": "2026-09-15T01:01:14.3678374+00:00",
+        "currentPhase": "Change policy rejected the release before any mutation: Data-populate workload 'unregistered-workload' writes 'res-cng-1000.population', which this release does not add as a nullable field.",
+        "errorMessage": "Change policy rejected the release before any mutation: Data-populate workload 'unregistered-workload' writes 'res-cng-1000.population', which this release does not add as a nullable field.",
+        "warnings": [],
+        "blockingReasons": [
+          "metadata-release-etl-unproven-compensation"
+        ],
+        "audit": {
+          "requestedBy": "admin",
+          "idempotencyKey": "unsafe-etl-rejected",
+          "requestFingerprint": "a7d4b1afdfc661636bcf2fdf0681006dfc0e198c2e11da0a12f915182c79e985",
+          "approvalReasonCodes": []
+        },
+        "concurrency": {
+          "partitionKey": "staging:metadata-release:res-cng-1000",
+          "requiresExclusiveLease": true
+        },
+        "metadataRelease": {
+          "packageId": "installed-unsafe-etl-rejected",
+          "desiredRevision": "installed-unsafe-etl-rejected",
+          "targetEnvironment": "staging",
+          "jobIds": [],
+          "evidenceRefs": [],
+          "currentStage": "Failed",
+          "executionPlan": {
+            "packageId": "installed-unsafe-etl-rejected",
+            "targetEnvironment": "staging",
+            "resourceSemanticId": "res-cng-1000",
+            "newFieldName": "owner_email",
+            "script": {
+              "scriptId": "add-owner_email",
+              "reversible": true,
+              "forwardOperations": [
+                {
+                  "kind": 0,
+                  "resourceSemanticId": "res-cng-1000",
+                  "fieldName": "owner_email",
+                  "fieldType": "String",
+                  "nullable": true
+                }
+              ],
+              "inverseOperations": []
+            },
+            "dataPopulateWorkloadId": "unregistered-workload",
+            "dataPopulateFields": [
+              "population"
+            ]
+          },
+          "ownedOperations": [],
+          "rebaseCount": 0,
+          "blockers": [
+            "metadata-release-etl-unproven-compensation"
+          ],
+          "warnings": []
+        }
+      },
+      "functionalAssertions": {
+        "rowCount": 6,
+        "srid": 4326,
+        "coordinatesAndValuesVerified": true,
+        "newFieldAbsent": true,
+        "anonymousAdminDenied": true
+      }
+    },
+    {
+      "name": "cancelled-etl-cleans-stage",
+      "status": "passed",
+      "operation": {
+        "operationId": "metadata-release-cancelled-etl-cleans-stage",
+        "kind": 3,
+        "status": "Failed",
+        "version": 5,
+        "priority": 1,
+        "createdAt": "2026-09-15T01:01:20.3745242+00:00",
+        "updatedAt": "2026-09-15T01:01:50.8572526+00:00",
+        "completedAt": "2026-09-15T01:01:50.8572526+00:00",
+        "currentPhase": "Data-populate job failed before activation (InvalidOperationException). The candidate was discarded; the live catalog is unchanged at revision 9.",
+        "errorMessage": "Data-populate job failed before activation (InvalidOperationException). The candidate was discarded; the live catalog is unchanged at revision 9.",
+        "warnings": [],
+        "blockingReasons": [
+          "metadata-release-etl-failed"
+        ],
+        "audit": {
+          "requestedBy": "admin",
+          "idempotencyKey": "cancelled-etl-cleans-stage",
+          "requestFingerprint": "ad40cdddca1202fc6ea2181b12d5f3b50791a79d1bc277589ea5829319a4a2d3",
+          "approvalReasonCodes": []
+        },
+        "concurrency": {
+          "partitionKey": "staging:metadata-release:res-cng-1000",
+          "requiresExclusiveLease": true
+        },
+        "metadataRelease": {
+          "packageId": "installed-cancelled-etl-cleans-stage",
+          "desiredRevision": "installed-cancelled-etl-cleans-stage",
+          "targetEnvironment": "staging",
+          "jobIds": [],
+          "evidenceRefs": [],
+          "currentStage": "Failed",
+          "rollbackPlan": {
+            "class": 3,
+            "isDataAffecting": true,
+            "requiresExplicitApproval": false,
+            "steps": [
+              "Reactivate the prior revision while the candidate is still current; otherwise revert only this release's owned fields on top of later updates.",
+              "Leave physical data and committed feature edits untouched.",
+              "Verify the recovered revision (schema, bindings, authorization, canonical query) before reporting RolledBack."
+            ],
+            "evidenceRequired": []
+          },
+          "executionPlan": {
+            "packageId": "installed-cancelled-etl-cleans-stage",
+            "targetEnvironment": "staging",
+            "resourceSemanticId": "res-cng-1000",
+            "newFieldName": "owner_email",
+            "script": {
+              "scriptId": "add-owner_email",
+              "reversible": true,
+              "forwardOperations": [
+                {
+                  "kind": 0,
+                  "resourceSemanticId": "res-cng-1000",
+                  "fieldName": "owner_email",
+                  "fieldType": "String",
+                  "nullable": true
+                }
+              ],
+              "inverseOperations": []
+            },
+            "dataPopulateWorkloadId": "cancelled-workload",
+            "dataPopulateFields": [
+              "owner_email"
+            ]
+          },
+          "priorRevision": 9,
+          "priorEtag": "\"5285d563997f2e48366b2d02bc37902836742edb536b41071c4b0c0fef0b22db\"",
+          "candidateRevision": 10,
+          "candidateEtag": "\"1e52e226420804d17a569c843faa51952a7baf303a6f20db87022c53d27c88df\"",
+          "ownedOperations": [
+            {
+              "kind": 0,
+              "resourceSemanticId": "res-cng-1000",
+              "fieldName": "owner_email",
+              "fieldType": "String",
+              "nullable": true
+            }
+          ],
+          "rebaseCount": 0,
+          "blockers": [
+            "metadata-release-etl-failed"
+          ],
+          "warnings": []
+        }
+      },
+      "functionalAssertions": {
+        "rowCount": 6,
+        "srid": 4326,
+        "coordinatesAndValuesVerified": true,
+        "newFieldAbsent": true,
+        "anonymousAdminDenied": true
+      }
+    }
+  ],
+  "status": "passed",
+  "imageId": "sha256:29974ee7b722e3ae15c3b891024e5e70800f412188aeccf5ec3d32d9dac675c1",
+  "baseline": {
+    "rowCount": 6,
+    "srid": 4326,
+    "coordinatesAndValuesVerified": true,
+    "newFieldAbsent": true,
+    "anonymousAdminDenied": true
+  },
+  "stagedOperation": {
+    "operationId": "metadata-release-staged-crash-recovery",
+    "kind": 3,
+    "status": "Reconciling",
+    "version": 4,
+    "priority": 1,
+    "createdAt": "2026-09-15T00:56:16.5164096+00:00",
+    "updatedAt": "2026-09-15T00:56:33.0125597+00:00",
+    "currentPhase": "Staged candidate revision 4 from prior revision 3; canonical readers remain on revision 3.",
+    "warnings": [],
+    "blockingReasons": [],
+    "audit": {
+      "requestedBy": "admin",
+      "idempotencyKey": "staged-crash-recovery",
+      "requestFingerprint": "bf3b007d1025b702737048e86a8aba98f2176312b3d282e7e64252010ec02502",
+      "approvalReasonCodes": []
+    },
+    "concurrency": {
+      "partitionKey": "staging:metadata-release:res-cng-1000",
+      "requiresExclusiveLease": true
+    },
+    "metadataRelease": {
+      "packageId": "installed-staged-crash-recovery",
+      "desiredRevision": "installed-staged-crash-recovery",
+      "targetEnvironment": "staging",
+      "jobIds": [],
+      "evidenceRefs": [],
+      "currentStage": "ServicePublication",
+      "rollbackPlan": {
+        "class": 3,
+        "isDataAffecting": true,
+        "requiresExplicitApproval": false,
+        "steps": [
+          "Reactivate the prior revision while the candidate is still current; otherwise revert only this release's owned fields on top of later updates.",
+          "Leave physical data and committed feature edits untouched.",
+          "Verify the recovered revision (schema, bindings, authorization, canonical query) before reporting RolledBack."
+        ],
+        "evidenceRequired": []
+      },
+      "executionPlan": {
+        "packageId": "installed-staged-crash-recovery",
+        "targetEnvironment": "staging",
+        "resourceSemanticId": "res-cng-1000",
+        "newFieldName": "owner_email",
+        "script": {
+          "scriptId": "add-owner_email",
+          "reversible": true,
+          "forwardOperations": [
+            {
+              "kind": 0,
+              "resourceSemanticId": "res-cng-1000",
+              "fieldName": "owner_email",
+              "fieldType": "String",
+              "nullable": true
+            }
+          ],
+          "inverseOperations": []
+        },
+        "dataPopulateFields": []
+      },
+      "priorRevision": 3,
+      "priorEtag": "\"96ffa470946fdbd98e81b71473a23d5acb711bbbd571755d88b2a3b3b709bd41\"",
+      "candidateRevision": 4,
+      "candidateEtag": "\"3a4c3467d43705e9cb2a6c70f8d9c13c4ed8935f7dce51dbe56acec6db7a32f7\"",
+      "ownedOperations": [
+        {
+          "kind": 0,
+          "resourceSemanticId": "res-cng-1000",
+          "fieldName": "owner_email",
+          "fieldType": "String",
+          "nullable": true
+        }
+      ],
+      "rebaseCount": 0,
+      "blockers": [],
+      "warnings": []
+    }
+  },
+  "stagingObservation": {
+    "priorRevision": 3,
+    "priorEtag": "\"96ffa470946fdbd98e81b71473a23d5acb711bbbd571755d88b2a3b3b709bd41\"",
+    "liveRevisionAtStaging": 3,
+    "liveEtagAtStaging": "\"96ffa470946fdbd98e81b71473a23d5acb711bbbd571755d88b2a3b3b709bd41\"",
+    "liveFieldNames": [
+      "objectid",
+      "name",
+      "category",
+      "population",
+      "ratio",
+      "active",
+      "observed_at",
+      "geometry"
+    ]
+  },
+  "preservedServicePolicy": {
+    "allowAnonymous": false,
+    "allowedRoles": [
+      "recovery-reviewer"
+    ]
+  },
+  "etlCancellation": {
+    "jobId": "metadata-release-etl-metadata-release-cancelled-etl-cleans-stage",
+    "action": "cancel",
+    "status": "Cancelled",
+    "message": "Job cancelled before submission."
+  },
+  "serverLogSha256": "5d22ec8f629b3b3552b03038245e21d1e701e59851d942669b1ca595b721ea28",
+  "cleanup": "removed lane containers and network",
+  "harnessSha256": "64825397f147c2af9c800cc6dcba43a4e0e4418735751b2c8e5e4842236a846b"
+}

@@ -1,0 +1,118 @@
+{
+  "at": "2026-09-16T18:01:41.383347+00:00",
+  "source": "2cc221388ea47d78c29e79eaee62737e4c792351",
+  "image": "sha256:61e06ef3a94d00e4c8fc57ce93e008a5e31b2dcf1da5deb22781fdd42d2d4e51",
+  "licensing_mode": "Disabled",
+  "evidence_kind": "installed-arcpy-observations",
+  "desktop_ui_exercised": false,
+  "checks": {
+    "buffer_feature_output": {
+      "tool": "Buffer",
+      "passed": true,
+      "status": 4,
+      "messages": "Completed",
+      "output_type": "RecordSet",
+      "verified": {
+        "expected_bbox": [
+          -1,
+          -1,
+          4,
+          5
+        ],
+        "area": 29.121567799872466,
+        "area_bounds": [
+          28.82842712474619,
+          29.141592653589793
+        ]
+      }
+    },
+    "union_multivalue_input": {
+      "tool": "Honua_67656F6D657472792E756E696F6E",
+      "passed": true,
+      "status": 4,
+      "messages": "Completed",
+      "output_type": "RecordSet",
+      "verified": {
+        "expected_bbox": [
+          0,
+          0,
+          5,
+          4
+        ],
+        "expected_area": 20,
+        "area": 20.0,
+        "attributes": {}
+      }
+    },
+    "clip_featureset_inputs": {
+      "tool": "Clip",
+      "passed": true,
+      "status": 4,
+      "messages": "Completed",
+      "output_type": "RecordSet",
+      "verified": {
+        "expected_bbox": [
+          2,
+          0,
+          3,
+          4
+        ],
+        "expected_area": 4,
+        "area": 4.0,
+        "attributes": {
+          "label": "input",
+          "score": 7.5
+        }
+      }
+    },
+    "attribute_filter_featureset_input": {
+      "tool": "Honua_7472616E73666F726D2E6174747269627574652D66696C746572",
+      "passed": true,
+      "status": 4,
+      "messages": "Completed",
+      "output_type": "RecordSet",
+      "verified": {
+        "expected_bbox": [
+          0,
+          0,
+          3,
+          4
+        ],
+        "expected_area": 12,
+        "area": 12.0,
+        "attributes": {
+          "label": "keep",
+          "score": 7.5
+        }
+      }
+    },
+    "near_table_recordset_output": {
+      "tool": "GenerateNearTable",
+      "passed": true,
+      "status": 4,
+      "messages": "Completed",
+      "output_type": "RecordSet",
+      "verified": {
+        "row_attributes": {
+          "OBJECTID": 1,
+          "IN_FID": 0,
+          "NEAR_FID": 0,
+          "NEAR_DIST": 0
+        },
+        "expected_distance": 0
+      }
+    },
+    "buffer_cancel": {
+      "tool": "Buffer",
+      "passed": true,
+      "status": 8,
+      "messages": "Cancelled",
+      "verified": {
+        "terminal_status": 8
+      }
+    }
+  },
+  "arcpy": "3.7.1",
+  "completed": true,
+  "passed": true
+}
