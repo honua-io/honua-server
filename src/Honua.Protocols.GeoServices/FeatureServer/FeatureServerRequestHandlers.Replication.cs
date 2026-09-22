@@ -440,7 +440,7 @@ internal static partial class FeatureServerEndpoints
                 ["syncModel must be perReplica, perLayer or none."]);
         }
 
-        var transportError = ValidateReplicaTransportParameters(context, values);
+        var transportError = ValidateReplicaTransportParameters(context, values, unsupportedDataFormatUsesHttpStatus: true);
         if (transportError is not null)
         {
             return transportError;

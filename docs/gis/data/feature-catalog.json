@@ -9823,6 +9823,7 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.CreateReplica_InvalidOrUnsupportedParameter_IsRejectedWithoutRegistering",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.CreateReplica_SyncModelNone_ReturnsScopedDataWithoutRegisteringAReplica",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.CreateReplica_UnsupportedDataFormat_ReturnsHttp400WithEsriErrorEnvelope",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.Replicas_AfterCreateAndUnregister_ReflectsLiveRegistryImmediately",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.Replicas_WhenReplicaExists_ReturnsReplicaList",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.ReplicaOwnershipEndpointTests.Replicas_AreScopedToTheirOwningPrincipal"
@@ -19632,6 +19633,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.CreateReplica_GeometryLayerQueriesAndReplicaSR_ScopeDataDeltasAndReplicaInfo",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.CreateReplica_InvalidOrUnsupportedParameter_IsRejectedWithoutRegistering",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.CreateReplica_SyncModelNone_ReturnsScopedDataWithoutRegisteringAReplica",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.CreateReplica_UnsupportedDataFormat_ReturnsHttp400WithEsriErrorEnvelope",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.ReplicaRejections_OtherThanCreateReplicaDataFormat_KeepHttp200Envelope",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.SynchronizeReplica_UpdateAcrossTheScopeBoundary_DeletesRowsThatLeftTheScope",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.CreateReplica_InvalidService_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.CreateReplica_LayersAsJsonArray_ReturnsReplicaId",
@@ -19675,6 +19678,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.ExtractChanges_ReturnSelectionAndIdsOnly_ShapeTheChangeEnvelope",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.ExtractChanges_ServerGensRange_StopsAtTheMaxGeneration",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.ExtractChanges_UnsupportedOrInvalidOption_IsRejectedNotIgnored",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaEsriParityTests.ReplicaRejections_OtherThanCreateReplicaDataFormat_KeepHttp200Envelope",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicaSyncTests.UploadOnly_PreservesForeignChangesAcrossRepeatedUploads",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.ExtractChanges_LayersAsJsonArray_ReturnsChanges",
         "Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.FeatureServerReplicationTests.ExtractChanges_NonexistentReplica_ReturnsNotFound",

@@ -18,7 +18,7 @@ Use disconnected field sync, form offline policy discovery, GeoServices replica/
 | Edition | Pro |
 | Surface maturity | 18 preview |
 | Registry entries | 18 |
-| Proving tests | 192 |
+| Proving tests | 196 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
