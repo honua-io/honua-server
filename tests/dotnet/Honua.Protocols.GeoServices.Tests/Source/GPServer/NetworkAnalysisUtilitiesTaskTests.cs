@@ -80,7 +80,8 @@ public sealed class NetworkAnalysisUtilitiesTaskTests : IClassFixture<NAServerEn
         recordSet.GetProperty("fields").EnumerateArray().Select(f => f.GetProperty("name").GetString())
             .Should().Equal("ObjectID", "Name", "TravelModeId", "TravelMode", "AltName");
         var features = recordSet.GetProperty("features").EnumerateArray().ToArray();
-        features.Should().NotBeEmpty();
+        features.Select(f => f.GetProperty("attributes").GetProperty("Name").GetString())
+            .Should().Equal(["driving", "walking"], "the provider supports both modes even though the default dataset lists only driving");
 
         var defaultId = results[1].GetProperty("value").GetString();
         var attributes = features[0].GetProperty("attributes");

@@ -80,7 +80,8 @@ public sealed class NAServerMetadataEndpointTests : IClassFixture<NAServerEndpoi
         root.GetProperty("outputSpatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
 
         var modes = root.GetProperty("supportedTravelModes").EnumerateArray().ToArray();
-        modes.Should().NotBeEmpty("the default network dataset declares at least the driving profile");
+        modes.Select(m => m.GetProperty("name").GetString()).Should().Equal(["driving", "walking"],
+            "metadata must include every mode supported by the active provider");
         // As on a real ArcGIS Server layer, the layer's modes carry an ordinal itemId and
         // defaultTravelMode names one of them; the 16-character ids live in GetTravelModes.
         var defaultMode = root.GetProperty("defaultTravelMode").GetString();

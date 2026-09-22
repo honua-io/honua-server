@@ -28,7 +28,7 @@ namespace Honua.Protocols.GeoServices.NAServer;
 /// <para>
 /// Everything here derives from what the provider actually advertises: one analysis
 /// layer per solver the <see cref="RoutingProviderCapabilities"/> support, one travel
-/// mode per <see cref="RoutingTravelProfile"/> of the active <see cref="NetworkDataset"/>,
+/// mode per entry in <see cref="RoutingProviderCapabilities.SupportedTravelModes"/>,
 /// and service limits from <see cref="RoutingConfiguration"/>. Nothing is stated that a
 /// solve would then refuse.
 /// </para>
@@ -135,8 +135,8 @@ internal static class NAServerMetadata
         // defaultTravelMode is that ordinal, network classes describe their fields as
         // fieldName/defaultValue/candidateFields, and the locate settings name the
         // sources. ArcGIS Pro's native reader is exact about these shapes.
-        var travelModes = dataset.TravelProfiles
-            .Select((profile, index) => BuildTravelMode(profile, dataset, itemId: (index + 1).ToString(CultureInfo.InvariantCulture)))
+        var travelModes = capabilities.SupportedTravelModes
+            .Select((name, index) => BuildTravelMode(name, dataset, itemId: (index + 1).ToString(CultureInfo.InvariantCulture)))
             .ToList();
         var document = new JsonObject
         {
@@ -167,7 +167,7 @@ internal static class NAServerMetadata
             ["hasZ"] = false,
             ["hasM"] = false,
             ["outputSpatialReference"] = new JsonObject { ["wkid"] = dataset.Srid },
-            ["defaultTravelMode"] = "1",
+            ["defaultTravelMode"] = travelModes.Count > 0 ? "1" : "",
             ["supportedTravelModes"] = new JsonArray([.. travelModes]),
             ["networkDataset"] = BuildNetworkDataset(dataset),
             ["networkClasses"] = BuildNetworkClasses(layer.Name),
@@ -282,13 +282,13 @@ internal static class NAServerMetadata
     }
 
     /// <summary>The <c>GetTravelModes/execute</c> result envelope.</summary>
-    public static JsonObject BuildGetTravelModesResult(NetworkDataset dataset)
+    public static JsonObject BuildGetTravelModesResult(NetworkDataset dataset, RoutingProviderCapabilities capabilities)
     {
         var features = new JsonArray();
         var objectId = 1;
-        foreach (var profile in dataset.TravelProfiles)
+        foreach (var name in capabilities.SupportedTravelModes)
         {
-            var mode = BuildTravelMode(profile, dataset);
+            var mode = BuildTravelMode(name, dataset);
             features.Add(new JsonObject
             {
                 ["attributes"] = new JsonObject
@@ -328,7 +328,9 @@ internal static class NAServerMetadata
                 {
                     ["paramName"] = "defaultTravelMode",
                     ["dataType"] = "GPString",
-                    ["value"] = TravelModeId(dataset.TravelProfiles[0]),
+                    ["value"] = capabilities.SupportedTravelModes.Count > 0
+                        ? TravelModeId(capabilities.SupportedTravelModes[0])
+                        : "",
                 }),
             ["messages"] = new JsonArray(),
         };
@@ -423,17 +425,16 @@ internal static class NAServerMetadata
     /// analysis layer resource carries the ordinal <c>itemId</c> instead, as real
     /// ArcGIS Server layers do.
     /// </summary>
-    private static JsonObject BuildTravelMode(RoutingTravelProfile profile, NetworkDataset dataset, string? itemId = null)
+    private static JsonObject BuildTravelMode(string name, NetworkDataset dataset, string? itemId = null)
         => new()
         {
-            [itemId is null ? "id" : "itemId"] = itemId ?? TravelModeId(profile),
+            [itemId is null ? "id" : "itemId"] = itemId ?? TravelModeId(name),
             // The solve adapter reads this name back from the travel-mode object and
             // validates it against the provider's profile names. Preserve that token
             // so clients can submit the advertised mode without translating it.
-            ["name"] = profile.Name,
-            ["type"] = TravelModeType(profile),
-            ["description"] = $"Travel profile '{profile.Name}' of network dataset '{dataset.Name}' "
-                              + $"(cost column {profile.ForwardCostColumn}, reverse {profile.ReverseCostColumn}).",
+            ["name"] = name,
+            ["type"] = TravelModeType(name),
+            ["description"] = $"Travel mode '{name}' supported by the routing provider for network dataset '{dataset.Name}'.",
             ["impedanceAttributeName"] = TimeAttributeName,
             ["timeAttributeName"] = TimeAttributeName,
             ["distanceAttributeName"] = DistanceAttributeName,
@@ -449,9 +450,9 @@ internal static class NAServerMetadata
     /// A stable 16-character identifier per profile name (Esri ids are 16 characters);
     /// clients persist the id in saved layers, so it must not change between requests.
     /// </summary>
-    internal static string TravelModeId(RoutingTravelProfile profile)
+    internal static string TravelModeId(string name)
     {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes("honua-travel-mode:" + profile.Name.ToLowerInvariant()));
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes("honua-travel-mode:" + name.ToLowerInvariant()));
         const string alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
         var id = new char[16];
         for (var i = 0; i < id.Length; i++)
@@ -462,9 +463,9 @@ internal static class NAServerMetadata
         return new string(id);
     }
 
-    private static string TravelModeType(RoutingTravelProfile profile)
+    private static string TravelModeType(string name)
     {
-        var name = profile.Name.ToLowerInvariant();
+        name = name.ToLowerInvariant();
         if (name.Contains("walk", StringComparison.Ordinal) || name.Contains("pedestrian", StringComparison.Ordinal))
         {
             return "WALK";
@@ -623,9 +624,9 @@ internal static class NAServerMetadata
                 limits["maximumDestinations"] = configuration.MaxDestinations;
                 break;
             case "LocationAllocation":
-                limits["maximumFacilities"] = configuration.MaxFacilities;
-                limits["maximumFacilitiesToFind"] = configuration.MaxFacilities;
-                limits["maximumDemandPoints"] = configuration.MaxStops;
+                limits["maximumFacilities"] = configuration.MaxLocationAllocationFacilities;
+                limits["maximumFacilitiesToFind"] = configuration.MaxLocationAllocationFacilities;
+                limits["maximumDemandPoints"] = configuration.MaxDemandPoints;
                 break;
         }
 

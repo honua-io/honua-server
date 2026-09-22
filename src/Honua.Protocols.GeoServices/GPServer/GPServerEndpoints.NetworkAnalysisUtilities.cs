@@ -57,11 +57,12 @@ internal static partial class GPServerEndpoints
         var configuration = context.RequestServices.GetRequiredService<IOptions<RoutingConfiguration>>().Value;
         var dataset = await NAServerEndpoints.ResolveDatasetAsync(datasets, configuration, ct).ConfigureAwait(false);
         var pretty = IsPrettyJsonRequest(context, parameters);
+        var capabilities = await routing.GetCapabilitiesAsync(ct).ConfigureAwait(false);
 
         if (taskName.Equals(NAServerMetadata.GetTravelModesTask, StringComparison.OrdinalIgnoreCase))
         {
             return Results.Text(
-                NAServerMetadata.Serialize(NAServerMetadata.BuildGetTravelModesResult(dataset), pretty),
+                NAServerMetadata.Serialize(NAServerMetadata.BuildGetTravelModesResult(dataset, capabilities), pretty),
                 NetworkAnalysisUtilitiesContentType);
         }
 
@@ -70,7 +71,6 @@ internal static partial class GPServerEndpoints
         // ignored, matching the ArcGIS Enterprise reference response.
         parameters.TryGetValue("serviceName", out var serviceName);
         parameters.TryGetValue("toolName", out var toolName);
-        var capabilities = await routing.GetCapabilitiesAsync(ct).ConfigureAwait(false);
         var document = NAServerMetadata.BuildGetToolInfoResult(serviceName, toolName, capabilities, configuration);
         return Results.Text(NAServerMetadata.Serialize(document, pretty), NetworkAnalysisUtilitiesContentType);
     }
