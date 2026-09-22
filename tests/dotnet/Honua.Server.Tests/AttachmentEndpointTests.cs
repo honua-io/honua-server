@@ -134,9 +134,10 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
 
         result.Should().NotBeNull();
         result!.AttachmentGroups.Should().ContainSingle("nonexistent parents are not visible");
-        result.AttachmentInfos.Should().BeNull();
 
         var seededGroup = result.AttachmentGroups.Single(group => group.ParentObjectId == TestFeatureId);
+        result.AttachmentInfos.Should().BeEquivalentTo(seededGroup.AttachmentInfos,
+            "the legacy flattened list contains only the one visible parent's attachments");
         seededGroup.AttachmentInfos.Should().NotBeEmpty();
         seededGroup.AttachmentInfos.Should().OnlyContain(attachment => !string.IsNullOrWhiteSpace(attachment.Url));
 
