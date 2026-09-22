@@ -56,6 +56,11 @@ public interface IPortalCredentialVerifier
 /// <see langword="null"/> when the full role set is entitlement-independent. An empty list is
 /// a known empty fallback; null provenance on a persisted legacy record remains fail-closed.
 /// </param>
+/// <param name="Source">
+/// The credential this verification consumed, so the issued token can be clamped to that
+/// credential's expiry and re-checked against it on every restore (SEC-9). A verifier that
+/// leaves it <see langword="null"/> mints a token bounded only by its own lifetime.
+/// </param>
 public sealed record PortalCredentialPrincipal(
     string PrincipalId,
     string? DisplayName,
@@ -63,4 +68,5 @@ public sealed record PortalCredentialPrincipal(
     IReadOnlyList<string> Roles,
     bool RolesRequireClaimsMappingEntitlement = false,
     bool TenantRequiresClaimsMappingEntitlement = false,
-    IReadOnlyList<string>? RolesWithoutClaimsMapping = null);
+    IReadOnlyList<string>? RolesWithoutClaimsMapping = null,
+    PortalCredentialSource? Source = null);

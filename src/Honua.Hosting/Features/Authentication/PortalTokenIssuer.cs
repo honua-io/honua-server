@@ -13,6 +13,7 @@ using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Security;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Infrastructure.Authentication;
 
@@ -52,6 +53,15 @@ internal sealed partial class PortalTokenIssuer(
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        var source = request.Source ?? PortalCredentialSource.None;
+
+        // A derived credential may never outlive the credential it was derived from, so the
+        // requested lifetime (already clamped to the configured maximum by the caller) is
+        // clamped again to the source's own expiry (SEC-9).
+        var expiresAt = source.ExpiresAt is { } sourceExpiresAt && sourceExpiresAt < request.ExpiresAt
+            ? sourceExpiresAt
+            : request.ExpiresAt;
+
         var token = CreateTokenValue();
         var record = new PortalTokenRecord
         {
@@ -64,17 +74,24 @@ internal sealed partial class PortalTokenIssuer(
             TenantRequiresClaimsMappingEntitlement = request.TenantRequiresClaimsMappingEntitlement,
             ClientType = request.ClientType,
             BindingValue = NormalizeBindingValue(request.ClientType, request.BindingValue),
-            ExpiresAt = request.ExpiresAt
+            ExpiresAt = expiresAt,
+            Source = new PortalTokenSourceRecord
+            {
+                Kind = source.Kind,
+                Reference = source.Reference,
+                Version = source.Version,
+                ExpiresAt = source.ExpiresAt,
+            }
         };
 
         await SetAsync(
             TokenKeyPrefix + token,
             record,
-            request.ExpiresAt,
+            expiresAt,
             PortalTokenJsonContext.Default.PortalTokenRecord,
             cancellationToken).ConfigureAwait(false);
 
-        return new PortalTokenIssuance(token, request.ExpiresAt);
+        return new PortalTokenIssuance(token, expiresAt);
     }
 
     /// <inheritdoc />
@@ -117,6 +134,12 @@ internal sealed partial class PortalTokenIssuer(
             return null;
         }
 
+        if (!await SourceCredentialStillValidAsync(record, cancellationToken).ConfigureAwait(false))
+        {
+            PortalTokenLog.SourceCredentialNoLongerValid(_logger, LogValueRedactor.Hash(token));
+            return null;
+        }
+
         var principal = ProjectPrincipal(record, ResolveRoles(record));
         return new PortalTokenValidation(principal, record.ExpiresAt);
     }
@@ -149,6 +172,11 @@ internal sealed partial class PortalTokenIssuer(
         // Introspection must agree with ValidateAsync: a token that would be refused there is
         // not active here either (honua-server#2997 review).
         if (!ClaimsMappingTenantAllowed(record))
+        {
+            return null;
+        }
+
+        if (!await SourceCredentialStillValidAsync(record, cancellationToken).ConfigureAwait(false))
         {
             return null;
         }
@@ -264,6 +292,39 @@ internal sealed partial class PortalTokenIssuer(
         return mappingEntitled
             ? record.Roles
             : record.RolesWithoutClaimsMapping ?? [];
+    }
+
+    /// <summary>
+    /// Whether the credential this token was minted from is still the live one (SEC-9).
+    /// </summary>
+    /// <remarks>
+    /// Fails closed in both directions. A record with no source predates this binding: its
+    /// provenance is UNKNOWN, so it is refused exactly as unknown claims-mapping provenance is,
+    /// and the client re-authenticates. A source that names a credential but cannot be re-checked
+    /// — no validator is reachable, the store is unavailable — is refused too, because honouring
+    /// it would be honouring the issuance-time snapshot the binding exists to replace.
+    /// </remarks>
+    private async ValueTask<bool> SourceCredentialStillValidAsync(
+        PortalTokenRecord record,
+        CancellationToken cancellationToken)
+    {
+        if (record.Source is not { } source)
+        {
+            return false;
+        }
+
+        if (source.Kind == PortalCredentialSourceKind.None)
+        {
+            return true;
+        }
+
+        var validator = _serviceProvider?.GetService<IPortalTokenSourceValidator>();
+        if (validator is null)
+        {
+            return false;
+        }
+
+        return await validator.IsStillValidAsync(source, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -488,6 +549,36 @@ internal sealed class PortalTokenRecord
     public required string BindingValue { get; init; }
 
     public required DateTimeOffset ExpiresAt { get; init; }
+
+    /// <summary>
+    /// The credential this token was minted from (SEC-9), re-checked on every restore.
+    /// </summary>
+    /// <remarks>
+    /// NULLABLE on purpose, for the same reason as the claims-mapping provenance flags above:
+    /// a record persisted before this field existed deserializes with the member absent, and
+    /// absent means UNKNOWN provenance, not "no source". Unknown fails closed — such a token
+    /// is refused and its holder re-authenticates — because the alternative is honouring
+    /// exactly the unbounded issuance-time snapshot this field exists to replace. Every record
+    /// written by this build carries a source, including
+    /// <see cref="PortalCredentialSourceKind.None"/> for flows with no separately revocable
+    /// backing credential.
+    /// </remarks>
+    public PortalTokenSourceRecord? Source { get; init; }
+}
+
+/// <summary>
+/// Persisted reference to the credential a token was minted from. Identifiers and
+/// non-reversible version markers only — never credential material.
+/// </summary>
+internal sealed class PortalTokenSourceRecord
+{
+    public required PortalCredentialSourceKind Kind { get; init; }
+
+    public string? Reference { get; init; }
+
+    public string? Version { get; init; }
+
+    public DateTimeOffset? ExpiresAt { get; init; }
 }
 
 [JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

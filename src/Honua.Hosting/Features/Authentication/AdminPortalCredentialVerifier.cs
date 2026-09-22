@@ -99,7 +99,14 @@ internal sealed class AdminPortalCredentialVerifier(
             PrincipalId: AdminUsername,
             DisplayName: AdminUsername,
             TenantId: _tenantContext?.TenantId,
-            Roles: AdminRoles);
+            Roles: AdminRoles,
+            // Bind the token to the password value it was minted from, so rotating the
+            // password (or the secret it resolves from) stops the tokens issued from the
+            // previous one instead of leaving them valid for their whole lifetime (SEC-9).
+            Source: new PortalCredentialSource(
+                PortalCredentialSourceKind.AdminPassword,
+                Reference: null,
+                Version: PortalCredentialSourceVersion.ForAdminPassword(configuredPassword)));
     }
 
     private PortalCredentialPrincipal? CreateManagedKeyPrincipal(AdminApiKeyRecord record)
@@ -117,30 +124,22 @@ internal sealed class AdminPortalCredentialVerifier(
             PrincipalId: AdminUsername,
             DisplayName: record.Name,
             TenantId: _tenantContext?.TenantId,
-            Roles: roles);
+            Roles: roles,
+            // Record the key the token derives from, plus its expiry, so the issued token is
+            // clamped to the key's own lifetime and stops the moment the key is revoked,
+            // expires or is rotated (SEC-9).
+            Source: new PortalCredentialSource(
+                PortalCredentialSourceKind.ManagedApiKey,
+                Reference: record.Id.ToString("D"),
+                Version: PortalCredentialSourceVersion.ForManagedKey(record),
+                ExpiresAt: record.ExpiresAt));
     }
 
-    private async Task<string?> ResolveAdminPasswordAsync(CancellationToken cancellationToken)
-    {
-        var configuredPassword = _apiKeyOptions.AdminPassword;
-        if (string.IsNullOrWhiteSpace(configuredPassword))
-        {
-            return null;
-        }
-
-        var resolvedPassword = configuredPassword;
-        if (_secretResolver is not null)
-        {
-            var canResolve = await _secretResolver.CanResolveSecretAsync(configuredPassword, cancellationToken).ConfigureAwait(false);
-            if (canResolve)
-            {
-                resolvedPassword = await _secretResolver.ResolveConnectionStringAsync(configuredPassword, cancellationToken).ConfigureAwait(false);
-            }
-        }
-
-        AdminPasswordValidation.ValidateRefreshedPassword(resolvedPassword, _apiKeyOptions.EnvironmentName);
-        return resolvedPassword;
-    }
+    private Task<string?> ResolveAdminPasswordAsync(CancellationToken cancellationToken)
+        => PortalCredentialSourceVersion.ResolveAdminPasswordAsync(
+            _apiKeyOptions,
+            _secretResolver,
+            cancellationToken);
 
     private static bool ConstantTimeEquals(string provided, string configured)
     {

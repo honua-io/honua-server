@@ -23066,6 +23066,16 @@
             "maxLength": 64,
             "description": "Geometry type override"
           },
+          "hasZ": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether the source geometries carry elevation (Z) ordinates. Only valid with a geometry column."
+          },
+          "hasM": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether the source geometries carry measure (M) ordinates. Only valid with a geometry column."
+          },
           "srid": {
             "type": "integer",
             "minimum": 0,
@@ -23082,6 +23092,32 @@
               "type": "string"
             },
             "description": "Subset of fields to publish (empty publishes all)"
+          },
+          "fieldDomains": {
+            "type": "object",
+            "nullable": true,
+            "description": "Captured source value domains keyed by field name. Entries for fields that are not published are ignored. Each coded-value domain is limited to 100 coded values, the import capture cap; a request over it is rejected with 400.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PublishLayerFieldDomain"
+            }
+          },
+          "subtypes": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PublishLayerSubtypes"
+              }
+            ],
+            "nullable": true,
+            "description": "Captured source subtype set. Attached only when subtypeField is a published column."
+          },
+          "attributeRules": {
+            "type": "array",
+            "nullable": true,
+            "maxItems": 200,
+            "description": "Captured source attribute rules, limited to 200 per layer (the import capture cap). Rule names must be unique; calculation rules whose fieldName is not published are dropped.",
+            "items": {
+              "$ref": "#/components/schemas/PublishLayerAttributeRule"
+            }
           },
           "serviceName": {
             "type": "string",
@@ -23133,6 +23169,174 @@
             "type": "boolean",
             "default": false,
             "description": "Declares attachment support for the published resource. Does not enable editing."
+          }
+        }
+      },
+      "PublishLayerFieldDomain": {
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "description": "Captured source value domain. Held to the Esri import capture rules: coded-value domains carry at most 100 entries, each with a string, number or boolean code and a name; range domains carry exactly [min, max].",
+        "properties": {
+          "name": {
+            "type": "string",
+            "nullable": true,
+            "description": "Source domain name."
+          },
+          "type": {
+            "type": "string",
+            "description": "Domain kind: codedValue, range, or another source kind carried for identity only."
+          },
+          "codedValues": {
+            "type": "array",
+            "maxItems": 100,
+            "description": "Coded value entries when type is codedValue.",
+            "items": {
+              "$ref": "#/components/schemas/LayerFieldCodedValue"
+            }
+          },
+          "range": {
+            "type": "array",
+            "nullable": true,
+            "minItems": 2,
+            "maxItems": 2,
+            "description": "[min, max] when type is range.",
+            "items": {}
+          },
+          "mergePolicy": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional merge policy metadata for Esri-style clients."
+          },
+          "splitPolicy": {
+            "type": "string",
+            "nullable": true,
+            "description": "Optional split policy metadata for Esri-style clients."
+          }
+        }
+      },
+      "PublishLayerSubtypes": {
+        "type": "object",
+        "required": [
+          "subtypeField",
+          "subtypes"
+        ],
+        "description": "Captured source subtype set, limited to 100 subtypes (the import capture cap).",
+        "properties": {
+          "subtypeField": {
+            "type": "string",
+            "description": "Field that selects the subtype for each row."
+          },
+          "defaultSubtypeCode": {
+            "nullable": true,
+            "description": "Subtype code applied when none is supplied: a string, number or boolean."
+          },
+          "subtypes": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/PublishLayerSubtype"
+            }
+          }
+        }
+      },
+      "PublishLayerSubtype": {
+        "type": "object",
+        "required": [
+          "code",
+          "name"
+        ],
+        "description": "One captured subtype.",
+        "properties": {
+          "code": {
+            "description": "Subtype code: a string, number or boolean."
+          },
+          "name": {
+            "type": "string",
+            "description": "Subtype display name."
+          },
+          "fieldOverrides": {
+            "type": "object",
+            "description": "Per-field default values and domains for rows of this subtype, keyed by field name. Override domains follow the same limits as fieldDomains.",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "defaultValue": {
+                  "nullable": true,
+                  "description": "Default value for the field on rows of this subtype."
+                },
+                "defaultValueIsNull": {
+                  "type": "boolean",
+                  "description": "Distinguishes an explicit null default from no default."
+                },
+                "domain": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/PublishLayerFieldDomain"
+                    }
+                  ],
+                  "nullable": true
+                }
+              }
+            }
+          }
+        }
+      },
+      "PublishLayerAttributeRule": {
+        "type": "object",
+        "required": [
+          "name",
+          "type",
+          "scriptExpression"
+        ],
+        "description": "Captured source attribute rule.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Rule name, unique within the layer (case-insensitive)."
+          },
+          "type": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "description": "Rule kind: 0 calculation, 1 constraint, 2 validation, 3 exclusion."
+          },
+          "fieldName": {
+            "type": "string",
+            "nullable": true,
+            "description": "Target field; required for calculation rules."
+          },
+          "scriptExpression": {
+            "type": "string",
+            "description": "Arcade expression text."
+          },
+          "triggeringEvents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Edit events that trigger the rule (insert, update, delete). Empty means every edit."
+          },
+          "errorMessage": {
+            "type": "string",
+            "nullable": true,
+            "description": "Message surfaced when a constraint or validation rule reports a violation."
+          },
+          "isEnabled": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether the rule fires on the edit path."
+          },
+          "batch": {
+            "type": "boolean",
+            "default": false,
+            "description": "Defer the rule to an explicit batch evaluation pass."
           }
         }
       },

@@ -82,11 +82,13 @@ internal static class CoreEndpoints
             type: MediaTypes.Json,
             title: "Collections"));
 
+        // Unfiltered dataset tilesets consistently describe map (PNG) tiles. Each
+        // collection links its vector tilesets with tilesets-vector (via rel=data).
         links.Add(Link.Create(
             href: $"{baseUrl}/ogc/tiles/tiles",
-            rel: RelationTypes.TilesetsVector,
+            rel: RelationTypes.TilesetsMap,
             type: MediaTypes.Json,
-            title: "Vector tilesets"));
+            title: "Dataset map tilesets"));
 
         links.Add(Link.Create(
             href: $"{baseUrl}/ogc/tiles/tileMatrixSets",

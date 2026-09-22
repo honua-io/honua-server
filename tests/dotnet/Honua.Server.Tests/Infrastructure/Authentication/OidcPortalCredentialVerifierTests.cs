@@ -58,6 +58,79 @@ public sealed class OidcPortalCredentialVerifierTests
     }
 
     [UnitTest]
+    public async Task VerifyAsync_ValidOidcToken_RecordsBridgedTokenAsSourceWithItsOwnExpiry()
+    {
+        var verifier = CreateVerifier(enabled: true);
+        var expiresAt = DateTime.UtcNow.AddMinutes(4);
+        var token = CreateToken(
+            subject: "user-123",
+            name: "Ada Lovelace",
+            roles: ["editor"],
+            tenantId: null,
+            expires: expiresAt);
+
+        var result = await verifier.VerifyAsync("ada", token, CancellationToken.None);
+
+        result.Should().NotBeNull();
+        result!.Source.Should().NotBeNull();
+        result.Source!.Kind.Should().Be(PortalCredentialSourceKind.FederatedToken);
+        result.Source.Reference.Should().Be($"{Issuer}|user-123");
+        // JWT `exp` has second resolution, so compare at that granularity.
+        result.Source.ExpiresAt.Should().NotBeNull();
+        result.Source.ExpiresAt!.Value.Should().BeCloseTo(new DateTimeOffset(expiresAt), TimeSpan.FromSeconds(1));
+    }
+
+    [UnitTest]
+    public async Task VerifyAsync_SourceExpiredWithinOidcClockSkew_ReturnsNull()
+    {
+        var verifier = CreateVerifier(enabled: true);
+        var token = CreateToken(
+            subject: "user-123",
+            name: "Ada",
+            roles: ["editor"],
+            tenantId: null,
+            expires: DateTime.UtcNow.AddMinutes(-1));
+
+        var result = await verifier.VerifyAsync("ada", token, CancellationToken.None);
+
+        result.Should().BeNull("clock skew must not permit issuing an already-expired portal token");
+    }
+
+    [UnitTest]
+    public async Task VerifyAndIssue_BridgedToken_ClampsPortalTokenToTheBridgedTokenExpiry()
+    {
+        var verifier = CreateVerifier(enabled: true);
+        var bridgedExpiry = DateTime.UtcNow.AddMinutes(4);
+        var token = CreateToken(
+            subject: "user-123",
+            name: "Ada",
+            roles: ["editor"],
+            tenantId: null,
+            expires: bridgedExpiry);
+        var verified = await verifier.VerifyAsync("ada", token, CancellationToken.None);
+
+        var issuer = new PortalTokenIssuer(
+            new MemoryCache(new MemoryCacheOptions()),
+            NullLogger<PortalTokenIssuer>.Instance,
+            serviceProvider: EnterpriseEntitledServices());
+        var issuance = await issuer.IssueAsync(
+            new PortalTokenIssueRequest(
+                PrincipalId: verified!.PrincipalId,
+                DisplayName: verified.DisplayName,
+                TenantId: verified.TenantId,
+                Roles: verified.Roles,
+                ClientType: PortalTokenClientType.Ip,
+                BindingValue: "192.0.2.13",
+                // A caller asking for the configured ceiling must not outlive the IdP token.
+                ExpiresAt: DateTimeOffset.UtcNow.AddMinutes(
+                    PortalTokenAuthenticationOptions.DefaultMaxExpirationMinutesValue),
+                Source: verified.Source),
+            CancellationToken.None);
+
+        issuance.ExpiresAt.Should().Be(verified.Source!.ExpiresAt);
+    }
+
+    [UnitTest]
     public async Task VerifyAsync_Disabled_ReturnsNull()
     {
         var verifier = CreateVerifier(enabled: false);
@@ -224,7 +297,8 @@ public sealed class OidcPortalCredentialVerifierTests
         string[] roles,
         string? tenantId,
         string? signingKey = null,
-        IReadOnlyCollection<Claim>? additionalClaims = null)
+        IReadOnlyCollection<Claim>? additionalClaims = null,
+        DateTime? expires = null)
     {
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(signingKey ?? SigningKey));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -255,7 +329,7 @@ public sealed class OidcPortalCredentialVerifierTests
             issuer: Issuer,
             audience: Audience,
             claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(30),
+            expires: expires ?? DateTime.UtcNow.AddMinutes(30),
             signingCredentials: credentials);
 
         return new JwtSecurityTokenHandler().WriteToken(token);

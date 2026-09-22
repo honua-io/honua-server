@@ -194,9 +194,31 @@ internal sealed class OidcPortalCredentialVerifier : IPortalCredentialVerifier
             (!markerNamesKnownClaimType || tenantClaim is null ||
                 string.Equals(tenantMappingMarker.Value, tenantClaim.Type, StringComparison.Ordinal));
 
+        // Bind the issued portal token to the bridged token's own expiry so it can never
+        // outlive the credential it was minted from (SEC-9). The issuer/subject pair records
+        // which identity it came from; no token material is kept.
+        var bridged = result.SecurityToken as JsonWebToken;
+        var bridgedExpiry = bridged?.ValidTo is { } validTo && validTo != DateTime.MinValue
+            ? new DateTimeOffset(DateTime.SpecifyKind(validTo, DateTimeKind.Utc))
+            : (DateTimeOffset?)null;
+
+        // OIDC lifetime validation permits clock skew, but a derived credential must
+        // have a future expiry. Refuse an already-expired source instead of issuing
+        // an unusable portal token or passing a past expiration to distributed cache.
+        if (bridgedExpiry is { } expiresAt && expiresAt <= DateTimeOffset.UtcNow)
+        {
+            OidcAuthenticationLog.PortalCredentialRejected(_logger, "source token expired");
+            return null;
+        }
+
         return new PortalCredentialPrincipal(
             principalId, displayName, tenantId, roles, rolesRequireClaimsMapping,
-            tenantRequiresClaimsMapping, rolesWithoutClaimsMapping);
+            tenantRequiresClaimsMapping, rolesWithoutClaimsMapping,
+            Source: new PortalCredentialSource(
+                PortalCredentialSourceKind.FederatedToken,
+                Reference: $"{bridged?.Issuer}|{principalId}",
+                Version: null,
+                ExpiresAt: bridgedExpiry));
     }
 
     private async Task<TokenValidationParameters?> ResolveParametersAsync(CancellationToken cancellationToken)

@@ -109,6 +109,15 @@ public static class PortalTokenAuthenticationExtensions
 
     private static void TryAddSingletonPortalTokenIssuer(this IServiceCollection services)
     {
+        // Re-checks the credential a stored token was minted from on every restore (SEC-9).
+        // Registered unconditionally, including when an operator supplies a custom issuer, so
+        // the binding is never silently absent.
+        services.TryAddSingleton<IPortalTokenSourceValidator>(sp => new PortalTokenSourceValidator(
+            sp.GetRequiredService<IMemoryCache>(),
+            sp.GetRequiredService<IOptions<PortalTokenAuthenticationOptions>>(),
+            sp,
+            sp.GetService<TimeProvider>()));
+
         if (!services.Any(d => d.ServiceType == typeof(IPortalTokenIssuer)))
         {
             services.AddSingleton<IPortalTokenIssuer>(sp => new PortalTokenIssuer(
