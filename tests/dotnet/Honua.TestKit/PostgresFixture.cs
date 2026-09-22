@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using Honua.TestKit.Seeding;
 using Npgsql;
 using Testcontainers.PostgreSql;
@@ -62,7 +63,7 @@ public sealed class PostgresFixture : IAsyncLifetime
                             .WithImage("postgis/postgis:18-3.6")
                             .WithDatabase("honua_test")
                             .WithUsername("test")
-                            .WithPassword("test")
+                            .WithPassword(Convert.ToHexString(RandomNumberGenerator.GetBytes(32)))
                             .WithEnvironment("POSTGIS_GDAL_ENABLED_DRIVERS", "ENABLE_ALL")
                             .WithCommand("-c", "max_connections=200")
                             .Build();
