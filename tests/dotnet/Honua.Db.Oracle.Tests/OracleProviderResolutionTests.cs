@@ -258,6 +258,101 @@ public class OracleProviderResolutionTests
             () => reader.CountAsync(LayerId, new FeatureQuery()));
     }
 
+    public static TheoryData<string> ReadOperations => new() { "get", "query", "ids", "count", "extent", "estimates" };
+
+    [Theory]
+    [MemberData(nameof(ReadOperations))]
+    public async Task BoundReader_WithRowLevelSecurityPredicateResolved_RefusesReadBeforeConnecting(string operation)
+    {
+        var factory = new RecordingConnectionFactory();
+        var readSecurity = new LayerReadSecurityResolver(
+            v2Provider: null,
+            filterExpressionService: null,
+            new StubRowFilterSource(new Honua.Core.Queries.Filters.SqlFragment("region = @p0", ["west"])),
+            new StubFieldMaskSource([]));
+        var reader = CreateBoundReader(factory, readSecurity);
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(() => InvokeReadAsync(reader, operation));
+
+        Assert.Contains("row-level security", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Oracle", exception.Message, StringComparison.Ordinal);
+        Assert.False(factory.WasCalled);
+    }
+
+    [Theory]
+    [MemberData(nameof(ReadOperations))]
+    public async Task BoundReader_WithFieldMaskResolved_RefusesReadBeforeConnecting(string operation)
+    {
+        var factory = new RecordingConnectionFactory();
+        var readSecurity = new LayerReadSecurityResolver(
+            v2Provider: null,
+            filterExpressionService: null,
+            new StubRowFilterSource(null),
+            new StubFieldMaskSource(["name"]));
+        var reader = CreateBoundReader(factory, readSecurity);
+
+        var exception = await Assert.ThrowsAsync<NotSupportedException>(() => InvokeReadAsync(reader, operation));
+
+        Assert.Contains("field-mask", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Oracle", exception.Message, StringComparison.Ordinal);
+        Assert.False(factory.WasCalled);
+    }
+
+    [Theory]
+    [MemberData(nameof(ReadOperations))]
+    public async Task BoundReader_WithNoPolicyResolved_ReadsAsBefore(string operation)
+    {
+        var factory = new RecordingConnectionFactory();
+        var rowSource = new StubRowFilterSource(null);
+        var maskSource = new StubFieldMaskSource([]);
+        var readSecurity = new LayerReadSecurityResolver(v2Provider: null, filterExpressionService: null, rowSource, maskSource);
+        var reader = CreateBoundReader(factory, readSecurity);
+
+        // No policy resolves, so the read proceeds to the connection factory exactly as it
+        // does without the resolver.
+        await Assert.ThrowsAsync<RecordingConnectionFactory.SentinelException>(() => InvokeReadAsync(reader, operation));
+
+        Assert.True(factory.WasCalled);
+        Assert.Equal("res-parcels", rowSource.LastResourceId);
+        Assert.Equal("res-parcels", maskSource.LastResourceId);
+    }
+
+    private static IFeatureReader CreateBoundReader(
+        IOracleConnectionFactory factory,
+        LayerReadSecurityResolver readSecurity,
+        string? permanentFilterExpression = null)
+    {
+        var provider = CreateOracleStore(factory, readSecurity: readSecurity);
+        var binding = CreateBinding(provider, connection: null);
+        if (permanentFilterExpression is not null)
+        {
+            binding = binding with
+            {
+                Resource = binding.Resource with
+                {
+                    PermanentFilter = new MetadataV2PermanentFilter
+                    {
+                        Expression = permanentFilterExpression,
+                        Language = MetadataV2PermanentFilterLanguages.ArcGisSql
+                    }
+                }
+            };
+        }
+
+        return ((IBindableFeatureDataProvider)provider).CreateReaderForBinding(binding);
+    }
+
+    private static Task InvokeReadAsync(IFeatureReader reader, string operation) => operation switch
+    {
+        "get" => reader.GetAsync(LayerId, 1),
+        "query" => reader.QueryAsync(LayerId, new FeatureQuery()),
+        "ids" => reader.QueryObjectIdsAsync(LayerId, new FeatureQuery()),
+        "count" => reader.CountAsync(LayerId, new FeatureQuery()),
+        "extent" => reader.GetExtentAsync(LayerId),
+        "estimates" => reader.GetEstimatesAsync(LayerId),
+        _ => throw new ArgumentOutOfRangeException(nameof(operation), operation, null)
+    };
+
     private static FeatureProviderBinding CreateBinding(OracleFeatureStore provider, DataConnection? connection)
     {
         var (snapshot, service, resource, publication) = CreateSnapshot(connection?.ConnectionId ?? Guid.NewGuid());
@@ -351,7 +446,8 @@ public class OracleProviderResolutionTests
 
     private static OracleFeatureStore CreateOracleStore(
         IOracleConnectionFactory? factory = null,
-        Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider? v2Provider = null)
+        Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider? v2Provider = null,
+        LayerReadSecurityResolver? readSecurity = null)
     {
         var connectionFactory = factory ?? new ThrowingConnectionFactory();
         var dataAccess = new OracleFeatureDataAccess(
@@ -362,7 +458,7 @@ public class OracleProviderResolutionTests
         var probe = new AcceptingProbe();
         var guard = new OracleSpatialGuard(probe, NullLogger<OracleSpatialGuard>.Instance);
 
-        return new OracleFeatureStore(dataAccess, guard, v2Provider);
+        return new OracleFeatureStore(dataAccess, guard, v2Provider, readSecurity);
     }
 
     /// <summary>
@@ -420,6 +516,31 @@ public class OracleProviderResolutionTests
 
         public Task<IReadOnlyList<string>> GetArcSdeVersioningColumnsAsync(OracleLayerMapping mapping, DataConnection? dataConnection, CancellationToken cancellationToken)
             => Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>());
+    }
+
+    private sealed class StubRowFilterSource(Honua.Core.Queries.Filters.SqlFragment? fragment) :
+        Honua.Core.Features.Authorization.Abstractions.IRowLevelSecurityFilterSource
+    {
+        public string? LastResourceId { get; private set; }
+
+        public Task<Honua.Core.Queries.Filters.SqlFragment?> ResolveAsync(MetadataV2Resource resource, CancellationToken cancellationToken = default)
+        {
+            LastResourceId = resource.Metadata.Id;
+            return Task.FromResult(fragment);
+        }
+    }
+
+    private sealed class StubFieldMaskSource(string[] maskedFields) :
+        Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource
+    {
+        public string? LastResourceId { get; private set; }
+
+        public Task<System.Collections.Immutable.ImmutableArray<string>> ResolveAsync(
+            MetadataV2Resource resource, CancellationToken cancellationToken = default)
+        {
+            LastResourceId = resource.Metadata.Id;
+            return Task.FromResult(System.Collections.Immutable.ImmutableArray.Create(maskedFields));
+        }
     }
 
     private sealed class ThrowingConnectionFactory : IOracleConnectionFactory

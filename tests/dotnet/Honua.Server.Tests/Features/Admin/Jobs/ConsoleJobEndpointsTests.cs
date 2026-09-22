@@ -3,6 +3,7 @@
 
 using System.Globalization;
 using System.Net;
+using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -12,6 +13,8 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.ControlPlane;
 using Honua.Geoprocessing;
+using Honua.Infrastructure.Models;
+using Honua.Server.Features.Admin.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -320,6 +323,85 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs")]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}")]
+    [Endpoint("POST /api/v1/admin/jobs/{jobId}/cancel")]
+    public async Task ListAndGetJob_ScopedAdminReadKeys_HonourReadGrantWithoutWideningExecute()
+    {
+        // Regression for #4981: admin:read (with or without admin:approve) must read
+        // durable jobs like every other admin GET, while cancel/retry (Execute) stays
+        // denied for a read-only scoped key. The shared class fixture runs with
+        // dev-auth bypass, which would authenticate any X-API-Key as full admin and
+        // never exercise a scoped key's real role/grants, so this stands up a
+        // dedicated gated fixture (HONUA_DEV_AUTH=false) with its own seeded job.
+        const string AdminPassword = "console-jobs-admin-bootstrap-key";
+        var jobStore = new InMemoryJobStore();
+        var now = DateTimeOffset.UtcNow;
+        jobStore.Set(CreateJob("job-scoped-read", ExecutionJobStatus.Succeeded, now.AddMinutes(-5), "corr-scoped-read") with
+        {
+            CompletedAt = now.AddMinutes(-3),
+            CurrentPhase = "Completed"
+        });
+
+        var gatedFixture = new WebAppFixture()
+            .ConfigureWebHost(builder =>
+            {
+                builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
+            })
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IExecutionJobStore>();
+                services.AddSingleton<IExecutionJobStore>(jobStore);
+            });
+        await gatedFixture.InitializeAsync();
+        try
+        {
+            using var adminClient = gatedFixture.CreateClient(
+                client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+
+            var readKey = await CreateApiKeyAsync(adminClient, "console-jobs-read-only", ["admin:read"]);
+            var readApproveKey = await CreateApiKeyAsync(
+                adminClient, "console-jobs-read-approve", ["admin:read", "admin:approve"]);
+            var nonAdminKey = await CreateApiKeyAsync(adminClient, "console-jobs-write-only", ["write:parcels"]);
+
+            using var readClient = gatedFixture.CreateClient(
+                client => client.DefaultRequestHeaders.Add("X-API-Key", readKey.Key));
+            using var readApproveClient = gatedFixture.CreateClient(
+                client => client.DefaultRequestHeaders.Add("X-API-Key", readApproveKey.Key));
+            using var nonAdminClient = gatedFixture.CreateClient(
+                client => client.DefaultRequestHeaders.Add("X-API-Key", nonAdminKey.Key));
+
+            (await readClient.GetAsync("/api/v1/admin/jobs")).StatusCode.Should().Be(HttpStatusCode.OK);
+            (await readClient.GetAsync("/api/v1/admin/jobs/job-scoped-read")).StatusCode.Should().Be(HttpStatusCode.OK);
+
+            (await readApproveClient.GetAsync("/api/v1/admin/jobs")).StatusCode.Should().Be(HttpStatusCode.OK);
+            (await readApproveClient.GetAsync("/api/v1/admin/jobs/job-scoped-read")).StatusCode
+                .Should().Be(HttpStatusCode.OK);
+
+            (await nonAdminClient.GetAsync("/api/v1/admin/jobs")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+
+            var cancel = await readClient.PostAsync("/api/v1/admin/jobs/job-scoped-read/cancel", null);
+            cancel.StatusCode.Should().Be(HttpStatusCode.Forbidden, "a read-only scoped key must not execute job control actions");
+        }
+        finally
+        {
+            await gatedFixture.DisposeAsync();
+        }
+    }
+
+    private static async Task<AdminApiKeySecretResponse> CreateApiKeyAsync(
+        HttpClient client, string name, IReadOnlyList<string> permissions)
+    {
+        var response = await client.PostAsJsonAsync(
+            "/api/v1/admin/api-keys",
+            new CreateAdminApiKeyRequest { Name = name, Permissions = permissions });
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var result = await response.Content.ReadFromJsonAsync<ApiResponse<AdminApiKeySecretResponse>>();
+        return result!.Data!;
+    }
+
+    [IntegrationTest]
     [Endpoint("GET /api/v1/admin/jobs/{jobId}/steps")]
     public async Task GetJobSteps_ForUnknownJob_Returns404()
     {
@@ -345,6 +427,57 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
         items["expired"].Should().Be("Expired");
         items["data-uri"].Should().Be("Redacted");
         items["provider-error"].Should().Be("ProviderError");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/artifacts")]
+    public async Task GetArtifacts_DirectReferencesRemainUsableWithMetadataProvider()
+    {
+        var job = (await _jobStore.GetAsync("job-artifacts"))!;
+        var references = new[]
+        {
+            "https://example.test/results/output.json", "staging/job/a1/result/output.tif",
+            "data:text/plain,private-inline", "https://example.test/output?token=private-value",
+            "{\"outputType\":\"future\",\"storeReference\":\"private-store\"}",
+            "https://fixture-user:749@example.test/output", "https://example.test/out\tput"
+        };
+        await _jobStore.SetAsync(job with { ArtifactReferences = references });
+        var response = await _client.GetAsync("/api/v1/admin/jobs/job-artifacts/artifacts?limit=10");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        var items = doc.RootElement.GetProperty("items").EnumerateArray().ToArray();
+        items.Should().HaveCount(7);
+        for (var i = 0; i < 2; i++)
+        {
+            items[i].GetProperty("availability").GetString().Should().Be("Available");
+            items[i].GetProperty("providerLink").GetString().Should().Be(references[i]);
+        }
+        foreach (var item in items.Skip(2))
+        {
+            item.GetProperty("availability").GetString().Should().Be("Redacted");
+        }
+        body.Should().NotContain("private-inline").And.NotContain("private-value").And.NotContain("private-store")
+            .And.NotContain("fixture-user");
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/admin/jobs/{jobId}/artifacts")]
+    public async Task GetArtifacts_ProviderFailureDoesNotEchoUnsafeReference()
+    {
+        var job = (await _jobStore.GetAsync("job-artifacts"))!;
+        await _jobStore.SetAsync(job with
+        {
+            ArtifactReferences = ["https://provider-error.test/output?token=private-error-value"]
+        });
+        var response = await _client.GetAsync("/api/v1/admin/jobs/job-artifacts/artifacts");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(body);
+        var item = doc.RootElement.GetProperty("items")[0];
+        item.GetProperty("availability").GetString().Should().Be("ProviderError");
+        item.GetProperty("artifactId").GetString().Should().StartWith("redacted-");
+        body.Should().NotContain("private-error-value");
     }
 
     [IntegrationTest]
@@ -841,12 +974,12 @@ public sealed class ConsoleJobEndpointsTests : IAsyncLifetime
 
         public Task<Artifact?> GetAsync(string artifactId, CancellationToken cancellationToken = default)
         {
-            if (artifactId == "provider-error")
+            if (artifactId == "provider-error" || artifactId.StartsWith("https://provider-error.test/", StringComparison.Ordinal))
             {
                 throw new InvalidOperationException("provider failed");
             }
 
-            if (artifactId == "missing")
+            if (artifactId == "missing" || artifactId.Contains('/') || artifactId.StartsWith("data:", StringComparison.Ordinal) || artifactId.StartsWith('{'))
             {
                 return Task.FromResult<Artifact?>(null);
             }

@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Capabilities;
+using Honua.Core.Features.Geoprocessing.Domain;
 
 namespace Honua.Geoprocessing;
 
@@ -301,35 +302,6 @@ internal sealed class GeoprocessingIdempotencyConflictException : Exception
     /// can recover by inspecting the winning job rather than blindly retrying.
     /// </summary>
     public string? ConflictingJobId { get; }
-}
-
-/// <summary>
-/// Raised when a geoprocessing output write would collide with an existing,
-/// available artifact in the target workspace and the caller did not request
-/// <c>env:overwriteOutput=true</c>. Mirrors arcpy's default
-/// <c>arcpy.env.overwriteOutput = False</c> behavior: re-running a tool against
-/// the same workspace output fails clearly instead of silently clobbering it.
-/// </summary>
-internal sealed class ArtifactAlreadyExistsException : Exception
-{
-    /// <summary>
-    /// Identifier of the workspace containing the colliding output.
-    /// </summary>
-    public string WorkspaceId { get; }
-
-    /// <summary>
-    /// Stable output label that already exists in the workspace.
-    /// </summary>
-    public string Label { get; }
-
-    public ArtifactAlreadyExistsException(string workspaceId, string label)
-        : base(
-            $"Output '{label}' already exists in workspace '{workspaceId}'. " +
-            "Set env:overwriteOutput=true to replace it.")
-    {
-        WorkspaceId = workspaceId;
-        Label = label;
-    }
 }
 
 /// <summary>

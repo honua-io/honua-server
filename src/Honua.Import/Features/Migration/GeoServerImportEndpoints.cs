@@ -381,29 +381,10 @@ internal static partial class GeoServerImportEndpoints
             return null;
         }
 
-        var secretProvider = context.RequestServices.GetService<ISecretProvider>();
-        if (!IsSupportedSecretReference(request.PasswordSecretReference, secretProvider))
-        {
-            return "PasswordSecretReference must use a supported secret reference format.";
-        }
-
-        if (!IsSupportedSecretReference(request.HonuaApiKeySecretReference, secretProvider))
-        {
-            return "HonuaApiKeySecretReference must use a supported secret reference format.";
-        }
-
-        return null;
-    }
-
-    private static bool IsSupportedSecretReference(string? secretReference, ISecretProvider? secretProvider)
-    {
-        if (string.IsNullOrWhiteSpace(secretReference))
-        {
-            return true;
-        }
-
-        return SecretReferenceResolver.IsEnvironmentReference(secretReference) ||
-            (secretProvider?.IsSecretReference(secretReference) ?? false);
+        return RequestSecretReferenceValidation.Validate(
+                context.RequestServices, request.PasswordSecretReference, "PasswordSecretReference")
+            ?? RequestSecretReferenceValidation.Validate(
+                context.RequestServices, request.HonuaApiKeySecretReference, "HonuaApiKeySecretReference");
     }
 
     private static async Task TryRollbackQueuedStateAsync(

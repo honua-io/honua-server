@@ -41,38 +41,6 @@ the cache between credential changes.
 
 ## Steps
 
-### SensorThings observation streams (Preview)
-
-`GET /sta/v1.1/ObservationsStream` requires authentication before either an SSE
-handshake or a WebSocket upgrade. Use the configured authentication scheme (for
-example, `X-API-Key` for an API client). Anonymous requests receive `401`; enabling
-anonymous SensorThings writes does not enable anonymous streaming.
-
-A subscription receives observations only for its resolved tenant and database
-schema. Omitting `datastreamId` selects all datastreams within that boundary.
-Tenant overrides follow the shared tenant middleware's administrator rules; a
-datastream ID is never a cross-tenant identifier.
-
-Concurrent subscriptions are admitted against three nested caps under
-`SensorThings:Streaming`, so no single credential or tenant can hold every slot on
-a node:
-
-| Setting | Default | Refusal |
-|---|---:|---|
-| `MaxSessionsPerPrincipal` | 8 | `429` with `Retry-After` |
-| `MaxSessionsPerTenant` | 64 | `429` with `Retry-After` |
-| `MaxConcurrentSessions` (per node) | 256 | `503` with `Retry-After` |
-
-A per-tenant cap at or above the node cap, or a per-principal cap above the
-per-tenant cap, fails startup validation. `RetryAfterSeconds` (default 30) sets the
-hint returned with a refusal. A refused request never opens a stream: the problem
-response is returned before the SSE headers or the WebSocket upgrade.
-
-Upgrade every observation-stream node together. Scoped fan-out uses a new Redis
-channel, so old and updated nodes do not exchange observations during a rolling
-upgrade. Reconnect clients to updated nodes; streams remain best-effort, with no
-replay guarantee. Disable the old stream endpoints until their nodes are updated.
-
 ### 1. Set the admin API key
 
 ```bash
@@ -192,11 +160,11 @@ all token-issuance nodes before resuming those exchanges.
 
 The response is `{ "token": "...", "expires": ..., "ssl": true }`. Tokens are opaque, cached server-side (Redis when enabled), and bound either to the supplied referer (`client=referer`, the default) or to the request's client IP (`client=ip` or `client=requestip`, the Esri SDK default for IP-bound tokens) — a mismatched binding fails validation. Use them on `/rest/services/...` via `?token=`, `Authorization: Bearer`, `X-Esri-Authorization: Bearer`, or a form-encoded POST `token` field. Issuance is HTTPS-only by default; expiry is clamped to `Authentication__PortalToken__MaxExpirationMinutes` (default 14400). An opt-in OAuth2 bridge (`/sharing/rest/oauth2/*`) brokers named-user sign-in to your OIDC provider — register every redirect URI in `Authentication__PortalToken__OAuth2__AllowedRedirectUris` before enabling it.
 
-For non-interactive service-to-service clients, an opt-in OAuth2 `client_credentials` grant (off by default; ADR-0053) exchanges an existing API key for an OAuth2 access token. Enable it with `Authentication__PortalToken__OAuth2__EnableClientCredentials=true`, then `POST /sharing/rest/oauth2/token` with `grant_type=client_credentials`, `client_id=<key-name>`, and `client_secret=<api-key>` (or HTTP Basic). The returned `access_token` is the same opaque, IP-bound portal token and has no refresh token (the client re-requests with its secret). With the flag off the grant is rejected with `unsupported_grant_type` — no behaviour change for existing deployments.
+For non-interactive service-to-service clients, an opt-in OAuth2 `client_credentials` grant (off by default) exchanges an existing API key for an OAuth2 access token. Enable it with `Authentication__PortalToken__OAuth2__EnableClientCredentials=true`, then `POST /sharing/rest/oauth2/token` with `grant_type=client_credentials`, `client_id=<key-name>`, and `client_secret=<api-key>` (or HTTP Basic). The returned `access_token` is the same opaque, IP-bound portal token and has no refresh token (the client re-requests with its secret). With the flag off the grant is rejected with `unsupported_grant_type` — no behaviour change for existing deployments.
 
 The API-key exchange follows the same rule as the admin credential bridge above. A portal token holds roles only, so only a key that confers full administration can be represented; its token carries the `admin` role. Every other key is refused with `unauthorized_client`. That covers service/layer keys, narrow admin or operations grants, approved-operation replay credentials, and keys with any other permission label. A permission label never becomes a token role. Use constrained keys through `X-API-Key`, or register a first-class OAuth2 client (below) for scoped per-application tokens. The upgrade note above applies to tokens previously issued through this grant as well.
 
-For a true per-application client identity (rather than reusing a human API key), register a first-class OAuth2 client (ADR-0053 Increment 2). Define your scopes once — `PUT /api/v1/admin/oauth-scopes` with `{ "scope": "features:read", "permissions": ["services:read"] }` — then register the client with `POST /api/v1/admin/oauth-clients` (`name`, `clientType` `confidential`|`public`, `allowedGrantTypes`, `allowedScopes`). The response's `data.clientSecret` is shown once; the stored secret is SHA-256-hashed (never plaintext). Authenticate with the returned `client_id`/`client_secret` at `/sharing/rest/oauth2/token`; the requested `scope` is narrowed to the client's allowed scopes, mapped to permissions via the catalogue, and echoed in the response. Manage clients with `GET /api/v1/admin/oauth-clients`, `GET`/`DELETE .../{id}`. The token endpoint matches a first-class client first and falls back to the API-key path, so both styles coexist.
+For a true per-application client identity (rather than reusing a human API key), register a first-class OAuth2 client. Define your scopes once — `PUT /api/v1/admin/oauth-scopes` with `{ "scope": "features:read", "permissions": ["services:read"] }` — then register the client with `POST /api/v1/admin/oauth-clients` (`name`, `clientType` `confidential`|`public`, `allowedGrantTypes`, `allowedScopes`). The response's `data.clientSecret` is shown once; the stored secret is SHA-256-hashed (never plaintext). Authenticate with the returned `client_id`/`client_secret` at `/sharing/rest/oauth2/token`; the requested `scope` is narrowed to the client's allowed scopes, mapped to permissions via the catalogue, and echoed in the response. Manage clients with `GET /api/v1/admin/oauth-clients`, `GET`/`DELETE .../{id}`. The token endpoint matches a first-class client first and falls back to the API-key path, so both styles coexist.
 
 ### 5. Choose per client
 
@@ -208,6 +176,38 @@ For a true per-application client identity (rather than reusing a human API key)
 | Native operator clients in locked-down environments | Client certificates — [TLS and mTLS](tls-and-mtls.md) |
 
 A legacy Basic compatibility mode (`HONUA_ENABLE_BASIC_AUTH_COMPAT=true`, with `HONUA_REQUIRE_HTTPS_FOR_BASIC_AUTH=true` enforced in production) maps the Basic password to the admin API key; use it only during migrations.
+
+### SensorThings observation streams (Preview)
+
+`GET /sta/v1.1/ObservationsStream` requires authentication before either an SSE
+handshake or a WebSocket upgrade. Use the configured authentication scheme (for
+example, `X-API-Key` for an API client). Anonymous requests receive `401`; enabling
+anonymous SensorThings writes does not enable anonymous streaming.
+
+A subscription receives observations only for its resolved tenant and database
+schema. Omitting `datastreamId` selects all datastreams within that boundary.
+Tenant overrides follow the shared tenant middleware's administrator rules; a
+datastream ID is never a cross-tenant identifier.
+
+Concurrent subscriptions are admitted against three nested caps under
+`SensorThings:Streaming`, so no single credential or tenant can hold every slot on
+a node:
+
+| Setting | Default | Refusal |
+|---|---:|---|
+| `MaxSessionsPerPrincipal` | 8 | `429` with `Retry-After` |
+| `MaxSessionsPerTenant` | 64 | `429` with `Retry-After` |
+| `MaxConcurrentSessions` (per node) | 256 | `503` with `Retry-After` |
+
+A per-tenant cap at or above the node cap, or a per-principal cap above the
+per-tenant cap, fails startup validation. `RetryAfterSeconds` (default 30) sets the
+hint returned with a refusal. A refused request never opens a stream: the problem
+response is returned before the SSE headers or the WebSocket upgrade.
+
+Upgrade every observation-stream node together. Scoped fan-out uses a new Redis
+channel, so old and updated nodes do not exchange observations during a rolling
+upgrade. Reconnect clients to updated nodes; streams remain best-effort, with no
+replay guarantee. Disable the old stream endpoints until their nodes are updated.
 
 ## Verify
 

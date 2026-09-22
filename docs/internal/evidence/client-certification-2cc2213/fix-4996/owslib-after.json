@@ -1,0 +1,56 @@
+/regressions/coverage_clients.py:96: DeprecationWarning: Setting the shape on a NumPy array has been deprecated in NumPy 2.5.
+As an alternative, you can create a new view using np.reshape (with copy=False if needed).
+  values = dataset.read(1).tolist()
+{
+  "result": "pass",
+  "fixture": "coverage-fixture.sql",
+  "client": "OWSLib 0.36.0",
+  "trims": [
+    {
+      "values": [
+        [
+          11.0,
+          -9999.0
+        ],
+        [
+          21.0,
+          22.0
+        ]
+      ],
+      "nodata": -9999.0,
+      "geotransform": [
+        -123.0,
+        1.0,
+        0.0,
+        39.0,
+        0.0,
+        -1.0
+      ],
+      "srid": 4326,
+      "request": "http://honua:5000/ogc/coverages/collections/2496/coverage?subset=Lon%28-123%3A-121%29%2CLat%2837%3A39%29"
+    },
+    {
+      "values": [
+        [
+          11.0,
+          -9999.0
+        ],
+        [
+          21.0,
+          22.0
+        ]
+      ],
+      "nodata": -9999.0,
+      "geotransform": [
+        -123.0,
+        1.0,
+        0.0,
+        39.0,
+        0.0,
+        -1.0
+      ],
+      "srid": 4326,
+      "request": "http://honua:5000/ogc/coverages/collections/2496/coverage?subset=Lat%2837%3A39%29%2CLon%28-123%3A-121%29"
+    }
+  ]
+}

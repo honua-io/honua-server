@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using Honua.Ai.Protocols.Mcp.Models;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Middleware;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
@@ -121,6 +122,20 @@ internal static class McpEndpointExtensions
         return next(context);
     }
 
+    /// <summary>
+    /// Token-replay continuation id for an MCP session (honua-server#4909).
+    /// </summary>
+    internal static string TokenReplayContinuationId(string sessionId) => $"mcp-session:{sessionId}";
+
+    /// <summary>
+    /// Binds the bearer token admitted on this request to <paramref name="sessionId"/> so
+    /// token replay protection admits that token's reuse on this session and nowhere else
+    /// (honua-server#4909). A no-op for API-key and anonymous callers, when replay
+    /// protection is disabled, and for a token already bound to another session.
+    /// </summary>
+    private static Task<bool> BindTokenReplayContinuationAsync(HttpContext context, string sessionId) =>
+        OidcAuthenticationExtensions.TryBindTokenReplayContinuationAsync(context, TokenReplayContinuationId(sessionId));
+
     private static async Task HandlePostAsync(HttpContext context, CancellationToken cancellationToken)
     {
         var surface = context.RequestServices.GetRequiredService<McpDataAccessSurface>();
@@ -210,6 +225,10 @@ internal static class McpEndpointExtensions
                             cancellationToken).ConfigureAwait(false);
                         return;
                 }
+
+                // The session accepted this principal (or serves it statelessly), so a
+                // freshly admitted — e.g. refreshed — bearer token may continue it.
+                await BindTokenReplayContinuationAsync(context, presented.ToString()).ConfigureAwait(false);
             }
 
             // honua-server#3428: rehydrate the session-negotiated workflow view onto
@@ -274,6 +293,7 @@ internal static class McpEndpointExtensions
                 if (sessions.TryCreateSession(principalKey, elicitationSupported, negotiatedView, out var sessionId))
                 {
                     context.Response.Headers[McpSessionManager.SessionHeaderName] = sessionId;
+                    await BindTokenReplayContinuationAsync(context, sessionId).ConfigureAwait(false);
                     McpLog.SessionIssued(logger, sessionId);
                 }
                 else
@@ -359,6 +379,7 @@ internal static class McpEndpointExtensions
             return;
         }
 
+        await BindTokenReplayContinuationAsync(context, sessionId).ConfigureAwait(false);
         StartEventStream(context);
         // Flush the response head so the client (and proxies) see the open SSE
         // stream immediately, before the first server-initiated frame is available.
@@ -738,7 +759,7 @@ internal static class McpEndpointExtensions
     /// a spec-compliant server are served statelessly; garbage keeps the strict
     /// 404.
     /// </summary>
-    private static bool IsWellFormedSessionId(string sessionId) =>
+    internal static bool IsWellFormedSessionId(string sessionId) =>
         sessionId.Length > 0
         && sessionId.Length <= MaxWellFormedSessionIdLength
         && sessionId.All(static c => c is >= '!' and <= '~');

@@ -86,6 +86,58 @@ public sealed partial class GPServerSoapEndpointsTests
     }
 
     [IntegrationTheory]
+    [InlineData("unqualified")]
+    [InlineData("qualified")]
+    [InlineData("default-namespace")]
+    [Operation(Operations.Create)]
+    [Endpoint("POST /services/{serviceId}/GPServer")]
+    [InterfaceOperation(TestProtocols.GPServer, "SubmitJob")]
+    public async Task SoapSubmitJob_ArgumentNamespaceForms_BindTheSameInputs(string form)
+    {
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        AnalysisPlan? submittedPlan = null;
+        jobs.SubmitJobAsync(Arg.Any<AnalysisPlan>(), Arg.Any<string?>(), Arg.Any<ClaimsPrincipal>(),
+            Arg.Any<IReadOnlyDictionary<string, string>?>(), Arg.Any<CancellationToken>()).Returns(call =>
+            {
+                submittedPlan = call.Arg<AnalysisPlan>();
+                return Task.FromResult(SoapJob());
+            });
+        using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
+        {
+            services.RemoveAll<IGeoprocessingJobService>();
+            services.AddSingleton(jobs);
+        });
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        using var response = await PostOperationAsync(client, SoapOperationForm("SubmitJob", AreaArguments, form));
+        var text = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, text);
+        var step = submittedPlan!.Steps.Should().ContainSingle().Subject;
+        step.ProcessId.Should().Be("geometry.area");
+        step.Inputs["wkb"].Should().Be("AQEAAAAAAAAAAAAAAAAAAAAAAAAA");
+        step.Inputs["srid"].Should().Be("3857");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ErrorHandling)]
+    [Endpoint("POST /services/{serviceId}/GPServer")]
+    [InterfaceOperation(TestProtocols.GPServer, "SubmitJob")]
+    public async Task SoapSubmitJob_UnrecognisedArgument_IsRejectedBeforeSubmission()
+    {
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        using var factory = ServiceRbacTestFixture.CreateFactory(configureServices: services =>
+        {
+            services.RemoveAll<IGeoprocessingJobService>();
+            services.AddSingleton(jobs);
+        });
+        using var client = ServiceRbacTestFixture.CreateClient(factory, "alpha-reader");
+        using var response = await PostAsync(client, "SubmitJob", AreaArguments + "<Recurse>true</Recurse>");
+        var text = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, text);
+        XDocument.Parse(text).Descendants(XName.Get("Fault", Soap11)).Should().ContainSingle();
+        await jobs.DidNotReceiveWithAnyArgs().SubmitJobAsync(default!, default, default!, default, default);
+    }
+
+    [IntegrationTheory]
     [InlineData("GetJobStatus")]
     [InlineData("GetJobMessages")]
     [InlineData("GetJobResult")]

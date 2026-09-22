@@ -45,17 +45,20 @@ internal sealed class SnowflakeFeatureStore : IFeatureDataProvider, IFeatureRead
     private readonly SnowflakeFeatureDataAccess _dataAccess;
     private readonly FeatureProviderBinding? _binding;
     private readonly DataConnection? _boundConnection;
+    private readonly LayerReadSecurityResolver? _readSecurity;
 
-    public SnowflakeFeatureStore(SnowflakeFeatureDataAccess dataAccess)
-        : this(dataAccess, binding: null)
+    public SnowflakeFeatureStore(SnowflakeFeatureDataAccess dataAccess, LayerReadSecurityResolver? readSecurity = null)
+        : this(dataAccess, readSecurity, binding: null)
     {
     }
 
     private SnowflakeFeatureStore(
         SnowflakeFeatureDataAccess dataAccess,
+        LayerReadSecurityResolver? readSecurity,
         FeatureProviderBinding? binding)
     {
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
+        _readSecurity = readSecurity;
         _binding = binding;
         _boundConnection = binding?.Connection;
     }
@@ -77,7 +80,7 @@ internal sealed class SnowflakeFeatureStore : IFeatureDataProvider, IFeatureRead
     {
         ArgumentNullException.ThrowIfNull(binding);
 
-        return new SnowflakeFeatureStore(_dataAccess, binding);
+        return new SnowflakeFeatureStore(_dataAccess, _readSecurity, binding);
     }
 
     /// <inheritdoc />
@@ -199,11 +202,10 @@ internal sealed class SnowflakeFeatureStore : IFeatureDataProvider, IFeatureRead
         int layerId, FeatureQuery query, H3AggregationQuery h3Query, CancellationToken cancellationToken = default)
         => throw NotSupported(nameof(QueryH3Async), layerId);
 
-    private Task<(SnowflakeLayerMapping Mapping, IReadOnlyList<string> AttributeColumns)> ResolveLayerAsync(
+    private async Task<(SnowflakeLayerMapping Mapping, IReadOnlyList<string> AttributeColumns)> ResolveLayerAsync(
         int layerId,
         CancellationToken cancellationToken)
     {
-        _ = cancellationToken;
         var binding = _binding
             ?? throw new InvalidOperationException(
                 "Snowflake provider reads require a Metadata v2 provider binding; route requests through FeatureProviderQueryRouter.");
@@ -213,6 +215,16 @@ internal sealed class SnowflakeFeatureStore : IFeatureDataProvider, IFeatureRead
                 $"Snowflake provider binding targets storage layer {binding.StorageLayerId}, not requested layer {layerId}.");
         }
 
+        // Every read path resolves its layer here, so this is the single seam that refuses a
+        // read whose layer carries a read policy this provider cannot enforce (permanent
+        // filter, row-level security predicate or field masks).
+        if (_readSecurity is not null)
+        {
+            await _readSecurity
+                .EnsureNoUnenforcedPolicyAsync("Snowflake", layerId, binding.Resource, rejectPermanentFilter: true, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         var mapping = SnowflakeLayerMapping.FromStorage(layerId, binding.StorageMapping);
         var attributeColumns = binding.Resource.SchemaFields
             .Where(f => f.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)
@@ -220,7 +232,7 @@ internal sealed class SnowflakeFeatureStore : IFeatureDataProvider, IFeatureRead
             .Select(f => f.Name)
             .ToArray();
 
-        return Task.FromResult<(SnowflakeLayerMapping, IReadOnlyList<string>)>((mapping, attributeColumns));
+        return (mapping, attributeColumns);
     }
 
     private static NotSupportedException NotSupported(string operation, int layerId)

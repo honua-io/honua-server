@@ -1,6 +1,7 @@
 ---
 type: index
 title: "Honua Studio"
+description: "One typed map, app, and dashboard composition that a person or an agent edits through the same tools, in browser preview for 2026.1."
 ---
 # Honua Studio
 
@@ -18,12 +19,6 @@ manage drafts. The model never edits the DOM or invents server routes.
 Use the preview by embedding `<honua-studio-app>`, using Honua's model proxy
 with the JavaScript `StudioAgentSession`, or connecting another MCP host to
 `/mcp` and calling the same composition tools.
-
-The server candidate verified for this section is
-`d4da482c95db7cb4d0dc06958b232c64a52a7b36`. Verification covered names,
-routes, configuration shapes, documentation links, and the repository's
-documentation-only pre-PR gate. It did not turn an unreleased browser bundle
-into a supported distribution.
 
 ## Release boundary
 

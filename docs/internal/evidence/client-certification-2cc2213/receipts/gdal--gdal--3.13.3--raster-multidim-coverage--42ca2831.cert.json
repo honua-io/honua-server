@@ -1,0 +1,321 @@
+{
+  "schema_version": "1.0",
+  "run_id": "roster-20260916T213457Z-2cc2213",
+  "run_date": "2026-09-16T21:46:38.698724Z",
+  "server_commit": "2cc221388ea47d78c29e79eaee62737e4c792351",
+  "server_version": {
+    "success": true,
+    "data": {
+      "version": "2026.1.1",
+      "metadataApiVersion": "metadata.honua.io/v2alpha1",
+      "metadataSchemaVersion": "2.0.0-alpha.1",
+      "serverTime": "2026-09-16T21:35:25.7136013+00:00"
+    },
+    "message": null,
+    "timestamp": "2026-09-16T21:35:25.7136021+00:00"
+  },
+  "producer_source_sha": "786b664f916b5c98fb2393555bf55801dc5f16e1",
+  "image_digest": "sha256:61e06ef3a94d00e4c8fc57ce93e008a5e31b2dcf1da5deb22781fdd42d2d4e51",
+  "fixture_revision": "docker/cng/seed.sql@2cc221388ea47d78c29e79eaee62737e4c792351",
+  "server_config_revision": "canonical-client-applicability@2026-08-21.3",
+  "auth_policy_revision": "anonymous-and-protected-v1",
+  "client_id": "GDAL",
+  "runner_lane": "gdal",
+  "client_version": "3.13.3",
+  "protocol": "raster-multidim-coverage",
+  "protocol_version": "OGC API - Coverages 1.0",
+  "protocol_profile": "registered Zarr datacube",
+  "environment": "local-docker",
+  "deployment_target": "local-docker",
+  "results": [
+    {
+      "test_case_id": "client-cert/gdal/raster-multidim-coverage/raster.multidim-coverage",
+      "status": "fail",
+      "performed_by": "GDAL",
+      "request_url": "http://honua:5000/ogc/coverages/collections/5200",
+      "exercised_capabilities": [
+        "positive",
+        "negative",
+        "auth",
+        "metadata",
+        "boundary",
+        "crs-axis",
+        "media-schema"
+      ],
+      "notes": "failed checks positive:open the registered Zarr datacube as a coverage and read the t0 slice, auth:the protected datacube requires a credential, metadata:variables, dimensions and CF units are described, boundary:an edge subset reads the boundary cells, crs-axis:latitude/longitude axes map to the lon/lat extent, media-schema:coverage payloads decode as GeoTIFF",
+      "operation": "raster.multidim-coverage",
+      "started_at": "2026-09-16T21:46:38.698724Z",
+      "finished_at": "2026-09-16T21:46:38.755433Z",
+      "duration_ms": 57,
+      "protocol_version": "OGC API - Coverages 1.0",
+      "checks": [
+        {
+          "facet": "positive",
+          "name": "open the registered Zarr datacube as a coverage and read the t0 slice",
+          "outcome": "fail",
+          "detail": "CheckFailed: GDAL OGCAPI could not open http://honua:5000/ogc/coverages/collections/5200: HTTP error code : 404, {\"type\":\"about:blank\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"Collection \\u00275200\\u0027 does not expose a raster coverage.\",\"instance\":\"/ogc/coverages/collections/5200\",\"correlationId\":\"00-9fc27b220e3ab08f9352a17efd77ec14-e832a8541eaadda2-01\",\"timestamp\":\"2026-09-16T21:46:38.7075160\\u002B00:00\"}\nMay be caused by: HTTP error code : 404; requests ['http://honua:5000/ogc/coverages/collections/5200']",
+          "request_url": null,
+          "duration_ms": 10
+        },
+        {
+          "facet": "negative",
+          "name": "an unknown datacube collection is a 404",
+          "outcome": "pass",
+          "detail": "HTTP error code : 404, {\"type\":\"about:blank\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"Collection \\u0027999999\\u0027 not found.\",\"instance\":\"/ogc/coverages/collections/999999\",\"correlationId\":\"00-d83",
+          "request_url": null,
+          "duration_ms": 7
+        },
+        {
+          "facet": "auth",
+          "name": "the protected datacube requires a credential",
+          "outcome": "fail",
+          "detail": "CheckFailed: denials {'anonymous': 401, 'wrong-api-key': 401, 'expired-bearer': 401}, but no credential can be shown to admit a datacube that is not served",
+          "request_url": null,
+          "duration_ms": 39
+        },
+        {
+          "facet": "metadata",
+          "name": "variables, dimensions and CF units are described",
+          "outcome": "fail",
+          "detail": "CheckFailed: not exercisable: the datacube coverage was not served (see the positive check)",
+          "request_url": null,
+          "duration_ms": 0
+        },
+        {
+          "facet": "boundary",
+          "name": "an edge subset reads the boundary cells",
+          "outcome": "fail",
+          "detail": "CheckFailed: not exercisable: the datacube coverage was not served (see the positive check)",
+          "request_url": null,
+          "duration_ms": 0
+        },
+        {
+          "facet": "crs-axis",
+          "name": "latitude/longitude axes map to the lon/lat extent",
+          "outcome": "fail",
+          "detail": "CheckFailed: not exercisable: the datacube coverage was not served (see the positive check)",
+          "request_url": null,
+          "duration_ms": 0
+        },
+        {
+          "facet": "media-schema",
+          "name": "coverage payloads decode as GeoTIFF",
+          "outcome": "fail",
+          "detail": "CheckFailed: not exercisable: the datacube coverage was not served (see the positive check)",
+          "request_url": null,
+          "duration_ms": 0
+        }
+      ],
+      "wire": {
+        "window": [
+          "2026-09-16T21:46:38.698724Z",
+          "2026-09-16T21:46:38.755433Z"
+        ],
+        "exchanges": 11,
+        "wire_lines": [
+          608,
+          609,
+          610,
+          611,
+          612,
+          613,
+          614,
+          615,
+          616,
+          617,
+          618
+        ],
+        "wire_lines_sha256": "d4289ff32a809c04efe78e7789c46552d355089b4d5fa0ff166fcac813f2503c",
+        "statuses": {
+          "200": 6,
+          "401": 3,
+          "404": 2
+        },
+        "user_agents": [
+          "GDAL/3.13.3"
+        ],
+        "credential_schemes": [
+          "ApiKey",
+          "Bearer",
+          "none"
+        ]
+      }
+    }
+  ],
+  "summary": {
+    "total": 1,
+    "passed": 0,
+    "failed": 1,
+    "skipped": 0
+  },
+  "honua_evidence": {
+    "release": "2026.1",
+    "candidate": {
+      "run_id": "roster-20260916T213457Z-2cc2213",
+      "release": "2026.1",
+      "cut": "pre-cut proof on the imaged trunk nightly (operator ruling A, 2026-09-16); no release cut exists",
+      "tag": "nightly-2cc2213",
+      "image": "ghcr.io/honua-io/honua-server@sha256:61e06ef3a94d00e4c8fc57ce93e008a5e31b2dcf1da5deb22781fdd42d2d4e51",
+      "index_digest": "sha256:61e06ef3a94d00e4c8fc57ce93e008a5e31b2dcf1da5deb22781fdd42d2d4e51",
+      "platform_image_id": "sha256:61e06ef3a94d00e4c8fc57ce93e008a5e31b2dcf1da5deb22781fdd42d2d4e51",
+      "source_sha": "2cc221388ea47d78c29e79eaee62737e4c792351",
+      "image_created": "2026-09-16T10:25:15.432Z",
+      "producer_source_sha": "786b664f916b5c98fb2393555bf55801dc5f16e1",
+      "target": "local-docker",
+      "durable_uri_base": "https://github.com/honua-io/honua-server/blob/trunk/docs/internal/evidence/client-certification-2cc2213/receipts/",
+      "server_version": {
+        "success": true,
+        "data": {
+          "version": "2026.1.1",
+          "metadataApiVersion": "metadata.honua.io/v2alpha1",
+          "metadataSchemaVersion": "2.0.0-alpha.1",
+          "serverTime": "2026-09-16T21:35:25.7136013+00:00"
+        },
+        "message": null,
+        "timestamp": "2026-09-16T21:35:25.7136021+00:00"
+      }
+    },
+    "fixture": {
+      "fixture": {
+        "files": {
+          "tests/seed/client-compat-v1.sql": "538537661f80fc46fb8cdc3f18c29b74cec192be15277d7bed0a046195d85757",
+          "tests/seed/browser-compat.yaml": "28f3d5a8eb38a459ccc00c1ee1d98e9b0bc35ca20a425fcaeb9775539d5a9777",
+          "tests/seed/client-compat-auth-wave1.yaml": "efe72bb4d3f0fd568d0dcdd41dbc230786e0f750959ab3ecc09a859482a4146f",
+          "tests/seed/portal-compat.yaml": "8a15f04566db39eadf7a2a784711cf8666ee298b238dbe2b665856936717c654",
+          "docker/cng/seed.sql": "83eb29ac38a3fb54914c1252b273dbb7f7f4d651a8204aafb4108d14d6d23727",
+          "certification/bounded-roster/fixture/roster-raster-fixture.sql": "e1b67029a1f991e497975657c86e075493697782ab2e042218bf052821060946",
+          "certification/bounded-roster/fixture/apply_fixture.py": "0e0cfddde3bc2406b45ec369d0fe02f635f46be40da9ccbf1d62da96f0e189f7"
+        },
+        "sha256": "373c9e9c19630d35f76bfea62007bcac3eb68fad880efcc32c1c545fea6fec84"
+      },
+      "server_config": {
+        "files": {
+          "docker/client-compat/compose.yml": "c85c7b55aac33f0fa2bbd281ea3c34365a724ab1e71d79034969dd813de1dcd3",
+          "certification/bounded-roster/compose.candidate.yml": "df63ac24f421fbe62148ce3b974c1a52a853780f2bcb58e35498ad312101568e"
+        },
+        "sha256": "b93d37649eb33faa96c5d01f91a6f99a151d311cb28d86145fcf8e19cddd0a99"
+      },
+      "auth_profile": {
+        "files": {
+          "tests/python/shared/cert_auth.py": "1d1e9d14a20522c8534846c429352a34dded5c2f2f3bfa2e75527067d411f406",
+          "certification/bounded-roster/lib/rosterenv.py": "d7cd3b4fb07fa5a97c6cbc2fdcf3c2cbfd70ac7c5385a0aa17118713f992acd1"
+        },
+        "sha256": "7ae3e6d6a24e9cf767e8c7c467f87da85f274aba259d1ef052eeb68fc65d4958"
+      },
+      "authored_objects": {
+        "cog_sha256": "8f3d72c953f432497cd8a144c671cf3a097f901e3825dc759b64170baddd286e",
+        "zarr_objects": {
+          ".zgroup": "e1e1914ae531ecb50e1ead685ef01895a5452faf5f25f35cd78f1f5de1367470",
+          "latitude/.zarray": "159b18e604ab48cea80b2f2274717e29632bdbbabb7d3d713c39d081bc461c16",
+          "latitude/.zattrs": "ced1a0fc1f56e5c8390f04b5aae829641d7e8e7a53b477bfab8f1e388097d201",
+          "latitude/0": "c017ba8ba94c8edee88c8b4a3e758466099074ced6c4cf005f00e382bc14f7fb",
+          "longitude/.zarray": "159b18e604ab48cea80b2f2274717e29632bdbbabb7d3d713c39d081bc461c16",
+          "longitude/.zattrs": "b13ff37602459a92ebcd20d30339139de1b0a6d0e3d2a62bed41b6a8166db67a",
+          "longitude/0": "35fba6c431575754b5211c738d95136ab87f210fa14febe5b6d023e0f78a87ee",
+          "sea_surface_temperature/.zarray": "0cd21d87a9be948d88c37465dbef5e0949da1842fdc97129f2dbd2754ca0bc28",
+          "sea_surface_temperature/.zattrs": "60c1b79e31d41b3196b994b7afa127706f5f30b835f67e5852890f3df687c319",
+          "sea_surface_temperature/0.0.0": "7947b3bec9208b39812217b4991d315ace7d5bb73b791c52f52e3e5a9a056dff",
+          "sea_surface_temperature/1.0.0": "3900d9c2e24335deeb469ec50daf9e4e217054262e0b220ca35ee6f8fd5e4a8a",
+          "time/.zarray": "68ee4a0f7aba395b620e50fcb23c48b02d52f5e1aa68dd9aaea1fc5db2fa840f",
+          "time/.zattrs": "8e8748818689b314fd05809fca7e594a128ac3600df72833477945d0c7902e2d",
+          "time/0": "a0271b7d6d70c4433d64ef613201fb90cc1dc160d7cbcdc3f2de5c39c7431717"
+        }
+      },
+      "registrations": {
+        "cloud-rasters": [
+          {
+            "id": 1,
+            "layerId": 5000,
+            "name": "roster cog 5000",
+            "description": null,
+            "provider": "AwsS3",
+            "bucket": "roster-fixtures",
+            "objectKey": "cog/roster-3857.tif",
+            "width": null,
+            "height": null,
+            "bandCount": null,
+            "srid": null,
+            "compression": null,
+            "overviewLevelCount": null,
+            "metadataScannedAt": null,
+            "createdAt": "2026-09-16T21:35:43.251246+00:00"
+          },
+          {
+            "id": 2,
+            "layerId": 5001,
+            "name": "roster cog 5001",
+            "description": null,
+            "provider": "AwsS3",
+            "bucket": "roster-fixtures",
+            "objectKey": "cog/roster-3857.tif",
+            "width": null,
+            "height": null,
+            "bandCount": null,
+            "srid": null,
+            "compression": null,
+            "overviewLevelCount": null,
+            "metadataScannedAt": null,
+            "createdAt": "2026-09-16T21:35:43.315616+00:00"
+          }
+        ],
+        "zarr-stores": [
+          {
+            "id": 1,
+            "layerId": 5200,
+            "name": "roster zarr 5200",
+            "description": null,
+            "provider": "AwsS3",
+            "bucket": "roster-fixtures",
+            "rootPath": "zarr/roster-sst.zarr",
+            "zarrFormat": null,
+            "srid": null,
+            "variableCount": null,
+            "primaryVariable": null,
+            "variables": null,
+            "metadataScannedAt": null,
+            "createdAt": "2026-09-16T21:35:43.3479988+00:00"
+          },
+          {
+            "id": 2,
+            "layerId": 5201,
+            "name": "roster zarr 5201",
+            "description": null,
+            "provider": "AwsS3",
+            "bucket": "roster-fixtures",
+            "rootPath": "zarr/roster-sst.zarr",
+            "zarrFormat": null,
+            "srid": null,
+            "variableCount": null,
+            "primaryVariable": null,
+            "variables": null,
+            "metadataScannedAt": null,
+            "createdAt": "2026-09-16T21:35:43.3758875+00:00"
+          }
+        ]
+      }
+    },
+    "client": {
+      "client_version_detail": [
+        "GDAL 3.13.3 \"Iowa City\", released 2026/08/13"
+      ],
+      "lane": {
+        "gdal 3.8.4": {
+          "lane": "gdal-3.8.4",
+          "image": "honua-roster/lane-gdal:3.8.4",
+          "image_id": "sha256:1952c4a24a44f84826938471f0ac761a1dcf3572fd4a666f0a6a5cccfc2202eb",
+          "base_image": "ghcr.io/osgeo/gdal:ubuntu-small-3.8.4",
+          "base_repo_digests": "[\"ghcr.io/osgeo/gdal@sha256:60d3bc2f8b09ca1a7ef2db0239699b2c03713aa02be6e525e731c0020bbb10a4\"]"
+        },
+        "gdal 3.13.3": {
+          "lane": "gdal-3.13.3",
+          "image": "honua-roster/lane-gdal:3.13.3",
+          "image_id": "sha256:87bd1773a4018e09bc07b4b484fef9ef85e5322f66e9ab5fb85082cee0c30fa5",
+          "base_image": "ghcr.io/osgeo/gdal:ubuntu-small-3.13.3",
+          "base_repo_digests": "[\"ghcr.io/osgeo/gdal@sha256:64250faf833c06d4b21afce4c27190039ba7ab58d70f0eebc87cf77d929c0b40\"]"
+        }
+      },
+      "lane_identity": null
+    },
+    "durable_uri": "https://github.com/honua-io/honua-server/blob/trunk/docs/internal/evidence/client-certification-2cc2213/receipts/gdal--gdal--3.13.3--raster-multidim-coverage--42ca2831.cert.json"
+  }
+}

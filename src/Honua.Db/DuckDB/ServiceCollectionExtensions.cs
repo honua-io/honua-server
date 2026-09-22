@@ -133,7 +133,8 @@ internal static class ServiceCollectionExtensions
             sp.GetRequiredService<IFeatureDataAccess>(),
             sp.GetRequiredService<IFeatureCacheManager>(),
             sp.GetService<Honua.Core.Features.Metadata.Abstractions.IMetadataV2GraphProvider>(),
-            sp.GetService<Honua.Core.Queries.Filters.IFilterExpressionService>()));
+            sp.GetService<Honua.Core.Queries.Filters.IFilterExpressionService>(),
+            Honua.Core.Features.FeatureStore.Services.LayerReadSecurityResolver.FromServices(sp)));
 
         // Register segregated interfaces
         services.AddScoped<IFeatureDataProvider>(sp => sp.GetRequiredService<DuckDBFeatureStore>());

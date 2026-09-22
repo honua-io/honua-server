@@ -760,6 +760,7 @@
       "title": "Publish layer",
       "inputFields": [
         "attribution",
+        "capabilities",
         "connectionId",
         "description",
         "dryRun",
@@ -776,6 +777,7 @@
         "serviceName",
         "sourceUrl",
         "srid",
+        "storageMode",
         "table"
       ],
       "outputFields": [

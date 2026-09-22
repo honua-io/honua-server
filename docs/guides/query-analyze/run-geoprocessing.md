@@ -116,10 +116,65 @@ projection, and NONE nodata). These are Esri's documented defaults and select th
 same behaviour as a REST request without `env:` parameters, so they are accepted
 for every task. Changed controls remain subject to canonical validation.
 
-Installed-client execution observations are retained with the GPServer tests in
-`Fixtures/EsriToolboxReplay`. These establish remote scalar execution, including
-an independently verified rectangle area; a native Pro desktop compatibility
-claim additionally requires fresh candidate and desktop UI receipts.
+### Workspace output retention and limits
+
+For managed jobs using `env:workspace`, PostgreSQL retains workspace output
+references across process restart. Workspace labels resolve within the calling
+owner's deployment context. A retry of the same job and output slot can recover
+its own output; replacing another job's output requires `env:overwriteOutput=true`.
+The native GDAL worker currently rejects these workspace controls.
+
+The `Geoprocessing:Workspace` settings bound each owner's active, unexpired
+workspaces and their artifact records:
+
+| Setting | Default | Meaning |
+| --- | ---: | --- |
+| `MaxWorkspaceCount` | 100 | Active workspaces; logically expired rows stop counting before cleanup runs. |
+| `MaxArtifactCount` | 1,000 | Artifact records across active, unexpired workspaces, including promoted records. |
+| `MaxStorageBytes` | 10 GiB | Recorded artifact bytes across those workspaces. Managed workspace publication counts the UTF-8 reference, including inline data. |
+
+Artifact writes serialize per owner and check projected usage before publication.
+An overwrite subtracts the replaced record when checking the limit. A quota
+rejection leaves the previous output intact and fails the job without automatic
+retry. Raising these limits does not change the separate executor output limit.
+
+The provider owns reference records. It neither measures nor deletes external
+files, layers, or cloud objects by following a reference, so recorded bytes are
+not a physical storage quota for those assets. Durable job acceptance and the
+PostgreSQL write use separate stores; a failed database commit requires retry
+recovery and is not a distributed transaction.
+
+### Bounded layer execution
+
+Layer-sourced buffer, dissolve, simplify, project, spatial-join and enrichment jobs
+apply the configured input limits while reading. Both join layers are bounded.
+`Limits:Analytics:MaxInputFeatures`, `Limits:Analytics:MaxInputBytes`,
+`Limits:Geometry:MaxGeometrySize` and `Limits:Geometry:MaxVerticesPerGeometry`
+remain authoritative. Non-ASCII text is charged in UTF-8 bytes, and nested
+attribute values count toward the input budget.
+
+The shared `Geoprocessing:Executors` configuration also limits computation:
+
+| Setting | Default | Enforced behavior |
+| --- | ---: | --- |
+| `MaxLayerVertices` | 100,000 | Cumulative vertices per input layer and buffered intermediate set; stops the read/buffer loop on overflow. |
+| `MaxTopologyWork` | 4,000,000 | Before managed topology, rejects squared vertex count for each buffer input, squared total vertex count for dissolve/simplify and buffered unions, or the product of both layers' vertex counts for joins/enrichment. This conservative estimate bounds admission even when a spatial index would later reduce the actual work. |
+| `MaxLayerExecutionSeconds` | 300 | Cancels layer reading, computation between topology calls, and serialization; a smaller job deadline still applies. |
+| `MaxArtifactBytes` | 52,428,800 | Stops UTF-8 serialization as the byte ceiling is reached, including attribute expansion; publishes no partial artifact. |
+
+An individual managed topology call cannot be interrupted. Its admitted work is
+bounded before entry; cancellation is observed as soon as it returns. These
+settings do not promise a hard wall-clock interrupt inside NetTopologySuite.
+Qualify the selected topology and limits under the worker's actual CPU and memory
+constraints before raising them. A failed resource budget returns its setting
+name and guidance to narrow the selection or simplify the input before resubmission.
+The job is failed, never silently truncated or reported as a partial success.
+
+Input, resource-limit and `MaxLayerExecutionSeconds` failures are terminal on the
+first attempt. The job's retry policy does not re-run them, because a retry repeats
+the same admission or spends another full deadline on the same input. Transient
+source-read failures keep the normal retry policy. Dismissing a running layer job
+cancels it at the next check between managed calls.
 
 ## Verify
 
@@ -148,33 +203,3 @@ Expected (trimmed):
 - [Automate workflows](automate-workflows.md)
 - [Geoprocessing operations reference](../../reference/geoprocessing-operations.md)
 - [Connect AI agents over MCP](../connect/ai-agents-mcp.md)
-
-### Bounded layer execution
-
-Layer-sourced buffer, dissolve, simplify, project, spatial-join and enrichment jobs
-apply the configured input limits while reading. Both join layers are bounded.
-`Limits:Analytics:MaxInputFeatures`, `Limits:Analytics:MaxInputBytes`,
-`Limits:Geometry:MaxGeometrySize` and `Limits:Geometry:MaxVerticesPerGeometry`
-remain authoritative. Non-ASCII text is charged in UTF-8 bytes, and nested
-attribute values count toward the input budget.
-
-The shared `Geoprocessing:Executors` configuration also limits computation:
-
-| Setting | Default | Enforced behavior |
-| --- | ---: | --- |
-| `MaxLayerVertices` | 100,000 | Cumulative vertices per input layer and buffered intermediate set; stops the read/buffer loop on overflow. |
-| `MaxTopologyWork` | 4,000,000 | Before managed topology, rejects squared vertex count for each buffer input, squared total vertex count for dissolve/simplify and buffered unions, or the product of both layers' vertex counts for joins/enrichment. This conservative estimate bounds admission even when a spatial index would later reduce the actual work. |
-| `MaxLayerExecutionSeconds` | 300 | Cancels layer reading, computation between topology calls, and serialization; a smaller job deadline still applies. |
-| `MaxArtifactBytes` | 52,428,800 | Stops UTF-8 serialization as the byte ceiling is reached, including attribute expansion; publishes no partial artifact. |
-
-An individual managed topology call cannot be interrupted. Its admitted work is
-bounded before entry; cancellation is observed as soon as it returns. These
-settings do not promise a hard wall-clock interrupt inside NetTopologySuite.
-Qualify the selected topology and limits under the worker's actual CPU and memory
-constraints before raising them. A failed resource budget returns its setting
-name and guidance to narrow the selection or simplify the input before resubmission.
-The job is failed, never silently truncated or reported as a partial success.
-
-The [layer resource qualification fixture](../../../tests/dotnet/Honua.Server.Tests/Features/Geoprocessing/Execution/LayerResourceQualification.md)
-documents the constrained deployment, independent geometry oracle, serving probes,
-and the currently failing manifest-pinned candidate receipt.

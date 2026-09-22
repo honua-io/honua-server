@@ -2,9 +2,14 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using FluentAssertions;
+using Honua.Core.Features.Capabilities;
+using Honua.Core.Features.Operations.Services;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Prompts;
+using Honua.Ai.Protocols.Mcp.Tools;
+using Honua.Ai.Protocols.Mcp.Views;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 
@@ -24,6 +29,7 @@ public sealed class McpPromptCatalogTests
         "hazard_assessment",
         "permit_review",
         "dashboard_scaffolding",
+        "setup_and_publish",
     };
 
     [UnitTest]
@@ -129,6 +135,55 @@ public sealed class McpPromptCatalogTests
 
         act.Should().Throw<GeoprocessingValidationException>()
             .WithMessage("*does_not_exist*");
+    }
+
+    [UnitTest]
+    public void SetupAndPublish_NamesExactlyTheSetupViewToolsAndNoExcludedAdminOperation()
+    {
+        // honua-server#3363: the setup-and-publish prompt must describe the tools the
+        // server actually serves for the terminal path. Every tool it names is a
+        // capability-registry tool selected by the server-authored setup view, every
+        // exact setup-view member is named, and it points at the published Admin
+        // family without naming any audited secret/session exclusion.
+        var text = McpPromptCatalog.Get("setup_and_publish", new Dictionary<string, string>
+        {
+            ["source"] = "parcels.gpkg",
+        }).Messages[0].Content.Text ?? string.Empty;
+
+        var named = Regex.Matches(text, "honua_[a-z0-9_]+")
+            .Select(match => match.Value)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        named.Should().Contain(PublishedOperationTool.AdminNamePrefix,
+            "the prompt must point the agent at the published Admin operation family");
+
+        var registryToolNames = new CapabilityRegistry().All
+            .Where(descriptor => descriptor.McpToolName is not null)
+            .Select(descriptor => descriptor.McpToolName!)
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var name in named.Where(name => name != PublishedOperationTool.AdminNamePrefix))
+        {
+            registryToolNames.Should().Contain(name, $"'{name}' must be a registered /mcp tool");
+            McpWorkflowViewCatalog.Setup.FindStageIndex(name).Should().BeGreaterThanOrEqualTo(0,
+                $"'{name}' must be a member of the server-authored setup view");
+        }
+
+        var setupMembers = McpWorkflowViewCatalog.Setup.Stages
+            .SelectMany(stage => stage.Rules)
+            .Where(rule => rule.Kind == McpWorkflowViewRuleKind.ExactName)
+            .Select(rule => rule.Value);
+        named.Should().Contain(setupMembers, "the prompt must cover the whole terminal setup path");
+
+        foreach (var exclusion in AdminMcpOperationExclusions.All)
+        {
+            text.Should().NotContain(exclusion.ToolName, "audited exclusions are never published over MCP");
+        }
+
+        text.Should().Contain("view \"setup\"").And.Contain("view \"full\"");
+        text.Should().Contain("creates no proposal",
+            "protected Admin tools are refused over MCP before any proposal exists");
+        text.Should().NotContain("honua://jobs/{jobId}", "honua_ingest_dataset is synchronous and returns no job");
+        text.Should().NotContain("{source}");
     }
 
     [UnitTest]

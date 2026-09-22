@@ -168,6 +168,101 @@
         }
       }
     },
+    "/ogc/maps/collections/{collectionId}": {
+      "get": {
+        "summary": "Get collection description",
+        "description": "Describes a collection that serves maps: its CRS84 extent and the map links (`https://www.opengis.net/def/rel/ogc/1.0/map`, its `[ogc-rel:map]` CURIE and the registered `http://www.opengis.net/def/rel/ogc/1.0/map` form that GDAL reads) that map clients follow to `/map`. Answers for exactly the collections that serve `/map`.",
+        "security": [
+          {},
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "collectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "f",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "json",
+                "html"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Collection description",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MapsCollection"
+                }
+              },
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query parameter",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required for the requested collection",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Requested collection is not accessible",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Collection not found",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/ogc/maps/collections/{collectionId}/map": {
       "get": {
         "summary": "Render a collection map",
@@ -705,6 +800,57 @@
           },
           "title": {
             "type": "string"
+          }
+        }
+      },
+      "MapsCollection": {
+        "type": "object",
+        "required": [
+          "id",
+          "links"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "extent": {
+            "type": "object",
+            "properties": {
+              "spatial": {
+                "type": "object",
+                "properties": {
+                  "bbox": {
+                    "type": "array",
+                    "items": {
+                      "type": "array",
+                      "minItems": 4,
+                      "maxItems": 6,
+                      "items": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "crs": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "itemType": {
+            "type": "string"
+          },
+          "links": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Link"
+            }
           }
         }
       },

@@ -55,16 +55,22 @@ On managed PostgreSQL layers, concurrent PATCH requests may return `409 Conflict
 | `limit`, `offset` | Paging, normalized by server limits. |
 | `ids`, `properties`, `sortby` | ID filter, property projection, `+`/`-`/`asc`/`desc` sorting. |
 | `bbox`, `bbox-crs` | 4 or 6 values; anti-meridian supported; any registry-resolvable EPSG CRS. |
-| `crs` | Output CRS; response includes `Content-Crs`. Part 2 conformance is not currently advertised. |
+| `crs` | Output CRS; response includes `Content-Crs`. Part 2 CRS conformance is advertised and exercised by the CITE evidence bundle. |
 | `datetime` | RFC 3339 instant or interval; requires temporal fields. |
-| `filter`, `filter-lang`, `filter-crs` | CQL2 filtering: `cql2-text` (default) and `cql2-json`. Filtering is implemented and blocking-tested, but its complete CQL2/Features Part 3 classes are not currently advertised. |
+| `filter`, `filter-lang`, `filter-crs` | CQL2 filtering: `cql2-text` (default) and `cql2-json`; `cql-text` is a legacy desktop-client alias for the text parser. Part 3 queryables/filter/features-filter and CQL2 basic/text/JSON classes are advertised. |
 | Queryable properties | Simple-valued queryables accepted directly as query parameters (combined with AND). |
+
+WGS84 collections advertise longitude/latitude `storageCrs=CRS84`, with CRS84 first
+in the supported CRS list. Default pages and single items use that axis order; an
+explicit EPSG:4326 request still returns latitude/longitude. Queryables retain
+the Part 3 JSON Schema and also expose a legacy property index and short link
+relation for GDAL 3.8.4.
 
 CQL2 parsing and translation support is broader than the currently advertised
 classes. Unsupported operators and functions return 400; the specialized
 comparison, temporal, array, and case/accent-insensitive classes remain
-unadvertised until the exact-candidate lane proves them. Full operator tables:
-[archived coverage matrix](../../archive/specifications/ogc-api-features-coverage.md).
+unadvertised until they are certified. Full operator tables:
+[CQL2 and filtering](../cql2-and-filtering.md).
 
 > Open `https://server.example.com/ogc/features/collections/roads/items?filter=S_INTERSECTS(geometry,POINT(-122.4%2037.8))&limit=10` in a browser.
 
@@ -73,6 +79,7 @@ unadvertised until the exact-candidate lane proves them. Full operator tables:
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/ogc/maps`, `/ogc/maps/conformance` | Landing page, conformance. |
+| GET | `/ogc/maps/collections/{collectionId}` | Collection description: extent and map links, for every collection that serves a map. |
 | GET | `/ogc/maps/collections/{collectionId}/map` | Rendered map for one collection. |
 | GET | `/ogc/maps/collections/{collectionId}/styles/{styleId}/map` | Rendered map with a named style. |
 | GET | `/ogc/maps/collections/{collectionId}/map/tiles`, `.../map/tiles/{tileMatrixSetId}` | Map tileset metadata. |
@@ -95,7 +102,7 @@ Map rendering and map tileset metadata observe the end-to-end `Limits__Connectio
 | GET | `/ogc/tiles/tiles`, `.../tiles/{tileMatrixSetId}`, `.../tiles/{tileMatrixSetId}/{tileMatrix}/{tileRow}/{tileCol}` | Dataset-level tilesets and tiles. |
 | GET | `/ogc/tiles/tileMatrixSets`, `.../tileMatrixSets/{tileMatrixSetId}` | Tile matrix set registry: the reserved built-ins (`WebMercatorQuad`, `WorldCRS84Quad`) plus any operator-defined custom gridsets. |
 
-Custom tile matrix sets are merged in from the `TileMatrixSets` configuration section (validated for unique IDs, no reserved-ID collision, monotonic scale denominators, positive tile dimensions, and a valid SRID). Custom gridsets are advertised through the registry and served by `GetTile` as both PNG (raster) and MVT (vector): the vector-tile provider derives the tile envelope and target SRID from the gridset geometry and reprojects the stored geometry into the gridset CRS with `ST_Transform`. The `crs`/`subset-crs` request parameters accept the gridset's own CRS for custom gridsets (tiles are delivered in the gridset CRS). Built-in gridset output (WebMercatorQuad / WorldCRS84Quad) is byte-identical to before. The per-dataset / per-collection tileset-metadata documents (`/ogc/tiles/.../tiles/{tileMatrixSetId}` and the tileset lists) advertise custom gridsets as `vector` (#1916): each custom gridset is emitted with its own CRS/URI and full-coverage per-level tile-matrix limits derived from the gridset geometry, threaded through the `ITileMatrixSetRegistry`; the two built-ins keep the byte-identical static-descriptor path. Tile requests accept a vertical/elevation subset (`subset=Z(...)` / `elevation(...)` / `height(...)`): the value is parsed, validated, and recorded on the render descriptor — raster layers can honour the coordinate, vector layers record-but-do-not-render it (Zarr-slice render binding is deferred). Non-vertical or unknown subset axes (e.g. `E(0:1)`) still return 400.
+Custom tile matrix sets are merged in from the `TileMatrixSets` configuration section (validated for unique IDs, no reserved-ID collision, monotonic scale denominators, positive tile dimensions, and a valid SRID). Custom gridsets are advertised through the registry and served by `GetTile` as both PNG (raster) and MVT (vector): the vector-tile provider derives the tile envelope and target SRID from the gridset geometry and reprojects the stored geometry into the gridset CRS with `ST_Transform`. The `crs`/`subset-crs` request parameters accept the gridset's own CRS for custom gridsets (tiles are delivered in the gridset CRS). Built-in gridset output (WebMercatorQuad / WorldCRS84Quad) is byte-identical to before. The per-dataset / per-collection tileset-metadata documents (`/ogc/tiles/.../tiles/{tileMatrixSetId}` and the tileset lists) advertise custom gridsets as `vector`: each custom gridset is emitted with its own CRS/URI and full-coverage per-level tile-matrix limits derived from the gridset geometry, threaded through the `ITileMatrixSetRegistry`; the two built-ins keep the byte-identical static-descriptor path. Tile requests accept a vertical/elevation subset (`subset=Z(...)` / `elevation(...)` / `height(...)`): the value is parsed, validated, and recorded on the render descriptor — raster layers can honour the coordinate, vector layers record-but-do-not-render it (Zarr-slice render binding is deferred). Non-vertical or unknown subset axes (e.g. `E(0:1)`) still return 400.
 
 > Open `https://server.example.com/ogc/tiles/collections/roads/tiles/WebMercatorQuad/12/1586/2412` in a browser.
 
@@ -110,7 +117,7 @@ OGC API Coverages is **Preview in 2026.1** and retains its existing default rout
 | GET | `/ogc/coverages/collections/{collectionId}/schema` | Band fields (`band_1`, `band_2`, …) as JSON Schema. |
 | GET | `/ogc/coverages/collections/{collectionId}/coverage` | Coverage bytes (GeoTIFF default, PNG via `f=png` or `Accept`). |
 
-Key coverage parameters: `f` (`geotiff`/`tiff`/`png` and MIME forms), `bbox`, `bbox-crs`, `crs` (output CRS), `properties` (band selection, order-preserving), and exactly one scaling control per request — `resolution`, `scale-factor`, or `scale-size` (max 8192 px per axis). `datetime` (RFC 3339 instant or interval) applies temporal subsetting to Zarr multidimensional coverages that declare an evenly-spaced time axis — an instant rounds to the nearest index, an interval is resolved by ceil/floor over the index range; coverages with no time axis, an irregular axis, or a conflicting `subset` over time return 400. `subset` and `scale-axes` are deferred and return 400.
+Key coverage parameters: `f` (`geotiff`/`tiff`/`png` and MIME forms), `bbox`, `bbox-crs`, `crs` (output CRS), `properties` (band selection, order-preserving), and exactly one scaling control per request — `resolution`, `scale-factor`, or `scale-size` (max 8192 px per axis). `datetime` (RFC 3339 instant or interval) applies temporal subsetting to Zarr multidimensional coverages that declare an evenly-spaced time axis — an instant rounds to the nearest index, an interval is resolved by ceil/floor over the index range; coverages with no time axis, an irregular axis, or a conflicting `subset` over time return 400. `scale-axes` remains unsupported and returns 400. Single-raster `subset` accepts finite trims such as `Lon(-123:-121),Lat(37:39)` in either axis order, or repeated `subset` parameters. Longitude/latitude labels use CRS84; `x`/`y` use the storage CRS. An omitted axis is unrestricted. Unknown, duplicate, non-finite, or reversed axes return 400, as does combining `subset` with `bbox`. The legacy GDAL `scaleSize` spelling is accepted for `scale-size` and permits named scale axes in either order; `scale-size` retains its x-then-y convention. Coverage discovery links identify GeoTIFF as `image/tiff; application=geotiff`. Unrotated raster collections also expose native grid bounds/resolution in `domainset.generalGrid` and band types in `rangetype`, so clients can request native-sized windows.
 
 > Open `https://server.example.com/ogc/coverages/collections/0/coverage?bbox=-122.5,37.7,-122.3,37.9&properties=band_1` in a browser.
 

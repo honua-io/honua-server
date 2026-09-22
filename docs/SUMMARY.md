@@ -37,7 +37,6 @@
 - [All guides: I want to…](guides/README.md)
 - Publish data
   - [Import files](guides/publish/import-files.md)
-  - [Open-data area-import provisioner](guides/open-data-provisioner.md)
   - [Import from ArcGIS services](guides/publish/import-from-arcgis-services.md)
   - [Serve existing databases](guides/publish/serve-existing-databases.md)
   - [Publish layers](guides/publish/publish-layers.md)
@@ -66,6 +65,7 @@
   - [Excel & Power BI](guides/connect/excel-power-bi.md)
   - [MapLibre web maps](guides/connect/maplibre-web-maps.md)
   - [AI agents (MCP)](guides/connect/ai-agents-mcp.md)
+  - [What an agent can do in each edition](guides/connect/agent-capabilities-and-editions.md)
 - Honua Studio (preview)
   - [Honua Studio](studio/README.md)
   - [Run standalone](studio/run-standalone.md)
@@ -168,8 +168,6 @@
   - [GeoServices REST parity](reference/compatibility/geoservices-parity.md)
   - [SCIM / SAML IdP conformance](reference/compatibility/idp-conformance-matrix.md)
   - [ImageServer admin mapping](reference/compatibility/imageserver-admin-mapping.md)
-  - [Client template runbook](gis/CLIENT_TEMPLATE_RUNBOOK.md)
-  - [Client template version matrix](gis/CLIENT_TEMPLATE_VERSION_MATRIX.md)
 
 ## Security
 

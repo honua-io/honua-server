@@ -22,9 +22,10 @@ internal static class PostgresMvtReader
             return null;
         }
 
-        if (reader.GetBytes(0, 0, null, 0, 0) > maxTileSize)
+        var encodedBytes = reader.GetBytes(0, 0, null, 0, 0);
+        if (encodedBytes > maxTileSize)
         {
-            throw new TileSizeLimitExceededException();
+            throw new TileSizeLimitExceededException(encodedBytes, maxTileSize);
         }
 
         return await reader.GetFieldValueAsync<byte[]>(0, cancellationToken).ConfigureAwait(false);

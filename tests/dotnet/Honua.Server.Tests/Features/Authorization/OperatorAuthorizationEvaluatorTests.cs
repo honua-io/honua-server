@@ -642,6 +642,86 @@ public sealed class OperatorAuthorizationEvaluatorTests
     }
 
     [UnitTest]
+    public async Task Evaluate_ScopedAdminReadKey_AllowedForJobRead()
+    {
+        // Regression for #4981: a key minted with only admin:read authenticates with
+        // role "scoped-admin-key", never "admin", so the operator-RBAC role-store
+        // lookup below has no grant for it and must not be the last word on Read.
+        var principal = CreateScopedAdminKeyPrincipal("admin:read");
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Job,
+            Operation = OperatorOperation.Read
+        };
+
+        (await _evaluator.EvaluateAsync(principal, request)).IsAllowed.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task Evaluate_ScopedAdminReadApproveKey_AllowedForJobRead()
+    {
+        var principal = CreateScopedAdminKeyPrincipal("admin:read", "admin:approve");
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Job,
+            Operation = OperatorOperation.Read
+        };
+
+        (await _evaluator.EvaluateAsync(principal, request)).IsAllowed.Should().BeTrue();
+    }
+
+    [UnitTest]
+    public async Task Evaluate_ScopedAdminReadKey_DeniedForJobExecute()
+    {
+        // The read bypass must not widen to Execute (job cancel/retry): only
+        // admin:write/admin:manage confer the full "admin" role.
+        var principal = CreateScopedAdminKeyPrincipal("admin:read");
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Job,
+            Operation = OperatorOperation.Execute
+        };
+
+        var decision = await _evaluator.EvaluateAsync(principal, request);
+
+        decision.IsAllowed.Should().BeFalse();
+        decision.RequiresAuthentication.Should().BeFalse();
+    }
+
+    [UnitTest]
+    public async Task Evaluate_ScopedNonAdminKey_DeniedForJobRead()
+    {
+        // A genuinely non-admin scoped key (e.g. layer-scoped write) carries neither
+        // the "admin" nor "scoped-admin-key" role and must stay denied.
+        _roleStore.AddGrant("scoped-api-key", "workspace", "*", "read");
+        var principal = CreatePrincipal("user-1", "scoped-api-key");
+        var request = new OperatorAuthorizationRequest
+        {
+            ResourceType = OperatorResourceType.Job,
+            Operation = OperatorOperation.Read
+        };
+
+        (await _evaluator.EvaluateAsync(principal, request)).IsAllowed.Should().BeFalse();
+    }
+
+    private static ClaimsPrincipal CreateScopedAdminKeyPrincipal(params string[] permissions)
+    {
+        var claims = new List<Claim>
+        {
+            new(ClaimTypes.Name, "scoped-admin-key"),
+            new(ClaimTypes.Role, AdminApiKeyPermission.ScopedAdminRole),
+            new("api_key_id", "key-scoped-admin"),
+        };
+
+        foreach (var permission in permissions)
+        {
+            claims.Add(new Claim(AdminApiKeyPermission.PermissionClaimType, permission));
+        }
+
+        return new ClaimsPrincipal(new ClaimsIdentity(claims, "TestScheme"));
+    }
+
+    [UnitTest]
     public async Task Evaluate_PersonalWorkspace_ApiKeyOwnerAllowed()
     {
         // The same resolved subject id is used for personal-workspace ownership, so an API-key

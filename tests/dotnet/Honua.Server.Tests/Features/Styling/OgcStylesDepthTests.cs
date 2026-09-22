@@ -873,12 +873,18 @@ public sealed class OgcStylesDepthTests : IAsyncLifetime
     {
         await SeedTestLayerStyleAsync(adminClient);
 
+        // Every feature collection now publishes a style (#4993), so the list is not just the
+        // seeded one: resolve the seeded layer's own style id and prove it is listed.
+        var styleId = _fixture.GetCurrentV2GraphSnapshot()
+            .Index.ResourcesByStorageLayerId[WebAppFixture.TestLayerId].Metadata.Name;
+
         var response = await adminClient.GetAsync("/ogc/styles");
         response.Be200Ok();
         using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-        var styles = document.RootElement.GetProperty("styles");
-        styles.GetArrayLength().Should().BeGreaterThan(0);
-        return styles[0].GetProperty("id").GetString()!;
+        document.RootElement.GetProperty("styles").EnumerateArray()
+            .Select(style => style.GetProperty("id").GetString())
+            .Should().Contain(styleId);
+        return styleId;
     }
 
     private static async Task SeedTestLayerStyleAsync(HttpClient adminClient)
