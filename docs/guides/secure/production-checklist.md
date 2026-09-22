@@ -34,7 +34,7 @@ Work through this checklist before exposing Honua to the internet; each item is 
 ### Limits and upload/import posture
 
 - [ ] Query and geometry limits are production-tuned (`Limits__Query__MaxRecordCount`, `Limits__Query__QueryTimeout`, `Limits__Geometry__MaxGeometrySize`, …).
-- [ ] Attachment limits fit your use case (`Limits__Attachments__MaxAttachmentSize`, `MaxAttachmentsPerFeature`, `AllowedMimeTypes` — defaults 5 MB / 5 per feature / `image/*,application/pdf`).
+- [ ] Attachment limits fit your use case (`Limits__Attachments__MaxAttachmentSize`, `MaxAttachmentsPerFeature`, `AllowedMimeTypes` — defaults 5 MB / 5 per feature / `image/*,application/pdf,text/plain,text/csv,application/json`).
 - [ ] Import upload limits reviewed via `GET /api/v1/admin/import/limits`.
 - [ ] SSRF posture for remote imports understood: URL-based import sources must be HTTPS, without embedded credentials, resolving to public addresses on recognized S3/Azure object-storage hosts — private and loopback targets are rejected server-side. Outbound webhook URLs get the same validation. Keep network egress policies as defense in depth.
 
