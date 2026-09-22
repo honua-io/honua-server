@@ -87,6 +87,10 @@ public sealed class NAServerMetadataEndpointTests : IClassFixture<NAServerEndpoi
         modes.Select(m => m.GetProperty("itemId").GetString()).Should().Contain(defaultMode);
         modes[0].GetProperty("impedanceAttributeName").GetString().Should().Be("TravelTime");
         modes[0].GetProperty("type").GetString().Should().Be("AUTOMOBILE");
+        foreach (var mode in modes)
+        {
+            await AssertTravelModeCanSolveAsync(_fixture.Client, mode.GetRawText());
+        }
         root.GetProperty("locateSettings").GetProperty("default").GetProperty("sources").GetArrayLength().Should().BeGreaterThan(0);
 
         var attributes = root.GetProperty("networkDataset").GetProperty("networkAttributes").EnumerateArray()
@@ -145,4 +149,21 @@ public sealed class NAServerMetadataEndpointTests : IClassFixture<NAServerEndpoi
 
     private static string?[] Names(JsonElement root, string property)
         => root.GetProperty(property).EnumerateArray().Select(e => e.GetString()).ToArray();
+
+    internal static async Task AssertTravelModeCanSolveAsync(HttpClient client, string travelMode)
+    {
+        using var payload = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("f", "json"),
+            new KeyValuePair<string, string>("stops", "-157.858333,21.306944;-157.862,21.31"),
+            new KeyValuePair<string, string>("travelMode", travelMode),
+            new KeyValuePair<string, string>("returnRoutes", "true"),
+        ]);
+        using var response = await client.PostAsync("/rest/services/Routing/NAServer/Route/solve", payload);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+            "a client must be able to submit the advertised travel mode unchanged: {0}", document.RootElement.GetRawText());
+        document.RootElement.GetProperty("routes").GetProperty("features").GetArrayLength().Should().BeGreaterThan(0);
+    }
 }

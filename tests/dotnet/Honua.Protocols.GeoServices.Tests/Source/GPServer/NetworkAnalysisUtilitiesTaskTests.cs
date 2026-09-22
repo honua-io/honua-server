@@ -88,6 +88,11 @@ public sealed class NetworkAnalysisUtilitiesTaskTests : IClassFixture<NAServerEn
         using var mode = JsonDocument.Parse(attributes.GetProperty("TravelMode").GetString()!);
         mode.RootElement.GetProperty("id").GetString().Should().Be(defaultId);
         mode.RootElement.GetProperty("impedanceAttributeName").GetString().Should().Be("TravelTime");
+        foreach (var feature in features)
+        {
+            await NAServerMetadataEndpointTests.AssertTravelModeCanSolveAsync(
+                _fixture.Client, feature.GetProperty("attributes").GetProperty("TravelMode").GetString()!);
+        }
         document.RootElement.GetProperty("messages").GetArrayLength().Should().Be(0);
     }
 

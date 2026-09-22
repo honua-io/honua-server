@@ -427,7 +427,10 @@ internal static class NAServerMetadata
         => new()
         {
             [itemId is null ? "id" : "itemId"] = itemId ?? TravelModeId(profile),
-            ["name"] = TravelModeName(profile),
+            // The solve adapter reads this name back from the travel-mode object and
+            // validates it against the provider's profile names. Preserve that token
+            // so clients can submit the advertised mode without translating it.
+            ["name"] = profile.Name,
             ["type"] = TravelModeType(profile),
             ["description"] = $"Travel profile '{profile.Name}' of network dataset '{dataset.Name}' "
                               + $"(cost column {profile.ForwardCostColumn}, reverse {profile.ReverseCostColumn}).",
@@ -457,17 +460,6 @@ internal static class NAServerMetadata
         }
 
         return new string(id);
-    }
-
-    private static string TravelModeName(RoutingTravelProfile profile)
-    {
-        var name = profile.Name.Trim();
-        if (name.Length == 0)
-        {
-            return "Driving Time";
-        }
-
-        return char.ToUpperInvariant(name[0]) + name[1..] + " Time";
     }
 
     private static string TravelModeType(RoutingTravelProfile profile)
