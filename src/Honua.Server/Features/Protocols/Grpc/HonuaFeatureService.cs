@@ -7,7 +7,6 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
-using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Shared.Models;
@@ -36,7 +35,6 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         new(MinOffset: 0, MinLimit: 1, OffsetParameterName: "resultOffset", LimitParameterName: "resultRecordCount");
 
     private readonly IResourceValidator _resourceValidator;
-    private readonly IMetadataV2GraphProvider _metadataGraph;
     private readonly IFeatureReader _featureReader;
     private readonly IFeatureWriter _featureWriter;
     private readonly IStreamingFeatureStore _streamingFeatureStore;
@@ -50,7 +48,6 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
 
     public HonuaFeatureService(
         IResourceValidator resourceValidator,
-        IMetadataV2GraphProvider metadataGraph,
         IFeatureReader featureReader,
         IFeatureWriter featureWriter,
         IStreamingFeatureStore streamingFeatureStore,
@@ -63,7 +60,6 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         GrpcApplyEditsIdempotencyStore idempotencyStore)
         : this(
             resourceValidator,
-            metadataGraph,
             featureReader,
             featureWriter,
             streamingFeatureStore,
@@ -80,7 +76,6 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
     [ActivatorUtilitiesConstructor]
     public HonuaFeatureService(
         IResourceValidator resourceValidator,
-        IMetadataV2GraphProvider metadataGraph,
         IFeatureReader featureReader,
         IFeatureWriter featureWriter,
         IStreamingFeatureStore streamingFeatureStore,
@@ -93,7 +88,6 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         GrpcApplyEditsIdempotencyStore idempotencyStore)
     {
         _resourceValidator = resourceValidator;
-        _metadataGraph = metadataGraph;
         _featureReader = featureReader;
         _featureWriter = featureWriter;
         _streamingFeatureStore = streamingFeatureStore;
@@ -532,12 +526,10 @@ internal sealed class HonuaFeatureService : Proto.FeatureService.FeatureServiceB
         }
 
         // The request addresses the layer by its service-local index; the feature
-        // reader/writer boundary is keyed on the storage-layer handle. Translate once
-        // here, through the shared resolver, and carry the result on the context so
-        // every read, edit and stream call below uses the storage handle of the
-        // publication this request actually resolved and authorized.
-        var snapshot = await _metadataGraph.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        var storageLayerId = snapshot.ResolveStorageLayerId(triple.Publication, triple.Resource);
+        // reader/writer boundary is keyed on the storage-layer handle. Validation
+        // resolves that handle from the same snapshot as the authorized resource;
+        // fetching current metadata again could race a publication rebind.
+        var storageLayerId = triple.StorageLayerId;
         if (!storageLayerId.HasValue)
         {
             throw new RpcException(new Status(

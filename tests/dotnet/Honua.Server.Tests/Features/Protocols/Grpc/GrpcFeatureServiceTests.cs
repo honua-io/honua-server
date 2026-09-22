@@ -70,7 +70,7 @@ public sealed class GrpcFeatureServiceTests
 #pragma warning restore CA2012
 
         _sut = new HonuaFeatureService(
-            _resourceValidator, _graphProvider, _featureReader, _featureWriter, _streamingStore,
+            _resourceValidator, _featureReader, _featureWriter, _streamingStore,
             new CommonQueryValidator(Options.Create(new LimitsOptions())),
             new SpatialReferenceResolver(_crsDetectionService, _crsRegistry),
             new FeatureMutationEventService(
@@ -1231,7 +1231,7 @@ public sealed class GrpcFeatureServiceTests
     public async Task QueryFeaturesStream_WithBatchSizeOne_WritesOneFeaturePerPage()
     {
         var streamBatchSizeOneSut = new HonuaFeatureService(
-            _resourceValidator, _graphProvider, _featureReader, _featureWriter, _streamingStore,
+            _resourceValidator, _featureReader, _featureWriter, _streamingStore,
             new CommonQueryValidator(Options.Create(new LimitsOptions())),
             new SpatialReferenceResolver(_crsDetectionService, _crsRegistry),
             new FeatureMutationEventService(
@@ -1512,7 +1512,10 @@ public sealed class GrpcFeatureServiceTests
                 },
                 IsPrimary = true
             },
-            resource);
+            resource)
+        {
+            StorageLayerId = 0
+        };
 
     private static TestServerCallContext CreateCallContext(ClaimsPrincipal? user = null)
         => CreateCallContext(user, resolverGrants: null);
@@ -1774,15 +1777,86 @@ public sealed class GrpcFeatureServiceTests
 
         await _sut.ApplyEdits(request, CreateCallContext());
 
-        await _featureWriter.Received(1).ApplyEditsAsync(
-            AliasedStorageLayerId, Arg.Any<FeatureEditBatch>(), Arg.Any<CancellationToken>());
-        await _featureWriter.DidNotReceive().ApplyEditsAsync(
-            AliasedLayerIndex, Arg.Any<FeatureEditBatch>(), Arg.Any<CancellationToken>());
+        var write = _featureWriter.ReceivedCalls()
+            .Where(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync))
+            .Should().ContainSingle().Subject;
+        write.GetArguments()[0].Should().Be(AliasedStorageLayerId);
         // The pre-write visibility read must resolve the same storage layer as the write.
         await _featureReader.Received().GetAsync(
             AliasedStorageLayerId, 42, Arg.Any<CancellationToken>());
         await _featureReader.DidNotReceive().GetAsync(
             AliasedLayerIndex, 42, Arg.Any<CancellationToken>());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.ApplyEdits)]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/QueryFeatures")]
+    [Endpoint("POST /grpc/geospatial.v1.FeatureService/ApplyEdits")]
+    public async Task Request_WhenStorageBindingChangesAfterValidation_UsesValidatedStorage(bool edit)
+    {
+        ArrangeAliasedLayer();
+        var graph = (await _graphProvider.GetCurrentAsync()).Graph;
+        const int reboundStorageLayerId = 99;
+        _graphProvider.ActivateAfterNextRead(graph with
+        {
+            Revision = graph.Revision + 1,
+            StorageBindings = graph.StorageBindings.Select(binding => binding with
+            {
+                StorageLayerId = reboundStorageLayerId
+            }).ToArray()
+        });
+        var sut = new HonuaFeatureService(
+            new ResourceValidator(_graphProvider), _featureReader, _featureWriter, _streamingStore,
+            new CommonQueryValidator(Options.Create(new LimitsOptions())),
+            new SpatialReferenceResolver(_crsDetectionService, _crsRegistry),
+            new FeatureMutationEventService(
+                _featureChangeEventPublisher,
+                outboxCapabilityProvider: _outboxCapabilityProvider),
+            Options.Create(new LimitsOptions()),
+            Options.Create(new GrpcOptions()),
+            NullLogger<HonuaFeatureService>.Instance,
+            new GrpcApplyEditsIdempotencyStore());
+
+        if (edit)
+        {
+            _featureWriter.ApplyEditsAsync(default, default, default)
+                .ReturnsForAnyArgs(Task.FromResult(FeatureEditResult.Success(
+                    createdCount: 0, updatedCount: 1, deletedCount: 0)));
+            var request = new Proto.ApplyEditsRequest
+            {
+                ServiceId = AliasedServiceName,
+                LayerId = AliasedLayerIndex
+            };
+            request.Updates.Add(new Proto.Feature { Id = 42 });
+
+            await sut.ApplyEdits(request, CreateCallContext());
+
+            var write = _featureWriter.ReceivedCalls()
+                .Where(call => call.GetMethodInfo().Name == nameof(IFeatureWriter.ApplyEditsAsync))
+                .Should().ContainSingle().Subject;
+            write.GetArguments()[0].Should().Be(AliasedStorageLayerId);
+        }
+        else
+        {
+            await sut.QueryFeatures(new Proto.QueryFeaturesRequest
+            {
+                ServiceId = AliasedServiceName,
+                LayerId = AliasedLayerIndex,
+                ReturnCountOnly = true
+            }, CreateCallContext());
+
+            await _featureReader.Received(1).CountAsync(
+                AliasedStorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+            await _featureReader.DidNotReceive().CountAsync(
+                reboundStorageLayerId, Arg.Any<FeatureQuery>(), Arg.Any<CancellationToken>());
+        }
+
+        var current = await _graphProvider.GetCurrentAsync();
+        current.Graph.Revision.Should().Be(graph.Revision + 1);
+        current.Graph.StorageBindings.Should().OnlyContain(binding => binding.StorageLayerId == reboundStorageLayerId);
     }
 
     /// <summary>
@@ -1827,7 +1901,10 @@ public sealed class GrpcFeatureServiceTests
         _resourceValidator
             .ValidateServiceLayerV2Async(AliasedServiceName, AliasedLayerIndex, Arg.Any<CancellationToken>())
             .Returns(ResourceValidationResult.Success(
-                new MetadataV2ServiceLayerTriple(service, publication, resource)));
+                new MetadataV2ServiceLayerTriple(service, publication, resource)
+                {
+                    StorageLayerId = AliasedStorageLayerId
+                }));
 
         return (service, publication, resource);
     }

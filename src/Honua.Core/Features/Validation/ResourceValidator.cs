@@ -304,7 +304,10 @@ public sealed class ResourceValidator : IResourceValidator
             // MetadataV2LifecycleStatus.Retired — skip them so the protocol routes
             // 404 the layer instead of serving stale metadata for a disabled layer.
             return ResourceValidationResult.Success(
-                new MetadataV2ServiceLayerTriple(service, candidate.Publication, candidate.Resource!));
+                new MetadataV2ServiceLayerTriple(service, candidate.Publication, candidate.Resource!)
+                {
+                    StorageLayerId = snapshot.ResolveStorageLayerId(candidate.Publication, candidate.Resource)
+                });
         }
         return ResourceValidationResult.NotFound<MetadataV2ServiceLayerTriple>(
             ErrorMessages.NotFound.FormatLayerInService(layerId, serviceId));
