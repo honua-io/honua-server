@@ -48,6 +48,11 @@ internal static partial class GeoprocessingServiceLog
         ILogger logger,
         string jobId);
 
+    [LoggerMessage(8042, LogLevel.Information, "Job results expired: JobId={JobId} is past the configured result retention")]
+    public static partial void JobResultsExpired(
+        ILogger logger,
+        string jobId);
+
     [LoggerMessage(8007, LogLevel.Warning, "Authorization denied for geoprocessing: ResourceType={ResourceType}, Operation={Operation}")]
     public static partial void AuthorizationDenied(
         ILogger logger,

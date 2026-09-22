@@ -85,9 +85,11 @@ internal sealed class GeoprocessingExecutorOptions
         Path.Join(Path.GetTempPath(), "honua-import-staging");
 
     /// <summary>
-    /// Retention TTL applied to durable geoprocessing result packages produced
-    /// by built-in executors. Mirrors the default Redis store retention so
-    /// configuration here is authoritative for both reads and writes.
+    /// How long a finished geoprocessing job's results stay available, measured from the
+    /// job's completion. It is the TTL of the durable result package, and it is enforced
+    /// on every results read: once it has elapsed, results requests answer not-found
+    /// even though the terminal job record (kept by the job store's own retention) can
+    /// still be read for status, and no package is re-synthesized from that record.
     /// </summary>
     [Range(typeof(TimeSpan), "00:01:00", "30.00:00:00", ErrorMessage = "ResultRetention must be between 1 minute and 30 days")]
     public TimeSpan ResultRetention { get; set; } = TimeSpan.FromDays(7);
