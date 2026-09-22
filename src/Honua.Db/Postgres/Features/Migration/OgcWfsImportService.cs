@@ -839,13 +839,15 @@ internal sealed partial class OgcWfsImportService : IOgcWfsImportService
     }
 
     /// <summary>
-    /// The spatial index name, derived the way PostgreSQL derives implicit relation names. A plain
-    /// <c>&lt;table&gt;_geom_idx</c> is truncated to 63 bytes, which for a long table name collides with the
-    /// table itself, so <c>IF NOT EXISTS</c> would skip the index. Names up to 54 bytes keep
-    /// <c>&lt;table&gt;_geom_idx</c> unchanged. Staging creation and promotion both use this derivation.
+    /// The spatial index name. A plain <c>&lt;table&gt;_geom_idx</c> is truncated to 63 bytes, which for a
+    /// long table name collides with another relation in the schema (for a 63-byte table, with the table
+    /// itself), so <c>CREATE INDEX IF NOT EXISTS</c> would silently skip the index. Table names up to 54
+    /// bytes keep <c>&lt;table&gt;_geom_idx</c> unchanged; longer ones are shortened and disambiguated by a
+    /// hash of the full name, so two targets sharing a prefix still get their own index. Staging creation
+    /// and promotion both derive the name this way.
     /// </summary>
     internal static string BuildSpatialIndexName(string tableName)
-        => PostgresDerivedRelationNames.Build(tableName, "geom", "idx");
+        => PostgresDerivedRelationNames.BuildUnique(tableName, "geom_idx");
 
     private static MigrationInventoryResource[] SelectResources(
         MigrationSourceInventoryArtifact inventory,

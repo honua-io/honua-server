@@ -1,6 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Security.Cryptography;
+using System.Text;
+
 namespace Honua.Db.Postgres.Features.Migration;
 
 /// <summary>
@@ -38,5 +41,27 @@ internal static class PostgresDerivedRelationNames
         return name2 is null
             ? $"{name1[..name1Chars]}_{label}"
             : $"{name1[..name1Chars]}_{name2[..name2Chars]}_{label}";
+    }
+
+    /// <summary>
+    /// A derived name that stays distinct for every source name. PostgreSQL's own derivation only
+    /// shortens, so two table names that differ after the truncation point share one name; a caller
+    /// that creates the relation with <c>IF NOT EXISTS</c> would then silently skip the second one.
+    /// Names that fit keep the plain <c>name_label</c> form; longer ones carry a hash of the full
+    /// name, the way the file-import path disambiguates long physical names.
+    /// </summary>
+    internal static string BuildUnique(string name, string label)
+    {
+        const int hashLength = 8;
+        var suffix = "_" + label;
+        if (name.Length + suffix.Length <= MaxIdentifierLength)
+        {
+            return name + suffix;
+        }
+
+        var keep = MaxIdentifierLength - suffix.Length - hashLength - 1;
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(name)))[..hashLength]
+            .ToLowerInvariant();
+        return $"{name[..keep]}_{hash}{suffix}";
     }
 }
