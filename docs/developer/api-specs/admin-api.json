@@ -23046,6 +23046,11 @@
             "description": "Enable layer after publish",
             "default": true
           },
+          "createEditableCopy": {
+            "type": "boolean",
+            "default": false,
+            "description": "Create an independent editable copy in the configured managed feature store. Source rows are unchanged; new target object IDs map to source IDs through the read-only honua_source_id field. Attachment and relationship migration must use that mapping. The publication connection must resolve the same database and features table as the managed writer."
+          },
           "storageMode": {
             "type": "string",
             "enum": [
@@ -23070,6 +23075,17 @@
               ]
             },
             "description": "Capability tokens declared on the feature publication (case-insensitive). Omit for the read-only default [\"Query\",\"Extract\"]. Must include Query. Create, Update, Delete and Editing require storageMode managed; otherwise the request is rejected with 400."
+          },
+          "globalIdField": {
+            "type": "string",
+            "nullable": true,
+            "maxLength": 63,
+            "description": "Existing published UUID column containing edit-stable global IDs. Does not enable editing."
+          },
+          "supportsAttachments": {
+            "type": "boolean",
+            "default": false,
+            "description": "Declares attachment support for the published resource. Does not enable editing."
           }
         }
       },
@@ -25118,7 +25134,7 @@
             "$ref": "#/components/schemas/UpdateRasterMosaicRequest"
           },
           "editing": {
-            "$ref": "#/components/schemas/UpdateLayerEditingRequest"
+            "$ref": "#/components/schemas/MetadataV2EditingPatch"
           }
         }
       },
@@ -47515,15 +47531,34 @@
           }
         }
       },
-      "UpdateLayerEditingRequest": {
+      "MetadataV2EditingPatch": {
         "type": "object",
         "nullable": true,
-        "description": "Partial attachment intent only; existing GlobalID, editor tracking, access policy and publication edit grants are preserved.",
         "properties": {
+          "globalIdField": {
+            "type": "string",
+            "nullable": true,
+            "description": "Declared UUID field; null preserves the binding and an empty string clears it."
+          },
           "supportsAttachments": {
             "type": "boolean",
             "nullable": true,
-            "description": "Null or omission preserves attachment intent. True or false updates the canonical resource flag. Runtime attachment operations still require the configured store and authorization."
+            "description": "Attachment support; null preserves the existing declaration."
+          },
+          "create": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Create policy for the selected publication; null preserves it."
+          },
+          "update": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Update policy for the selected publication; null preserves it."
+          },
+          "delete": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Delete policy for the selected publication; null preserves it."
           }
         }
       },
@@ -47533,23 +47568,28 @@
         "properties": {
           "globalIdField": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "UUID field used as an edit-stable identifier."
           },
           "creatorField": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "Field tracking the creating user."
           },
           "createdAtField": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "Field tracking the creation timestamp."
           },
           "editorField": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "Field tracking the last editing user."
           },
           "updatedAtField": {
             "type": "string",
-            "nullable": true
+            "nullable": true,
+            "description": "Field tracking the last update timestamp."
           },
           "canModify": {
             "type": "boolean",

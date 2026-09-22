@@ -43,7 +43,7 @@ public sealed class FeatureServerResponse
     public required LayerInfo[] Layers { get; init; }
 
     /// <summary>
-    /// Tables available in this service (typically empty for basic implementation)
+    /// Attribute-only tables available in this service.
     /// </summary>
     public object[] Tables { get; init; } = [];
 

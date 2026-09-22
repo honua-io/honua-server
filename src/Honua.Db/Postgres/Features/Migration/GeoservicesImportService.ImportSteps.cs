@@ -340,7 +340,9 @@ internal sealed partial class GeoservicesImportService
                     startedAt,
                     featuresProcessed,
                     _connectionProvider.GetConnectionString(),
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    supportsAttachments: layerInfo.HasAttachments && request.ImportAttachments && _attachmentStore is not null)
+                    .ConfigureAwait(false);
             }
 
             // #4600: attachment accounting is kept on its own evidence (advertised / copied / failed /
@@ -435,6 +437,9 @@ internal sealed partial class GeoservicesImportService
                 PublishRequested = request.AutoPublish,
                 FailedFeatures = failedFeatures,
                 Attachments = attachmentFidelity,
+                Relationships = request.DeferRelationshipApplyToBatch
+                    ? []
+                    : DescribeUnappliedSourceRelationships(layerInfo, publishedLayer?.LayerId),
                 SourceSnapshot = sourceSnapshot
             });
 

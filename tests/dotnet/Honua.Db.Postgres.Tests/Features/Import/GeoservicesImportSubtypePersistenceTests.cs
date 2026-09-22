@@ -31,7 +31,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// <c>defaultSubtypeCode</c> (see <see cref="MetadataV2Resource.Subtypes"/>).
 /// </summary>
 [Collection("Database")]
-public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fixture)
+public sealed partial class GeoservicesImportSubtypePersistenceTests(PostgresFixture fixture)
 {
     [Theory]
     [InlineData(false)]
@@ -191,10 +191,12 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
     }
 
     private GeoservicesImportService CreateService(PostgresMetadataV2GraphStore graphStore, string dataSchema, bool featureTypes,
-        bool hasZ = false, bool hasM = false)
+        bool hasZ = false, bool hasM = false, HttpMessageHandler? handler = null,
+        Honua.Core.Features.Attachments.Abstractions.IAttachmentStore? attachmentStore = null,
+        bool nonSpatial = false)
     {
         var restClient = new ArcGisRestClient(
-            new HttpClient(new SubtypeFeatureServerHandler(featureTypes, hasZ, hasM)),
+            new HttpClient(handler ?? new SubtypeFeatureServerHandler(featureTypes, hasZ, hasM, nonSpatial)),
             NullLogger<ArcGisRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
 
@@ -223,7 +225,8 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
             NullLogger<GeoservicesImportService>.Instance,
             new GeoservicesLayerPublicationService(
                 NullLogger<GeoservicesLayerPublicationService>.Instance,
-                layerPublishingService: publishingService));
+                layerPublishingService: publishingService),
+            attachmentStore: attachmentStore);
     }
 
     private async Task EnsureCatalogSchemaAsync()
@@ -261,7 +264,7 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
     // Minimal ArcGIS FeatureServer mock that advertises an integer subtype field
     // 'buildingtype' with two subtypes; the 'Residential' subtype carries a per-subtype
     // default value and a coded-value domain on 'status'.
-    private sealed class SubtypeFeatureServerHandler(bool featureTypes, bool hasZ, bool hasM) : HttpMessageHandler
+    private sealed class SubtypeFeatureServerHandler(bool featureTypes, bool hasZ, bool hasM, bool nonSpatial) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -371,6 +374,34 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
                         geometry["z"] = 125.5;
                     if (hasM && pathAndQuery.Contains("returnM=true", StringComparison.Ordinal))
                         geometry["m"] = 42.25;
+                }
+            }
+            if (nonSpatial)
+            {
+                response.Remove("geometryType");
+                response.Remove("spatialReference");
+                response.Remove("hasZ");
+                response.Remove("hasM");
+                if (response["fields"] is JsonArray fields)
+                {
+                    response["type"] = "Table";
+                    fields.Add(new JsonObject { ["name"] = "Join_ID", ["type"] = "esriFieldTypeString", ["nullable"] = true });
+                }
+                if (response.ContainsKey("count"))
+                {
+                    response["count"] = 2;
+                }
+                if (response["features"] is JsonArray rows && rows.Count > 0)
+                {
+                    var first = rows[0]!.AsObject();
+                    first.Remove("geometry");
+                    first["attributes"]!["Join_ID"] = "001-A";
+                    first["attributes"]!["status"] = null;
+                    var second = first.DeepClone().AsObject();
+                    second["attributes"]!["OBJECTID"] = 2;
+                    second["attributes"]!["Join_ID"] = "002-B";
+                    second["attributes"]!["status"] = "occupied";
+                    rows.Add(second);
                 }
             }
             payload = response.ToJsonString();

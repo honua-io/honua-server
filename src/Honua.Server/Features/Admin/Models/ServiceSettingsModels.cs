@@ -112,7 +112,7 @@ internal sealed class UpdateTimeInfoRequest
 /// </summary>
 internal sealed class LayerMetadataResponse
 {
-    /// <summary>Persisted canonical editing metadata; attachment intent does not grant edit access.</summary>
+    /// <summary>Persisted editing and attachment bindings for the canonical resource.</summary>
     public MetadataV2ResourceEditing? Editing { get; init; }
 
     /// <summary>The layer identifier.</summary>
@@ -153,6 +153,12 @@ internal sealed class UpdateLayerMetadataRequest
 {
     /// <summary>Partial attachment configuration. Omitted values preserve existing metadata.</summary>
     public UpdateLayerEditingRequest? Editing { get; init; }
+
+    /// <summary>
+    /// Partial resource binding repair and explicit edit policy for this service's
+    /// FeatureServer publication. Omitted fields preserve existing values.
+    /// </summary>
+    public MetadataV2EditingPatch? Editing { get; init; }
 
     /// <summary>
     /// SPDX license expression or <c>proprietary</c>. Null preserves the current value;

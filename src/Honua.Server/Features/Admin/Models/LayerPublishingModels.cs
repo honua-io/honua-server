@@ -12,6 +12,13 @@ namespace Honua.Server.Features.Admin.Models;
 public sealed class PublishLayerRequest
 {
     /// <summary>
+    /// Create an independent editable managed copy. The connection must resolve
+    /// to this server's managed database. Source IDs remain in honua_source_id;
+    /// attachments and relationships require mapping to the copy's new IDs.
+    /// </summary>
+    public bool CreateEditableCopy { get; init; }
+
+    /// <summary>
     /// Schema containing the source table.
     /// </summary>
     [Required]
@@ -81,6 +88,13 @@ public sealed class PublishLayerRequest
     /// </summary>
     [StringLength(64)]
     public string? PrimaryKey { get; init; }
+
+    /// <summary>Existing published UUID column containing edit-stable global IDs. Does not enable editing.</summary>
+    [StringLength(63)]
+    public string? GlobalIdField { get; init; }
+
+    /// <summary>Expose the configured attachment store for this resource; independent of copy fidelity and edit grants.</summary>
+    public bool SupportsAttachments { get; init; }
 
     /// <summary>
     /// Selected attribute fields to publish (empty means include all).

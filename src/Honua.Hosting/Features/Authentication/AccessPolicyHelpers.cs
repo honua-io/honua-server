@@ -121,6 +121,11 @@ internal static class AccessPolicyHelpers
             return StandardErrorHelpers.CreateForbidden(context, AccessForbiddenMessage);
         }
 
+        if (scope == AccessScope.Write && MetadataV2RelationshipEditPolicy.RequiresReadOnly(resource))
+        {
+            return StandardErrorHelpers.CreateForbidden(context, MetadataV2RelationshipEditPolicy.ReadOnlyReason);
+        }
+
         return RequireAccess(context, resource.AccessPolicy, service?.AccessPolicy, scope);
     }
 
@@ -310,6 +315,11 @@ internal static class AccessPolicyHelpers
                 && MetadataV2TenantVisibility.IsVisibleToTenant(service, tenantId)))
         {
             return AccessDecision.Forbidden(TenantScopeDeniedReason);
+        }
+
+        if (ScopeForOperation(operation) == AccessScope.Write && MetadataV2RelationshipEditPolicy.RequiresReadOnly(resource))
+        {
+            return AccessDecision.Forbidden(MetadataV2RelationshipEditPolicy.ReadOnlyReason);
         }
 
         var serviceName = service?.Metadata.Name;

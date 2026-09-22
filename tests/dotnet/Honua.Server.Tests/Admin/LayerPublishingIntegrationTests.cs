@@ -35,7 +35,7 @@ namespace Honua.Server.Tests.Admin;
 /// </summary>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
-public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
+public sealed partial class LayerPublishingIntegrationTests : IAsyncLifetime
 {
     private static readonly string[] _idNameFields = ["id", "name"];
     private static readonly string[] _idNamePopulationFields = ["id", "name", "population"];
@@ -55,6 +55,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     private string _tableName = string.Empty;
     private string _nonCanonicalIdTableName = string.Empty;
     private string _serviceName = string.Empty;
+    private string? _retainedSourceServiceName;
     private int? _layerId;
     private string? _importedTableName;
     private string? _importedTableSchema;
@@ -1195,6 +1196,28 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task RefreshMaterializedFeaturesForSourceTable_WithoutSchema_RebuildsPublishedSnapshot()
     {
+        // A same-named nonspatial publication sorts first. Skipping it must not
+        // terminate the refresh scan before the later spatial publication.
+        var nonSpatialSchema = _fixture.CurrentSchema ?? throw new InvalidOperationException("Test schema was not initialized.");
+        await using (var connection = await _fixture.Postgres.GetConnectionAsync())
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = $"""
+                CREATE TABLE "{nonSpatialSchema}"."{_tableName}" (id integer PRIMARY KEY, name text);
+                INSERT INTO "{nonSpatialSchema}"."{_tableName}" VALUES (1, 'Attribute-only parent');
+                """;
+            await command.ExecuteNonQueryAsync();
+        }
+        var nonSpatial = await PublishLayerAsync(new PublishLayerRequest
+        {
+            Schema = nonSpatialSchema,
+            Table = _tableName,
+            LayerName = $"Table {_tableName}",
+            PrimaryKey = "id",
+            Fields = ["id", "name"],
+            ServiceName = _serviceName,
+            Enabled = true
+        });
         var publishedLayer = await PublishLayerAsync(new PublishLayerRequest
         {
             Schema = _schema,
@@ -1222,6 +1245,8 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
             schema: null,
             _tableName);
 
+        nonSpatial.LayerId.Should().BeLessThan(layerId);
+        refreshed.Should().NotContain(result => result.LayerId == nonSpatial.LayerId);
         refreshed.Should().ContainSingle(result =>
             result.LayerId == layerId && result.MaterializedFeatureCount == 2);
         (await GetCanonicalSnapshotCountAsync(layerId)).Should().Be(2);
@@ -3215,7 +3240,7 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
                    OR layer_id IN (
                         SELECT layer_id
                         FROM honua.service_layers
-                        WHERE service_name = @serviceName
+                        WHERE service_name = ANY(@serviceNames)
                    );
 
                 DELETE FROM honua.layers
@@ -3223,19 +3248,22 @@ public sealed class LayerPublishingIntegrationTests : IAsyncLifetime
                    OR layer_id IN (
                         SELECT layer_id
                         FROM honua.service_layers
-                        WHERE service_name = @serviceName
+                        WHERE service_name = ANY(@serviceNames)
                    );
                 """;
             command.Parameters.AddWithValue("hasLayerId", _layerId.HasValue);
             command.Parameters.AddWithValue("layerId", _layerId.GetValueOrDefault());
-            command.Parameters.AddWithValue("serviceName", _serviceName);
+            var serviceNames = _retainedSourceServiceName is null
+                ? new[] { _serviceName }
+                : new[] { _serviceName, _retainedSourceServiceName };
+            command.Parameters.AddWithValue("serviceNames", serviceNames);
             await command.ExecuteNonQueryAsync();
 
             if (!string.IsNullOrWhiteSpace(_serviceName))
             {
                 await using var serviceCommand = connection.CreateCommand();
-                serviceCommand.CommandText = "DELETE FROM honua.services WHERE service_name = @serviceName;";
-                serviceCommand.Parameters.AddWithValue("serviceName", _serviceName);
+                serviceCommand.CommandText = "DELETE FROM honua.services WHERE service_name = ANY(@serviceNames);";
+                serviceCommand.Parameters.AddWithValue("serviceNames", serviceNames);
                 await serviceCommand.ExecuteNonQueryAsync();
             }
         });

@@ -45,6 +45,7 @@ public static class MetadataV2GraphValidator
 
         ValidateStorageBindings(errors, graph.StorageBindings, resourceIds, connectionIds);
         ValidateResources(errors, graph.Resources, storageBindingsById);
+        ValidateCompositeRelationships(errors, resourcesById);
         ValidatePublications(errors, graph.Publications, resourcesById, storageBindingsById, serviceIds);
         ValidateServices(errors, graph.Services, publicationsById);
         ValidatePublicationPrimary(errors, graph.Publications);
@@ -52,6 +53,45 @@ public static class MetadataV2GraphValidator
         ValidateStyleResources(errors, graph);
 
         return new MetadataV2GraphValidationResult(errors.Count == 0, errors);
+    }
+
+    private static void ValidateCompositeRelationships(
+        List<string> errors,
+        Dictionary<string, MetadataV2Resource> resourcesById)
+    {
+        foreach (var resource in resourcesById.Values)
+        {
+            if (!MetadataV2RelationshipEditPolicy.RequiresReadOnly(resource))
+            {
+                continue;
+            }
+
+            if (resource.Editing?.CanModify == true)
+            {
+                errors.Add($"resource '{resource.Metadata.Id}' has composite relationships and cannot enable editing until ownership edits are supported.");
+            }
+
+            foreach (var relationship in resource.Relationships.Where(static relationship => relationship.Composite))
+            {
+                if (!resourcesById.TryGetValue(relationship.RelatedResourceId, out var related))
+                {
+                    errors.Add($"resource '{resource.Metadata.Id}' composite relationship '{relationship.Id}' references a missing resource.");
+                    continue;
+                }
+
+                // Both ends must retain the constraint. Otherwise dropping the
+                // destination declaration could accidentally leave its writes enabled.
+                var reciprocal = related.Relationships.Any(candidate =>
+                    candidate.Composite &&
+                    string.Equals(candidate.RelatedResourceId, resource.Metadata.Id, StringComparison.Ordinal) &&
+                    string.Equals(candidate.OriginField, relationship.DestinationField, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(candidate.DestinationField, relationship.OriginField, StringComparison.OrdinalIgnoreCase));
+                if (!reciprocal)
+                {
+                    errors.Add($"resource '{resource.Metadata.Id}' composite relationship '{relationship.Id}' requires a reciprocal composite declaration on '{related.Metadata.Id}'.");
+                }
+            }
+        }
     }
 
     private static Dictionary<string, TEntity> ToUniqueDictionary<TEntity>(

@@ -12,6 +12,34 @@ internal sealed partial class GeoservicesImportService
 {
     private const string ArcGisSourceKind = "arcgis-geoservices-rest";
 
+    /// <summary>
+    /// Single-layer import has not run the separate relationship-apply stage. Retain every
+    /// source declaration as an explicit omission, including malformed/null declarations,
+    /// instead of silently reporting that a row transfer migrated its dependencies.
+    /// </summary>
+    internal static MigrationRelationshipApplyOutcome[] DescribeUnappliedSourceRelationships(
+        GeoservicesLayerInfo layerInfo, int? publishedLayerId)
+        => layerInfo.Relationships.Select((relationship, index) =>
+        {
+            var sourceId = relationship?.Id?.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                ?? $"unknown-{index.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+            var sourceReference = $"layer:{layerInfo.Id.ToString(System.Globalization.CultureInfo.InvariantCulture)}/relationship:{sourceId}";
+            return new MigrationRelationshipApplyOutcome
+            {
+                SourceRelationshipId = sourceReference,
+                TargetRelationshipRef = publishedLayerId.HasValue
+                    ? $"rel-{publishedLayerId.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}-{sourceId}"
+                    : sourceReference,
+                Outcome = MigrationCatalogWriteOutcome.AlreadyExists,
+                Deferred = true,
+                Message = "Single-layer import does not recreate source relationships. Import the related resource "
+                    + "and apply a reviewed relationship manifest with the published layer IDs and key fields. "
+                    + (relationship?.Composite == true
+                        ? "The source declares composite ownership; its target behavior also requires review."
+                        : "Verify related-record readback before cutover.")
+            };
+        }).ToArray();
+
     /// <inheritdoc />
     public async Task<MigrationRelationshipApplyOutcome[]> ApplyRelationshipsAsync(
         MigrationManifestArtifact manifest,
