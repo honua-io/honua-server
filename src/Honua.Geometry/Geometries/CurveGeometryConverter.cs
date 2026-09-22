@@ -259,7 +259,7 @@ public static class CurveGeometryConverter
             var angle = startAngle + (interiorSweep * local);
             var x = i == firstSteps ? interior[0] : cx + (radius * Math.Cos(angle));
             var y = i == firstSteps ? interior[1] : cy + (radius * Math.Sin(angle));
-            output.Add(CreateInterpolatedVertex(x, y, start, end, global));
+            output.AddInterpolated(x, y, start, end, global);
         }
 
         var remainingSweep = totalSweep - interiorSweep;
@@ -274,12 +274,12 @@ public static class CurveGeometryConverter
             }
 
             var angle = startAngle + interiorSweep + (remainingSweep * local);
-            output.Add(CreateInterpolatedVertex(
+            output.AddInterpolated(
                 cx + (radius * Math.Cos(angle)),
                 cy + (radius * Math.Sin(angle)),
                 start,
                 end,
-                global));
+                global);
         }
     }
 
@@ -313,7 +313,7 @@ public static class CurveGeometryConverter
         if (firstLength > double.Epsilon)
         {
             var parameter = totalLength > double.Epsilon ? firstLength / totalLength : 0.5;
-            output.Add(CreateInterpolatedVertex(interior[0], interior[1], start, end, parameter));
+            output.AddInterpolated(interior[0], interior[1], start, end, parameter);
         }
 
         output.Add(end);
@@ -378,7 +378,7 @@ public static class CurveGeometryConverter
             var minorComponent = semiMinor * Math.Sin(angle);
             var x = center[0] + (majorComponent * cosRotation) - (minorComponent * sinRotation);
             var y = center[1] + (majorComponent * sinRotation) + (minorComponent * cosRotation);
-            output.Add(CreateInterpolatedVertex(x, y, start, end, parameter));
+            output.AddInterpolated(x, y, start, end, parameter);
         }
 
         output.Add(end);
@@ -497,7 +497,7 @@ public static class CurveGeometryConverter
 
             var x = (w0 * x0) + (w1 * p1[0]) + (w2 * p2[0]) + (w3 * p3[0]);
             var y = (w0 * y0) + (w1 * p1[1]) + (w2 * p2[1]) + (w3 * p3[1]);
-            output.Add(CreateInterpolatedVertex(x, y, start, p3, t));
+            output.AddInterpolated(x, y, start, p3, t);
         }
 
         end = NormalizeEndpoint(start, p3);
@@ -586,6 +586,59 @@ public static class CurveGeometryConverter
             }
             Count++;
             _vertices?.Add(vertex);
+        }
+
+        public void AddInterpolated(
+            double x,
+            double y,
+            double[] start,
+            double[] end,
+            double parameter)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (Count >= maxVertices)
+            {
+                throw new ArgumentException($"True-curve densification exceeds the remaining budget of {maxVertices} vertices.");
+            }
+
+            if (!double.IsFinite(x) || !double.IsFinite(y))
+            {
+                throw new ArgumentException("True-curve densification produced a non-finite ordinate.");
+            }
+
+            var length = Math.Max(start.Length, end.Length);
+            if (_vertices != null)
+            {
+                Add(CreateInterpolatedVertex(x, y, start, end, parameter));
+                return;
+            }
+
+            for (var ordinate = 2; ordinate < length; ordinate++)
+            {
+                if (!double.IsFinite(InterpolateOrdinate(start, end, ordinate, parameter)))
+                {
+                    throw new ArgumentException("True-curve densification produced a non-finite ordinate.");
+                }
+            }
+
+            Count++;
+        }
+
+        private static double InterpolateOrdinate(
+            double[] start,
+            double[] end,
+            int ordinate,
+            double parameter)
+        {
+            var hasStart = ordinate < start.Length;
+            var hasEnd = ordinate < end.Length;
+            return (hasStart, hasEnd) switch
+            {
+                (true, true) => start[ordinate] + ((end[ordinate] - start[ordinate]) * parameter),
+                (true, false) => start[ordinate],
+                (false, true) => end[ordinate],
+                _ => double.NaN
+            };
         }
 
         public double[][] ToArray() => _vertices?.ToArray()
