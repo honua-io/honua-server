@@ -309,6 +309,47 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
         await response.AssertGeoServicesErrorAsync(400);
     }
 
+    [IntegrationTheory]
+    [InlineData("text/plain", "field-notes.txt", "Inspected 2026-09-21; hydrant cap replaced.")]
+    [InlineData("text/csv", "tally.csv", "species,count\nsalmon,12\ntrout,4\n")]
+    [InlineData("application/json", "reading.json", "{\"ph\":7.2,\"turbidity\":3}")]
+    [Operation(Operations.AddAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
+    public async Task AddAttachment_TextMimeTypeWithDefaultAllowList_IsStoredAndDownloadable(
+        string contentType, string fileName, string text)
+    {
+        // #5017: the default allow-list was image/*,application/pdf, so text notes, CSV tallies and
+        // JSON payloads were refused with "File type '...' is not allowed".
+        var payload = Encoding.UTF8.GetBytes(text);
+        var attachmentId = await AddAttachmentAsync(payload, fileName, contentType);
+
+        var downloaded = await DownloadAttachmentBytesAsync(attachmentId);
+        downloaded.Should().Equal(payload);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.AddAttachment)]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
+    public async Task AddAttachment_TextFileWithScriptContent_IsRejectedByContentScan()
+    {
+        // #5017: admitting text/plain by default must not bypass the content scan that runs after
+        // the MIME check.
+        var body = new ByteArrayContent("note <script>1</script>"u8.ToArray());
+        body.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/plain");
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent(TestFeatureId.ToString(CultureInfo.InvariantCulture)), "objectId" },
+            { body, "attachment", "note.txt" }
+        };
+
+        var response = await _fixture.Client.PostAsync(
+            $"/rest/services/{TestServiceId}/FeatureServer/{TestLayerId}/{TestFeatureId}/addAttachment", form);
+
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("Invalid file content");
+        content.Should().NotContain("is not allowed");
+    }
+
     [IntegrationTest]
     [Operation(Operations.AddAttachment)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/{featureId}/addAttachment")]
@@ -1055,7 +1096,8 @@ public sealed class AttachmentEndpointTests : IAsyncLifetime
     }
     /// <summary>
     /// Media type used for the binary round-trip payloads. The upload validator's default
-    /// allowlist is <c>image/*,application/pdf</c> (<c>LimitsOptions.AllowedMimeTypes</c>), so an
+    /// allowlist is <c>image/*,application/pdf,text/plain,text/csv,application/json</c>
+    /// (<c>LimitsOptions.AllowedMimeTypes</c>), so an
     /// <c>application/octet-stream</c> upload is rejected before it ever reaches storage.
     /// </summary>
     private const string BinaryContentType = "image/png";
