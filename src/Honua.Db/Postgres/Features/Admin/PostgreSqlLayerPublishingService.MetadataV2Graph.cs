@@ -49,7 +49,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         int layerId,
         PublishedLayerStorage storage,
         string resourcePrimaryKeyColumn,
-        string resourceGeometryColumn,
+        string? resourceGeometryColumn,
         string geometryType,
         int srid,
         IReadOnlyList<LayerFieldInsert> fields,
