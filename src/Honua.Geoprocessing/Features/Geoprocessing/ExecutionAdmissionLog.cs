@@ -79,4 +79,12 @@ internal static partial class ExecutionAdmissionLog
     [LoggerMessage(8030, LogLevel.Warning,
         "Releasing the shared execution-admission lease failed; it expires with its TTL.")]
     public static partial void SharedLeaseReleaseFailed(ILogger logger, Exception exception);
+
+    [LoggerMessage(8031, LogLevel.Warning,
+        "Active-job snapshot read failed on attempt {Attempt}; retrying before the admission decision.")]
+    public static partial void ActiveStateReadRetrying(ILogger logger, int attempt, Exception exception);
+
+    [LoggerMessage(8032, LogLevel.Warning,
+        "Active-job snapshot unavailable after {Attempts} attempts; rejecting the submission with backpressure.")]
+    public static partial void ActiveStateUnavailable(ILogger logger, int attempts, Exception exception);
 }

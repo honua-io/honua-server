@@ -95,6 +95,10 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
             principal,
             StudioAuthorizationOperation.PublishRequest,
             pointers?.OwnerId,
+            // A missing item carries the caller's own tenant so the ownerless-target denial
+            // keeps deciding; an existing item is refused when it belongs to another tenant
+            // (honua-server#4905).
+            pointers is null ? RequestTenantId(httpContext) : pointers.TenantId,
             itemId.ToString("D"),
             "studio-content-item",
             OperatorOperation.Create,

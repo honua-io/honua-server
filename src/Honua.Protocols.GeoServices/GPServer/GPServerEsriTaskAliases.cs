@@ -53,6 +53,15 @@ namespace Honua.Protocols.GeoServices.GPServer;
 /// <c>GPServerEndpoints.BuildPublishedTaskNames</c> /
 /// <c>GPServerEndpoints.ResolveTaskDefinition</c>.
 /// </para>
+/// <para>
+/// <b>Publication invariant (#4781):</b> an alias may only be mapped for a process that
+/// GPServer actually publishes — one whose catalog classification declares the Job entry
+/// point. Protocol-only and workflow-only operations are reached through a different entry
+/// point and are deliberately absent from the task list (#4409), so an alias for one would
+/// advertise a task that can never be discovered, described or submitted. The contract, the
+/// parity alias claim that counts it, and the published task list therefore always agree;
+/// <c>GPServerEsriTaskAliasesTests</c> and <c>GPServerEsriTaskAliasEndpointTests</c> pin it.
+/// </para>
 /// </summary>
 internal static class GPServerEsriTaskAliases
 {
@@ -109,11 +118,14 @@ internal static class GPServerEsriTaskAliases
         ["conversion.polygonize"] = "RasterToPolygon",
         ["conversion.rasterize"] = "FeatureToRaster",
 
-        // Data management
+        // Data management.
+        // data-management.delete-features and data-management.calculate-field are
+        // deliberately absent: both are ProtocolOnly operations (their only entry point
+        // is the owning synchronous FeatureServer edit endpoint; no process-job executor
+        // is registered), so GPServer never publishes them as tasks (#4409) and an alias
+        // for them would promise a task that cannot be discovered or submitted (#4781).
         ["data-management.copy-features"] = "CopyFeatures",
         ["data-management.append"] = "Append",
-        ["data-management.delete-features"] = "DeleteFeatures",
-        ["data-management.calculate-field"] = "CalculateField",
 
         // Generalization
         ["generalization.dissolve"] = "Dissolve",
@@ -127,6 +139,14 @@ internal static class GPServerEsriTaskAliases
         // Esri "Enrich Layer" analysis tool convention.
         ["enrichment.enrich"] = "EnrichLayer",
     }.ToFrozenDictionary(StringComparer.Ordinal);
+
+    /// <summary>
+    /// The whole alias contract: internal process ID -&gt; published Esri-conventional task
+    /// name. Exposed so conformance tests assert the published <c>/GPServer?f=json</c> task
+    /// list against the real contract instead of a hand-maintained copy that can silently
+    /// drift from it (#4781).
+    /// </summary>
+    public static IReadOnlyDictionary<string, string> Contract => AliasByProcessId;
 
     /// <summary>
     /// Esri-conventional task name -&gt; internal process ID (the inverse of

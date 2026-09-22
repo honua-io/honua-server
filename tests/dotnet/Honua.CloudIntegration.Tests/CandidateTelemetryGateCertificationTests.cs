@@ -4,6 +4,8 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
@@ -291,6 +293,42 @@ public sealed class CandidateTelemetryGateCertificationTests : IClassFixture<Loc
             WriteIndented = true
         };
 
+        /// <summary>
+        /// One throwaway PKCS#12 key-ring certificate per lane process (honua-server#4617).
+        /// </summary>
+        /// <remarks>
+        /// A 2026.1 server image that connects to Redis outside Development/Test refuses to start
+        /// until <c>Operations:SecretChannel:KeyRingCertificatePath</c> names a real certificate
+        /// (#4722, #4885). That is an operator-supplied file, so the lane mints one and mounts it
+        /// read-only into every replica, the same way the capacity soak does (#4902). Without it the
+        /// candidate replica exits at startup and the rollout fails at the exposure deadline, which
+        /// reads as a candidate health failure rather than as missing configuration.
+        /// </remarks>
+        private static readonly Lazy<KeyRingCertificate> LaneKeyRing = new(MintKeyRing, LazyThreadSafetyMode.ExecutionAndPublication);
+
+        private sealed record KeyRingCertificate(string HostDirectory, string ContainerDirectory, string FileName, string Password)
+        {
+            public string ContainerPath => $"{ContainerDirectory}/{FileName}";
+        }
+
+        private static KeyRingCertificate MintKeyRing()
+        {
+            var directory = Directory.CreateTempSubdirectory("honua-candidate-gate-keyring").FullName;
+            const string fileName = "operation-keyring.pfx";
+            const string password = "candidate-gate-4617-keyring";
+            using var key = RSA.Create(2048);
+            var request = new CertificateRequest(
+                "CN=honua-candidate-gate-keyring",
+                key,
+                HashAlgorithmName.SHA256,
+                RSASignaturePadding.Pkcs1);
+            using var certificate = request.CreateSelfSigned(
+                DateTimeOffset.UtcNow.AddDays(-1),
+                DateTimeOffset.UtcNow.AddDays(1));
+            File.WriteAllBytes(Path.Join(directory, fileName), certificate.Export(X509ContentType.Pfx, password));
+            return new KeyRingCertificate(directory, "/keyring", fileName, password);
+        }
+
         private readonly LocalSubstrateDockerFixture _docker;
         private readonly CandidateLane _lane;
         private readonly ITestOutputHelper _output;
@@ -399,7 +437,8 @@ public sealed class CandidateTelemetryGateCertificationTests : IClassFixture<Loc
                             [YarpRollingDeployBackend.LabelRole] = YarpRollingDeployBackend.RoleActive,
                             [YarpRollingDeployBackend.LabelRevision] = lane.Previous.Reference
                         },
-                        Environment = ReplicaEnvironment(previousPostgres.Address, redisAddress)
+                        Environment = ReplicaEnvironment(previousPostgres.Address, redisAddress),
+                        Mounts = [new ContainerMount(LaneKeyRing.Value.HostDirectory, LaneKeyRing.Value.ContainerDirectory)]
                     },
                     CancellationToken.None);
                 (await WaitForStatusAsync(ReplicaUrl(ports.Active, "/healthz/ready"), 200, TimeSpan.FromMinutes(3)))
@@ -490,6 +529,9 @@ public sealed class CandidateTelemetryGateCertificationTests : IClassFixture<Loc
             {
                 parameters[SelfHostedDeployParameterKeys.EnvironmentPrefix + name] = value;
             }
+
+            parameters[SelfHostedDeployParameterKeys.MountPrefix + LaneKeyRing.Value.ContainerDirectory] =
+                LaneKeyRing.Value.HostDirectory;
 
             var service = _factory.Services.GetRequiredService<DeployWorkflowService>();
             var record = await service.CreateAsync(
@@ -804,7 +846,9 @@ public sealed class CandidateTelemetryGateCertificationTests : IClassFixture<Loc
                 ["HostValidation__AllowedHosts__1"] = "localhost",
                 ["HostValidation__AllowedHosts__2"] = ReplicaHostAlias,
                 ["Security__ConnectionEncryption__MasterKey"] = "candidate-gate-4617-master-key-0123456789abcdef",
-                ["Security__ConnectionEncryption__Salt"] = "Y2FuZGlkYXRlLWdhdGUtNDYxNy1zYWx0"
+                ["Security__ConnectionEncryption__Salt"] = "Y2FuZGlkYXRlLWdhdGUtNDYxNy1zYWx0",
+                ["Operations__SecretChannel__KeyRingCertificatePath"] = LaneKeyRing.Value.ContainerPath,
+                ["Operations__SecretChannel__KeyRingCertificatePassword"] = LaneKeyRing.Value.Password
             };
 
         private static Dictionary<string, string?> BuildHostSettings(

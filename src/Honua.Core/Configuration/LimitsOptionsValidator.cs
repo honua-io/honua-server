@@ -17,6 +17,7 @@ public sealed class LimitsOptionsValidator : OptionsValidator<LimitsOptions>
         ValidateDataAnnotations(options.Imports, failures, "Imports");
         ValidateDataAnnotations(options.Analytics, failures, "Analytics");
         ValidateDataAnnotations(options.Elevation, failures, "Elevation");
+        ValidateDataAnnotations(options.Replica, failures, "Replica");
 
         ValidateQueryLimits(options.Query, failures);
         ValidateTileLimits(options.Tiles, failures);

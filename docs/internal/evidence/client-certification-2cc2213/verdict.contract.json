@@ -1,0 +1,1267 @@
+{
+  "schema": "honua.client-certification-verdict/v1",
+  "mode": "contract",
+  "requirementsRevision": "2026-09-16-bounded-roster.3",
+  "requirementsSourceRevision": "97e34bdb284f57ecea1de577805311c78cb52941",
+  "denominatorRevision": "2026-09-13-complete.12",
+  "candidate": null,
+  "summary": {
+    "requiredCells": 59,
+    "byResult": {
+      "pass": 0,
+      "fail": 0,
+      "skip": 59
+    },
+    "byBlockerReasonCode": {
+      "no-candidate": 3,
+      "producer-lane-not-emitted": 29,
+      "producer-surface-not-emitted": 27
+    },
+    "byBlockerOwner": {
+      "honua-io/honua-release": 3,
+      "honua-io/honua-server": 56
+    },
+    "green": false
+  },
+  "cells": [
+    {
+      "cell": "ogc|OGC-OP-WCS-2-0-COVERAGE|GDAL|3.8.4|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-WCS-2-0-COVERAGE",
+      "canonical_client": "GDAL",
+      "client_lane": "gdal",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc-api-coverages|serve.ogc-api-coverages|GDAL|3.8.4|local-docker",
+      "capability_key": "serve.ogc-api-coverages",
+      "surface": "ogc-api-coverages",
+      "operation": "serve.ogc-api-coverages",
+      "canonical_client": "GDAL",
+      "client_lane": "gdal",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "raster-cloud-cog-serving|raster.cloud-cog-serving|GDAL|3.13.3|local-docker",
+      "capability_key": "raster.cloud-cog-serving",
+      "surface": "raster-cloud-cog-serving",
+      "operation": "raster.cloud-cog-serving",
+      "canonical_client": "GDAL",
+      "client_lane": "gdal",
+      "client_version": "3.13.3",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "raster-multidim-coverage|raster.multidim-coverage|GDAL|3.13.3|local-docker",
+      "capability_key": "raster.multidim-coverage",
+      "surface": "raster-multidim-coverage",
+      "operation": "raster.multidim-coverage",
+      "canonical_client": "GDAL",
+      "client_lane": "gdal",
+      "client_version": "3.13.3",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "wcs|serve.wcs|GDAL|3.8.4|local-docker",
+      "capability_key": "serve.wcs",
+      "surface": "wcs",
+      "operation": "serve.wcs",
+      "canonical_client": "GDAL",
+      "client_lane": "gdal",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "cog|dataset-read|GDAL|3.8.4|local-docker",
+      "capability_key": "format.cog",
+      "surface": "cog",
+      "operation": "dataset-read",
+      "canonical_client": "GDAL",
+      "client_lane": "gdal-cog",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-cog'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-cog'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "flatgeobuf|feature-read|GDAL|3.8.4|local-docker",
+      "capability_key": "format.flatgeobuf",
+      "surface": "flatgeobuf",
+      "operation": "feature-read",
+      "canonical_client": "GDAL",
+      "client_lane": "gdal-flatgeobuf",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-flatgeobuf'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-flatgeobuf'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "geoparquet|feature-read|GDAL|3.14.0|local-docker",
+      "capability_key": "format.geoparquet",
+      "surface": "geoparquet",
+      "operation": "feature-read",
+      "canonical_client": "GDAL",
+      "client_lane": "gdal-geoparquet",
+      "client_version": "3.14.0",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-geoparquet'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal-geoparquet'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-OGC-API-FEATURES-COLLECTION|GDAL/OGR|3.8.4|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-COLLECTION",
+      "canonical_client": "GDAL/OGR",
+      "client_lane": "gdal",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-OGC-API-FEATURES-COLLECTIONS|GDAL/OGR|3.8.4|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-COLLECTIONS",
+      "canonical_client": "GDAL/OGR",
+      "client_lane": "gdal",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-OGC-API-FEATURES-CONFORMANCE|GDAL/OGR|3.8.4|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-CONFORMANCE",
+      "canonical_client": "GDAL/OGR",
+      "client_lane": "gdal",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-OGC-API-FEATURES-ITEM|GDAL/OGR|3.8.4|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-ITEM",
+      "canonical_client": "GDAL/OGR",
+      "client_lane": "gdal",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-OGC-API-FEATURES-ITEMS|GDAL/OGR|3.8.4|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-ITEMS",
+      "canonical_client": "GDAL/OGR",
+      "client_lane": "gdal",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-OGC-API-FEATURES-LANDING|GDAL/OGR|3.8.4|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-LANDING",
+      "canonical_client": "GDAL/OGR",
+      "client_lane": "gdal",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-OGC-API-FEATURES-QUERYABLES|GDAL/OGR|3.8.4|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-QUERYABLES",
+      "canonical_client": "GDAL/OGR",
+      "client_lane": "gdal",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-OGC-API-FEATURES-TRANSACTIONS|GDAL/OGR|3.8.4|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-TRANSACTIONS",
+      "canonical_client": "GDAL/OGR",
+      "client_lane": "gdal",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-WFS-2-0|GDAL/OGR|3.8.4|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-WFS-2-0",
+      "canonical_client": "GDAL/OGR",
+      "client_lane": "gdal",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc-api-features|serve.ogc-api-features|GDAL/OGR|3.8.4|local-docker",
+      "capability_key": "serve.ogc-api-features",
+      "surface": "ogc-api-features",
+      "operation": "serve.ogc-api-features",
+      "canonical_client": "GDAL/OGR",
+      "client_lane": "gdal",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "wfs|serve.wfs|GDAL/OGR|3.8.4|local-docker",
+      "capability_key": "serve.wfs",
+      "surface": "wfs",
+      "operation": "serve.wfs",
+      "canonical_client": "GDAL/OGR",
+      "client_lane": "gdal",
+      "client_version": "3.8.4",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'gdal'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-OGC-API-TILES-LANDING-TILESETS|MapLibre GL JS|5.7|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-TILES-LANDING-TILESETS",
+      "canonical_client": "MapLibre GL JS",
+      "client_lane": "js-maplibre",
+      "client_version": "5.7",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-OGC-API-TILES-TILE|MapLibre GL JS|5.7|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-TILES-TILE",
+      "canonical_client": "MapLibre GL JS",
+      "client_lane": "js-maplibre",
+      "client_version": "5.7",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-WMS-GETCAPABILITIES-GETMAP-GETFEATUREINF|MapLibre GL JS|5.7|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-WMS-GETCAPABILITIES-GETMAP-GETFEATUREINF",
+      "canonical_client": "MapLibre GL JS",
+      "client_lane": "js-maplibre",
+      "client_version": "5.7",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-WMTS-GETCAPABILITIES-GETTILE|MapLibre GL JS|5.7|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-WMTS-GETCAPABILITIES-GETTILE",
+      "canonical_client": "MapLibre GL JS",
+      "client_lane": "js-maplibre",
+      "client_version": "5.7",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc-api-maps|serve.ogc-api-maps|MapLibre GL JS|5.7|local-docker",
+      "capability_key": "serve.ogc-api-maps",
+      "surface": "ogc-api-maps",
+      "operation": "serve.ogc-api-maps",
+      "canonical_client": "MapLibre GL JS",
+      "client_lane": "js-maplibre",
+      "client_version": "5.7",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc-api-styles|styling.ogc-api-styles|MapLibre GL JS|5.7|local-docker",
+      "capability_key": "styling.ogc-api-styles",
+      "surface": "ogc-api-styles",
+      "operation": "styling.ogc-api-styles",
+      "canonical_client": "MapLibre GL JS",
+      "client_lane": "js-maplibre",
+      "client_version": "5.7",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc-api-tiles|serve.ogc-api-tiles|MapLibre GL JS|5.7|local-docker",
+      "capability_key": "serve.ogc-api-tiles",
+      "surface": "ogc-api-tiles",
+      "operation": "serve.ogc-api-tiles",
+      "canonical_client": "MapLibre GL JS",
+      "client_lane": "js-maplibre",
+      "client_version": "5.7",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "raster-terrain-rgb|raster.terrain-rgb|MapLibre GL JS|6.5.0|local-docker",
+      "capability_key": "raster.terrain-rgb",
+      "surface": "raster-terrain-rgb",
+      "operation": "raster.terrain-rgb",
+      "canonical_client": "MapLibre GL JS",
+      "client_lane": "js-maplibre",
+      "client_version": "6.5.0",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "wms|serve.wms|MapLibre GL JS|5.7|local-docker",
+      "capability_key": "serve.wms",
+      "surface": "wms",
+      "operation": "serve.wms",
+      "canonical_client": "MapLibre GL JS",
+      "client_lane": "js-maplibre",
+      "client_version": "5.7",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "wmts|serve.wmts|MapLibre GL JS|5.7|local-docker",
+      "capability_key": "serve.wmts",
+      "surface": "wmts",
+      "operation": "serve.wmts",
+      "canonical_client": "MapLibre GL JS",
+      "client_lane": "js-maplibre",
+      "client_version": "5.7",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-lane-not-emitted",
+      "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+      "blockers": [
+        {
+          "reason_code": "producer-lane-not-emitted",
+          "reason": "No honua-server client-compat lane emits evidence under the governed client_lane 'js-maplibre'; the lanes this repository is contracted to emit are arcgis-stub, cli, desktop-qgis, duckdb, js, js-cesium, py-geopandas, py-owslib, py-pystac, r-sf.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-WCS-2-0-COVERAGE|OWSLib|0.36.0|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-WCS-2-0-COVERAGE",
+      "canonical_client": "OWSLib",
+      "client_lane": "py-owslib",
+      "client_version": "0.36.0",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'py-owslib' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs, wms, wmts.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'py-owslib' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs, wms, wmts.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc-api-coverages|serve.ogc-api-coverages|OWSLib|0.36.0|local-docker",
+      "capability_key": "serve.ogc-api-coverages",
+      "surface": "ogc-api-coverages",
+      "operation": "serve.ogc-api-coverages",
+      "canonical_client": "OWSLib",
+      "client_lane": "py-owslib",
+      "client_version": "0.36.0",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'py-owslib' is emitted, but not for the governed surface 'ogc-api-coverages'; it emits ogc-features, wfs, wms, wmts.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'py-owslib' is emitted, but not for the governed surface 'ogc-api-coverages'; it emits ogc-features, wfs, wms, wmts.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc-api-edr|serve.ogc-api-edr|OWSLib|0.36.0|local-docker",
+      "capability_key": "serve.ogc-api-edr",
+      "surface": "ogc-api-edr",
+      "operation": "serve.ogc-api-edr",
+      "canonical_client": "OWSLib",
+      "client_lane": "py-owslib",
+      "client_version": "0.36.0",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'py-owslib' is emitted, but not for the governed surface 'ogc-api-edr'; it emits ogc-features, wfs, wms, wmts.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'py-owslib' is emitted, but not for the governed surface 'ogc-api-edr'; it emits ogc-features, wfs, wms, wmts.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc-api-processes|process.ogc-api-processes|OWSLib|0.36.0|local-docker",
+      "capability_key": "process.ogc-api-processes",
+      "surface": "ogc-api-processes",
+      "operation": "process.ogc-api-processes",
+      "canonical_client": "OWSLib",
+      "client_lane": "py-owslib",
+      "client_version": "0.36.0",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'py-owslib' is emitted, but not for the governed surface 'ogc-api-processes'; it emits ogc-features, wfs, wms, wmts.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'py-owslib' is emitted, but not for the governed surface 'ogc-api-processes'; it emits ogc-features, wfs, wms, wmts.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc-api-records|serve.ogc-api-records|OWSLib|0.36.0|local-docker",
+      "capability_key": "serve.ogc-api-records",
+      "surface": "ogc-api-records",
+      "operation": "serve.ogc-api-records",
+      "canonical_client": "OWSLib",
+      "client_lane": "py-owslib",
+      "client_version": "0.36.0",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'py-owslib' is emitted, but not for the governed surface 'ogc-api-records'; it emits ogc-features, wfs, wms, wmts.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'py-owslib' is emitted, but not for the governed surface 'ogc-api-records'; it emits ogc-features, wfs, wms, wmts.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "wcs|serve.wcs|OWSLib|0.36.0|local-docker",
+      "capability_key": "serve.wcs",
+      "surface": "wcs",
+      "operation": "serve.wcs",
+      "canonical_client": "OWSLib",
+      "client_lane": "py-owslib",
+      "client_version": "0.36.0",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'py-owslib' is emitted, but not for the governed surface 'wcs'; it emits ogc-features, wfs, wms, wmts.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'py-owslib' is emitted, but not for the governed surface 'wcs'; it emits ogc-features, wfs, wms, wmts.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "stac|serve.stac|PySTAC-Client|pystac=1.15.2;pystac-client=0.9.0|local-docker",
+      "capability_key": "serve.stac",
+      "surface": "stac",
+      "operation": "serve.stac",
+      "canonical_client": "PySTAC-Client",
+      "client_lane": "py-pystac",
+      "client_version": "pystac=1.15.2;pystac-client=0.9.0",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "no-candidate",
+      "reason": "A producer and a denominator join both exist, but no exact candidate image was supplied, so no receipt has been admitted. Re-run with --mode release.",
+      "blockers": [
+        {
+          "reason_code": "no-candidate",
+          "reason": "A producer and a denominator join both exist, but no exact candidate image was supplied, so no receipt has been admitted. Re-run with --mode release.",
+          "owner": "honua-io/honua-release"
+        }
+      ]
+    },
+    {
+      "cell": "featureserver|serve.geoservices-featureserver|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "serve.geoservices-featureserver",
+      "surface": "featureserver",
+      "operation": "serve.geoservices-featureserver",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'featureserver'; it emits ogc-features, wfs.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'featureserver'; it emits ogc-features, wfs.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "mapserver|serve.geoservices-mapserver|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "serve.geoservices-mapserver",
+      "surface": "mapserver",
+      "operation": "serve.geoservices-mapserver",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'mapserver'; it emits ogc-features, wfs.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'mapserver'; it emits ogc-features, wfs.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-OGC-API-FEATURES-COLLECTION|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-COLLECTION",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-OGC-API-FEATURES-COLLECTIONS|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-COLLECTIONS",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-OGC-API-FEATURES-CONFORMANCE|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-CONFORMANCE",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-OGC-API-FEATURES-ITEM|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-ITEM",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-OGC-API-FEATURES-ITEMS|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-ITEMS",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-OGC-API-FEATURES-LANDING|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-LANDING",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-OGC-API-FEATURES-QUERYABLES|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-QUERYABLES",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-OGC-API-FEATURES-TRANSACTIONS|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-FEATURES-TRANSACTIONS",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-OGC-API-TILES-LANDING-TILESETS|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-TILES-LANDING-TILESETS",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-OGC-API-TILES-TILE|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-OGC-API-TILES-TILE",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-WFS-2-0|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-WFS-2-0",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-WMS-GETCAPABILITIES-GETMAP-GETFEATUREINF|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-WMS-GETCAPABILITIES-GETMAP-GETFEATUREINF",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc|OGC-OP-WMTS-GETCAPABILITIES-GETTILE|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "serve.ogc",
+      "surface": "ogc",
+      "operation": "OGC-OP-WMTS-GETCAPABILITIES-GETTILE",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc'; it emits ogc-features, wfs.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc-api-features|serve.ogc-api-features|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "serve.ogc-api-features",
+      "surface": "ogc-api-features",
+      "operation": "serve.ogc-api-features",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc-api-features'; it emits ogc-features, wfs.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc-api-features'; it emits ogc-features, wfs.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc-api-maps|serve.ogc-api-maps|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "serve.ogc-api-maps",
+      "surface": "ogc-api-maps",
+      "operation": "serve.ogc-api-maps",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc-api-maps'; it emits ogc-features, wfs.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc-api-maps'; it emits ogc-features, wfs.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc-api-styles|styling.ogc-api-styles|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "styling.ogc-api-styles",
+      "surface": "ogc-api-styles",
+      "operation": "styling.ogc-api-styles",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc-api-styles'; it emits ogc-features, wfs.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc-api-styles'; it emits ogc-features, wfs.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc-api-tiles|serve.ogc-api-tiles|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "serve.ogc-api-tiles",
+      "surface": "ogc-api-tiles",
+      "operation": "serve.ogc-api-tiles",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc-api-tiles'; it emits ogc-features, wfs.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'ogc-api-tiles'; it emits ogc-features, wfs.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "ogc-features|serve.ogc-api-features|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "serve.ogc-api-features",
+      "surface": "ogc-features",
+      "operation": "serve.ogc-api-features",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "no-candidate",
+      "reason": "A producer and a denominator join both exist, but no exact candidate image was supplied, so no receipt has been admitted. Re-run with --mode release.",
+      "blockers": [
+        {
+          "reason_code": "no-candidate",
+          "reason": "A producer and a denominator join both exist, but no exact candidate image was supplied, so no receipt has been admitted. Re-run with --mode release.",
+          "owner": "honua-io/honua-release"
+        }
+      ]
+    },
+    {
+      "cell": "wfs|serve.wfs|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "serve.wfs",
+      "surface": "wfs",
+      "operation": "serve.wfs",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "no-candidate",
+      "reason": "A producer and a denominator join both exist, but no exact candidate image was supplied, so no receipt has been admitted. Re-run with --mode release.",
+      "blockers": [
+        {
+          "reason_code": "no-candidate",
+          "reason": "A producer and a denominator join both exist, but no exact candidate image was supplied, so no receipt has been admitted. Re-run with --mode release.",
+          "owner": "honua-io/honua-release"
+        }
+      ]
+    },
+    {
+      "cell": "wms|serve.wms|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "serve.wms",
+      "surface": "wms",
+      "operation": "serve.wms",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'wms'; it emits ogc-features, wfs.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'wms'; it emits ogc-features, wfs.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    },
+    {
+      "cell": "wmts|serve.wmts|QGIS|3.44.13-Solothurn|local-docker",
+      "capability_key": "serve.wmts",
+      "surface": "wmts",
+      "operation": "serve.wmts",
+      "canonical_client": "QGIS",
+      "client_lane": "desktop-qgis",
+      "client_version": "3.44.13-Solothurn",
+      "deployment_target": "local-docker",
+      "required_tier": "nightly",
+      "result": "skip",
+      "reason_code": "producer-surface-not-emitted",
+      "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'wmts'; it emits ogc-features, wfs.",
+      "blockers": [
+        {
+          "reason_code": "producer-surface-not-emitted",
+          "reason": "Lane 'desktop-qgis' is emitted, but not for the governed surface 'wmts'; it emits ogc-features, wfs.",
+          "owner": "honua-io/honua-server"
+        }
+      ]
+    }
+  ]
+}

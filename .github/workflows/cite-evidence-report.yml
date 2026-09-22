@@ -72,6 +72,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      - name: Checkout candidate migration manifest
+        if: inputs.server_image != ''
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_sha }}
+          path: .cite-source
+
+      - name: Select candidate migration manifest
+        if: inputs.server_image != ''
+        run: echo "HONUA_CITE_MIGRATIONS_DIR=$GITHUB_WORKSPACE/.cite-source/src/Honua.Server/Migrations" >> "$GITHUB_ENV"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -150,6 +161,16 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y curl jq
+
+      - name: Verify WFS migration-first bootstrap and stale-schema rejection
+        env:
+          HONUA_CITE_SERVER_IMAGE: honua-server:latest
+        run: bash docker/cite/shared/tests/test-wfs-bootstrap.sh
+
+      - name: Verify WCS raster migration and seed restart
+        env:
+          HONUA_CITE_SERVER_IMAGE: honua-server:latest
+        run: bash docker/cite/shared/tests/test-wcs-bootstrap.sh
 
       - name: Run CITE suites
         id: run-cite
@@ -320,6 +341,14 @@ jobs:
       - name: Assert CITE status freshness
         if: always()
         run: scripts/ci/check-cite-status-freshness.sh docs/cite-status.md
+
+      - name: Upload reviewed CITE status snapshot
+        uses: actions/upload-artifact@v7
+        with:
+          name: cite-status
+          path: docs/cite-status.md
+          retention-days: 90
+          if-no-files-found: error
 
       - name: Open/update issue on scheduled failure
         if: failure() && github.event_name == 'schedule'

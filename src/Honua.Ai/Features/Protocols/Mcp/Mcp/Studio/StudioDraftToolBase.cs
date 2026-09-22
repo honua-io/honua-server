@@ -200,6 +200,9 @@ internal abstract class StudioDraftToolBase
                 principal,
                 studioOperation,
                 resourceOwnerId: null,
+                // A lookup miss carries the caller's own tenant so the tenant boundary stays a
+                // no-op here and the ownerless-target denial keeps deciding (honua-server#4905).
+                resourceTenantId: RequestTenantId(httpContext),
                 draftId.ToString("D"),
                 "studio-package-draft",
                 operatorOperation,
@@ -213,12 +216,23 @@ internal abstract class StudioDraftToolBase
             principal,
             studioOperation,
             draft.OwnerId,
+            draft.TenantId,
             draftId.ToString("D"),
             "studio-package-draft",
             operatorOperation,
             cancellationToken).ConfigureAwait(false);
 
         return draft;
+    }
+
+    /// <summary>
+    /// The tenant the current MCP request resolved to (honua-server#4905). Used as the recorded
+    /// tenant of a resource the caller is about to create and of a lookup miss.
+    /// </summary>
+    protected static string? RequestTenantId(HttpContext httpContext)
+    {
+        ArgumentNullException.ThrowIfNull(httpContext);
+        return httpContext.RequestServices.GetService<ITenantContext>()?.TenantId;
     }
 
     /// <summary>
@@ -232,6 +246,7 @@ internal abstract class StudioDraftToolBase
         ClaimsPrincipal principal,
         StudioAuthorizationOperation studioOperation,
         string? resourceOwnerId,
+        string? resourceTenantId,
         string? resourceId,
         string resourceType,
         OperatorOperation operatorOperation,
@@ -243,6 +258,7 @@ internal abstract class StudioDraftToolBase
             callerId,
             studioOperation,
             resourceOwnerId,
+            resourceTenantId,
             resourceId: resourceId,
             cancellationToken: cancellationToken).ConfigureAwait(false);
 

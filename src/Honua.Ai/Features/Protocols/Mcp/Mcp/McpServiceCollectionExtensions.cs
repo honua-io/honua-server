@@ -375,6 +375,13 @@ internal static class McpServiceCollectionExtensions
                 timeProvider);
         });
 
+        // honua-server#4909: a bearer token admitted on a session's initialize (or on a
+        // refreshed-token request that session accepted) may be reused on that session
+        // under token replay protection; reuse anywhere else stays a replay.
+        services.TryAddEnumerable(ServiceDescriptor.Singleton<
+            Honua.Infrastructure.Authentication.ITokenReplayContinuationResolver,
+            McpTokenReplayContinuationResolver>());
+
         // Server-push notifications over the session SSE stream (honua-server#1954):
         // the publisher builds notifications/progress + */list_changed frames and
         // enqueues them onto the owning session; the progress bridge polls the
@@ -410,8 +417,9 @@ internal static class McpServiceCollectionExtensions
 
     /// <summary>
     /// Publishes validated operations-toolset descriptors as first-class MCP tools
-    /// (#2483, ADR-0056 Increment 4). Off unless <c>Mcp:PublishOperations:Enabled</c>
-    /// is set, so the advertised catalog is unchanged by default. Must be called
+    /// (#2483, ADR-0056 Increment 4). The audited Admin projection publishes by default
+    /// (#3363; <c>Mcp:PublishOperations:AdminProjection=false</c> withholds it) and the full
+    /// catalog stays opt-in via <c>Mcp:PublishOperations:Enabled</c>. Must be called
     /// AFTER the operations toolset is composed (<c>AddOperationsToolset</c>), because
     /// the tool source resolves the canonical <see cref="Honua.Core.Features.Operations.Abstractions.IOperationCatalog"/>
     /// — call it from a host that has the operations toolset wired, not from a bare

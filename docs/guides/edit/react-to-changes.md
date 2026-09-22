@@ -119,6 +119,23 @@ Page with `cursor` (and optional `from`/`to` ISO 8601 bounds, `limit` 1–1000):
 
 `DELETE /api/v1/admin/streaming/features/sessions/{sessionId}` force-disconnects one.
 
+### 9. Bound concurrent sessions
+
+`FeatureStreaming__MaxConcurrentSessions` limits simultaneous SSE and WebSocket
+connections per effective tenant on each server process. All principals in a tenant
+share that tenant's limit. When tenancy is disabled or there is no effective tenant,
+the limit applies per authenticated principal, using the same scheme- and
+issuer-qualified identity as other security boundaries. Anonymous connections share
+one partition. Changing `clientLabel`, transport, or subscription count does not
+create additional capacity.
+
+A full partition receives HTTP `503` and a problem document describing the session
+limit before the SSE stream or WebSocket handshake opens. Disconnecting a session
+returns capacity only to its own partition. The cap does not impose a second global
+limit, and it is not a distributed cluster quota. The streaming health check retains
+the total active-session count and reports saturation using the largest partition,
+without exposing tenant or principal identifiers.
+
 ## Verify
 
 > Open `/api/v1/streaming/features/capabilities` in a browser.
@@ -155,20 +172,3 @@ More general failures: [Troubleshooting](../deploy/troubleshooting.md).
 
 - [Edit features](edit-features.md)
 - [Monitoring](../deploy/monitoring.md)
-
-### Connection admission
-
-`FeatureStreaming__MaxConcurrentSessions` limits simultaneous SSE and WebSocket
-connections per effective tenant on each server process. All principals in a tenant
-share that tenant's limit. When tenancy is disabled or there is no effective tenant,
-the limit applies per authenticated principal, using the same scheme- and
-issuer-qualified identity as other security boundaries. Anonymous connections share
-one partition. Changing `clientLabel`, transport, or subscription count does not
-create additional capacity.
-
-A full partition receives HTTP `503` and a problem document describing the session
-limit before the SSE stream or WebSocket handshake opens. Disconnecting a session
-returns capacity only to its own partition. The cap does not impose a second global
-limit, and it is not a distributed cluster quota. The streaming health check retains
-the total active-session count and reports saturation using the largest partition,
-without exposing tenant or principal identifiers.

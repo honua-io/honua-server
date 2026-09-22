@@ -62,9 +62,13 @@ using var host = builder.Build();
 
 `ApiKey` is sent as the `X-API-Key` header. The options also accept `ApiKeyProvider` and `BearerTokenProvider` delegates if you resolve credentials dynamically.
 
-> **gRPC listens on a different port.** The HTTP protocols are on 8080; gRPC is HTTP/2 cleartext > (h2c) on **8081** (`Kestrel:Endpoints:Grpc:Url`, exposed as `HONUA_GRPC_PORT` in Compose). > Pointing a gRPC client at 8080 fails at runtime with `HTTP_1_1_REQUIRED`. See > [the gRPC protocol reference](../../reference/protocols/grpc.md).
+> **gRPC listens on a different port.** The HTTP protocols are on 8080; gRPC is HTTP/2 cleartext
+> (h2c) on **8081** (`Kestrel:Endpoints:Grpc:Url`, exposed as `HONUA_GRPC_PORT` in Compose).
+> Pointing a gRPC client at 8080 fails at runtime with `HTTP_1_1_REQUIRED`. See
+> [the gRPC protocol reference](../../reference/protocols/grpc.md).
 
-> **Ports on this page** are the repository Compose defaults. If you changed them in the > [quickstart](../../get-started/quickstart.md), substitute your own throughout.
+> **Ports on this page** are the repository Compose defaults. If you changed them in the
+> [quickstart](../../get-started/quickstart.md), substitute your own throughout.
 
 ### 3. Make your first call
 

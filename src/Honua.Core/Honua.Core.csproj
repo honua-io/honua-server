@@ -29,6 +29,9 @@
     <PackageReference Include="Microsoft.Extensions.ObjectPool" />
     <PackageReference Include="Polly" />
 
+    <!-- ArcGIS source protocol client for import discovery/query/attachments (#4599). -->
+    <PackageReference Include="Honua.Sdk.GeoServices" />
+
     <!-- COG tile decode: managed zstd port, no native dependency (see Directory.Packages.props). -->
     <PackageReference Include="ZstdSharp.Port" />
 

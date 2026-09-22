@@ -1374,6 +1374,14 @@ internal sealed partial class JobExecutionContext(
         string artifactReference,
         CancellationToken cancellationToken = default)
     {
+        await TryPublishArtifactAsync(artifactReference, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> TryPublishArtifactAsync(
+        string artifactReference,
+        CancellationToken cancellationToken = default)
+    {
         ArgumentException.ThrowIfNullOrWhiteSpace(artifactReference);
         const int maxCasRetries = 10;
 
@@ -1388,14 +1396,14 @@ internal sealed partial class JobExecutionContext(
                 var job = await jobStore.GetAsync(operationId, cancellationToken).ConfigureAwait(false);
                 if (job == null || !IsOwnedBy(job))
                 {
-                    return;
+                    return false;
                 }
 
                 if (claimedAttempt > 0 && job.AttemptCount != claimedAttempt)
                 {
                     // A stale attempt must never publish into a newer attempt's record.
                     Log.ArtifactPublishFencedStaleAttempt(logger, operationId, claimedAttempt, job.AttemptCount);
-                    return;
+                    return false;
                 }
 
                 if (job.CancellationRequestedAt.HasValue)
@@ -1403,13 +1411,13 @@ internal sealed partial class JobExecutionContext(
                     // Durable cancellation wins: an attempt racing its own cancellation
                     // cannot expose new output through the job record.
                     Log.ArtifactPublishFencedCancellation(logger, operationId);
-                    return;
+                    return false;
                 }
 
                 if (!TryAppendArtifactReference(job.ArtifactReferences, artifactReference, out var refs))
                 {
                     // Identical publication already durable — retried publish is a no-op.
-                    return;
+                    return true;
                 }
 
                 var updated = job with
@@ -1420,7 +1428,7 @@ internal sealed partial class JobExecutionContext(
                 };
                 if (await jobStore.TrySetAsync(updated, cancellationToken: cancellationToken).ConfigureAwait(false))
                 {
-                    return;
+                    return true;
                 }
 
                 // Version conflict (heartbeat/reconciler write raced this publish):

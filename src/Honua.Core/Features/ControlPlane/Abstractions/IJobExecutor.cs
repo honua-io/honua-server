@@ -152,6 +152,19 @@ public interface IJobExecutionContext
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Publishes an artifact and reports whether the execution fence accepted it.
+    /// Durable contexts must return false when ownership, attempt identity, or
+    /// cancellation rejects publication. Lease-free contexts accept completed writes.
+    /// </summary>
+    async Task<bool> TryPublishArtifactAsync(
+        string artifactReference,
+        CancellationToken cancellationToken = default)
+    {
+        await PublishArtifactAsync(artifactReference, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>
     /// Verifies that the worker still owns the active execution attempt before an
     /// executor performs an external side effect. Lightweight contexts that do not
     /// have a durable lease may keep the default no-op implementation.

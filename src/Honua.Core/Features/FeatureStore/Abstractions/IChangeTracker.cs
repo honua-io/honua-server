@@ -89,4 +89,43 @@ public interface IChangeTracker
                 || change.PublicObjectId is { } publicObjectId && objectIds.Contains(publicObjectId))
             .ToList();
     }
+
+    /// <summary>
+    /// Gets the changes committed in the bounded generation window
+    /// (<paramref name="sinceGeneration"/>, <paramref name="throughGeneration"/>], collapsed over that
+    /// window only. Replica delivery reads bounded windows so a response reports exactly the
+    /// generation it reached and a large backlog can be delivered in consecutive windows: an object
+    /// inserted inside the window and updated after it is reported as an insert here and as an update
+    /// by the next window, never as an update of a row the client does not hold.
+    /// </summary>
+    /// <param name="sinceGeneration">Exclusive lower generation bound.</param>
+    /// <param name="throughGeneration">Inclusive upper generation bound.</param>
+    /// <param name="layerIds">Storage layers to read.</param>
+    /// <param name="excludeOriginReplicaId">Recipient replica whose own edits are already known, or null.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>Collapsed change feed for the window, ordered by generation.</returns>
+    /// <remarks>
+    /// The default implementation reads the unbounded feed and is exact only when no returned change
+    /// lies above the bound (collapsing over a longer history then equals collapsing over the window).
+    /// Otherwise it throws rather than filter collapsed rows, which would silently misreport an object
+    /// whose history straddles the bound. Providers backed by a change log override it.
+    /// </remarks>
+    async Task<IReadOnlyList<FeatureChange>> GetChangesInWindowAsync(
+        long sinceGeneration,
+        long throughGeneration,
+        int[] layerIds,
+        string? excludeOriginReplicaId,
+        CancellationToken cancellationToken = default)
+    {
+        var changes = excludeOriginReplicaId is null
+            ? await GetChangesSinceAsync(sinceGeneration, layerIds, cancellationToken).ConfigureAwait(false)
+            : await GetChangesSinceAsync(sinceGeneration, layerIds, objectIds: null, excludeOriginReplicaId, cancellationToken).ConfigureAwait(false);
+        if (changes.All(change => change.Generation <= throughGeneration))
+        {
+            return changes;
+        }
+
+        throw new NotSupportedException(
+            "This change tracker cannot collapse a bounded generation window; override GetChangesInWindowAsync.");
+    }
 }

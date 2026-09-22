@@ -118,7 +118,6 @@ internal static partial class SecureConnectionEndpoints
     private static async Task<Results<Ok<ApiResponse<ConnectionTestResult>>, BadRequest<ApiResponse<object>>, ProblemHttpResult>>
         HandleTestDraftConnection(
             CreateSecureConnectionRequest request,
-            [FromServices] IConnectionSecretResolver secretResolver,
             [FromServices] IConnectionHealthTester connectionTester,
             [FromServices] IConnectionDriverRegistry driverRegistry,
             [FromServices] SecureConnectionGovernance governance,
@@ -155,10 +154,19 @@ internal static partial class SecureConnectionEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure("SSL mode must require encrypted transport when SSL is required"));
             }
 
+            if (!string.IsNullOrWhiteSpace(request.SecretReference))
+            {
+                var secretReferenceDecision = governance.EvaluateSecretReference(request.SecretReference);
+                if (!secretReferenceDecision.IsPermitted)
+                {
+                    return TypedResults.BadRequest(ApiResponse<object>.Failure($"SecretReference: {secretReferenceDecision.Reason}"));
+                }
+            }
+
             // Enforce the host policy before issuing an outbound probe so a non-allowlisted
             // (or reserved-address) destination cannot be reached even at draft-test time.
             var draftUsesSecretReference = !string.IsNullOrWhiteSpace(request.SecretReference);
-            if (governance.IsHostEvaluable(request.Host, draftUsesSecretReference))
+            if (governance.IsHostEvaluable())
             {
                 var hostDecision = await governance.EvaluateHostAsync(request.Host, context.RequestAborted);
                 if (!hostDecision.IsAllowed)
@@ -192,9 +200,17 @@ internal static partial class SecureConnectionEndpoints
 
             if (!string.IsNullOrWhiteSpace(request.SecretReference))
             {
-                connectionString = await secretResolver.ResolveConnectionStringAsync(
-                    request.SecretReference,
-                    context.RequestAborted);
+                try
+                {
+                    connectionString = await governance.ResolveSecretReferenceAsync(
+                        request.SecretReference,
+                        context.RequestAborted);
+                }
+                catch (RequestSecretReferenceException)
+                {
+                    return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                        $"SecretReference: {RequestSecretReferenceException.ClientSafeMessage}"));
+                }
             }
             else
             {
@@ -390,11 +406,20 @@ internal static partial class SecureConnectionEndpoints
                 return TypedResults.BadRequest(ApiResponse<object>.Failure("SSL mode must require encrypted transport when SSL is required"));
             }
 
-            // Enforce the outbound connection host policy before persisting. For an inline
-            // password the host is the connection target; for a secret reference the host is
-            // optional display metadata, so only evaluate it when supplied.
+            if (!string.IsNullOrWhiteSpace(request.SecretReference))
+            {
+                var secretReferenceDecision = governance.EvaluateSecretReference(request.SecretReference);
+                if (!secretReferenceDecision.IsPermitted)
+                {
+                    return TypedResults.BadRequest(ApiResponse<object>.Failure($"SecretReference: {secretReferenceDecision.Reason}"));
+                }
+            }
+
+            // Enforce the outbound connection host policy before persisting. While a host policy
+            // is enforced the host is required for every connection, including one that uses a
+            // secret reference.
             var usesSecretReference = !string.IsNullOrWhiteSpace(request.SecretReference);
-            if (governance.IsHostEvaluable(request.Host, usesSecretReference))
+            if (governance.IsHostEvaluable())
             {
                 var hostDecision = await governance.EvaluateHostAsync(request.Host, context.RequestAborted);
                 if (!hostDecision.IsAllowed)
@@ -723,7 +748,7 @@ internal static partial class SecureConnectionEndpoints
             // are not retroactively invalidated by a later policy tightening on unrelated edits.
             var usesSecretReference = !string.IsNullOrWhiteSpace(existing.SecretRef);
             if (!string.Equals(host, existing.Host, StringComparison.Ordinal) &&
-                governance.IsHostEvaluable(host, usesSecretReference))
+                governance.IsHostEvaluable())
             {
                 var hostDecision = await governance.EvaluateHostAsync(host, context.RequestAborted);
                 if (!hostDecision.IsAllowed)

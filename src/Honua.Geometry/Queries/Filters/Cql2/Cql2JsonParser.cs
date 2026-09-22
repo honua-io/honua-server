@@ -57,7 +57,9 @@ public sealed class Cql2JsonParser
         {
             _expressionDepth = 0;
             using var document = JsonDocument.Parse(cql2Json);
-            return ParseExpression(document.RootElement);
+            var expression = ParseExpression(document.RootElement);
+            FilterParserGuard.EnsureExpressionTree(expression);
+            return expression;
         }
         catch (JsonException ex)
         {
@@ -151,6 +153,12 @@ public sealed class Cql2JsonParser
 
         if (normalizedLower is "and" or "or")
         {
+            if (argsElement.ValueKind == JsonValueKind.Array)
+            {
+                // Checked before the operands are parsed so an over-long list is never materialized.
+                FilterParserGuard.EnsureLogicalOperandCount(argsElement.GetArrayLength());
+            }
+
             var expressions = ParseArguments(argsElement);
             if (expressions.Count < 2)
             {

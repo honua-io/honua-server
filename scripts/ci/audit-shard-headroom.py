@@ -26,6 +26,10 @@ Examples::
     scripts/ci/audit-shard-headroom.py --timings-dir ./artifacts \
         --markdown --max-utilization 0.85
 
+    # what ci.yml runs per shard (#4790): same finding, ::warning::, exit 0
+    scripts/ci/audit-shard-headroom.py --timings-dir tests/TestResults \
+        --max-utilization 0.85 --advisory
+
 `--fail-on-warn` and `--max-utilization` answer different questions.
 `--fail-on-warn` is retrospective and p90-based: it re-bases budgets from a
 collected history. `--max-utilization` is the forward-looking drain guard: it
@@ -285,6 +289,14 @@ def main(argv: list[str] | None = None) -> int:
             "in --timings-dir are skipped, so a partial collection cannot fail the check."
         ),
     )
+    parser.add_argument(
+        "--advisory",
+        action="store_true",
+        help=(
+            "report only (#4790): emit the --max-utilization finding as a ::warning:: "
+            "annotation and always exit 0. This is how ci.yml runs the guard."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if not args.timings_dir.is_dir():
@@ -334,9 +346,15 @@ def main(argv: list[str] | None = None) -> int:
             if row["latest_utilization"] is not None
             and row["latest_utilization"] > args.max_utilization
         ]
+        # --advisory (#4790) keeps the same marker and remedy but downgrades the
+        # annotation to a warning: an `::error::` on a step whose exit code is
+        # meant to be ignored reads as the job's failure cause, and on
+        # 2026-09-13 it was quoted as the reason for a red that was actually
+        # HONUA_SHARD_CAPACITY_EXHAUSTED from the shard runner.
+        level = "warning" if args.advisory else "error"
         for row in crowded:
             print(
-                f"::error::HONUA_SHARD_OVER_MAX_UTILIZATION shard='{row['shard']}' last run "
+                f"::{level}::HONUA_SHARD_OVER_MAX_UTILIZATION shard='{row['shard']}' last run "
                 f"{row['latest_minutes']}m of its {row['test_timeout_minutes']}m budget "
                 f"({row['latest_utilization'] * 100:.0f}%, limit "
                 f"{args.max_utilization * 100:.0f}%). Move whole test classes out of this "
@@ -347,6 +365,10 @@ def main(argv: list[str] | None = None) -> int:
         if crowded:
             exit_code = 1
 
+    if args.advisory:
+        # The annotations above are the whole signal; an advisory run never
+        # turns a passing shard red, whichever flags it was combined with.
+        return 0
     return exit_code
 
 

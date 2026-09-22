@@ -89,6 +89,106 @@ public sealed class YarpRollingDeployBackendTests
     }
 
     [Fact]
+    public async Task StartAsync_MountsOperatorSuppliedFilesIntoTheReplica()
+    {
+        // A 2026.1 image that connects to Redis outside Development/Test refuses to start until
+        // Operations:SecretChannel:KeyRingCertificatePath names a real certificate (#4722, #4885).
+        // That is a file, so env vars alone cannot roll such an image out at all (#4617).
+        var keyRing = Directory.CreateTempSubdirectory("honua-rolling-mount-test");
+        try
+        {
+            var backend = CreateBackend(out var runtime, out _, out _);
+            var spec = CreateSpec();
+            spec = spec with
+            {
+                Parameters = new Dictionary<string, string>
+                {
+                    [SelfHostedDeployParameterKeys.MountPrefix + "/keyring"] = keyRing.FullName,
+                    [SelfHostedDeployParameterKeys.EnvironmentPrefix + "Operations__SecretChannel__KeyRingCertificatePath"] =
+                        "/keyring/operation-keyring.pfx"
+                }
+            };
+
+            await backend.StartAsync(CreateOperation(WorkflowOperationStatus.Submitted, spec));
+
+            var request = runtime.RunRequests.Should().ContainSingle().Subject;
+            request.Mounts.Should().ContainSingle();
+            request.Mounts[0].HostPath.Should().Be(keyRing.FullName);
+            request.Mounts[0].ContainerPath.Should().Be("/keyring");
+            request.Environment["Operations__SecretChannel__KeyRingCertificatePath"]
+                .Should().Be("/keyring/operation-keyring.pfx");
+        }
+        finally
+        {
+            keyRing.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task PlanAsync_MountHostPathMissing_BlocksBeforeAnyMutation()
+    {
+        // Rejecting at plan time keeps a configuration error from surfacing later as "the candidate
+        // never passed the backend health gate", which is what a replica that exits at startup looks
+        // like from the outside.
+        var backend = CreateBackend(out var runtime, out _, out _);
+        var missing = Path.Join(Path.GetTempPath(), $"honua-rolling-absent-{Guid.NewGuid():N}");
+        var spec = CreateSpec() with
+        {
+            Parameters = new Dictionary<string, string>
+            {
+                [SelfHostedDeployParameterKeys.MountPrefix + "/keyring"] = missing
+            }
+        };
+
+        var plan = await backend.PlanAsync(spec);
+
+        plan.IsReadyToSubmit.Should().BeFalse();
+        plan.BlockingReasons.Should().Contain(reason => reason.Contains(missing, StringComparison.Ordinal));
+
+        var result = await backend.StartAsync(CreateOperation(WorkflowOperationStatus.Submitted, spec));
+
+        result.Status.Should().Be(WorkflowOperationStatus.Failed, "a submit that slipped past the plan must still not launch a replica");
+        runtime.RunRequests.Should().BeEmpty("no replica may start without the file the image requires");
+    }
+
+    [Theory]
+    [InlineData("/keyring", "")]
+    [InlineData("/keyring", "   ")]
+    [InlineData("", "C:/does-not-matter")]
+    public async Task PlanAsync_MountMissingEitherHalf_BlocksBeforeAnyMutation(string containerPath, string hostPath)
+    {
+        var backend = CreateBackend(out var runtime, out _, out _);
+        var spec = CreateSpec() with
+        {
+            Parameters = new Dictionary<string, string>
+            {
+                [SelfHostedDeployParameterKeys.MountPrefix + containerPath] = hostPath
+            }
+        };
+
+        var plan = await backend.PlanAsync(spec);
+
+        plan.IsReadyToSubmit.Should().BeFalse();
+        plan.BlockingReasons.Should().Contain(reason =>
+            reason.Contains(SelfHostedDeployParameterKeys.MountPrefix, StringComparison.Ordinal));
+
+        var result = await backend.StartAsync(CreateOperation(WorkflowOperationStatus.Submitted, spec));
+
+        result.Status.Should().Be(WorkflowOperationStatus.Failed);
+        runtime.RunRequests.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task StartAsync_WithoutMountParameters_RequestsNoMounts()
+    {
+        var backend = CreateBackend(out var runtime, out _, out _);
+
+        await backend.StartAsync(CreateOperation(WorkflowOperationStatus.Submitted));
+
+        runtime.RunRequests.Should().ContainSingle().Which.Mounts.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task ObserveAsync_StandbyUnhealthy_DoesNotRecommendPromotion()
     {
         var backend = CreateBackend(out var runtime, out _, out var probe);
@@ -471,6 +571,9 @@ public sealed class YarpRollingDeployBackendTests
         };
 
     private static WorkflowOperationRecord CreateOperation(WorkflowOperationStatus status)
+        => CreateOperation(status, CreateSpec());
+
+    private static WorkflowOperationRecord CreateOperation(WorkflowOperationStatus status, DeployOperationSpec spec)
     {
         var now = DateTimeOffset.UtcNow;
         return new WorkflowOperationRecord
@@ -481,7 +584,7 @@ public sealed class YarpRollingDeployBackendTests
             CreatedAt = now,
             UpdatedAt = now,
             ProviderOperationId = "container-standby",
-            Deploy = CreateSpec()
+            Deploy = spec
         };
     }
 

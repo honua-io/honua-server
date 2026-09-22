@@ -1,0 +1,6 @@
+Traceback (most recent call last):
+  File "/regressions/features_clients.py", line 89, in <module>
+    result = (gdal_checks if args.client == "gdal" else qgis_checks)(args.base_url.rstrip("/"))
+  File "/regressions/features_clients.py", line 44, in gdal_checks
+    assert point == (-122.46, 37.73), point
+AssertionError: (37.73, -122.46)
