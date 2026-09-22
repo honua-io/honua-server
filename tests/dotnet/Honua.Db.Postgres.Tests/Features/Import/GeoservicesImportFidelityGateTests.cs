@@ -6,6 +6,8 @@ using System.Data.Common;
 using System.Net;
 using System.Text;
 using FluentAssertions;
+using Honua.Core.Features.Admin.Abstractions;
+using Honua.Core.Features.Admin.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
@@ -36,6 +38,55 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 [Collection("Database")]
 public sealed class GeoservicesImportFidelityGateTests(PostgresFixture fixture)
 {
+    /// <summary>
+    /// #4854: a publication that fails after the source transfer committed (for example a snapshot
+    /// copy that exceeds its budget) must keep the transferred rows for recovery and end in
+    /// NeedsReview with a blocking publish omission, never a full-fidelity completion.
+    /// </summary>
+    [Fact]
+    public async Task ImportLayerAsync_WhenPublicationTimesOut_RetainsRowsAndRequiresReview()
+    {
+        const string tableName = "geoservices_publication_timeout";
+        var serviceName = $"fidtimeout_{Guid.NewGuid():N}";
+        var schemaName = await fixture.CreateIsolatedSchemaAsync("ImportPublicationTimeout");
+        await EnsureCatalogSchemaAsync();
+        await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, "honua");
+        var graphStore = new PostgresMetadataV2GraphStore(
+            new FixtureConnectionProvider(fixture), $"PublicationTimeout-{Guid.NewGuid():N}",
+            FixtureBypassDatabaseSchemaGuard.Instance);
+        var publisher = new Mock<ILayerPublishingService>();
+        publisher.Setup(service => service.PublishLayerAsync(
+                It.IsAny<string>(), It.IsAny<LayerPublishRequest>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new TimeoutException("Layer snapshot materialization exceeded its budget."));
+
+        try
+        {
+            var service = CreateService(graphStore, schemaName, faithful: true, publishingOverride: publisher.Object);
+            var result = await service.ImportLayerAsync(BuildRequest(tableName, schemaName, serviceName, faithful: true));
+
+            result.FeatureCount.Should().Be(1);
+            result.FailedFeatures.Should().Be(0);
+            result.Success.Should().BeFalse();
+            result.NeedsReview.Should().BeTrue();
+            result.PublishedLayerId.Should().BeNull();
+            result.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+            result.FidelityDifferences.Should().ContainSingle()
+                .Which.Code.Should().Be(MigrationFidelityDifferenceCodes.PublishNotCompleted);
+
+            await using var connection = await fixture.GetConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT count(*) FROM \"{schemaName}\".\"{tableName}\"";
+            (await command.ExecuteScalarAsync()).Should().Be(1L);
+            publisher.Verify(service => service.PublishLayerAsync(
+                It.IsAny<string>(), It.IsAny<LayerPublishRequest>(), It.IsAny<CancellationToken>()), Times.Once);
+        }
+        finally
+        {
+            await CleanupCatalogAsync(serviceName);
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
     [Fact]
     public async Task ImportLayerAsync_WhenCatalogReconciliationFails_RoutesToNeedsReviewDespiteGreenDataReconciliation()
     {
@@ -207,7 +258,8 @@ public sealed class GeoservicesImportFidelityGateTests(PostgresFixture fixture)
         PostgresMetadataV2GraphStore graphStore,
         string dataSchema,
         bool faithful = false,
-        bool catalogReadBack = true)
+        bool catalogReadBack = true,
+        ILayerPublishingService? publishingOverride = null)
     {
         var restClient = new ArcGisRestClient(
             new HttpClient(new FidelityFeatureServerHandler(faithful)),
@@ -238,7 +290,7 @@ public sealed class GeoservicesImportFidelityGateTests(PostgresFixture fixture)
             NullLogger<GeoservicesImportService>.Instance,
             new GeoservicesLayerPublicationService(
                 NullLogger<GeoservicesLayerPublicationService>.Instance,
-                layerPublishingService: publishingService,
+                layerPublishingService: publishingOverride ?? publishingService,
                 // A pass-through data-movement service keeps that probe green, so the assertions
                 // isolate what the catalog pass contributes to the verdict.
                 reconciliationService: new PassThroughReconciliationService(),

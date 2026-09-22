@@ -181,7 +181,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task<int> MaterializeLayerFeaturesAsync(
+    private async Task<int> MaterializeLayerFeaturesAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         int layerId,
@@ -226,10 +226,56 @@ internal sealed partial class PostgreSqlLayerPublishingService
         command.Parameters.AddWithValue("@layerId", layerId);
         command.Parameters.AddWithValue("@srid", srid);
 
-        var result = await command.ExecuteScalarAsync(cancellationToken);
+        var result = await ExecuteSnapshotCommandAsync(command, cancellationToken).ConfigureAwait(false);
         return result is int count
             ? count
             : Convert.ToInt32(result, CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>Seconds the driver read timeout extends past the snapshot budget.</summary>
+    internal const int SnapshotCommandTimeoutGraceSeconds = 30;
+
+    /// <summary>
+    /// Runs one canonical snapshot command (copy or pre-refresh delete) under the publication
+    /// budget instead of the connection's ordinary command timeout. The command stays inside the
+    /// caller's transaction, so expiry or caller cancellation leaves it to roll back; the source
+    /// table is never modified.
+    /// </summary>
+    internal async Task<object?> ExecuteSnapshotCommandAsync(NpgsqlCommand command, CancellationToken cancellationToken)
+    {
+        if (command.Transaction is null)
+        {
+            throw new InvalidOperationException("Snapshot commands require a publication transaction.");
+        }
+
+        // The wall-clock budget below is the bound. The driver's read timeout is only a backstop,
+        // set past the budget so expiry surfaces as a cooperative cancellation (connection stays
+        // usable for the rollback) rather than a driver timeout that may break the connection.
+        command.CommandTimeout = _materializationTimeoutSeconds + SnapshotCommandTimeoutGraceSeconds;
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        budget.CancelAfter(TimeSpan.FromSeconds(_materializationTimeoutSeconds));
+
+        try
+        {
+            // Startup options may impose a shorter server timeout even when the driver's
+            // timeout is extended. Keep the override local to the publication transaction.
+            await using var serverTimeout = new NpgsqlCommand(
+                "SELECT set_config('statement_timeout', @timeout, true)", command.Connection, command.Transaction)
+            {
+                CommandTimeout = command.CommandTimeout
+            };
+            serverTimeout.Parameters.AddWithValue("timeout",
+                FormattableString.Invariant($"{command.CommandTimeout}s"));
+            await serverTimeout.ExecuteScalarAsync(budget.Token).ConfigureAwait(false);
+            return await command.ExecuteScalarAsync(budget.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested && budget.IsCancellationRequested)
+        {
+            throw new TimeoutException(
+                $"Layer snapshot materialization exceeded its {_materializationTimeoutSeconds}-second budget "
+                + $"({LayerPublishingOptions.SectionName}:MaterializationTimeoutSeconds). The publication transaction "
+                + "rolls back; the source table is retained.", exception);
+        }
     }
 
     private static async Task<bool> ServiceExistsAsync(

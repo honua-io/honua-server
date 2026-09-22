@@ -126,6 +126,7 @@ After a successful upload, `<LicensePath>.uploaded` takes precedence at startup.
 | `Limits__Imports__MaxImportSize` | `524288000` (500 MiB) | Max file size for any import. |
 | `Limits__Imports__MaxPreviewFeatures` | `100` | Max features returned by a preview. |
 | `Limits__Imports__BatchSize` | `1000` | Insert batch size for import writes. |
+| `LayerPublishing__MaterializationTimeoutSeconds` | `300` | PostgreSQL budget, in seconds (1–3600), for the canonical snapshot copy made when a layer is published or its snapshot is refreshed, such as automatic publication after a large import. It is a wall-clock and command budget for that copy only; ordinary query timeouts are unchanged and caller cancellation still applies. Expiry rolls the publication back, keeps the imported table, and reports the import as needing review. Out-of-range values fail at startup. |
 | `Migration__AllowedServiceHostSuffixes__N` | — (unset) | Optional remote GIS migration/import source allowlist. Each entry matches the exact host or its subdomains. Unset permits any otherwise-safe public host; an explicitly empty array rejects all hosts. |
 | `Limits__MaxUploadSizeBytes` | `104857600` (100 MiB) | General upload ceiling. |
 | `Limits__Query__MaxRecordCount` | `10000` | Max features per query response. |
