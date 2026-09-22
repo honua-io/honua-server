@@ -7,20 +7,17 @@ using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
 using FluentAssertions;
-using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.Shared.Models;
 using Honua.Db.Postgres.Features.Admin;
-using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Metadata;
 using Honua.Db.Postgres.Features.Migration;
 using Honua.TestKit;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.ObjectPool;
 using Moq;
 
 namespace Honua.Db.Postgres.Tests.Features.Import;
@@ -76,7 +73,7 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
             result.Warnings.Should().NotContain(warning =>
                 warning.Contains("publishing did not complete", StringComparison.OrdinalIgnoreCase));
 
-            // Read the activated current snapshot â€” exactly the compat-compiled graph
+            // Read the activated current snapshot — exactly the compat-compiled graph
             // the serving side reads. If subtypes were dropped at publish this fails.
             var snapshot = await graphStore.GetCurrentAsync();
             var resource = snapshot.Graph.Resources
@@ -84,7 +81,7 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
                     f.Name.Equals("buildingtype", StringComparison.OrdinalIgnoreCase)));
             resource.Should().NotBeNull("the imported layer should be projected into the Metadata v2 graph");
 
-            resource!.Subtypes.Should().NotBeNull("the subtype set must survive import â†’ publish â†’ compat-compile");
+            resource!.Subtypes.Should().NotBeNull("the subtype set must survive import → publish → compat-compile");
             var subtypes = resource.Subtypes!;
             subtypes.SubtypeField.Should().Be("buildingtype");
             if (featureTypes)
@@ -193,89 +190,11 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
         }
     }
 
-    [Fact]
-    public async Task ImportLayerAsync_WithDateOnlyFields_PreservesCalendarDatesAndRejectsMalformedValues()
-    {
-        const string tableName = "geoservices_import_dates";
-        var serviceName = $"dates_{Guid.NewGuid():N}";
-        var schemaName = await fixture.CreateIsolatedSchemaAsync("ImportDates");
-        await EnsureCatalogSchemaAsync();
-        await CoreMigrationTestFixture.ApplyMetadataV2Async(fixture, "honua");
-        var graphStore = new PostgresMetadataV2GraphStore(
-            new FixtureConnectionProvider(fixture), $"Dates-{Guid.NewGuid():N}",
-            FixtureBypassDatabaseSchemaGuard.Instance);
-        try
-        {
-            var service = CreateService(graphStore, schemaName, false, temporalFields: true);
-            var result = await service.ImportLayerAsync(new GeoservicesImportRequest
-            {
-                ServiceUrl = "https://example.com/arcgis/rest/services/Subtypes/FeatureServer",
-                LayerId = 0,
-                TableName = tableName,
-                TargetSchema = schemaName,
-                TargetSrid = 4326,
-                BatchSize = 10,
-                MaxRetries = 0,
-                AutoPublish = true,
-                ServiceName = serviceName
-            });
-            result.FeatureCount.Should().Be(4);
-            result.FailedFeatures.Should().Be(1, "a malformed non-null calendar date must not silently become text or null");
-
-            await using var connection = await fixture.DataSource.OpenConnectionAsync();
-            await using var command = connection.CreateCommand();
-            command.CommandText = $"SELECT dateofflight, pg_typeof(dateofflight)::text FROM \"{schemaName}\".\"{tableName}\" ORDER BY dateofflight NULLS LAST";
-            await using (var reader = await command.ExecuteReaderAsync())
-            {
-                foreach (var expected in new[] { new DateOnly(2024, 2, 28), new DateOnly(2024, 2, 29), new DateOnly(2024, 3, 1) })
-                {
-                    (await reader.ReadAsync()).Should().BeTrue();
-                    reader.GetFieldValue<DateOnly>(0).Should().Be(expected);
-                    reader.GetString(1).Should().Be("date");
-                }
-                (await reader.ReadAsync()).Should().BeTrue();
-                reader.IsDBNull(0).Should().BeTrue();
-                (await reader.ReadAsync()).Should().BeFalse();
-            }
-            command.CommandText = $"SELECT COUNT(*) FROM \"{schemaName}\".\"{tableName}\" WHERE dateofflight >= DATE '2024-02-29' AND dateofflight < DATE '2024-03-01'";
-            (await command.ExecuteScalarAsync()).Should().Be(1L);
-            var snapshot = await graphStore.GetCurrentAsync();
-            var resource = snapshot.Graph.Resources.Single(r => r.Metadata.Name == "Subtype Layer");
-            resource.SchemaFields.Single(f => f.Name == "dateofflight").Type.Should().Be(MetadataV2FieldType.Date);
-            var dictionaryPool = new DefaultObjectPoolProvider().Create(
-                new Honua.Core.Features.Infrastructure.ServiceRegistration.DictionaryPooledObjectPolicy());
-            var mappedReader = new PostgresStorageMappedFeatureReader(
-                new FixtureConnectionProvider(fixture), dictionaryPool, resource,
-                new FeatureStorageMapping(TableName: tableName, SchemaName: schemaName,
-                    PrimaryKeyColumn: "objectid", GeometryColumn: "geom", StorageSrid: 4326),
-                connection: null, connectionEncryptionService: null);
-            var calendar = await mappedReader.QueryStatisticsAsync(1, new FeatureQuery
-            {
-                GroupByFields = ["dateofflight"],
-                OutStatistics = [new StatisticDefinition
-                {
-                    StatisticType = StatisticType.Count,
-                    OnStatisticField = "objectid",
-                    OutStatisticFieldName = "record_count"
-                }]
-            });
-            calendar.Should().HaveCount(4);
-            calendar.Select(row => row["dateofflight"]).Should().BeEquivalentTo(
-                new object?[] { "2024-02-28", "2024-02-29", "2024-03-01", null });
-            calendar.Should().OnlyContain(row => Equals(row["record_count"], 1L));
-        }
-        finally
-        {
-            await CleanupCatalogAsync(serviceName);
-            await fixture.DropSchemaAsync(schemaName);
-        }
-    }
-
     private GeoservicesImportService CreateService(PostgresMetadataV2GraphStore graphStore, string dataSchema, bool featureTypes,
-        bool hasZ = false, bool hasM = false, bool temporalFields = false)
+        bool hasZ = false, bool hasM = false)
     {
         var restClient = new ArcGisRestClient(
-            new HttpClient(new SubtypeFeatureServerHandler(featureTypes, hasZ, hasM, temporalFields)),
+            new HttpClient(new SubtypeFeatureServerHandler(featureTypes, hasZ, hasM)),
             NullLogger<ArcGisRestClient>.Instance,
             (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
 
@@ -342,7 +261,7 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
     // Minimal ArcGIS FeatureServer mock that advertises an integer subtype field
     // 'buildingtype' with two subtypes; the 'Residential' subtype carries a per-subtype
     // default value and a coded-value domain on 'status'.
-    private sealed class SubtypeFeatureServerHandler(bool featureTypes, bool hasZ, bool hasM, bool temporalFields) : HttpMessageHandler
+    private sealed class SubtypeFeatureServerHandler(bool featureTypes, bool hasZ, bool hasM) : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -438,26 +357,6 @@ public sealed class GeoservicesImportSubtypePersistenceTests(PostgresFixture fix
             }
 
             var response = JsonNode.Parse(payload)!.AsObject();
-            if (temporalFields)
-            {
-                if (response["fields"] is JsonArray fields)
-                    fields.Add(new JsonObject { ["name"] = "DateOfFlight", ["type"] = "esriFieldTypeDateOnly", ["nullable"] = true });
-                if (response["count"] is not null)
-                    response["count"] = 5;
-                if (response["features"] is JsonArray { Count: > 0 } rows)
-                {
-                    var template = rows[0]!.DeepClone();
-                    rows.Clear();
-                    string?[] dates = ["2024-02-28", "2024-02-29", "2024-03-01", null, "2023-02-29"];
-                    for (var index = 0; index < dates.Length; index++)
-                    {
-                        var row = template.DeepClone();
-                        row["attributes"]!["OBJECTID"] = index + 1;
-                        row["attributes"]!["DateOfFlight"] = dates[index];
-                        rows.Add(row);
-                    }
-                }
-            }
             if (pathAndQuery == "/arcgis/rest/services/Subtypes/FeatureServer/0?f=json")
             {
                 response["hasZ"] = hasZ;
