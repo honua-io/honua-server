@@ -60,10 +60,9 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
 
     /// <summary>
     /// Full selection of a service with a Z point layer and a nonspatial table. Every source record lands in
-    /// PostGIS, and the verdict names exactly what the migration could not deliver instead of reporting success:
-    /// the table imports but a table without a geometry column cannot be published yet (#4834), so it is
-    /// incomplete; the layer publishes and its records reconcile, but this host has no activated Metadata v2
-    /// snapshot for catalog reconciliation to read back, so the layer is unverified.
+    /// PostGIS and both resources publish, including the nonspatial table. Record counts reconcile, but this
+    /// host has no activated Metadata v2 snapshot for catalog reconciliation to read back, so both resources
+    /// and the service fidelity verdict remain unverified despite successful execution.
     /// </summary>
     [IntegrationTest]
     [Endpoint("POST /api/v1/admin/import/scan")]
@@ -108,9 +107,9 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
 
         var batch = await WaitForBatchAsync(sdk, started.BatchId);
 
-        batch.Status.Should().Be("needs-review", _host.Source.Describe());
+        batch.Status.Should().Be("succeeded", _host.Source.Describe());
         batch.Children.Select(static child => (child.SourceResourceId, child.Status))
-            .Should().Equal((HydrantsId, "succeeded"), (InspectionsId, "needs-review"));
+            .Should().Equal((HydrantsId, "succeeded"), (InspectionsId, "succeeded"));
 
         var hydrantsJob = await WaitForChildJobAsync(sdk, batch, HydrantsId, SdkModels.GeoservicesImportStatus.Completed);
         hydrantsJob.FeaturesProcessed.Should().Be(FieldOpsFeatureServer.Hydrants.Length);
@@ -126,14 +125,18 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
         hydrantsFidelity.Differences.Should().Equal(
             (MigrationFidelityDifferenceCodes.CatalogReconciliationNotExecuted, MigrationFidelityDifferenceSeverities.Unverified));
 
-        var inspectionsJob = await WaitForChildJobAsync(sdk, batch, InspectionsId, SdkModels.GeoservicesImportStatus.NeedsReview);
+        var inspectionsJob = await WaitForChildJobAsync(sdk, batch, InspectionsId, SdkModels.GeoservicesImportStatus.Completed);
         inspectionsJob.FeaturesProcessed.Should().Be(FieldOpsFeatureServer.Inspections.Length);
         inspectionsJob.FailedFeatures.Should().Be(0);
-        inspectionsJob.PublishedLayerId.Should().BeNull("a table without a geometry column cannot be published yet (#4834)");
+        inspectionsJob.PublishedLayerId.Should().NotBeNull("nonspatial tables publish without a geometry column");
+        var inspectionsCount = inspectionsJob.ReconciliationArtifact.Should().NotBeNull().And.Subject
+            .As<SdkModels.MigrationReconciliationArtifact>().Layers.Should().ContainSingle().Subject.Count;
+        inspectionsCount.SourceCount.Should().Be(FieldOpsFeatureServer.Inspections.Length);
+        inspectionsCount.TargetCount.Should().Be(FieldOpsFeatureServer.Inspections.Length);
         var inspectionsFidelity = await GetJobFidelityAsync(http, inspectionsJob.JobId);
-        inspectionsFidelity.Verdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
+        inspectionsFidelity.Verdict.Should().Be(MigrationFidelityVerdicts.Unverified);
         inspectionsFidelity.Differences.Should().Equal(
-            (MigrationFidelityDifferenceCodes.PublishNotCompleted, MigrationFidelityDifferenceSeverities.Blocking));
+            (MigrationFidelityDifferenceCodes.CatalogReconciliationNotExecuted, MigrationFidelityDifferenceSeverities.Unverified));
 
         await AssertHydrantsReadBackAsync(schema, hydrantsTable);
         await AssertInspectionsReadBackAsync(schema, inspectionsTable);
@@ -150,15 +153,15 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
             entry.GetProperty("disposition").GetString() == MigrationConstructDispositions.Migrated &&
             entry.GetProperty("targetTable").GetString() == $"{schema}.{inspectionsTable}");
         verdict.RootElement.GetProperty("fidelityVerdict").GetString()
-            .Should().Be(MigrationFidelityVerdicts.Incomplete, verdict.RootElement.GetRawText());
+            .Should().Be(MigrationFidelityVerdicts.Unverified, verdict.RootElement.GetRawText());
         verdict.RootElement.GetProperty("fidelityDifferences").EnumerateArray()
             .Select(static difference => (
                 difference.GetProperty("code").GetString(),
                 difference.GetProperty("severity").GetString(),
                 difference.GetProperty("subject").GetString()))
             .Should().Equal(
-                (MigrationFidelityDifferenceCodes.ServiceLayerIncomplete, MigrationFidelityDifferenceSeverities.Blocking, InspectionsId),
-                (MigrationFidelityDifferenceCodes.ServiceLayerUnverified, MigrationFidelityDifferenceSeverities.Unverified, HydrantsId));
+                (MigrationFidelityDifferenceCodes.ServiceLayerUnverified, MigrationFidelityDifferenceSeverities.Unverified, HydrantsId),
+                (MigrationFidelityDifferenceCodes.ServiceLayerUnverified, MigrationFidelityDifferenceSeverities.Unverified, InspectionsId));
     }
 
     /// <summary>
