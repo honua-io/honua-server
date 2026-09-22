@@ -336,6 +336,80 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
     }
 
     [Fact]
+    public async Task ImportFeaturesAsync_TargetTableAtIdentifierLimit_CreatesAndKeepsOneGistIndex()
+    {
+        // "wfs_" + 59-character slug = a 63-byte target table name, PostgreSQL's identifier limit.
+        var featureTypeName = "demo:island_parcels_" + new string('p', 44);
+        var tableName = "wfs_island_parcels_" + new string('p', 44);
+        tableName.Length.Should().Be(63);
+        var schemaName = await fixture.CreateIsolatedSchemaAsync("wfs_long_index");
+        try
+        {
+            using var firstClient = new HttpClient(new FakeWfsHandler(
+                BuildPointFeatureCollection(("Sentinel", 73, -157.85, 21.30))));
+            var first = await CreateService(firstClient, BuildPointInventory(featureTypeName: featureTypeName))
+                .ImportFeaturesAsync(new OgcWfsImportRequest
+                {
+                    ServiceUrl = DefaultServiceUrl,
+                    TargetSchema = schemaName,
+                    ApplyMode = true,
+                    AllowUnsafeLocalUrls = true,
+                });
+
+            first.FeaturesCopied.Should().Be(1);
+            (await ReadGistIndexNamesAsync(schemaName, tableName)).Should().Equal(
+                "wfs_island_parcels_" + new string('p', 35) + "_geom_idx");
+
+            using var replacementClient = new HttpClient(new FakeWfsHandler(
+                BuildPointFeatureCollection(("Replacement", 99, -155.08, 19.71))));
+            var replacement = await CreateService(replacementClient, BuildPointInventory(featureTypeName: featureTypeName))
+                .ImportFeaturesAsync(new OgcWfsImportRequest
+                {
+                    ServiceUrl = DefaultServiceUrl,
+                    TargetSchema = schemaName,
+                    ApplyMode = true,
+                    AllowUnsafeLocalUrls = true,
+                    OverwriteExisting = true,
+                });
+
+            replacement.FeaturesCopied.Should().Be(1);
+            (await ReadCityRowsAsync(schemaName, tableName)).Should().ContainSingle()
+                .Which.Name.Should().Be("Replacement");
+            (await ReadGistIndexNamesAsync(schemaName, tableName)).Should().Equal(
+                "wfs_island_parcels_" + new string('p', 35) + "_geom_idx");
+            (await FindTablesLikeAsync(schemaName, "__honua_wfs_stage_%")).Should().BeEmpty();
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [Fact]
+    public async Task ImportFeaturesAsync_ShortTargetTableName_KeepsTableGeomIdxIndexName()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync("wfs_short_index");
+        try
+        {
+            using var client = new HttpClient(new FakeWfsHandler(
+                BuildPointFeatureCollection(("Kihei", 42, -156.46, 20.76))));
+            await CreateService(client, BuildPointInventory()).ImportFeaturesAsync(new OgcWfsImportRequest
+            {
+                ServiceUrl = DefaultServiceUrl,
+                TargetSchema = schemaName,
+                ApplyMode = true,
+                AllowUnsafeLocalUrls = true,
+            });
+
+            (await ReadGistIndexNamesAsync(schemaName, "wfs_cities")).Should().Equal("wfs_cities_geom_idx");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [Fact]
     public async Task ImportFeaturesAsync_Overwrite_ReapsOrphanedStagingTableFromPriorAttempt()
     {
         var schemaName = await fixture.CreateIsolatedSchemaAsync("wfs_atomic_orphan");
@@ -415,7 +489,9 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
                 [PostgresSchemaConfiguration.DefaultDataSchema, "public"]));
     }
 
-    private static MigrationSourceInventoryArtifact BuildPointInventory(string compatibilityLevel = "compatible")
+    private static MigrationSourceInventoryArtifact BuildPointInventory(
+        string compatibilityLevel = "compatible",
+        string featureTypeName = DefaultFeatureType)
     {
         return new MigrationSourceInventoryArtifact
         {
@@ -442,7 +518,7 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
                     Id = "feature-type:demo:cities",
                     ContainerId = "namespace:demo",
                     Kind = "feature-type",
-                    Name = DefaultFeatureType,
+                    Name = featureTypeName,
                     GeometryType = "Point",
                     SpatialReferences =
                     [
@@ -562,6 +638,33 @@ public sealed class OgcWfsImportServiceTests(PostgresFixture fixture)
         }
 
         return schemas.ToArray();
+    }
+
+    /// <summary>Names of the GiST indexes PostgreSQL's catalog records on the table (pg_index/pg_class).</summary>
+    private async Task<string[]> ReadGistIndexNamesAsync(string schemaName, string tableName)
+    {
+        var names = new List<string>();
+        await using var connection = await fixture.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT ix.relname
+            FROM pg_index i
+            JOIN pg_class t ON t.oid = i.indrelid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
+            JOIN pg_class ix ON ix.oid = i.indexrelid
+            JOIN pg_am am ON am.oid = ix.relam
+            WHERE n.nspname = @schema AND t.relname = @table AND am.amname = 'gist'
+            ORDER BY ix.relname;
+            """;
+        command.Parameters.AddWithValue("schema", schemaName);
+        command.Parameters.AddWithValue("table", tableName);
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            names.Add(reader.GetString(0));
+        }
+
+        return names.ToArray();
     }
 
     private async Task<bool> TableExistsAsync(string schemaName, string tableName)
