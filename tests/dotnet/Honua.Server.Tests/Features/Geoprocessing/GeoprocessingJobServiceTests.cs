@@ -2892,6 +2892,102 @@ public sealed class GeoprocessingJobServiceTests
     }
 
     [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/GetJobResult")]
+    public async Task GetJobResults_AfterResultRetentionElapsed_ThrowsNotFoundWithoutResynthesizing()
+    {
+        var retention = new GeoprocessingExecutorOptions().ResultRetention;
+        var completedAt = DateTimeOffset.UtcNow - retention - TimeSpan.FromMinutes(5);
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Succeeded) with
+        {
+            CompletedAt = completedAt,
+            UpdatedAt = completedAt,
+        };
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _resultPackageStore.GetAsync("job-1", Arg.Any<CancellationToken>())
+            .Returns((AnalysisResultPackage?)null);
+
+        var act = async () => await _sut.GetJobResultsAsync("job-1", CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>()
+            .WithMessage("*no longer available*");
+        await _resultPackageStore.DidNotReceive().SetAsync(
+            Arg.Any<string>(),
+            Arg.Any<AnalysisResultPackage>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/GetJobResult")]
+    public async Task GetJobResults_AfterResultRetentionElapsed_IgnoresLingeringStoredPackage()
+    {
+        var retention = TimeSpan.FromMinutes(1);
+        var completedAt = DateTimeOffset.UtcNow - TimeSpan.FromMinutes(3);
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Succeeded) with
+        {
+            CompletedAt = completedAt,
+            UpdatedAt = completedAt,
+        };
+        var package = AnalysisResultPackage.CreateCompleted(
+            GeoprocessingResultPackageFactory.CreateResultPackageId(record),
+            new ResultSummary { Title = "Lingering result" },
+            [],
+            [],
+            new ProvenanceRecord { Sources = [], ProcessDefinitions = ["geometry.buffer"] });
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _resultPackageStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(package);
+        var sut = new GeoprocessingJobService(
+            _progressStore, [_cancellationNotifier],
+            _authEvaluator, _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            new StaticOptionsMonitor<GeoprocessingExecutorOptions>(
+                new GeoprocessingExecutorOptions { ResultRetention = retention }),
+            _jobStore, _jobQueue,
+            resultPackageStore: _resultPackageStore);
+
+        var act = async () => await sut.GetJobResultsAsync("job-1", CreatePrincipal());
+
+        await act.Should().ThrowAsync<GeoprocessingNotFoundException>();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /geospatial.v1.ProcessService/GetJobResult")]
+    public async Task GetJobResults_WithinResultRetention_ReturnsStoredPackage()
+    {
+        var completedAt = DateTimeOffset.UtcNow - TimeSpan.FromSeconds(30);
+        var record = CreateJobRecord("job-1", ExecutionJobStatus.Succeeded) with
+        {
+            CompletedAt = completedAt,
+            UpdatedAt = completedAt,
+        };
+        var package = AnalysisResultPackage.CreateCompleted(
+            GeoprocessingResultPackageFactory.CreateResultPackageId(record),
+            new ResultSummary { Title = "Fresh result" },
+            [],
+            [],
+            new ProvenanceRecord { Sources = [], ProcessDefinitions = ["geometry.buffer"] });
+        _jobStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(record);
+        _resultPackageStore.GetAsync("job-1", Arg.Any<CancellationToken>()).Returns(package);
+        var sut = new GeoprocessingJobService(
+            _progressStore, [_cancellationNotifier],
+            _authEvaluator, _approvalEvaluator,
+            new BuiltInProcessCatalog(),
+            NullLogger<GeoprocessingJobService>.Instance,
+            new StaticOptionsMonitor<GeoprocessingExecutorOptions>(
+                new GeoprocessingExecutorOptions { ResultRetention = TimeSpan.FromMinutes(1) }),
+            _jobStore, _jobQueue,
+            resultPackageStore: _resultPackageStore);
+
+        var result = await sut.GetJobResultsAsync("job-1", CreatePrincipal());
+
+        result.Should().BeSameAs(package);
+    }
+
+    [UnitTest]
     public async Task GetJobResultsForTerminal_OwnerDoesNotRequireIndependentJobReadGrant()
     {
         var record = CreateOwnedJobRecord("job-1", ExecutionJobStatus.Succeeded, owner: "test-user");
