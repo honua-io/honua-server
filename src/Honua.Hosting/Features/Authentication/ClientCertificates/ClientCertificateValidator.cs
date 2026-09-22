@@ -621,6 +621,11 @@ internal sealed class ClientCertificateValidator(
             ClientCertificateAuthenticationDefaults.AuthenticationScheme,
             ClaimTypes.Name,
             ClaimTypes.Role);
+
+        // Same reason for the authority claims (auth_type) this validator mints from the
+        // configured trust profile: they are server-side state, not certificate content.
+        CanonicalSecurityActor.StampAuthorityClaims(identity);
+
         return new ClaimsPrincipal(identity);
     }
 

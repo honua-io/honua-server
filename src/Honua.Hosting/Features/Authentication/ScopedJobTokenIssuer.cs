@@ -9,6 +9,7 @@ using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Infrastructure.Logging;
+using Honua.Infrastructure.Security;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 
@@ -185,6 +186,12 @@ internal sealed partial class ScopedJobTokenIssuer(
             AuthSchemeName,
             ClaimTypes.Name,
             ClaimTypes.Role);
+
+        // The token value carries no claims of its own: auth_type and the frozen
+        // permission set come from the stored record, so mark them framework-owned
+        // and they survive shared claim sanitization.
+        CanonicalSecurityActor.StampAuthorityClaims(identity);
+
         return new ClaimsPrincipal(identity);
     }
 

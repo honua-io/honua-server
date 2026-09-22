@@ -448,6 +448,12 @@ internal sealed class ApiKeyAuthenticationHandler(
         }
 
         var identity = new ClaimsIdentity(claims, Scheme.Name);
+
+        // Every authority claim above comes from the persisted key record (or the bootstrap
+        // password / dev-bypass branches), so mark them framework-owned: shared claim
+        // sanitization keeps stamped copies and drops any that arrived in a token.
+        CanonicalSecurityActor.StampAuthorityClaims(identity);
+
         var principal = new ClaimsPrincipal(identity);
         var ticket = new AuthenticationTicket(principal, Scheme.Name);
 
