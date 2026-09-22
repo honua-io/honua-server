@@ -191,6 +191,10 @@ internal static class ObservabilityServiceCollectionExtensions
                 // alone would store it and replay a transient fault for the TTL (#4980).
                 // Deliberately cached tile refusals are re-admitted by TileOutcomeOutputCachePolicy.
                 policy.AddPolicy<BypassOutputCacheOnErrorEnvelopePolicy>();
+                // The policy cannot inspect an entry that was written before #4980 because cache
+                // hits bypass response formatting. Version the shared key so stale HTTP-200 error
+                // envelopes in memory or Redis become unreachable on rollout.
+                policy.VaryByValue(ResolveErrorEnvelopeCacheKey);
                 policy.VaryByValue(static context => ResolveTenantOutputCacheKey(context));
                 // Metadata responses (service directory, capabilities, collections, STAC,
                 // tiles, styles) are filtered by the process-wide license edition and
@@ -719,6 +723,9 @@ internal static class ObservabilityServiceCollectionExtensions
 
     private static KeyValuePair<string, string> ResolveTenantOutputCacheKey(HttpContext context)
         => new("tenant", TenantScopeHelpers.ResolveRequestTenantId(context) ?? "<none>");
+
+    private static KeyValuePair<string, string> ResolveErrorEnvelopeCacheKey(HttpContext _)
+        => new("error-envelope-policy", "v2");
 
     /// <summary>
     /// Resolves a license fingerprint (edition + validation state + active entitlements) for the output
