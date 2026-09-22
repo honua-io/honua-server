@@ -8,6 +8,13 @@ namespace Honua.Core.Features.Admin.Domain;
 /// </summary>
 public sealed class LayerPublishRequest
 {
+    /// <summary>
+    /// Publish an independent editable copy in the server's managed feature store.
+    /// The source remains unchanged. Source object IDs are retained in
+    /// <c>honua_source_id</c>; the copy receives its own stable object IDs.
+    /// </summary>
+    public bool CreateEditableCopy { get; init; }
+
     /// <summary>Allow an empty generated output with a known schema. Ordinary publication requires rows.</summary>
     public bool AllowEmptyTable { get; init; }
 

@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Geometries;
 using Honua.Infrastructure.Validation;
 using Microsoft.Extensions.Primitives;
 
@@ -58,7 +59,26 @@ internal sealed class GeoServicesQueryGeometryMetadata : GeometryParameterMetada
         {
             try
             {
-                geometry = GeoServicesGeometryConverter.DensifyCurves(geometry, maxVertices, cancellationToken);
+                var curveParts = geometry.CurvePaths is { Length: > 0 }
+                    ? geometry.CurvePaths
+                    : geometry.CurveRings;
+                var curveVertexCount = 0;
+                foreach (var part in curveParts ?? [])
+                {
+                    if (part == null)
+                    {
+                        return VertexError(maxVertices);
+                    }
+
+                    curveVertexCount += CurveGeometryConverter.CountDensifiedVertices(
+                        part,
+                        maxVertices - curveVertexCount,
+                        cancellationToken);
+                }
+
+                return curveVertexCount == 0 || curveVertexCount > maxVertices
+                    ? VertexError(maxVertices)
+                    : null;
             }
             catch (Exception exception) when (exception is ArgumentException or InvalidOperationException or FormatException or OverflowException)
             {
@@ -119,9 +139,16 @@ internal sealed class GeoServicesQueryGeometryMetadata : GeometryParameterMetada
             {
                 return false;
             }
-            foreach (var coordinate in position)
+
+            if (!double.IsFinite(position[0]) || !double.IsFinite(position[1]))
             {
-                if (!double.IsFinite(coordinate))
+                return false;
+            }
+
+            for (var ordinate = 2; ordinate < position.Length; ordinate++)
+            {
+                var coordinate = position[ordinate];
+                if (!double.IsFinite(coordinate) && !double.IsNaN(coordinate))
                 {
                     return false;
                 }

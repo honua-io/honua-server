@@ -489,7 +489,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             fields,
             useMapping: true,
             sql.AddParameter,
-            query.Distinct ? _primaryKeyColumn : null);
+            query.Distinct || !string.IsNullOrWhiteSpace(_mapping.AttributesColumn) ? _primaryKeyColumn : null);
     }
 
     private string BuildAttributesExpressionText(
@@ -544,7 +544,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             // value round-trips with its declared type (an integer field returns a JSON
             // number, not a string). Text-like types keep the text accessor (->>) so existing
             // string/date formatting is unchanged.
-            if (distinctObjectIdExpression is not null && IsObjectIdField(field.Name))
+            if (distinctObjectIdExpression is not null &&
+                (IsObjectIdField(field.Name) || field.SemanticRoles.Contains("id.primary")))
             {
                 parts.Add(distinctObjectIdExpression);
             }
@@ -1001,7 +1002,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private MetadataV2FieldType? TryResolveFieldType(string fieldName)
     {
         if (fieldName.Equals("objectid", StringComparison.OrdinalIgnoreCase) ||
-            fieldName.Equals("object_id", StringComparison.OrdinalIgnoreCase))
+            fieldName.Equals("object_id", StringComparison.OrdinalIgnoreCase) ||
+            fieldName.Equals(_resource.FindPrimaryIdField()?.Name, StringComparison.OrdinalIgnoreCase))
         {
             return MetadataV2FieldType.BigInteger;
         }

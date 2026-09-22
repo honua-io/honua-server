@@ -137,6 +137,45 @@ to declare edit support; Query-only imported table bindings currently do not.
 Repairing metadata alone does not make their writer available. Composite
 relationships remain read-only even when the underlying storage supports edits.
 
+## Publish an editable managed copy
+
+`POST /api/v1/admin/connections/{id}/layers` accepts `createEditableCopy: true`.
+Use this after importing a source into the server's database when the target
+should own its data and support editing:
+
+```json
+{
+  "schema": "honua_data",
+  "table": "imported_points",
+  "layerName": "Editable points",
+  "serviceName": "editable-points",
+  "primaryKey": "id",
+  "geometryColumn": "geom",
+  "geometryType": "Point",
+  "srid": 4326,
+  "createEditableCopy": true
+}
+```
+
+The copy reads and writes the managed feature store and declares Create, Update
+and Delete on its FeatureServer publication. Normal authentication and edit
+authorization still apply. The source table and its existing publications are
+unchanged. Omitting this option retains ordinary source-backed publication.
+
+The copy receives new object IDs. Its read-only `honua_source_id` field records
+each imported source ID, so migration can map attachments and relationships to
+the corresponding new target ID. New features have no source ID. This reserved
+field cannot already be part of the selected source schema. The option does not
+copy attachments or establish relationships; those migration steps must use the
+mapping and be independently verified. It does not repair an existing layer in
+place or preserve its numeric object IDs.
+
+The connection must use the managed writer's configured database host, port,
+database and feature table search path; a mismatched destination is rejected.
+Managed copies are excluded from source snapshot refresh, so that operation
+cannot overwrite edits. The per-layer refresh endpoint returns 404 for a
+managed copy, which has no source snapshot to refresh.
+
 ## Related guides
 
 - [Serve existing databases](../../guides/publish/serve-existing-databases.md)

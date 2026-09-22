@@ -16,7 +16,17 @@ public sealed class CurveGeometryConverterTests
         var part = ParseCurve("""{"curvePaths":[[[0,0],{"b":[[1,1],[0,1],[1,0]]}]]}""");
         var expected = CurveGeometryConverter.Densify(part);
         expected.Should().HaveCount(33);
+        CurveGeometryConverter.CountDensifiedVertices(part, 33).Should().Be(expected.Length);
         CurveGeometryConverter.Densify(part, 33).Should().BeEquivalentTo(expected, options => options.WithStrictOrdering());
+    }
+
+    [UnitTest]
+    public void CountDensifiedVertices_EnforcesBudgetWithoutCollectingCoordinates()
+    {
+        var part = ParseCurve("""{"curvePaths":[[[0,0],{"b":[[1,1],[0,1],[1,0]]}]]}""");
+
+        var action = () => CurveGeometryConverter.CountDensifiedVertices(part, 32);
+        action.Should().Throw<ArgumentException>().WithMessage("*budget*");
     }
 
     [UnitTest]

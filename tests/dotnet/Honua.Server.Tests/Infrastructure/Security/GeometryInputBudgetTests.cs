@@ -70,6 +70,16 @@ public sealed class GeometryInputBudgetTests
         Assert.Contains("MaxVerticesPerGeometry", result.Body, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task VertexBudget_AllowsMissingOptionalZOrMOrdinate()
+    {
+        const string geometry = "{\"hasZ\":true,\"hasM\":true,\"points\":[[1,2,null,4]]}";
+
+        var result = await InvokeAsync(geometry);
+
+        Assert.True(result.Passed, result.Body);
+    }
+
     [Theory]
     [InlineData("{broken")]
     [InlineData("{}")]
@@ -173,6 +183,20 @@ public sealed class GeometryInputBudgetTests
         var result = await InvokeAsync(geometry);
         Assert.True(result.Passed, result.Body);
         Assert.Equal(geometry, result.ForwardedValue);
+    }
+
+    [Fact]
+    public async Task TrueCurveRings_WithEmptyPaths_RespectBudgetAndPreserveDefinition()
+    {
+        const string geometry = """
+            {"curvePaths":[],"curveRings":[[[1,0],{"c":[[-1,0],[0,1]]},{"c":[[1,0],[0,-1]]}]]}
+            """;
+        var accepted = await InvokeAsync(geometry);
+        Assert.True(accepted.Passed, accepted.Body);
+        Assert.Equal(geometry, accepted.ForwardedValue);
+        var rejected = await InvokeAsync(geometry, maxVertices: 1);
+        Assert.False(rejected.Passed);
+        Assert.Contains("MaxVerticesPerGeometry", rejected.Body, StringComparison.Ordinal);
     }
 
     [Fact]

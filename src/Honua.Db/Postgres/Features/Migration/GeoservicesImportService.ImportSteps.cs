@@ -437,6 +437,9 @@ internal sealed partial class GeoservicesImportService
                 PublishRequested = request.AutoPublish,
                 FailedFeatures = failedFeatures,
                 Attachments = attachmentFidelity,
+                Relationships = request.DeferRelationshipApplyToBatch
+                    ? []
+                    : DescribeUnappliedSourceRelationships(layerInfo, publishedLayer?.LayerId),
                 SourceSnapshot = sourceSnapshot
             });
 

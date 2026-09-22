@@ -48,6 +48,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         LayerPublishRequest request,
         int layerId,
         PublishedLayerStorage storage,
+        string resourcePrimaryKeyColumn,
+        string? resourceGeometryColumn,
         string geometryType,
         int srid,
         IReadOnlyList<LayerFieldInsert> fields,
@@ -62,8 +64,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var resource = BuildPublishedResource(
             request,
             layerId,
-            storage.PrimaryKeyColumn,
-            storage.GeometryColumn,
+            resourcePrimaryKeyColumn,
+            resourceGeometryColumn,
             geometryType,
             srid,
             storage.StorageSrid,
@@ -3133,7 +3135,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
             StorageBindingIds = [bindingId],
             PrimaryStorageBindingId = bindingId,
             SchemaFields = fields
-                .Select(field => MapLayerFieldToMetadataV2(field, primaryKeyColumn, geometryColumn))
+                .Select(field =>
+                {
+                    var mapped = MapLayerFieldToMetadataV2(field, primaryKeyColumn, geometryColumn);
+                    return request.CreateEditableCopy &&
+                        (field.Name.Equals(primaryKeyColumn, StringComparison.OrdinalIgnoreCase) || field.Name == ManagedSourceIdField)
+                        ? mapped with { Editable = false }
+                        : mapped;
+                })
                 .ToArray(),
             Spatial = string.IsNullOrWhiteSpace(geometryColumn) ? null : new MetadataV2ResourceSpatial
             {
@@ -3179,7 +3188,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
     private static MetadataV2ResourceEditing? ResolveEditingForPublish(
         LayerPublishRequest request, IReadOnlyList<LayerFieldInsert> fields)
     {
-        if (string.IsNullOrWhiteSpace(request.GlobalIdField) && !request.SupportsAttachments)
+        if (string.IsNullOrWhiteSpace(request.GlobalIdField) && !request.SupportsAttachments && !request.CreateEditableCopy)
         {
             return null;
         }
@@ -3196,7 +3205,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         {
             GlobalIdField = globalId?.Name,
             SupportsAttachments = request.SupportsAttachments,
-            CanModify = false,
+            CanModify = request.CreateEditableCopy,
             SupportsRelatedRecords = false
         };
     }
