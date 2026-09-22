@@ -4001,7 +4001,23 @@
             "notes": "Graph-backed service directory, RBAC-filtered per principal, listing every service type a publication exposes. Returns 401/403 rather than a misleading empty list when every publication is denied. Does not emit folders; currentVersion is deliberately omitted (see knownLimitations)."
           }
         ],
-        "partial": [],
+        "partial": [
+          {
+            "name": "Service administration metadata",
+            "status": "partial",
+            "esriPaths": [
+              "/rest/admin/{serviceName}.{serviceType}"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/admin/{serviceName}.{serviceType}",
+              "POST /rest/admin/{serviceName}.{serviceType}"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "Read-only service metadata for connections without a site segment. GET and POST expose the same principal-filtered service and branch-versioning metadata. This does not implement the ArcGIS Server administration mutation API."
+          }
+        ],
         "stub": [
           {
             "name": "REST Info",
