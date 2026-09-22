@@ -20373,6 +20373,8 @@
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_FileTooLarge_Returns413",
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_RacingADeleteOnTheSameFeature_LeavesBothStoresConsistent",
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_RejectedUploads_LeaveNoPartialObjectAndNoRow",
+        "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_TextFileWithScriptContent_IsRejectedByContentScan",
+        "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_TextMimeTypeWithDefaultAllowList_IsStoredAndDownloadable",
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_ThenDownload_RoundTripsBinaryBytesExactly",
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_WithCanonicalFeatureRoute_ReturnsSuccess",
         "Honua.Server.Tests.AttachmentEndpointTests.AddAttachment_WithInvalidMimeType_Returns400",

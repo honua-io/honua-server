@@ -306,7 +306,10 @@ public class AttachmentLimits
     /// <summary>
     /// Allowed MIME types for attachments.
     /// </summary>
-    public string AllowedMimeTypes { get; set; } = "image/*,application/pdf";
+    // honua-server#5017: text notes, CSV tallies and JSON payloads are ordinary field attachments.
+    // FileUploadSecurity still scans .txt/.csv/.json uploads for script content after this check;
+    // that scan is keyed on the file extension, not on the declared MIME type.
+    public string AllowedMimeTypes { get; set; } = "image/*,application/pdf,text/plain,text/csv,application/json";
 }
 
 

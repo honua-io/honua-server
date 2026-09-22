@@ -143,7 +143,7 @@ After a successful upload, `<LicensePath>.uploaded` takes precedence at startup.
 | `Limits__Edits__MaxPayloadSize` | `26214400` (25 MiB) | Max edit payload size. |
 | `Limits__Attachments__MaxAttachmentSize` | `5242880` (5 MiB) | Max single attachment size. |
 | `Limits__Attachments__MaxAttachmentsPerFeature` | `5` | Max attachments per feature. |
-| `Limits__Attachments__AllowedMimeTypes` | `image/*,application/pdf` | Allowed attachment MIME types. |
+| `Limits__Attachments__AllowedMimeTypes` | `image/*,application/pdf,text/plain,text/csv,application/json` | Allowed attachment MIME types. |
 | `Limits__Tiles__MaxFeaturesPerTile` | see `.env.example` | Max features rendered into one vector tile. |
 | `Limits__Tiles__TileTimeout` | see `.env.example` | Per-tile generation timeout. |
 | `Limits__Tiles__MaxTileZoom` / `Limits__Tiles__MinTileZoom` | `22` / `0` | Served zoom range. |
