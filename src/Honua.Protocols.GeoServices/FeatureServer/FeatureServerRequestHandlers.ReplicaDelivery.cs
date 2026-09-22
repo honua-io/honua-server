@@ -67,9 +67,19 @@ internal static partial class FeatureServerEndpoints
     /// unknown <c>transportType</c>, and <c>returnAttachments=true</c>. <c>esriTransportTypeUrl</c> is
     /// accepted and answered with the embedded transport, which the response declares.
     /// </summary>
+    /// <param name="context">The request being answered.</param>
+    /// <param name="values">The merged query and form values.</param>
+    /// <param name="unsupportedDataFormatUsesHttpStatus">
+    /// True for createReplica: an unsupported <c>dataFormat</c> is answered with a real HTTP 400
+    /// instead of the GeoServices HTTP 200 envelope. ArcGIS Pro's Download Map sends
+    /// <c>dataFormat=sqlite</c> and reads the transport status alone, so a 200 carrying the
+    /// rejection reads as success and the user is left with no offline copy and no error
+    /// (honua-server#5013). Every other rejection keeps the 200 envelope.
+    /// </param>
     private static IResult? ValidateReplicaTransportParameters(
         HttpContext context,
-        IReadOnlyDictionary<string, StringValues> values)
+        IReadOnlyDictionary<string, StringValues> values,
+        bool unsupportedDataFormatUsesHttpStatus = false)
     {
         if (!TryParseBoolValue(values, "async", false, out var isAsync, out var asyncError))
         {
@@ -87,8 +97,12 @@ internal static partial class FeatureServerEndpoints
         if (!string.IsNullOrWhiteSpace(dataFormat) &&
             !dataFormat.Trim().Equals("json", StringComparison.OrdinalIgnoreCase))
         {
-            return StandardErrorHelpers.CreateBadRequest(context, $"dataFormat '{dataFormat.Trim()}' is not supported",
-                ["Replica data is delivered as Esri JSON only. Pass dataFormat=json; runtime geodatabase (sqlite), file geodatabase, shapefile and other file formats are not produced."]);
+            return StandardErrorResponseFormatter.FormatError(
+                context,
+                StandardErrorResponse.BadRequest(
+                    $"dataFormat '{dataFormat.Trim()}' is not supported",
+                    ["Replica data is delivered as Esri JSON only. Pass dataFormat=json; runtime geodatabase (sqlite), file geodatabase, shapefile and other file formats are not produced."]),
+                new ErrorResponseFormatterOptions { GeoServicesUseHttpStatus = unsupportedDataFormatUsesHttpStatus });
         }
 
         var transportType = GetValueString(values, "transportType");
