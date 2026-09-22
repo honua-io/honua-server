@@ -35,6 +35,7 @@ internal sealed partial class GeoservicesImportService
         var inserted = 0;
         var failed = 0;
         string? firstError = null;
+        string? firstFailureReason = null;
         var higherDimensionCount = 0;
 
         // Build insert statement
@@ -144,6 +145,7 @@ internal sealed partial class GeoservicesImportService
             {
                 await transaction.RollbackAsync(savepointName, CancellationToken.None).ConfigureAwait(false);
                 firstError ??= "Feature import failed.";
+                firstFailureReason ??= DescribeFeatureInsertFailure(ex);
                 Log.FeatureInsertFailed(_logger, ex.Message);
                 failed++;
             }
@@ -165,7 +167,7 @@ internal sealed partial class GeoservicesImportService
             Log.HigherDimensionGeometryDetected(_logger, higherDimensionCount, tableName);
         }
 
-        return new InsertFeaturesResult(inserted, failed, objectIdMap);
+        return new InsertFeaturesResult(inserted, failed, objectIdMap, firstFailureReason);
     }
 
     private static bool TryReadSourceObjectId(
@@ -217,11 +219,15 @@ internal sealed partial class GeoservicesImportService
     /// Outcome of a single InsertFeaturesAsync batch: insert/fail counters plus a
     /// mapping from source ObjectId to the BIGSERIAL identifier assigned by the
     /// imported table. Used to link attachments back to the persisted features.
+    /// <see cref="FirstFailureReason"/> is the redacted reason the batch's first failed row was
+    /// rejected (see <see cref="DescribeFeatureInsertFailure"/>), or <see langword="null"/> when no
+    /// row failed.
     /// </summary>
     internal readonly record struct InsertFeaturesResult(
         int Inserted,
         int Failed,
-        Dictionary<long, long> ObjectIdMap);
+        Dictionary<long, long> ObjectIdMap,
+        string? FirstFailureReason = null);
 
     private static string BuildGeometryInsertExpression(string? geometryType, int targetSrid)
     {

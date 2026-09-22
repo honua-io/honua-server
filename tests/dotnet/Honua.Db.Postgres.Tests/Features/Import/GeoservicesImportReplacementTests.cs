@@ -55,6 +55,10 @@ public sealed class GeoservicesImportReplacementTests(PostgresFixture fixture)
             result.FeatureCount.Should().Be(0, "the loaded record was rolled back with the refused replacement");
             result.FailedFeatures.Should().Be(1);
             result.ErrorMessage.Should().Contain("Replacement refused").And.Contain("1 of 2").And.Contain("retained");
+            // #4827 REQ-003: the job keeps why the row was rejected (redacted to category + SQLSTATE).
+            result.Warnings.Should().Contain(warning =>
+                warning.Contains("first rejection: value rejected by the target database (SQLSTATE 22001)", StringComparison.Ordinal));
+            result.Warnings.Should().NotContain(warning => warning.Contains("TOOLONG", StringComparison.Ordinal));
             result.FidelityVerdict.Should().Be(MigrationFidelityVerdicts.Incomplete);
 
             var difference = result.FidelityDifferences.Should().ContainSingle().Subject;

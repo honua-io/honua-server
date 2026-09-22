@@ -40,6 +40,9 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
     private const string InProcessLocalBackendName = "local";
 
     private const string WorkflowOperationStoreBackendId = "workflow-operation-store";
+    private const string ManualInterventionComponentId = "manual-intervention-deploy-operations";
+    private const int ManualInterventionPageSize = 200;
+    private const int ManualInterventionMaxPages = 5;
 
     private readonly IOptionsMonitor<OpsFindingsOptions> _options;
     private readonly IOptionsMonitor<ControlPlaneOptions> _controlPlaneOptions;
@@ -738,11 +741,70 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
                 token => _workflowStore.ListActiveAsync(WorkflowOperationKind.Deploy, token),
                 cancellationToken)
             .ConfigureAwait(false);
-        foreach (var operation in active.Value ?? [])
+        if (!active.Succeeded)
         {
-            if (operation.Status != WorkflowOperationStatus.ManualInterventionRequired)
+            return;
+        }
+
+        var stuck = await ReadManualInterventionDeploysAsync(workflowCollection, cancellationToken).ConfigureAwait(false);
+        if (stuck is null)
+        {
+            return;
+        }
+
+        var succeededByTarget = new Dictionary<string, OpsFindingsStoreRead<WorkflowOperationRecord?>>(StringComparer.Ordinal);
+        foreach (var operation in stuck)
+        {
+            // A stuck deploy is not re-driven by the reconciler and has no rollback of its own; it is
+            // resolved by a later deploy of the same target (typically the rollback this finding
+            // proposes). Once one exists, the stale rollback payload must not be offered again.
+            var targetId = operation.Deploy?.TargetId;
+            if (!string.IsNullOrWhiteSpace(targetId))
             {
-                continue;
+                var newerKnown = stuck.Concat(active.Value ?? [])
+                    .Any(other => IsLaterDeployOfTarget(other, operation, targetId));
+                if (newerKnown)
+                {
+                    continue;
+                }
+
+                if (!succeededByTarget.TryGetValue(targetId, out var lookup))
+                {
+                    lookup = await workflowCollection.ReadAsync(
+                            $"deploy-target:{targetId}",
+                            token => _workflowStore.GetMostRecentSucceededDeployByTargetAsync(targetId, token),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    succeededByTarget[targetId] = lookup;
+                }
+
+                // Unknown supersession is not "not superseded": an unread index yields no finding.
+                if (!lookup.Succeeded
+                    || (lookup.Value is { } succeeded && IsLaterDeployOfTarget(succeeded, operation, targetId)))
+                {
+                    continue;
+                }
+
+                var later = await workflowCollection.ReadAsync(
+                        $"deploy-target:{targetId}:later-than:{operation.OperationId}",
+                        token => _workflowStore.HasLaterDeployOfTargetAsync(operation, token),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (!later.Succeeded || later.Value is null)
+                {
+                    // Legacy records have no creation-index coverage. Do not offer a rollback based
+                    // on incomplete history, and publish partial source coverage for this pass.
+                    if (later.Succeeded)
+                    {
+                        workflowCollection.ExpectUncollected($"deploy-target:{targetId}:creation-history");
+                    }
+                    continue;
+                }
+
+                if (later.Value.Value)
+                {
+                    continue;
+                }
             }
 
             var deploy = operation.Deploy;
@@ -798,6 +860,64 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
             });
         }
     }
+
+    /// <summary>
+    /// Reads deploys parked in <see cref="WorkflowOperationStatus.ManualInterventionRequired"/> through
+    /// the store's kind + status query. The active index is not the source: the Redis store files the
+    /// status under its terminal index, so reconcilers and the backstop sweep (which walk the active
+    /// index) leave it alone and <c>ListActiveAsync</c> never returns it (#4938). The read is bounded;
+    /// when the store still reports more, the source is published as partial.
+    /// </summary>
+    /// <returns>The stuck deploys, or null when a read failed.</returns>
+    private async Task<List<WorkflowOperationRecord>?> ReadManualInterventionDeploysAsync(
+        OpsFindingsStoreCollection workflowCollection,
+        CancellationToken cancellationToken)
+    {
+        var collected = new List<WorkflowOperationRecord>();
+        for (var page = 1; page <= ManualInterventionMaxPages; page++)
+        {
+            var query = new WorkflowOperationQuery
+            {
+                Kind = WorkflowOperationKind.Deploy,
+                Status = WorkflowOperationStatus.ManualInterventionRequired,
+                Page = page,
+                PageSize = ManualInterventionPageSize,
+            };
+            var read = await workflowCollection.ReadAsync(
+                    page == 1 ? ManualInterventionComponentId : $"{ManualInterventionComponentId}:page-{page}",
+                    token => _workflowStore!.QueryAsync(query, token),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!read.Succeeded)
+            {
+                return null;
+            }
+
+            // A store that ignores the query filters must not widen the rule's scope, and paging over a
+            // set that moves under the reader can repeat an operation.
+            collected.AddRange((read.Value?.Items ?? []).Where(IsStuckDeploy));
+
+            if (read.Value is not { HasMore: true })
+            {
+                return Deduplicate(collected);
+            }
+        }
+
+        workflowCollection.ExpectUncollected($"{ManualInterventionComponentId}:beyond-page-{ManualInterventionMaxPages}");
+        return Deduplicate(collected);
+    }
+
+    private static bool IsStuckDeploy(WorkflowOperationRecord operation)
+        => operation is { Kind: WorkflowOperationKind.Deploy, Status: WorkflowOperationStatus.ManualInterventionRequired };
+
+    private static List<WorkflowOperationRecord> Deduplicate(IEnumerable<WorkflowOperationRecord> operations)
+        => operations.DistinctBy(operation => operation.OperationId, StringComparer.Ordinal).ToList();
+
+    private static bool IsLaterDeployOfTarget(WorkflowOperationRecord candidate, WorkflowOperationRecord stuck, string targetId)
+        => candidate.Kind == WorkflowOperationKind.Deploy
+            && !string.Equals(candidate.OperationId, stuck.OperationId, StringComparison.Ordinal)
+            && string.Equals(candidate.Deploy?.TargetId, targetId, StringComparison.Ordinal)
+            && candidate.CreatedAt > stuck.CreatedAt;
 
     // Rule (g): per-protocol serving-latency/error-rate SLO breach, evidenced from the persisted
     // ops-health rollup history (#2553) rather than the live in-process window, so a short blip does not

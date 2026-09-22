@@ -90,7 +90,7 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         // Derived like PostgreSQL's own implicit names. A plain "<table>_geom_idx" is truncated to 63
         // bytes, which for a 63-byte table name is the table's own name, so IF NOT EXISTS silently
         // skipped the index (#4600).
-        cmd.CommandText = $"CREATE INDEX IF NOT EXISTS {QuoteIdentifier(BuildDerivedRelationName(tableName, "geom", "idx"))} ON {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} USING GIST (geom)";
+        cmd.CommandText = $"CREATE INDEX IF NOT EXISTS {QuoteIdentifier(PostgresDerivedRelationNames.Build(tableName, "geom", "idx"))} ON {QuoteIdentifier(schemaName)}.{QuoteIdentifier(tableName)} USING GIST (geom)";
         await cmd.ExecuteNonQueryAsync(cancellationToken);
 
         Log.SpatialIndexCreated(_logger, tableName);
@@ -203,46 +203,17 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         await RenameDerivedRelationAsync(
             connection,
             schemaName,
-            BuildDerivedRelationName(stagingTable, null, "pkey"),
-            BuildDerivedRelationName(tableName, null, "pkey"),
+            PostgresDerivedRelationNames.Build(stagingTable, null, "pkey"),
+            PostgresDerivedRelationNames.Build(tableName, null, "pkey"),
             (current, renamed) => $"ALTER TABLE {schema}.{target} RENAME CONSTRAINT {current} TO {renamed}",
             cancellationToken);
         await RenameDerivedRelationAsync(
             connection,
             schemaName,
-            BuildDerivedRelationName(stagingTable, FieldNames.ObjectId, "seq"),
-            BuildDerivedRelationName(tableName, FieldNames.ObjectId, "seq"),
+            PostgresDerivedRelationNames.Build(stagingTable, FieldNames.ObjectId, "seq"),
+            PostgresDerivedRelationNames.Build(tableName, FieldNames.ObjectId, "seq"),
             (current, renamed) => $"ALTER SEQUENCE {schema}.{current} RENAME TO {renamed}",
             cancellationToken);
-    }
-
-    /// <summary>
-    /// The name PostgreSQL derives for a table's implicit relations (<c>makeObjectName</c> in
-    /// <c>indexcmds.c</c>): the longer part is shortened one character at a time until
-    /// <c>name1_name2_label</c> fits in 63 bytes. Callers pass ASCII identifiers (validated table names,
-    /// fixed column names), so characters are bytes.
-    /// </summary>
-    internal static string BuildDerivedRelationName(string name1, string? name2, string label)
-    {
-        const int maxIdentifierLength = 63;
-        var available = maxIdentifierLength - (label.Length + 1) - (name2 is null ? 0 : 1);
-        var name1Chars = name1.Length;
-        var name2Chars = name2?.Length ?? 0;
-        while (name1Chars + name2Chars > available)
-        {
-            if (name1Chars > name2Chars)
-            {
-                name1Chars--;
-            }
-            else
-            {
-                name2Chars--;
-            }
-        }
-
-        return name2 is null
-            ? $"{name1[..name1Chars]}_{label}"
-            : $"{name1[..name1Chars]}_{name2[..name2Chars]}_{label}";
     }
 
     private static async Task RenameDerivedRelationAsync(
@@ -483,5 +454,9 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
         [LoggerMessage(7846, LogLevel.Warning,
             "Import lease on table {TableName} could not be released explicitly; it ends with the connection")]
         public static partial void TargetLeaseReleaseFailed(ILogger logger, string tableName, Exception exception);
+
+        [LoggerMessage(7847, LogLevel.Warning,
+            "Rollback of failed import into table {TableName} did not complete; the originating failure is reported and the server discards the transaction with the session")]
+        public static partial void ImportRollbackFailed(ILogger logger, string tableName, Exception exception);
     }
 }

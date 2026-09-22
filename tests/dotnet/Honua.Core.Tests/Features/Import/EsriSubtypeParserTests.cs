@@ -4,6 +4,7 @@
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Migration.Services;
 
@@ -181,8 +182,18 @@ public sealed class EsriSubtypeParserTests
             { "typeIdField": "kind", "types": [{ "id": 1, "name": "One",
               "templates": [{ "name": "A" }, { "name": "B" }] }] }
             """);
+
+        // #4824 REQ-002: an editing construct the canonical model cannot represent is
+        // reported as a named finding, not raised as a generic failure that aborts the
+        // whole layer read. Nothing ambiguous is persisted either way.
         var act = () => EsriSubtypeParser.Parse(layer);
-        act.Should().Throw<InvalidOperationException>().WithMessage("*multiple editing templates*");
+        act.Should().NotThrow();
+
+        var result = EsriSubtypeParser.Parse(layer);
+        result.Subtypes.Should().BeNull("an ambiguous template set is never silently reduced");
+        result.Truncated.Should().BeFalse();
+        result.UnsupportedCode.Should().Be(ImportCompatibilityCodes.ArcGisFeatureTypeTemplatesUnsupported);
+        result.UnsupportedDetail.Should().Contain("One").And.Contain("2 editing templates");
     }
 
     [Fact]
@@ -210,8 +221,44 @@ public sealed class EsriSubtypeParserTests
             { "typeIdField": "kind", "types": [{ "id": 1, "name": "One",
               "domains": { "status": null } }] }
             """);
+
         var act = () => EsriSubtypeParser.Parse(layer);
-        act.Should().Throw<InvalidOperationException>().WithMessage("*clears a domain*");
+        act.Should().NotThrow();
+
+        var result = EsriSubtypeParser.Parse(layer);
+        result.Subtypes.Should().BeNull("domain clearing is never silently dropped to inheritance");
+        result.UnsupportedCode.Should().Be(ImportCompatibilityCodes.ArcGisFeatureTypeDomainClearingUnsupported);
+        result.UnsupportedDetail.Should().Contain("status", "the finding names the field whose domain is cleared");
+    }
+
+    [Fact]
+    public void Parse_FeatureTypeWithoutUsableIdentity_RejectsWithoutThrowing()
+    {
+        var layer = ParseLayer("""
+            { "typeIdField": "kind", "types": [{ "id": { "nested": true }, "name": "One" }] }
+            """);
+
+        var act = () => EsriSubtypeParser.Parse(layer);
+        act.Should().NotThrow();
+
+        var result = EsriSubtypeParser.Parse(layer);
+        result.Subtypes.Should().BeNull();
+        result.UnsupportedCode.Should().Be(ImportCompatibilityCodes.ArcGisFeatureTypeIdentityUnsupported);
+    }
+
+    [Fact]
+    public void Parse_SupportedFeatureTypes_ReportsNoUnsupportedConstruct()
+    {
+        var layer = ParseLayer("""
+            { "typeIdField": "kind", "types": [{ "id": 1, "name": "One",
+              "templates": [{ "prototype": { "attributes": { "kind": 1 } } }] }] }
+            """);
+
+        var result = EsriSubtypeParser.Parse(layer);
+
+        result.UnsupportedCode.Should().BeNull();
+        result.UnsupportedDetail.Should().BeNull();
+        result.Subtypes!.Subtypes.Should().ContainSingle();
     }
 
     private static JsonElement ParseLayer(string json)

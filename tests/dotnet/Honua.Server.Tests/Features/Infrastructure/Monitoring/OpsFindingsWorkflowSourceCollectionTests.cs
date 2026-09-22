@@ -213,12 +213,13 @@ public sealed class OpsFindingsWorkflowSourceRedisTests
         var clock = new SettableClock(WorkflowSourceFixture.T0);
         var options = WorkflowSourceFixture.DeclaredReleaseOptions();
 
-        // Keys stay readable for the active set, the seeded operation and target A's succeeded-deploy
-        // index; the server refuses target B's index, so the pass answers for A and not for B.
+        // Keys stay readable for the active set, the terminal index, the seeded operation and target A's
+        // succeeded-deploy index; the server refuses target B's index, so the pass answers for A and not for B.
         var denied = await container.ExecAsync(
         [
             "redis-cli", "ACL", "SETUSER", "default", "resetkeys",
             "~controlplane:workflow:active*",
+            "~controlplane:workflow:terminal",
             "~controlplane:workflow:op-4840-*",
             $"~controlplane:workflow:deploy-succeeded:{WorkflowSourceFixture.TargetA}",
         ]);
@@ -255,6 +256,72 @@ public sealed class OpsFindingsWorkflowSourceRedisTests
         clock.Now = restoredAt;
         var restoredId = await WorkflowSourceFixture.AssertCompleteAndProposableAsync(store, options, ledger, clock, restoredAt);
         Assert.Equal(finding.Id, restoredId);
+    }
+
+    /// <summary>
+    /// #4938: a deploy parked in ManualInterventionRequired through the production Redis store yields
+    /// the manual-intervention finding with its rollback action, although the store keeps that status
+    /// out of the active index. The finding clears when the operation is rolled back, or when a later
+    /// deploy of the same target succeeds.
+    /// </summary>
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task DeployManualIntervention_RedisStore_FiresUntilRolledBackOrSuperseded()
+    {
+        await using var container = new RedisBuilder("redis:7.2-alpine").Build();
+        await container.StartAsync();
+        using var multiplexer = await ConnectionMultiplexer.ConnectAsync(container.GetConnectionString());
+        var store = new RedisWorkflowOperationStore(multiplexer, NullLogger<RedisWorkflowOperationStore>.Instance);
+        var stuckAt = DateTimeOffset.UtcNow.AddMinutes(-10);
+        var stuckA = WorkflowSourceFixture.StuckDeploy(WorkflowSourceFixture.TargetA, stuckAt);
+        var stuckB = WorkflowSourceFixture.StuckDeploy(WorkflowSourceFixture.TargetB, stuckAt);
+        Assert.True(await store.TryCreateAsync(stuckA));
+        Assert.True(await store.TryCreateAsync(stuckB));
+        // The store keeps the status out of the active index, so reconcilers do not re-drive it.
+        Assert.Empty(await store.ListActiveAsync(WorkflowOperationKind.Deploy));
+        var ledger = new OpsFindingsCollectionLedger();
+        var clock = new SettableClock(WorkflowSourceFixture.T0);
+
+        var gateway = WorkflowSourceFixture.CreateGateway();
+        var service = WorkflowSourceFixture.CreateService(store, new ControlPlaneOptions(), ledger, clock, gateway);
+        var evaluation = await service.EvaluateWithEvidenceAsync();
+
+        Assert.Equal(
+            EvidencePostureVocabulary.Completeness.Complete,
+            WorkflowSourceFixture.WorkflowSource(evaluation).Completeness);
+        var findings = evaluation.Findings
+            .Where(f => f.Rule == OpsFindingsService.RuleDeployManualIntervention)
+            .OrderBy(f => f.Subject.TargetId, StringComparer.Ordinal)
+            .ToArray();
+        Assert.Equal([stuckA.OperationId, stuckB.OperationId], findings.Select(f => f.Subject.OperationId));
+        var findingA = findings[0];
+        Assert.Equal(OpsFindingSeverity.Critical, findingA.Severity);
+        Assert.Equal(OperationClass.Deploy, findingA.RecommendedAction?.Kind);
+        Assert.Contains(
+            $"\"desiredRevision\":\"{WorkflowSourceFixture.PriorArtifact}\"",
+            findingA.RecommendedAction!.ExecutionPayload,
+            StringComparison.Ordinal);
+        Assert.Equal(OpsFindingProposalStatus.ProposalCreated, (await service.ProposeAsync(findingA.Id)).Status);
+
+        // B is rolled back; a later deploy of A (the proposed rollback) succeeds.
+        var rolledBackB = (await store.GetAsync(stuckB.OperationId))! with
+        {
+            Status = WorkflowOperationStatus.RolledBack,
+            UpdatedAt = DateTimeOffset.UtcNow,
+        };
+        await store.SetAsync(rolledBackB);
+        Assert.True(await store.TryCreateAsync(
+            WorkflowSourceFixture.SucceededDeploy(WorkflowSourceFixture.TargetA, WorkflowSourceFixture.PriorArtifact)));
+        clock.Now = WorkflowSourceFixture.T0.AddMinutes(1);
+
+        var resolved = await WorkflowSourceFixture
+            .CreateService(store, new ControlPlaneOptions(), ledger, clock, WorkflowSourceFixture.CreateGateway())
+            .EvaluateWithEvidenceAsync();
+
+        Assert.Equal(
+            EvidencePostureVocabulary.Completeness.Complete,
+            WorkflowSourceFixture.WorkflowSource(resolved).Completeness);
+        Assert.DoesNotContain(resolved.Findings, f => f.Rule == OpsFindingsService.RuleDeployManualIntervention);
     }
 
     private static ConfigurationOptions OutageTolerant(string connectionString)
@@ -335,6 +402,27 @@ internal static class WorkflowSourceFixture
             },
         };
     }
+
+    public static WorkflowOperationRecord StuckDeploy(string targetId, DateTimeOffset createdAt)
+        => new()
+        {
+            OperationId = $"op-4938-{targetId}-stuck",
+            Kind = WorkflowOperationKind.Deploy,
+            Status = WorkflowOperationStatus.ManualInterventionRequired,
+            CreatedAt = createdAt,
+            UpdatedAt = createdAt,
+            CompletedAt = createdAt,
+            Deploy = new DeployOperationSpec
+            {
+                TargetId = targetId,
+                TargetKind = DeployTargetKind.SelfHostedRolling,
+                Backend = "self-hosted",
+                Environment = "prod",
+                TargetName = targetId,
+                CurrentRevision = PriorArtifact,
+                DesiredRevision = "ghcr.io/honua/server:2026.1.1",
+            },
+        };
 
     public static ControlPlaneOptions DeclaredReleaseOptions(params string[] targetIds)
         => new()
@@ -419,9 +507,11 @@ internal static class WorkflowSourceFixture
             [EvidencePostureVocabulary.ReasonCodes.IncompleteCoverage, EvidencePostureVocabulary.ReasonCodes.PartialResult],
             source.ReasonCodes);
         Assert.NotNull(source.Coverage);
-        Assert.Equal(["active-deploy-operations", $"deploy-target:{TargetA}"], source.Coverage!.IncludedComponentIds);
         Assert.Equal(
-            ["active-deploy-operations", $"deploy-target:{TargetA}", $"deploy-target:{TargetB}"],
+            ["active-deploy-operations", $"deploy-target:{TargetA}", "manual-intervention-deploy-operations"],
+            source.Coverage!.IncludedComponentIds);
+        Assert.Equal(
+            ["active-deploy-operations", $"deploy-target:{TargetA}", $"deploy-target:{TargetB}", "manual-intervention-deploy-operations"],
             source.Coverage.ExpectedComponentIds);
     }
 

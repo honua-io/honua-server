@@ -1,0 +1,73 @@
+name: Cloud Post-Apply Validation (nightly)
+
+# The caller honua-server#4414 defect 2 asked for.
+#
+# `cloud-post-apply-validation.yml` is workflow_call + workflow_dispatch only and had ZERO callers
+# anywhere in honua-server, honua-release, honua-devops or honua-iac — the one intended consumer,
+# honua-iac's `terraform-manual-validation.yml`, points at
+# `honua-server/scripts/run-cloud-post-apply-validation.sh`, a flat path that has not existed on
+# trunk since around 2026-04-21 (the file is `scripts/cloud/run-cloud-post-apply-validation.sh`).
+# Repairing that path is a honua-iac change. Meanwhile every Category=Cloud cell behind the
+# workflow — including `CloudDeploymentValidationTests`' staged-import row count
+# (`featuresProcessed == 1`, `failedFeatures == 0`), the only row-count assertion in the deploy
+# story — has been unreachable, and skipped silently rather than failing.
+#
+# This lane gives the workflow a target it can always reach: it boots a real Honua.Server against a
+# real PostGIS on the runner and validates against that. It is FREE, needs no cloud account and no
+# repository variable, and it runs every night, so a regression in the post-apply contract or in
+# the validation script itself is caught within a day instead of never.
+#
+# What it is NOT: a cloud substrate. It proves the post-apply CONTRACT (public health surface,
+# deploy preflight, admin control-plane availability, staged-import publish/query round-trip with an
+# asserted row count) against a real server on one host. Certifying a real ECS / Lambda / AKS
+# deployment still requires the honua-iac path repair and a `base_url` pointing at that deployment.
+
+on:
+  schedule:
+    # Nightly, offset from cloud-integration-harness.yml (05:00) so the two do not contend.
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: Validate this deployed environment instead of booting a local target.
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: cloud-post-apply-validation-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  local-target:
+    name: Post-apply contract (local target)
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.base_url == '' }}
+    uses: ./.github/workflows/cloud-post-apply-validation.yml
+    with:
+      local_target: true
+      # expected_environment / expected_deployment_mode / platform are deliberately NOT set: each
+      # one either pins an assertion to a value only a specific substrate reports, or (for platform)
+      # switches a capability default to false and turns a cell into a skip. Unset, the preflight
+      # and deploy-plan cells assert their full contract instead.
+      #
+      # The staged-import publish/query round-trip is the row-count cell. Giving it a table prefix
+      # is what turns it from a skip into an executed assertion.
+      import_table_prefix: post_apply_nightly
+      import_timeout_seconds: '300'
+      # Counts tripwire floor. The public-health, deploy-preflight, deploy-plan,
+      # admin-control-plane and staged-import cells all execute against a local target; the two
+      # live deploy-operation cells require ExecuteDeployOperation and stay skipped here, which the
+      # tripwire reports by name. Raising this floor is how the lane notices a cell going dark.
+      min_passed: '5'
+
+  deployed-environment:
+    name: Post-apply contract (deployed environment)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.base_url != '' }}
+    uses: ./.github/workflows/cloud-post-apply-validation.yml
+    with:
+      base_url: ${{ inputs.base_url }}
+    secrets:
+      admin_api_key: ${{ secrets.CLOUD_VALIDATION_ADMIN_API_KEY }}

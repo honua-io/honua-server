@@ -8673,6 +8673,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerErrorHandlingTests.GetServiceInfo_NonExistentLayer_ReturnsNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.GetServiceInfo_AggregatesExtentAndTimeExtentAcrossLayerRasters",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.GetServiceInfo_ServesBandStatisticsFromPersistedMosaicSnapshot",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.ImageServerOperations_WithMixedResolutionMosaic_AreServedFromTheAlignedUnion",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicPixelSizeTests.GetServiceInfo_MosaicExtents_PreservesNativePixelResolution",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.GetServiceInfo_PjsonFormat_DoesNotReturnBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.GetServiceInfo_ValidRequest_ReturnsExpectedStructure",
@@ -8898,7 +8899,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeStatisticsHistograms_Get_WithEnvelope_ReturnsStatisticsAndHistograms",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeStatisticsHistograms_Get_WithoutGeometry_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ComputeStatisticsHistograms_WithGeometry_ClipsAnalysisToAoi",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.ImageServerOperations_WithEsriEpochMillisecondTimeExtent_AreNotRejected"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.ImageServerOperations_WithEsriEpochMillisecondTimeExtent_AreNotRejected",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.ImageServerOperations_WithMixedResolutionMosaic_AreServedFromTheAlignedUnion"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "preview",
@@ -8976,6 +8978,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.ExportImage_AsInlineJpegMosaic_AppliesCompressionQuality",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.ExportImage_WithBboxBeyondRasterFootprint_CoversRequestedBboxWithNoDataOutsideData",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.ImageServerOperations_WithEsriEpochMillisecondTimeExtent_AreNotRejected",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.ImageServerOperations_WithMixedResolutionMosaic_AreServedFromTheAlignedUnion",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_JpegFormat_ReturnsSuccessOrNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_MaximumSize_ReturnsSuccessOrNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.ExportImage_MinimumSize_ReturnsSuccessOrNotFound",
@@ -9085,6 +9088,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.Identify_WithOrderingMosaicMethods_ResolvesContestedPixelLikeExport",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.Identify_WithTimeOnCommunityEdition_ReturnsPaymentRequired",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.Identify_WithTimeOnProEdition_WhenNewestLayerSnapshotMissesPoint_ReturnsNoData",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerMosaicIntegrationTests.ImageServerOperations_WithMixedResolutionMosaic_AreServedFromTheAlignedUnion",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.Identify_CommaSeparatedGeometry_ReturnsSuccessOrNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.Identify_JsonGeometry_ReturnsSuccessOrNotFound",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerParameterValidationTests.Identify_SuccessResponse_HasExpectedStructure",

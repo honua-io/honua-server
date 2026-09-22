@@ -213,6 +213,15 @@ public sealed class EsriConstructCapabilityRegistry : IEsriConstructCapabilityRe
                 + "editing behavior (per-subtype defaults and domain overrides on applyEdits) still needs operator review "
                 + "before cutover.",
             ManualSteps = ["Recreate subtype behavior or document an accepted gap before cutover."],
+            // #4824 REQ-002: a source editing construct the canonical model cannot represent
+            // (multiple templates per type, explicit domain clearing, an unusable type identity)
+            // is not captured at all. It takes this fallback tier, and EsriSubtypeFidelityClassifier
+            // supplies the construct-specific code and reason so the finding names what was lost.
+            UnsupportedAutomationStatus = MigrationFidelityAutomationStatuses.Unsupported,
+            UnsupportedCode = ImportCompatibilityCodes.ArcGisSubtypesManualReview,
+            UnsupportedReason = "The source editing model uses a subtype construct this migration slice cannot represent, "
+                + "so no subtype or feature type was captured for this resource.",
+            UnsupportedManualSteps = ["Recreate the source editing model on the target resource, or document an accepted gap, before cutover."],
             CanTransform = false,
             CanServe = false,
             RequiresCheck = true
