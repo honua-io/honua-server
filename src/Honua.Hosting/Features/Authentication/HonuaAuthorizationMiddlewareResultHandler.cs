@@ -210,7 +210,10 @@ internal sealed class HonuaAuthorizationMiddlewareResultHandler : IAuthorization
             context,
             status,
             timeProvider.GetUtcNow(),
-            ResolveGenericDenialCode(authorizeResult));
+            ResolveGenericDenialCode(authorizeResult),
+            // UseAuthorization runs before lineage attestation. A rejected request
+            // never reaches that middleware, so its lineage headers are untrusted.
+            includeLineage: false);
 
         AuditContextResolver.MarkAuthorizationFailureAudited(context);
 

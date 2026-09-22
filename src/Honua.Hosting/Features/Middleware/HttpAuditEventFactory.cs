@@ -53,12 +53,14 @@ internal static class HttpAuditEventFactory
     /// <param name="status">The rejection status code.</param>
     /// <param name="timestamp">The event timestamp.</param>
     /// <param name="code">Optional stable policy code recorded alongside the request details.</param>
+    /// <param name="includeLineage">Whether the caller has passed lineage attestation and may include its headers.</param>
     /// <returns>The audit event to record.</returns>
     public static AuditEvent CreateAuthOutcomeEvent(
         HttpContext context,
         int status,
         DateTimeOffset timestamp,
-        string? code = null)
+        string? code = null,
+        bool includeLineage = false)
     {
         ArgumentNullException.ThrowIfNull(context);
 
@@ -76,7 +78,7 @@ internal static class HttpAuditEventFactory
             CorrelationId = AuditContextResolver.ResolveCorrelationId(context),
             RemoteIp = AuditContextResolver.ResolveRemoteIp(context),
             UserAgent = AuditContextResolver.ResolveUserAgent(context),
-            Details = BuildDetails(context, status, code),
+            Details = BuildDetails(context, status, code, includeLineage),
         };
     }
 
@@ -117,11 +119,11 @@ internal static class HttpAuditEventFactory
             CorrelationId = AuditContextResolver.ResolveCorrelationId(context),
             RemoteIp = AuditContextResolver.ResolveRemoteIp(context),
             UserAgent = AuditContextResolver.ResolveUserAgent(context),
-            Details = BuildDetails(context, status, code: null),
+            Details = BuildDetails(context, status, code: null, includeLineage: true),
         };
     }
 
-    private static string BuildDetails(HttpContext context, int status, string? code)
+    private static string BuildDetails(HttpContext context, int status, string? code, bool includeLineage)
     {
         var details = new JsonObject
         {
@@ -134,9 +136,12 @@ internal static class HttpAuditEventFactory
             details["code"] = code;
         }
 
-        AddHeader(details, context, "operationInstanceId", "X-Honua-Operation-Instance-Id");
-        AddHeader(details, context, "acceptedAuditId", "X-Honua-Audit-Id");
-        AddHeader(details, context, "proposalId", "X-Honua-Proposal-Id");
+        if (includeLineage)
+        {
+            AddHeader(details, context, "operationInstanceId", "X-Honua-Operation-Instance-Id");
+            AddHeader(details, context, "acceptedAuditId", "X-Honua-Audit-Id");
+            AddHeader(details, context, "proposalId", "X-Honua-Proposal-Id");
+        }
         return details.ToJsonString();
     }
 

@@ -4,6 +4,7 @@
 using System.Security.Claims;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.AuditLog.Abstractions;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Security;
@@ -268,6 +269,29 @@ public sealed class AuditLogMiddlewareUnitTests
         evt.Outcome.Should().Be(AuditOutcome.Failure);
         using var details = JsonDocument.Parse(evt.Details);
         details.RootElement.GetProperty("status").GetInt32().Should().Be(StatusCodes.Status500InternalServerError);
+    }
+
+    [Theory]
+    [InlineData(400)]
+    [InlineData(503)]
+    [Trait("Tier", "Fast")]
+    public async Task AuditedRoute_WhenMappedExceptionIsThrown_RecordsItsEffectiveStatus(int status)
+    {
+        var context = BuildContext(
+            method: "DELETE",
+            routePattern: "/api/v{version:apiVersion}/admin/roles/{id}",
+            authenticated: true);
+        Exception fault = status == 400
+            ? new ArgumentException("invalid request")
+            : new ServiceUnavailableException("temporarily unavailable");
+
+        var thrown = await InvokeThrowingAsync(context, fault);
+
+        thrown.Should().BeSameAs(fault);
+        var evt = _audit.Events.Should().ContainSingle().Subject;
+        evt.Outcome.Should().Be(AuditOutcome.Failure);
+        using var details = JsonDocument.Parse(evt.Details);
+        details.RootElement.GetProperty("status").GetInt32().Should().Be(status);
     }
 
     [Fact]

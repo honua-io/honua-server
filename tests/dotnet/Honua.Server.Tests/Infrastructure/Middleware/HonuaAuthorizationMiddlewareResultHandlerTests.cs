@@ -67,6 +67,29 @@ public sealed class HonuaAuthorizationMiddlewareResultHandlerTests
         details.RootElement.GetProperty("status").GetInt32().Should().Be(StatusCodes.Status403Forbidden);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Trait("Tier", "Fast")]
+    public async Task PolicyDenial_WithUnattestedLineageHeaders_DoesNotRecordForgedAssociations(bool authenticated)
+    {
+        var context = BuildContext(authenticated);
+        context.Request.Headers["X-Honua-Operation-Instance-Id"] = "forged-operation";
+        context.Request.Headers["X-Honua-Audit-Id"] = "forged-audit";
+        context.Request.Headers["X-Honua-Proposal-Id"] = "forged-proposal";
+
+        await HandleAsync(context, authenticated
+            ? PolicyAuthorizationResult.Forbid()
+            : PolicyAuthorizationResult.Challenge());
+
+        var evt = _audit.Events.Should().ContainSingle().Subject;
+        using var details = JsonDocument.Parse(evt.Details);
+        details.RootElement.TryGetProperty("operationInstanceId", out _).Should().BeFalse();
+        details.RootElement.TryGetProperty("acceptedAuditId", out _).Should().BeFalse();
+        details.RootElement.TryGetProperty("proposalId", out _).Should().BeFalse();
+        details.RootElement.GetProperty("status").GetInt32().Should().Be(authenticated ? 403 : 401);
+    }
+
     [Fact]
     public async Task Forbid_WithHandlerReason_RecordsTheStablePolicyCode()
     {

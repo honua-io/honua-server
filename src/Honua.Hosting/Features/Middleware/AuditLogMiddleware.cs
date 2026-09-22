@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.AuditLog.Abstractions;
+using Honua.Infrastructure.Models;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -34,7 +35,7 @@ namespace Honua.Infrastructure.Middleware;
 /// marked that it already recorded the final authorization denial.
 /// </description></item>
 /// <item><description>
-/// Emits a <c>500</c> failure event when an audited operation throws, then rethrows so the
+/// Emits a failure event with the shared exception mapper's status when an audited operation throws, then rethrows so the
 /// global exception handler still shapes the response. Without this the audit trail would
 /// show nothing at all for the one class of admin mutation most worth recording.
 /// </description></item>
@@ -70,10 +71,11 @@ internal sealed class AuditLogMiddleware(RequestDelegate next, IAuditActionResol
         {
             // The operation failed after it was admitted. Record the failure before the
             // exception leaves this middleware — the global exception handler runs further up
-            // and turns this into a 500 response the audit layer would otherwise never see.
+            // and maps the response the audit layer would otherwise never see.
             // The record is written with an independent token so a torn-down request still
             // leaves the row behind.
-            var faultDescriptor = ResolveDescriptor(context, StatusCodes.Status500InternalServerError);
+            var faultStatus = ExceptionMapper.Map(pipelineException).StatusCode;
+            var faultDescriptor = ResolveDescriptor(context, faultStatus);
             if (faultDescriptor is not null)
             {
                 await TryRecordAsync(
@@ -81,7 +83,7 @@ internal sealed class AuditLogMiddleware(RequestDelegate next, IAuditActionResol
                     HttpAuditEventFactory.CreateDescriptorEvent(
                         context,
                         faultDescriptor,
-                        StatusCodes.Status500InternalServerError,
+                        faultStatus,
                         DateTimeOffset.UtcNow),
                     CancellationToken.None).ConfigureAwait(false);
             }
@@ -111,7 +113,7 @@ internal sealed class AuditLogMiddleware(RequestDelegate next, IAuditActionResol
 
         var auditEvent = descriptor is not null
             ? HttpAuditEventFactory.CreateDescriptorEvent(context, descriptor, status, DateTimeOffset.UtcNow)
-            : HttpAuditEventFactory.CreateAuthOutcomeEvent(context, status, DateTimeOffset.UtcNow);
+            : HttpAuditEventFactory.CreateAuthOutcomeEvent(context, status, DateTimeOffset.UtcNow, includeLineage: true);
 
         await TryRecordAsync(context, auditEvent, context.RequestAborted).ConfigureAwait(false);
     }
@@ -133,7 +135,7 @@ internal sealed class AuditLogMiddleware(RequestDelegate next, IAuditActionResol
         }
 
         return context.RequestServices.GetService<IAuditLog>() is not null &&
-            ResolveDescriptor(context, StatusCodes.Status500InternalServerError) is not null;
+            ResolveDescriptor(context, ExceptionMapper.Map(exception).StatusCode) is not null;
     }
 
     private static async Task TryRecordAsync(HttpContext context, AuditEvent auditEvent, CancellationToken cancellationToken)

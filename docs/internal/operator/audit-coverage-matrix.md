@@ -86,11 +86,15 @@ whichever one wrote it. Policy denials that a domain seam classifies (the
 Studio lifecycle policy) keep their own richer event and stable `code`; they
 are not recorded a second time as a generic `auth.denied`.
 
+Authorization-middleware denials omit operation, audit and proposal lineage headers:
+these requests stop before lineage attestation can validate those headers. Downstream
+audit events retain lineage after the attestation middleware has processed it.
+
 ### Failures of audited operations
 
 | Operation | Trigger | EventType | Action | Outcome source |
 |---|---|---|---|---|
-| Audited route throws | Any unhandled exception raised beneath `UseHonuaAuditLog` on a route the matrix classifies | matrix `EventType` | matrix `Action` | `500` → `Failure` |
+| Audited route throws | Any unhandled exception raised beneath `UseHonuaAuditLog` on a route the matrix classifies | matrix `EventType` | matrix `Action` | Shared exception mapping (for example `400`, `500` or `503`) → `Failure`; `403` → `Denied` |
 
 The exception is rethrown unchanged after the record is written, so the global
 exception handler still shapes the response. Client-cancelled requests are not
