@@ -160,6 +160,7 @@ public class ImageServerErrorHandlingTests : IClassFixture<WebAppFixture>
         // #4424: the bare status assertion passed just as happily on a rendered tile, so the
         // test could not fail. A missing layer must never yield image bytes.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
+        await response.AssertGeoServicesErrorAsync(404);
         response.Content.Headers.ContentType?.MediaType
             .Should().NotStartWith("image/", "a non-existent layer must not render a tile");
 

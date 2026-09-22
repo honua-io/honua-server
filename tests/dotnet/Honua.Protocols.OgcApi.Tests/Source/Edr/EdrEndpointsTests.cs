@@ -625,16 +625,14 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
     /// <summary>
     /// The fixture raster's synthetic pixel function, mirroring the derivable-oracle pattern
     /// of <c>ImageServerZarrTestFixture</c>. Band index, longitude and latitude each carry a
-    /// different weight so no two distinct (band, x, y) triples collide within the fixture's
-    /// bbox, and swapping x with y always changes the result.
+    /// different weight so the tested coordinates distinguish band selection and axis swaps.
     /// </summary>
     internal static double ExpectedBandValue(int band, double x, double y)
         => (band * 1000.0) + (Math.Round(x, 6) * 10.0) + Math.Round(y, 6);
 
     /// <summary>
     /// Asserts that every value of <paramref name="parameterName"/> in a cube response is the
-    /// pixel function evaluated at one of the grid coordinates the response itself advertises,
-    /// and that the whole grid is covered exactly once. A handler that sampled the wrong
+    /// pixel function evaluated at the corresponding advertised grid coordinate in row-major order. A handler that sampled the wrong
     /// coordinates, transposed the axes or reused one sample for the whole cube fails here.
     /// </summary>
     private static void AssertCubeValuesDerivedFromDomain(
@@ -651,13 +649,18 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
         var expected = (from y in yValues
                         from x in xValues
                         select ExpectedBandValue(band, x, y))
-            .OrderBy(value => value)
             .ToArray();
 
-        var actual = root.GetProperty("ranges").GetProperty(parameterName).GetProperty("values")
+        var range = root.GetProperty("ranges").GetProperty(parameterName);
+        range.GetProperty("axisNames").EnumerateArray().Select(value => value.GetString())
+            .Should().Equal("y", "x");
+        range.GetProperty("shape").EnumerateArray().Select(value => value.GetInt32())
+            .Should().Equal(yValues.Length, xValues.Length);
+
+        // Preserve row-major order: sorting hides a transposed or permuted grid.
+        var actual = range.GetProperty("values")
             .EnumerateArray()
             .Select(value => value.GetDouble())
-            .OrderBy(value => value)
             .ToArray();
 
         actual.Should().HaveCount(
@@ -669,7 +672,7 @@ public sealed class EdrEndpointsTests : IAsyncLifetime
             actual[i].Should().BeApproximately(
                 expected[i],
                 1e-6,
-                $"'{parameterName}' cell {i} must be the pixel function at an advertised grid coordinate");
+                $"'{parameterName}' cell {i} must be the pixel function at its advertised grid coordinate");
         }
     }
 
