@@ -60,13 +60,17 @@ public sealed class LayerPublishSourceMetadataBoundsTests
         accepted.Should().BeTrue();
     }
 
-    [Fact]
-    public void TryValidate_WithCodedValueDomainOverCap_Rejects()
+    [Theory]
+    [InlineData("codedValue")]
+    [InlineData("CODEDVALUE")]
+    [InlineData("range")]
+    [InlineData("futureDomain")]
+    public void TryValidate_WithCodedValueDomainOverCap_Rejects(string domainType)
     {
         var domain = new MetadataV2FieldDomain
         {
             Name = "Status",
-            Type = "codedValue",
+            Type = domainType,
             CodedValues = Enumerable.Range(1, EsriFieldDomainParser.CodedValueDomainCap + 1)
                 .Select(code => new MetadataV2CodedValue { Code = JsonSerializer.SerializeToElement(code), Name = $"v{code}" })
                 .ToArray()
@@ -77,13 +81,17 @@ public sealed class LayerPublishSourceMetadataBoundsTests
             "fieldDomains coded-value domains are limited to 100 coded values.");
     }
 
-    [Fact]
-    public void TryValidate_WithSubtypeOverrideDomainOverCap_Rejects()
+    [Theory]
+    [InlineData("codedValue")]
+    [InlineData("CODEDVALUE")]
+    [InlineData("range")]
+    [InlineData("futureDomain")]
+    public void TryValidate_WithSubtypeOverrideDomainOverCap_Rejects(string domainType)
     {
         var subtypes = EsriSubtypeParser.Parse("kind", null, Json($"[{Subtypes(1, overrideCodedValues: 1)}]")).Subtypes!;
         var oversized = new MetadataV2FieldDomain
         {
-            Type = "codedValue",
+            Type = domainType,
             CodedValues = Enumerable.Range(1, EsriFieldDomainParser.CodedValueDomainCap + 1)
                 .Select(code => new MetadataV2CodedValue { Code = JsonSerializer.SerializeToElement(code), Name = $"v{code}" })
                 .ToArray()
@@ -101,6 +109,33 @@ public sealed class LayerPublishSourceMetadataBoundsTests
 
         AssertRejected(null, withOversizedOverride, null,
             "subtypes fieldOverrides coded-value domains are limited to 100 coded values.");
+    }
+
+    [Theory]
+    [InlineData("range")]
+    [InlineData("codedValue")]
+    [InlineData("futureDomain")]
+    public void TryValidate_WithOversizedRangeRegardlessOfDomainType_Rejects(string domainType)
+    {
+        AssertRejected(Domains(new MetadataV2FieldDomain
+        {
+            Type = domainType,
+            Range = [Json("1"), Json("2"), Json("3")]
+        }), null, null, "fieldDomains range domains must declare exactly [min, max].");
+    }
+
+    [Theory]
+    [InlineData("range")]
+    [InlineData("futureDomain")]
+    public void TryValidate_WithImportParserIdentityOnlyDomain_Accepts(string domainType)
+    {
+        var domain = EsriFieldDomainParser.ParseDomain(
+            JsonSerializer.SerializeToElement(new { type = domainType, name = "Identity only" })).Domain;
+        domain.Should().NotBeNull();
+
+        LayerPublishSourceMetadataBounds.TryValidate(Domains(domain!), null, null, out var error)
+            .Should().BeTrue();
+        error.Should().BeNull();
     }
 
     [Fact]

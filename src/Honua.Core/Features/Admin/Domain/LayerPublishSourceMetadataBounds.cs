@@ -94,19 +94,27 @@ public static class LayerPublishSourceMetadataBounds
             return $"{slot} entries must declare a domain type.";
         }
 
-        if (string.Equals(domain.Type, EsriFieldDomainParser.CodedValueDomainType, StringComparison.Ordinal))
+        // Bound stored arrays independently of the client-supplied domain kind. The
+        // publication projection retains these properties even for unknown kinds.
+        var codedValues = domain.CodedValues;
+        if (codedValues is { Count: > MaxCodedValuesPerDomain })
         {
-            var codedValues = domain.CodedValues;
-            if (codedValues is null)
-            {
-                return $"{slot} coded-value domains must list their coded values.";
-            }
+            return $"{slot} coded-value domains are limited to {MaxCodedValuesPerDomain} coded values.";
+        }
 
-            if (codedValues.Count > MaxCodedValuesPerDomain)
-            {
-                return $"{slot} coded-value domains are limited to {MaxCodedValuesPerDomain} coded values.";
-            }
+        if (domain.Range is { Count: not 2 })
+        {
+            return $"{slot} range domains must declare exactly [min, max].";
+        }
 
+        if (codedValues is null
+            && string.Equals(domain.Type, EsriFieldDomainParser.CodedValueDomainType, StringComparison.OrdinalIgnoreCase))
+        {
+            return $"{slot} coded-value domains must list their coded values.";
+        }
+
+        if (codedValues is not null)
+        {
             foreach (var codedValue in codedValues)
             {
                 if (codedValue is null || !IsSupportedCode(codedValue.Code) || string.IsNullOrWhiteSpace(codedValue.Name))
@@ -114,11 +122,6 @@ public static class LayerPublishSourceMetadataBounds
                     return $"{slot} coded values need a string, number or boolean code and a name.";
                 }
             }
-        }
-        else if (string.Equals(domain.Type, EsriFieldDomainParser.RangeDomainType, StringComparison.Ordinal)
-            && domain.Range is { Count: not 2 })
-        {
-            return $"{slot} range domains must declare exactly [min, max].";
         }
 
         return null;
