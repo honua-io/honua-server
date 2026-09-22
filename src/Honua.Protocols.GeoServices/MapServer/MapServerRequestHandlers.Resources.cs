@@ -367,7 +367,7 @@ internal static partial class MapServerEndpoints
             Type = domain.Type,
             Name = domain.Name,
             FieldName = field.Name,
-            FieldType = MapFieldTypeToGeoServicesV2(field.Type),
+            FieldType = GeoServicesFieldConventions.MapFieldType(field.Type),
             CodedValues = domain.CodedValues.Count == 0
                 ? null
                 : [.. domain.CodedValues.Select(static codedValue => new MapServerDomainCodedValue

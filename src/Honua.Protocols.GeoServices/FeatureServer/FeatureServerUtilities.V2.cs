@@ -308,7 +308,7 @@ internal static partial class FeatureServerEndpoints
 
         var isObjectId = field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase);
         var isGlobalId = field.Type == MetadataV2FieldType.Uuid && field.Name.Equals(globalIdFieldName, StringComparison.OrdinalIgnoreCase);
-        var geoServicesType = isObjectId ? "esriFieldTypeOID" : isGlobalId ? "esriFieldTypeGlobalID" : MapFieldTypeToGeoServicesV2(field.Type);
+        var geoServicesType = isObjectId ? "esriFieldTypeOID" : isGlobalId ? "esriFieldTypeGlobalID" : GeoServicesFieldConventions.MapFieldType(field.Type);
         var sqlType = MapFieldTypeToSqlV2(field.Type);
         var isGeometry = field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography;
 
@@ -327,9 +327,7 @@ internal static partial class FeatureServerEndpoints
                 : field.Length,
             Nullable = field.Nullable && !isObjectId,
             Editable = !isGeometry && !isObjectId && !isGlobalId,
-            // V2 has no default-value slot on the canonical field; the catalog/admin layer
-            // owns insertion defaults.
-            DefaultValue = null,
+            DefaultValue = GeoServicesFieldConventions.NormalizeFieldDefault(field),
             Domain = GeoServicesFieldDomainMapper.Map(field.Domain),
             Visible = !field.Hidden
         };
@@ -826,26 +824,6 @@ internal static partial class FeatureServerEndpoints
             MetadataV2GeometryType.Mixed => "esriGeometryNull",
             MetadataV2GeometryType.None => "esriGeometryNull",
             _ => "esriGeometryNull"
-        };
-
-    private static string MapFieldTypeToGeoServicesV2(MetadataV2FieldType type)
-        => type switch
-        {
-            MetadataV2FieldType.String => "esriFieldTypeString",
-            MetadataV2FieldType.Integer => "esriFieldTypeInteger",
-            MetadataV2FieldType.BigInteger => "esriFieldTypeBigInteger",
-            MetadataV2FieldType.Double => "esriFieldTypeDouble",
-            MetadataV2FieldType.Float => "esriFieldTypeSingle",
-            MetadataV2FieldType.Boolean => "esriFieldTypeSmallInteger",
-            MetadataV2FieldType.DateTime => "esriFieldTypeDate",
-            MetadataV2FieldType.Date => "esriFieldTypeDate",
-            MetadataV2FieldType.Time => "esriFieldTypeString",
-            MetadataV2FieldType.Json => "esriFieldTypeString",
-            MetadataV2FieldType.Binary => "esriFieldTypeBlob",
-            MetadataV2FieldType.Uuid => "esriFieldTypeGUID",
-            MetadataV2FieldType.Geometry => "esriFieldTypeGeometry",
-            MetadataV2FieldType.Geography => "esriFieldTypeGeometry",
-            _ => "esriFieldTypeString"
         };
 
     private static string MapFieldTypeToSqlV2(MetadataV2FieldType type)

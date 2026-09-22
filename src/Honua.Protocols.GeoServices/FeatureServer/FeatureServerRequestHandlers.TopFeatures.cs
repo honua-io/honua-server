@@ -293,13 +293,23 @@ internal static partial class FeatureServerEndpoints
             return Results.Bytes(pbfPayload, pbfContentType);
         }
 
-        var dateFieldNames = GeoServicesFieldConventions.ResolveDateFieldNames(resource);
+        return CreateTopFeaturesJsonResult(
+            BuildTopFeaturesJsonResponse(result, resource, returnGeometry, outputSrid), topFeaturesIsPretty);
+    }
+
+    internal static QueryResponse BuildTopFeaturesJsonResponse(
+        QueryResult<Feature> result,
+        MetadataV2Resource resource,
+        bool returnGeometry,
+        int? outputSrid)
+    {
+        var temporalFieldTypes = GeoServicesFieldConventions.ResolveTemporalFieldTypes(resource);
         var responseFeatures = result.Items.Select(feature =>
         {
             var attributes = feature.Attributes
                 .Where(kvp => !FeatureAttributeVisibility.IsInternalAttribute(kvp.Key))
                 .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
-            GeoServicesFieldConventions.CoerceDateAttributes(attributes, dateFieldNames);
+            GeoServicesFieldConventions.CoerceTemporalAttributes(attributes, temporalFieldTypes);
             return new GeoServicesFeature
             {
                 Attributes = attributes,
@@ -329,7 +339,7 @@ internal static partial class FeatureServerEndpoints
             ExceededTransferLimit = result.HasMoreResults
         };
 
-        return CreateTopFeaturesJsonResult(response, topFeaturesIsPretty);
+        return response;
     }
 
     /// <summary>

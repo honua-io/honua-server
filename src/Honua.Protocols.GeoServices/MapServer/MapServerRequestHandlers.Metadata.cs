@@ -704,7 +704,7 @@ internal static partial class MapServerEndpoints
         return new()
         {
             Name = field.Name,
-            Type = isObjectId ? "esriFieldTypeOID" : MapFieldTypeToGeoServicesV2(field.Type),
+            Type = isObjectId ? "esriFieldTypeOID" : GeoServicesFieldConventions.MapFieldType(field.Type),
             Alias = field.Alias ?? field.Title ?? field.Name,
             // Esri clients require a positive length on string fields (a null length is
             // mapped to 0 and breaks inserts/updates). Fall back to the Esri-conventional
@@ -715,28 +715,9 @@ internal static partial class MapServerEndpoints
             Nullable = field.Nullable && !isObjectId,
             Editable = field.Editable && !isObjectId
                 && field.Type is not MetadataV2FieldType.Geometry and not MetadataV2FieldType.Geography,
-            DefaultValue = field.DefaultValue.HasValue ? field.DefaultValue.Value : null
+            DefaultValue = GeoServicesFieldConventions.NormalizeFieldDefault(field)
         };
     }
-
-    private static string MapFieldTypeToGeoServicesV2(MetadataV2FieldType type)
-        => type switch
-        {
-            MetadataV2FieldType.String => "esriFieldTypeString",
-            MetadataV2FieldType.Integer => "esriFieldTypeInteger",
-            MetadataV2FieldType.BigInteger => "esriFieldTypeBigInteger",
-            MetadataV2FieldType.Double => "esriFieldTypeDouble",
-            MetadataV2FieldType.Float => "esriFieldTypeSingle",
-            MetadataV2FieldType.Boolean => "esriFieldTypeSmallInteger",
-            MetadataV2FieldType.DateTime => "esriFieldTypeDate",
-            MetadataV2FieldType.Date => "esriFieldTypeDate",
-            MetadataV2FieldType.Time => "esriFieldTypeString",
-            MetadataV2FieldType.Json => "esriFieldTypeString",
-            MetadataV2FieldType.Binary => "esriFieldTypeBlob",
-            MetadataV2FieldType.Uuid => "esriFieldTypeGUID",
-            MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography => "esriFieldTypeGeometry",
-            _ => "esriFieldTypeString"
-        };
 
     private static string BuildMapServerCapabilities()
         => DefaultMapServerCapabilities;

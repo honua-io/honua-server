@@ -438,13 +438,17 @@ internal sealed class PbfQueryFormatter
                 // null_value = field 10 (bool, true = null)
                 valueMsg.WriteBool(10, true);
             }
-            else if (field.Type == "esriFieldTypeDate" &&
-                GeoServicesFieldConventions.TryConvertToEpochMilliseconds(value, out var epochMilliseconds))
-            {
-                valueMsg.WriteInt64Always(6, epochMilliseconds);
-            }
             else
             {
+                var temporalType = field.Type switch
+                {
+                    "esriFieldTypeDate" => (MetadataV2FieldType?)MetadataV2FieldType.DateTime,
+                    "esriFieldTypeDateOnly" => MetadataV2FieldType.Date,
+                    _ => null
+                };
+                if (temporalType.HasValue
+                    && GeoServicesFieldConventions.TryConvertTemporalValue(value, temporalType.Value, out var converted))
+                    value = converted!;
                 WriteAttributeValue(ref valueMsg, value);
             }
 
