@@ -720,7 +720,7 @@ internal static partial class FeatureServerEndpoints
     private static async Task<(long[] InsertIds, long[] UpdateIds, long[] DeleteIds)> FilterChangesForReadAsync(
         HttpContext context,
         ReplicaLayerV2 layer,
-        IReadOnlyList<FeatureChange> changes,
+        List<FeatureChange> changes,
         IFeatureReader featureReader,
         ReplicaLayerScope layerScope,
         int pageSize,
@@ -738,42 +738,108 @@ internal static partial class FeatureServerEndpoints
         var hasVisibilityPolicy = !string.IsNullOrWhiteSpace(layer.Resource.PermanentFilter?.Expression) ||
                                   rlsSource is not null &&
                                   await rlsSource.ResolveAsync(layer.Resource, cancellationToken).ConfigureAwait(false) is not null;
-        // A deleted row is no longer queryable, so its former owner/claims cannot be
-        // re-authorized. Suppressing delete IDs is the only fail-closed behavior until
-        // the change log carries a pre-delete row snapshot.
-
-        var filtered = ReplicaSecurity.FilterChangeIds(changes, visibleSet, hasVisibilityPolicy);
-        if (layerScope.SqlFilter is null && layerScope.SpatialFilter is null)
+        var isScoped = layerScope.SqlFilter is not null || layerScope.SpatialFilter is not null;
+        if (!isScoped && !hasVisibilityPolicy)
         {
-            return filtered;
+            // Every row is visible before and after each change, so the current state alone is exact.
+            return ReplicaSecurity.FilterChangeIds(changes, visibleSet, suppressDeletes: false);
         }
 
-        // An update that moved a row out of the replica scope leaves the client holding a row the scope no
-        // longer covers, so it is delivered as a delete, like a deleted row. Only rows the caller can still
-        // read qualify, so nothing is disclosed that the caller's own query would not show. The change log
-        // keeps no pre-change state, so an update to a row that was never in scope is reported the same
-        // way (a no-op delete for the client), and a row updated into the scope arrives as an update.
-        var outOfScopeUpdateIds = changes
-            .Where(change => change.Operation == FeatureChangeOperation.Update && !visibleSet.Contains(change.ObjectId))
-            .Select(change => change.ObjectId)
-            .Distinct()
-            .ToArray();
-        if (outOfScopeUpdateIds.Length == 0)
+        // With a scope or a visibility policy the delivery depends on whether the client could hold the row
+        // before the change. The change log's pre-change image answers that (#4879): the scope and the
+        // caller's current row visibility are evaluated against it through the same reader seam, so a
+        // deleted row is re-authorised instead of withheld, and a row updated into the scope is an add.
+        var preImageReader = featureReader as IPreChangeImageReader;
+        List<FeatureChange> known = preImageReader is null
+            ? []
+            : changes
+                .Where(static change => change.Operation != FeatureChangeOperation.Insert && change.PreImageChangeId is not null)
+                .ToList();
+        var classified = (InsertIds: Array.Empty<long>(), UpdateIds: Array.Empty<long>(), DeleteIds: Array.Empty<long>());
+        var knownIds = new HashSet<long>();
+        if (known.Count > 0)
         {
-            return filtered;
+            var visibleBefore = await QueryReadablePreChangeIdsAsync(
+                    preImageReader!, layer, layerScope, [.. known.Select(static change => change.PreImageChangeId!.Value)], pageSize, cancellationToken)
+                .ConfigureAwait(false);
+            classified = ReplicaSecurity.ClassifyWithPreChangeImage(known, visibleSet, visibleBefore);
+            if (known.Count == changes.Count)
+            {
+                return classified;
+            }
+
+            knownIds = known.Select(static change => change.ObjectId).ToHashSet();
         }
 
-        var readable = await QueryReadableReplicaIdsAsync(
-                featureReader,
-                layer,
-                layerScope with { SqlFilter = null, SpatialFilter = null },
-                outOfScopeUpdateIds,
-                pageSize,
-                cancellationToken)
-            .ConfigureAwait(false);
-        return readable.Count == 0
-            ? filtered
-            : (filtered.InsertIds, filtered.UpdateIds, [.. filtered.DeleteIds, .. outOfScopeUpdateIds.Where(readable.Contains)]);
+        List<FeatureChange> remaining = knownIds.Count == 0
+            ? changes
+            : [.. changes.Where(change => !knownIds.Contains(change.ObjectId))];
+
+        // Inserts, and changes recorded before pre-change images were captured, are judged from the current
+        // state only. Without a prior image a deleted row cannot be re-authorised, so its delete is withheld
+        // under a visibility policy.
+        var filtered = ReplicaSecurity.FilterChangeIds(remaining, visibleSet, hasVisibilityPolicy);
+        if (isScoped)
+        {
+            // An update that moved a row out of the replica scope leaves the client holding a row the scope no
+            // longer covers, so it is delivered as a delete. Only rows the caller can still read qualify, so
+            // nothing is disclosed that the caller's own query would not show. Without a prior image an update
+            // to a row that was never in scope is reported the same way (a no-op delete for the client).
+            var outOfScopeUpdateIds = remaining
+                .Where(change => change.Operation == FeatureChangeOperation.Update && !visibleSet.Contains(change.ObjectId))
+                .Select(change => change.ObjectId)
+                .Distinct()
+                .ToArray();
+            if (outOfScopeUpdateIds.Length > 0)
+            {
+                var readable = await QueryReadableReplicaIdsAsync(
+                        featureReader,
+                        layer,
+                        layerScope with { SqlFilter = null, SpatialFilter = null },
+                        outOfScopeUpdateIds,
+                        pageSize,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                filtered = (filtered.InsertIds, filtered.UpdateIds, [.. filtered.DeleteIds, .. outOfScopeUpdateIds.Where(readable.Contains)]);
+            }
+        }
+
+        return (
+            [.. classified.InsertIds, .. filtered.InsertIds],
+            [.. classified.UpdateIds, .. filtered.UpdateIds],
+            [.. classified.DeleteIds, .. filtered.DeleteIds]);
+    }
+
+    /// <summary>
+    /// Returns which object ids' pre-change images (recorded by <paramref name="changeIds"/>) lie inside
+    /// <paramref name="layerScope"/> and the caller's row visibility, queried in pages of
+    /// <paramref name="pageSize"/>.
+    /// </summary>
+    private static async Task<HashSet<long>> QueryReadablePreChangeIdsAsync(
+        IPreChangeImageReader reader,
+        ReplicaLayerV2 layer,
+        ReplicaLayerScope layerScope,
+        long[] changeIds,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        var readable = new HashSet<long>();
+        foreach (var page in changeIds.Chunk(pageSize))
+        {
+            var visible = await reader.QueryPreChangeObjectIdsAsync(
+                    layer.StorageLayerId,
+                    CreateReplicaFeatureQuery(layer, layerScope) with
+                    {
+                        OutputSrid = null,
+                        ExcludeAttributes = true
+                    },
+                    page,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            readable.UnionWith(visible);
+        }
+
+        return readable;
     }
 
     /// <summary>

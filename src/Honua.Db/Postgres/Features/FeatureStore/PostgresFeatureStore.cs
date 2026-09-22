@@ -40,7 +40,7 @@ namespace Honua.Db.Postgres.Features.FeatureStore;
 /// 'field = value', 'age > 18') and properly parameterizes all literal values while
 /// validating field names to prevent SQL injection attacks.</para>
 /// </remarks>
-internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IDistinctFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore
+internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IDistinctFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore, IPreChangeImageReader
 {
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
@@ -223,6 +223,32 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             query,
             layerId,
             cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlySet<long>> QueryPreChangeObjectIdsAsync(
+        int layerId,
+        FeatureQuery query,
+        IReadOnlyCollection<long> changeIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(changeIds);
+        if (changeIds.Count == 0)
+        {
+            return new HashSet<long>();
+        }
+
+        // The enforced read policy (permanent filter, row-level security) is stamped exactly as for a live
+        // read, so a pre-change image the caller could not read never matches.
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        query = query with { Limit = null, Offset = null, OrderBy = null };
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var objectIdsQuery = _queryBuilder.BuildPreChangeObjectIdsQuery(layerId, query, changeIds, geometryStorageType);
+        var objectIds = await _dataAccess.ExecuteSelectObjectIdsQueryAsync(
+            objectIdsQuery,
+            query,
+            layerId,
+            cancellationToken).ConfigureAwait(false);
+        return objectIds.ToHashSet();
     }
 
     public async Task<ImmutableArray<ProjectedPoint>> QueryProjectedPointsAsync(
