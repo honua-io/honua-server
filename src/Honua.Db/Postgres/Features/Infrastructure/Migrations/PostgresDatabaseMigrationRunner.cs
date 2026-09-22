@@ -25,6 +25,15 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
     private const string BackupHookSucceededOutcome = "succeeded";
     private const string BackupHookFailedOutcome = "failed";
     private const int BackupHookStderrMaxLength = 500;
+
+    /// <summary>
+    /// Opt-in for databases whose migration-owned tables are created by a seed before the first
+    /// migration run (test and certification fixtures, #4900). When set and the journal is empty,
+    /// the pending migrations adopt complete seed-created tables instead of failing preflight.
+    /// It never applies once any migration is journaled, and it is off by default so a production
+    /// database that has lost its journal still fails closed rather than replaying every script.
+    /// </summary>
+    internal const string AdoptSeededSchemaOnFirstMigrationKey = "Database:AdoptSeededSchemaOnFirstMigration";
     private static readonly TimeSpan _migrationLockWaitTimeout = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan _migrationLockRetryDelay = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan _backupCommandTimeout = TimeSpan.FromHours(1);
@@ -35,6 +44,7 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
     private readonly string? _contractApprovalToken;
     private readonly string _metadataSchemaVariable;
     private readonly bool _includeConfiguredSchemaAdoption;
+    private readonly bool _adoptSeededSchemaOnFirstMigration;
     private readonly IDatabaseSchemaGuard _schemaGuard;
     private readonly PostgresCoreSchemaMigrationManifest _migrations;
 
@@ -59,6 +69,9 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
             PostgresSchemaConfiguration.DefaultMetadataSchema,
             StringComparison.Ordinal);
 
+        _adoptSeededSchemaOnFirstMigration =
+            bool.TryParse(configuration?[AdoptSeededSchemaOnFirstMigrationKey], out var adoptSeededSchema) && adoptSeededSchema;
+
         // The contract-apply approval is an explicit top-level operator signal
         // (HONUA_APPROVE_CONTRACT_MIGRATIONS=<nonce>), read via the IConfiguration indexer (Abstractions
         // only, no Binder dependency). It intentionally lives outside the bound options record so an
@@ -81,13 +94,12 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
 
             var usesCanonicalMigrationRoots = UsesCanonicalMigrationRoots(migrationsAssembly);
             var includeRasterProviderMigrations = false;
-            if (usesCanonicalMigrationRoots)
+            await using var connection = usesCanonicalMigrationRoots ? new NpgsqlConnection(connectionString) : null;
+            if (connection is not null)
             {
-                await using var connection = new NpgsqlConnection(connectionString);
                 await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
                 includeRasterProviderMigrations = await HasPostGisRasterAsync(connection, cancellationToken)
                     .ConfigureAwait(false);
-                await _schemaGuard.VerifyConsistencyAsync(connection, cancellationToken).ConfigureAwait(false);
             }
 
             var upgrader = BuildUpgrader(
@@ -97,10 +109,16 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 includeRasterProviderMigrations,
                 _includeConfiguredSchemaAdoption,
                 _migrations.ConfiguredSchemaAdoptionMigration);
+            var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
+            if (connection is not null)
+            {
+                await VerifyPreMigrationConsistencyAsync(connection, journalIsNonEmpty, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             var scripts = upgrader.GetScriptsToExecute();
             var pendingScripts = scripts.Select(script => script.Name).ToArray();
             var classifications = ClassifyScripts(scripts);
-            var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             var executedButNotDiscoveredScripts = upgrader.GetExecutedButNotDiscoveredScripts().ToArray();
 
             return DatabaseMigrationPlan.Succeeded(
@@ -225,6 +243,21 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
     private static bool JournalIsNonEmpty(UpgradeEngine upgrader)
         => upgrader.GetExecutedScripts().Count > 0;
 
+    /// <summary>
+    /// Preflight journal/physical-schema reconciliation. On a database that has never been migrated,
+    /// with <see cref="AdoptSeededSchemaOnFirstMigrationKey"/> set, seed-created migration-owned tables
+    /// are accepted as adoption candidates for the pending migrations (#4900); the post-upgrade
+    /// <see cref="IDatabaseSchemaGuard.VerifyAsync(System.Data.Common.DbConnection, CancellationToken)"/>
+    /// still enforces the complete floor. Every other case keeps the fail-closed consistency check.
+    /// </summary>
+    private Task VerifyPreMigrationConsistencyAsync(
+        NpgsqlConnection connection,
+        bool journalIsNonEmpty,
+        CancellationToken cancellationToken)
+        => _adoptSeededSchemaOnFirstMigration && !journalIsNonEmpty
+            ? _schemaGuard.VerifyFirstMigrationAdoptionAsync(connection, cancellationToken)
+            : _schemaGuard.VerifyConsistencyAsync(connection, cancellationToken);
+
     private static string CreateMigrationRunId()
         => "schema-migration-" + Guid.NewGuid().ToString("N");
 
@@ -261,13 +294,14 @@ internal sealed partial class PostgresDatabaseMigrationRunner : IDatabaseMigrati
                 includeRasterProviderMigrations,
                 _includeConfiguredSchemaAdoption,
                 _migrations.ConfiguredSchemaAdoptionMigration);
+            var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             if (usesCanonicalMigrationRoots)
             {
-                await _schemaGuard.VerifyConsistencyAsync(lockConnection, cancellationToken).ConfigureAwait(false);
+                await VerifyPreMigrationConsistencyAsync(lockConnection, journalIsNonEmpty, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             var classifications = ClassifyScripts(upgrader.GetScriptsToExecute());
-            var journalIsNonEmpty = JournalIsNonEmpty(upgrader);
             var migrationRunId = CreateMigrationRunId();
 
             // 1. ADR-0060 fail-closed: reject unannotated contract scripts (default Enforce=true).
