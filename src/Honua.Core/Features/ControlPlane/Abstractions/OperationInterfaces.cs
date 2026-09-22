@@ -158,6 +158,18 @@ public interface IWorkflowOperationStore : IOperationStore
         string targetId,
         CancellationToken cancellationToken = default)
         => Task.FromResult<WorkflowOperationRecord?>(null);
+
+    /// <summary>
+    /// Whether a later deploy was created for the same target. Null means the store cannot prove
+    /// complete history since this operation was created, so callers must withhold stale actions.
+    /// </summary>
+    /// <param name="operation">The deploy being checked.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>True for a later deploy, false for proven absence, or null when history is incomplete.</returns>
+    Task<bool?> HasLaterDeployOfTargetAsync(
+        WorkflowOperationRecord operation,
+        CancellationToken cancellationToken = default)
+        => Task.FromResult<bool?>(null);
 }
 
 /// <summary>

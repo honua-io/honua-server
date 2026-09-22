@@ -280,6 +280,8 @@ public sealed class OpsFindingsServiceTests
     [InlineData("succeeded")]
     [InlineData("in-flight")]
     [InlineData("stuck")]
+    [InlineData("failed")]
+    [InlineData("rolled-back")]
     [Trait("Tier", "Fast")]
     [Operation(Operations.TestInfrastructure)]
     public async Task Evaluate_DeployManualInterventionSupersededByLaterDeployOfTarget_ProducesNoFindingForIt(string later)
@@ -292,6 +294,8 @@ public sealed class OpsFindingsServiceTests
         {
             "succeeded" => WorkflowOperationStatus.Succeeded,
             "in-flight" => WorkflowOperationStatus.Reconciling,
+            "failed" => WorkflowOperationStatus.Failed,
+            "rolled-back" => WorkflowOperationStatus.RolledBack,
             _ => WorkflowOperationStatus.ManualInterventionRequired,
         }, "rev-1", "rev-3") with
         {
@@ -310,6 +314,12 @@ public sealed class OpsFindingsServiceTests
                 workflowStore.ListActiveAsync(Arg.Any<WorkflowOperationKind?>(), Arg.Any<CancellationToken>())
                     .Returns(Task.FromResult<IReadOnlyList<WorkflowOperationRecord>>([newer]));
                 break;
+            case "failed":
+            case "rolled-back":
+                StubStuckDeploys(workflowStore, stuck);
+                workflowStore.HasLaterDeployOfTargetAsync(stuck, Arg.Any<CancellationToken>())
+                    .Returns(Task.FromResult<bool?>(true));
+                break;
             default:
                 StubStuckDeploys(workflowStore, newer, stuck);
                 break;
@@ -322,6 +332,25 @@ public sealed class OpsFindingsServiceTests
         Assert.Equal(
             expected,
             findings.Where(f => f.Rule == OpsFindingsService.RuleDeployManualIntervention).Select(f => f.Subject.OperationId));
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_DeployManualInterventionCreationHistoryUnknown_WithholdsFindingAndPublishesPartial()
+    {
+        var workflowStore = Substitute.For<IWorkflowOperationStore>();
+        var stuck = BuildDeployOperation("op-legacy", WorkflowOperationStatus.ManualInterventionRequired, "rev-1", "rev-2");
+        StubStuckDeploys(workflowStore, stuck);
+        workflowStore.HasLaterDeployOfTargetAsync(stuck, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(null));
+
+        var evaluation = await CreateService(workflowStore: workflowStore).EvaluateWithEvidenceAsync();
+
+        Assert.DoesNotContain(evaluation.Findings, f => f.Rule == OpsFindingsService.RuleDeployManualIntervention);
+        var source = evaluation.Posture.Sources.Single(
+            item => item.SourceId == EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations);
+        Assert.Equal(EvidencePostureVocabulary.Completeness.Partial, source.Completeness);
+        Assert.Contains($"deploy-target:{stuck.Deploy!.TargetId}:creation-history", source.Coverage?.ExpectedComponentIds ?? []);
     }
 
     [UnitTest]
@@ -348,6 +377,8 @@ public sealed class OpsFindingsServiceTests
     public async Task Evaluate_DeployManualInterventionQueryStillHasMoreAtBound_PublishesPartial()
     {
         var workflowStore = Substitute.For<IWorkflowOperationStore>();
+        workflowStore.HasLaterDeployOfTargetAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(false));
         var pages = 0;
         workflowStore.QueryAsync(Arg.Any<WorkflowOperationQuery>(), Arg.Any<CancellationToken>())
             .Returns(call =>
@@ -385,7 +416,10 @@ public sealed class OpsFindingsServiceTests
     /// (the Redis store never lists them as active).
     /// </summary>
     private static void StubStuckDeploys(IWorkflowOperationStore workflowStore, params WorkflowOperationRecord[] operations)
-        => workflowStore.QueryAsync(
+    {
+        workflowStore.HasLaterDeployOfTargetAsync(Arg.Any<WorkflowOperationRecord>(), Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<bool?>(false));
+        workflowStore.QueryAsync(
                 Arg.Is<WorkflowOperationQuery>(query =>
                     query.Kind == WorkflowOperationKind.Deploy
                     && query.Status == WorkflowOperationStatus.ManualInterventionRequired),
@@ -398,6 +432,7 @@ public sealed class OpsFindingsServiceTests
                 TotalCount = operations.Length,
                 HasMore = false,
             }));
+    }
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]

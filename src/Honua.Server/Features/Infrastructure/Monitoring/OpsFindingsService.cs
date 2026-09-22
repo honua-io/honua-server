@@ -784,6 +784,27 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
                 {
                     continue;
                 }
+
+                var later = await workflowCollection.ReadAsync(
+                        $"deploy-target:{targetId}:later-than:{operation.OperationId}",
+                        token => _workflowStore.HasLaterDeployOfTargetAsync(operation, token),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (!later.Succeeded || later.Value is null)
+                {
+                    // Legacy records have no creation-index coverage. Do not offer a rollback based
+                    // on incomplete history, and publish partial source coverage for this pass.
+                    if (later.Succeeded)
+                    {
+                        workflowCollection.ExpectUncollected($"deploy-target:{targetId}:creation-history");
+                    }
+                    continue;
+                }
+
+                if (later.Value.Value)
+                {
+                    continue;
+                }
             }
 
             var deploy = operation.Deploy;
