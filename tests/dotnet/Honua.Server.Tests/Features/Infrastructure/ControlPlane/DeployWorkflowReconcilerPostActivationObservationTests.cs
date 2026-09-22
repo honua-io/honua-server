@@ -191,6 +191,76 @@ public sealed class DeployWorkflowReconcilerPostActivationObservationTests
         updated.Deploy!.Protection.Should().BeNull("a fully settled rollback has fully recovered; there is nothing left to observe");
     }
 
+    [Theory]
+    [InlineData(DeployProtectionPhase.Recovering, "rollback-requested")]
+    [InlineData(DeployProtectionPhase.Recovering, "rollback-requested-out-of-band")]
+    [InlineData(DeployProtectionPhase.Observing, null)]
+    public async Task Reconcile_RollbackRequestedSettlesOnLaterCycle_ClearsProtection(
+        DeployProtectionPhase retainedPhase,
+        string? retainedReasonCode)
+    {
+        // honua-server#4989: a post-cutover rollback returns RollbackRequested first, and a later cycle
+        // observes the settled RolledBack. The out-of-band path can also settle before its recovering
+        // stamp lands, leaving the window still observing. Every settle to RolledBack clears the window.
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new RecordingDeployBackend(
+            observe: new DeployObservation
+            {
+                Status = WorkflowOperationStatus.RolledBack,
+                Message = "Previous revision confirmed serving."
+            });
+        var protection = CreateProtection(deadline: DateTimeOffset.UtcNow.AddMinutes(5)) with
+        {
+            Phase = retainedPhase,
+            ReasonCode = retainedReasonCode,
+            RecoveryDeadline = retainedPhase == DeployProtectionPhase.Recovering ? DateTimeOffset.UtcNow.AddMinutes(5) : null
+        };
+        var operation = CreateOperation(WorkflowOperationStatus.RollbackRequested, protection: protection);
+        await store.TryCreateAsync(operation);
+
+        var reconciler = CreateReconciler(store, backend);
+
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var updated = await store.GetAsync(operation.OperationId);
+
+        backend.RollbackCalls.Should().Be(0, "the rollback was already requested; this cycle only observes its settlement");
+        updated.Should().NotBeNull();
+        updated!.Status.Should().Be(WorkflowOperationStatus.RolledBack);
+        updated.CompletedAt.Should().NotBeNull();
+        updated.Deploy!.Protection.Should().BeNull("a settled RolledBack has fully recovered the previous revision");
+    }
+
+    [Fact]
+    public async Task Reconcile_RollbackRequestedStillSettling_KeepsRecoveringWindow()
+    {
+        var store = new InMemoryWorkflowOperationStore();
+        var backend = new RecordingDeployBackend(
+            observe: new DeployObservation
+            {
+                Status = WorkflowOperationStatus.RollbackRequested,
+                Message = "Waiting for the previous replica."
+            });
+        var protection = CreateProtection(deadline: DateTimeOffset.UtcNow.AddMinutes(5)) with
+        {
+            Phase = DeployProtectionPhase.Recovering,
+            ReasonCode = "rollback-requested",
+            RecoveryDeadline = DateTimeOffset.UtcNow.AddMinutes(5)
+        };
+        var operation = CreateOperation(WorkflowOperationStatus.RollbackRequested, protection: protection);
+        await store.TryCreateAsync(operation);
+
+        var reconciler = CreateReconciler(store, backend);
+
+        await reconciler.ReconcileWorkflowOperationAsync(operation.OperationId);
+        var updated = await store.GetAsync(operation.OperationId);
+
+        updated.Should().NotBeNull();
+        updated!.Status.Should().Be(WorkflowOperationStatus.RollbackRequested);
+        updated.Deploy!.Protection.Should().NotBeNull();
+        updated.Deploy.Protection!.Phase.Should().Be(DeployProtectionPhase.Recovering);
+        updated.Deploy.Protection.ReasonCode.Should().Be("rollback-requested");
+    }
+
     [Fact]
     public async Task Reconcile_CompleteProtectionFails_EscalatesToManualInterventionAsUnavailable()
     {
