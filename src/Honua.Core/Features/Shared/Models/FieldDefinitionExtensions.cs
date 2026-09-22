@@ -28,7 +28,6 @@ public static class FieldDefinitionExtensions
                 ? $"VARCHAR({length})"
                 : "TEXT",
             "ESRIFIELDTYPEDATE" => "TIMESTAMP WITH TIME ZONE",
-            "ESRIFIELDTYPEDATEONLY" => "DATE",
             "ESRIFIELDTYPEGUID" or "ESRIFIELDTYPEGLOBALID" => "UUID",
             "ESRIFIELDTYPEBLOB" => "BYTEA",
             "ESRIFIELDTYPERASTER" => "BYTEA",

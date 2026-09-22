@@ -15,27 +15,6 @@ namespace Honua.Core.Tests.Features.Import;
 /// </summary>
 public sealed class MigrationCatalogReconcilerTests
 {
-    [Theory]
-    [InlineData(MetadataV2FieldType.Date, false)]
-    [InlineData(MetadataV2FieldType.String, true)]
-    [InlineData(MetadataV2FieldType.DateTime, true)]
-    public void Reconcile_DateOnlyField_RequiresCalendarDateType(MetadataV2FieldType targetType, bool mismatch)
-    {
-        var inventory = BuildInventoryResource() with
-        {
-            Fields = [new MigrationInventoryField { Name = "DAY", FieldType = "esriFieldTypeDateOnly", Nullable = true }]
-        };
-        var published = BuildPublishedResource() with
-        {
-            SchemaFields = [new MetadataV2Field { Name = "DAY", Type = targetType, Nullable = true }]
-        };
-
-        var outcome = MigrationCatalogReconciler.ReconcileResource(inventory, published);
-
-        outcome.Findings.Any(f => f.Code == MigrationCatalogReconciliationCodes.FieldTypeMismatch && f.Subject == "DAY")
-            .Should().Be(mismatch);
-    }
-
     [Fact]
     public void Reconcile_WhenPublishedCatalogMatchesInventory_ReportsPassWithNoFindings()
     {
