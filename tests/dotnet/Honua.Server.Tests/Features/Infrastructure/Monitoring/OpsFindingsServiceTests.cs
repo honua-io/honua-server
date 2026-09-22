@@ -246,11 +246,7 @@ public sealed class OpsFindingsServiceTests
     public async Task Evaluate_DeployManualInterventionWithPriorRevision_ProducesCriticalFindingWithRollbackAction()
     {
         var workflowStore = Substitute.For<IWorkflowOperationStore>();
-        workflowStore.ListActiveAsync(Arg.Any<WorkflowOperationKind?>(), Arg.Any<CancellationToken>())
-            .Returns(new List<WorkflowOperationRecord>
-            {
-                BuildDeployOperation("op-1", WorkflowOperationStatus.ManualInterventionRequired, currentRevision: "rev-9", desiredRevision: "rev-10"),
-            });
+        StubStuckDeploys(workflowStore, BuildDeployOperation("op-1", WorkflowOperationStatus.ManualInterventionRequired, currentRevision: "rev-9", desiredRevision: "rev-10"));
         var service = CreateService(workflowStore: workflowStore);
 
         var findings = await service.EvaluateAsync();
@@ -270,11 +266,7 @@ public sealed class OpsFindingsServiceTests
     public async Task Evaluate_DeployManualInterventionWithoutPriorRevision_ProducesInformationalFinding()
     {
         var workflowStore = Substitute.For<IWorkflowOperationStore>();
-        workflowStore.ListActiveAsync(Arg.Any<WorkflowOperationKind?>(), Arg.Any<CancellationToken>())
-            .Returns(new List<WorkflowOperationRecord>
-            {
-                BuildDeployOperation("op-2", WorkflowOperationStatus.ManualInterventionRequired, currentRevision: null, desiredRevision: "rev-10"),
-            });
+        StubStuckDeploys(workflowStore, BuildDeployOperation("op-2", WorkflowOperationStatus.ManualInterventionRequired, currentRevision: null, desiredRevision: "rev-10"));
         var service = CreateService(workflowStore: workflowStore);
 
         var findings = await service.EvaluateAsync();
@@ -283,6 +275,129 @@ public sealed class OpsFindingsServiceTests
         Assert.Equal(OpsFindingSeverity.Critical, finding.Severity);
         Assert.Null(finding.RecommendedAction);
     }
+
+    [Theory]
+    [InlineData("succeeded")]
+    [InlineData("in-flight")]
+    [InlineData("stuck")]
+    [Trait("Tier", "Fast")]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_DeployManualInterventionSupersededByLaterDeployOfTarget_ProducesNoFindingForIt(string later)
+    {
+        var stuck = BuildDeployOperation("op-old", WorkflowOperationStatus.ManualInterventionRequired, "rev-1", "rev-2") with
+        {
+            CreatedAt = DateTimeOffset.UtcNow.AddMinutes(-30),
+        };
+        var newer = BuildDeployOperation("op-new", later switch
+        {
+            "succeeded" => WorkflowOperationStatus.Succeeded,
+            "in-flight" => WorkflowOperationStatus.Reconciling,
+            _ => WorkflowOperationStatus.ManualInterventionRequired,
+        }, "rev-1", "rev-3") with
+        {
+            Deploy = stuck.Deploy! with { DesiredRevision = "rev-3" },
+        };
+        var workflowStore = Substitute.For<IWorkflowOperationStore>();
+        switch (later)
+        {
+            case "succeeded":
+                StubStuckDeploys(workflowStore, stuck);
+                workflowStore.GetMostRecentSucceededDeployByTargetAsync(stuck.Deploy!.TargetId, Arg.Any<CancellationToken>())
+                    .Returns(Task.FromResult<WorkflowOperationRecord?>(newer));
+                break;
+            case "in-flight":
+                StubStuckDeploys(workflowStore, stuck);
+                workflowStore.ListActiveAsync(Arg.Any<WorkflowOperationKind?>(), Arg.Any<CancellationToken>())
+                    .Returns(Task.FromResult<IReadOnlyList<WorkflowOperationRecord>>([newer]));
+                break;
+            default:
+                StubStuckDeploys(workflowStore, newer, stuck);
+                break;
+        }
+
+        var findings = await CreateService(workflowStore: workflowStore).EvaluateAsync();
+
+        Assert.DoesNotContain(findings, f => f.Subject.OperationId == "op-old");
+        string[] expected = later == "stuck" ? ["op-new"] : [];
+        Assert.Equal(
+            expected,
+            findings.Where(f => f.Rule == OpsFindingsService.RuleDeployManualIntervention).Select(f => f.Subject.OperationId));
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_DeployManualInterventionTargetIndexUnreadable_WithholdsFindingAndPublishesPartial()
+    {
+        var workflowStore = Substitute.For<IWorkflowOperationStore>();
+        var stuck = BuildDeployOperation("op-3", WorkflowOperationStatus.ManualInterventionRequired, "rev-1", "rev-2");
+        StubStuckDeploys(workflowStore, stuck);
+        workflowStore.GetMostRecentSucceededDeployByTargetAsync(stuck.Deploy!.TargetId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromException<WorkflowOperationRecord?>(new InvalidOperationException("index read denied")));
+
+        var evaluation = await CreateService(workflowStore: workflowStore).EvaluateWithEvidenceAsync();
+
+        // Whether a later deploy resolved it is unknown, so no rollback is offered for it.
+        Assert.DoesNotContain(evaluation.Findings, f => f.Rule == OpsFindingsService.RuleDeployManualIntervention);
+        var source = evaluation.Posture.Sources.Single(
+            item => item.SourceId == EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations);
+        Assert.Equal(EvidencePostureVocabulary.Completeness.Partial, source.Completeness);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_DeployManualInterventionQueryStillHasMoreAtBound_PublishesPartial()
+    {
+        var workflowStore = Substitute.For<IWorkflowOperationStore>();
+        var pages = 0;
+        workflowStore.QueryAsync(Arg.Any<WorkflowOperationQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var query = call.Arg<WorkflowOperationQuery>();
+                pages++;
+                return Task.FromResult(new WorkflowOperationPage
+                {
+                    Items =
+                    [
+                        BuildDeployOperation(
+                            $"op-page-{query.Page}", WorkflowOperationStatus.ManualInterventionRequired, "rev-1", "rev-2"),
+                    ],
+                    Page = query.Page,
+                    PageSize = query.PageSize,
+                    TotalCount = int.MaxValue,
+                    HasMore = true,
+                });
+            });
+
+        var evaluation = await CreateService(workflowStore: workflowStore).EvaluateWithEvidenceAsync();
+
+        Assert.Equal(5, pages);
+        Assert.Equal(5, evaluation.Findings.Count(f => f.Rule == OpsFindingsService.RuleDeployManualIntervention));
+        var source = evaluation.Posture.Sources.Single(
+            item => item.SourceId == EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations);
+        Assert.Equal(EvidencePostureVocabulary.Completeness.Partial, source.Completeness);
+        var coverage = Assert.IsType<EvidenceSourceCoverage>(source.Coverage);
+        Assert.Contains("manual-intervention-deploy-operations:beyond-page-5", coverage.ExpectedComponentIds ?? []);
+        Assert.DoesNotContain("manual-intervention-deploy-operations:beyond-page-5", coverage.IncludedComponentIds ?? []);
+    }
+
+    /// <summary>
+    /// Stubs the store's kind + status query, the read the real store answers for stuck deploys
+    /// (the Redis store never lists them as active).
+    /// </summary>
+    private static void StubStuckDeploys(IWorkflowOperationStore workflowStore, params WorkflowOperationRecord[] operations)
+        => workflowStore.QueryAsync(
+                Arg.Is<WorkflowOperationQuery>(query =>
+                    query.Kind == WorkflowOperationKind.Deploy
+                    && query.Status == WorkflowOperationStatus.ManualInterventionRequired),
+                Arg.Any<CancellationToken>())
+            .Returns(call => Task.FromResult(new WorkflowOperationPage
+            {
+                Items = call.Arg<WorkflowOperationQuery>().Page == 1 ? operations : [],
+                Page = call.Arg<WorkflowOperationQuery>().Page,
+                PageSize = call.Arg<WorkflowOperationQuery>().PageSize,
+                TotalCount = operations.Length,
+                HasMore = false,
+            }));
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
@@ -754,11 +869,7 @@ public sealed class OpsFindingsServiceTests
     public async Task Propose_ActionableFinding_RoutesThroughGatewayKeyedOnFindingId()
     {
         var workflowStore = Substitute.For<IWorkflowOperationStore>();
-        workflowStore.ListActiveAsync(Arg.Any<WorkflowOperationKind?>(), Arg.Any<CancellationToken>())
-            .Returns(new List<WorkflowOperationRecord>
-            {
-                BuildDeployOperation("op-7", WorkflowOperationStatus.ManualInterventionRequired, currentRevision: "rev-1", desiredRevision: "rev-2"),
-            });
+        StubStuckDeploys(workflowStore, BuildDeployOperation("op-7", WorkflowOperationStatus.ManualInterventionRequired, currentRevision: "rev-1", desiredRevision: "rev-2"));
 
         var gateway = Substitute.For<IOperationGateway>();
         gateway.RouteAsync(Arg.Any<OperationGatewayRequest>(), Arg.Any<CancellationToken>())
@@ -906,8 +1017,7 @@ public sealed class OpsFindingsServiceTests
     public async Task Propose_CompleteFreshEvidence_PreservesFlowAndPersistsBoundedSnapshotReference()
     {
         var workflowStore = Substitute.For<IWorkflowOperationStore>();
-        workflowStore.ListActiveAsync(Arg.Any<WorkflowOperationKind?>(), Arg.Any<CancellationToken>())
-            .Returns([BuildDeployOperation("op-complete", WorkflowOperationStatus.ManualInterventionRequired, "rev-1", "rev-2")]);
+        StubStuckDeploys(workflowStore, BuildDeployOperation("op-complete", WorkflowOperationStatus.ManualInterventionRequired, "rev-1", "rev-2"));
         var gateway = CreateProposalGateway(OperationClass.Deploy, "proposal-complete");
         var service = CreateService(workflowStore: workflowStore, gateway: gateway);
         var finding = (await service.EvaluateAsync()).Single(item => item.Rule == OpsFindingsService.RuleDeployManualIntervention);
@@ -1101,11 +1211,7 @@ public sealed class OpsFindingsServiceTests
         // IOperationGateway (only wired with the durable control-plane graph). Findings still
         // evaluate; proposing an otherwise-actionable fix degrades cleanly instead of throwing.
         var workflowStore = Substitute.For<IWorkflowOperationStore>();
-        workflowStore.ListActiveAsync(Arg.Any<WorkflowOperationKind?>(), Arg.Any<CancellationToken>())
-            .Returns(new List<WorkflowOperationRecord>
-            {
-                BuildDeployOperation("op-9", WorkflowOperationStatus.ManualInterventionRequired, currentRevision: "rev-1", desiredRevision: "rev-2"),
-            });
+        StubStuckDeploys(workflowStore, BuildDeployOperation("op-9", WorkflowOperationStatus.ManualInterventionRequired, currentRevision: "rev-1", desiredRevision: "rev-2"));
 
         var service = new OpsFindingsService(
             new StaticOptionsMonitor<OpsFindingsOptions>(new OpsFindingsOptions()),

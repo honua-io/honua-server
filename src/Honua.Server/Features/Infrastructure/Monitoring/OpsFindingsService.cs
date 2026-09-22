@@ -40,6 +40,9 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
     private const string InProcessLocalBackendName = "local";
 
     private const string WorkflowOperationStoreBackendId = "workflow-operation-store";
+    private const string ManualInterventionComponentId = "manual-intervention-deploy-operations";
+    private const int ManualInterventionPageSize = 200;
+    private const int ManualInterventionMaxPages = 5;
 
     private readonly IOptionsMonitor<OpsFindingsOptions> _options;
     private readonly IOptionsMonitor<ControlPlaneOptions> _controlPlaneOptions;
@@ -738,11 +741,49 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
                 token => _workflowStore.ListActiveAsync(WorkflowOperationKind.Deploy, token),
                 cancellationToken)
             .ConfigureAwait(false);
-        foreach (var operation in active.Value ?? [])
+        if (!active.Succeeded)
         {
-            if (operation.Status != WorkflowOperationStatus.ManualInterventionRequired)
+            return;
+        }
+
+        var stuck = await ReadManualInterventionDeploysAsync(workflowCollection, cancellationToken).ConfigureAwait(false);
+        if (stuck is null)
+        {
+            return;
+        }
+
+        var succeededByTarget = new Dictionary<string, OpsFindingsStoreRead<WorkflowOperationRecord?>>(StringComparer.Ordinal);
+        foreach (var operation in stuck)
+        {
+            // A stuck deploy is not re-driven by the reconciler and has no rollback of its own; it is
+            // resolved by a later deploy of the same target (typically the rollback this finding
+            // proposes). Once one exists, the stale rollback payload must not be offered again.
+            var targetId = operation.Deploy?.TargetId;
+            if (!string.IsNullOrWhiteSpace(targetId))
             {
-                continue;
+                var newerKnown = stuck.Concat(active.Value ?? [])
+                    .Any(other => IsLaterDeployOfTarget(other, operation, targetId));
+                if (newerKnown)
+                {
+                    continue;
+                }
+
+                if (!succeededByTarget.TryGetValue(targetId, out var lookup))
+                {
+                    lookup = await workflowCollection.ReadAsync(
+                            $"deploy-target:{targetId}",
+                            token => _workflowStore.GetMostRecentSucceededDeployByTargetAsync(targetId, token),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    succeededByTarget[targetId] = lookup;
+                }
+
+                // Unknown supersession is not "not superseded": an unread index yields no finding.
+                if (!lookup.Succeeded
+                    || (lookup.Value is { } succeeded && IsLaterDeployOfTarget(succeeded, operation, targetId)))
+                {
+                    continue;
+                }
             }
 
             var deploy = operation.Deploy;
@@ -798,6 +839,64 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
             });
         }
     }
+
+    /// <summary>
+    /// Reads deploys parked in <see cref="WorkflowOperationStatus.ManualInterventionRequired"/> through
+    /// the store's kind + status query. The active index is not the source: the Redis store files the
+    /// status under its terminal index, so reconcilers and the backstop sweep (which walk the active
+    /// index) leave it alone and <c>ListActiveAsync</c> never returns it (#4938). The read is bounded;
+    /// when the store still reports more, the source is published as partial.
+    /// </summary>
+    /// <returns>The stuck deploys, or null when a read failed.</returns>
+    private async Task<List<WorkflowOperationRecord>?> ReadManualInterventionDeploysAsync(
+        OpsFindingsStoreCollection workflowCollection,
+        CancellationToken cancellationToken)
+    {
+        var stuck = new List<WorkflowOperationRecord>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        for (var page = 1; page <= ManualInterventionMaxPages; page++)
+        {
+            var query = new WorkflowOperationQuery
+            {
+                Kind = WorkflowOperationKind.Deploy,
+                Status = WorkflowOperationStatus.ManualInterventionRequired,
+                Page = page,
+                PageSize = ManualInterventionPageSize,
+            };
+            var read = await workflowCollection.ReadAsync(
+                    page == 1 ? ManualInterventionComponentId : $"{ManualInterventionComponentId}:page-{page}",
+                    token => _workflowStore!.QueryAsync(query, token),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!read.Succeeded)
+            {
+                return null;
+            }
+
+            foreach (var operation in read.Value?.Items ?? [])
+            {
+                if (operation is { Kind: WorkflowOperationKind.Deploy, Status: WorkflowOperationStatus.ManualInterventionRequired }
+                    && seen.Add(operation.OperationId))
+                {
+                    stuck.Add(operation);
+                }
+            }
+
+            if (read.Value is not { HasMore: true })
+            {
+                return stuck;
+            }
+        }
+
+        workflowCollection.ExpectUncollected($"{ManualInterventionComponentId}:beyond-page-{ManualInterventionMaxPages}");
+        return stuck;
+    }
+
+    private static bool IsLaterDeployOfTarget(WorkflowOperationRecord candidate, WorkflowOperationRecord stuck, string targetId)
+        => candidate.Kind == WorkflowOperationKind.Deploy
+            && !string.Equals(candidate.OperationId, stuck.OperationId, StringComparison.Ordinal)
+            && string.Equals(candidate.Deploy?.TargetId, targetId, StringComparison.Ordinal)
+            && candidate.CreatedAt > stuck.CreatedAt;
 
     // Rule (g): per-protocol serving-latency/error-rate SLO breach, evidenced from the persisted
     // ops-health rollup history (#2553) rather than the live in-process window, so a short blip does not
