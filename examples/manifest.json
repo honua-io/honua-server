@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1138,
+    "total": 1140,
     "byStatus": {
-      "not-executable": 1125,
+      "not-executable": 1127,
       "unvalidated": 10,
       "passed": 3
     }
@@ -6013,7 +6013,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 23,
+      "line": 33,
       "language": "json"
     },
     {
@@ -6026,7 +6026,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 78,
+      "line": 88,
       "language": "json"
     },
     {
@@ -6039,7 +6039,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 36,
+      "line": 46,
       "language": "json"
     },
     {
@@ -6052,7 +6052,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 68,
+      "line": 78,
       "language": "json"
     },
     {
@@ -13427,6 +13427,32 @@
       "language": "json"
     },
     {
+      "id": "b81a3b787964ed75",
+      "kind": "docs-fence",
+      "path": "docs/reference/admin-api/connections-and-layers.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 2,
+      "line": 110,
+      "language": "json"
+    },
+    {
+      "id": "fb9c13c751d346c1",
+      "kind": "docs-fence",
+      "path": "docs/reference/admin-api/connections-and-layers.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 3,
+      "line": 146,
+      "language": "json"
+    },
+    {
       "id": "601686e05c798a5c",
       "kind": "docs-fence",
       "path": "docs/reference/admin-api/forms.md",
@@ -13475,7 +13501,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 382,
+      "line": 420,
       "language": "sql"
     },
     {
@@ -13501,7 +13527,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 151,
+      "line": 165,
       "language": "json"
     },
     {
@@ -13514,7 +13540,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 200,
+      "line": 214,
       "language": "sql"
     },
     {
@@ -13527,7 +13553,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 138,
+      "line": 152,
       "language": "sql"
     },
     {
@@ -13540,7 +13566,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 210,
+      "line": 224,
       "language": "sql"
     },
     {
@@ -13553,7 +13579,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 188,
+      "line": 202,
       "language": "sql"
     },
     {

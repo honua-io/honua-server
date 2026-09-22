@@ -762,12 +762,14 @@
         "attribution",
         "capabilities",
         "connectionId",
+        "createEditableCopy",
         "description",
         "dryRun",
         "enabled",
         "fields",
         "geometryColumn",
         "geometryType",
+        "globalIdField",
         "layerName",
         "license",
         "licenseUrl",
@@ -778,6 +780,7 @@
         "sourceUrl",
         "srid",
         "storageMode",
+        "supportsAttachments",
         "table"
       ],
       "outputFields": [
@@ -2161,6 +2164,7 @@
       "inputFields": [
         "accessPolicy",
         "attribution",
+        "editing",
         "layerId",
         "license",
         "licenseUrl",
