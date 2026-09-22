@@ -31,8 +31,8 @@
       },
       "arcpy": {
         "pass": 37,
-        "n/a-no-client": 47,
-        "blocked": 8,
+        "blocked": 12,
+        "n/a-no-client": 43,
         "fail": 2
       },
       "qgis-ui": {
@@ -48,8 +48,8 @@
     },
     "overall": {
       "cells": 376,
-      "closed": 257,
-      "open": 119
+      "closed": 253,
+      "open": 123
     }
   },
   "rows": [
@@ -109,13 +109,13 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904, UI-SERVICE-WMS: Explore pop-up on the WMS layer returned the text/plain GetFeatureInfo body 'Layer=UI Points, category=A, name=ui-point-07, objectid=10, value=60', matching the service and the server-side GetFeatureInfo in all three advertised formats"
         },
         "arcpy": {
-          "state": "n/a-no-client",
+          "state": "blocked",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. Missing MakeWMSLayer and module-level identify names do not cover factory-returned mapping objects; the exact GetFeatureInfo request path needs review.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "arcpy 3.7.1 module probe, 2026-09-18: arcpy exposes no MakeWMSLayer or MakeWMTSLayer and no identify call against a WMS layer. A WMS is consumed by adding it to a map, which draws it; GetFeatureInfo is issued by Pro's Identify tool in the UI, not by arcpy."
           },
-          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no wms consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['wms'] returned nothing to review. Absence executed against the installed client, not asserted."
+          "evidence": "Reverted: this cell was closed n/a-no-client on an inventory that declared no arcpy WMS consumption surface. That was wrong. arcpy.mp Map.addDataFromPath(url, 'WMS') adds WMS layers (verified on ArcGIS Pro 3.7.1, 2026-09-22: 5 layers added), and WMS is one of the five valid web_service_type values alongside AUTOMATIC, ARCGIS_SERVER_WEB, KML and VECTOR_TILE. The lane's own wms.GetCapabilities and wms.GetMap passes already contradicted the closure. Back to blocked: unproven, not absent."
         },
         "qgis-ui": {
           "state": "pass",
@@ -136,13 +136,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
+          "state": "blocked",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
           },
-          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no wms consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['wms'] returned nothing to review. Absence executed against the installed client, not asserted."
+          "evidence": "Reverted: this cell was closed n/a-no-client on an inventory that declared no arcpy WMS consumption surface. That was wrong. arcpy.mp Map.addDataFromPath(url, 'WMS') adds WMS layers (verified on ArcGIS Pro 3.7.1, 2026-09-22: 5 layers added), and WMS is one of the five valid web_service_type values alongside AUTOMATIC, ARCGIS_SERVER_WEB, KML and VECTOR_TILE. The lane's own wms.GetCapabilities and wms.GetMap passes already contradicted the closure. Back to blocked: unproven, not absent."
         },
         "qgis-ui": {
           "state": "pass",
@@ -163,13 +163,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
+          "state": "blocked",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
           },
-          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no wms consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['wms'] returned nothing to review. Absence executed against the installed client, not asserted."
+          "evidence": "Reverted: this cell was closed n/a-no-client on an inventory that declared no arcpy WMS consumption surface. That was wrong. arcpy.mp Map.addDataFromPath(url, 'WMS') adds WMS layers (verified on ArcGIS Pro 3.7.1, 2026-09-22: 5 layers added), and WMS is one of the five valid web_service_type values alongside AUTOMATIC, ARCGIS_SERVER_WEB, KML and VECTOR_TILE. The lane's own wms.GetCapabilities and wms.GetMap passes already contradicted the closure. Back to blocked: unproven, not absent."
         },
         "qgis-ui": {
           "state": "pass",
@@ -190,13 +190,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
+          "state": "blocked",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
           },
-          "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no wms consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['wms'] returned nothing to review. Absence executed against the installed client, not asserted."
+          "evidence": "Reverted: this cell was closed n/a-no-client on an inventory that declared no arcpy WMS consumption surface. That was wrong. arcpy.mp Map.addDataFromPath(url, 'WMS') adds WMS layers (verified on ArcGIS Pro 3.7.1, 2026-09-22: 5 layers added), and WMS is one of the five valid web_service_type values alongside AUTOMATIC, ARCGIS_SERVER_WEB, KML and VECTOR_TILE. The lane's own wms.GetCapabilities and wms.GetMap passes already contradicted the closure. Back to blocked: unproven, not absent."
         },
         "qgis-ui": {
           "state": "pass",
