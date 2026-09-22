@@ -124,6 +124,65 @@ public sealed class DatabaseMigrationSafetyTests
             "integration hosts skip migrations, so their canonical seed must mirror migration 080");
     }
 
+    // Raster payload columns whose EXTERNAL storage is a migration-owned effect that the
+    // core schema guard verifies on every boot (migrations 055 and 063).
+    private static readonly (string Table, string Column)[] ExternalStorageRasterColumns =
+    [
+        ("raster_data", "raster"),
+        ("raster_tiles", "tile_data"),
+        ("raster_overviews", "raster"),
+    ];
+
+    [ArchitectureTest]
+    public void TestSeeds_ThatCreateRasterTables_ShouldSetMigrationOwnedExternalStorage()
+    {
+        // A seed that creates these tables with default storage after a first boot has
+        // journaled 055/063 as no-ops leaves the database in a state the schema guard
+        // rejects on the next boot (JournalClaimsMissingSchema), which stops the raster
+        // provider migrations from running (honua-server#4889).
+        var projectRoot = FindProjectRoot(Directory.GetCurrentDirectory());
+        var seedFiles = Directory
+            .EnumerateFiles(ArchitectureTestHelpers.CombinePath(projectRoot, "tests", "seed"), "*.*", SearchOption.AllDirectories)
+            .Where(path => path.EndsWith(".sql", StringComparison.OrdinalIgnoreCase)
+                || path.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase)
+                || path.EndsWith(".yml", StringComparison.OrdinalIgnoreCase))
+            .Append(ArchitectureTestHelpers.CombinePath(projectRoot, "tests", "python", "shared", "postgis.py"))
+            .ToArray();
+
+        var checkedCreates = 0;
+        var violations = new List<string>();
+        foreach (var seedFile in seedFiles)
+        {
+            var text = File.ReadAllText(seedFile);
+            foreach (var (table, column) in ExternalStorageRasterColumns)
+            {
+                var creates = new Regex(
+                    $@"\bCREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?honua\.{table}\s*\(",
+                    RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                if (!creates.IsMatch(text))
+                {
+                    continue;
+                }
+
+                checkedCreates++;
+                var setsExternal = new Regex(
+                    $@"\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?honua\.{table}\s+ALTER\s+COLUMN\s+{column}\s+SET\s+STORAGE\s+EXTERNAL\b",
+                    RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+                if (!setsExternal.IsMatch(text))
+                {
+                    violations.Add($"{Path.GetRelativePath(projectRoot, seedFile)}: honua.{table}.{column}");
+                }
+            }
+        }
+
+        checkedCreates.Should().BePositive(
+            "the test seeds create raster tables; zero matches means the scan is broken, not that there is nothing to guard");
+        violations.Should().BeEmpty(
+            "a seed that creates a raster table must also apply the migration-owned EXTERNAL storage policy " +
+            "(migrations 055 and 063), or the core schema guard fails the next boot. Missing: " +
+            string.Join("; ", violations));
+    }
+
     // Delegates to the shared runtime classifier so the architecture gate and the runtime
     // migration-safety enforcement (MigrationSafetyClassifier) share one source of truth.
     private static IReadOnlyList<string> AnalyzePotentiallyBreakingChanges(string sql)

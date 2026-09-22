@@ -323,7 +323,7 @@
       "category": "FieldOps",
       "edition": "Pro",
       "status": "preview",
-      "description": "Use disconnected field sync, form offline policy discovery, GeoServices replica/GeoPackage delta sync, and FieldCollection cursor/change exchange."
+      "description": "Use disconnected field sync, form offline policy discovery, GeoServices replica delta sync delivered as Esri JSON, and FieldCollection cursor/change exchange."
     },
     {
       "key": "format.geoarrow",

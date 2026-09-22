@@ -139,6 +139,7 @@ internal sealed partial class DeployWorkflowReconciler(
                 updated = BeginPostActivationObservationIfPromoted(updated);
                 updated = await ApplyPostActivationProtectionWindowAsync(updated, backend, reconciliationCancellation.Token)
                     .ConfigureAwait(false);
+                updated = ClearProtectionOnSettledRollback(updated);
             }
 
             if (!Equals(updated, operation))
@@ -588,7 +589,10 @@ internal sealed partial class DeployWorkflowReconciler(
 
         if (observation.Status == WorkflowOperationStatus.RolledBack)
         {
-            return current with { Deploy = WithoutRollbackAttempts(current.Deploy) };
+            // The rollback requested on an earlier cycle (by the reconciler or out of band) has settled:
+            // the previous revision is fully recovered, so the protection window closes here too
+            // (honua-server#4989), not only when RollbackAsync itself reports RolledBack.
+            return current with { Deploy = WithoutProtection(WithoutRollbackAttempts(current.Deploy)) };
         }
 
         if (observation.Status != WorkflowOperationStatus.RollbackRequested)
@@ -860,6 +864,17 @@ internal sealed partial class DeployWorkflowReconciler(
             }
         };
     }
+
+    /// <summary>
+    /// A settled <see cref="WorkflowOperationStatus.RolledBack"/> never carries a protection window
+    /// (honua-server#4989). Applied after every reconcile step so no settle path, whichever cycle or
+    /// caller requested the rollback, can leave a terminal operation reporting a recovery in flight
+    /// (<c>recovering</c>) or a live observation window (<c>observing</c>).
+    /// </summary>
+    private static WorkflowOperationRecord ClearProtectionOnSettledRollback(WorkflowOperationRecord current)
+        => current is { Status: WorkflowOperationStatus.RolledBack, Deploy.Protection: not null }
+            ? current with { Deploy = WithoutProtection(current.Deploy) }
+            : current;
 
     /// <summary>Clears an open post-activation protection window (honua-server#4618); see <see cref="WithProtectionPhase"/>.</summary>
     internal static DeployOperationSpec WithoutProtection(DeployOperationSpec spec)

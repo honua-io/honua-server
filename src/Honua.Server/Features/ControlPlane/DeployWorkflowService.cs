@@ -156,7 +156,78 @@ internal sealed partial class DeployWorkflowService
             };
         }
 
+        plan = await ApplyProbeUrlValidationAsync(plan, spec, cancellationToken).ConfigureAwait(false);
+
         return new DeployWorkflowPlanResult(target, spec, plan, capabilities, canonicalApproval);
+    }
+
+    /// <summary>
+    /// Refuses a synthetic health-probe or golden-query URL that the runtime probe would refuse
+    /// (honua-server#4988). Otherwise the rollout is admitted, the gate reports itself misconfigured
+    /// on every cycle, and a correct candidate is failed at its exposure deadline. A URL whose host
+    /// cannot be resolved right now is only a warning: that condition is transient, and the runtime
+    /// probe re-validates it on every cycle.
+    /// </summary>
+    private static async Task<DeployPlan> ApplyProbeUrlValidationAsync(
+        DeployPlan plan,
+        DeployOperationSpec spec,
+        CancellationToken cancellationToken)
+    {
+        var (blocks, warnings) = await DescribeProbeUrlFindingsAsync(spec, cancellationToken).ConfigureAwait(false);
+        if (blocks.Count == 0 && warnings.Count == 0)
+        {
+            return plan;
+        }
+
+        return plan with
+        {
+            IsReadyToSubmit = plan.IsReadyToSubmit && blocks.Count == 0,
+            BlockingReasons = [.. plan.BlockingReasons, .. blocks],
+            Warnings = [.. plan.Warnings, .. warnings]
+        };
+    }
+
+    private static async Task<(List<string> Blocks, List<string> Warnings)> DescribeProbeUrlFindingsAsync(
+        DeployOperationSpec spec,
+        CancellationToken cancellationToken)
+    {
+        var blocks = new List<string>();
+        var warnings = new List<string>();
+        var policy = DeployTelemetryPolicy.Parse(spec);
+        if (policy is not { IsValid: true })
+        {
+            return (blocks, warnings);
+        }
+
+        foreach (var (key, url) in new[]
+                 {
+                     ("telemetry.healthz.url", policy.HealthProbeUrl),
+                     ("telemetry.golden_query.url", policy.GoldenQueryUrl)
+                 })
+        {
+            if (string.IsNullOrWhiteSpace(url))
+            {
+                continue;
+            }
+
+            var validation = await DeployProbeUrlPolicy.ValidateAsync(url, cancellationToken).ConfigureAwait(false);
+            if (validation.IsValid)
+            {
+                continue;
+            }
+
+            if (validation.IsHostResolutionUnavailable)
+            {
+                warnings.Add($"{key} {validation.ErrorMessage} The probe re-checks it on every cycle.");
+                continue;
+            }
+
+            blocks.Add(
+                $"Telemetry gate configuration rejected: {key} {validation.ErrorMessage} " +
+                "Deploy probes only reach public HTTPS endpoints, so this gate could never be evaluated.");
+        }
+
+        return (blocks, warnings);
     }
 
     private string? DescribeTelemetryGateBlock(DeployOperationSpec spec)
@@ -433,6 +504,15 @@ internal sealed partial class DeployWorkflowService
         {
             throw new ResourceConflictException(
                 $"Deploy operation '{operation.OperationId}' cannot be submitted: {gateBlock}");
+        }
+
+        // A probe host can resolve differently at submit time than it did at plan time (for example
+        // after an approval wait), so the probe destination rule is re-applied before any mutation (#4988).
+        var (probeBlocks, _) = await DescribeProbeUrlFindingsAsync(operation.Deploy, cancellationToken).ConfigureAwait(false);
+        if (probeBlocks.Count > 0)
+        {
+            throw new ResourceConflictException(
+                $"Deploy operation '{operation.OperationId}' cannot be submitted: {string.Join(" ", probeBlocks)}");
         }
 
         var target = await _targetRegistry.GetAsync(operation.Deploy.TargetId, cancellationToken).ConfigureAwait(false);

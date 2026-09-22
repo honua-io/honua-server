@@ -132,7 +132,7 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
         try
         {
             using var client = fixture.CreateAdminClient();
-            client.Timeout = TimeSpan.FromSeconds(30);
+            client.Timeout = GPServerJobWait.RequestTimeout;
             var inputs = new Dictionary<string, string>
             {
                 ["f"] = "json",
@@ -206,7 +206,11 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
             jobId.Should().NotBeNullOrWhiteSpace();
             submitDoc.RootElement.GetProperty("jobStatus").GetString().Should().Be("esriJobSubmitted");
 
-            using var terminal = await PollUntilSucceededAsync(client, routeTask, jobId!);
+            using var terminal = await GPServerJobWait.UntilRestSucceededAsync(
+                client,
+                $"/rest/services/{ServiceId}/GPServer/{routeTask}/jobs/{jobId}?f=json",
+                jobId!,
+                fixture.GetService<IExecutionJobStore>());
             terminal.RootElement.GetProperty("results").GetProperty("outputFeatureLayer")
                 .GetProperty("paramUrl").GetString()
                 .Should().Be("results/outputFeatureLayer");
@@ -261,30 +265,6 @@ public sealed class GPServerDefaultServiceTests(RedisFixture redis)
             await fixture.DisposeAsync();
             await DeleteControlPlaneKeysAsync(GPServerRedisTestConnection.For(redis));
         }
-    }
-
-    private static async Task<JsonDocument> PollUntilSucceededAsync(HttpClient client, string taskName, string jobId)
-    {
-        var deadline = DateTimeOffset.UtcNow.AddSeconds(30);
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            using var response = await client.GetAsync(
-                $"/rest/services/{ServiceId}/GPServer/{taskName}/jobs/{jobId}?f=json");
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-            var body = await response.Content.ReadAsStringAsync();
-            using var doc = JsonDocument.Parse(body);
-            var status = doc.RootElement.GetProperty("jobStatus").GetString();
-            if (status == "esriJobSucceeded")
-            {
-                return JsonDocument.Parse(body);
-            }
-
-            status.Should().NotBe("esriJobFailed", "the real geometry.buffer executor should complete the seeded-service job");
-            await Task.Delay(TimeSpan.FromMilliseconds(250));
-        }
-
-        throw new TimeoutException($"Timed out waiting for GPServer job '{jobId}' to succeed.");
     }
 
     private static async Task DeleteControlPlaneKeysAsync(string redisConnectionString)

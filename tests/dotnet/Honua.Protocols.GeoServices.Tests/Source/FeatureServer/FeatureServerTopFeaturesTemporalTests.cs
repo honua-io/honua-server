@@ -27,7 +27,7 @@ public sealed class FeatureServerTopFeaturesTemporalTests
     [IntegrationTest]
     [Operation(Operations.QueryTopFeatures)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/queryTopFeatures")]
-    public async Task QueryTopFeatures_TemporalAttributes_ReturnEpochMilliseconds()
+    public async Task QueryTopFeatures_TemporalAttributes_ReturnCalendarDateAndEpochTimestamp()
     {
         var access = new AccessPolicy { AllowAnonymous = true };
         var graph = new TestMetadataV2GraphBuilder()
@@ -63,7 +63,8 @@ public sealed class FeatureServerTopFeaturesTemporalTests
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         using var document = JsonDocument.Parse(body);
         var attributes = document.RootElement.GetProperty("features")[0].GetProperty("attributes");
-        attributes.GetProperty("day").GetInt64().Should().Be(1704153600000L);
+        // Calendar dates stay ISO calendar days (esriFieldTypeDateOnly); timestamps stay epoch milliseconds.
+        attributes.GetProperty("day").GetString().Should().Be("2024-01-02");
         attributes.GetProperty("instant").GetInt64().Should().Be(1704153600000L);
     }
 }

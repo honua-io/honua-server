@@ -2188,7 +2188,7 @@
           "esriPaths": [
             "/GPServer/{taskName}"
           ],
-          "notes": "Returns task metadata projected from the built-in IProcessCatalog, including parameter descriptions and Esri data types. Implemented in #723."
+          "notes": "Returns task metadata projected from the built-in IProcessCatalog, including parameter descriptions and Esri data types. Implemented in #723. Every GP service also resolves the NetworkAnalysisUtilities tasks GetTravelModes and GetToolInfo by name (synchronous, anonymous projections of the routing provider, deliberately absent from the task list because they have no SOAP or job form) so ArcGIS Pro and arcpy can bind the NAServer next to it (#5035)."
         },
         {
           "name": "Job Status (generic)",
@@ -2464,16 +2464,35 @@
       "evidence": {
         "code": [
           "src/Honua.Protocols.GeoServices/NAServer/NAServerEndpoints.cs",
+          "src/Honua.Protocols.GeoServices/NAServer/NAServerMetadata.cs",
           "src/Honua.Protocols.GeoServices/NAServer/NAServerParameterTranslation.cs",
           "src/Honua.Protocols.GeoServices/NAServer/NAServerResultMapping.cs",
           "src/Honua.Routing/Features/Routing/Abstractions/IRoutingProvider.cs"
         ],
         "tests": [
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerEndpointTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerTranslationUnitTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerTranslationUnitTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerMetadataEndpointTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/NetworkAnalysisUtilitiesTaskTests.cs"
         ]
       },
       "operations": [
+        {
+          "name": "Service resource",
+          "status": "implemented",
+          "esriPaths": [
+            "/NAServer"
+          ],
+          "notes": "GET and POST return the Esri network service resource: one analysis layer name per solver the configured IRoutingProvider advertises (routeLayers, serviceAreaLayers, closestFacilityLayers, odCostMatrixLayers, locationAllocationLayers) (#5035)."
+        },
+        {
+          "name": "Analysis layer resource",
+          "status": "implemented",
+          "esriPaths": [
+            "/NAServer/{layerName}"
+          ],
+          "notes": "GET and POST return the Esri network analysis layer resource for Route, ServiceArea, ClosestFacility, ODCostMatrix and LocationAllocation: impedance and travel modes projected from the active network dataset's travel profiles, network attributes and sources, input network classes and the configured service limits. Unknown or unsupported layers answer 404. Together with the GetTravelModes/GetToolInfo utility tasks every GPServer resolves, this is the stand-alone binding surface ArcGIS Pro and arcpy read (#5035); a native Pro replay is still pending."
+        },
         {
           "name": "Route solve",
           "status": "implemented",

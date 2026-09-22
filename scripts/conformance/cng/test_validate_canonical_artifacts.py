@@ -686,5 +686,181 @@ class GeoParquetObservationTests(unittest.TestCase):
         self.assertEqual("sha256:" + "c" * 64, normalized["evidence_digest"])
 
 
+def gdal_geoparquet_info(feature_count=6, extent=(-122.4194, -0.0, 179.5, 86.0)):
+    """`ogrinfo -json -al -so -mdd _PARQUET_METADATA_` for the Honua artifact, trimmed.
+
+    Shape taken from the pinned GDAL 3.14.0 image reading `cng.parquet` from CNG run
+    35084581101: GDAL reports the south edge as -0.0 and surfaces the footer `geo` key
+    under the `_PARQUET_METADATA_` layer metadata domain.
+    """
+    return {
+        "driverShortName": "Parquet",
+        "layers": [{
+            "name": "cng",
+            "metadata": {"_PARQUET_METADATA_": {
+                "geo": json.dumps(EMITTED_GEOPARQUET_METADATA)}},
+            "geometryFields": [{
+                "name": "geometry",
+                "type": "Point",
+                "extent": list(extent),
+                "coordinateSystem": {"projjson": {
+                    "type": "GeographicCRS", "name": "WGS 84",
+                    "id": {"authority": "EPSG", "code": 4326}}},
+            }],
+            "featureCount": feature_count,
+        }],
+    }
+
+
+class _FakeCrs:
+    def __init__(self, value):
+        self._value = value
+
+    def to_string(self):
+        return self._value
+
+
+class _FakeGeometry:
+    name = "geometry"
+
+    def isna(self):
+        return self
+
+    def any(self):
+        return False
+
+
+class _FakeFrame:
+    """The GeoDataFrame surface the GeoPandas check reads, without GeoPandas."""
+
+    empty = False
+
+    def __init__(self, rows=6, crs="OGC:CRS84"):
+        self._rows = rows
+        self.crs = _FakeCrs(crs)
+        self.geometry = _FakeGeometry()
+        self.total_bounds = [-122.4194, 0.0, 179.5, 86.0]
+
+    def __len__(self):
+        return self._rows
+
+
+class GeoParquetConsumerMetadataTests(unittest.TestCase):
+    """#4799: GeoPandas and GDAL must report what they read, so a healthy artifact grades."""
+
+    def _grade(self, client, operation, lane, version, observed):
+        row = MODULE._observation(
+            "geoparquet", operation, client, lane, "2026-09-22T00:00:00Z", args(), version)
+        row["observed_metadata"] = observed
+        return MODULE._normalize_observations([row], args())[0]
+
+    def test_geopandas_reads_every_declared_oracle(self):
+        observed = MODULE._geopandas_geoparquet_metadata(
+            _FakeFrame(), EMITTED_GEOPARQUET_METADATA)
+
+        self.assertEqual({
+            "geo.version": "1.1.0", "primary_column": "geometry",
+            "geometry_encoding": "WKB", "crs": "EPSG:4326", "feature_count": 6,
+            "bounds": [-122.4194, 0.0, 179.5, 86.0],
+        }, observed)
+
+    def test_gdal_reads_every_declared_oracle(self):
+        observed = MODULE._gdal_geoparquet_metadata(gdal_geoparquet_info())
+
+        self.assertEqual({
+            "geo.version": "1.1.0", "primary_column": "geometry",
+            "geometry_encoding": "WKB", "crs": "EPSG:4326", "feature_count": 6,
+            "bounds": [-122.4194, -0.0, 179.5, 86.0],
+        }, observed)
+
+    def test_healthy_artifact_passes_both_lanes(self):
+        graded = [
+            self._grade("GeoPandas", "geometry-read", "geopandas-geoparquet", None,
+                        MODULE._geopandas_geoparquet_metadata(
+                            _FakeFrame(), EMITTED_GEOPARQUET_METADATA)),
+            self._grade("GDAL", "feature-read", "gdal-geoparquet", "3.14.0",
+                        MODULE._gdal_geoparquet_metadata(gdal_geoparquet_info())),
+        ]
+        for row in graded:
+            with self.subTest(client=row["canonical_client"]):
+                self.assertEqual([], row["budget_results"]["unmet"])
+                self.assertEqual("pass", row["result"])
+                self.assertEqual("sha256:" + "c" * 64, row["evidence_digest"])
+
+    def test_metadata_mismatch_still_does_not_pass(self):
+        graded = [
+            self._grade("GeoPandas", "geometry-read", "geopandas-geoparquet", None,
+                        MODULE._geopandas_geoparquet_metadata(
+                            _FakeFrame(rows=5), EMITTED_GEOPARQUET_METADATA)),
+            self._grade("GDAL", "feature-read", "gdal-geoparquet", "3.14.0",
+                        MODULE._gdal_geoparquet_metadata(
+                            gdal_geoparquet_info(feature_count=5))),
+        ]
+        for row in graded:
+            with self.subTest(client=row["canonical_client"]):
+                self.assertFalse(row["budget_results"]["met"])
+                self.assertIn("metadata 'feature_count' observed 5, expected 6",
+                              row["budget_results"]["unmet"])
+                self.assertNotEqual("pass", row["result"])
+                self.assertIsNone(row["evidence_digest"])
+
+    def test_undecoded_geo_declarations_are_named_not_passed(self):
+        observed = MODULE._geopandas_geoparquet_metadata(_FakeFrame(), None)
+        row = self._grade(
+            "GeoPandas", "geometry-read", "geopandas-geoparquet", None, observed)
+
+        self.assertNotEqual("pass", row["result"])
+        self.assertIn("required metadata 'geo.version' was not observed",
+                      row["budget_results"]["unmet"])
+        self.assertIn("required metadata 'geometry_encoding' was not observed",
+                      row["budget_results"]["unmet"])
+
+    def test_validate_geoparquet_attaches_each_consumers_own_observation(self):
+        """The wiring the bug lived in: before #4799 both rows were collected without
+        `observed_metadata`, so they could only ever skip."""
+        import subprocess
+        import sys
+        import types
+        from unittest import mock
+
+        geopandas = types.ModuleType("geopandas")
+        geopandas.read_parquet = lambda path: _FakeFrame()
+        geopandas_io = types.ModuleType("geopandas.io")
+        arrow = types.ModuleType("geopandas.io.arrow")
+        arrow._read_parquet_schema_and_metadata = lambda path, filesystem: (
+            None, {b"geo": json.dumps(EMITTED_GEOPARQUET_METADATA).encode()})
+        arrow._decode_metadata = json.loads
+        pyarrow = types.ModuleType("pyarrow")  # the PyArrow cell is not under test here
+        stubs = {
+            "geopandas": geopandas, "geopandas.io": geopandas_io,
+            "geopandas.io.arrow": arrow, "pyarrow": pyarrow,
+            "pyarrow.compute": types.ModuleType("pyarrow.compute"),
+            "pyarrow.parquet": types.ModuleType("pyarrow.parquet"),
+        }
+
+        def fake_run(*command):
+            if command[0] == "ogrinfo":
+                self.assertIn("_PARQUET_METADATA_", command)
+                stdout = json.dumps(gdal_geoparquet_info())
+            else:
+                stdout = "GDAL 3.8.4, released 2024/02/08"
+            return subprocess.CompletedProcess(command, 0, stdout, "")
+
+        env = {key: value for key, value in MODULE.os.environ.items()
+               if key != "HONUA_CNG_GDAL_IMAGE"}
+        with mock.patch.dict(sys.modules, stubs), \
+                mock.patch.dict(MODULE.os.environ, env, clear=True), \
+                mock.patch.object(MODULE, "_run", fake_run):
+            rows = MODULE.validate_geoparquet(Path("cng.parquet"), args())
+
+        by_client = {row["canonical_client"]: row for row in rows}
+        for client in ("GeoPandas", "GDAL"):
+            with self.subTest(client=client):
+                self.assertEqual("pass", by_client[client]["result"])
+                self.assertEqual(6, by_client[client]["observed_metadata"]["feature_count"])
+                self.assertEqual("WKB",
+                                 by_client[client]["observed_metadata"]["geometry_encoding"])
+
+
 if __name__ == "__main__":
     unittest.main()

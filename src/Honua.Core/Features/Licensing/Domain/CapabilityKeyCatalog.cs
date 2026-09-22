@@ -80,7 +80,7 @@ public static class CapabilityKeyCatalog
         // Operator ruling (2026-09-03, honua-release#266 / #264) supersedes the earlier
         // sync.offline GA promotion for release 2026.1: offline sync is Preview in 2026.1.
         new(FeatureCatalog.FieldOpsOfflineSyncKey, "Offline/Field Sync", FeatureCatalog.Categories.FieldOps,
-            HonuaEdition.Pro, "Use disconnected field sync, form offline policy discovery, GeoServices replica/GeoPackage delta sync, and FieldCollection cursor/change exchange.", Status: PreviewStatus),
+            HonuaEdition.Pro, "Use disconnected field sync, form offline policy discovery, GeoServices replica delta sync delivered as Esri JSON, and FieldCollection cursor/change exchange.", Status: PreviewStatus),
     ];
 
     /// <summary>
