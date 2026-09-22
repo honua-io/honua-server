@@ -129,7 +129,18 @@ internal sealed class InputValidationMiddleware
         // threadpool thread on sync-over-async body I/O (FormFeature.ReadForm).
         if (context.Request.HasFormContentType && !IsMultipartFormData(context.Request.ContentType))
         {
-            await context.Request.ReadFormAsync(context.RequestAborted);
+            try
+            {
+                await context.Request.ReadFormAsync(context.RequestAborted);
+            }
+            catch (InvalidDataException)
+            {
+                // The form parser rejects malformed values (including encoded NUL)
+                // before parameter validation can run. These are bad requests.
+                InputValidationLog.InputRejected(_logger, "Invalid form data.");
+                await CreateSecurityErrorResponse(context, "Invalid form data.");
+                return;
+            }
         }
 
         // Validate request inputs
@@ -401,7 +412,20 @@ internal sealed class InputValidationMiddleware
     private static bool ShouldSkipSqlInspection(HttpRequest request, string paramType, string name)
         => IsFeatureEditPayloadField(request, paramType, name)
            || IsOAuth2CredentialParameter(request, paramType, name)
+           || IsGenerateTokenPasswordParameter(request, paramType, name)
            || IsAdminSignalRConnectionId(request, paramType, name);
+
+    private static bool IsGenerateTokenPasswordParameter(HttpRequest request, string paramType, string name)
+    {
+        // Managed API keys are opaque base64url credentials and may contain "--".
+        // The credential verifier performs a lookup or constant-time comparison, never
+        // SQL evaluation. Keep this exception scoped to the supported password field;
+        // all size, control-character and other input checks still run.
+        return paramType is "form" or "query"
+            && name.Equals("password", StringComparison.OrdinalIgnoreCase)
+            && (string.Equals(request.Path.Value, "/sharing/rest/generateToken", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(request.Path.Value, "/sharing/rest/generateToken/", StringComparison.OrdinalIgnoreCase));
+    }
 
     private static bool IsAdminSignalRConnectionId(HttpRequest request, string paramType, string name)
     {

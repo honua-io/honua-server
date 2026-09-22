@@ -25,7 +25,9 @@ namespace Honua.Server.Tests.Features.Sharing;
 [Operation(Operations.Security)]
 public sealed class SharingRestTokenTests : IAsyncLifetime
 {
-    private const string AdminPassword = WebAppFixture.SharedAdminPassword;
+    // Base64url managed credentials may contain consecutive hyphens. Keep the
+    // supported form/query exchange paths deterministic against that SQL-looking data.
+    private const string AdminPassword = WebAppFixture.SharedAdminPassword + "--opaque";
     private const string TokenEndpoint = "/sharing/rest/generateToken";
     private const string SecureRefererA = "https://app.example.com/maps/";
 
@@ -76,10 +78,12 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData(TokenEndpoint)]
+    [InlineData(TokenEndpoint + "/")]
     [Operation(Operations.Security)]
     [Endpoint("POST /sharing/rest/generateToken")]
-    public async Task GenerateToken_WithFormCredentials_ReturnsTokenAndExpiry()
+    public async Task GenerateToken_WithFormCredentials_ReturnsTokenAndExpiry(string path)
     {
         using var client = _fixture.CreateClient();
         using var content = new FormUrlEncodedContent(new[]
@@ -90,7 +94,7 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
             new KeyValuePair<string, string>("referer", SecureRefererA),
             new KeyValuePair<string, string>("f", "json"),
         });
-        using var response = await client.PostAsync("/sharing/rest/generateToken", content);
+        using var response = await client.PostAsync(path, content);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var payload = await ReadTokenPayloadAsync(response);
@@ -103,13 +107,15 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
         response.Headers.Pragma.Should().Contain(value => value.Name == "no-cache");
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData(TokenEndpoint)]
+    [InlineData(TokenEndpoint + "/")]
     [Operation(Operations.Security)]
     [Endpoint("GET /sharing/rest/generateToken")]
-    public async Task GenerateToken_WithQueryStringCredentials_ReturnsToken()
+    public async Task GenerateToken_WithQueryStringCredentials_ReturnsToken(string path)
     {
         using var client = _fixture.CreateClient();
-        var query = $"/sharing/rest/generateToken?username=admin" +
+        var query = $"{path}?username=admin" +
             $"&password={Uri.EscapeDataString(AdminPassword)}" +
             $"&client=referer&referer={Uri.EscapeDataString(SecureRefererA)}&f=json";
         using var response = await client.GetAsync(query);
@@ -125,14 +131,16 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
         response.Headers.Pragma.Should().Contain(value => value.Name == "no-cache");
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("WRONG")]
+    [InlineData("WRONG--opaque")]
     [Operation(Operations.Security)]
     [Endpoint("POST /sharing/rest/generateToken")]
-    public async Task GenerateToken_WithInvalidCredentials_Returns400UnableToGenerateToken()
+    public async Task GenerateToken_WithInvalidCredentials_Returns400UnableToGenerateToken(string password)
     {
         using var client = _fixture.CreateClient();
         using var response = await PostFormAsync(client,
-            ("username", "admin"), ("password", "WRONG"),
+            ("username", "admin"), ("password", password),
             ("client", "referer"), ("referer", SecureRefererA), ("f", "json"));
 
         await response.AssertGeoServicesErrorAsync(400);
@@ -141,6 +149,51 @@ public sealed class SharingRestTokenTests : IAsyncLifetime
         response.Headers.CacheControl.Should().NotBeNull();
         response.Headers.CacheControl!.NoStore.Should().BeTrue();
         response.Headers.Pragma.Should().Contain(value => value.Name == "no-cache");
+    }
+
+    [IntegrationTheory]
+    [InlineData(TokenEndpoint, "username")]
+    [InlineData(TokenEndpoint + "-extra", "password")]
+    [InlineData("/rest/services/test/FeatureServer/0/query", "password")]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/generateToken")]
+    [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task GenerateToken_SqlInspectionExemption_IsLimitedToPassword(string path, string parameter)
+    {
+        using var client = _fixture.CreateClient();
+        using var content = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>(parameter, "opaque--value"),
+            new KeyValuePair<string, string>("f", "json")
+        });
+        using var response = await client.PostAsync(path, content);
+
+        await response.AssertGeoServicesErrorAsync(400);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("SQL injection attempt detected");
+    }
+
+    [IntegrationTheory]
+    [InlineData("null", "Invalid form data")]
+    [InlineData("control", "Control characters detected")]
+    [InlineData("length", "exceeds maximum length")]
+    [Operation(Operations.Security)]
+    [Endpoint("POST /sharing/rest/generateToken")]
+    public async Task GenerateToken_PasswordShapeValidation_RemainsEnforced(string kind, string expectedError)
+    {
+        var password = kind switch
+        {
+            // The form parser rejects encoded NUL before parameter inspection.
+            "null" => "opaque--" + (char)0,
+            "control" => "opaque--" + (char)1,
+            _ => new string('a', 10000)
+        };
+        using var client = _fixture.CreateClient();
+        using var response = await PostFormAsync(client,
+            ("username", "admin"), ("password", password),
+            ("client", "referer"), ("referer", SecureRefererA), ("f", "json"));
+
+        await response.AssertGeoServicesErrorAsync(400);
+        (await response.Content.ReadAsStringAsync()).Should().Contain(expectedError);
     }
 
     [IntegrationTest]
