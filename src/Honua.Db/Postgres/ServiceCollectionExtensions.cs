@@ -429,6 +429,14 @@ internal static class ServiceCollectionExtensions
         services.AddScoped<ITableDiscoveryService, PostgreSqlTableDiscoveryService>();
 
         // Register layer publishing implementation
+        // Snapshot copies of large imported tables need a longer, explicit budget than ordinary
+        // queries; out-of-range values fail at startup rather than on the first publication.
+        services.AddOptions<LayerPublishingOptions>()
+            .Bind(configuration.GetSection(LayerPublishingOptions.SectionName))
+            .Validate(
+                static options => LayerPublishingOptions.IsValidMaterializationTimeout(options.MaterializationTimeoutSeconds),
+                $"{LayerPublishingOptions.SectionName}:MaterializationTimeoutSeconds must be between 1 and {LayerPublishingOptions.MaximumMaterializationTimeoutSeconds}.")
+            .ValidateOnStart();
         services.AddScoped<ILayerPublishingService>(serviceProvider =>
             new PostgreSqlLayerPublishingService(
                 serviceProvider.GetRequiredService<ITableDiscoveryService>(),
@@ -436,7 +444,8 @@ internal static class ServiceCollectionExtensions
                 serviceProvider.GetRequiredService<ILogger<PostgreSqlLayerPublishingService>>(),
                 configuration["Database:Schema"],
                 serviceProvider.GetService<IStyleCatalog>(),
-                serviceProvider.GetService<IAdoNetDatabaseConnectionProvider>()));
+                serviceProvider.GetService<IAdoNetDatabaseConnectionProvider>(),
+                serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<LayerPublishingOptions>>().Value));
 
         // Register health checker
         services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();
