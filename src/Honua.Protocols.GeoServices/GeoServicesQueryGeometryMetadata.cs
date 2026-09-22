@@ -59,7 +59,9 @@ internal sealed class GeoServicesQueryGeometryMetadata : GeometryParameterMetada
         {
             try
             {
-                var curveParts = geometry.CurvePaths ?? geometry.CurveRings;
+                var curveParts = geometry.CurvePaths is { Length: > 0 }
+                    ? geometry.CurvePaths
+                    : geometry.CurveRings;
                 var curveVertexCount = 0;
                 foreach (var part in curveParts ?? [])
                 {
