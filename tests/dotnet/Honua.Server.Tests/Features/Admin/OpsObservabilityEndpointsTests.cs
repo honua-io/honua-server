@@ -346,9 +346,14 @@ public sealed class OpsObservabilityEndpointsTests : IAsyncLifetime
         // A 404 here would mean the denial leaked finding existence.
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
 
+        // Nothing is disclosed. The problem+json legitimately echoes the caller's own request
+        // path in "instance", so the disclosure test is that no proposal or finding payload
+        // comes back — the caller learns nothing it did not already supply.
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().NotContain("does-not-exist");
-        body.Should().NotContain("proposal");
+        foreach (var marker in new[] { "proposalId", "\"proposal\"", "\"finding\"", "\"severity\"" })
+        {
+            body.Should().NotContain(marker, $"an unauthenticated caller must not see '{marker}'");
+        }
     }
 
     private sealed class FixedAlertDispatchHealth(AlertDispatchBacklog backlog) : IAlertDispatchHealth
