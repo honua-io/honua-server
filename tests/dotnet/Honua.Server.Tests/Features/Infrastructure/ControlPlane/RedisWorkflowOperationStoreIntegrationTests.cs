@@ -5,6 +5,7 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
 using Honua.TestKit;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using StackExchange.Redis;
 
@@ -301,7 +302,7 @@ public sealed class RedisWorkflowOperationStoreIntegrationTests(RedisFixture red
         afterRollback!.OperationId.Should().Be(older.OperationId);
     }
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData(WorkflowOperationStatus.Failed)]
     [InlineData(WorkflowOperationStatus.RolledBack)]
     public async Task WorkflowStore_LaterTerminalDeploySupersedesStuckDespiteOldRecordUpdate(
@@ -324,7 +325,7 @@ public sealed class RedisWorkflowOperationStoreIntegrationTests(RedisFixture red
         (await store.HasLaterDeployOfTargetAsync(stuck)).Should().BeTrue();
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task WorkflowStore_LaterDeployLookupFailsClosedForLegacyAndIgnoresGlobalQueryWindow()
     {
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);

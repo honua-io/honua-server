@@ -276,13 +276,12 @@ public sealed class OpsFindingsServiceTests
         Assert.Null(finding.RecommendedAction);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("succeeded")]
     [InlineData("in-flight")]
     [InlineData("stuck")]
     [InlineData("failed")]
     [InlineData("rolled-back")]
-    [Trait("Tier", "Fast")]
     [Operation(Operations.TestInfrastructure)]
     public async Task Evaluate_DeployManualInterventionSupersededByLaterDeployOfTarget_ProducesNoFindingForIt(string later)
     {

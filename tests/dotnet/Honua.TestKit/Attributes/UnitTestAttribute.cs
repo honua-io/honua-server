@@ -18,6 +18,12 @@ public sealed class UnitTestAttribute : FactAttribute, ITraitAttribute
 {
 }
 
+/// <summary>Marks a parameterized test as unit-tier while retaining xUnit theory discovery.</summary>
+[TraitDiscoverer("Honua.TestKit.Attributes.UnitTestDiscoverer", "Honua.TestKit")]
+public sealed class UnitTheoryAttribute : TheoryAttribute, ITraitAttribute
+{
+}
+
 public sealed class UnitTestDiscoverer : ITraitDiscoverer
 {
     public IEnumerable<KeyValuePair<string, string>> GetTraits(IAttributeInfo traitAttribute)

@@ -146,6 +146,8 @@ public sealed class TierTraitEnforcementTests
     {
         TierTraitScanner.EmitsTierTrait(typeof(UnitTestAttribute)).Should().BeTrue(
             "[UnitTest] emits Tier=Fast, which is what the required gate filters on");
+        TierTraitScanner.EmitsTierTrait(typeof(UnitTheoryAttribute)).Should().BeTrue(
+            "[UnitTheory] emits Tier=Fast for parameterized tests");
         TierTraitScanner.EmitsTierTrait(typeof(IntegrationTestAttribute)).Should().BeTrue(
             "[IntegrationTest] emits Tier=Integration");
         TierTraitScanner.EmitsTierTrait(typeof(ScaleTestAttribute)).Should().BeTrue(

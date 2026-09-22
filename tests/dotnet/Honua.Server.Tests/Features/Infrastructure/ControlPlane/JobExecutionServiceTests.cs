@@ -2560,13 +2560,12 @@ public sealed class JobExecutionServiceTests
     /// claimed attempt back to the queue at once (no heartbeat-expiry wait), release the
     /// per-job cancellation registration, and let the next claim run the job to success.
     /// </summary>
-    [Theory]
+    [UnitTheory]
     [InlineData(PreDispatchFaultStore.InitialRead)]
     [InlineData(PreDispatchFaultStore.ReRead)]
     [InlineData(PreDispatchFaultStore.RunningTransitionLost)]
     [InlineData(PreDispatchFaultStore.RunningTransitionLanded)]
     [InlineData(PreDispatchFaultStore.PartitionLeaseAcquire)]
-    [Trait("Tier", "Fast")]
     public async Task ExecuteAsync_RequeuesAndRunsClaimedJob_WhenStoreFaultsBeforeDispatch(string faultPoint)
     {
         var queued = CreateQueuedJob(withPartitionLease: faultPoint == PreDispatchFaultStore.PartitionLeaseAcquire);
@@ -2617,13 +2616,12 @@ public sealed class JobExecutionServiceTests
     /// also fails. That must be absorbed (reconciliation recovers the job), must not
     /// escape into the claim loop, and must still drop the per-job cancellation entry.
     /// </summary>
-    [Theory]
+    [UnitTheory]
     [InlineData(PreDispatchFaultStore.InitialRead)]
     [InlineData(PreDispatchFaultStore.ReRead)]
     [InlineData(PreDispatchFaultStore.RunningTransitionLost)]
     [InlineData(PreDispatchFaultStore.RunningTransitionLanded)]
     [InlineData(PreDispatchFaultStore.PartitionLeaseAcquire)]
-    [Trait("Tier", "Fast")]
     public async Task ProcessJob_LeavesJobToReconciliation_WhenRequeueAfterPreDispatchFaultAlsoFails(string faultPoint)
     {
         var provisioning = CreateProvisioningJob() with
