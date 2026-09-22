@@ -28,33 +28,44 @@ public sealed class FeatureServerBranchAccessTests(FeatureServerBranchAccessFixt
 {
     private const string Layer = "/rest/services/" + BranchVersioningPublicationFixture.ServiceName + "/FeatureServer/0";
     private const string Service = "/rest/services/" + BranchVersioningPublicationFixture.ServiceName + "/FeatureServer";
+    private string CanonicalServiceId => fixture.App.GetCurrentV2GraphSnapshot().Index.ServicesByName[BranchVersioningPublicationFixture.ServiceName].Metadata.Id;
     private IVersionManager Manager => fixture.App.GetService<IVersionManager>();
 
     [IntegrationTheory]
-    [InlineData(VersionAccess.Private, "bob", false, "FeatureServer")]
-    [InlineData(VersionAccess.Private, "alice", true, "FeatureServer")]
-    [InlineData(VersionAccess.Private, "administrator", true, "FeatureServer")]
-    [InlineData(VersionAccess.Protected, "bob", true, "FeatureServer")]
-    [InlineData(VersionAccess.Public, "bob", true, "FeatureServer")]
-    [InlineData(VersionAccess.Private, "bob", false, "MapServer")]
-    [InlineData(VersionAccess.Private, "alice", true, "MapServer")]
-    [InlineData(VersionAccess.Public, "bob", true, "MapServer")]
+    [InlineData(VersionAccess.Private, "bob", false, "FeatureServer", false)]
+    [InlineData(VersionAccess.Private, "bob", false, "FeatureServer", true)]
+    [InlineData(VersionAccess.Private, "alice", true, "FeatureServer", false)]
+    [InlineData(VersionAccess.Private, "alice", true, "FeatureServer", true)]
+    [InlineData(VersionAccess.Private, "administrator", true, "FeatureServer", false)]
+    [InlineData(VersionAccess.Private, "administrator", true, "FeatureServer", true)]
+    [InlineData(VersionAccess.Protected, "bob", true, "FeatureServer", false)]
+    [InlineData(VersionAccess.Protected, "bob", true, "FeatureServer", true)]
+    [InlineData(VersionAccess.Public, "bob", true, "FeatureServer", false)]
+    [InlineData(VersionAccess.Public, "bob", true, "FeatureServer", true)]
+    [InlineData(VersionAccess.Private, "bob", false, "MapServer", false)]
+    [InlineData(VersionAccess.Private, "bob", false, "MapServer", true)]
+    [InlineData(VersionAccess.Private, "alice", true, "MapServer", false)]
+    [InlineData(VersionAccess.Private, "alice", true, "MapServer", true)]
+    [InlineData(VersionAccess.Public, "bob", true, "MapServer", false)]
+    [InlineData(VersionAccess.Public, "bob", true, "MapServer", true)]
+    [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}")]
     [Operation(Operations.Security)]
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/{layerId}/query")]
     [Endpoint("POST /rest/services/{serviceId}/MapServer/{layerId}/query")]
-    public async Task Reads_RespectPrivateVisibilityAcrossRowsCountIdsAndStatistics(VersionAccess access, string caller, bool allowed, string protocol)
+    public async Task Reads_RespectPrivateVisibilityAcrossRowsCountIdsAndStatistics(VersionAccess access, string caller, bool allowed, string protocol, bool useAdvertisedName)
     {
         var marker = "branch_access_" + Guid.NewGuid().ToString("N");
-        var version = await Manager.CreateAsync(new CreateVersionRequest(marker, "alice", access));
+        var version = await Manager.CreateAsync(new CreateVersionRequest(marker, "alice", access, ServiceId: CanonicalServiceId));
         try
         {
+            var identity = await GetIdentityAsync(version, useAdvertisedName);
             var objectId = await SeedBranchAsync(version.VersionId, marker);
             using var scope = new AssertionScope();
             foreach (var mode in new[] { "rows", "count", "ids", "statistics" })
             {
-                var values = QueryValues(version.VersionId, marker);
+                var values = QueryValues(identity, marker);
                 switch (mode)
                 {
                     case "count": values["returnCountOnly"] = "true"; break;
@@ -92,17 +103,25 @@ public sealed class FeatureServerBranchAccessTests(FeatureServerBranchAccessFixt
     }
 
     [IntegrationTheory]
-    [InlineData(VersionAccess.Private, "bob", false)]
-    [InlineData(VersionAccess.Protected, "bob", false)]
-    [InlineData(VersionAccess.Private, "alice", true)]
-    [InlineData(VersionAccess.Protected, "alice", true)]
-    [InlineData(VersionAccess.Private, "administrator", true)]
-    [InlineData(VersionAccess.Public, "bob", true)]
-    [InlineData(VersionAccess.Public, "viewer", false)]
+    [InlineData(VersionAccess.Private, "bob", false, false)]
+    [InlineData(VersionAccess.Private, "bob", false, true)]
+    [InlineData(VersionAccess.Protected, "bob", false, false)]
+    [InlineData(VersionAccess.Protected, "bob", false, true)]
+    [InlineData(VersionAccess.Private, "alice", true, false)]
+    [InlineData(VersionAccess.Private, "alice", true, true)]
+    [InlineData(VersionAccess.Protected, "alice", true, false)]
+    [InlineData(VersionAccess.Protected, "alice", true, true)]
+    [InlineData(VersionAccess.Private, "administrator", true, false)]
+    [InlineData(VersionAccess.Private, "administrator", true, true)]
+    [InlineData(VersionAccess.Public, "bob", true, false)]
+    [InlineData(VersionAccess.Public, "bob", true, true)]
+    [InlineData(VersionAccess.Public, "viewer", false, false)]
+    [InlineData(VersionAccess.Public, "viewer", false, true)]
+    [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}")]
     [Operation(Operations.Security)]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/applyEdits")]
-    public async Task Writes_RespectPrivateAndProtectedOwnershipAtLayerAndService(VersionAccess access, string caller, bool allowed)
+    public async Task Writes_RespectPrivateAndProtectedOwnershipAtLayerAndService(VersionAccess access, string caller, bool allowed, bool useAdvertisedName)
     {
         var marker = "branch_edit_" + Guid.NewGuid().ToString("N");
         // This fixture owns its isolated database. Seed a DEFAULT row before creating
@@ -111,8 +130,9 @@ public sealed class FeatureServerBranchAccessTests(FeatureServerBranchAccessFixt
         Guid? ownedVersion = null;
         try
         {
-            var version = await Manager.CreateAsync(new CreateVersionRequest(marker, "alice", access));
+            var version = await Manager.CreateAsync(new CreateVersionRequest(marker, "alice", access, ServiceId: CanonicalServiceId));
             ownedVersion = version.VersionId;
+            var identity = await GetIdentityAsync(version, useAdvertisedName);
             version.Owner.Should().Be("alice");
             version.Access.Should().Be(access);
             output.WriteLine("Owned branch {0}, owner {1}, access {2}, baseline object {3}",
@@ -126,7 +146,7 @@ public sealed class FeatureServerBranchAccessTests(FeatureServerBranchAccessFixt
                 var values = new Dictionary<string, string>
                 {
                     ["f"] = "json",
-                    ["gdbVersion"] = version.VersionId.ToString(),
+                    ["gdbVersion"] = identity,
                     ["rollbackOnFailure"] = "true"
                 };
                 if (serviceLevel)
@@ -156,7 +176,7 @@ public sealed class FeatureServerBranchAccessTests(FeatureServerBranchAccessFixt
                 var readback = await SendAsync("alice", Layer + "/query", new Dictionary<string, string>
                 {
                     ["f"] = "json",
-                    ["gdbVersion"] = version.VersionId.ToString(),
+                    ["gdbVersion"] = identity,
                     ["objectIds"] = objectId.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     ["outFields"] = "objectid,name",
                     ["returnGeometry"] = "false"
@@ -240,7 +260,105 @@ public sealed class FeatureServerBranchAccessTests(FeatureServerBranchAccessFixt
         body.GetProperty("count").GetInt32().Should().Be(0, "all owned data changes stay in the branch");
     }
 
-    private static Dictionary<string, string> QueryValues(Guid version, string marker) => new()
+    [IntegrationTheory]
+    [InlineData("plain")]
+    [InlineData("alice.legacy")]
+    [InlineData("namespace.quoted'name")]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer/create")]
+    [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer/versions")]
+    [Endpoint("GET /rest/services/{serviceId}/VersionManagementServer/versions/{versionGuid}")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Create_ReturnedCanonicalNameMatchesListDetailAndResolvesSameOwnedVersion(string prefix)
+    {
+        var rawName = prefix + "_" + Guid.NewGuid().ToString("N");
+        var vms = "/rest/services/" + BranchVersioningPublicationFixture.ServiceName + "/VersionManagementServer";
+        var created = await SendAsync("alice", vms + "/create", new Dictionary<string, string>
+        {
+            ["f"] = "json", ["versionName"] = rawName, ["owner"] = "bob", ["accessPermission"] = "private"
+        }, true);
+        created.TryGetProperty("error", out _).Should().BeFalse(created.ToString());
+        var info = created.GetProperty("versionInfo");
+        var id = Guid.Parse(info.GetProperty("versionGuid").GetString()!);
+        try
+        {
+            var name = info.GetProperty("versionName").GetString()!;
+            name.Should().Be("alice." + rawName);
+            info.GetProperty("owner").GetString().Should().Be("alice");
+            var stored = (await Manager.GetVersionAsync(id))!.Value;
+            stored.VersionName.Should().Be(rawName, "qualification must not rewrite stored names");
+            stored.Owner.Should().Be("alice", "caller-supplied owner is never authoritative");
+            (await Manager.ResolveAsync(name))!.Value.VersionId.Should().Be(id);
+            var detail = await SendAsync("alice", vms + "/versions/" + id.ToString("D"), new Dictionary<string, string> { ["f"] = "json" });
+            detail.GetProperty("versionName").GetString().Should().Be(name);
+            var list = await SendAsync("alice", vms + "/versions", new Dictionary<string, string> { ["f"] = "json" });
+            list.GetProperty("versions").EnumerateArray().Single(item => Guid.Parse(item.GetProperty("versionGuid").GetString()!) == id)
+                .GetProperty("versionName").GetString().Should().Be(name);
+            var marker = "name_roundtrip_" + Guid.NewGuid().ToString("N");
+            var objectId = await SeedBranchAsync(id, marker);
+            var rows = await SendAsync("alice", Layer + "/query", QueryValues(name, marker));
+            rows.GetProperty("features").GetArrayLength().Should().Be(1);
+            rows.GetProperty("features")[0].GetProperty("attributes").GetProperty("objectid").GetInt64().Should().Be(objectId);
+            rows.GetProperty("features")[0].GetProperty("attributes").GetProperty("name").GetString().Should().Be(marker);
+            await AssertDefaultAbsentAsync(marker);
+        }
+        finally
+        {
+            (await Manager.DeleteAsync(id)).Should().BeTrue();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task DottedPublicName_CannotShadowOtherOwnersPrivateQuery()
+    {
+        var marker = "collision_" + Guid.NewGuid().ToString("N");
+        var alice = await Manager.CreateAsync(new CreateVersionRequest(marker, "alice", VersionAccess.Private, ServiceId: CanonicalServiceId));
+        Guid? bobId = null;
+        try
+        {
+            var bob = await Manager.CreateAsync(new CreateVersionRequest("alice." + marker, "bob", VersionAccess.Public, ServiceId: CanonicalServiceId));
+            bobId = bob.VersionId;
+            var objectId = await SeedBranchAsync(alice.VersionId, marker);
+            var privateIdentity = "alice." + marker;
+            var allowed = await SendAsync("alice", Layer + "/query", QueryValues(privateIdentity, marker));
+            allowed.GetProperty("features").GetArrayLength().Should().Be(1);
+            allowed.GetProperty("features")[0].GetProperty("attributes").GetProperty("objectid").GetInt64().Should().Be(objectId);
+            var denied = await SendAsync("bob", Layer + "/query", QueryValues(privateIdentity, marker));
+            AssertError(denied, 404, "a public raw name must not replace the actual owner's private identity");
+            var ownPublic = await SendAsync("bob", Layer + "/query", QueryValues("bob.alice." + marker, marker));
+            ownPublic.TryGetProperty("error", out _).Should().BeFalse(ownPublic.ToString());
+            ownPublic.GetProperty("features").GetArrayLength().Should().Be(0, "the public branch must not read the private overlay");
+            (await Manager.GetVersionAsync(bob.VersionId))!.Value.Access.Should().Be(VersionAccess.Public);
+            await AssertDefaultAbsentAsync(marker);
+        }
+        finally
+        {
+            if (bobId is { } id)
+            {
+                (await Manager.DeleteAsync(id)).Should().BeTrue();
+            }
+            (await Manager.DeleteAsync(alice.VersionId)).Should().BeTrue();
+        }
+    }
+
+    private async Task<string> GetIdentityAsync(GdbVersion version, bool useAdvertisedName)
+    {
+        if (!useAdvertisedName)
+        {
+            return version.VersionId.ToString("D");
+        }
+        var body = await SendAsync("alice", "/rest/services/" + BranchVersioningPublicationFixture.ServiceName +
+            "/VersionManagementServer/versions/" + version.VersionId.ToString("D"), new Dictionary<string, string> { ["f"] = "json" });
+        body.TryGetProperty("error", out _).Should().BeFalse(body.ToString());
+        var name = body.GetProperty("versionName").GetString()!;
+        name.Should().Be(version.Owner + "." + version.VersionName);
+        (await Manager.ResolveAsync(name))!.Value.VersionId.Should().Be(version.VersionId);
+        return name;
+    }
+
+    private static Dictionary<string, string> QueryValues(string version, string marker) => new()
     {
         ["f"] = "json",
         ["gdbVersion"] = version.ToString(),

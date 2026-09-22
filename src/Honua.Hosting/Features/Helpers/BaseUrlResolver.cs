@@ -20,8 +20,10 @@ internal static class BaseUrlResolver
 
     public static string GetBaseUrl(HttpRequest request)
     {
-        var configuration = request.HttpContext.RequestServices.GetRequiredService<IConfiguration>();
-        if (TryGetConfiguredBaseUrl(configuration, out var configuredBaseUrl))
+        // Hosts without a registered IConfiguration (unit-test contexts, minimal pipelines)
+        // fall through to the local-origin derivation instead of throwing.
+        var configuration = request.HttpContext.RequestServices.GetService<IConfiguration>();
+        if (configuration is not null && TryGetConfiguredBaseUrl(configuration, out var configuredBaseUrl))
         {
             return configuredBaseUrl;
         }

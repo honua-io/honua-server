@@ -1299,6 +1299,21 @@ RESOLVED_EXCLUSION_EVIDENCE[("ogc-api-maps", "1.0", "map", "pyqgis")] = (
     "Development JIT SDK evidence; dataset landing metadata defect remains open"
 )
 
+RESOLVED_EXCLUSION_EVIDENCE[("ogc-api-records", "1.0", "records", "pyqgis")] = (
+    "honua-client-compat/evidence/pyqgis-ogc-records-native-20260920-a/receipt.json "
+    "(honua-client-compat commit 5805b4854d28f944ea3cb36c2a96fb010f8c1cf7; "
+    "SHA-256 15a7d73a879725288c7bc95d1ea8798b142fbcb3f42ac7cc862d2a03560399af): "
+    "PyQGIS 3.44.14-Solothurn / GDAL 3.13.3 stock OGR GeoJSON configured HTTPS URL "
+    "reads all 11 catalog records and repeats the read after QGS reload in a distinct "
+    "fresh process. IDs, titles, types, resource types and null geometries match "
+    "independent before/after HTTP; exact remote URI retained, both workers exit0. "
+    "Verified TLS, unchanged SQL feature/raster fixture and runtime, source "
+    "8b7aea9f6c73504d968560227926e3b8b4c5ddd0 / image 28d09586daf7. "
+    "Configured-URL membership and selected metadata only; no catalog chooser, "
+    "provider-generated search, filtering/pagination, nested metadata, native wire trace "
+    "or full Records conformance claim. Development JIT SDK evidence, zero UI credit"
+)
+
 NATIVE_REVIEW_FAILURES = {
     ("featureserver", "GeoServices REST", "statistics", "arcpy"): {
         "issue": "https://github.com/honua-io/honua-server/issues/5045",

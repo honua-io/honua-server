@@ -19,10 +19,8 @@ namespace Honua.Db.Postgres.Features.FeatureStore.Services;
 /// same version is serialized; large runs execute through the canonical async job runner. A null or
 /// DEFAULT resolution always maps to the byte-identical base path.
 /// </summary>
-internal sealed partial class PostgresVersionManager : IVersionManager
+internal sealed partial class PostgresVersionManager : IVersionManager, IVersionServiceAssociationManager, IVersionServiceMaintenanceManager
 {
-    private const string DefaultVersionSentinel = "sde.default";
-
     // The (service, version) maintenance lock auto-expires after this lease if a holder crashes
     // mid-reconcile/post, so a stuck lock can never permanently wedge a version (#1553). The Redis
     // handle renews the lease while the critical section runs.
@@ -65,9 +63,33 @@ internal sealed partial class PostgresVersionManager : IVersionManager
             throw new ArgumentException("Version name is required.", nameof(request));
         }
 
+        RejectReservedVersionName(request.VersionName);
+        if (request.ServiceId is not null && string.IsNullOrWhiteSpace(request.ServiceId))
+        {
+            throw new ArgumentException("Canonical service identity cannot be blank.", nameof(request));
+        }
+
         if (string.IsNullOrWhiteSpace(request.Owner))
         {
             throw new ArgumentException("Version owner is required.", nameof(request));
+        }
+
+        // Resolve immutable DEFAULT identity before acquiring the insert connection. Holding
+        // that connection while checking out another can exhaust even a valid one-slot pool.
+        var parentVersion = request.ParentVersion;
+        if (parentVersion.HasValue &&
+            (await GetDefaultVersionIdentityAsync(cancellationToken).ConfigureAwait(false))?.VersionId == parentVersion.Value)
+        {
+            parentVersion = null;
+        }
+
+        if (request.ServiceId is not null && parentVersion.HasValue)
+        {
+            var parent = await GetVersionAsync(parentVersion.Value, cancellationToken).ConfigureAwait(false);
+            if (parent is null || !VersionServiceScope.BelongsTo(parent.Value, request.ServiceId))
+            {
+                throw new ArgumentException("The parent does not belong to the requested service.", nameof(request));
+            }
         }
 
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
@@ -75,15 +97,16 @@ internal sealed partial class PostgresVersionManager : IVersionManager
         // The merge base is the current DEFAULT generation; reconcile pulls DEFAULT changes since this
         // cursor into the branch. last_value mirrors PostgresChangeTracker.GetCurrentGenerationAsync.
         const string sql = """
-            INSERT INTO honua.gdb_versions (version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description)
-            VALUES (@name, @owner, @parent, @access, 0, (SELECT last_value FROM honua.sync_generation), (SELECT last_value FROM honua.sync_generation), @description)
-            RETURNING version_id, version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description, created_at, modified_at
+            INSERT INTO honua.gdb_versions (version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description, service_id)
+            VALUES (@name, @owner, @parent, @access, 0, (SELECT last_value FROM honua.sync_generation), (SELECT last_value FROM honua.sync_generation), @description, @service)
+            RETURNING version_id, version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description, created_at, modified_at, service_id
             """;
 
         await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("service", (object?)request.ServiceId ?? DBNull.Value);
         command.Parameters.AddWithValue("name", request.VersionName);
         command.Parameters.AddWithValue("owner", request.Owner);
-        command.Parameters.AddWithValue("parent", (object?)request.ParentVersion ?? DBNull.Value);
+        command.Parameters.AddWithValue("parent", (object?)parentVersion ?? DBNull.Value);
         command.Parameters.AddWithValue("access", (short)request.Access);
         command.Parameters.AddWithValue("description", (object?)request.Description ?? DBNull.Value);
 
@@ -106,6 +129,8 @@ internal sealed partial class PostgresVersionManager : IVersionManager
     /// <inheritdoc />
     public async Task<bool> DeleteAsync(Guid versionId, CancellationToken cancellationToken = default)
     {
+        await EnsureBranchTargetAsync(versionId, cancellationToken).ConfigureAwait(false);
+
         // ON DELETE CASCADE on honua.version_edits removes the overlay rows with the registry row.
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand(
@@ -118,6 +143,12 @@ internal sealed partial class PostgresVersionManager : IVersionManager
     /// <inheritdoc />
     public async Task<GdbVersion?> AlterAsync(AlterVersionRequest request, CancellationToken cancellationToken = default)
     {
+        await EnsureBranchTargetAsync(request.VersionId, cancellationToken).ConfigureAwait(false);
+        if (request.VersionName is not null)
+        {
+            RejectReservedVersionName(request.VersionName);
+        }
+
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         const string sql = """
             UPDATE honua.gdb_versions
@@ -126,7 +157,7 @@ internal sealed partial class PostgresVersionManager : IVersionManager
                 description = CASE WHEN @description_set THEN @description ELSE description END,
                 modified_at = now()
             WHERE version_id = @id
-            RETURNING version_id, version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description, created_at, modified_at
+            RETURNING version_id, version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description, created_at, modified_at, service_id
             """;
 
         await using var command = new NpgsqlCommand(sql, connection);
@@ -154,7 +185,7 @@ internal sealed partial class PostgresVersionManager : IVersionManager
     {
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         const string sql = """
-            SELECT version_id, version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description, created_at, modified_at
+            SELECT version_id, version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description, created_at, modified_at, service_id
             FROM honua.gdb_versions
             WHERE state <> 3
             ORDER BY created_at
@@ -175,8 +206,20 @@ internal sealed partial class PostgresVersionManager : IVersionManager
     public async Task<VersionContext?> ResolveAsync(string? gdbVersion, CancellationToken cancellationToken = default)
     {
         // Absent/empty or the DEFAULT sentinel resolves to DEFAULT (byte-identical base path).
-        if (string.IsNullOrWhiteSpace(gdbVersion) ||
-            gdbVersion.Trim().Equals(DefaultVersionSentinel, StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(gdbVersion))
+        {
+            return VersionContext.Default;
+        }
+        if (DefaultVersionIdentity.IsDefaultName(gdbVersion))
+        {
+            // Pre-existing reserved names remain stored and reachable by GUID. An ambiguous
+            // display identity must not silently select either DEFAULT or somebody's branch.
+            return await HasDefaultNameCollisionAsync(gdbVersion.Trim(), cancellationToken).ConfigureAwait(false)
+                ? null : VersionContext.Default;
+        }
+
+        if (Guid.TryParse(gdbVersion.Trim(), out var identity) &&
+            (await GetDefaultVersionIdentityAsync(cancellationToken).ConfigureAwait(false))?.VersionId == identity)
         {
             return VersionContext.Default;
         }
@@ -194,7 +237,7 @@ internal sealed partial class PostgresVersionManager : IVersionManager
         if (Guid.TryParse(gdbVersion, out var versionId))
         {
             sql = """
-                SELECT version_id, version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description, created_at, modified_at
+                SELECT version_id, version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description, created_at, modified_at, service_id
                 FROM honua.gdb_versions
                 WHERE version_id = @id AND state <> 3
                 """;
@@ -203,20 +246,28 @@ internal sealed partial class PostgresVersionManager : IVersionManager
             return await ReadSingleAsync(byId, cancellationToken).ConfigureAwait(false);
         }
 
-        var (owner, name) = SplitOwnerName(gdbVersion);
+        // Dotted inputs are canonical owner + literal stored name, never global
+        // raw-name aliases. Owners and names may both contain dots: compare the
+        // full identity and fail closed if two different rows produce it.
+        // Bare-name convenience is retained only when the active match is unique.
         sql = """
-            SELECT version_id, version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description, created_at, modified_at
+            SELECT version_id, version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description, created_at, modified_at, service_id
             FROM honua.gdb_versions
             WHERE state <> 3
-              AND LOWER(version_name) = LOWER(@name)
-              AND (@owner IS NULL OR LOWER(owner) = LOWER(@owner))
-            ORDER BY created_at
-            LIMIT 1
+              AND LOWER(CASE WHEN @qualified THEN owner || '.' || version_name ELSE version_name END) = LOWER(@identity)
+            LIMIT 2
             """;
         await using var byName = new NpgsqlCommand(sql, connection);
-        byName.Parameters.AddWithValue("name", name);
-        byName.Parameters.AddWithValue("owner", (object?)owner ?? DBNull.Value);
-        return await ReadSingleAsync(byName, cancellationToken).ConfigureAwait(false);
+        byName.Parameters.AddWithValue("qualified", gdbVersion.Contains('.'));
+        byName.Parameters.AddWithValue("identity", gdbVersion);
+        await using var reader = await byName.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return null;
+        }
+
+        var candidate = ReadVersion(reader);
+        return await reader.ReadAsync(cancellationToken).ConfigureAwait(false) ? null : candidate;
     }
 
     private static async Task<GdbVersion?> ReadSingleAsync(NpgsqlCommand command, CancellationToken cancellationToken)
@@ -228,19 +279,6 @@ internal sealed partial class PostgresVersionManager : IVersionManager
         }
 
         return ReadVersion(reader);
-    }
-
-    private static (string? Owner, string Name) SplitOwnerName(string gdbVersion)
-    {
-        // Esri identities are "owner.name"; match on the full name first, but a dotted value also lets us
-        // disambiguate by owner. Treat the substring after the last dot as the name and the prefix as owner.
-        var lastDot = gdbVersion.LastIndexOf('.');
-        if (lastDot <= 0 || lastDot == gdbVersion.Length - 1)
-        {
-            return (null, gdbVersion);
-        }
-
-        return (gdbVersion[..lastDot], gdbVersion[(lastDot + 1)..]);
     }
 
     private static GdbVersion ReadVersion(NpgsqlDataReader reader) => new()
@@ -256,5 +294,6 @@ internal sealed partial class PostgresVersionManager : IVersionManager
         Description = reader.IsDBNull(8) ? null : reader.GetString(8),
         CreatedAt = reader.GetFieldValue<DateTimeOffset>(9),
         ModifiedAt = reader.GetFieldValue<DateTimeOffset>(10),
+        ServiceId = reader.IsDBNull(11) ? null : reader.GetString(11),
     };
 }

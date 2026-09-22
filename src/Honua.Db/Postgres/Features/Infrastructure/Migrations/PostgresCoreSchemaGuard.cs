@@ -15,7 +15,7 @@ namespace Honua.Db.Postgres.Features.Infrastructure.Migrations;
 /// audited core migrations. This component never executes DDL: divergence is an operator-visible,
 /// terminal failure rather than permission to replay part of a migration from a store.
 /// </summary>
-internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
+internal sealed partial class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
 {
     internal const string RasterTablesMigration =
         "Honua.Postgres.Migrations.001_CreateRasterTables.sql";
@@ -379,6 +379,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
     {
         ArgumentNullException.ThrowIfNull(connection);
         var state = await ReadStateAsync(connection, cancellationToken).ConfigureAwait(false);
+        await VerifyDefaultVersionIdentityAsync(connection, state, allowPending: false, cancellationToken).ConfigureAwait(false);
+        await VerifyVersionServiceAssociationAsync(connection, state, allowPending: false, cancellationToken).ConfigureAwait(false);
 
         if (state.RequiresRasterFloor)
         {
@@ -446,6 +448,8 @@ internal sealed class PostgresCoreSchemaGuard : IDatabaseSchemaGuard
     {
         ArgumentNullException.ThrowIfNull(connection);
         var state = await ReadStateAsync(connection, cancellationToken).ConfigureAwait(false);
+        await VerifyDefaultVersionIdentityAsync(connection, state, allowPending: true, cancellationToken).ConfigureAwait(false);
+        await VerifyVersionServiceAssociationAsync(connection, state, allowPending: true, cancellationToken).ConfigureAwait(false);
 
         if (state.RequiresRasterFloor)
         {

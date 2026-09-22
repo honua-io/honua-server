@@ -121,9 +121,11 @@ public sealed class FeatureServerResponse
     public GeoServicesFieldInfo[] Fields { get; init; } = [];
 
     /// <summary>
-    /// Relationships between layers (typically empty for basic implementation)
+    /// Relationship classes the service's layers take part in. ArcGIS Pro offers Related
+    /// Data on a layer only when the service root lists the relationship, so this mirrors
+    /// the layers' relationships (one entry per relationship id).
     /// </summary>
-    public object[] Relationships { get; init; } = [];
+    public LayerRelationshipInfo[] Relationships { get; init; } = [];
 
     /// <summary>
     /// Whether the service allows geometry updates on features

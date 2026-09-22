@@ -52,7 +52,7 @@ internal static partial class FeatureServerEndpoints
         return false;
     }
 
-    private static async Task<bool> IsPublicationBranchVersioningAvailableAsync(
+    internal static async Task<bool> IsPublicationBranchVersioningAvailableAsync(
         HttpContext context, MetadataV2Service service, MetadataV2Resource resource,
         MetadataV2Publication publication, MetadataV2GraphSnapshot snapshot,
         CancellationToken cancellationToken)

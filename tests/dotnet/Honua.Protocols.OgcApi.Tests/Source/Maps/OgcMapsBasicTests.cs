@@ -26,6 +26,7 @@ public class OgcMapsBasicTests : IAsyncLifetime
     private readonly WebAppFixture _fixture = new();
     private const int TestLayerId = 0; // Use existing test layer
     private static readonly string[] OptionalLinkFieldNames = ["rel", "type", "title"];
+    private static readonly string[] RequiredLandingFieldNames = ["title", "links"];
 
     public async Task InitializeAsync()
     {
@@ -124,6 +125,22 @@ public class OgcMapsBasicTests : IAsyncLifetime
 
         json.RootElement.GetProperty("openapi").GetString().Should().NotBeNullOrWhiteSpace();
         json.RootElement.GetProperty("paths").TryGetProperty("/ogc/maps", out _).Should().BeTrue();
+
+        var schemas = json.RootElement.GetProperty("components").GetProperty("schemas");
+        var landing = schemas.GetProperty("LandingPage");
+        landing.GetProperty("required").EnumerateArray().Select(item => item.GetString())
+            .Should().BeEquivalentTo(RequiredLandingFieldNames, "dataset discovery additions remain optional");
+        var properties = landing.GetProperty("properties");
+        properties.GetProperty("extent").GetProperty("$ref").GetString()
+            .Should().Be("#/components/schemas/MapsCollection/properties/extent");
+        var extent = schemas.GetProperty("MapsCollection").GetProperty("properties").GetProperty("extent");
+        extent.GetProperty("type").GetString().Should().Be("object");
+        extent.GetProperty("properties").GetProperty("spatial").GetProperty("properties")
+            .GetProperty("bbox").GetProperty("items").GetProperty("items")
+            .GetProperty("type").GetString().Should().Be("number");
+        properties.GetProperty("crs").GetProperty("type").GetString().Should().Be("array");
+        properties.GetProperty("crs").GetProperty("items").GetProperty("type").GetString().Should().Be("string");
+        properties.GetProperty("storageCrs").GetProperty("type").GetString().Should().Be("string");
     }
 
     [IntegrationTest]

@@ -72,7 +72,10 @@ public sealed class OgcClassicWmtsLimitsTests : IClassFixture<OgcClassicWmtsLimi
 
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        content.Should().Contain("<TileMatrix>24</TileMatrix>");
+        // Only the TileMatrixSet definition is asserted. The companion
+        // <TileMatrix>24</TileMatrix> check was dropped: that element existed only inside
+        // TileMatrixLimits, which is no longer emitted because its level-0 entry made the
+        // document fail WMTS 1.0.0 schema validation - see AppendWmtsTileMatrixSetLink.
         content.Should().Contain("<ows:Identifier>24</ows:Identifier>");
     }
 }

@@ -24,6 +24,11 @@ internal static partial class GPServerEndpoints
         var logger = ResolveLogger(context);
         try
         {
+            var serviceId = originalRoutes["serviceId"]?.ToString() ?? string.Empty;
+            if (IsNetworkAnalysisUtilityRequest(context) && name is not ("Execute" or "SubmitJob"))
+            {
+                return CreateSoapFault("Routing utilities do not create jobs.", StatusCodes.Status400BadRequest, soap);
+            }
             IResult response;
             XElement? result;
             if (name is "SubmitJob" or "Execute")
@@ -33,9 +38,9 @@ internal static partial class GPServerEndpoints
                 IReadOnlyDictionary<string, string> ReadParameters()
                 {
                     var catalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
-                    var definition = ResolveTaskDefinition(catalog, taskName)
+                    var task = ResolveServiceTaskInfo(catalog, GPServerEndpoints.IsNetworkAnalysisUtilityRequest(context), taskName)
                         ?? throw new GeoprocessingNotFoundException("The requested task was not found.");
-                    return GPServerSoapExecution.ReadSubmission(operation, BuildTaskInfo(taskName, definition));
+                    return GPServerSoapExecution.ReadSubmission(operation, task);
                 }
 
                 // Parsing is deferred until the canonical handler authorizes the
@@ -64,7 +69,6 @@ internal static partial class GPServerEndpoints
                 var taskName = job.Spec.Parameters.GetValueOrDefault(GeoprocessingProtocolMetadataKeys.GPServerTaskName) ?? string.Empty;
                 context.Request.RouteValues["taskName"] = taskName;
                 context.Request.RouteValues["jobId"] = jobId;
-                var serviceId = originalRoutes["serviceId"]?.ToString() ?? string.Empty;
                 var bindingError = ValidateJobBinding(context, logger, job, serviceId, taskName);
                 if (bindingError is not null)
                 {

@@ -16,11 +16,63 @@ public sealed class VersionManagementServiceInfo
     // independent, Esri-compatible server and must not impersonate a specific ArcGIS Server
     // release. Do NOT add a currentVersion/fullVersion field (guarded by NoArcGisServerVersionTests).
 
-    /// <summary>Default version name (always the implicit DEFAULT version).</summary>
+    /// <summary>Standard extension display name.</summary>
+    public string Name { get; init; } = "Version Management Server";
+
+    /// <summary>The standard service-extension resource type.</summary>
+    public string Type { get; init; } = "Map Server Extension";
+
+    /// <summary>Canonical name of the managed base store.</summary>
     public string DefaultVersionName { get; init; } = "sde.DEFAULT";
 
-    /// <summary>Capability list advertised for the version-management surface.</summary>
-    public string Capabilities { get; init; } = "Create,Delete,Alter,Reconcile,Post";
+    /// <summary>Persisted identity of the managed base store, never a fabricated branch GUID.</summary>
+    public required string DefaultVersionGuid { get; init; }
+
+    /// <summary>Truthful supported optional operations, in the standard object wire shape.</summary>
+    public VersionManagementCapabilities Capabilities { get; init; } = new();
+}
+
+/// <summary>Optional VMS operations supported by the canonical implementation.</summary>
+public sealed class VersionManagementCapabilities
+{
+    /// <summary>Reconcile supports attribute-level conflict detection.</summary>
+    public bool SupportsConflictDetectionByAttribute { get; init; } = true;
+
+    /// <summary>Reconcile can use the configured canonical job runner.</summary>
+    public bool SupportsAsyncReconcile { get; init; }
+
+    /// <summary>Post can use the configured canonical job runner.</summary>
+    public bool SupportsAsyncPost { get; init; }
+
+    /// <summary>Posting selected rows is not implemented.</summary>
+    public bool SupportsPartialPost => false;
+
+    /// <summary>Moment-filtered differences are not implemented.</summary>
+    public bool SupportsDifferencesFromMoment => false;
+
+    /// <summary>Layer-filtered differences are not implemented.</summary>
+    public bool SupportsDifferencesWithLayers => false;
+
+    /// <summary>Asynchronous differences are not implemented.</summary>
+    public bool SupportsAsyncDifferences => false;
+
+    /// <summary>Output projection of differences/conflicts is not implemented.</summary>
+    public bool SupportsOutSR => false;
+
+    /// <summary>The separate partial-post operation is not implemented.</summary>
+    public bool SupportsPartialPostOperation => false;
+
+    /// <summary>The versionInfos name-filter operation is not implemented.</summary>
+    public bool SupportsVersionInfosNameFilter => false;
+
+    /// <summary>Server-held Esri read/write session locks are not implemented.</summary>
+    public bool SupportsMultipleReadersSingleWriterLocking => false;
+
+    /// <summary>The Esri locks and lockInfos resources are not implemented.</summary>
+    public bool SupportsLockInfos => false;
+
+    /// <summary>Creating a version at a historical moment is not implemented.</summary>
+    public bool SupportsCreateWithMoment => false;
 }
 
 /// <summary>
@@ -50,6 +102,12 @@ public sealed class VersionInfo
     /// <summary>Parent version GUID this branch was created from; null when branched from DEFAULT.</summary>
     public string? ParentVersionGuid { get; init; }
 
+    /// <summary>Standard version metadata creation date, matching the durable descriptor.</summary>
+    public long CreationDate => CreationMoment;
+
+    /// <summary>Standard metadata modification date; not a feature-data modification timestamp.</summary>
+    public long ModifiedDate => ModifiedMoment;
+
     /// <summary>Epoch-milliseconds the version was created.</summary>
     public long CreationMoment { get; init; }
 
@@ -62,8 +120,18 @@ public sealed class VersionInfo
 /// </summary>
 public sealed class VersionListResponse
 {
-    /// <summary>The known branch versions (DEFAULT is implicit and not listed).</summary>
+    /// <summary>The durable DEFAULT descriptor and visible branch versions.</summary>
     public VersionInfo[] Versions { get; init; } = [];
+}
+
+/// <summary>Read-only versionInfos result after canonical access and owner filtering.</summary>
+public sealed class VersionInfosResponse
+{
+    /// <summary>Visible identities, including DEFAULT when its display owner matches the filter.</summary>
+    public VersionInfo[] Versions { get; init; } = [];
+
+    /// <summary>True only when identity discovery completed successfully.</summary>
+    public bool Success => true;
 }
 
 /// <summary>

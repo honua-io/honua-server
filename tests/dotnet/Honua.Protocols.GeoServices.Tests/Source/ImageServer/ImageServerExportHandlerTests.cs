@@ -74,6 +74,79 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task ExportImageAsync_FramedBboxSelectingNoRasters_ReturnsEmptyImage()
+    {
+        // A tiling client asks for a grid of adjacent extents, so the tiles beyond the layer's
+        // footprint select no raster. Esri answers those with an empty image; returning an error
+        // body instead fails the tile in the client (QGIS's arcgismapserver provider paints
+        // nothing and logs a failure for every off-footprint tile).
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
+        RasterQuery? capturedQuery = null;
+        _rasterStore.ExportEmptyExtentAsync(1, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedQuery = callInfo.ArgAt<RasterQuery>(1);
+                return CreateTestRasterResult();
+            });
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(bbox: "-123,37,-122.9,37.1", size: 256, responseFormat: "image");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<FileContentHttpResult>();
+        ((FileContentHttpResult)result).FileContents.ToArray().Should().Equal(CreateTestRasterResult().Data);
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Value.CoverClipExtent.Should().BeTrue();
+        capturedQuery.Value.ClipRegion.Should().NotBeNull();
+        capturedQuery.Value.OutputWidth.Should().Be(256);
+        capturedQuery.Value.OutputHeight.Should().Be(256);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_FramedBboxOnLayerWithoutRasters_ReturnsNotFound()
+    {
+        // A layer holding no raster at all has no band layout to copy, so there is no empty image
+        // to describe and the request still reports not-found rather than inventing a shape.
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
+        _rasterStore.ExportEmptyExtentAsync(1, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = Array.Empty<byte>(),
+                ContentType = "image/png",
+                Width = 0,
+                Height = 0
+            });
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(bbox: "-123,37,-122.9,37.1", size: 256, responseFormat: "image");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
+    public async Task ExportImageAsync_NoRastersWithoutFramedBbox_DoesNotRenderEmptyImage()
+    {
+        // Without a bbox and an output size there is no canvas to draw, so the not-found answer
+        // is unchanged and no empty-extent render is attempted.
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(responseFormat: "image");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        await AssertGeoServicesErrorAsync(context, result, StatusCodes.Status404NotFound);
+        await _rasterStore.DidNotReceiveWithAnyArgs()
+            .ExportEmptyExtentAsync(default, default, default);
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ExportImageAsync_InvalidBbox_ReturnsBadRequest()
     {
         SetupLayerAndRasters();
@@ -983,6 +1056,46 @@ public class ImageServerExportHandlerTests
 
     [UnitTest]
     [Operation(Operations.Export)]
+    public async Task ExportImageAsync_WithBsqFormat_RequestsRawSamplesAndStoresThemAsOctetStream()
+    {
+        // "bsq" is the raw band-sequential sample buffer Esri clients read image-service
+        // pixels through (SOAP ExportImage with esriImageBSQ maps onto it). It must reach
+        // the raster store as RasterFormat.Raw and be stored for the href as octet-stream.
+        SetupLayerAndRasters();
+        RasterQuery? capturedQuery = null;
+        string? storedContentType = null;
+        _rasterStore.ExportImageAsync(1, 100, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedQuery = callInfo.ArgAt<RasterQuery>(2);
+                return CreateTestRasterResult() with { ContentType = "application/octet-stream", Data = new byte[256 * 256] };
+            });
+        _temporaryFileService.StoreTemporaryFileAsync(
+            Arg.Any<byte[]>(),
+            Arg.Any<string>(),
+            Arg.Any<TimeSpan?>(),
+            Arg.Any<ClaimsPrincipal?>(),
+            Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                storedContentType = callInfo.ArgAt<string>(1);
+                return "/temp/test";
+            });
+        _rasterStore.GetExtentAsync(1, 100, Arg.Any<CancellationToken>())
+            .Returns(new RasterExtent { XMin = -180, YMin = -90, XMax = 180, YMax = 90, Srid = 4326 });
+
+        var context = CreateImageServerContext();
+        var request = CreateRequest(format: "bsq");
+        var result = await _handler.ExportImageAsync(context, 1, request);
+
+        result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>();
+        capturedQuery.Should().NotBeNull();
+        capturedQuery!.Value.OutputFormat.Should().Be(RasterFormat.Raw);
+        storedContentType.Should().Be("application/octet-stream");
+    }
+
+    [UnitTest]
+    [Operation(Operations.Export)]
     public async Task ExportImageAsync_WithTiffCompression_MapsCompressionIntoRasterQuery()
     {
         SetupLayerAndRasters();
@@ -1171,7 +1284,9 @@ public class ImageServerExportHandlerTests
         var result = await _handler.ExportImageAsync(context, 1, request);
 
         var jsonResult = result.Should().BeOfType<JsonHttpResult<ExportImageResponse>>().Which;
-        jsonResult.Value!.Href.Should().Be("/temp/test.png");
+        // ArcGIS clients fetch the href verbatim, so the envelope must resolve the
+        // temporary-file path to an absolute URL (local origin here: no PUBLIC_BASE_URL).
+        jsonResult.Value!.Href.Should().Be("http://localhost/temp/test.png");
         jsonResult.Value.Width.Should().Be(256);
         jsonResult.Value.Height.Should().Be(256);
     }

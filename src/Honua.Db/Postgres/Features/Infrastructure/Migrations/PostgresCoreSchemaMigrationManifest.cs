@@ -21,7 +21,9 @@ internal sealed class PostgresCoreSchemaMigrationManifest
         string configuredSchemaAdoptionMigration,
         string governedLineageMigration,
         string? initialSchemaMigration = null,
-        string? sensorThingsIdSequencesMigration = null)
+        string? sensorThingsIdSequencesMigration = null,
+        string? defaultVersionIdentityMigration = null,
+        string? versionServiceAssociationMigration = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationMigrationAssemblyName);
         ArgumentException.ThrowIfNullOrWhiteSpace(metadataV2SnapshotMigration);
@@ -44,6 +46,8 @@ internal sealed class PostgresCoreSchemaMigrationManifest
         GovernedLineageMigration = governedLineageMigration;
         InitialSchemaMigration = initialSchemaMigration;
         SensorThingsIdSequencesMigration = sensorThingsIdSequencesMigration;
+        DefaultVersionIdentityMigration = defaultVersionIdentityMigration;
+        VersionServiceAssociationMigration = versionServiceAssociationMigration;
     }
 
     public string ApplicationMigrationAssemblyName { get; }
@@ -76,4 +80,10 @@ internal sealed class PostgresCoreSchemaMigrationManifest
     /// predate the sequences leave this null and the guard skips the check.
     /// </summary>
     public string? SensorThingsIdSequencesMigration { get; }
+
+    /// <summary>Application-owned durable DEFAULT identity migration; omitted by older synthetic manifests.</summary>
+    public string? DefaultVersionIdentityMigration { get; }
+
+    /// <summary>Application-owned branch service-association migration; absent in older synthetic manifests.</summary>
+    public string? VersionServiceAssociationMigration { get; }
 }

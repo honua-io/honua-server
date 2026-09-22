@@ -2,8 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Shared.Models;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -12,6 +15,7 @@ using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Maps.Handlers;
 using Honua.Protocols.Ogc.Api.Maps.Models;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.Ogc.Api.Maps;
 
@@ -132,7 +136,9 @@ public static partial class OgcMapsEndpoints
     /// <summary>
     /// Get OGC API - Maps landing page.
     /// </summary>
-    private static IResult GetLandingPage(HttpContext context, string? f)
+    private static async Task<IResult> GetLandingPage(
+        HttpContext context,
+        string? f)
     {
         if (!OgcCoreMetadataUtilities.TryPrepareMetadataResponse(
                 context,
@@ -143,6 +149,68 @@ public static partial class OgcMapsEndpoints
         {
             return errorResult!;
         }
+
+        // Setup-only hosts can map routes before a data provider is configured.
+        var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var coordinateTransformService = context.RequestServices.GetRequiredService<ICoordinateTransformService>();
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var logger = context.RequestServices.GetRequiredService<ILogger<OgcMapsRenderingHandler>>();
+        var resources = OgcMapsResourceResolver.EnumerateDatasetEntries(snapshot, logger)
+            .Where(entry => OgcMapsResourceResolver.IsProtocolEnabled(entry.Service, ServiceProtocols.OgcApiMaps)
+                && AccessPolicyHelpers.EvaluateAccess(context, entry.Resource.AccessPolicy, entry.Service?.AccessPolicy).IsAllowed)
+            .OrderBy(entry => entry.LayerId)
+            .Select(entry => entry.Resource)
+            .ToArray();
+        var (datasetExtent, transformUnavailable) = await OgcMapsResourceResolver.BuildDatasetExtentAsync(
+            resources, coordinateTransformService, cancellationToken).ConfigureAwait(false);
+        Extent? extent = null;
+        if (datasetExtent is { } bounds)
+        {
+            var crs84 = await OgcExtentTransformer.TryTransformExtentToCrs84Async(
+                bounds.MinX, bounds.MinY, bounds.MaxX, bounds.MaxY, bounds.SpatialReference,
+                coordinateTransformService, cancellationToken).ConfigureAwait(false);
+            transformUnavailable |= crs84 is null;
+            if (crs84 is { } geographic)
+            {
+                extent = new Extent
+                {
+                    Spatial = new Honua.Protocols.Ogc.Common.SpatialExtent
+                    {
+                        BoundingBox = ImmutableArray.Create(ImmutableArray.Create(
+                            geographic.MinLon, geographic.MinLat, geographic.MaxLon, geographic.MaxLat)),
+                        Crs = SpatialReference.WGS84.ToOgcCrsUri()
+                    }
+                };
+            }
+        }
+
+        // Intersect the declared CRSes, then remove the CRS84 fallback when its
+        // transform fails or cannot be established for an unbounded projected resource.
+        var supportedCrs = resources
+            .Select(resource => SpatialReference.Create(resource.ReadSrid() ?? 4326).GetSupportedCrsUris())
+            .Select(crs => (IEnumerable<string>)crs)
+            .Aggregate((IEnumerable<string>?)null, (common, current) => common is null
+                ? current
+                : common.Intersect(current, StringComparer.OrdinalIgnoreCase))
+            ?.ToImmutableArray() ?? ImmutableArray<string>.Empty;
+        var hasUnboundedProjectedResource = resources.Any(resource =>
+            resource.ReadBbox() is null && resource.ReadSrid() is int srid && srid != 4326 &&
+            !SpatialReferenceExtensions.IsWebMercatorSrid(srid));
+        if (transformUnavailable || hasUnboundedProjectedResource)
+        {
+            // A declared fallback alone does not establish this dataset's transformation capability.
+            supportedCrs = supportedCrs.Where(crs =>
+                !string.Equals(crs, SpatialReference.WGS84.ToOgcCrsUri(), StringComparison.OrdinalIgnoreCase))
+                .ToImmutableArray();
+        }
+        var storageSrids = resources
+            .Select(resource => resource.Spatial?.StorageCrs?.ResolveSrid() ?? resource.ReadSrid())
+            .Distinct()
+            .ToArray();
+        var storageCrs = storageSrids is [int storageSrid] && storageSrid != 4326
+            ? SpatialReference.Create(storageSrid).ToOgcCrsUri()
+            : null;
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var basePath = $"{baseUrl}/ogc/maps";
@@ -166,11 +234,22 @@ public static partial class OgcMapsEndpoints
             type: "image/png",
             title: "Dataset map"));
 
+        // Keep the standard HTTPS relation above. The registered HTTP alias is
+        // also needed by GDAL's stock OGCAPI Maps image-link selector.
+        links.Add(Link.Create(
+            href: $"{baseUrl}/ogc/maps/map",
+            rel: RegisteredMapRelation,
+            type: "image/png",
+            title: "Dataset map"));
+
         var landingPage = new LandingPage
         {
             Title = "Honua OGC API Maps",
             Description = "OGC API Maps implementation for server-rendered imagery",
             Supports3d = false,
+            Extent = extent,
+            Crs = supportedCrs,
+            StorageCrs = storageCrs,
             Links = links.ToImmutable()
         };
 

@@ -73,7 +73,7 @@ public sealed class ContainerGrpcTransportConfigurationTests
         Assert.Contains("Kestrel__Endpoints__Http__Protocols: Http1", compose, StringComparison.Ordinal);
         Assert.Contains("Kestrel__Endpoints__Grpc__Url: http://+:5001", compose, StringComparison.Ordinal);
         Assert.Contains("Kestrel__Endpoints__Grpc__Protocols: Http2", compose, StringComparison.Ordinal);
-        Assert.Contains("PUBLIC_BASE_URL: http://honua:5000", compose, StringComparison.Ordinal);
+        Assert.Contains("PUBLIC_BASE_URL: ${HONUA_CLIENT_COMPAT_PUBLIC_BASE_URL:-http://honua:5000}", compose, StringComparison.Ordinal);
         Assert.Contains("ConnectionStrings__Redis: redis:6379", compose, StringComparison.Ordinal);
         var postgresService = GetComposeServiceBlock(compose, "postgres", "redis");
         Assert.Contains("POSTGIS_GDAL_ENABLED_DRIVERS: ENABLE_ALL", postgresService, StringComparison.Ordinal);

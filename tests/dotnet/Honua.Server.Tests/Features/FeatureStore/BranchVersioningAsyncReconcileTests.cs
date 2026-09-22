@@ -127,7 +127,7 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
         var versionManager = CreateVersionManager();
         await store.CreateAsync(PointsLayerId, BuildFeature("Async-Base", 1.0, 1.0), CancellationToken.None);
         var version = await versionManager.CreateAsync(
-            new CreateVersionRequest("AsyncJob", "sde", VersionAccess.Public), CancellationToken.None);
+            new CreateVersionRequest("AsyncJob", "sde", VersionAccess.Public, ServiceId: "svc"), CancellationToken.None);
 
         var job = await runner.StartReconcileAsync(
             "svc", version.VersionId, VersionReconcilePolicy.None, cancellationToken: CancellationToken.None);
@@ -146,7 +146,7 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
         var runner = provider.GetRequiredService<IVersionJobRunner>();
         var versionManager = CreateVersionManager();
         var version = await versionManager.CreateAsync(
-            new CreateVersionRequest("AsyncContended", "sde", VersionAccess.Public), CancellationToken.None);
+            new CreateVersionRequest("AsyncContended", "sde", VersionAccess.Public, ServiceId: "svc"), CancellationToken.None);
 
         // Hold the lock the job's reconcile will try to take so the job terminates as lock-contended.
         await using var held = await _sharedLock.TryAcquireAsync(
@@ -173,7 +173,7 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
 
         var versionManager = CreateVersionManager();
         var version = await versionManager.CreateAsync(
-            new CreateVersionRequest("AsyncShutdown", "sde", VersionAccess.Public), CancellationToken.None);
+            new CreateVersionRequest("AsyncShutdown", "sde", VersionAccess.Public, ServiceId: "svc"), CancellationToken.None);
 
         var job = await runner.StartReconcileAsync(
             "svc", version.VersionId, VersionReconcilePolicy.None, cancellationToken: CancellationToken.None);
@@ -270,6 +270,120 @@ public sealed class BranchVersioningAsyncReconcileTests : IAsyncLifetime
         public void StopApplication()
         {
         }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task QueuedMaintenance_AfterLegacyAdoptionRejectsOldServiceBeforeMutation(bool post)
+    {
+        var manager = CreateVersionManager();
+        var branch = await manager.CreateAsync(new CreateVersionRequest(
+            "QueuedScope_" + Guid.NewGuid().ToString("N"), "sde", VersionAccess.Public));
+        var featureStore = CreateFeatureStore();
+        var feature = await featureStore.CreateAsync(PointsLayerId, BuildFeature("Queued-Default", 1.0, 1.0), CancellationToken.None);
+        await featureStore.ApplyEditsAsync(PointsLayerId,
+            FeatureEditBatch.Create(updates: ImmutableArray.Create(BuildFeature("Queued-Branch", 2.0, 2.0, feature.Id)),
+                versionContext: VersionContext.ForVersion(branch)), CancellationToken.None);
+        var dataBefore = await ReadQueuedDataOracleAsync(branch.VersionId, feature.Id);
+        dataBefore.Should().Contain("Queued-Default").And.Contain("Queued-Branch");
+        var store = new PausedVersionJobStore();
+        var services = new ServiceCollection();
+        services.AddSingleton<IVersionManager>(manager);
+        services.AddSingleton<IVersionJobStore>(store);
+        await using var provider = services.BuildServiceProvider();
+        var runner = new VersionJobRunner(provider.GetRequiredService<IServiceScopeFactory>(),
+            store, NullLogger<VersionJobRunner>.Instance);
+        var job = post
+            ? await runner.StartPostAsync("old-service", branch.VersionId)
+            : await runner.StartReconcileAsync("old-service", branch.VersionId);
+        try
+        {
+            await store.BeforeMaintenance.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            (await manager.AssociateLegacyVersionAsync(branch.VersionId, "new-service", "sde", [PointsLayerId]))
+                .Should().Be(VersionServiceAssociationResult.Associated);
+            var adopted = await manager.GetVersionAsync(branch.VersionId);
+            var baseline = await manager.GetDefaultVersionIdentityAsync();
+            store.Continue.TrySetResult();
+            var terminal = await PollJobAsync(runner, job.JobId);
+            terminal.Status.Should().Be(VersionJobStatus.Failed);
+            terminal.AppliedChanges.Should().Be(0);
+            terminal.CanPost.Should().BeFalse();
+            (await manager.GetVersionAsync(branch.VersionId)).Should().Be(adopted);
+            (await manager.GetDefaultVersionIdentityAsync()).Should().Be(baseline);
+            (await ReadQueuedDataOracleAsync(branch.VersionId, feature.Id)).Should().Be(dataBefore,
+                "the queued job may neither post branch data to DEFAULT nor alter the retained overlay");
+        }
+        finally
+        {
+            store.Continue.TrySetResult();
+            await PollJobAsync(runner, job.JobId);
+            await manager.DeleteAsync(branch.VersionId);
+        }
+    }
+
+    [Fact]
+    public async Task ServiceAssociation_UsesMaintenanceLockAndPersistsAcrossNewManager()
+    {
+        var manager = CreateVersionManager();
+        var branch = await manager.CreateAsync(new CreateVersionRequest(
+            "AdoptionLock_" + Guid.NewGuid().ToString("N"), "sde", VersionAccess.Public));
+        try
+        {
+            await using (var held = await _sharedLock.TryAcquireAsync(
+                _schema, branch.VersionId, TimeSpan.FromMinutes(1), CancellationToken.None))
+            {
+                held.Should().NotBeNull();
+                var blocked = async () => await manager.AssociateLegacyVersionAsync(
+                    branch.VersionId, "svc", "sde", []);
+                await blocked.Should().ThrowAsync<VersionLockedException>();
+                (await manager.GetVersionAsync(branch.VersionId))!.Value.ServiceId.Should().BeNull();
+            }
+            (await manager.AssociateLegacyVersionAsync(branch.VersionId, "svc", "sde", []))
+                .Should().Be(VersionServiceAssociationResult.Associated);
+            var reopened = CreateVersionManager();
+            (await reopened.GetVersionAsync(branch.VersionId)).Should().Be(branch with { ServiceId = "svc" });
+            var result = await reopened.ReconcileForServiceAsync("svc", branch.VersionId);
+            result.CanPost.Should().BeTrue();
+            (await reopened.PostForServiceAsync("svc", branch.VersionId)).Posted.Should().BeTrue();
+        }
+        finally { await manager.DeleteAsync(branch.VersionId); }
+    }
+
+    private sealed class PausedVersionJobStore : IVersionJobStore
+    {
+        private readonly InMemoryVersionJobStore _inner = new();
+        public TaskCompletionSource BeforeMaintenance { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource Continue { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public async Task SaveAsync(VersionJob job, CancellationToken cancellationToken = default)
+        {
+            await _inner.SaveAsync(job, cancellationToken);
+            if (job.Status == VersionJobStatus.Running)
+            {
+                BeforeMaintenance.TrySetResult();
+                await Continue.Task.WaitAsync(TimeSpan.FromSeconds(15), cancellationToken);
+            }
+        }
+
+        public Task<VersionJob?> GetAsync(Guid jobId, CancellationToken cancellationToken = default)
+            => _inner.GetAsync(jobId, cancellationToken);
+    }
+
+    private async Task<string> ReadQueuedDataOracleAsync(Guid versionId, long objectId)
+    {
+        await using var connection = await _fixture.DataSource.OpenConnectionAsync();
+        await using var command = new Npgsql.NpgsqlCommand($"""
+            SELECT jsonb_build_object(
+                'default', (SELECT jsonb_build_object('attributes', attributes, 'geometry', encode(ST_AsBinary(geometry), 'hex'))
+                    FROM "{_schema}".features WHERE layer_id=@layer AND objectid=@objectid),
+                'branch', (SELECT jsonb_build_object('attributes', attributes, 'geometry', encode(ST_AsBinary(geometry), 'hex'))
+                    FROM honua.version_edits WHERE version_id=@version AND layer_id=@layer AND objectid=@objectid))::text
+            """, connection);
+        command.Parameters.AddWithValue("version", versionId);
+        command.Parameters.AddWithValue("layer", PointsLayerId);
+        command.Parameters.AddWithValue("objectid", objectId);
+        return (string)(await command.ExecuteScalarAsync())!;
     }
 
     private static Feature BuildFeature(string name, double x, double y, long id = 0)

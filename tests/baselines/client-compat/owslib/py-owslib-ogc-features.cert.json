@@ -1,10 +1,10 @@
 {
   "schema_version": "1.0",
-  "run_id": "20260829T205535Z",
-  "run_date": "2026-08-29T20:55:35.536375+00:00",
-  "server_version": "1.0.0+e358ef1b50961de6fe6e4fae172e544418b7fe0c",
-  "server_commit": "e358ef1b50961de6fe6e4fae172e544418b7fe0c",
-  "fixture_revision": "sha256:62fe29ac1e00af62ce6f7708f2a0ff9d959c4730c9a27abe24467489e103a312",
+  "run_id": "20260918T081523Z",
+  "run_date": "2026-09-18T08:15:23.915252+00:00",
+  "server_version": "2026.1.1",
+  "server_commit": "defedd5a93c7b66155c1b185415bae81c92290f7",
+  "fixture_revision": "sha256:f1029ff590000dff56c9dcf109e510ab13d3456d25a6d9121c10a850d42081e4",
   "server_config_revision": "sha256:3eb71252f241546d4fa9fc23799296de3a75592f189449f056dadf103313998f",
   "client_lane": "py-owslib",
   "client_version": "0.36.0",
@@ -55,17 +55,17 @@
     {
       "test_case_id": "CERT-DISC-01",
       "status": "pass",
-      "duration_ms": 175,
-      "measured_count": 5,
+      "duration_ms": 55,
+      "measured_count": 8,
       "measured_delta": null,
-      "notes": "Features.collections() listed 5 collections: ['2000', '2001', '2002', '3000', '0'].",
+      "notes": "Features.collections() listed 8 collections: ['2000', '2001', '2002', '3000', '0', '10', '11', '12'].",
       "evidence_ref": "http://honua:5000/ogc/features/collections",
       "protocol_version": null
     },
     {
       "test_case_id": "CERT-DISC-02",
       "status": "pass",
-      "duration_ms": 38,
+      "duration_ms": 10,
       "measured_count": 13,
       "measured_delta": null,
       "notes": "Features.collection('0') -> title='Test Layer', itemType='feature', storageCrs='http://www.opengis.net/def/crs/EPSG/0/4326'.",
@@ -75,7 +75,7 @@
     {
       "test_case_id": "CERT-SCHM-01",
       "status": "pass",
-      "duration_ms": 5,
+      "duration_ms": 9,
       "measured_count": 13,
       "measured_delta": null,
       "notes": "Features.collection_queryables() advertised 13 properties covering all 10 seeded scalar attributes.",
@@ -85,7 +85,7 @@
     {
       "test_case_id": "CERT-SCHM-02",
       "status": "pass",
-      "duration_ms": 39,
+      "duration_ms": 14,
       "measured_count": 9,
       "measured_delta": null,
       "notes": "All 9 geometry-bearing features report GeoJSON type Point, matching the seeded Point layer; the null-geometry row is preserved as null. Queryables declare geometry property ['shape'].",
@@ -95,7 +95,7 @@
     {
       "test_case_id": "CERT-QFLT-01",
       "status": "pass",
-      "duration_ms": 13,
+      "duration_ms": 39,
       "measured_count": 5,
       "measured_delta": null,
       "notes": "CQL2-text \"status = 'active'\" matched 5 of 10 features, and every returned feature carries the filtered value.",
@@ -105,7 +105,7 @@
     {
       "test_case_id": "CERT-QFLT-02",
       "status": "pass",
-      "duration_ms": 25,
+      "duration_ms": 57,
       "measured_count": 3,
       "measured_delta": null,
       "notes": "bbox=[-122.495, 37.705, -122.455, 37.735] selected 3 features (['alpha', 'beta', 'gamma']); every returned coordinate lies inside the window.",
@@ -115,7 +115,7 @@
     {
       "test_case_id": "CERT-PAGE-01",
       "status": "pass",
-      "duration_ms": 15,
+      "duration_ms": 34,
       "measured_count": 3,
       "measured_delta": null,
       "notes": "limit=3 returned exactly 3 features while numberMatched stayed at the full 10.",
@@ -125,7 +125,7 @@
     {
       "test_case_id": "CERT-PAGE-02",
       "status": "pass",
-      "duration_ms": 34,
+      "duration_ms": 45,
       "measured_count": 3,
       "measured_delta": null,
       "notes": "offset=3 returned a disjoint page: ['alpha', 'beta', 'gamma'] then ['delta', 'epsilon', 'zeta'].",
@@ -135,7 +135,7 @@
     {
       "test_case_id": "CERT-GEOM-01",
       "status": "pass",
-      "duration_ms": 16,
+      "duration_ms": 49,
       "measured_count": null,
       "measured_delta": 0.0,
       "notes": "Anchor feature 'alpha' returned (-122.49, 37.71) against seeded (-122.49, 37.71); max ordinate deviation 0.0 degrees, threshold 1e-06.",
@@ -145,7 +145,7 @@
     {
       "test_case_id": "CERT-GEOM-02",
       "status": "pass",
-      "duration_ms": 18,
+      "duration_ms": 43,
       "measured_count": null,
       "measured_delta": 0.0,
       "notes": "crs=http://www.opengis.net/def/crs/EPSG/0/4326 was echoed verbatim in Content-Crs and the payload switched to the CRS's declared latitude/longitude axis order (37.71, -122.49); the CRS84 default returns longitude first.",
@@ -155,7 +155,7 @@
     {
       "test_case_id": "CERT-ERRH-01",
       "status": "pass",
-      "duration_ms": 19,
+      "duration_ms": 16,
       "measured_count": null,
       "measured_delta": null,
       "notes": "OWSLib raised RuntimeError carrying the server's RFC 7807 problem+json body for collection 'does-not-exist-9999': {\"type\":\"about:blank\",\"title\":\"Not Found\",\"status\":404,\"detail\":\"Collection \\u0027does-not-exist-9999\\u0027 not found.\",\"instance\":\"/ogc/features/collections/does-not-exist-9999/it",
@@ -165,7 +165,7 @@
     {
       "test_case_id": "CERT-ERRH-02",
       "status": "pass",
-      "duration_ms": 7,
+      "duration_ms": 13,
       "measured_count": null,
       "measured_delta": null,
       "notes": "Malformed CQL2 'status ==' produced a structured 400 problem+json naming the parse failure rather than a 500 or an empty result: {\"type\":\"about:blank\",\"title\":\"Bad Request\",\"status\":400,\"detail\":\"Invalid CQL filter: Failed to parse CQL2 expression. (Parameter \\u0027cql2Text\\u0027)\",\"instance\":\"/ogc/features/",
@@ -255,10 +255,10 @@
   ],
   "summary": {
     "total": 24,
-    "passed": 16,
+    "passed": 15,
     "failed": 0,
     "skipped": 0,
-    "not_applicable": 8
+    "not_applicable": 9
   },
   "cite_results": null,
   "extensions": [
@@ -286,9 +286,9 @@
       "test_case_id": "NB-OWS-OAF-COLL-02",
       "status": "pass",
       "duration_ms": null,
-      "measured_count": 5,
+      "measured_count": 8,
       "measured_delta": null,
-      "notes": "Features.feature_collections() -> ['2000', '2001', '2002', '3000', '0']; every collection declares itemType=feature.",
+      "notes": "Features.feature_collections() -> ['2000', '2001', '2002', '3000', '0', '10', '11', '12']; every collection declares itemType=feature.",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -316,9 +316,9 @@
       "test_case_id": "NB-OWS-OAF-CONF-01",
       "status": "pass",
       "duration_ms": null,
-      "measured_count": 26,
+      "measured_count": 14,
       "measured_delta": null,
-      "notes": "/conformance declares 26 classes including Features 1.0 core/geojson/oas30.",
+      "notes": "/conformance declares 14 classes including Features 1.0 core/geojson/oas30.",
       "evidence_ref": "",
       "protocol_version": null
     },
@@ -328,7 +328,7 @@
       "duration_ms": null,
       "measured_count": 3,
       "measured_delta": null,
-      "notes": "Declared conformance classes were exercised rather than trusted: ['crs', 'queryables', 'cql2-text'] all behaved as advertised.",
+      "notes": "Queryables and the CRS/CQL2 extension behaviors were exercised: ['crs', 'queryables', 'cql2-text'] all behaved as advertised.",
       "evidence_ref": "",
       "protocol_version": null
     },

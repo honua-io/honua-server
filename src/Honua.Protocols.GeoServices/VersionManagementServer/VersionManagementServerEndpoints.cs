@@ -5,6 +5,7 @@ using System.Globalization;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
@@ -33,24 +34,25 @@ namespace Honua.Protocols.GeoServices.VersionManagementServer;
 /// <para>
 /// Branch versioning is Postgres-only and Pro-gated. When the active provider's
 /// <see cref="IVersionManager.SupportsVersioning"/> is false (DuckDB / SQL Server / MySQL), the
-/// mutating and lifecycle operations return a 501 not-supported response; the read-only
-/// <c>versions</c> / <c>versionInfo</c> operations report an empty version set. Service-info
-/// discovery additionally requires an accessible publication whose bound reader supports branches.
+/// operations return a 501 not-supported response. Read-only identity discovery also requires
+/// an accessible publication whose bound reader supports branches; unsupported providers do not
+/// fabricate a DEFAULT identity or return an empty successful version registry.
 /// </para>
 /// <para>
 /// In Honua's overlay/moment storage model a version read/edit carries its
 /// <see cref="VersionContext"/> per-request (resolved from <c>gdbVersion</c> on the FeatureServer
 /// surface), so there is no server-held read/edit session. The <c>startReading</c>/<c>stopReading</c>
-/// and <c>startEditing</c>/<c>stopEditing</c> operations are therefore stateless acknowledgements;
+/// and <c>startEditing</c>/<c>stopEditing</c> operations on branches are stateless acknowledgements;
 /// this divergence from Esri's session-token model is intentional and documented here. They are not,
 /// however, no-ops: each resolves the named version, returns the version's durable branch generation
 /// as the read/edit <c>moment</c> (a stable cursor an Esri client can echo to pin a consistent
 /// snapshot), and <c>startEditing</c> refuses with a 409 in-progress when the version is
 /// mid-reconcile/post (locked). Reconcile/post delegate straight to the version manager, which owns
-/// the Redis-backed version lock and job runtime.
+/// the Redis-backed version lock and job runtime. DEFAULT sessions are explicitly unsupported;
+/// a branch-generation acknowledgement does not implement Esri session-owned read/write locks.
 /// </para>
 /// </remarks>
-public static class VersionManagementServerEndpoints
+public static partial class VersionManagementServerEndpoints
 {
     private const string BasePath = "/rest/services/{serviceId}/VersionManagementServer";
     private const string Tag = "VersionManagementServer";
@@ -79,6 +81,7 @@ public static class VersionManagementServerEndpoints
         // operations. Marked AllowAnonymous so the audit architecture guard records the
         // intentional decision, matching the sibling GeoServices endpoint files.
         group.MapGet("", HandleServiceInfo)
+            .Produces<VersionManagementServiceInfo>()
             .WithName("GetVersionManagementServiceInfo")
             .WithSummary("Get VersionManagementServer service metadata")
             .WithTags(Tag)
@@ -86,20 +89,36 @@ public static class VersionManagementServerEndpoints
 
         // Native ArcPy uses POST even for this read-only discovery resource.
         group.MapPost("", HandleServiceInfo)
+            .Produces<VersionManagementServiceInfo>()
             .WithName("PostVersionManagementServiceInfo")
             .WithSummary("Get VersionManagementServer service metadata")
             .WithTags(Tag)
             .AllowAnonymous();
 
         group.MapGet("/versions", HandleListVersions)
+            .Produces<VersionListResponse>()
             .WithName("ListVersions")
             .WithSummary("List branch versions")
             .WithTags(Tag)
             .AllowAnonymous();
 
+        group.MapPost("/versionInfos", HandleVersionInfos)
+            .Produces<VersionInfosResponse>()
+            .WithName("GetVersionInfos")
+            .WithSummary("Read visible version identities")
+            .WithTags(Tag)
+            .AllowAnonymous();
+
         group.MapGet("/versions/{versionGuid}", HandleVersionInfo)
+            .Produces<VersionInfo>()
             .WithName("GetVersionInfo")
             .WithSummary("Get a single branch version's metadata")
+            .WithTags(Tag)
+            .AllowAnonymous();
+
+        group.MapPost("/versions/{versionGuid}/adoptService", HandleAdoptService)
+            .WithName("AdoptLegacyVersionService")
+            .WithSummary("Explicitly associate an authorized legacy branch with this service (Honua extension)")
             .WithTags(Tag)
             .AllowAnonymous();
 
@@ -184,34 +203,33 @@ public static class VersionManagementServerEndpoints
         string serviceId,
         HttpContext context,
         [FromServices] IResourceValidator resourceValidator,
+        [FromServices] IVersionManager versionManager,
         CancellationToken cancellationToken)
     {
-        var validation = await ValidateReadableServiceAsync(serviceId, context, resourceValidator, cancellationToken)
+        var gate = await ValidateVersionManagementReadAsync(serviceId, context, resourceValidator, cancellationToken)
             .ConfigureAwait(false);
-        if (!validation.IsValid)
+        if (gate is not null)
         {
-            return validation.ErrorResult!;
+            return gate;
         }
 
-        var entitlementGate = LicenseGate.RequireEntitlement(
-            context, FeatureCatalog.BranchVersioningKey, "Branch versioning");
-        if (entitlementGate is not null)
+        var identity = await versionManager.GetDefaultVersionIdentityAsync(cancellationToken).ConfigureAwait(false);
+        if (identity is null)
         {
-            return entitlementGate;
+            return StandardErrorHelpers.CreateServiceUnavailable(context, "The managed DEFAULT identity is unavailable.");
         }
 
-        var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
-        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        if (!await FeatureServerEndpoints.HasAccessibleBranchVersionedPublicationsAsync(
-            context, validation.Service!, snapshot, cancellationToken).ConfigureAwait(false))
+        var supportsJobs = context.RequestServices.GetService<IVersionJobRunner>() is not null;
+        return Results.Json(new VersionManagementServiceInfo
         {
-            return StandardErrorHelpers.CreateNotImplemented(context,
-                "Branch versioning is not supported by the service's accessible publications.");
-        }
-
-        return Results.Json(new VersionManagementServiceInfo(),
-            VersionManagementJsonContext.Default.VersionManagementServiceInfo,
-            contentType: "application/json");
+            DefaultVersionName = identity.Value.VersionName,
+            DefaultVersionGuid = identity.Value.VersionId.ToString("B"),
+            Capabilities = new VersionManagementCapabilities
+            {
+                SupportsAsyncReconcile = supportsJobs,
+                SupportsAsyncPost = supportsJobs
+            }
+        }, VersionManagementJsonContext.Default.VersionManagementServiceInfo, contentType: "application/json");
     }
 
     private static async Task<IResult> HandleListVersions(
@@ -221,21 +239,20 @@ public static class VersionManagementServerEndpoints
         [FromServices] IVersionManager versionManager,
         CancellationToken cancellationToken)
     {
-        var problem = await ValidateServiceAsync(serviceId, context, resourceValidator, cancellationToken)
+        var gate = await ValidateVersionManagementReadAsync(serviceId, context, resourceValidator, cancellationToken)
             .ConfigureAwait(false);
-        if (problem is not null)
+        if (gate is not null)
         {
-            return problem;
+            return gate;
         }
 
-        var entitlementGate = LicenseGate.RequireEntitlement(
-            context, FeatureCatalog.BranchVersioningKey, "Branch versioning");
-        if (entitlementGate is not null)
+        var identity = await versionManager.GetDefaultVersionIdentityAsync(cancellationToken).ConfigureAwait(false);
+        if (identity is null)
         {
-            return entitlementGate;
+            return StandardErrorHelpers.CreateServiceUnavailable(context, "The managed DEFAULT identity is unavailable.");
         }
 
-        var versions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
+        var versions = await versionManager.ListForServiceAsync(RequireCanonicalVersionService(context), cancellationToken).ConfigureAwait(false);
 
         // BH3-002: filter the version set before projecting. Private versions are only
         // visible to their owner and service administrators; Public and Protected versions
@@ -247,11 +264,52 @@ public static class VersionManagementServerEndpoints
             Versions = versions
                 .Where(v => VersionAccessPolicy.IsVersionVisible(v, callerName, isAdmin))
                 .Select(ToVersionInfo)
+                .Prepend(ToVersionInfo(identity.Value))
                 .ToArray(),
         };
 
         return Results.Json(response, VersionManagementJsonContext.Default.VersionListResponse,
             contentType: "application/json");
+    }
+
+    private static async Task<IResult> HandleVersionInfos(
+        string serviceId, HttpContext context, [FromServices] IResourceValidator resourceValidator,
+        [FromServices] IVersionManager versionManager, CancellationToken cancellationToken)
+    {
+        var gate = await ValidateVersionManagementReadAsync(serviceId, context, resourceValidator, cancellationToken).ConfigureAwait(false);
+        if (gate is not null)
+        {
+            return gate;
+        }
+        var (values, error) = await GeoServicesRequestValueHelpers.TryReadRequestValuesAsync(context.Request, cancellationToken).ConfigureAwait(false);
+        if (values is null)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Invalid versionInfos parameters.", [error ?? "Invalid request."]);
+        }
+        if (values.TryGetValue("nameFilter", out var nameFilter) && !StringValues.IsNullOrEmpty(nameFilter))
+        {
+            return StandardErrorHelpers.CreateNotImplemented(context, "Version name filtering is not implemented.");
+        }
+        if (values.TryGetValue("includeHidden", out var hidden) && !StringValues.IsNullOrEmpty(hidden) &&
+            (!bool.TryParse(hidden.ToString(), out var includeHidden) || includeHidden))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Hidden versions are not supported; includeHidden must be false.");
+        }
+        var identity = await versionManager.GetDefaultVersionIdentityAsync(cancellationToken).ConfigureAwait(false);
+        if (identity is null)
+        {
+            return StandardErrorHelpers.CreateServiceUnavailable(context, "The managed DEFAULT identity is unavailable.");
+        }
+        var versions = await versionManager.ListForServiceAsync(RequireCanonicalVersionService(context), cancellationToken).ConfigureAwait(false);
+        var visible = versions.Where(version => VersionAccessPolicy.IsVersionVisible(version,
+                context.User?.Identity?.Name, ServiceDataEditorAuthorization.IsAdminPrincipal(context)))
+            .Select(ToVersionInfo).Prepend(ToVersionInfo(identity.Value));
+        if (values.TryGetValue("ownerFilter", out var owner) && !StringValues.IsNullOrEmpty(owner))
+        {
+            visible = visible.Where(version => string.Equals(version.Owner, owner.ToString(), StringComparison.OrdinalIgnoreCase));
+        }
+        return Results.Json(new VersionInfosResponse { Versions = visible.ToArray() },
+            VersionManagementJsonContext.Default.VersionInfosResponse, contentType: "application/json");
     }
 
     private static async Task<IResult> HandleVersionInfo(
@@ -262,18 +320,17 @@ public static class VersionManagementServerEndpoints
         [FromServices] IVersionManager versionManager,
         CancellationToken cancellationToken)
     {
-        var problem = await ValidateServiceAsync(serviceId, context, resourceValidator, cancellationToken)
+        var gate = await ValidateVersionManagementReadAsync(serviceId, context, resourceValidator, cancellationToken)
             .ConfigureAwait(false);
-        if (problem is not null)
+        if (gate is not null)
         {
-            return problem;
+            return gate;
         }
 
-        var entitlementGate = LicenseGate.RequireEntitlement(
-            context, FeatureCatalog.BranchVersioningKey, "Branch versioning");
-        if (entitlementGate is not null)
+        var identity = await versionManager.GetDefaultVersionIdentityAsync(cancellationToken).ConfigureAwait(false);
+        if (identity is null)
         {
-            return entitlementGate;
+            return StandardErrorHelpers.CreateServiceUnavailable(context, "The managed DEFAULT identity is unavailable.");
         }
 
         if (!Guid.TryParse(versionGuid, out var versionId))
@@ -281,7 +338,15 @@ public static class VersionManagementServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "versionGuid is not a valid GUID.");
         }
 
-        var versions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
+        if (versionId == identity.Value.VersionId)
+        {
+            // DEFAULT is public at the version level. Its display namespace is not an owner grant;
+            // the same canonical service/resource gates above remain authoritative.
+            return Results.Json(ToVersionInfo(identity.Value), VersionManagementJsonContext.Default.VersionInfo,
+                contentType: "application/json");
+        }
+
+        var versions = await versionManager.ListForServiceAsync(RequireCanonicalVersionService(context), cancellationToken).ConfigureAwait(false);
         var match = versions.FirstOrDefault(v => v.VersionId == versionId);
         if (match.VersionId != versionId)
         {
@@ -329,7 +394,8 @@ public static class VersionManagementServerEndpoints
         var access = ParseAccess(GeoServicesRequestValueHelpers.GetValueString(values!, "accessPermission"));
         var description = GeoServicesRequestValueHelpers.GetValueString(values!, "description");
 
-        var request = new CreateVersionRequest(versionName, owner, access, ParentVersion: null, Description: description);
+        var request = new CreateVersionRequest(versionName, owner, access, ParentVersion: null, Description: description,
+            ServiceId: RequireCanonicalVersionService(context));
 
         try
         {
@@ -367,7 +433,7 @@ public static class VersionManagementServerEndpoints
         // DEFAULT branch, or leave dangling change rows that can never be cleaned up. Return 409
         // so the caller retries once the operation completes, mirroring the state guard already
         // present in AcknowledgeSessionAsync (startEditing path).
-        var versions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
+        var versions = await versionManager.ListForServiceAsync(RequireCanonicalVersionService(context), cancellationToken).ConfigureAwait(false);
         var version = versions.FirstOrDefault(v => v.VersionId == versionId);
         if (version.VersionId == versionId && version.State is VersionState.Reconciling or VersionState.Posting)
         {
@@ -478,7 +544,7 @@ public static class VersionManagementServerEndpoints
         // job handle. The synchronous path stays the default for small/fast versions (#1553).
         if (ParseAsyncRequested(values!))
         {
-            var job = await jobRunner.StartReconcileAsync(serviceId, versionId, policy, detection, cancellationToken)
+            var job = await jobRunner.StartReconcileAsync(RequireCanonicalVersionService(context), versionId, policy, detection, cancellationToken)
                 .ConfigureAwait(false);
             return AcceptedJob(serviceId, versionGuid, job);
         }
@@ -487,7 +553,7 @@ public static class VersionManagementServerEndpoints
 
         try
         {
-            var result = await versionManager.ReconcileAsync(versionId, policy, detection, cancellationToken)
+            var result = await versionManager.RequireServiceMaintenance().ReconcileForServiceAsync(RequireCanonicalVersionService(context), versionId, policy, detection, cancellationToken)
                 .ConfigureAwait(false);
             var hasConflicts = !result.Conflicts.IsDefaultOrEmpty && result.Conflicts.Length > 0;
 
@@ -499,7 +565,7 @@ public static class VersionManagementServerEndpoints
             long serverGeneration = 0;
             if (withPost && result.CanPost && !hasConflicts)
             {
-                var post = await versionManager.PostAsync(versionId, cancellationToken).ConfigureAwait(false);
+                var post = await versionManager.RequireServiceMaintenance().PostForServiceAsync(RequireCanonicalVersionService(context), versionId, cancellationToken).ConfigureAwait(false);
                 posted = post.Posted;
                 appliedChanges = post.AppliedChanges;
                 serverGeneration = post.ServerGeneration;
@@ -564,6 +630,11 @@ public static class VersionManagementServerEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "versionGuid is not a valid GUID.");
         }
 
+        if ((await versionManager.GetDefaultVersionIdentityAsync(cancellationToken).ConfigureAwait(false))?.VersionId == versionId)
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "DEFAULT is not a branch conflict target.");
+        }
+
         // BH3-003 / BH6-001: conflict records contain full before/after attribute and geometry
         // images. Load the version record and enforce ownership before exposing conflict data.
         // Private AND Protected versions require owner-or-admin (CanManageVersion). Only Public
@@ -572,7 +643,7 @@ public static class VersionManagementServerEndpoints
         // with authorization to view raw conflict diffs for Protected versions — BH6-001 corrects
         // the conditional so Protected versions are now gated on CanManageVersion, matching the
         // sibling HandleResolveConflicts which checks unconditionally via AuthorizeReadAndResolveVersionAsync.
-        var allVersions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
+        var allVersions = await versionManager.ListForServiceAsync(RequireCanonicalVersionService(context), cancellationToken).ConfigureAwait(false);
         var conflictVersion = allVersions.FirstOrDefault(v => v.VersionId == versionId);
         if (conflictVersion.VersionId != versionId)
         {
@@ -651,13 +722,13 @@ public static class VersionManagementServerEndpoints
         // Async fast path: start a durable, pollable post job under the version lock (#1553).
         if (ParseAsyncRequested(values!))
         {
-            var job = await jobRunner.StartPostAsync(serviceId, versionId, cancellationToken).ConfigureAwait(false);
+            var job = await jobRunner.StartPostAsync(RequireCanonicalVersionService(context), versionId, cancellationToken).ConfigureAwait(false);
             return AcceptedJob(serviceId, versionGuid, job);
         }
 
         try
         {
-            var result = await versionManager.PostAsync(versionId, cancellationToken).ConfigureAwait(false);
+            var result = await versionManager.RequireServiceMaintenance().PostForServiceAsync(RequireCanonicalVersionService(context), versionId, cancellationToken).ConfigureAwait(false);
             var response = new PostResponse
             {
                 Success = result.Posted,
@@ -727,8 +798,16 @@ public static class VersionManagementServerEndpoints
         // Reject jobs that do not belong to the route's service/version (mirrors GPServer's
         // ValidateJobBinding) so a caller authorized on one service cannot poll another
         // service's reconcile/post jobs by GUID.
-        if (!string.Equals(job.Service, serviceId, StringComparison.OrdinalIgnoreCase) ||
+        if (!string.Equals(job.Service, RequireCanonicalVersionService(context), StringComparison.Ordinal) ||
             job.VersionId != versionId)
+        {
+            return StandardErrorHelpers.CreateNotFound(context, $"Version job '{jobId}' was not found.");
+        }
+
+        var branch = await versionManager.GetVersionAsync(versionId, cancellationToken).ConfigureAwait(false);
+        if (branch is null || !VersionServiceScope.BelongsTo(branch.Value, RequireCanonicalVersionService(context))
+            || !VersionAccessPolicy.IsVersionVisible(branch.Value, context.User?.Identity?.Name,
+                ServiceDataEditorAuthorization.IsAdminPrincipal(context)))
         {
             return StandardErrorHelpers.CreateNotFound(context, $"Version job '{jobId}' was not found.");
         }
@@ -759,13 +838,13 @@ public static class VersionManagementServerEndpoints
         CancellationToken cancellationToken)
     {
         var (gate, _, versionId) = await AuthorizeReadAndResolveVersionAsync(
-            serviceId, versionGuid, context, versionManager, cancellationToken).ConfigureAwait(false);
+            serviceId, versionGuid, context, versionManager, cancellationToken, defaultSession: true).ConfigureAwait(false);
         if (gate is not null)
         {
             return gate;
         }
 
-        var versions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
+        var versions = await versionManager.ListForServiceAsync(RequireCanonicalVersionService(context), cancellationToken).ConfigureAwait(false);
         var version = versions.FirstOrDefault(v => v.VersionId == versionId);
         if (version.VersionId != versionId)
         {
@@ -800,6 +879,42 @@ public static class VersionManagementServerEndpoints
             VersionManagementJsonContext.Default.VersionMomentResponse,
             contentType: "application/json");
 
+    private static async Task<IResult?> ValidateVersionManagementReadAsync(
+        string serviceId, HttpContext context, IResourceValidator resourceValidator,
+        CancellationToken cancellationToken)
+    {
+        var validation = await ValidateReadableServiceAsync(serviceId, context, resourceValidator, cancellationToken)
+            .ConfigureAwait(false);
+        if (!validation.IsValid)
+        {
+            return validation.ErrorResult!;
+        }
+
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context, FeatureCatalog.BranchVersioningKey, "Branch versioning");
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
+        var manager = context.RequestServices.GetRequiredService<IVersionManager>();
+        if (!manager.SupportsVersioning)
+        {
+            return StandardErrorHelpers.CreateNotImplemented(context, "Branch versioning is not supported by the configured data provider.");
+        }
+
+        var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (!await FeatureServerEndpoints.HasAccessibleBranchVersionedPublicationsAsync(
+            context, validation.Service!, snapshot, cancellationToken).ConfigureAwait(false))
+        {
+            return StandardErrorHelpers.CreateNotImplemented(context,
+                "Branch versioning is not supported by the service's accessible publications.");
+        }
+
+        return null;
+    }
+
     private static async Task<IResult?> ValidateServiceAsync(
         string serviceId,
         HttpContext context,
@@ -827,9 +942,12 @@ public static class VersionManagementServerEndpoints
         // Update + data-editor checks on top via VersionManagementAuthorization.
         var accessError = await AccessPolicyHelpers.RequireServiceAccessAsync(
             context, validation.Service!, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
-        return accessError is null
-            ? validation
-            : new FeatureServerResourceValidationHelpers.ServiceValidationV2Result(false, null, accessError);
+        if (accessError is not null)
+        {
+            return new FeatureServerResourceValidationHelpers.ServiceValidationV2Result(false, null, accessError);
+        }
+        context.Items[CanonicalVersionServiceKey] = validation.Service!;
+        return validation;
     }
 
     /// <summary>
@@ -864,6 +982,13 @@ public static class VersionManagementServerEndpoints
             return (writeError, null);
         }
 
+        var readGate = await ValidateVersionManagementReadAsync(serviceId, context,
+            context.RequestServices.GetRequiredService<IResourceValidator>(), cancellationToken).ConfigureAwait(false);
+        if (readGate is not null)
+        {
+            return (readGate, null);
+        }
+
         var (values, readError) = await GeoServicesRequestValueHelpers.TryReadRequestValuesAsync(
             context.Request, cancellationToken).ConfigureAwait(false);
         if (values is null)
@@ -886,7 +1011,8 @@ public static class VersionManagementServerEndpoints
             string versionGuid,
             HttpContext context,
             IVersionManager versionManager,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool defaultSession = false)
     {
         var (gate, values) = await AuthorizeAndReadAsync(serviceId, context, versionManager, cancellationToken)
             .ConfigureAwait(false);
@@ -898,6 +1024,15 @@ public static class VersionManagementServerEndpoints
         if (!Guid.TryParse(versionGuid, out var versionId))
         {
             return (StandardErrorHelpers.CreateBadRequest(context, "versionGuid is not a valid GUID."), null, Guid.Empty);
+        }
+
+        var identity = await versionManager.GetDefaultVersionIdentityAsync(cancellationToken).ConfigureAwait(false);
+        if (identity?.VersionId == versionId)
+        {
+            var defaultGate = defaultSession
+                ? StandardErrorHelpers.CreateNotImplemented(context, "DEFAULT read/edit sessions and server-held locks are not implemented.")
+                : StandardErrorHelpers.CreateBadRequest(context, "DEFAULT is a system-managed identity and cannot be a branch lifecycle target.");
+            return (defaultGate, null, Guid.Empty);
         }
 
         // BH3-004: lifecycle operations (delete, alter, reconcile, post, resolveConflicts,
@@ -926,7 +1061,7 @@ public static class VersionManagementServerEndpoints
         string versionGuidString,
         CancellationToken cancellationToken)
     {
-        var versions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
+        var versions = await versionManager.ListForServiceAsync(RequireCanonicalVersionService(context), cancellationToken).ConfigureAwait(false);
         var version = versions.FirstOrDefault(v => v.VersionId == versionId);
         if (version.VersionId != versionId)
         {
@@ -972,10 +1107,22 @@ public static class VersionManagementServerEndpoints
         _ => "active",
     };
 
+    private static VersionInfo ToVersionInfo(DefaultVersionIdentity identity) => new()
+    {
+        VersionGuid = identity.VersionId.ToString("B"),
+        VersionName = identity.VersionName,
+        Owner = identity.DisplayOwner,
+        Access = AccessToString(identity.Access),
+        Status = "active",
+        Description = "System-managed DEFAULT identity.",
+        CreationMoment = identity.CreatedAt.ToUnixTimeMilliseconds(),
+        ModifiedMoment = identity.CreatedAt.ToUnixTimeMilliseconds()
+    };
+
     private static VersionInfo ToVersionInfo(GdbVersion version) => new()
     {
         VersionGuid = version.VersionId.ToString(),
-        VersionName = version.VersionName,
+        VersionName = $"{version.Owner}.{version.VersionName}",
         Owner = version.Owner,
         Access = AccessToString(version.Access),
         Status = StatusToString(version.State),

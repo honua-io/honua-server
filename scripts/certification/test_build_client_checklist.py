@@ -18,9 +18,9 @@ class ExclusionReviewTests(unittest.TestCase):
         self.assertEqual([], checklist.validate(rows))
         cells = [cell for row in rows for cell in row["lanes"].values()]
         self.assertEqual(376, len(cells))
-        self.assertEqual(173, sum(cell["state"] == "pass" for cell in cells))
+        self.assertEqual(174, sum(cell["state"] == "pass" for cell in cells))
         self.assertEqual(4, sum(cell["state"] == "fail" for cell in cells))
-        self.assertEqual(137, sum(cell["state"] == "blocked" for cell in cells))
+        self.assertEqual(136, sum(cell["state"] == "blocked" for cell in cells))
         reopened = [cell for cell in cells if "previous_exclusion" in cell]
         self.assertEqual(157, len(reopened))
         for cell in reopened:
@@ -39,8 +39,8 @@ class ExclusionReviewTests(unittest.TestCase):
                     for row in rows for lane, cell in row["lanes"].items()
                     if "previous_review" in cell}
         self.assertEqual(set(checklist.RESOLVED_EXCLUSION_EVIDENCE), resolved)
-        self.assertEqual(19, len(resolved))
-        self.assertEqual(20, sum(cell["state"] == "pass" and "previous_exclusion" in cell
+        self.assertEqual(20, len(resolved))
+        self.assertEqual(21, sum(cell["state"] == "pass" and "previous_exclusion" in cell
                                  for row in rows for cell in row["lanes"].values()))
         gui = {key for key in resolved if key[3] not in ("arcpy", "pyqgis")}
         self.assertEqual({("imageserver", "GeoServices REST", "service-info", "qgis-ui"),
@@ -50,6 +50,16 @@ class ExclusionReviewTests(unittest.TestCase):
             self.assertIn("windows-computer-use", checklist.RESOLVED_EXCLUSION_EVIDENCE[key])
         self.assertEqual(20, sum(row["lanes"]["pro-ui"]["state"] == "pass" for row in rows))
         self.assertEqual(53, sum(row["lanes"]["qgis-ui"]["state"] == "pass" for row in rows))
+
+    def test_records_configured_url_read_does_not_close_gui_or_claim_full_conformance(self):
+        row = next(row for row in checklist.build_rows() if row["protocol"] == "ogc-api-records")
+        self.assertEqual("blocked", row["lanes"]["qgis-ui"]["state"])
+        self.assertEqual("pass", row["lanes"]["pyqgis"]["state"])
+        evidence = row["lanes"]["pyqgis"]["evidence"]
+        self.assertIn("5805b4854d28f944ea3cb36c2a96fb010f8c1cf7", evidence)
+        self.assertIn("Configured-URL membership and selected metadata only", evidence)
+        self.assertIn("or full Records conformance claim", evidence)
+        self.assertIn("zero UI credit", evidence)
 
     def test_properties_hang_does_not_close_unperformed_gui_operations(self):
         rows = checklist.build_rows()

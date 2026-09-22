@@ -225,7 +225,7 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
         VersionJob job,
         CancellationToken cancellationToken)
     {
-        var result = await manager.ReconcileAsync(job.VersionId, job.Policy, job.ConflictDetection, cancellationToken).ConfigureAwait(false);
+        var result = await manager.RequireServiceMaintenance().ReconcileForServiceAsync(job.Service, job.VersionId, job.Policy, job.ConflictDetection, cancellationToken).ConfigureAwait(false);
         var conflictCount = result.Conflicts.IsDefaultOrEmpty ? 0 : result.Conflicts.Length;
         return job with
         {
@@ -243,7 +243,7 @@ public sealed partial class VersionJobRunner : IVersionJobRunner
         VersionJob job,
         CancellationToken cancellationToken)
     {
-        var result = await manager.PostAsync(job.VersionId, cancellationToken).ConfigureAwait(false);
+        var result = await manager.RequireServiceMaintenance().PostForServiceAsync(job.Service, job.VersionId, cancellationToken).ConfigureAwait(false);
         return job with
         {
             Status = VersionJobStatus.Succeeded,

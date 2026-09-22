@@ -307,6 +307,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
             var (query, outputSrid, preparationError) = await PrepareFeatureQueryAsync(
                 context,
+                queryLayer.Service.Metadata.Id,
                 queryLayer.Resource,
                 validatedParams,
                 queryLimits,
@@ -602,6 +603,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
             var (preparedQuery, outputSrid, preparationError) = await PrepareFeatureQueryAsync(
                 context,
+                queryLayer.Service.Metadata.Id,
                 queryLayer.Resource,
                 validatedParams,
                 queryLimits,
@@ -1376,6 +1378,7 @@ internal sealed partial class FeatureServerQueryHandler(
 
     private async Task<(FeatureQuery? Query, int? OutputSrid, IResult? Error)> PrepareFeatureQueryAsync(
         HttpContext context,
+        string canonicalServiceId,
         MetadataV2Resource resource,
         QueryParameters validatedParams,
         QueryLimits queryLimits,
@@ -1627,7 +1630,7 @@ internal sealed partial class FeatureServerQueryHandler(
         // resolves to DEFAULT, where the canonical read overlay is a no-op so the query SQL stays
         // byte-identical (CITE-protected). A named version is Pro-gated and Postgres-only.
         var (versionContext, versionError) = await FeatureServerVersioning.ResolveQueryVersionAsync(
-            context, validatedParams.GdbVersion, cancellationToken).ConfigureAwait(false);
+            context, canonicalServiceId, validatedParams.GdbVersion, cancellationToken).ConfigureAwait(false);
         if (versionError != null)
         {
             return (null, null, versionError);

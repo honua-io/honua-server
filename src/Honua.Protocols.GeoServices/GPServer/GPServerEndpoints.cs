@@ -15,6 +15,7 @@ using Honua.Infrastructure.Models;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Validation;
 using Honua.Protocols.GeoServices.GPServer.Models;
+using Honua.Protocols.GeoServices.NAServer;
 using Honua.ServiceDefaults;
 
 namespace Honua.Protocols.GeoServices.GPServer;
@@ -220,7 +221,8 @@ internal static partial class GPServerEndpoints
         var response = new GPServiceInfoResponse
         {
             ServiceDescription = $"Geoprocessing service for {serviceId}",
-            ExecutionType = "esriExecutionTypeAsynchronous",
+            ExecutionType = IsNetworkAnalysisUtilityRequest(context)
+                ? "esriExecutionTypeSynchronous" : "esriExecutionTypeAsynchronous",
             Capabilities = string.Empty,
             ResultMapServerName = string.Empty,
             // ADDITIVE (#gpserver-esri-task-name-aliases): every task is still published
@@ -228,7 +230,8 @@ internal static partial class GPServerEndpoints
             // with a documented Esri GP tool equivalent are ALSO published under that
             // Esri-conventional name, so an unmodified ArcGIS client browsing the task
             // list can find the tool it's looking for either way.
-            Tasks = [.. BuildPublishedTaskNames(processCatalog)]
+            // Synchronous routing utilities have their own truthful service contract.
+            Tasks = [.. BuildServiceTaskNames(processCatalog, IsNetworkAnalysisUtilityRequest(context))]
         };
 
         return Results.Json(
@@ -254,6 +257,24 @@ internal static partial class GPServerEndpoints
         if (!serviceValidation.IsValid)
         {
             return serviceValidation.ErrorResult!;
+        }
+        // Preserve authorized REST utility aliases used by existing standalone
+        // routing clients; only the dedicated service advertises them in its root.
+        if (IsNetworkAnalysisUtilityTask(context.RequestServices.GetRequiredService<IProcessCatalog>(), IsNetworkAnalysisUtilityRequest(context), taskName))
+        {
+            if (!IsNetworkAnalysisUtilityRequest(context))
+            {
+                var availabilityError = await ValidateNetworkAnalysisUtilityDependenciesAsync(context, ct).ConfigureAwait(false);
+                if (availabilityError is not null)
+                {
+                    return availabilityError;
+                }
+            }
+            return HandleNetworkAnalysisUtilityTaskInfo(context, taskName);
+        }
+        if (IsNetworkAnalysisUtilityRequest(context))
+        {
+            return StandardErrorHelpers.CreateNotFound(context, "The requested routing utility was not found.");
         }
 
         var processCatalog = context.RequestServices.GetRequiredService<IProcessCatalog>();
@@ -294,6 +315,10 @@ internal static partial class GPServerEndpoints
             if (!serviceValidation.IsValid)
             {
                 return serviceValidation.ErrorResult!;
+            }
+            if (IsNetworkAnalysisUtilityRequest(context) || IsNetworkAnalysisUtilityTask(context.RequestServices.GetRequiredService<IProcessCatalog>(), IsNetworkAnalysisUtilityRequest(context), taskName))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Routing utilities are synchronous. Use execute; no job was created.");
             }
 
             // Auth must precede parameter reading to guarantee 401/403 before 400
@@ -418,6 +443,16 @@ internal static partial class GPServerEndpoints
             if (!serviceValidation.IsValid)
             {
                 return serviceValidation.ErrorResult!;
+            }
+            if (IsNetworkAnalysisUtilityTask(context.RequestServices.GetRequiredService<IProcessCatalog>(), IsNetworkAnalysisUtilityRequest(context), taskName)
+                && (readSoapParameters is null || IsNetworkAnalysisUtilityRequest(context)))
+            {
+                var utilityContentTypeError = readSoapParameters is null ? ValidateFormPostContentType(context) : null;
+                return utilityContentTypeError ?? await HandleNetworkAnalysisUtilityExecuteAsync(context, taskName, ct, readSoapParameters).ConfigureAwait(false);
+            }
+            if (IsNetworkAnalysisUtilityRequest(context))
+            {
+                return StandardErrorHelpers.CreateNotFound(context, "The requested routing utility was not found.");
             }
 
             // Auth must precede parameter reading to guarantee 401/403 before 400.
@@ -813,6 +848,11 @@ internal static partial class GPServerEndpoints
             {
                 return serviceValidation.ErrorResult!;
             }
+            if (IsNetworkAnalysisUtilityRequest(context))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Routing utilities do not create jobs.");
+            }
+
 
             // Constrain the listing to jobs submitted through this service/task so the
             // shared service cannot surface another protocol's or task's jobs.
@@ -974,6 +1014,11 @@ internal static partial class GPServerEndpoints
             {
                 return serviceValidation.ErrorResult!;
             }
+            if (IsNetworkAnalysisUtilityRequest(context))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Routing utilities do not create jobs.");
+            }
+
 
             var job = await jobService.GetJobAsync(jobId, context.User, ct);
 
@@ -1072,6 +1117,11 @@ internal static partial class GPServerEndpoints
             {
                 return serviceValidation.ErrorResult!;
             }
+            if (IsNetworkAnalysisUtilityRequest(context))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Routing utilities do not create jobs.");
+            }
+
 
             // Validate route binding before accessing results.
             var job = await jobService.GetJobAsync(jobId, context.User, ct);
@@ -1178,6 +1228,11 @@ internal static partial class GPServerEndpoints
             {
                 return serviceValidation.ErrorResult!;
             }
+            if (IsNetworkAnalysisUtilityRequest(context))
+            {
+                return StandardErrorHelpers.CreateBadRequest(context, "Routing utilities do not create jobs.");
+            }
+
 
             // Validate route binding before attempting cancellation.
             var existing = await jobService.GetJobAsync(jobId, context.User, ct);
@@ -1277,21 +1332,34 @@ internal static partial class GPServerEndpoints
     // Shared helpers
     // -----------------------------------------------------------------------
 
-    internal static Task<ServiceResourceValidationHelpers.ServiceValidationV2Result> ValidateServiceAsync(
+    internal static async Task<ServiceResourceValidationHelpers.ServiceValidationV2Result> ValidateServiceAsync(
         HttpContext context,
         string serviceId,
         ILogger logger,
         CancellationToken cancellationToken)
     {
+        // Only successful resolved classification may select the host-compute
+        // mode. Revalidation clears stale request state before any early return.
+        context.Items[NetworkAnalysisUtilityRequestKey] = false;
+        var classification = await ClassifyNetworkAnalysisUtilityRequestAsync(context, serviceId, cancellationToken).ConfigureAwait(false);
+        if (classification.Error is not null)
+        {
+            return new ServiceResourceValidationHelpers.ServiceValidationV2Result(false, null, classification.Error);
+        }
+        if (classification.Synthetic)
+        {
+            context.Items[NetworkAnalysisUtilityRequestKey] = true;
+            return new ServiceResourceValidationHelpers.ServiceValidationV2Result(true, null, null);
+        }
         var resourceValidator = context.RequestServices.GetRequiredService<IResourceValidator>();
-        return ServiceResourceValidationHelpers.ValidateServiceV2Async(
+        return await ServiceResourceValidationHelpers.ValidateServiceV2Async(
             resourceValidator,
             serviceId,
             ProtocolName,
             context,
             id => GPServerLog.ServiceNotFound(logger, id),
             requireServiceAccess: true,
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

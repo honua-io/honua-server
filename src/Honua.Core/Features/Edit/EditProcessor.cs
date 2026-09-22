@@ -781,26 +781,9 @@ public sealed class EditProcessor : IEditProcessor
     /// </para>
     /// </remarks>
     private static bool IsServerAssignedIdField(MetadataV2Field field, string? primaryIdFieldName)
-    {
-        for (var i = 0; i < field.SemanticRoles.Count; i++)
-        {
-            if (string.Equals(field.SemanticRoles[i], "id.primary", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        if (primaryIdFieldName is not null
-            && string.Equals(field.Name, primaryIdFieldName, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        // Conventional server-assigned integer object-id (Esri-style OID): auto-assigned on insert
-        // even when a distinct public primary-id field carries the id.primary role.
-        return field.Type is MetadataV2FieldType.Integer or MetadataV2FieldType.BigInteger
-            && string.Equals(field.Name, FieldNames.ObjectId, StringComparison.OrdinalIgnoreCase);
-    }
+        // The rule itself lives in Honua.Core.Abstractions so the mutation validator's
+        // null-on-insert relaxation applies the same answer; see the remarks there.
+        => MetadataV2SpatialExtensions.IsServerAssignedIdField(field, primaryIdFieldName);
 
     private static bool RequiresAttributes(MetadataV2Resource resource)
     {

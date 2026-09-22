@@ -664,12 +664,27 @@ public class ImportEndpointTests : IAsyncLifetime
             var features = queryDocument.RootElement.GetProperty("features");
             features.GetArrayLength().Should().Be(1);
             features[0].GetProperty("attributes").GetProperty("id").GetInt64().Should().Be(1);
-            features[0].GetProperty("attributes")
-                .GetProperty("properties")
-                .GetProperty("name")
-                .GetString()
-                .Should()
-                .Be("Schema Boundary Point");
+            // The published JSON column is an Esri string field. Its wire value
+            // must preserve the JSON as text so native Esri readers can consume it.
+            var publishedField = queryDocument.RootElement.GetProperty("fields").EnumerateArray()
+                .Single(field => field.GetProperty("name").GetString() == "properties");
+            publishedField.GetProperty("type").GetString().Should().Be("esriFieldTypeString");
+            var properties = features[0].GetProperty("attributes").GetProperty("properties");
+            properties.ValueKind.Should().Be(JsonValueKind.String);
+            using var importedProperties = JsonDocument.Parse(properties.GetString()!);
+            importedProperties.RootElement.GetProperty("name").GetString().Should().Be("Schema Boundary Point");
+
+            // GeoJSON retains the structured value; the Esri wire conversion must
+            // not rewrite the imported value or leak into the canonical read path.
+            using var geoJsonResponse = await _client.GetAsync(
+                $"/rest/services/{serviceName}/FeatureServer/{layerId}/query?f=geojson&where=1%3D1&outFields=*&returnGeometry=true&resultRecordCount=10");
+            var geoJsonPayload = await geoJsonResponse.Content.ReadAsStringAsync();
+            geoJsonResponse.StatusCode.Should().Be(HttpStatusCode.OK, geoJsonPayload);
+            using var geoJsonDocument = JsonDocument.Parse(geoJsonPayload);
+            var geoJsonFeatures = geoJsonDocument.RootElement.GetProperty("features");
+            geoJsonFeatures.GetArrayLength().Should().Be(1);
+            geoJsonFeatures[0].GetProperty("properties").GetProperty("properties")
+                .GetProperty("name").GetString().Should().Be("Schema Boundary Point");
         }
         finally
         {

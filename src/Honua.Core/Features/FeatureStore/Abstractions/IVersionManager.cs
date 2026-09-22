@@ -26,6 +26,11 @@ public interface IVersionManager
     /// <summary>Whether this provider supports branch versioning. Non-Postgres providers return false.</summary>
     bool SupportsVersioning { get; }
 
+    /// <summary>Reads the immutable, durable DEFAULT identity; unsupported providers return null.</summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>A persisted base-store descriptor, never a mutable branch.</returns>
+    Task<DefaultVersionIdentity?> GetDefaultVersionIdentityAsync(CancellationToken cancellationToken = default);
+
     /// <summary>Creates a new branch version.</summary>
     /// <param name="request">Create request.</param>
     /// <param name="cancellationToken">Cancellation token.</param>

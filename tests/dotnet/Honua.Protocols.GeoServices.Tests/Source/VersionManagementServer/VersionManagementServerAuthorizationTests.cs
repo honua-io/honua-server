@@ -43,10 +43,10 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementSer
 public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
 {
     private const string ServiceBase =
-        "/rest/services/" + WebAppFixture.TestServiceId + "/VersionManagementServer";
+        "/rest/services/" + BranchVersioningPublicationFixture.ServiceName + "/VersionManagementServer";
 
     /// <summary>The service-scoped data-editor role (<c>RbacOptions.DataEditorServicePrefix</c>).</summary>
-    private const string EditorRole = "data-editor:" + WebAppFixture.TestServiceId;
+    private const string EditorRole = "data-editor:" + BranchVersioningPublicationFixture.ServiceName;
 
     private const string Referer = "https://vms-authorization-proof.example/";
 
@@ -68,7 +68,10 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
             builder.UseSetting("HONUA_DEV_AUTH", "false");
             builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
         });
+        _fixture.ConfigureWebHost(builder => builder.UseSetting("Capabilities:Experimental:versioning.branch:Enabled", "true"));
         await _fixture.InitializeAsync();
+        BranchVersioningPublicationFixture.ConfigureManagedPublications(_fixture);
+        _fixture.EnableV2ServiceEditingCapabilities(BranchVersioningPublicationFixture.ServiceName, ["Create", "Update", "Delete"]);
 
         _ownerToken = await IssueAsync("alice");
         _nonOwnerToken = await IssueAsync("bob");
@@ -205,7 +208,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
 
         // The owner still reads it: the assertions above measure the policy, not an absent row.
         var visible = await ReadVersionAsync(_ownerToken, guid);
-        visible.GetProperty("versionName").GetString().Should().Be("alice.private_visibility");
+        visible.GetProperty("versionName").GetString().Should().Be("alice.alice.private_visibility");
     }
 
     /// <summary>
@@ -249,7 +252,7 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         // No anonymous version was created and the owner's version survived the delete attempt.
         var versions = await ListVersionNamesAsync(_ownerToken);
         versions.Should().NotContain("anonymous.created");
-        versions.Should().Contain("alice.anon_target");
+        versions.Should().Contain("alice.alice.anon_target");
     }
 
     private static async Task AssertDeniedAsync(HttpResponseMessage response, string operation)

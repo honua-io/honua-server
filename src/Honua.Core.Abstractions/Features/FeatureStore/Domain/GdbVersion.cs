@@ -54,6 +54,9 @@ public readonly record struct GdbVersion
     /// <summary>Version owner.</summary>
     public required string Owner { get; init; }
 
+    /// <summary>Canonical originating service ID; null identifies a legacy or trusted unscoped branch.</summary>
+    public string? ServiceId { get; init; }
+
     /// <summary>Parent version this branch was created from; null when branched from DEFAULT.</summary>
     public Guid? ParentVersion { get; init; }
 

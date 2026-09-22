@@ -28,6 +28,7 @@ public sealed class FeatureServerBranchEditSnapshotTests(BranchEditSnapshotFixtu
 {
     private const string Service = "/rest/services/" + BranchVersioningPublicationFixture.ServiceName + "/FeatureServer";
     private const string Layer = Service + "/0";
+    private string CanonicalServiceId => fixture.App.GetCurrentV2GraphSnapshot().Index.ServicesByName[BranchVersioningPublicationFixture.ServiceName].Metadata.Id;
     private IVersionManager Manager => fixture.App.GetService<IVersionManager>();
 
     [IntegrationTheory]
@@ -50,7 +51,7 @@ public sealed class FeatureServerBranchEditSnapshotTests(BranchEditSnapshotFixtu
             {
                 baseId = await AddAsync(marker, null);
             }
-            versionId = (await Manager.CreateAsync(new CreateVersionRequest(marker, "alice", VersionAccess.Private))).VersionId;
+            versionId = (await Manager.CreateAsync(new CreateVersionRequest(marker, "alice", VersionAccess.Private, ServiceId: CanonicalServiceId))).VersionId;
             var objectId = baseId ?? await AddAsync(marker, versionId);
             await AssertDefaultAsync(objectId, seedDefault, marker);
 
@@ -93,7 +94,7 @@ public sealed class FeatureServerBranchEditSnapshotTests(BranchEditSnapshotFixtu
     public async Task Delete_BranchCreatedFeature_UsesBranchVisibility(bool serviceLevel)
     {
         var marker = "snapshot_delete_" + Guid.NewGuid().ToString("N");
-        var version = await Manager.CreateAsync(new CreateVersionRequest(marker, "alice", VersionAccess.Private));
+        var version = await Manager.CreateAsync(new CreateVersionRequest(marker, "alice", VersionAccess.Private, ServiceId: CanonicalServiceId));
         try
         {
             var objectId = await AddAsync(marker, version.VersionId);

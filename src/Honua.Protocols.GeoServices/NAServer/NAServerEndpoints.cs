@@ -8,6 +8,7 @@ using Honua.Protocols.GeoServices.GPServer;
 using Honua.Protocols.GeoServices.NAServer.Models;
 using Honua.Routing.Features.Routing.Abstractions;
 using Honua.Routing.Features.Routing.Domain;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices.NAServer;
@@ -46,7 +47,7 @@ internal static class NAServerEndpoints
         // compute endpoints, which are AllowAnonymous for the same reason. Marked
         // AllowAnonymous so the audit guard records the intentional decision.
         endpoints.MapGet($"{RouteBase}/Route/solve",
-                static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
+                static (HttpContext context, [FromServices] IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
                     => HandleRouteSolve(context, routing, options.Value, ct))
             .WithDisplayName("NAServer Route Solve (GET)")
             .WithName("NAServerRouteSolveGet")
@@ -57,7 +58,7 @@ internal static class NAServerEndpoints
             .AllowAnonymous();
 
         endpoints.MapPost($"{RouteBase}/Route/solve",
-                static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
+                static (HttpContext context, [FromServices] IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
                     => HandleRouteSolve(context, routing, options.Value, ct))
             .WithDisplayName("NAServer Route Solve")
             .WithName("NAServerRouteSolve")
@@ -68,7 +69,7 @@ internal static class NAServerEndpoints
             .AllowAnonymous();
 
         endpoints.MapPost($"{RouteBase}/ServiceArea/solveServiceArea",
-                static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
+                static (HttpContext context, [FromServices] IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
                     => HandleServiceArea(context, routing, options.Value, ct))
             .WithDisplayName("NAServer Service Area Solve")
             .WithName("NAServerServiceAreaSolve")
@@ -81,7 +82,7 @@ internal static class NAServerEndpoints
         // ANONYMOUS by design (same rationale as Route/ServiceArea): a stateless
         // closest-facility computation over the shared routing provider.
         endpoints.MapPost($"{RouteBase}/ClosestFacility/solveClosestFacility",
-                static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
+                static (HttpContext context, [FromServices] IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
                     => HandleClosestFacility(context, routing, options.Value, ct))
             .WithDisplayName("NAServer Closest Facility Solve")
             .WithName("NAServerClosestFacilitySolve")
@@ -92,7 +93,7 @@ internal static class NAServerEndpoints
             .AllowAnonymous();
 
         endpoints.MapPost($"{RouteBase}/ODCostMatrix/solveODCostMatrix",
-                static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
+                static (HttpContext context, [FromServices] IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
                     => HandleOdCostMatrix(context, routing, options.Value, ct))
             .WithDisplayName("NAServer OD Cost Matrix Solve")
             .WithName("NAServerOdCostMatrixSolve")
@@ -103,7 +104,7 @@ internal static class NAServerEndpoints
             .AllowAnonymous();
 
         endpoints.MapPost($"{RouteBase}/LocationAllocation/solveLocationAllocation",
-                static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
+                static (HttpContext context, [FromServices] IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
                     => HandleLocationAllocation(context, routing, options.Value, ct))
             .WithDisplayName("NAServer Location Allocation Solve")
             .WithName("NAServerLocationAllocationSolve")
@@ -113,7 +114,117 @@ internal static class NAServerEndpoints
             .Produces<NAServerLocationAllocationResponse>(StatusCodes.Status200OK, JsonContentType)
             .AllowAnonymous();
 
+        // Metadata resources (#5035): the service resource and the per-solver analysis
+        // layer resources ArcGIS Pro and arcpy.nax read before they will bind a
+        // stand-alone routing service. They describe the same provider the solves run
+        // on and carry no per-tenant data, so they are anonymous for the same reason.
+        endpoints.MapMethods(RouteBase, ["GET", "POST"],
+                static (HttpContext context, [FromServices] IRoutingProvider routing, CancellationToken ct)
+                    => HandleServiceResource(context, routing, ct))
+            .WithDisplayName("NAServer Service Resource")
+            .WithName("NAServerServiceResource")
+            .WithSummary("Describe the NAServer service")
+            .WithDescription("Lists the analysis layers (Route, ServiceArea, ClosestFacility, ODCostMatrix, LocationAllocation) the configured routing provider supports, in the Esri network service resource shape.")
+            .WithTags("NAServer")
+            .Produces(StatusCodes.Status200OK, contentType: JsonContentType)
+            .AllowAnonymous();
+
+        endpoints.MapMethods($"{RouteBase}/{{layerName}}", ["GET", "POST"],
+                static (HttpContext context, [FromServices] IRoutingProvider routing, [FromServices] INetworkDatasetResolver datasets, IOptions<RoutingConfiguration> options, CancellationToken ct)
+                    => HandleLayerResource(context, routing, datasets, options.Value, ct))
+            .WithDisplayName("NAServer Analysis Layer Resource")
+            .WithName("NAServerLayerResource")
+            .WithSummary("Describe an NAServer analysis layer")
+            .WithDescription("Returns the Esri network analysis layer resource for a supported solver: impedance, travel modes, network dataset attributes, input classes and service limits.")
+            .WithTags("NAServer")
+            .Produces(StatusCodes.Status200OK, contentType: JsonContentType)
+            .Produces(StatusCodes.Status404NotFound, contentType: JsonContentType)
+            .AllowAnonymous();
+
         return endpoints;
+    }
+
+    private static async Task<IResult> HandleServiceResource(
+        HttpContext context,
+        IRoutingProvider routing,
+        CancellationToken ct)
+    {
+        EnrichActivity("ServiceResource");
+        var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
+        var formatError = ValidateJsonFormat(context, parameters);
+        if (formatError is not null)
+        {
+            return formatError;
+        }
+
+        var serviceId = context.Request.RouteValues["serviceId"]?.ToString() ?? string.Empty;
+        var capabilities = await routing.GetCapabilitiesAsync(ct).ConfigureAwait(false);
+        var document = NAServerMetadata.BuildServiceResource(serviceId, capabilities);
+        return Results.Text(
+            NAServerMetadata.Serialize(document, IsPrettyJson(context, parameters)),
+            JsonContentType);
+    }
+
+    private static async Task<IResult> HandleLayerResource(
+        HttpContext context,
+        IRoutingProvider routing,
+        INetworkDatasetResolver datasets,
+        RoutingConfiguration configuration,
+        CancellationToken ct)
+    {
+        EnrichActivity("LayerResource");
+        var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
+        var formatError = ValidateJsonFormat(context, parameters);
+        if (formatError is not null)
+        {
+            return formatError;
+        }
+
+        var layerName = context.Request.RouteValues["layerName"]?.ToString() ?? string.Empty;
+        var capabilities = await routing.GetCapabilitiesAsync(ct).ConfigureAwait(false);
+        var dataset = await ResolveDatasetAsync(datasets, configuration, ct).ConfigureAwait(false);
+        var document = NAServerMetadata.BuildLayerResource(layerName, capabilities, dataset, configuration);
+        if (document is null)
+        {
+            return SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateNotFound(
+                    context,
+                    NAServerMetadata.IsKnownLayer(layerName)
+                        ? $"The configured routing provider does not support the '{layerName}' analysis layer."
+                        : $"NAServer layer '{layerName}' was not found."),
+                "NAServer layer not found");
+        }
+
+        return Results.Text(
+            NAServerMetadata.Serialize(document, IsPrettyJson(context, parameters)),
+            JsonContentType);
+    }
+
+    /// <summary>
+    /// The active network dataset, falling back to the built-in default so the metadata
+    /// stays describable when the registry has no row for the configured id.
+    /// </summary>
+    internal static async Task<NetworkDataset> ResolveDatasetAsync(
+        INetworkDatasetResolver datasets,
+        RoutingConfiguration configuration,
+        CancellationToken ct)
+    {
+        var datasetId = string.IsNullOrWhiteSpace(configuration.NetworkDatasetId)
+            ? NetworkDataset.DefaultId
+            : configuration.NetworkDatasetId;
+        NetworkDataset? dataset = null;
+        try
+        {
+            dataset = await datasets.ResolveAsync(datasetId, ct).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // A registry that cannot be read (no Postgres, no table yet) must not take
+            // the metadata down with it; the default topology description still holds.
+            Activity.Current?.SetTag("honua.routing.dataset_resolution_failed", exception.GetType().Name);
+        }
+
+        return dataset ?? NetworkDataset.Default;
     }
 
     private static async Task<IResult> HandleRouteSolve(

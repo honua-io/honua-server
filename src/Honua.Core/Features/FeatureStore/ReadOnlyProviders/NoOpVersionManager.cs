@@ -19,6 +19,10 @@ public sealed class NoOpVersionManager : IVersionManager
     public bool SupportsVersioning => false;
 
     /// <inheritdoc />
+    public Task<DefaultVersionIdentity?> GetDefaultVersionIdentityAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult<DefaultVersionIdentity?>(null);
+
+    /// <inheritdoc />
     public Task<GdbVersion> CreateAsync(CreateVersionRequest request, CancellationToken cancellationToken = default)
         => throw new NotSupportedException("Branch versioning is not supported by this data provider.");
 
@@ -43,7 +47,7 @@ public sealed class NoOpVersionManager : IVersionManager
     {
         // Absent/empty or the DEFAULT sentinel resolves to DEFAULT; any named version is unknown here.
         if (string.IsNullOrWhiteSpace(gdbVersion) ||
-            gdbVersion.Trim().Equals("sde.default", StringComparison.OrdinalIgnoreCase))
+            DefaultVersionIdentity.IsDefaultName(gdbVersion))
         {
             return Task.FromResult<VersionContext?>(VersionContext.Default);
         }

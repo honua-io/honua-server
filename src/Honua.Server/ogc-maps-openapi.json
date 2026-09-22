@@ -780,6 +780,22 @@
             "items": {
               "$ref": "#/components/schemas/Link"
             }
+          },
+          "extent": {
+            "$ref": "#/components/schemas/MapsCollection/properties/extent"
+          },
+          "crs": {
+            "type": "array",
+            "description": "CRS identifiers advertised for the caller-visible dataset.",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "storageCrs": {
+            "type": "string",
+            "format": "uri",
+            "description": "The common native storage CRS when one non-CRS84 reference system describes the dataset."
           }
         }
       },

@@ -76,9 +76,22 @@ public sealed class VersionJobRunnerTelemetryTests
             link.Context.TraceId == callerContext.TraceId && link.Context.SpanId == callerContext.SpanId);
     }
 
-    private sealed class FakeVersionManager : IVersionManager
+    private sealed class FakeVersionManager : IVersionManager, IVersionServiceMaintenanceManager
     {
         public bool SupportsVersioning => true;
+
+        public Task<VersionReconcileResult> ReconcileForServiceAsync(
+            string serviceId, Guid versionId, VersionReconcilePolicy policy = VersionReconcilePolicy.None,
+            VersionConflictDetection detection = VersionConflictDetection.ByAttribute,
+            CancellationToken cancellationToken = default)
+            => ReconcileAsync(versionId, policy, detection, cancellationToken);
+
+        public Task<VersionPostResult> PostForServiceAsync(
+            string serviceId, Guid versionId, CancellationToken cancellationToken = default)
+            => PostAsync(versionId, cancellationToken);
+
+        public Task<DefaultVersionIdentity?> GetDefaultVersionIdentityAsync(CancellationToken cancellationToken = default)
+            => Task.FromResult<DefaultVersionIdentity?>(null);
 
         public Task<GdbVersion> CreateAsync(CreateVersionRequest request, CancellationToken cancellationToken = default)
             => throw new NotSupportedException();

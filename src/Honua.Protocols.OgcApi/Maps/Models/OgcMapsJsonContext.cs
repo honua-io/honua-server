@@ -12,6 +12,8 @@ namespace Honua.Protocols.Ogc.Api.Maps.Models;
 /// </summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(LandingPage))]
+[JsonSerializable(typeof(Honua.Protocols.Ogc.Common.SpatialExtent), TypeInfoPropertyName = "CommonSpatialExtent")]
+[JsonSerializable(typeof(Honua.Protocols.Ogc.Common.TemporalExtent), TypeInfoPropertyName = "CommonTemporalExtent")]
 [JsonSerializable(typeof(ConformanceDeclaration))]
 [JsonSerializable(typeof(Link))]
 [JsonSerializable(typeof(System.Collections.Immutable.ImmutableArray<Link>))]

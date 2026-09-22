@@ -23,5 +23,7 @@ internal static class ServerCoreSchemaMigrations
         "Honua.Server.Migrations.109_AdoptConfiguredGuardedSchema.sql",
         "Honua.Server.Migrations.110_PreserveGovernedLineage.sql",
         "Honua.Server.Migrations.001_CreateHonuaSchema.sql",
-        "Honua.Server.Migrations.116_AddSensorThingsIdSequences.sql");
+        "Honua.Server.Migrations.116_AddSensorThingsIdSequences.sql",
+        defaultVersionIdentityMigration: "Honua.Server.Migrations.121_CreateDefaultVersionIdentity.sql",
+        versionServiceAssociationMigration: "Honua.Server.Migrations.122_AddVersionServiceAssociation.sql");
 }

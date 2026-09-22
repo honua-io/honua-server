@@ -17,7 +17,7 @@ import subprocess
 import sys
 import time
 from collections import deque
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from threading import Thread
 from pathlib import Path
 from urllib.parse import urlparse
@@ -40,6 +40,7 @@ class HonuaServer:
         port: int = DEFAULT_PORT,
         project_root: Path | None = None,
         environment: Mapping[str, str] | None = None,
+        log_redactor: Callable[[str], str] | None = None,
     ):
         """
         Initialize the server manager.
@@ -54,6 +55,7 @@ class HonuaServer:
         self.port = port
         self.project_root = project_root or self._find_project_root()
         self.environment = dict(environment or {})
+        self._log_redactor = log_redactor or (lambda text: text)
         self._process: subprocess.Popen | None = None
         self._stdout_lines: deque[str] = deque(maxlen=2000)
         self._stderr_lines: deque[str] = deque(maxlen=2000)
@@ -108,6 +110,11 @@ class HonuaServer:
             "HONUA_DEV_AUTH": "true",
             "HONUA_DEV_AUTH_ALLOW_BYPASS": "true",
             "HONUA_ADMIN_PASSWORD": "ClientCompatAdmin123!",
+            # The ArcGIS JS API sends its credential in X-Esri-Authorization, so the
+            # Esri identity probes assert it survives a CORS preflight. With no allowed
+            # origin the server correctly emits no CORS headers at all and there is
+            # nothing to assert against, so configure one.
+            "Cors__AllowedOrigins__0": "http://localhost:3000",
             "HONUA_REGISTER_TEST_INFRASTRUCTURE": "true",
             "HONUA_SKIP_MIGRATIONS": "true",
             # Disable HTTPS redirection for tests
@@ -156,6 +163,7 @@ class HonuaServer:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=str(self.project_root),
+            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
         )
         self._start_log_readers()
 
@@ -172,6 +180,9 @@ class HonuaServer:
         start_time = time.time()
 
         while time.time() - start_time < timeout:
+            if self._process and self._process.poll() is not None:
+                raise RuntimeError("Owned server process exited during startup. " +
+                                   "".join(self._stderr_lines))
             try:
                 response = httpx.get(health_url, timeout=2.0)
                 if response.status_code == 200:
@@ -242,7 +253,7 @@ class HonuaServer:
 
         def drain(stream, buffer):
             for line in iter(stream.readline, b""):
-                text = line.decode(errors="ignore")
+                text = self._log_redactor(line.decode(errors="ignore"))
                 buffer.append(text)
                 if self._echo_logs:
                     sys.stdout.write(text)

@@ -13,12 +13,14 @@ namespace Honua.Core.Features.FeatureStore.Domain;
 /// <param name="Access">Access level.</param>
 /// <param name="ParentVersion">Parent version id; null branches from DEFAULT.</param>
 /// <param name="Description">Optional description.</param>
+/// <param name="ServiceId">Validated canonical originating service ID; null for trusted unscoped creation.</param>
 public readonly record struct CreateVersionRequest(
     string VersionName,
     string Owner,
     VersionAccess Access,
     Guid? ParentVersion = null,
-    string? Description = null);
+    string? Description = null,
+    string? ServiceId = null);
 
 /// <summary>
 /// Request to alter a version's mutable metadata. Null fields are left unchanged.

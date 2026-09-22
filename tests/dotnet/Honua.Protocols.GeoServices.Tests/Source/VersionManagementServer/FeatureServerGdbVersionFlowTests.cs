@@ -11,6 +11,8 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Helpers;
 
+using Microsoft.AspNetCore.Hosting;
+
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer;
 
 /// <summary>
@@ -23,7 +25,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementSer
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
 {
-    private const string ServiceId = WebAppFixture.TestServiceId;
+    private const string ServiceId = BranchVersioningPublicationFixture.ServiceName;
     private const string VmsBase = "/rest/services/" + ServiceId + "/VersionManagementServer";
     private const string LayerBase = "/rest/services/" + ServiceId + "/FeatureServer/0";
 
@@ -32,7 +34,10 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _fixture.WithTestLicense(HonuaEdition.Enterprise);
+        _fixture.ConfigureWebHost(builder => builder.UseSetting("Capabilities:Experimental:versioning.branch:Enabled", "true"));
         await _fixture.InitializeAsync();
+        BranchVersioningPublicationFixture.ConfigureManagedPublications(_fixture);
+        _fixture.EnableV2ServiceEditingCapabilities(BranchVersioningPublicationFixture.ServiceName, ["Create", "Update", "Delete"]);
         _fixture.EnableV2ServiceEditingCapabilities(ServiceId, ["Create", "Update", "Delete"]);
     }
 

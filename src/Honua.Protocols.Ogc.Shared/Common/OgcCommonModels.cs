@@ -32,6 +32,27 @@ public sealed record LandingPage
     public bool? Supports3d { get; init; }
 
     /// <summary>
+    /// Dataset extent when the API exposes a dataset map.
+    /// </summary>
+    [JsonPropertyName("extent")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Extent? Extent { get; init; }
+
+    /// <summary>
+    /// Coordinate reference systems supported by the dataset as a whole.
+    /// </summary>
+    [JsonPropertyName("crs")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ImmutableArray<string>? Crs { get; init; }
+
+    /// <summary>
+    /// Shared storage CRS when all mapped resources have the same non-CRS84 CRS.
+    /// </summary>
+    [JsonPropertyName("storageCrs")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? StorageCrs { get; init; }
+
+    /// <summary>
     /// Links to related resources.
     /// </summary>
     [JsonPropertyName("links")]

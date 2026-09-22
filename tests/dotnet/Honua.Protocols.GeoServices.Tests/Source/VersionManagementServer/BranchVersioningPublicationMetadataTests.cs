@@ -301,7 +301,7 @@ public sealed class BranchVersioningPublicationFixture : IAsyncLifetime
         using var document = JsonDocument.Parse(getBody);
         document.RootElement.TryGetProperty("error", out _).Should().BeFalse(getBody);
         document.RootElement.GetProperty("defaultVersionName").GetString().Should().Be("sde.DEFAULT");
-        document.RootElement.GetProperty("capabilities").GetString().Should().Contain("Create");
+        document.RootElement.GetProperty("capabilities").GetProperty("supportsConflictDetectionByAttribute").GetBoolean().Should().BeTrue();
     }
 
     internal static async Task AssertVersionManagementErrorAsync(HttpResponseMessage response, int expectedCode, ITestOutputHelper output)

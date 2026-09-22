@@ -62,12 +62,29 @@ internal sealed partial class PostgresVersionManager
     // canonical async wrapper (IVersionJobRunner) calls these same methods on a durable, pollable job.
 
     /// <inheritdoc />
-    public async Task<VersionReconcileResult> ReconcileAsync(
+    public Task<VersionReconcileResult> ReconcileAsync(
         Guid versionId,
         VersionReconcilePolicy policy = VersionReconcilePolicy.None,
         VersionConflictDetection detection = VersionConflictDetection.ByAttribute,
         CancellationToken cancellationToken = default)
+        => ReconcileCoreAsync(null, versionId, policy, detection, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<VersionReconcileResult> ReconcileForServiceAsync(
+        string serviceId, Guid versionId, VersionReconcilePolicy policy = VersionReconcilePolicy.None,
+        VersionConflictDetection detection = VersionConflictDetection.ByAttribute,
+        CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(serviceId);
+        return ReconcileCoreAsync(serviceId, versionId, policy, detection, cancellationToken);
+    }
+
+    private async Task<VersionReconcileResult> ReconcileCoreAsync(
+        string? serviceId, Guid versionId, VersionReconcilePolicy policy,
+        VersionConflictDetection detection, CancellationToken cancellationToken)
+    {
+        await EnsureBranchTargetAsync(versionId, cancellationToken).ConfigureAwait(false);
+
         // The (service, version) lock serializes reconcile/post/resolve for the version (#1553); a
         // competing in-flight reconcile/post throws VersionLockedException for a clear in-progress 409.
         await using var lockHandle = await AcquireVersionLockAsync(versionId, cancellationToken).ConfigureAwait(false);
@@ -80,6 +97,7 @@ internal sealed partial class PostgresVersionManager
 
         var version = await LoadVersionAsync(versionId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Version {versionId} does not exist.");
+        RequireMaintenanceService(version, serviceId);
 
         await SetVersionStateAsync(versionId, VersionState.Reconciling, cancellationToken).ConfigureAwait(false);
         try
@@ -146,6 +164,8 @@ internal sealed partial class PostgresVersionManager
         Guid versionId,
         CancellationToken cancellationToken = default)
     {
+        await EnsureBranchTargetAsync(versionId, cancellationToken).ConfigureAwait(false);
+
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand("""
             SELECT layer_id, objectid, conflict_type,
@@ -184,6 +204,8 @@ internal sealed partial class PostgresVersionManager
         IReadOnlyList<VersionConflictResolution> resolutions,
         CancellationToken cancellationToken = default)
     {
+        await EnsureBranchTargetAsync(versionId, cancellationToken).ConfigureAwait(false);
+
         ArgumentNullException.ThrowIfNull(resolutions);
 
         // A manual resolve rewrites the overlay, so it must not race a reconcile/post for the same
@@ -203,8 +225,30 @@ internal sealed partial class PostgresVersionManager
     }
 
     /// <inheritdoc />
-    public async Task<VersionPostResult> PostAsync(Guid versionId, CancellationToken cancellationToken = default)
+    public Task<VersionPostResult> PostAsync(Guid versionId, CancellationToken cancellationToken = default)
+        => PostCoreAsync(null, versionId, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<VersionPostResult> PostForServiceAsync(
+        string serviceId, Guid versionId, CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(serviceId);
+        return PostCoreAsync(serviceId, versionId, cancellationToken);
+    }
+
+    private static void RequireMaintenanceService(GdbVersion version, string? serviceId)
+    {
+        if (serviceId is not null && !string.Equals(version.ServiceId, serviceId, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The branch does not belong to the requested service.");
+        }
+    }
+
+    private async Task<VersionPostResult> PostCoreAsync(
+        string? serviceId, Guid versionId, CancellationToken cancellationToken)
+    {
+        await EnsureBranchTargetAsync(versionId, cancellationToken).ConfigureAwait(false);
+
         // Post takes the same (service, version) lock as reconcile so a post is serialized against any
         // concurrent reconcile/post for the version (#1553); contention surfaces as VersionLockedException.
         await using var lockHandle = await AcquireVersionLockAsync(versionId, cancellationToken).ConfigureAwait(false);
@@ -213,9 +257,9 @@ internal sealed partial class PostgresVersionManager
         activity?.SetTag("honua.version.id", versionId.ToString());
         activity?.SetTag("honua.version.service", _lockScope);
 
-        // Only used to verify the version exists (throws below); the loaded record itself is unused here.
-        _ = await LoadVersionAsync(versionId, cancellationToken).ConfigureAwait(false)
+        var version = await LoadVersionAsync(versionId, cancellationToken).ConfigureAwait(false)
             ?? throw new InvalidOperationException($"Version {versionId} does not exist.");
+        RequireMaintenanceService(version, serviceId);
 
         // Post is refused while pending (unresolved) conflicts remain for the version; the caller must
         // reconcile clean, auto-resolve via policy, or manually resolve first.
@@ -434,7 +478,7 @@ internal sealed partial class PostgresVersionManager
     {
         await using var connection = await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = new NpgsqlCommand("""
-            SELECT version_id, version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description, created_at, modified_at
+            SELECT version_id, version_name, owner, parent_version, access, state, common_ancestor_gen, branch_gen, description, created_at, modified_at, service_id
             FROM honua.gdb_versions
             WHERE version_id = @id
             """, connection);

@@ -440,6 +440,7 @@ internal static class OgcRecordsEndpoints
             .Select(p => snapshot.ResolveStorageLayerId(p.Publication))
             .Where(id => id.HasValue)
             .Select(id => id!.Value)
+            .Distinct()
             .ToImmutableArray();
 
         var properties = new OgcRecordProperties

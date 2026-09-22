@@ -464,7 +464,7 @@ public sealed class WebAppFixture : IAsyncLifetime
                 await Postgres.DropSchemaAsync(_currentSchema);
             }
 
-            Client.Dispose();
+            Client?.Dispose();
 
             // Audit-A2: ref-counted teardown of the shared factory + Postgres lives on
             // WebAppFixtureSharedBootstrapMixin.
@@ -477,7 +477,7 @@ public sealed class WebAppFixture : IAsyncLifetime
             await Postgres.DropSchemaAsync(_currentSchema);
         }
 
-        Client.Dispose();
+        Client?.Dispose();
         if (_factory is not null)
         {
             await _factory.DisposeAsync();

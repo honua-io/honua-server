@@ -50,6 +50,12 @@ on:
       - 'src/Honua.Server/ogc-coverages-openapi.json'
       - 'src/Honua.Server/ogc-processes-openapi.json'
       - 'scripts/ci/report-generated-file-drift.sh'
+      # The four-lane client certification checklist is generated from the
+      # same committed client-compat envelopes (already listed above), so a
+      # refreshed envelope or an edited generator can change what it claims.
+      - 'scripts/certification/build-client-checklist.py'
+      - 'docs/gis/data/client-certification-checklist.v1.json'
+      - 'docs/gis/CLIENT_CERTIFICATION_CHECKLIST.md'
       - 'scripts/ci/generated-files.sh'
       - '.github/workflows/capability-matrix-aggregation.yml'
   schedule:
@@ -109,6 +115,20 @@ jobs:
 
       - name: Validate CITE evidence-table joins against OpenAPI metadata
         run: python3 scripts/ci/validate-cite-openapi-compliance.py
+
+      # Fails when a cell has no state, when an n/a or blocked cell carries no
+      # citation, or when a pass names a build that is not under certification -
+      # which is how OGC API Features and WFS sat closed against QGIS 3.44.13
+      # while the target was 3.44.14.
+      - name: Validate the four-lane client certification checklist
+        run: python3 scripts/certification/build-client-checklist.py --check
+
+      - name: Report client certification checklist drift (advisory)
+        run: |
+          python3 scripts/certification/build-client-checklist.py >/dev/null
+          bash scripts/ci/report-generated-file-drift.sh \
+            docs/gis/data/client-certification-checklist.v1.json \
+            docs/gis/CLIENT_CERTIFICATION_CHECKLIST.md
 
       - name: Upload capability-matrix.v1.json artifact
         if: always()

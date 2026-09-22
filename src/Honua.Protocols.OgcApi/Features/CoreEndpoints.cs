@@ -241,7 +241,12 @@ internal static class CoreEndpoints
                 "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/features-filter",
                 "http://www.opengis.net/spec/cql2/1.0/conf/basic-cql2",
                 "http://www.opengis.net/spec/cql2/1.0/conf/cql2-text",
-                "http://www.opengis.net/spec/cql2/1.0/conf/cql2-json"
+                "http://www.opengis.net/spec/cql2/1.0/conf/cql2-json",
+
+                // Part 5 schema discovery lets QGIS resolve fields and their
+                // semantic roles even when a collection has no feature rows.
+                "http://www.opengis.net/spec/ogcapi-features-5/1.0/conf/schemas",
+                "http://www.opengis.net/spec/ogcapi-features-5/1.0/conf/core-roles-features"
 
             // Optional CQL2 extensions and Part 4 remain unadvertised pending
             // complete class evidence.

@@ -27,7 +27,7 @@ class DigestAlgorithmTests(unittest.TestCase):
     def test_file_digest_is_sha256_of_raw_bytes(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "seed.sql"
-            path.write_text("SELECT 1;\n", encoding="utf-8")
+            path.write_bytes(b"SELECT 1;\n")
             self.assertEqual(digest("SELECT 1;\n"), module.file_digest(path))
 
     def test_input_set_digest_matches_sha256sum_pipeline(self):

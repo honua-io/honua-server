@@ -3,6 +3,7 @@
 
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Licensing;
@@ -30,6 +31,7 @@ internal static class FeatureServerVersioning
     /// Resolves the <c>gdbVersion</c> parameter for an edit request.
     /// </summary>
     /// <param name="context">The HTTP context.</param>
+    /// <param name="canonicalServiceId">Canonical ID from the validated service metadata.</param>
     /// <param name="gdbVersion">The requested version identity, or null/empty for DEFAULT.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>
@@ -38,35 +40,56 @@ internal static class FeatureServerVersioning
     /// </returns>
     public static Task<(VersionContext? Version, IResult? Error)> ResolveEditVersionAsync(
         HttpContext context,
+        string canonicalServiceId,
         string? gdbVersion,
         CancellationToken cancellationToken)
-        => ResolveAsync(context, gdbVersion, forEdit: true, cancellationToken);
+        => ResolveAsync(context, canonicalServiceId, gdbVersion, forEdit: true, cancellationToken);
 
     /// <summary>
     /// Resolves the <c>gdbVersion</c> parameter for a query request with the same provider/license
     /// gates as edits and the shared branch visibility policy. DEFAULT has no read overlay.
     /// </summary>
     /// <param name="context">The HTTP context.</param>
+    /// <param name="canonicalServiceId">Canonical ID from the validated service metadata.</param>
     /// <param name="gdbVersion">The requested version identity, or null/empty for DEFAULT.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The resolved context and a null error on success, or an error result on failure.</returns>
     public static Task<(VersionContext? Version, IResult? Error)> ResolveQueryVersionAsync(
         HttpContext context,
+        string canonicalServiceId,
         string? gdbVersion,
         CancellationToken cancellationToken)
-        => ResolveAsync(context, gdbVersion, forEdit: false, cancellationToken);
+        => ResolveAsync(context, canonicalServiceId, gdbVersion, forEdit: false, cancellationToken);
 
     private static async Task<(VersionContext? Version, IResult? Error)> ResolveAsync(
         HttpContext context,
+        string canonicalServiceId,
         string? gdbVersion,
         bool forEdit,
         CancellationToken cancellationToken)
     {
         // Fast DEFAULT path: no version requested. Do not touch the entitlement service or the
         // version manager so the non-versioned path stays byte-identical to pre-versioning behavior.
-        if (string.IsNullOrWhiteSpace(gdbVersion) ||
-            gdbVersion.Trim().Equals("sde.default", StringComparison.OrdinalIgnoreCase))
+        if (string.IsNullOrWhiteSpace(gdbVersion))
         {
+            return (VersionContext.Default, null);
+        }
+
+        var versionManager = context.RequestServices.GetRequiredService<IVersionManager>();
+        if (DefaultVersionIdentity.IsDefaultName(gdbVersion))
+        {
+            var defaultContext = versionManager.SupportsVersioning
+                ? await versionManager.ResolveAsync(gdbVersion, cancellationToken).ConfigureAwait(false)
+                : VersionContext.Default;
+            return defaultContext is { IsDefault: true }
+                ? (VersionContext.Default, null)
+                : (null, StandardErrorHelpers.CreateNotFound(context, $"Version '{gdbVersion}' was not found."));
+        }
+        if (Guid.TryParse(gdbVersion.Trim(), out var requestedId) && versionManager.SupportsVersioning &&
+            (await versionManager.GetDefaultVersionIdentityAsync(cancellationToken).ConfigureAwait(false))?.VersionId == requestedId)
+        {
+            // DEFAULT retains ordinary service/resource/tenant/scoped-key permissions.
+            // Its display owner is not an authorization identity and it has no branch overlay.
             return (VersionContext.Default, null);
         }
 
@@ -77,7 +100,6 @@ internal static class FeatureServerVersioning
             return (null, entitlementGate);
         }
 
-        var versionManager = context.RequestServices.GetRequiredService<IVersionManager>();
         if (!versionManager.SupportsVersioning)
         {
             return (null, StandardErrorHelpers.CreateNotImplemented(
@@ -86,7 +108,7 @@ internal static class FeatureServerVersioning
                 ["Branch versioning requires a PostgreSQL/PostGIS feature provider."]));
         }
 
-        var resolved = await versionManager.ResolveAsync(gdbVersion, cancellationToken).ConfigureAwait(false);
+        var resolved = await versionManager.ResolveForServiceAsync(canonicalServiceId, gdbVersion, cancellationToken).ConfigureAwait(false);
         if (resolved is null)
         {
             return (null, StandardErrorHelpers.CreateNotFound(

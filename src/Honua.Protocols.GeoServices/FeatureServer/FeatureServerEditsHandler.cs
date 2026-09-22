@@ -180,7 +180,7 @@ internal sealed class FeatureServerEditsHandler(
             // VersionContext.Default — the byte-identical non-versioned write path. A named version
             // is Pro-gated and Postgres-only.
             var (versionContext, versionError) = await FeatureServerVersioning.ResolveEditVersionAsync(
-                httpContext, request.GdbVersion, cancellationToken).ConfigureAwait(false);
+                httpContext, service.Metadata.Id, request.GdbVersion, cancellationToken).ConfigureAwait(false);
             if (versionError != null)
             {
                 return versionError;
