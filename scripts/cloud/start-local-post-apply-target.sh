@@ -61,7 +61,6 @@ DB_CONTAINER_FILE="${STATE_DIR}/honua-post-apply-db.container"
 # The admin key the validation run authenticates with. Generated per run so no
 # static credential is baked into the repository or the lane.
 ADMIN_API_KEY="${HONUA_LOCAL_TARGET_ADMIN_API_KEY:-$(head -c 24 /dev/urandom | base64 | tr -d '=+/' )}"
-ADMIN_PASSWORD="LocalPostApply123!"
 POSTGIS_INIT_WAIT_SECONDS=120
 SERVER_READY_WAIT_SECONDS=150
 
@@ -119,8 +118,9 @@ echo "Starting ${SERVER_DLL} with migrations enabled on port ${SERVER_PORT}."
     export ASPNETCORE_ENVIRONMENT=Test
     export ConnectionStrings__DefaultConnection="Host=127.0.0.1;Port=${DB_PORT};Database=${DB_NAME};Username=${DB_USER};Password=${DB_PASSWORD}"
     export ConnectionStrings__honua="${ConnectionStrings__DefaultConnection}"
-    export HONUA_ADMIN_PASSWORD="${ADMIN_PASSWORD}"
-    export HONUA_ADMIN_API_KEY="${ADMIN_API_KEY}"
+    # X-API-Key authentication compares against HONUA_ADMIN_PASSWORD; the server
+    # does not consume a HONUA_ADMIN_API_KEY setting.
+    export HONUA_ADMIN_PASSWORD="${ADMIN_API_KEY}"
     export HONUA_REGISTER_TEST_INFRASTRUCTURE=true
     # Migrations MUST run: the staged-import row-count cell needs a real schema.
     unset HONUA_SKIP_MIGRATIONS

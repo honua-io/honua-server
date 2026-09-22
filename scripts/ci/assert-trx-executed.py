@@ -113,6 +113,9 @@ def check(
 
     Raises TripwireError when the lane did not prove what it claims to.
     """
+    if min_passed < 1 or (max_skipped is not None and max_skipped < 0):
+        raise TripwireError("min-passed must be positive and max-skipped must be non-negative")
+
     results: list[tuple[str, str]] = []
     for path in trx_paths:
         results.extend(read_results(path))
@@ -132,6 +135,9 @@ def check(
         )
     if failed > 0:
         problems.append(f"{label}: {failed} case(s) failed.")
+    for outcome, count in sorted(counts.items()):
+        if outcome not in (PASSED, FAILED, SKIPPED):
+            problems.append(f"{label}: {count} case(s) have non-passing outcome {outcome!r}.")
     if max_skipped is not None and skipped > max_skipped:
         problems.append(
             f"{label}: {skipped} case(s) skipped but at most {max_skipped} may skip in this lane."
@@ -221,6 +227,22 @@ def self_test() -> int:
             "a failing case is rejected",
             lambda: check("lane", [with_failure], 1, None),
             "1 case(s) failed",
+        )
+        for outcome in ("Error", "Aborted", "Timeout", "Inconclusive", "<no outcome>"):
+            incomplete = root / "incomplete.trx"
+            incomplete.write_text(
+                _trx([("CellA", PASSED), ("CellB", outcome.replace("<", "&lt;"))]),
+                encoding="utf-8",
+            )
+            expect_fail(
+                f"non-passing outcome {outcome} is rejected",
+                lambda: check("lane", [incomplete], 1, None),
+                "non-passing outcome",
+            )
+        expect_fail(
+            "zero execution floor is rejected",
+            lambda: check("lane", [all_skipped], 0, None),
+            "min-passed must be positive",
         )
         expect_fail(
             "a missing TRX is rejected",

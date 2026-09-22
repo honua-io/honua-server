@@ -217,9 +217,17 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Require a validation target
+      - name: Validate cloud certification helpers
         run: |
-          if [ -z "${{ inputs.base_url }}" ] && [ "${{ inputs.local_target }}" != "true" ]; then
+          python3 scripts/ci/assert-trx-executed.py --self-test
+          python3 scripts/ci/certify-ecs-alb-serving.test.py
+
+      - name: Require a validation target
+        env:
+          VALIDATION_BASE_URL: ${{ inputs.base_url }}
+          VALIDATION_LOCAL_TARGET: ${{ inputs.local_target }}
+        run: |
+          if [ -z "$VALIDATION_BASE_URL" ] && [ "$VALIDATION_LOCAL_TARGET" != "true" ]; then
             echo "::error::Pass base_url for a deployed environment, or local_target: true to boot one on the runner."
             exit 1
           fi
@@ -272,11 +280,13 @@ jobs:
       # exactly like one that proved everything.
       - name: Prove the post-apply validation actually executed
         if: ${{ !cancelled() && steps.validate.conclusion != 'skipped' }}
+        env:
+          MIN_PASSED: ${{ inputs.min_passed || '1' }}
         run: |
           python3 scripts/ci/assert-trx-executed.py \
             --label "Cloud post-apply validation" \
             --trx tests/TestResults/cloud-post-apply-validation.trx \
-            --min-passed "${{ inputs.min_passed || '1' }}"
+            --min-passed "$MIN_PASSED"
 
       - name: Upload post-apply validation results
         if: ${{ always() }}

@@ -28,7 +28,7 @@
 #
 # Environment:
 #   HONUA_REALAWS_CERT_ALB_BASE_URL          Required. Public base URL of the cert ALB.
-#   HONUA_REALAWS_CERT_ALB_ADMIN_API_KEY     Optional. Enables the admin-denial check.
+#   HONUA_REALAWS_CERT_ALB_ADMIN_API_KEY     Optional. Enables the authenticated admin check.
 #   HONUA_REALAWS_CERT_ALB_QUERY_PATH        Optional. FeatureServer query path (with query string).
 #   HONUA_REALAWS_CERT_ALB_EXPECTED_COUNT    Optional. Expected feature count for that query.
 #   HONUA_REALAWS_CERT_ALB_TIMEOUT_SECONDS   Optional. Per-request timeout (default 20).
@@ -72,7 +72,7 @@ fetch_status() {
 }
 
 fetch_body() {
-    curl --silent --max-time "${TIMEOUT}" --connect-timeout 10 "$@" || true
+    curl --silent --fail --max-time "${TIMEOUT}" --connect-timeout 10 "$@" || true
 }
 
 echo "Certifying Honua serving through ${BASE_URL}"
@@ -94,7 +94,7 @@ fi
 
 # 2. Readiness (migrations applied, dependencies reachable).
 ready_body="$(fetch_body "${BASE_URL}/healthz/ready")"
-if [[ "${ready_body}" == *Ready* ]]; then
+if [[ "${ready_body}" == Ready ]]; then
     record PASS "readiness through the ALB reports Ready."
 else
     record FAIL "GET ${BASE_URL}/healthz/ready did not report Ready (got: ${ready_body:-<empty>})."
@@ -130,7 +130,7 @@ else
 fi
 
 # 5. Authorization is enforced on the deployed service, not just in tests.
-admin_status="$(fetch_status "${BASE_URL}/admin/api/services")"
+admin_status="$(fetch_status "${BASE_URL}/api/v1/admin/services")"
 if [[ "${admin_status}" == "401" || "${admin_status}" == "403" ]]; then
     record PASS "an unauthenticated admin request through the ALB was denied (HTTP ${admin_status})."
 elif [[ "${admin_status}" == "404" ]]; then
@@ -140,7 +140,7 @@ else
 fi
 
 if [[ -n "${ADMIN_API_KEY}" ]]; then
-    authed_status="$(fetch_status -H "X-API-Key: ${ADMIN_API_KEY}" "${BASE_URL}/admin/api/services")"
+    authed_status="$(fetch_status -H "X-API-Key: ${ADMIN_API_KEY}" "${BASE_URL}/api/v1/admin/services")"
     if [[ "${authed_status}" == "200" ]]; then
         record PASS "an authenticated admin request through the ALB succeeded (HTTP 200)."
     else
