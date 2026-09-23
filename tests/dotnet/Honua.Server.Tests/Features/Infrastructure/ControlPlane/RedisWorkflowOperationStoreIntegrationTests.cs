@@ -6,6 +6,7 @@ using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using StackExchange.Redis;
 
@@ -15,6 +16,8 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 /// Redis integration tests for durable workflow operation storage and leases.
 /// </summary>
 [Collection("Redis")]
+[Protocol(TestProtocols.Infrastructure)]
+[Operation(Operations.TestInfrastructure)]
 public sealed class RedisWorkflowOperationStoreIntegrationTests(RedisFixture redis)
 {
     [Fact]
