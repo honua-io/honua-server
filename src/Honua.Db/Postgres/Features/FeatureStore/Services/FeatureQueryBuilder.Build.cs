@@ -373,7 +373,8 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
 
             sql.Append(CultureInfo.InvariantCulture,
                 $"SELECT {objectId} FROM (SELECT c.{objectId}, c.{layerIdColumn}, {geometryImage} AS {DatabaseSchema.GeometryColumn}, " +
-                $"c.pre_attributes AS {DatabaseSchema.AttributesColumn} FROM honua.feature_changes c " +
+                $"c.pre_attributes AS {DatabaseSchema.AttributesColumn}, " +
+                $"c.pre_created_at AS created_at, c.pre_updated_at AS updated_at FROM honua.feature_changes c " +
                 $"WHERE c.change_id = ANY(${changeIdsParam}) AND c.pre_attributes IS NOT NULL) AS features " +
                 $"WHERE {layerIdColumn} = $1");
 

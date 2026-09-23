@@ -16,11 +16,19 @@ ALTER TABLE honua.feature_changes
     ADD COLUMN IF NOT EXISTS pre_geometry geometry;
 ALTER TABLE honua.feature_changes
     ADD COLUMN IF NOT EXISTS pre_attributes JSONB;
+ALTER TABLE honua.feature_changes
+    ADD COLUMN IF NOT EXISTS pre_created_at TIMESTAMPTZ;
+ALTER TABLE honua.feature_changes
+    ADD COLUMN IF NOT EXISTS pre_updated_at TIMESTAMPTZ;
 
 COMMENT ON COLUMN honua.feature_changes.pre_geometry IS
     'Row geometry before this update/delete (DEFAULT version); NULL when not captured (#4879)';
 COMMENT ON COLUMN honua.feature_changes.pre_attributes IS
     'Row attributes before this update/delete (DEFAULT version); NULL when not captured (#4879)';
+COMMENT ON COLUMN honua.feature_changes.pre_created_at IS
+    'Row creation timestamp before this update/delete (DEFAULT version); NULL when not captured (#4879)';
+COMMENT ON COLUMN honua.feature_changes.pre_updated_at IS
+    'Row update timestamp before this update/delete (DEFAULT version); NULL when not captured (#4879)';
 
 -- Migration 105's contract, plus the pre-change image of OLD for updates and deletes. The attributes
 -- image is never NULL for a captured change so that a NULL reliably means "not captured".
@@ -43,6 +51,8 @@ DECLARE
     raw_source TEXT;
     before_geometry geometry;
     before_attributes JSONB;
+    before_created_at TIMESTAMPTZ;
+    before_updated_at TIMESTAMPTZ;
 BEGIN
     IF TG_OP = 'INSERT' THEN
         lid := NEW.layer_id;
@@ -64,6 +74,8 @@ BEGIN
     IF TG_OP <> 'INSERT' THEN
         before_geometry := OLD.geometry::geometry;
         before_attributes := COALESCE(OLD.attributes, '{}'::jsonb);
+        before_created_at := OLD.created_at;
+        before_updated_at := OLD.updated_at;
     END IF;
 
     public_oid := honua.resolve_feature_public_objectid(lid, oid, row_attributes);
@@ -103,10 +115,12 @@ BEGIN
 
     INSERT INTO honua.feature_changes
         (generation, layer_id, objectid, public_objectid, operation, version_id,
-         actor, source, operation_name, source_id, pre_geometry, pre_attributes)
+         actor, source, operation_name, source_id, pre_geometry, pre_attributes,
+         pre_created_at, pre_updated_at)
     VALUES
         (gen, lid, oid, public_oid, op, ver_uuid,
-         attr_actor, attr_source, attr_operation, attr_source_id, before_geometry, before_attributes);
+         attr_actor, attr_source, attr_operation, attr_source_id, before_geometry, before_attributes,
+         before_created_at, before_updated_at);
 
     IF TG_OP = 'DELETE' THEN
         RETURN OLD;

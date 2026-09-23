@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -283,6 +284,72 @@ public sealed class PostgresChangeTrackerTests : IClassFixture<WebAppFixture>
             change.Operation == FeatureChangeOperation.Update && change.PreImageChangeId == null);
         changes.Single(change => change.ObjectId == 4).Should().Match<FeatureChange>(change =>
             change.Operation == FeatureChangeOperation.Delete && change.PreImageChangeId == firstUpdate);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ExtractChanges)]
+    public async Task QueryPreChangeObjectIds_UsesPreviousAuditTimestampsForScopeAndReadPolicy()
+    {
+        var schemaContext = (Honua.Infrastructure.Middleware.SchemaContext)_fixture
+            .GetService<Honua.Core.Features.Infrastructure.Abstractions.ISchemaContext>();
+        var previousSchema = schemaContext.CurrentSchema;
+        schemaContext.CurrentSchema = _fixture.CurrentSchema;
+        try
+        {
+            var created = new DateTimeOffset(2020, 1, 2, 0, 0, 0, TimeSpan.Zero);
+            var beforeUpdate = new DateTimeOffset(2021, 2, 3, 0, 0, 0, TimeSpan.Zero);
+            var afterUpdate = new DateTimeOffset(2022, 3, 4, 0, 0, 0, TimeSpan.Zero);
+            long objectId;
+            long changeId;
+            await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!))
+            {
+                await using (var insert = new Npgsql.NpgsqlCommand("""
+                    INSERT INTO honua.features (layer_id, attributes, created_at, updated_at)
+                    VALUES (0, '{}'::jsonb, @created, @beforeUpdate)
+                    RETURNING objectid;
+                    """, connection))
+                {
+                    insert.Parameters.AddWithValue("created", created);
+                    insert.Parameters.AddWithValue("beforeUpdate", beforeUpdate);
+                    objectId = (long)(await insert.ExecuteScalarAsync())!;
+                }
+
+                await using (var update = new Npgsql.NpgsqlCommand("""
+                    UPDATE honua.features SET updated_at = @afterUpdate WHERE objectid = @objectId;
+                    """, connection))
+                {
+                    update.Parameters.AddWithValue("afterUpdate", afterUpdate);
+                    update.Parameters.AddWithValue("objectId", objectId);
+                    await update.ExecuteNonQueryAsync();
+                }
+
+                await using var findChange = new Npgsql.NpgsqlCommand("""
+                    SELECT change_id FROM honua.feature_changes
+                    WHERE layer_id = 0 AND objectid = @objectId AND operation = 2
+                    ORDER BY change_id DESC LIMIT 1;
+                    """, connection);
+                findChange.Parameters.AddWithValue("objectId", objectId);
+                changeId = (long)(await findChange.ExecuteScalarAsync())!;
+            }
+
+            var reader = (IPreChangeImageReader)_fixture.GetService<IFeatureReader>();
+            FeatureQuery Query(DateTimeOffset creation, DateTimeOffset update) => new()
+            {
+                SqlFilter = new SqlFragment("created_at = @p0", [creation]),
+                EnforcedSqlFilter = new SqlFragment("updated_at = @p0", [update])
+            };
+
+            (await reader.QueryPreChangeObjectIdsAsync(0, Query(created, beforeUpdate), [changeId]))
+                .Should().Contain(objectId);
+            (await reader.QueryPreChangeObjectIdsAsync(0, Query(created, afterUpdate), [changeId]))
+                .Should().NotContain(objectId);
+            (await reader.QueryPreChangeObjectIdsAsync(0, Query(created.AddDays(1), beforeUpdate), [changeId]))
+                .Should().NotContain(objectId);
+        }
+        finally
+        {
+            schemaContext.CurrentSchema = previousSchema;
+        }
     }
 
     [IntegrationTest]

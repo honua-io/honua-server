@@ -41,7 +41,7 @@ public sealed class FeatureQueryBuilderObjectIdsTests
         var result = queryBuilder.BuildPreChangeObjectIdsQuery(layerId: 1, query, changeIds: [11L, 12L]);
 
         // The images replace the base table behind the usual column shape; the change ids bind first.
-        result.Sql.Should().StartWith("SELECT objectid FROM (SELECT c.objectid, c.layer_id, c.pre_geometry AS geometry, c.pre_attributes AS attributes FROM honua.feature_changes c WHERE c.change_id = ANY($2) AND c.pre_attributes IS NOT NULL) AS features WHERE layer_id = $1");
+        result.Sql.Should().StartWith("SELECT objectid FROM (SELECT c.objectid, c.layer_id, c.pre_geometry AS geometry, c.pre_attributes AS attributes, c.pre_created_at AS created_at, c.pre_updated_at AS updated_at FROM honua.feature_changes c WHERE c.change_id = ANY($2) AND c.pre_attributes IS NOT NULL) AS features WHERE layer_id = $1");
         result.Sql.Should().NotContain("FROM features WHERE").And.NotContain("public.features");
         result.WhereParameters[0].Should().BeEquivalentTo(new[] { 11L, 12L });
         result.WhereParameters.Skip(1).Should().Equal("west", "alpha");
@@ -91,4 +91,3 @@ public sealed class FeatureQueryBuilderObjectIdsTests
         result.Sql.Should().Contain("ORDER BY");
     }
 }
-
