@@ -317,6 +317,8 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, "create should succeed; body: {0}", body);
 
         using var document = JsonDocument.Parse(body);
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+            "create should succeed without a GeoServices error; body: {0}", body);
         return document.RootElement.GetProperty("versionInfo").Clone();
     }
 
