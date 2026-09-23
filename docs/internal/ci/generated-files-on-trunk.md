@@ -16,6 +16,7 @@ inputs still fail. Generator implementation and serialization are unchanged.
 | `docs/gis/data/admin-openapi-operation-ids.json` and `admin-mcp-projection-manifest.json` | `scripts/generate-admin-operation-parity-exports.sh` → `AdminOperationParityExportTests` | Every trunk push |
 | `docs/gis/data/geoservices-rest-parity.json` | `scripts/generate-geoservices-parity.sh` → `GeoServicesParityEmitter` / `GeoServicesParityGenerator` | Every trunk push |
 | `docs/gis/data/capability-matrix.v1.json` | `scripts/ci/generate-capability-matrix.py` (after catalog and parity) | Every trunk push |
+| `docs/okf/capabilities` | `scripts/ci/generate-capability-concepts.py` (after the capability matrix) | Every trunk push |
 | `examples/manifest.json` | `scripts/examples/generate-manifest.py` | Every trunk push |
 | `src/Honua.Core/Features/Infrastructure/Crs/Resources/geoparquet-crs-projjson.json` | `scripts/geoparquet/generate-projjson-catalog.py` | Explicit CRS/PROJ dependency update; depends on external pyproj/PROJ data, not trunk evidence |
 | `docs/gis/gap-report.md`, `docs/internal/compatibility/cross-server-consume-gap-report.md` | `scripts/client-compat/diff-baselines.py`, `scripts/ci/generate-cross-server-gap-report.sh` | Evidence-run snapshots; require measured results, external checkouts or live servers |
@@ -117,7 +118,7 @@ needed for that case, unlike the direct-push design it replaces.
 
 ## Local proof
 
-Run from an isolated worktree (the generators overwrite the six projections):
+Run from an isolated worktree (the generators overwrite the seven projections):
 
 ```bash
 python3 scripts/ci/fixtures/validate-generated-files.py
