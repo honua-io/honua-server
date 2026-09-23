@@ -3,6 +3,7 @@
 
 using System.Diagnostics;
 using System.Reflection;
+using System.Reflection.Emit;
 using FluentAssertions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -190,6 +191,24 @@ public sealed class TierTraitEnforcementTests
     }
 
     [ArchitectureTest]
+    public void TierDetection_RecognisesLegacyTierTraitsOnClassesAndMethods()
+    {
+        var classWithTier = typeof(Honua.Server.Tests.Infrastructure.Security.GeometryInputBudgetTests);
+        TierTraitScanner.HasTierBearingAttribute(classWithTier).Should().BeTrue();
+
+        var methodWithTier = typeof(Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wmts.WmtsFeatureInfoSerializationTests)
+            .GetMethod("GetFeatureInfo_SupportedAttribute_SerializesWithoutReflectionFallback")!;
+        TierTraitScanner.HasTierBearingAttribute(methodWithTier).Should().BeTrue();
+
+        TierTraitScanner.HasTierBearingAttribute(typeof(UnsupportedTierFixture)).Should().BeFalse();
+    }
+
+    [Trait("Tier", "Typo")]
+    private sealed class UnsupportedTierFixture
+    {
+    }
+
+    [ArchitectureTest]
     public void ArchitectureCategoryDetection_ReadsXunitTraitConstructorArguments()
     {
         TierTraitScanner.HasArchitectureCategoryTrait(typeof(ArchitectureCategoryFixture)).Should().BeTrue();
@@ -228,6 +247,28 @@ public sealed class TierTraitEnforcementTests
         TierTraitBaseline.AddedEntries([added], [legacyKey])
             .Should().ContainSingle().Which.Should().Be(added,
                 "a historical name-only entry cannot authorize a new signature");
+    }
+
+    [ArchitectureTest]
+    public void TierBaselineKeys_DistinguishAssembliesWithIdenticalTestSignatures()
+    {
+        static Type CreateType(string assemblyName)
+        {
+            var assembly = AssemblyBuilder.DefineDynamicAssembly(new AssemblyName(assemblyName), AssemblyBuilderAccess.Run);
+            var module = assembly.DefineDynamicModule(assemblyName);
+            var type = module.DefineType("Example.IdenticalTest", TypeAttributes.Public);
+            var method = type.DefineMethod("BareFact", MethodAttributes.Public, typeof(void), Type.EmptyTypes);
+            method.GetILGenerator().Emit(OpCodes.Ret);
+            return type.CreateType()!;
+        }
+
+        var firstType = CreateType("Honua.TestFixture.First");
+        var secondType = CreateType("Honua.TestFixture.Second");
+        var first = TierTraitScanner.MethodKey(firstType, firstType.GetMethod("BareFact")!);
+        var second = TierTraitScanner.MethodKey(secondType, secondType.GetMethod("BareFact")!);
+
+        first.Should().NotBe(second, "independently compiled test assemblies can reuse a namespace and type name");
+        TierTraitBaseline.AddedEntries([second], [first]).Should().ContainSingle().Which.Should().Be(second);
     }
 
     private sealed class OverloadedTestFixture
@@ -348,9 +389,11 @@ internal static class TierTraitScanner
                     continue;
                 }
 
+                var hasClassTier = HasTierBearingAttribute(type);
                 foreach (var method in type.GetMethods(TestMemberFlags))
                 {
-                    if (!IsXunitTestMethod(method) || HasTierBearingAttribute(method) || HasArchitectureCategoryTrait(method))
+                    if (!IsXunitTestMethod(method) || hasClassTier ||
+                        HasTierBearingAttribute(method) || HasArchitectureCategoryTrait(method))
                     {
                         continue;
                     }
@@ -367,7 +410,7 @@ internal static class TierTraitScanner
     {
         var genericArity = method.GetGenericArguments().Length;
         var parameters = string.Join(",", method.GetParameters().Select(parameter => parameter.ParameterType.ToString()));
-        return $"{type.FullName}.{method.Name}`{genericArity}({parameters})";
+        return $"{type.Assembly.GetName().Name}:{type.FullName}.{method.Name}`{genericArity}({parameters})";
     }
 
     private static bool IsXunitTestMethod(MethodInfo method)
@@ -394,9 +437,18 @@ internal static class TierTraitScanner
     /// a hard-coded attribute list, so a new TestKit tier attribute is honoured the day it is
     /// added and one that stops emitting <c>Tier</c> stops satisfying the guard.
     /// </summary>
-    private static bool HasTierBearingAttribute(MemberInfo member)
-        => member.GetCustomAttributes(inherit: true)
-            .Any(attribute => EmitsTierTrait(attribute.GetType()));
+    internal static bool HasTierBearingAttribute(MemberInfo member)
+    {
+        var explicitTraits = member.GetCustomAttributesData()
+            .Where(attribute => attribute.AttributeType == typeof(TraitAttribute) &&
+                                attribute.ConstructorArguments.Count == 2)
+            .Select(attribute => new KeyValuePair<string, string>(
+                attribute.ConstructorArguments[0].Value as string ?? string.Empty,
+                attribute.ConstructorArguments[1].Value as string ?? string.Empty));
+        return HasExactlyOneSupportedTier(explicitTraits) ||
+               member.GetCustomAttributes(inherit: true)
+                   .Any(attribute => EmitsTierTrait(attribute.GetType()));
+    }
 
     private static readonly Dictionary<Type, bool> _tierEmittingCache = [];
 
