@@ -25,7 +25,7 @@ namespace Honua.Architecture.Tests;
 /// </para>
 /// <para>
 /// This guard makes that a build failure for anything NEW. The methods that were already
-/// untiered when the guard landed are listed, by fully-qualified name, in the committed
+/// untiered when the guard landed are listed, by fully-qualified method signature, in the committed
 /// baseline <c>tests/dotnet/Honua.Architecture.Tests/tier-trait-baseline.txt</c>. The list is
 /// a ratchet: adding a tier attribute to a baselined method must also remove its line, and a
 /// stale line fails the guard. The required gate compares the file to the first parent of
@@ -174,6 +174,40 @@ public sealed class TierTraitEnforcementTests
         TierTraitScanner.HasArchitectureCategoryTrait(typeof(TierTraitBaseline)).Should().BeFalse();
     }
 
+    [ArchitectureTest]
+    public void TierBaselineKeys_DistinguishUntieredMethodOverloads()
+    {
+        var overloads = typeof(OverloadedTestFixture).GetMethods(BindingFlags.Public | BindingFlags.Instance)
+            .Where(method => method.Name == nameof(OverloadedTestFixture.BareTheory))
+            .Select(method => TierTraitScanner.MethodKey(typeof(OverloadedTestFixture), method))
+            .ToArray();
+
+        overloads.Should().HaveCount(2);
+        overloads.Should().OnlyHaveUniqueItems(
+            "a new bare [Theory] overload must not reuse an existing baseline key");
+        var existing = overloads.Single(key => key.EndsWith("BareTheory`0(System.Int32)", StringComparison.Ordinal));
+        var added = overloads.Single(key => key.EndsWith("BareTheory`0(System.String)", StringComparison.Ordinal));
+
+        overloads.Except([existing], StringComparer.Ordinal).Should().ContainSingle().Which.Should().Be(added,
+            "baselining one overload must leave a newly untiered overload visible");
+        TierTraitBaseline.AddedEntries([existing, added], [existing])
+            .Should().ContainSingle().Which.Should().Be(added,
+                "adding the new overload to the committed baseline must fail the growth guard");
+    }
+
+    private sealed class OverloadedTestFixture
+    {
+        // xUnit's analyzer rejects decorated overloads in the fixture itself; the scanner's
+        // baseline key uses the same MethodInfo signature for a decorated test method.
+        public void BareTheory(int value)
+        {
+        }
+
+        public void BareTheory(string value)
+        {
+        }
+    }
+
     [Trait("Category", "Architecture")]
     private sealed class ArchitectureCategoryFixture
     {
@@ -254,7 +288,7 @@ internal static class TierTraitScanner
         => ArchitectureTestHelpers.IntegrationTestAssemblies();
 
     /// <summary>
-    /// Fully-qualified <c>Namespace.Type.Method</c> names of every discovered test method that
+    /// Fully-qualified <c>Namespace.Type.Method(ParameterTypes)</c> signatures of every discovered test method that
     /// carries no tier-bearing attribute, sorted ordinally.
     /// </summary>
     internal static IReadOnlyCollection<string> UntieredTestMethodNames()
@@ -286,12 +320,19 @@ internal static class TierTraitScanner
                         continue;
                     }
 
-                    names.Add($"{type.FullName}.{method.Name}");
+                    names.Add(MethodKey(type, method));
                 }
             }
         }
 
         return names;
+    }
+
+    internal static string MethodKey(Type type, MethodInfo method)
+    {
+        var genericArity = method.GetGenericArguments().Length;
+        var parameters = string.Join(",", method.GetParameters().Select(parameter => parameter.ParameterType.ToString()));
+        return $"{type.FullName}.{method.Name}`{genericArity}({parameters})";
     }
 
     private static bool IsXunitTestMethod(MethodInfo method)
