@@ -87,6 +87,9 @@ internal sealed class PostgresChangeTracker : IChangeTracker
         // entire change history since the base generation. public_objectid is the durable alias
         // captured by the trigger for custom id.primary layers; unlike the source row, it survives a
         // delete and lets an upload expressed in protocol-facing ids still find the storage change.
+        // pre_image_change_id names the window's first change when it recorded the row image from before
+        // that change (migration 121), i.e. the state a client synchronized up to the window start holds;
+        // it is NULL when the window starts with an insert or the first change predates image capture.
         const string sql = """
             WITH matched_objects AS MATERIALIZED (
                 SELECT DISTINCT layer_id, objectid
@@ -101,6 +104,8 @@ internal sealed class PostgresChangeTracker : IChangeTracker
                        changes.public_objectid, changes.operation, changes.changed_at, changes.origin_replica_id,
                        FIRST_VALUE(changes.operation) OVER (
                            PARTITION BY changes.layer_id, changes.objectid ORDER BY changes.generation) AS first_op,
+                       FIRST_VALUE(CASE WHEN changes.pre_attributes IS NOT NULL THEN changes.change_id END) OVER (
+                           PARTITION BY changes.layer_id, changes.objectid ORDER BY changes.generation) AS pre_image_change_id,
                        LAST_VALUE(changes.operation) OVER (
                            PARTITION BY changes.layer_id, changes.objectid ORDER BY changes.generation
                            ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) AS last_op,
@@ -123,7 +128,8 @@ internal sealed class PostgresChangeTracker : IChangeTracker
                        WHEN last_op = 3 THEN 3
                        ELSE 2
                    END AS net_operation,
-                   changed_at, origin_replica_id
+                   changed_at, origin_replica_id,
+                   CASE WHEN first_op <> 1 THEN pre_image_change_id END AS pre_image_change_id
             FROM ranked
             WHERE rn = 1
               AND CASE
@@ -170,7 +176,8 @@ internal sealed class PostgresChangeTracker : IChangeTracker
                 PublicObjectId = reader.IsDBNull(4) ? null : reader.GetInt64(4),
                 Operation = (FeatureChangeOperation)netOp,
                 ChangedAt = reader.GetFieldValue<DateTimeOffset>(6),
-                OriginReplicaId = reader.IsDBNull(7) ? null : reader.GetString(7)
+                OriginReplicaId = reader.IsDBNull(7) ? null : reader.GetString(7),
+                PreImageChangeId = reader.IsDBNull(8) ? null : reader.GetInt64(8)
             });
         }
 

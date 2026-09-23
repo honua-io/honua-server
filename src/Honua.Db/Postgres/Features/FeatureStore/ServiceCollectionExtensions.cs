@@ -96,7 +96,8 @@ internal static class ServiceCollectionExtensions
                 provider.GetService<IMetadataV2GraphProvider>(),
                 provider.GetService<ILogger<PostgresStorageMappedFeatureReader>>(),
                 provider.GetService<Honua.Core.Features.Authorization.Abstractions.IRowLevelSecurityFilterSource>(),
-                provider.GetService<Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource>()));
+                provider.GetService<Honua.Core.Features.Authorization.Abstractions.IFieldMaskSource>(),
+                schemaName));
 
         // Register segregated interfaces
         services.AddScoped<IFeatureDataProvider>(provider => provider.GetRequiredService<PostgresFeatureStoreRefactored>());

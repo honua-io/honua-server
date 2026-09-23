@@ -31,7 +31,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 376,
-      "provingTestCount": 1296,
+      "provingTestCount": 1300,
       "maturity": {
         "implemented": 373,
         "preview": 2,
@@ -818,10 +818,10 @@
       "category": "Editing",
       "edition": "Pro",
       "status": null,
-      "entryCount": 15,
-      "provingTestCount": 37,
+      "entryCount": 16,
+      "provingTestCount": 60,
       "maturity": {
-        "experimental": 15
+        "experimental": 16
       },
       "noSurface": null,
       "cite": [],
@@ -1675,7 +1675,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 49,
-      "provingTestCount": 466,
+      "provingTestCount": 503,
       "maturity": {
         "implemented": 49
       },
@@ -1824,7 +1824,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 45,
-      "provingTestCount": 367,
+      "provingTestCount": 379,
       "maturity": {
         "implemented": 43,
         "preview": 2
@@ -1890,10 +1890,10 @@
       "category": "Serve",
       "edition": "Community",
       "status": null,
-      "entryCount": 6,
-      "provingTestCount": 53,
+      "entryCount": 10,
+      "provingTestCount": 69,
       "maturity": {
-        "implemented": 6
+        "implemented": 10
       },
       "noSurface": null,
       "cite": [],

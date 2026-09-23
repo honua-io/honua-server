@@ -30,8 +30,9 @@ internal sealed class AdminConnectImportOperationExecutor(
             .Where(parameter => !request.Parameters.TryGetValue(parameter.Name, out var value) || string.IsNullOrWhiteSpace(value))
             .Select(parameter => $"Required parameter '{parameter.Name}' is missing.").ToArray();
         var messages = missing.ToList();
-        if (definition.SideEffect != OperationSideEffectClass.ReadOnly &&
-            request.Parameters.TryGetValue("password", out var password) &&
+        // Read-only connection tests take the same credential body as create/update. An inline
+        // password is rejected there too (#4880); callers pass secretReference instead.
+        if (request.Parameters.TryGetValue("password", out var password) &&
             !string.IsNullOrEmpty(password))
         {
             messages.Add("Inline passwords cannot be persisted for approval; use secretReference.");
@@ -71,6 +72,24 @@ internal sealed class AdminConnectImportOperationExecutor(
         {
             var issued = await adminApiKeyStore.CreateAsync(
                 $"approved-operation:{context.ApprovedProposalId}",
+                AdminApiKeyPermission.CreateApprovedOperationGrants(definition.Method.Method, uri.AbsolutePath, context.TenantId),
+                clock.GetUtcNow().AddMinutes(5),
+                context.PrincipalId,
+                cancellationToken).ConfigureAwait(false);
+            executionCredential = issued.Record;
+            message.Headers.TryAddWithoutValidation("X-API-Key", issued.Key);
+            if (!string.IsNullOrWhiteSpace(context.TenantId))
+                message.Headers.TryAddWithoutValidation("X-Honua-Tenant", context.TenantId);
+        }
+        else if (definition.SideEffect == OperationSideEffectClass.ReadOnly
+            && !AdminApiKeyPermission.IsSafeMethod(definition.Method.Method)
+            && !AdminApiKeyPermission.IsAuthorized(current.User, definition.Method.Method, uri.AbsolutePath))
+        {
+            // A read-scoped caller is authorized for the semantic read, but the Admin route is POST
+            // and would reject admin:read. Mint a single-use credential for this exact route instead
+            // of forwarding a key that cannot call it, and do not widen that credential to other routes.
+            var issued = await adminApiKeyStore.CreateAsync(
+                $"read-operation:{OperationId}",
                 AdminApiKeyPermission.CreateApprovedOperationGrants(definition.Method.Method, uri.AbsolutePath, context.TenantId),
                 clock.GetUtcNow().AddMinutes(5),
                 context.PrincipalId,

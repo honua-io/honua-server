@@ -272,9 +272,14 @@ public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
     [Endpoint("POST /rest/services/{serviceId}/FeatureServer/{layerId}/applyEdits")]
     public async Task SynchronizeReplica_UpdateAcrossTheScopeBoundary_DeletesRowsThatLeftTheScope()
     {
+        // Scope: envelope (60,10)-(61,11). Each row is classified from its state before the first change
+        // in the window (the change log's pre-change image, #4879) and its state now.
         var leaving = await AddFeatureAsync("boundary-leaving", 60.25, 10.5);
         var staying = await AddFeatureAsync("boundary-staying", 60.75, 10.25);
         var entering = await AddFeatureAsync("boundary-entering", 62.5, 10.5);
+        var drifting = await AddFeatureAsync("boundary-drifting", 62.5, 10.25);
+        var removedInside = await AddFeatureAsync("boundary-removed-inside", 60.5, 10.5);
+        var removedOutside = await AddFeatureAsync("boundary-removed-outside", 62.75, 10.75);
 
         var created = await PostFormAsync("createReplica", new Dictionary<string, string>
         {
@@ -290,11 +295,15 @@ public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
         AssertFeatures(
             created.GetProperty("layers")[0].GetProperty("features"),
             (leaving, "boundary-leaving", 60.25, 10.5),
-            (staying, "boundary-staying", 60.75, 10.25));
+            (staying, "boundary-staying", 60.75, 10.25),
+            (removedInside, "boundary-removed-inside", 60.5, 10.5));
 
         await UpdateFeatureAsync(leaving, "boundary-left", 62.25, 10.5);
         await UpdateFeatureAsync(staying, "boundary-stayed", 60.5, 10.75);
         await UpdateFeatureAsync(entering, "boundary-entered", 60.25, 10.75);
+        await UpdateFeatureAsync(drifting, "boundary-drifted", 62.25, 10.75);
+        await DeleteFeatureAsync(removedInside);
+        await DeleteFeatureAsync(removedOutside);
 
         var synced = await PostJsonAsync("synchronizeReplica", new
         {
@@ -305,14 +314,65 @@ public sealed class FeatureServerReplicaEsriParityTests : IAsyncLifetime
         });
         var delta = synced.GetProperty("edits").EnumerateArray().Should().ContainSingle().Subject;
 
-        // The row that left the scope is deleted from the client instead of lingering there.
-        delta.GetProperty("deleteIds").EnumerateArray().Select(id => id.GetInt64()).Should().BeEquivalentTo(new[] { leaving });
-        // The change log keeps no pre-change state, so a row updated into the scope arrives as an update
-        // beside the in-scope edit (documented in the parity notes).
-        AssertFeatures(
-            delta.GetProperty("updateFeatures"),
-            (staying, "boundary-stayed", 60.5, 10.75),
-            (entering, "boundary-entered", 60.25, 10.75));
+        // A row updated into the scope is new to the client, so it arrives as an add; an edit to a row that
+        // stayed inside is an update.
+        AssertFeatures(delta.GetProperty("addFeatures"), (entering, "boundary-entered", 60.25, 10.75));
+        AssertFeatures(delta.GetProperty("updateFeatures"), (staying, "boundary-stayed", 60.5, 10.75));
+        // Only rows that were inside the scope before the change are deleted: the row that left it and the
+        // deleted in-scope row. Rows that were never in scope (updated or deleted) produce nothing.
+        delta.GetProperty("deleteIds").EnumerateArray().Select(id => id.GetInt64())
+            .Should().BeEquivalentTo(new[] { leaving, removedInside });
+
+        // Row visibility (a permanent filter here) is judged the same way: before the change against the
+        // pre-change image, now against the live row, both under the caller's current policy.
+        var concealed = await AddFeatureAsync("visibility-concealed", 70.25, 20.25);
+        var revealed = await AddFeatureAsync("hidden-revealed", 70.5, 20.5);
+        var removedVisible = await AddFeatureAsync("visibility-removed", 70.75, 20.75);
+        var removedHidden = await AddFeatureAsync("hidden-removed", 70.5, 20.25);
+        var policy = new Honua.Core.Features.Metadata.Domain.V2.MetadataV2PermanentFilter
+        {
+            Expression = "name NOT LIKE 'hidden%'"
+        };
+        _fixture.UpdateV2ResourceMetadata(0, permanentFilter: policy);
+
+        var visibilityReplica = await PostFormAsync("createReplica", new Dictionary<string, string>
+        {
+            ["replicaName"] = "visibility",
+            ["layers"] = "0",
+            ["syncModel"] = "perReplica",
+            ["f"] = "json"
+        });
+        var visibleAtCreate = ReadIds(visibilityReplica.GetProperty("layers")[0].GetProperty("features")).ToArray();
+        visibleAtCreate.Should().Contain([concealed, removedVisible]);
+        visibleAtCreate.Should().NotContain([revealed, removedHidden]);
+
+        // Edit with the policy lifted so hidden rows can be changed, then restore it for the download.
+        _fixture.UpdateV2ResourceMetadata(0, clearPermanentFilter: true);
+        await UpdateFeatureAsync(concealed, "hidden-concealed", 70.25, 20.25);
+        await UpdateFeatureAsync(revealed, "visibility-revealed", 70.5, 20.5);
+        await DeleteFeatureAsync(removedVisible);
+        await DeleteFeatureAsync(removedHidden);
+        _fixture.UpdateV2ResourceMetadata(0, permanentFilter: policy);
+
+        var visibilitySynced = await PostJsonAsync("synchronizeReplica", new
+        {
+            replicaID = visibilityReplica.GetProperty("replicaID").GetString(),
+            syncDirection = "download",
+            replicaServerGen = visibilityReplica.GetProperty("serverGen").GetInt64(),
+            f = "json"
+        });
+        var visibilityDelta = visibilitySynced.GetProperty("edits").EnumerateArray().Should().ContainSingle().Subject;
+        var visibilityJson = visibilityDelta.ToString();
+        visibilityDelta.TryGetProperty("addFeatures", out var visibilityAdds).Should().BeTrue(visibilityJson);
+        AssertFeatures(visibilityAdds, (revealed, "visibility-revealed", 70.5, 20.5));
+        // An empty category is omitted from the envelope, so a missing key is an empty change set.
+        visibilityDelta.TryGetProperty("updateFeatures", out var visibilityUpdates).Should().BeFalse(visibilityJson);
+        visibilityUpdates.ValueKind.Should().Be(JsonValueKind.Undefined);
+        // Deletes are re-authorised against the pre-change image instead of being withheld: the client
+        // loses the row it could see that is now hidden and the visible row that was deleted, and learns
+        // nothing about the hidden row.
+        visibilityDelta.GetProperty("deleteIds").EnumerateArray().Select(id => id.GetInt64())
+            .Should().BeEquivalentTo(new[] { concealed, removedVisible }, visibilityJson);
     }
 
     [IntegrationTest]

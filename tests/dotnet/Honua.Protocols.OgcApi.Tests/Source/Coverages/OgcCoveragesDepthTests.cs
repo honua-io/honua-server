@@ -460,24 +460,56 @@ internal static class CoverageDepthRasterStore
                 var isEmpty = emptyDataForSingleBand.HasValue &&
                               query.Bands is { Length: 1 } bands &&
                               bands[0] == emptyDataForSingleBand.Value;
+                var srid = query.OutputSrid ?? 4326;
+                var width = query.OutputWidth ?? 64;
+                var height = query.OutputHeight ?? 64;
+
+                // #4424: the covered extent follows the requested clip instead of always
+                // reporting the raster's full 20000 x 20000 native footprint, so a narrow
+                // bbox that the handler failed to apply is now distinguishable from one it
+                // applied correctly.
+                var extent = ClippedExtent(
+                    raster.Extent ?? OgcCoveragesEndpointsTests.NativeExtent,
+                    query,
+                    srid);
                 return Task.FromResult(new RasterResult
                 {
                     Data = isEmpty
                         ? []
-                        : query.OutputFormat == RasterFormat.PNG
-                            ? [0x89, 0x50, 0x4E, 0x47]
-                            : [0x49, 0x49, 0x2A, 0x00],
+                        : OgcCoveragesEndpointsTests.SyntheticRasterBytes(query.OutputFormat, extent, width, height),
                     ContentType = query.OutputFormat.ToContentType(),
-                    Width = query.OutputWidth ?? 64,
-                    Height = query.OutputHeight ?? 64,
-                    Srid = query.OutputSrid ?? 4326,
-                    Extent = raster.Extent,
+                    Width = width,
+                    Height = height,
+                    Srid = srid,
+                    Extent = extent,
                     BandCount = query.Bands?.Length ?? 3,
                     PixelType = "32BF"
                 });
             });
 
         return rasterStore;
+    }
+
+    /// <summary>
+    /// The extent a correct export covers: the requested clip envelope intersected with the
+    /// raster footprint, or the whole footprint when no clip was requested.
+    /// </summary>
+    private static RasterExtent ClippedExtent(RasterExtent native, RasterQuery query, int srid)
+    {
+        if (query.ClipRegion is not { } clip)
+        {
+            return native with { Srid = srid };
+        }
+
+        var envelope = new NetTopologySuite.IO.WKBReader().Read(clip.Geometry).EnvelopeInternal;
+        return new RasterExtent
+        {
+            XMin = Math.Max(native.XMin, envelope.MinX),
+            YMin = Math.Max(native.YMin, envelope.MinY),
+            XMax = Math.Min(native.XMax, envelope.MaxX),
+            YMax = Math.Min(native.YMax, envelope.MaxY),
+            Srid = srid
+        };
     }
 
     public static RasterInfo CreateRasterInfo(long rasterId, int width, int height, double pixelSize)

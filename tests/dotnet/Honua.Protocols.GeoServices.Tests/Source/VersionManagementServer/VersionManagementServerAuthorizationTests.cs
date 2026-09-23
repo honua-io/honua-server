@@ -208,6 +208,34 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         visible.GetProperty("versionName").GetString().Should().Be("alice.private_visibility");
     }
 
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task FeatureQuery_PrivateVersionOfAnotherOwner_DoesNotExposeBranch(bool useGuid)
+    {
+        const string versionName = "private_query_visibility";
+        var owned = await CreateVersionAsync(_ownerToken, versionName, "private-query-description");
+        var versionGuid = owned.GetProperty("versionGuid").GetString()!;
+        BranchVersioningPublicationFixture.ConfigureManagedPublications(_fixture);
+
+        var identity = useGuid ? versionGuid : $"alice.{versionName}";
+        var query = $"/rest/services/{BranchVersioningPublicationFixture.ServiceName}/FeatureServer/0/query" +
+            $"?where=1%3D1&returnCountOnly=true&gdbVersion={Uri.EscapeDataString(identity)}&f=json";
+        using var denied = await GetAsync(_nonOwnerToken, query);
+        await denied.AssertGeoServicesErrorAsync((int)HttpStatusCode.NotFound);
+
+        // The same version remains readable by its owner, proving this is a
+        // visibility denial rather than a missing branch or broken query route.
+        using var allowed = await GetAsync(_ownerToken, query);
+        var body = await allowed.Content.ReadAsStringAsync();
+        allowed.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse(body);
+        document.RootElement.GetProperty("count").GetInt32().Should().BeGreaterThanOrEqualTo(0);
+    }
+
     /// <summary>
     /// With the development bypass off, an unauthenticated caller reaches no VMS lifecycle
     /// operation and learns nothing about the versions that exist.

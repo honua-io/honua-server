@@ -453,18 +453,54 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/connections/{id}/tables")]
     public async Task Admin_GetTables_ShouldReturnTableList()
     {
-        // Act
+        // This fixture runs with the dev-auth bypass, so _client IS an authorized principal
+        // and there is exactly one expected outcome. The previous OK-or-Unauthorized
+        // disjunction was dead cover: the Unauthorized branch is unreachable here, and the
+        // conditional body meant an endpoint that returned nothing still passed (#4390).
+
+        // Act: "test" is the secure connection WebAppFixture registers against the fixture's
+        // own PostGIS, so the discovery has a non-empty database to describe.
         var response = await _client.GetAsync("/api/v1/admin/connections/test/tables");
 
         // Assert
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Unauthorized);
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
-        if (response.StatusCode == HttpStatusCode.OK)
+        var json = JsonDocument.Parse(payload);
+        var tables = json.RootElement.GetProperty("tables");
+        tables.ValueKind.Should().Be(JsonValueKind.Array);
+        tables.GetArrayLength().Should().BeGreaterThan(
+            0,
+            "discovery against the seeded fixture database must return at least one spatial table");
+
+        // Every entry is a real discovered table, not an empty placeholder object.
+        foreach (var table in tables.EnumerateArray())
         {
-            var content = await response.Content.ReadAsStringAsync();
-            var json = JsonDocument.Parse(content);
-            json.RootElement.GetProperty("tables").ValueKind.Should().Be(JsonValueKind.Array);
+            table.GetProperty("schema").GetString().Should().NotBeNullOrWhiteSpace();
+            table.GetProperty("table").GetString().Should().NotBeNullOrWhiteSpace();
         }
+
+        // ...and the discovery really is spatial discovery, not a bare table listing.
+        var hasGeometryColumn = false;
+        foreach (var table in tables.EnumerateArray())
+        {
+            if (table.TryGetProperty("geometryColumn", out var column) &&
+                column.ValueKind == JsonValueKind.String &&
+                !string.IsNullOrWhiteSpace(column.GetString()))
+            {
+                hasGeometryColumn = true;
+                break;
+            }
+        }
+
+        hasGeometryColumn.Should().BeTrue(
+            "PostGIS discovery must report the geometry column of at least one seeded spatial table");
+
+        // An unknown connection id is a distinct, pinned outcome — so "returns something for
+        // everything" cannot pass as a table list.
+        var unknown = await _client.GetAsync("/api/v1/admin/connections/no-such-connection-4390/tables");
+        unknown.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
     // v1 admin metadata-resource POST endpoint removed in #1035 cutover; V2 admin UX (epic #1046) tracks the replacement.
@@ -478,7 +514,13 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
     [Endpoint("POST /api/v1/admin/import/upload")]
     public async Task Import_UploadFile_ShouldAcceptValidFormats()
     {
+        // This fixture runs with the dev-auth bypass, so _client IS an authorized principal
+        // and the upload has exactly one expected outcome. The previous
+        // OK-or-Accepted-or-Unauthorized disjunction asserted nothing about whether anything
+        // was actually imported (#4390).
+
         // Arrange
+        var tableName = $"coverage_import_{Guid.NewGuid():N}"[..30];
         var geoJsonContent = """
             {
                 "type": "FeatureCollection",
@@ -499,13 +541,36 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
 
         using var multipartContent = new MultipartFormDataContent();
         multipartContent.Add(new StringContent(geoJsonContent), "file", "test.geojson");
-        multipartContent.Add(new StringContent("coverage_import_table"), "TableName");
+        multipartContent.Add(new StringContent(tableName), "TableName");
+        multipartContent.Add(new StringContent("4326"), "TargetSrid");
 
         // Act
         var response = await _client.PostAsync("/api/v1/admin/import/upload", multipartContent);
 
-        // Assert
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Accepted, HttpStatusCode.Unauthorized);
+        // Assert: a synchronous upload completes inline with 200 and a real ImportResult.
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
+
+        using var result = JsonDocument.Parse(payload);
+        result.RootElement.GetProperty("success").GetBoolean().Should().BeTrue(payload);
+        result.RootElement.GetProperty("tableName").GetString().Should().Be(tableName);
+        result.RootElement.GetProperty("format").GetString().Should().Be("GeoJson");
+        result.RootElement.GetProperty("featureCount").GetInt32().Should().Be(
+            1,
+            "the posted FeatureCollection carries exactly one feature, so an import that silently dropped it must fail");
+        result.RootElement.GetProperty("detectedSrid").GetInt32().Should().Be(4326);
+
+        // The import really landed: the physical table is discoverable through the same
+        // connection the admin table-discovery endpoint reads.
+        var physicalTableName = result.RootElement.GetProperty("physicalTableName").GetString();
+        physicalTableName.Should().NotBeNullOrWhiteSpace();
+
+        var discovery = await _client.GetAsync("/api/v1/admin/connections/test/tables");
+        var discoveryPayload = await discovery.Content.ReadAsStringAsync();
+        discovery.StatusCode.Should().Be(HttpStatusCode.OK, discoveryPayload);
+        discoveryPayload.Should().Contain(
+            physicalTableName!,
+            "an upload that reported success must have created a table the server can discover");
     }
 
     [IntegrationTest]
@@ -513,14 +578,67 @@ public sealed class EndpointCoverageTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/import/jobs/{jobId}")]
     public async Task Import_GetJobStatus_ShouldReturnJobStatus()
     {
-        // Arrange
-        var jobId = Guid.NewGuid().ToString();
+        // The previous OK-or-NotFound-or-Unauthorized disjunction could not tell a job
+        // document from a not-found envelope, so it passed whatever the endpoint did (#4390).
+        // Both outcomes are now pinned separately, on the same authorized principal.
 
-        // Act
+        // 1. An id that was never queued is exactly 404, and discloses no job document.
+        var unknownJobId = Guid.NewGuid().ToString();
+
+        var unknown = await _client.GetAsync($"/api/v1/admin/import/jobs/{unknownJobId}");
+
+        unknown.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var unknownBody = await unknown.Content.ReadAsStringAsync();
+        unknownBody.Should().NotContain("\"currentPhase\"");
+        unknownBody.Should().NotContain("\"tableName\"");
+
+        // 2. A really queued background import returns ITS status, keyed by its own id.
+        var tableName = $"coverage_jobstatus_{Guid.NewGuid():N}"[..30];
+        var geoJsonContent = """
+            {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "geometry": { "type": "Point", "coordinates": [-122.0, 37.0] },
+                        "properties": { "name": "Job Status Point" }
+                    }
+                ]
+            }
+            """;
+
+        using var multipartContent = new MultipartFormDataContent();
+        var fileContent = new StringContent(geoJsonContent, Encoding.UTF8, "application/json");
+        fileContent.Headers.ContentDisposition =
+            new System.Net.Http.Headers.ContentDispositionHeaderValue("form-data")
+            {
+                Name = "File",
+                FileName = "job-status.geojson",
+            };
+        multipartContent.Add(fileContent);
+        multipartContent.Add(new StringContent(tableName), "TableName");
+        multipartContent.Add(new StringContent("true"), "ForceBackground");
+
+        var queued = await _client.PostAsync("/api/v1/admin/import/upload", multipartContent);
+        var queuedPayload = await queued.Content.ReadAsStringAsync();
+        queued.StatusCode.Should().Be(HttpStatusCode.Accepted, queuedPayload);
+
+        using var queuedJson = JsonDocument.Parse(queuedPayload);
+        var jobId = queuedJson.RootElement.GetProperty("jobId").GetString();
+        jobId.Should().NotBeNullOrWhiteSpace();
+
         var response = await _client.GetAsync($"/api/v1/admin/import/jobs/{jobId}");
 
-        // Assert
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.NotFound, HttpStatusCode.Unauthorized);
+        var payload = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, payload);
+
+        using var job = JsonDocument.Parse(payload);
+        job.RootElement.GetProperty("jobId").GetString().Should().Be(jobId);
+        job.RootElement.GetProperty("tableName").GetString().Should().Be(
+            tableName,
+            "the status must describe the job that was queued, not an arbitrary job");
+        job.RootElement.GetProperty("fileName").GetString().Should().Be("job-status.geojson");
+        job.RootElement.GetProperty("currentPhase").GetString().Should().NotBeNullOrWhiteSpace();
     }
 
     #endregion

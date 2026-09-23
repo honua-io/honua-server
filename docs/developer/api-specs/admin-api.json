@@ -47712,69 +47712,81 @@
           }
         }
       },
-      "LayerRelationshipBatchUpdateItem": {
+      "CogArtifactPublishRequest": {
         "type": "object",
         "required": [
           "layerId"
         ],
-        "description": "Complete desired relationship set for one global storage-layer id.",
         "properties": {
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "description": "Publication layer index whose primary raster is exported."
+          }
+        },
+        "additionalProperties": false
+      },
+      "CogArtifactDescriptor": {
+        "type": "object",
+        "required": [
+          "artifactId",
+          "layerId",
+          "rasterId",
+          "sizeBytes",
+          "contentType",
+          "url",
+          "width",
+          "height",
+          "bandCount",
+          "publishedAt"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": "string",
+            "description": "Deterministic object key, `cog/{layerId}/{rasterId}.tif`; also the `{artifactId}` of the range proxy.",
+            "example": "cog/0/1.tif"
+          },
           "layerId": {
             "type": "integer",
             "format": "int32"
           },
-          "relationships": {
-            "type": "array",
-            "maxItems": 64,
-            "description": "Full replacement relationship set.",
-            "items": {
-              "$ref": "#/components/schemas/LayerRelationshipUpdateItem"
-            }
-          }
-        }
-      },
-      "LayerRelationshipBatchUpdateRequest": {
-        "type": "object",
-        "required": [
-          "layers"
-        ],
-        "properties": {
-          "layers": {
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 64,
-            "items": {
-              "$ref": "#/components/schemas/LayerRelationshipBatchUpdateItem"
-            }
-          }
-        }
-      },
-      "LayerRelationshipBatchResponse": {
-        "type": "object",
-        "properties": {
-          "layers": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/LayerRelationshipResponse"
-            }
-          }
-        }
-      },
-      "ApiResponseLayerRelationshipBatchResponse": {
-        "type": "object",
-        "description": "Relationship sets from the atomically committed graph snapshot.",
-        "properties": {
-          "success": {
-            "type": "boolean"
+          "rasterId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Identifier of the layer's primary raster."
           },
-          "data": {
-            "$ref": "#/components/schemas/LayerRelationshipBatchResponse"
+          "sizeBytes": {
+            "type": "integer",
+            "format": "int64"
           },
-          "message": {
+          "contentType": {
             "type": "string",
+            "example": "image/tiff; application=geotiff; profile=cloud-optimized"
+          },
+          "url": {
+            "type": "string",
+            "description": "Root-relative range proxy path `/api/v1/rasters/cog/{artifactId}`.",
+            "example": "/api/v1/rasters/cog/cog/0/1.tif"
+          },
+          "width": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "height": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "bandCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "srid": {
+            "type": "integer",
+            "format": "int32",
             "nullable": true
           },
-          "timestamp": {
+          "publishedAt": {
             "type": "string",
             "format": "date-time"
           }
@@ -47851,6 +47863,74 @@
           "supportsRelatedRecords": {
             "type": "boolean",
             "default": true
+          }
+        }
+      },
+      "LayerRelationshipBatchUpdateItem": {
+        "type": "object",
+        "required": [
+          "layerId"
+        ],
+        "description": "Complete desired relationship set for one global storage-layer id.",
+        "properties": {
+          "layerId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "relationships": {
+            "type": "array",
+            "maxItems": 64,
+            "description": "Full replacement relationship set.",
+            "items": {
+              "$ref": "#/components/schemas/LayerRelationshipUpdateItem"
+            }
+          }
+        }
+      },
+      "LayerRelationshipBatchUpdateRequest": {
+        "type": "object",
+        "required": [
+          "layers"
+        ],
+        "properties": {
+          "layers": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "items": {
+              "$ref": "#/components/schemas/LayerRelationshipBatchUpdateItem"
+            }
+          }
+        }
+      },
+      "LayerRelationshipBatchResponse": {
+        "type": "object",
+        "properties": {
+          "layers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LayerRelationshipResponse"
+            }
+          }
+        }
+      },
+      "ApiResponseLayerRelationshipBatchResponse": {
+        "type": "object",
+        "description": "Relationship sets from the atomically committed graph snapshot.",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/LayerRelationshipBatchResponse"
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       }

@@ -40,7 +40,7 @@ namespace Honua.Db.Postgres.Features.FeatureStore;
 /// 'field = value', 'age > 18') and properly parameterizes all literal values while
 /// validating field names to prevent SQL injection attacks.</para>
 /// </remarks>
-internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IDistinctFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore
+internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFeatureReader, IDistinctFeatureReader, IBindableFeatureDataProvider, IBindableTileProvider, IRasterPointReader, IFeatureWriter, ITileProvider, IRelationshipStore, IGeoJsonFeatureStore, IGeobufFeatureStore, IFlatGeobufFeatureStore, IGmlFeatureStore, IKmlFeatureStore, IStreamingFeatureStore, IPagedFeatureReader, IPagedGeoJsonFeatureStore, IPagedRawGeoJsonFeatureStore, IPagedRawGeoServicesFeatureStore, IPreChangeImageReader
 {
     private readonly IFeatureQueryBuilder _queryBuilder;
     private readonly IFeatureDataAccess _dataAccess;
@@ -53,6 +53,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     private readonly IRowLevelSecurityFilterSource? _rlsFilterSource;
     private readonly IFieldMaskSource? _fieldMaskSource;
     private readonly ILogger<PostgresStorageMappedFeatureReader>? _storageMappedReaderLogger;
+    private readonly string? _managedFeatureSchema;
     private readonly LayerReadSecurityResolver _readSecurity;
 
     public PostgresFeatureStoreRefactored(
@@ -81,7 +82,8 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         IMetadataV2GraphProvider? v2Provider = null,
         ILogger<PostgresStorageMappedFeatureReader>? storageMappedReaderLogger = null,
         IRowLevelSecurityFilterSource? rlsFilterSource = null,
-        IFieldMaskSource? fieldMaskSource = null)
+        IFieldMaskSource? fieldMaskSource = null,
+        string? managedFeatureSchema = null)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
@@ -92,6 +94,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         _connectionEncryptionService = connectionEncryptionService;
         _filterExpressionService = filterExpressionService;
         _storageMappedReaderLogger = storageMappedReaderLogger;
+        _managedFeatureSchema = string.IsNullOrWhiteSpace(managedFeatureSchema) ? null : managedFeatureSchema.Trim();
         _rlsFilterSource = rlsFilterSource;
         _fieldMaskSource = fieldMaskSource;
         _readSecurity = new LayerReadSecurityResolver(v2Provider, filterExpressionService, rlsFilterSource, fieldMaskSource);
@@ -124,7 +127,8 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             _storageMappedReaderLogger,
             _filterExpressionService,
             _rlsFilterSource,
-            _fieldMaskSource);
+            _fieldMaskSource,
+            _managedFeatureSchema);
     }
 
     public ITileProvider CreateTileProviderForBinding(FeatureProviderBinding binding)
@@ -223,6 +227,32 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             query,
             layerId,
             cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlySet<long>> QueryPreChangeObjectIdsAsync(
+        int layerId,
+        FeatureQuery query,
+        IReadOnlyCollection<long> changeIds,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(changeIds);
+        if (changeIds.Count == 0)
+        {
+            return new HashSet<long>();
+        }
+
+        // The enforced read policy (permanent filter, row-level security) is stamped exactly as for a live
+        // read, so a pre-change image the caller could not read never matches.
+        query = await ApplyPermanentFilterAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        query = query with { Limit = null, Offset = null, OrderBy = null };
+        var geometryStorageType = await _cacheManager.GetGeometryStorageTypeAsync(cancellationToken).ConfigureAwait(false);
+        var objectIdsQuery = _queryBuilder.BuildPreChangeObjectIdsQuery(layerId, query, changeIds, geometryStorageType);
+        var objectIds = await _dataAccess.ExecuteSelectObjectIdsQueryAsync(
+            objectIdsQuery,
+            query,
+            layerId,
+            cancellationToken).ConfigureAwait(false);
+        return objectIds.ToHashSet();
     }
 
     public async Task<ImmutableArray<ProjectedPoint>> QueryProjectedPointsAsync(

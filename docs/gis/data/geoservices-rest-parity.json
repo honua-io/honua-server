@@ -278,7 +278,7 @@
             "capabilityMaturity": [
               "preview"
             ],
-            "notes": "Preview/opt-in in 2026.1. Supports download, upload, and bidirectional sync directions. Downloads apply the replica\u0027s stored scope, and a backlog above Limits:Replica:MaxChangesPerLayer per layer is delivered in consecutive generation windows (exceededTransferLimit; the cursor advances to the generation reached). An update that moves a row out of a scoped replica is delivered as a delete; because the change log keeps no pre-change state, a row updated into the scope arrives as an update. Esri id arrays carry the layer\u0027s protocol-facing object ids. Broader parity is deferred to release/2026.2."
+            "notes": "Preview/opt-in in 2026.1. Supports download, upload, and bidirectional sync directions. Downloads apply the replica\u0027s stored scope, and a backlog above Limits:Replica:MaxChangesPerLayer per layer is delivered in consecutive generation windows (exceededTransferLimit; the cursor advances to the generation reached). Scoped and visibility-filtered downloads classify each row from its pre-change image and its current state: a row updated into the scope arrives as an add, and a row that left the scope, became hidden or was deleted is delivered as a delete only when the client could hold it. Esri id arrays carry the layer\u0027s protocol-facing object ids. Broader parity is deferred to release/2026.2."
           },
           {
             "name": "Unregister Replica",
@@ -3946,12 +3946,13 @@
               "/VersionManagementServer"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/{serviceId}/VersionManagementServer"
+              "GET /rest/services/{serviceId}/VersionManagementServer",
+              "POST /rest/services/{serviceId}/VersionManagementServer"
             ],
             "capabilityMaturity": [
               "experimental"
             ],
-            "notes": "Returns a hardcoded descriptor (defaultVersionName \u0022sde.DEFAULT\u0022, capabilities \u0022Create,Delete,Alter,Reconcile,Post\u0022) after a service-read check only. It does not consult the provider\u0027s versioning support, so a non-Postgres store advertises five capabilities whose mutations then return 501."
+            "notes": "GET and POST return the descriptor after service-read, branch-versioning entitlement, and accessible bound-publication capability checks. The descriptor still uses a capability string rather than the Esri capability object and does not expose a durable DEFAULT version GUID; native workspace initialization remains unresolved."
           },
           {
             "name": "Create version",
@@ -4036,7 +4037,23 @@
             "notes": "Graph-backed service directory, RBAC-filtered per principal, listing every service type a publication exposes. Returns 401/403 rather than a misleading empty list when every publication is denied. Does not emit folders; currentVersion is deliberately omitted (see knownLimitations)."
           }
         ],
-        "partial": [],
+        "partial": [
+          {
+            "name": "Service administration metadata",
+            "status": "partial",
+            "esriPaths": [
+              "/rest/admin/{serviceName}.{serviceType}"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/admin/{serviceName}.{serviceType}",
+              "POST /rest/admin/{serviceName}.{serviceType}"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "Read-only service metadata for connections without a site segment. GET and POST expose the same principal-filtered service and branch-versioning metadata. This does not implement the ArcGIS Server administration mutation API."
+          }
+        ],
         "stub": [
           {
             "name": "REST Info",

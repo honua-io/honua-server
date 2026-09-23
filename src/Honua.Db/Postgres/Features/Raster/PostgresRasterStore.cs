@@ -827,7 +827,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         {
             if (!frameClipExtent)
             {
-                rasterExpr = $"ST_Transform({rasterExpr}, @outputSrid)";
+                rasterExpr = RasterProjectionSql.TransformIfNeeded(rasterExpr, "@outputSrid");
             }
 
             extraParams.Add(("@outputSrid", query.OutputSrid.Value));
@@ -841,7 +841,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         {
             if (!frameClipExtent)
             {
-                rasterExpr = $"ST_Resize({rasterExpr}, @outputWidth, @outputHeight)";
+                rasterExpr = RasterProjectionSql.ResizePreservingGrid(rasterExpr, "@outputWidth", "@outputHeight");
             }
 
             extraParams.Add(("@outputWidth", query.OutputWidth!.Value));
@@ -2117,7 +2117,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         {
             if (!frameClipExtent)
             {
-                postMergeRasterExpr = $"ST_Transform({postMergeRasterExpr}, @outputSrid)";
+                postMergeRasterExpr = RasterProjectionSql.TransformIfNeeded(postMergeRasterExpr, "@outputSrid");
             }
 
             extraParams.Add(("@outputSrid", query.OutputSrid.Value));
@@ -2130,7 +2130,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         {
             if (!frameClipExtent)
             {
-                postMergeRasterExpr = $"ST_Resize({postMergeRasterExpr}, @outputWidth, @outputHeight)";
+                postMergeRasterExpr = RasterProjectionSql.ResizePreservingGrid(postMergeRasterExpr, "@outputWidth", "@outputHeight");
             }
 
             extraParams.Add(("@outputWidth", query.OutputWidth!.Value));
