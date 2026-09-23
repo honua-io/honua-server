@@ -1555,10 +1555,9 @@ def render_markdown(rows: list[dict], summary: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
-def write_markdown(rows: list[dict], summary: dict) -> None:
-    """Replace the generated region of DOC_PATH, appending it if absent."""
+def render_markdown_document(rows: list[dict], summary: dict, existing: str) -> str:
+    """Replace the generated region while preserving hand-authored prose."""
     generated = render_markdown(rows, summary)
-    existing = DOC_PATH.read_text(encoding="utf-8")
     if DOC_BEGIN in existing and DOC_END in existing:
         head = existing.split(DOC_BEGIN)[0]
         tail = existing.split(DOC_END, 1)[1]
@@ -1570,8 +1569,17 @@ def write_markdown(rows: list[dict], summary: dict) -> None:
     # Normalise the ends, or the generated region's own trailing newline is
     # re-added on every run and the file is never byte-identical twice - which
     # would make the CI drift check fire on a no-op regeneration.
-    DOC_PATH.write_text(
-        updated.rstrip("\n") + "\n", encoding="utf-8", newline="\n")
+    return updated.rstrip("\n") + "\n"
+
+
+def check_projections(json_text: str, rows: list[dict], summary: dict) -> list[str]:
+    problems = []
+    if not DATA_PATH.is_file() or DATA_PATH.read_text(encoding="utf-8") != json_text:
+        problems.append(f"stale or missing {DATA_PATH.relative_to(REPO_ROOT)}")
+    if not DOC_PATH.is_file() or DOC_PATH.read_text(encoding="utf-8") != render_markdown_document(
+            rows, summary, DOC_PATH.read_text(encoding="utf-8")):
+        problems.append(f"stale or missing {DOC_PATH.relative_to(REPO_ROOT)}")
+    return problems
 
 
 def summarise(rows: list[dict]) -> dict:
@@ -1593,7 +1601,7 @@ def summarise(rows: list[dict]) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true",
-                        help="validate only; do not write the data file")
+                        help="validate rows and committed JSON/Markdown projections without writing")
     args = parser.parse_args()
 
     rows = build_rows()
@@ -1620,13 +1628,20 @@ def main() -> int:
         "rows": rows,
     }
 
-    if not args.check:
+    json_text = json.dumps(document, indent=2, ensure_ascii=False) + "\n"
+    if args.check:
+        projection_problems = check_projections(json_text, rows, summary)
+        if projection_problems:
+            for problem in projection_problems:
+                print(f"FAIL {problem}")
+            return 1
+    else:
         DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
-        DATA_PATH.write_text(
-            json.dumps(document, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8", newline="\n")
+        DATA_PATH.write_text(json_text, encoding="utf-8", newline="\n")
         print(f"wrote {DATA_PATH.relative_to(REPO_ROOT)}")
-        write_markdown(rows, summary)
+        DOC_PATH.write_text(render_markdown_document(
+            rows, summary, DOC_PATH.read_text(encoding="utf-8")),
+            encoding="utf-8", newline="\n")
         print(f"wrote {DOC_PATH.relative_to(REPO_ROOT)}")
 
     overall = summary["overall"]

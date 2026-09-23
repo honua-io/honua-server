@@ -2,7 +2,9 @@
 import copy
 import importlib.util
 from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import patch
 
 
 spec = importlib.util.spec_from_file_location(
@@ -12,6 +14,27 @@ spec.loader.exec_module(checklist)
 
 
 class ExclusionReviewTests(unittest.TestCase):
+    def test_check_rejects_stale_json_and_markdown_projections(self):
+        rows = checklist.build_rows()
+        summary = checklist.summarise(rows)
+        json_text = checklist.DATA_PATH.read_text(encoding="utf-8")
+        markdown = checklist.DOC_PATH.read_text(encoding="utf-8")
+        with tempfile.TemporaryDirectory(dir=checklist.REPO_ROOT) as directory:
+            data_path = Path(directory) / "checklist.json"
+            doc_path = Path(directory) / "checklist.md"
+            data_path.write_text(json_text, encoding="utf-8")
+            doc_path.write_text(markdown, encoding="utf-8")
+            with patch.object(checklist, "DATA_PATH", data_path), patch.object(checklist, "DOC_PATH", doc_path):
+                self.assertEqual([], checklist.check_projections(json_text, rows, summary))
+                data_path.write_text(json_text + " ", encoding="utf-8")
+                self.assertTrue(any("checklist.json" in problem for problem in
+                                    checklist.check_projections(json_text, rows, summary)))
+                data_path.write_text(json_text, encoding="utf-8")
+                doc_path.write_text(markdown.replace(checklist.DOC_BEGIN,
+                                                    checklist.DOC_BEGIN + "\nSTALE", 1), encoding="utf-8")
+                self.assertTrue(any("checklist.md" in problem for problem in
+                                    checklist.check_projections(json_text, rows, summary)))
+
     def test_reopening_preserves_operations_passes_and_original_claims(self):
         rows = checklist.build_rows()
         self.assertEqual(94, len(rows))
