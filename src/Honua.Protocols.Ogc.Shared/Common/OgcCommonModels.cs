@@ -32,6 +32,29 @@ public sealed record LandingPage
     public bool? Supports3d { get; init; }
 
     /// <summary>
+    /// Dataset extent, when the API exposes a dataset-wide resource such as a dataset map.
+    /// Omitted entirely when the API has no dataset extent to describe (#5048).
+    /// </summary>
+    [JsonPropertyName("extent")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Extent? Extent { get; init; }
+
+    /// <summary>
+    /// Coordinate reference systems the dataset as a whole can be requested in.
+    /// </summary>
+    [JsonPropertyName("crs")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public ImmutableArray<string>? Crs { get; init; }
+
+    /// <summary>
+    /// Shared storage CRS, present only when every mapped resource stores in the same
+    /// non-CRS84 reference system.
+    /// </summary>
+    [JsonPropertyName("storageCrs")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? StorageCrs { get; init; }
+
+    /// <summary>
     /// Links to related resources.
     /// </summary>
     [JsonPropertyName("links")]

@@ -301,6 +301,62 @@ public sealed class RedisWorkflowOperationStoreIntegrationTests(RedisFixture red
         afterRollback!.OperationId.Should().Be(older.OperationId);
     }
 
+    [Theory]
+    [InlineData(WorkflowOperationStatus.Failed)]
+    [InlineData(WorkflowOperationStatus.RolledBack)]
+    public async Task WorkflowStore_LaterTerminalDeploySupersedesStuckDespiteOldRecordUpdate(
+        WorkflowOperationStatus laterStatus)
+    {
+        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisWorkflowOperationStore(multiplexer, NullLogger<RedisWorkflowOperationStore>.Instance);
+        var targetId = $"supersession-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+        var stuck = CreateDeployOperationRecord($"stuck-{Guid.NewGuid():N}", targetId,
+            now.AddMinutes(-10), WorkflowOperationStatus.ManualInterventionRequired);
+        var later = CreateDeployOperationRecord($"later-{Guid.NewGuid():N}", targetId,
+            now.AddMinutes(-5), laterStatus);
+
+        (await store.TryCreateAsync(stuck)).Should().BeTrue();
+        (await store.HasLaterDeployOfTargetAsync(stuck)).Should().BeFalse();
+        (await store.TryCreateAsync(later)).Should().BeTrue();
+        // Updating the older record must not make it the newest created deploy.
+        await store.SetAsync(stuck with { UpdatedAt = now.AddMinutes(1) });
+        (await store.HasLaterDeployOfTargetAsync(stuck)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task WorkflowStore_LaterDeployLookupFailsClosedForLegacyAndIgnoresGlobalQueryWindow()
+    {
+        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisWorkflowOperationStore(multiplexer, NullLogger<RedisWorkflowOperationStore>.Instance);
+        var targetId = $"supersession-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+        var stuck = CreateDeployOperationRecord($"stuck-{Guid.NewGuid():N}", targetId,
+            now.AddMinutes(-10), WorkflowOperationStatus.ManualInterventionRequired);
+        var later = CreateDeployOperationRecord($"later-{Guid.NewGuid():N}", targetId,
+            now.AddMinutes(-5), WorkflowOperationStatus.Failed);
+        (await store.TryCreateAsync(stuck)).Should().BeTrue();
+        (await store.TryCreateAsync(later)).Should().BeTrue();
+
+        var db = multiplexer.GetDatabase();
+        var decoyPrefix = $"supersession-pressure-{Guid.NewGuid():N}-";
+        var decoys = Enumerable.Range(0, 1001)
+            .Select(i => new SortedSetEntry($"{decoyPrefix}{i}", now.ToUnixTimeMilliseconds() + i))
+            .ToArray();
+        await db.SortedSetAddAsync("controlplane:workflow:terminal", decoys);
+        try
+        {
+            // The global QueryAsync materialization window is only 1000 records.
+            (await store.HasLaterDeployOfTargetAsync(stuck)).Should().BeTrue();
+            await db.SortedSetRemoveAsync($"controlplane:workflow:deploy-created:{targetId}", stuck.OperationId);
+            (await store.HasLaterDeployOfTargetAsync(stuck)).Should().BeNull();
+        }
+        finally
+        {
+            await db.SortedSetRemoveAsync("controlplane:workflow:terminal", decoys.Select(e => e.Element).ToArray());
+        }
+    }
+
     private static WorkflowOperationRecord CreateDeployOperationRecord(
         string operationId,
         string targetId,

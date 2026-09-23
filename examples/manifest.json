@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1140,
+    "total": 1141,
     "byStatus": {
-      "not-executable": 1127,
+      "not-executable": 1128,
       "unvalidated": 10,
       "passed": 3
     }
@@ -5142,7 +5142,7 @@
         "check": "inventory-classification"
       },
       "fence": 6,
-      "line": 104,
+      "line": 106,
       "language": "bash"
     },
     {
@@ -5169,6 +5169,19 @@
       },
       "fence": 3,
       "line": 78,
+      "language": "bash"
+    },
+    {
+      "id": "b75fe86684bef930",
+      "kind": "docs-fence",
+      "path": "docs/guides/deploy/monitoring.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 7,
+      "line": 113,
       "language": "bash"
     },
     {
@@ -5402,7 +5415,7 @@
         "check": "inventory-classification"
       },
       "fence": 2,
-      "line": 215,
+      "line": 216,
       "language": "bash"
     },
     {

@@ -4997,7 +4997,10 @@ internal sealed class PostgresRasterStore : IRasterStore
         RasterMergeStrategy mergeStrategy,
         RasterMosaicOrdering ordering = RasterMosaicOrdering.AcquisitionNewest,
         RasterMosaicAttributeSort? attributeSort = null)
-        => RasterMosaicSql.CreateMosaicAggregateExpression(mergeStrategy, ordering, attributeSort);
+        // Every mosaic query in this store unions the rows of its `source` CTE. Layers may mix
+        // native resolutions or grid origins, so each input is put on one shared grid first
+        // (honua-server#4792); aligned inputs pass through unchanged.
+        => RasterMosaicSql.CreateMosaicAggregateExpression(mergeStrategy, ordering, attributeSort, alignToSourceCte: "source");
 
     private static async Task<DbDataReader> ExecuteRasterExportReaderAsync(
         DbCommand command,

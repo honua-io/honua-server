@@ -2,8 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Shared.Models;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
@@ -12,6 +15,7 @@ using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Ogc.Api.Maps.Handlers;
 using Honua.Protocols.Ogc.Api.Maps.Models;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Logging;
 
 namespace Honua.Protocols.Ogc.Api.Maps;
 
@@ -27,6 +31,8 @@ public static partial class OgcMapsEndpoints
     private static readonly ImmutableHashSet<string> OpenApiQueryParameters =
         ImmutableHashSet.Create(StringComparer.OrdinalIgnoreCase, "f");
 
+    private const string OgcApiMapsProtocol = "OGC-API-Maps";
+
     /// <summary>
     /// Maps OGC API - Maps endpoints to the application.
     /// </summary>
@@ -41,8 +47,11 @@ public static partial class OgcMapsEndpoints
             .WithSummary("Get OGC API - Maps landing page")
             .WithDescription("The landing page provides links to the OGC API - Maps definition and related resources")
             .Produces<LandingPage>(StatusCodes.Status200OK, MediaTypes.Json)
-            .Produces<string>(StatusCodes.Status200OK, MediaTypes.Html)
-            .CacheOutput("OgcMapsLandingPage");
+            .Produces<string>(StatusCodes.Status200OK, MediaTypes.Html);
+        // #5048: the landing page now describes the extent and CRS of the collections THIS
+        // caller may see, so it is per-principal and must not be served from the shared
+        // anonymous output cache - the same reason other principal-specific surfaces opt
+        // out. The response is built from the in-memory metadata graph, so it stays cheap.
 
         // Core conformance endpoint
         group.MapGet("/conformance", GetConformance)
@@ -132,7 +141,7 @@ public static partial class OgcMapsEndpoints
     /// <summary>
     /// Get OGC API - Maps landing page.
     /// </summary>
-    private static IResult GetLandingPage(HttpContext context, string? f)
+    private static async Task<IResult> GetLandingPage(HttpContext context, string? f)
     {
         if (!OgcCoreMetadataUtilities.TryPrepareMetadataResponse(
                 context,
@@ -143,6 +152,8 @@ public static partial class OgcMapsEndpoints
         {
             return errorResult!;
         }
+
+        var (extent, supportedCrs, storageCrs) = await BuildDatasetMetadataAsync(context).ConfigureAwait(false);
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
         var basePath = $"{baseUrl}/ogc/maps";
@@ -171,6 +182,9 @@ public static partial class OgcMapsEndpoints
             Title = "Honua OGC API Maps",
             Description = "OGC API Maps implementation for server-rendered imagery",
             Supports3d = false,
+            Extent = extent,
+            Crs = supportedCrs,
+            StorageCrs = storageCrs,
             Links = links.ToImmutable()
         };
 
@@ -238,6 +252,102 @@ public static partial class OgcMapsEndpoints
         var layerId = resolution.LayerId!.Value;
 
         return await handler.RenderCollectionMapAsync(layerId, request, context: context, cancellationToken);
+    }
+
+    /// <summary>
+    /// Builds the dataset extent, common CRS list and shared storage CRS advertised by the
+    /// landing page, from the Maps-enabled collections this caller may see (#5048).
+    /// </summary>
+    /// <remarks>
+    /// Discovery enumerates through <see cref="OgcMapsResourceResolver.EnumerateDatasetEntries"/>
+    /// and combines extents through <see cref="OgcMapsResourceResolver.BuildDatasetExtentAsync"/>,
+    /// the same helpers the dataset-map render path uses, so the landing page cannot describe
+    /// a viewport the renderer would not produce. Nothing is invented: when the bounds cannot
+    /// be transformed to CRS84 the extent is omitted and CRS84 is withdrawn from the
+    /// advertised list rather than reported as a world extent.
+    /// </remarks>
+    private static async Task<(Extent? Extent, ImmutableArray<string>? Crs, string? StorageCrs)> BuildDatasetMetadataAsync(
+        HttpContext context)
+    {
+        var graphProvider = context.RequestServices.GetService<IMetadataV2GraphProvider>();
+        var coordinateTransformService = context.RequestServices.GetService<ICoordinateTransformService>();
+        if (graphProvider is null)
+        {
+            // Setup-only hosts map routes before a data provider is configured.
+            return (null, null, null);
+        }
+
+        var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
+            .CreateLogger(typeof(OgcMapsEndpoints));
+
+        var resources = OgcMapsResourceResolver.EnumerateDatasetEntries(snapshot, logger)
+            .Where(entry => OgcMapsResourceResolver.IsProtocolEnabled(entry.Service, OgcApiMapsProtocol)
+                && AccessPolicyHelpers.RequireResourceAccess(context, entry.Resource, entry.Service) is null)
+            .OrderBy(entry => entry.LayerId)
+            .Select(entry => entry.Resource)
+            .ToArray();
+        if (resources.Length == 0)
+        {
+            return (null, null, null);
+        }
+
+        var (datasetExtent, transformUnavailable) = await OgcMapsResourceResolver.BuildDatasetExtentAsync(
+            resources, coordinateTransformService, cancellationToken, snapshot).ConfigureAwait(false);
+
+        Extent? extent = null;
+        if (datasetExtent is { } bounds)
+        {
+            var crs84 = await OgcExtentTransformer.TryTransformExtentToCrs84Async(
+                bounds.MinX,
+                bounds.MinY,
+                bounds.MaxX,
+                bounds.MaxY,
+                bounds.SpatialReference,
+                coordinateTransformService!,
+                cancellationToken).ConfigureAwait(false);
+            transformUnavailable |= crs84 is null;
+            if (crs84 is { } geographic)
+            {
+                extent = new Extent
+                {
+                    Spatial = new Honua.Protocols.Ogc.Common.SpatialExtent
+                    {
+                        BoundingBox = ImmutableArray.Create(ImmutableArray.Create(
+                            geographic.MinLon, geographic.MinLat, geographic.MaxLon, geographic.MaxLat)),
+                        Crs = SpatialReference.WGS84.ToOgcCrsUri()
+                    }
+                };
+            }
+        }
+
+        // Advertise only what every mapped resource can serve.
+        var supportedCrs = resources
+            .Select(resource => (IEnumerable<string>)SpatialReference
+                .Create(resource.ReadSrid() ?? SpatialReference.WGS84.Wkid).GetSupportedCrsUris())
+            .Aggregate((IEnumerable<string>?)null, (common, current) => common is null
+                ? current
+                : common.Intersect(current, StringComparer.OrdinalIgnoreCase))
+            ?.ToImmutableArray() ?? ImmutableArray<string>.Empty;
+        if (transformUnavailable)
+        {
+            // A declared CRS84 fallback does not establish that this dataset can be
+            // transformed into it, so it is withdrawn rather than advertised untruthfully.
+            supportedCrs = supportedCrs
+                .Where(crs => !string.Equals(crs, SpatialReference.WGS84.ToOgcCrsUri(), StringComparison.OrdinalIgnoreCase))
+                .ToImmutableArray();
+        }
+
+        var storageSrids = resources
+            .Select(resource => resource.Spatial?.StorageCrs?.ResolveSrid() ?? resource.ReadSrid())
+            .Distinct()
+            .ToArray();
+        var storageCrs = storageSrids is [int storageSrid] && storageSrid != SpatialReference.WGS84.Wkid
+            ? SpatialReference.Create(storageSrid).ToOgcCrsUri()
+            : null;
+
+        return (extent, supportedCrs, storageCrs);
     }
 
     /// <summary>

@@ -780,6 +780,44 @@
             "items": {
               "$ref": "#/components/schemas/Link"
             }
+          },
+          "extent": {
+            "type": "object",
+            "description": "Extent of the caller-visible dataset, omitted when no bounds can be described.",
+            "properties": {
+              "spatial": {
+                "type": "object",
+                "properties": {
+                  "bbox": {
+                    "type": "array",
+                    "items": {
+                      "type": "array",
+                      "minItems": 4,
+                      "maxItems": 6,
+                      "items": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  "crs": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          },
+          "crs": {
+            "type": "array",
+            "description": "CRS identifiers the caller-visible dataset as a whole can be requested in.",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "storageCrs": {
+            "type": "string",
+            "format": "uri",
+            "description": "The common native storage CRS, present only when one non-CRS84 reference system describes every mapped collection."
           }
         }
       },

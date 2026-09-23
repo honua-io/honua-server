@@ -52,11 +52,44 @@ public static class ImportCompatibilityCodes
     /// <summary>ArcGIS service returned a generic non-auth error response.</summary>
     public const string ArcGisServiceError = "ARCGIS_SERVICE_ERROR";
 
+    /// <summary>ArcGIS import stopped for a reason the importer states (for example no pagination progress).</summary>
+    public const string ArcGisImportAborted = "ARCGIS_IMPORT_ABORTED";
+
+    /// <summary>ArcGIS import failed because the target database rejected a source geometry.</summary>
+    public const string ArcGisImportGeometryRejected = "ARCGIS_IMPORT_GEOMETRY_REJECTED";
+
+    /// <summary>ArcGIS import failed because the target database rejected a statement (reported by SQLSTATE).</summary>
+    public const string ArcGisImportDatabaseError = "ARCGIS_IMPORT_DATABASE_ERROR";
+
+    /// <summary>ArcGIS import failed because the target database connection was lost, refused or out of resources.</summary>
+    public const string ArcGisImportDatabaseUnavailable = "ARCGIS_IMPORT_DATABASE_UNAVAILABLE";
+
+    /// <summary>ArcGIS import failed for a reason that is not classified further; the step that failed is reported.</summary>
+    public const string ArcGisImportFailed = "ARCGIS_IMPORT_FAILED";
+
     /// <summary>ArcGIS coded-value domain exceeded the deterministic capture cap.</summary>
     public const string ArcGisDomainTruncated = "ARCGIS_DOMAIN_TRUNCATED";
 
     /// <summary>ArcGIS subtype metadata is captured but not automatically migrated by this slice.</summary>
     public const string ArcGisSubtypesManualReview = "ARCGIS_SUBTYPES_MANUAL_REVIEW";
+
+    /// <summary>
+    /// An ArcGIS feature type declares more than one editing template. The canonical model
+    /// carries a single prototype per type, so the type's editing defaults are not captured.
+    /// </summary>
+    public const string ArcGisFeatureTypeTemplatesUnsupported = "ARCGIS_FEATURE_TYPE_TEMPLATES_UNSUPPORTED";
+
+    /// <summary>
+    /// An ArcGIS feature type explicitly clears a field domain. The canonical model expresses
+    /// only inheritance or replacement, so the cleared domain is not captured.
+    /// </summary>
+    public const string ArcGisFeatureTypeDomainClearingUnsupported = "ARCGIS_FEATURE_TYPE_DOMAIN_CLEARING_UNSUPPORTED";
+
+    /// <summary>
+    /// An ArcGIS feature type carries no scalar identifier or no name, so it cannot be
+    /// projected onto a canonical subtype entry.
+    /// </summary>
+    public const string ArcGisFeatureTypeIdentityUnsupported = "ARCGIS_FEATURE_TYPE_IDENTITY_UNSUPPORTED";
 
     /// <summary>ArcGIS relationship metadata is captured but not automatically migrated by this slice.</summary>
     public const string ArcGisRelationshipsManualReview = "ARCGIS_RELATIONSHIPS_MANUAL_REVIEW";

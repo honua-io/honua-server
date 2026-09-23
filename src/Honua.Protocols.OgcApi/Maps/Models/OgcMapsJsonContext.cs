@@ -12,6 +12,10 @@ namespace Honua.Protocols.Ogc.Api.Maps.Models;
 /// </summary>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(LandingPage))]
+// The Maps slice declares its own SpatialExtent/TemporalExtent, so the landing page's
+// shared OGC common extent types need explicit names to resolve the generator collision.
+[JsonSerializable(typeof(Honua.Protocols.Ogc.Common.SpatialExtent), TypeInfoPropertyName = "CommonSpatialExtent")]
+[JsonSerializable(typeof(Honua.Protocols.Ogc.Common.TemporalExtent), TypeInfoPropertyName = "CommonTemporalExtent")]
 [JsonSerializable(typeof(ConformanceDeclaration))]
 [JsonSerializable(typeof(Link))]
 [JsonSerializable(typeof(System.Collections.Immutable.ImmutableArray<Link>))]

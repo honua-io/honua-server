@@ -32,24 +32,166 @@ internal static class RasterMosaicSql
     /// when <paramref name="ordering"/> is <see cref="RasterMosaicOrdering.Attribute"/>; names the
     /// allowlisted catalog column and direction that resolve a contested pixel.
     /// </param>
+    /// <param name="alignToSourceCte">
+    /// When set, the name of the CTE (or table) the aggregate reads <c>rast</c> from. Every input
+    /// raster that does not share the pixel grid of a reference raster drawn from that source is
+    /// resampled onto it before the union (see <see cref="CreateAlignedRasterExpression"/>), so a
+    /// layer that mixes native resolutions or grid origins can be unioned at all. When null the
+    /// aggregate reads <c>rast</c> unchanged; use that only for inputs already warped onto one grid.
+    /// </param>
     public static string CreateMosaicAggregateExpression(
         RasterMergeStrategy mergeStrategy,
         RasterMosaicOrdering ordering = RasterMosaicOrdering.AcquisitionNewest,
-        RasterMosaicAttributeSort? attributeSort = null) => mergeStrategy switch
+        RasterMosaicAttributeSort? attributeSort = null,
+        string? alignToSourceCte = null)
+    {
+        var input = alignToSourceCte is null ? "rast" : CreateAlignedRasterExpression(alignToSourceCte);
+        return mergeStrategy switch
         {
             // MEAN/MAX/MIN are order-independent; the ordering clause is meaningless for them.
-            RasterMergeStrategy.Average => "ST_Union(rast, 'MEAN')",
-            RasterMergeStrategy.Max => "ST_Union(rast, 'MAX')",
-            RasterMergeStrategy.Min => "ST_Union(rast, 'MIN')",
+            RasterMergeStrategy.Average => $"ST_Union({input}, 'MEAN')",
+            RasterMergeStrategy.Max => $"ST_Union({input}, 'MAX')",
+            RasterMergeStrategy.Min => $"ST_Union({input}, 'MIN')",
 
             // Oldest is an explicit FIRST/oldest-acquisition selection regardless of the
             // requested ordering; ordering only refines the newest/Northwest/lock cases below.
-            RasterMergeStrategy.Oldest => $"ST_Union(rast, 'FIRST' ORDER BY {OrderByClause(ordering, attributeSort)})",
+            RasterMergeStrategy.Oldest => $"ST_Union({input}, 'FIRST' ORDER BY {OrderByClause(ordering, attributeSort)})",
 
             // Newest (and the default) honour the requested ordering via a LAST union: the row
             // sorted last in the ORDER BY wins the contested pixel.
-            _ => $"ST_Union(rast, 'LAST' ORDER BY {OrderByClause(ordering, attributeSort)})"
+            _ => $"ST_Union({input}, 'LAST' ORDER BY {OrderByClause(ordering, attributeSort)})"
         };
+    }
+
+    /// <summary>
+    /// Returns a per-row raster expression that puts <c>rast</c> on one pixel grid shared by every
+    /// row of <paramref name="sourceCte"/>, for use as the input of an <c>ST_Union</c> aggregate.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>ST_Union</c> requires every input to share scale, skew and a grid origin a whole number
+    /// of pixels apart; otherwise PostGIS raises <c>rt_raster_from_two_rasters: The two rasters
+    /// provided do not have the same alignment</c>. A layer that mixes native resolutions (national
+    /// imagery patched with finer local tiles) or grid origins therefore failed every mosaic
+    /// operation (honua-server#4792). This is the same resample-to-a-reference-grid step the
+    /// dataset map renderer applies before its union (honua-server#2487).
+    /// </para>
+    /// <para>
+    /// Already-aligned inputs keep their native grid. Otherwise the reference is a deterministic
+    /// axis-aligned grid with the finest horizontal and vertical source sampling. Skewed inputs also
+    /// bound both axes by their smallest affine singular value, so no direction is coarsened.
+    /// A 256-fold per-source amplification limit prevents pathological intermediate allocations;
+    /// the query fails explicitly if it is exceeded.
+    /// Inputs are resampled with nearest-neighbour, which invents no pixel values. An aligned
+    /// layer passes through untouched, so its mosaics are byte-identical to the pre-#4792 result.
+    /// The reference lookup is an uncorrelated scalar subquery evaluated once per statement;
+    /// the source must project
+    /// <c>rast</c> and <c>id</c>, which every mosaic source already does.
+    /// </para>
+    /// <para>
+    /// Snapping to the reference grid widens a raster to whole reference pixels. For any band
+    /// without NoData, the padding value PostGIS supplies can also be valid source data (zero
+    /// for unsigned, signed and floating bands). If an unaligned mosaic has such a band, every
+    /// input is converted to 64BF before union and reserves the lowest finite double as NoData.
+    /// That value lies outside every integer and 32BF source range. Double precision exactly
+    /// represents every source integer pixel type, and a uniform output type prevents ST_Union
+    /// from narrowing back to its first input's pixel type.
+    /// A valid 64BF pixel equal to that reserved value instead raises an explicit collision
+    /// error; one NoData marker cannot also represent that valid value.
+    /// Existing NoData bands retain their marker through resampling. Already-aligned layers
+    /// retain their original pixel types and values.
+    /// </para>
+    /// </remarks>
+    internal static string CreateAlignedRasterExpression(string sourceCte)
+    {
+        const string Determinant = "(ST_ScaleX(candidate.rast) * ST_ScaleY(candidate.rast) - ST_SkewX(candidate.rast) * ST_SkewY(candidate.rast))";
+        const string Trace = "(power(ST_ScaleX(candidate.rast), 2) + power(ST_ScaleY(candidate.rast), 2) + power(ST_SkewX(candidate.rast), 2) + power(ST_SkewY(candidate.rast), 2))";
+        // The smaller singular value is evaluated in its rationalized form to avoid
+        // cancellation for a nearly singular affine transform.
+        var skewResolution = $"sqrt(2 * power({Determinant}, 2) / nullif({Trace} + sqrt(greatest(0, power({Trace}, 2) - 4 * power({Determinant}, 2))), 0))";
+        var reference = $"""
+            (SELECT CASE WHEN NOT EXISTS (
+                        SELECT 1 FROM {sourceCte} AS candidate
+                        WHERE candidate.rast IS NOT NULL AND NOT ST_IsEmpty(candidate.rast)
+                          AND NOT COALESCE(ST_SameAlignment(candidate.rast, first.rast), TRUE))
+                        THEN first.rast
+                        ELSE ST_MakeEmptyRaster(
+                            CASE WHEN NOT (grid.x_resolution > 0 AND grid.y_resolution > 0
+                                           AND grid.x_resolution < 'Infinity'::double precision
+                                           AND grid.y_resolution < 'Infinity'::double precision)
+                                THEN ('raster_mosaic_invalid_affine_grid:' || ST_SRID(first.rast))::integer
+                                WHEN EXISTS (
+                                SELECT 1 FROM {sourceCte} AS candidate
+                                WHERE candidate.rast IS NOT NULL AND NOT ST_IsEmpty(candidate.rast)
+                                  AND abs(ST_ScaleX(candidate.rast) * ST_ScaleY(candidate.rast)
+                                          - ST_SkewX(candidate.rast) * ST_SkewY(candidate.rast))
+                                      / nullif(grid.x_resolution * grid.y_resolution, 0) > 256)
+                                THEN ('raster_mosaic_grid_amplification_exceeded:' || ST_SRID(first.rast))::integer
+                                ELSE 1 END, 1,
+                            ST_UpperLeftX(first.rast), ST_UpperLeftY(first.rast),
+                            CASE WHEN ST_ScaleX(first.rast) < 0 THEN -grid.x_resolution ELSE grid.x_resolution END,
+                            CASE WHEN ST_ScaleY(first.rast) > 0 THEN grid.y_resolution ELSE -grid.y_resolution END,
+                            0, 0, ST_SRID(first.rast))
+                    END
+             FROM (SELECT align_ref.rast FROM {sourceCte} AS align_ref
+                   WHERE align_ref.rast IS NOT NULL AND NOT ST_IsEmpty(align_ref.rast)
+                   ORDER BY align_ref.id ASC LIMIT 1) AS first
+             CROSS JOIN LATERAL (
+                 SELECT least(min(nullif(abs(ST_ScaleX(candidate.rast)), 0)),
+                              min(CASE WHEN ST_SkewX(candidate.rast) <> 0 OR ST_SkewY(candidate.rast) <> 0
+                                       THEN {skewResolution} END)) AS x_resolution,
+                        least(min(nullif(abs(ST_ScaleY(candidate.rast)), 0)),
+                              min(CASE WHEN ST_SkewX(candidate.rast) <> 0 OR ST_SkewY(candidate.rast) <> 0
+                                       THEN {skewResolution} END)) AS y_resolution
+                 FROM {sourceCte} AS candidate
+                 WHERE candidate.rast IS NOT NULL AND NOT ST_IsEmpty(candidate.rast)) AS grid)
+            """;
+
+        var widenSource = $"""
+            (EXISTS (
+                SELECT 1 FROM {sourceCte} AS candidate
+                WHERE candidate.rast IS NOT NULL AND NOT ST_IsEmpty(candidate.rast)
+                  AND NOT COALESCE(ST_SameAlignment(candidate.rast, {reference}), TRUE))
+             AND EXISTS (
+                SELECT 1 FROM {sourceCte} AS candidate
+                CROSS JOIN LATERAL generate_series(1, ST_NumBands(candidate.rast)) AS band(n)
+                WHERE candidate.rast IS NOT NULL AND NOT ST_IsEmpty(candidate.rast)
+                  AND ST_BandNoDataValue(candidate.rast, band.n) IS NULL))
+            """;
+
+        // Map algebra emits the requested NoData value for an input NoData pixel. Resetting
+        // that value on the wider result keeps existing masks intact while preserving valid
+        // zero, signed -1 and floating values. Every band is widened because ST_Union inherits the first
+        // input's pixel type, independently of which row needed resampling.
+        // A 64BF source can itself contain the reserved value. Detect that exceptional
+        // collision before conversion and fail explicitly instead of silently erasing it.
+        // The cast deliberately carries a stable diagnostic into the PostgreSQL error.
+        const string WideNoData = """
+            CASE WHEN ST_BandPixelType(rast, band.n) = '64BF'
+                       AND ST_ValueCount(rast, band.n, TRUE, -1.7976931348623157e308) > 0
+                 THEN ('raster_mosaic_64bf_nodata_collision:' || ST_BandPixelType(rast, band.n))::double precision
+                 ELSE -1.7976931348623157e308
+            END
+            """;
+        var wide = $"""
+            ST_AddBand(
+                ST_MakeEmptyRaster(rast),
+                (SELECT array_agg(
+                            ST_SetBandNoDataValue(
+                                ST_MapAlgebra(rast, band.n, '64BF', '[rast.val]', {WideNoData}),
+                                1, {WideNoData}) ORDER BY band.n)
+                 FROM generate_series(1, ST_NumBands(rast)) AS band(n)))
+            """;
+
+        return $"""
+            (SELECT CASE
+                        WHEN ST_IsEmpty(rast) OR COALESCE(ST_SameAlignment(rast, {reference}), TRUE)
+                            THEN prepared.rast
+                        ELSE ST_Resample(prepared.rast, {reference}, 'NearestNeighbor')
+                    END
+             FROM (SELECT CASE WHEN {widenSource} THEN {wide} ELSE rast END AS rast) AS prepared)
+            """;
+    }
 
     // The ORDER BY orients the union so the desired raster sorts LAST (and therefore wins a
     // LAST union). 'id ASC' is always appended as a unique tiebreaker for determinism.
