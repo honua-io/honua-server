@@ -480,6 +480,36 @@ internal sealed partial class Wcs20Handler
             return responseCrsError!;
         }
 
+        var supportedCrs = await ResolveSupportedCrsAsync([nativeSrid], cancellationToken).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(GetQueryValue(query, Wcs20Utilities.Parameters10.Crs)) &&
+            !supportedCrs.Srids.Contains(requestSrid))
+        {
+            return Wcs10ErrorResults.CreateBadRequest(
+                Wcs20Utilities.ExceptionCodes10.InvalidParameterValue,
+                $"CRS 'EPSG:{requestSrid}' is not supported for this coverage.",
+                Wcs20Utilities.Parameters10.Crs);
+        }
+
+        if (!string.IsNullOrWhiteSpace(GetQueryValue(query, Wcs20Utilities.Parameters10.ResponseCrs)) &&
+            !supportedCrs.Srids.Contains(responseSrid))
+        {
+            return Wcs10ErrorResults.CreateBadRequest(
+                Wcs20Utilities.ExceptionCodes10.InvalidParameterValue,
+                $"RESPONSE_CRS 'EPSG:{responseSrid}' is not supported for this coverage.",
+                Wcs20Utilities.Parameters10.ResponseCrs);
+        }
+
+        // An omitted BBOX uses the raster's native extent. Relabeling those coordinates
+        // with a different request CRS would clip the wrong area.
+        if (string.IsNullOrWhiteSpace(GetQueryValue(query, Wcs20Utilities.Parameters.BBox)) &&
+            requestSrid != nativeSrid.Value)
+        {
+            return Wcs10ErrorResults.CreateBadRequest(
+                Wcs20Utilities.ExceptionCodes10.InvalidParameterValue,
+                "BBOX is required when CRS differs from the coverage's native CRS.",
+                Wcs20Utilities.Parameters.BBox);
+        }
+
         if (!TryResolveWcs10Envelope(query, nativeExtent, out var envelope, out var envelopeError))
         {
             return envelopeError!;
@@ -669,27 +699,21 @@ internal sealed partial class Wcs20Handler
             return false;
         }
 
-        // RESX/RESY are the alternative 1.0 form: ground resolution rather than a pixel
-        // count. QGIS sends WIDTH/HEIGHT, but other 1.0 clients use resolution.
-        if (width == 0 || height == 0)
+        // Resolve each axis independently. A caller supplying only WIDTH or HEIGHT must
+        // not lose that value when the other axis falls back to the raster size.
+        if (width == 0 && !TryResolveWcs10ResolutionDimension(
+                query, Wcs20Utilities.Parameters10.ResX, envelope.Width, out width, out error))
         {
-            var resX = GetQueryValue(query, Wcs20Utilities.Parameters10.ResX);
-            var resY = GetQueryValue(query, Wcs20Utilities.Parameters10.ResY);
-            if (!string.IsNullOrWhiteSpace(resX) && !string.IsNullOrWhiteSpace(resY) &&
-                double.TryParse(resX, NumberStyles.Float, CultureInfo.InvariantCulture, out var stepX) &&
-                double.TryParse(resY, NumberStyles.Float, CultureInfo.InvariantCulture, out var stepY) &&
-                stepX > 0 && stepY > 0)
-            {
-                width = (int)Math.Max(1, Math.Round(envelope.Width / stepX));
-                height = (int)Math.Max(1, Math.Round(envelope.Height / stepY));
-            }
+            return false;
+        }
+        if (height == 0 && !TryResolveWcs10ResolutionDimension(
+                query, Wcs20Utilities.Parameters10.ResY, envelope.Height, out height, out error))
+        {
+            return false;
         }
 
-        if (width == 0 || height == 0)
-        {
-            width = Math.Max(raster.Width, 1);
-            height = Math.Max(raster.Height, 1);
-        }
+        width = width == 0 ? Math.Max(raster.Width, 1) : width;
+        height = height == 0 ? Math.Max(raster.Height, 1) : height;
 
         if (width > MaxWcsOutputDimension || height > MaxWcsOutputDimension)
         {
@@ -700,6 +724,45 @@ internal sealed partial class Wcs20Handler
             return false;
         }
 
+        return true;
+    }
+
+    private static bool TryResolveWcs10ResolutionDimension(
+        IQueryCollection query,
+        string parameterName,
+        double span,
+        out int dimension,
+        out IResult? error)
+    {
+        dimension = 0;
+        error = null;
+        var raw = GetQueryValue(query, parameterName);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return true;
+        }
+
+        if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var step) ||
+            !double.IsFinite(step) || step <= 0)
+        {
+            error = Wcs10ErrorResults.CreateBadRequest(
+                Wcs20Utilities.ExceptionCodes10.InvalidParameterValue,
+                $"{parameterName} must be a positive finite resolution.",
+                parameterName);
+            return false;
+        }
+
+        var requested = Math.Max(1, Math.Round(span / step));
+        if (!double.IsFinite(requested) || requested > MaxWcsOutputDimension)
+        {
+            error = Wcs10ErrorResults.CreateBadRequest(
+                Wcs20Utilities.ExceptionCodes10.InvalidParameterValue,
+                $"Requested output exceeds the {MaxWcsOutputDimension}px limit per dimension.",
+                parameterName);
+            return false;
+        }
+
+        dimension = (int)requested;
         return true;
     }
 

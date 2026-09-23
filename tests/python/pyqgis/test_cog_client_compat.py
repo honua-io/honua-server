@@ -10,7 +10,7 @@ configuration". That was true. The ImageServer and WCS surfaces render on demand
 artifact this module reads is produced by the admin publish
 ``POST /api/v1/admin/raster-artifacts/cog`` with ``{"layerId": 0}``, which exports the
 layer's primary raster through PostGIS ``ST_AsGDALRaster(..., 'COG')`` under the
-deterministic key ``cog/{layerId}/{rasterId}.tif`` and serves it from the public range proxy
+deterministic key ``cog/{layerId}/{rasterId}.tif`` and serves it from the policy-aware range proxy
 ``/api/v1/rasters/cog/{artifactId}``.
 
 PREREQUISITE: that publish is the fixture's responsibility (``seed/publish-cog.py``), not
@@ -24,7 +24,7 @@ behaviours are therefore load-bearing and are asserted directly: HEAD must repor
 length on every probe, and a ranged GET must answer 206 even after an unranged GET has
 warmed the output cache.
 
-The raster is ``test_service`` layer 0's ``Client Compat Coverage``: 64x64, one 32BF band,
+The raster is ``test_service`` layer 0's ``Client Compat Coverage``: 64x64, one 8BUI band,
 EPSG:4326 over -122.5,37.7 / -122.35,37.84 (``tests/seed/client-compat-v1.sql``). The pixel
 oracle is the ImageServer identify at the same point, so a wrong CRS or a flipped axis fails
 the comparison.

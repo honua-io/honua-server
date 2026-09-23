@@ -135,6 +135,9 @@ services:
       HostValidation__AllowedHosts__0: honua
       HostValidation__AllowedHosts__1: localhost
       HONUA_ADMIN_PASSWORD: ClientCompatAdmin123!
+      # The scene publisher and both client read surfaces are opt-in routes.
+      Capabilities__Experimental__serve.3d-tiles-scene__Enabled: "true"
+      Capabilities__Experimental__serve.i3s-scene__Enabled: "true"
       # Deterministic local OIDC verifier for certification auth breadth. No
       # external IdP is contacted: client lanes mint short-lived HS256 tokens
       # against this test-only issuer/audience/signing-key tuple.

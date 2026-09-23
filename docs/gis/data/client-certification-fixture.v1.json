@@ -8,7 +8,7 @@
   "matrixSource": "docs/gis/data/client-certification-matrix.v1.json",
   "proseContract": "docs/gis/CLIENT_CERTIFICATION_FIXTURE_CONTRACT.md",
   "evidenceSchema": "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
-  "fixtureRevision": "sha256:e8e100e7b4d2fbab8be044dac3625a9ef3ad87e7b8a302457cb79e63affd62b9",
+  "fixtureRevision": "sha256:77ba549074aca4d7514c0c5b027db39747d5b3db0a8ca73bccd93e64bc8ff8c7",
   "serverConfigRevision": "sha256:d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a",
   "authPolicyRevision": "sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9",
   "digestAlgorithms": {
@@ -41,7 +41,7 @@
     {
       "path": "tests/seed/client-compat-v1.sql",
       "role": "fixture",
-      "sha256": "sha256:12e00231cb314f93aad2d3a25713198559c976f8b6b317033003eac2590eddd6",
+      "sha256": "sha256:9874de13a0c589152d3d5d33364038b5af03365401df930238718f6e88848584",
       "purpose": "Canonical vector seed: base schema, honua.seed_metadata_v2_compat_snapshot, service test_service, canonical layer 0, ten read fixtures, and isolated WFS-T mutation layers 10-12."
     },
     {
@@ -71,7 +71,7 @@
     {
       "path": "docker/client-compat/seed/run.sh",
       "role": "fixture",
-      "sha256": "sha256:caadbabb9ec114561e05249ee9a115d1eaa0865c76c0af9f4b8951f3a5b5f654",
+      "sha256": "sha256:69b4b9118b4edee033dcde30b79fd24b8f62923c0d5af725c8aa004c60ec981f",
       "purpose": "Definition of which seed files are applied, and in which order, for the client-compat matrix. Adding or removing a fixture input changes this file and therefore fixtureRevision."
     },
     {
@@ -4025,7 +4025,7 @@
     "producer": "tests/python/shared/cert_envelope.py::build_lane_runtime",
     "currentValues": {
       "fixture_revision": {
-        "value": "sha256:12e00231cb314f93aad2d3a25713198559c976f8b6b317033003eac2590eddd6",
+        "value": "sha256:9874de13a0c589152d3d5d33364038b5af03365401df930238718f6e88848584",
         "boundTo": "inputs[tests/seed/client-compat-v1.sql].sha256",
         "convergenceTarget": "fixtureRevision",
         "gapId": "receipt-binding-uses-per-file-digests"

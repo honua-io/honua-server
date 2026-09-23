@@ -1110,4 +1110,46 @@ FROM (VALUES
 ) AS scratch(layer_id, feature_name)
 WHERE NOT EXISTS (SELECT 1 FROM features existing WHERE existing.layer_id = scratch.layer_id);
 
+-- Keep layer 0's COG source aligned with the ImageServer/Maps fixture in
+-- base-schema.sql. The standalone PyQGIS workflow applies this SQL directly,
+-- while the Docker seed publishes cog/0/1.tif before its client cells run.
+WITH inserted_raster AS (
+    INSERT INTO honua.raster_data (layer_id, name, description, raster)
+    SELECT
+        0,
+        'Test Raster',
+        'Deterministic raster for client compatibility tests',
+        ST_AddBand(
+            ST_MakeEmptyRaster(64, 64, -122.5, 37.84, 0.00234375, -0.0021875, 0, 0, 4326),
+            '8BUI'::text,
+            128,
+            0)
+    WHERE NOT EXISTS (
+        SELECT 1 FROM honua.raster_data
+        WHERE layer_id = 0 AND name = 'Test Raster'
+    )
+    RETURNING id
+),
+target_raster AS (
+    SELECT id FROM inserted_raster
+    UNION ALL
+    SELECT id FROM honua.raster_data
+    WHERE layer_id = 0 AND name = 'Test Raster'
+    LIMIT 1
+)
+INSERT INTO honua.raster_statistics (
+    raster_data_id, band_number, min_value, max_value, mean_value,
+    std_dev, valid_pixel_count, nodata_pixel_count
+)
+SELECT id, 1, 128, 128, 128, 0, 4096, 0
+FROM target_raster
+ON CONFLICT (raster_data_id, band_number) DO UPDATE SET
+    min_value = EXCLUDED.min_value,
+    max_value = EXCLUDED.max_value,
+    mean_value = EXCLUDED.mean_value,
+    std_dev = EXCLUDED.std_dev,
+    valid_pixel_count = EXCLUDED.valid_pixel_count,
+    nodata_pixel_count = EXCLUDED.nodata_pixel_count,
+    computed_at = NOW();
+
 SELECT honua.seed_metadata_v2_compat_snapshot();

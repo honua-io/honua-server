@@ -20674,7 +20674,7 @@
           "Cloud Rasters"
         ],
         "summary": "Publish Layer Raster As COG",
-        "description": "Exports the publication layer's primary raster as a Cloud Optimized GeoTIFF and stores it under the deterministic object key `cog/{layerId}/{rasterId}.tif`, tagged with the publish operation and the COG media type. The artifact is then served to desktop clients (GDAL `/vsicurl`, ArcGIS Pro) by the public byte-range proxy `GET|HEAD /api/v1/rasters/cog/{artifactId}`, which answers HEAD with the real length and ranged GETs with 206. Publishing again for the same layer overwrites the same key. A layer with no raster is 400, an unknown or unroutable layer is 404, and an export or upload failure is 500.",
+        "description": "Exports the publication layer's primary raster as a Cloud Optimized GeoTIFF and stores it under the deterministic object key `cog/{layerId}/{rasterId}.tif`, tagged with the publish operation and the COG media type. Desktop clients (GDAL `/vsicurl`, ArcGIS Pro) read it through `GET|HEAD /api/v1/rasters/cog/{artifactId}`. The proxy checks the current source publication, binding and access policy before serving each request; authorized HEAD responses carry the real length and ranged GETs return 206. Publishing again for the same layer overwrites the same key. A layer with no raster is 400, an unknown or unroutable layer is 404, and an export or upload failure is 500.",
         "operationId": "publishCogArtifact",
         "requestBody": {
           "required": true,

@@ -501,6 +501,10 @@
       "capability": "raster.terrain-rgb"
     },
     {
+      "family": "WCS 1.0.0",
+      "capability": "serve.wcs"
+    },
+    {
       "family": "WCS 2.0.1",
       "capability": "serve.wcs"
     },

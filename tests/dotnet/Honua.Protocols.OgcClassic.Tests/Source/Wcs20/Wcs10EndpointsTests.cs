@@ -217,6 +217,76 @@ public sealed class Wcs10EndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs10, "GetCoverage")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    public async Task Wcs10_GetCoverage_WithoutBboxRejectsNonnativeRequestCrs()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/{WebAppFixture.TestServiceId}/wcs?SERVICE=WCS&VERSION=1.0.0&REQUEST=GetCoverage" +
+            "&COVERAGE=coverage_0&FORMAT=GeoTIFF&CRS=EPSG:3857&WIDTH=16&HEIGHT=16");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("BBOX is required");
+        _exportQueries.Should().BeEmpty();
+    }
+
+    [IntegrationTheory]
+    [InlineData("CRS")]
+    [InlineData("RESPONSE_CRS")]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs10, "GetCoverage")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    public async Task Wcs10_GetCoverage_UnsupportedCrsIsRejectedBeforeExport(string parameter)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/{WebAppFixture.TestServiceId}/wcs?SERVICE=WCS&VERSION=1.0.0&REQUEST=GetCoverage" +
+            $"&COVERAGE=coverage_0&FORMAT=GeoTIFF&BBOX=-122.5,37.7,-122.35,37.84" +
+            $"&{parameter}=EPSG:999999&WIDTH=16&HEIGHT=16");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("InvalidParameterValue");
+        content.Should().Contain($"locator=\"{parameter}\"");
+        _exportQueries.Should().BeEmpty();
+    }
+
+    [IntegrationTheory]
+    [InlineData("WIDTH=16", 16, 64)]
+    [InlineData("HEIGHT=16", 64, 16)]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs10, "GetCoverage")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    public async Task Wcs10_GetCoverage_OneExplicitDimensionPreservesIt(
+        string dimensionParameter, int expectedWidth, int expectedHeight)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/{WebAppFixture.TestServiceId}/wcs?SERVICE=WCS&VERSION=1.0.0&REQUEST=GetCoverage" +
+            $"&COVERAGE=coverage_0&FORMAT=GeoTIFF&{dimensionParameter}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        _exportQueries.Should().ContainSingle();
+        _exportQueries[0].OutputWidth.Should().Be(expectedWidth);
+        _exportQueries[0].OutputHeight.Should().Be(expectedHeight);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs10, "GetCoverage")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    public async Task Wcs10_GetCoverage_TinyResolutionIsRejectedBeforeIntegerConversion()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/{WebAppFixture.TestServiceId}/wcs?SERVICE=WCS&VERSION=1.0.0&REQUEST=GetCoverage" +
+            "&COVERAGE=coverage_0&FORMAT=GeoTIFF&BBOX=-122.5,37.7,-122.35,37.84" +
+            "&CRS=EPSG:4326&RESX=0.000000000001&RESY=0.01");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("limit per dimension");
+        _exportQueries.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
     [InterfaceOperation(TestProtocols.Wcs10, "DescribeCoverage")]
     [Endpoint("GET /ogc/services/{serviceId}/wcs")]
     public async Task Wcs10_DescribeCoverage_UnknownCoverage_ReturnsCoverageNotDefined()
