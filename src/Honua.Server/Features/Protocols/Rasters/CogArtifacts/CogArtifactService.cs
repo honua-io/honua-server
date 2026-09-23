@@ -89,7 +89,7 @@ internal sealed class CogArtifactService
         var publication = CogPublicationBinding.Resolve(snapshot, layerId);
         if (publication is null || snapshot.ResolveResource(publication) is not { } resource ||
             !snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ||
-            snapshot.ResolveStorageBinding(publication) is not { } binding ||
+            snapshot.ResolveStorageBinding(publication) is not { StorageLayerId: not null } binding ||
             !string.Equals(binding.ResourceId, resource.Metadata.Id, StringComparison.Ordinal))
         {
             return null;
@@ -104,7 +104,12 @@ internal sealed class CogArtifactService
     public async Task<CogArtifactPublishOutcome> PublishAsync(CogArtifactSource source, CancellationToken cancellationToken)
     {
         var layerId = source.LayerId;
-        var primary = await _rasterStore.GetPrimaryRasterInfoAsync(layerId, cancellationToken).ConfigureAwait(false);
+        if (source.Binding.StorageLayerId is not int storageLayerId)
+        {
+            return new CogArtifactPublishOutcome(CogArtifactPublishStatus.LayerNotFound, null, "The layer has no bound raster storage.");
+        }
+
+        var primary = await _rasterStore.GetPrimaryRasterInfoAsync(storageLayerId, cancellationToken).ConfigureAwait(false);
         if (primary is not { } raster)
         {
             return new CogArtifactPublishOutcome(CogArtifactPublishStatus.NoRaster, null, "The layer has no raster to export.");
@@ -114,7 +119,7 @@ internal sealed class CogArtifactService
         try
         {
             export = await _rasterStore.ExportImageAsync(
-                layerId,
+                storageLayerId,
                 raster.Id,
                 new RasterQuery { OutputFormat = RasterFormat.COG },
                 cancellationToken).ConfigureAwait(false);

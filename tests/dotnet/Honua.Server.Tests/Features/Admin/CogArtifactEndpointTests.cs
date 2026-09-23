@@ -22,7 +22,7 @@ namespace Honua.Server.Tests.Features.Admin;
 
 /// <summary>
 /// The published-COG surface: an admin publish that materialises a layer's primary raster
-/// through the raster store's COG export, and the public byte-range proxy desktop clients
+/// through the raster store's COG export, and the policy-aware byte-range proxy desktop clients
 /// (GDAL /vsicurl, ArcGIS Pro) read it through. The raster store is substituted so the test
 /// pins the HTTP contract - deterministic key, exact bytes, HEAD length, 206 ranges - rather
 /// than PostGIS's GDAL build.
@@ -36,12 +36,13 @@ public sealed class CogArtifactEndpointTests : IAsyncLifetime
     private static readonly byte[] CogBytes = BuildFakeCogBytes();
 
     private readonly WebAppFixture _fixture = new();
+    private IRasterStore _rasterStore = null!;
     private HttpClient _client = null!;
 
     public async Task InitializeAsync()
     {
-        var rasterStore = Substitute.For<IRasterStore>();
-        rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
+        _rasterStore = Substitute.For<IRasterStore>();
+        _rasterStore.GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>())
             .Returns(new RasterInfo
             {
                 Id = PrimaryRasterId,
@@ -53,9 +54,9 @@ public sealed class CogArtifactEndpointTests : IAsyncLifetime
                 Srid = 4326,
                 PixelType = "32BF",
             });
-        rasterStore.GetPrimaryRasterInfoAsync(Arg.Is<int>(id => id != WebAppFixture.TestLayerId), Arg.Any<CancellationToken>())
+        _rasterStore.GetPrimaryRasterInfoAsync(Arg.Is<int>(id => id != WebAppFixture.TestLayerId), Arg.Any<CancellationToken>())
             .Returns((RasterInfo?)null);
-        rasterStore.ExportImageAsync(
+        _rasterStore.ExportImageAsync(
                 WebAppFixture.TestLayerId,
                 PrimaryRasterId,
                 Arg.Is<RasterQuery>(q => q.OutputFormat == RasterFormat.COG),
@@ -70,7 +71,7 @@ public sealed class CogArtifactEndpointTests : IAsyncLifetime
                 BandCount = 1,
             });
 
-        _fixture.ReplaceService<IRasterStore>(rasterStore);
+        _fixture.ReplaceService<IRasterStore>(_rasterStore);
         _fixture.ConfigureWebHost(builder =>
         {
             builder.UseSetting("HONUA_DEV_AUTH", "false");
@@ -107,6 +108,64 @@ public sealed class CogArtifactEndpointTests : IAsyncLifetime
         using var response = await _client.PostAsJsonAsync("/api/v1/admin/raster-artifacts/cog", new { layerId = 987654 });
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/raster-artifacts/cog")]
+    public async Task PublishCog_ServiceIndexDiffersFromStorageLayer_ExportsOnlyBoundRaster()
+    {
+        const int storageLayerId = 2701;
+        const long boundRasterId = 42;
+        var boundBytes = CogBytes.ToArray();
+        boundBytes[16] ^= 0xFF;
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var publication = ImagePublication(graph);
+        var resource = graph.Resources.Single(candidate => candidate.Metadata.Id == publication.ResourceId);
+        var bindingId = publication.StorageBindingId ?? resource.PrimaryStorageBindingId;
+        SetGraph(graph with
+        {
+            StorageBindings = graph.StorageBindings.Select(binding => binding.Metadata.Id == bindingId
+                ? binding with { StorageLayerId = storageLayerId } : binding).ToArray()
+        });
+        _rasterStore.GetPrimaryRasterInfoAsync(storageLayerId, Arg.Any<CancellationToken>())
+            .Returns(new RasterInfo
+            {
+                Id = boundRasterId,
+                LayerId = storageLayerId,
+                Name = "bound primary",
+                Width = 64,
+                Height = 64,
+                BandCount = 1,
+                Srid = 4326,
+                PixelType = "32BF",
+            });
+        _rasterStore.ExportImageAsync(storageLayerId, boundRasterId,
+                Arg.Is<RasterQuery>(query => query.OutputFormat == RasterFormat.COG),
+                Arg.Any<CancellationToken>())
+            .Returns(new RasterResult
+            {
+                Data = boundBytes,
+                ContentType = "image/tiff",
+                Width = 64,
+                Height = 64,
+                Srid = 4326,
+                BandCount = 1,
+            });
+
+        var descriptor = await PublishAsync();
+
+        descriptor.GetProperty("artifactId").GetString()
+            .Should().Be($"cog/{WebAppFixture.TestLayerId}/{boundRasterId}.tif");
+        await _rasterStore.Received(1).GetPrimaryRasterInfoAsync(storageLayerId, Arg.Any<CancellationToken>());
+        await _rasterStore.Received(1).ExportImageAsync(storageLayerId, boundRasterId,
+            Arg.Is<RasterQuery>(query => query.OutputFormat == RasterFormat.COG), Arg.Any<CancellationToken>());
+        await _rasterStore.DidNotReceive().GetPrimaryRasterInfoAsync(WebAppFixture.TestLayerId, Arg.Any<CancellationToken>());
+        await _rasterStore.DidNotReceive().ExportImageAsync(WebAppFixture.TestLayerId,
+            Arg.Any<long>(), Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
+
+        using var response = await _client.GetAsync(descriptor.GetProperty("url").GetString()!);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await response.Content.ReadAsByteArrayAsync()).Should().Equal(boundBytes);
     }
 
     [IntegrationTest]
