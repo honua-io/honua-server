@@ -86,7 +86,7 @@ internal static class FeatureServerVersioning
         }
 
         var resolved = await versionManager.ResolveAsync(gdbVersion, cancellationToken).ConfigureAwait(false);
-        if (resolved is null)
+        if (resolved is not { } resolvedVersion)
         {
             return (null, StandardErrorHelpers.CreateNotFound(
                 context, $"Version '{gdbVersion}' was not found."));
@@ -97,8 +97,8 @@ internal static class FeatureServerVersioning
         // context can select overlay rows (or target edits). A 404 conceals
         // private versions from callers who do not own them.
         var versions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
-        var version = versions.FirstOrDefault(item => item.VersionId == resolved.Value.VersionId);
-        if (version.VersionId != resolved.Value.VersionId ||
+        var version = versions.FirstOrDefault(item => item.VersionId == resolvedVersion.VersionId);
+        if (version.VersionId != resolvedVersion.VersionId ||
             !VersionAccessPolicy.IsVersionVisible(version, context.User?.Identity?.Name,
                 ServiceDataEditorAuthorization.IsAdminPrincipal(context)))
         {
@@ -106,6 +106,6 @@ internal static class FeatureServerVersioning
                 context, $"Version '{gdbVersion}' was not found."));
         }
 
-        return (resolved.Value, null);
+        return (resolvedVersion, null);
     }
 }
