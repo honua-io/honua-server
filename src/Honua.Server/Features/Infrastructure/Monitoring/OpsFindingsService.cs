@@ -897,6 +897,11 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
             // set that moves under the reader can repeat an operation.
             collected.AddRange((read.Value?.Items ?? []).Where(IsStuckDeploy));
 
+            if (read.Value is { IsTruncated: true, HasMore: false })
+            {
+                workflowCollection.ExpectUncollected($"{ManualInterventionComponentId}:beyond-materialization-window");
+            }
+
             if (read.Value is not { HasMore: true })
             {
                 return Deduplicate(collected);

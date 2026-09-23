@@ -249,10 +249,8 @@ internal sealed partial class RedisWorkflowOperationStore(
             Page = page,
             PageSize = pageSize,
             TotalCount = filtered.Length,
-            // The filtered result can be empty even when the terminal index has more records beyond
-            // the materialization window. Preserve that uncertainty so callers that need complete
-            // evidence publish partial coverage instead of treating an older matching operation as absent.
-            HasMore = terminalIndexTruncated || skip + items.Length < filtered.Length
+            HasMore = skip + items.Length < filtered.Length,
+            IsTruncated = terminalIndexTruncated
         };
     }
 

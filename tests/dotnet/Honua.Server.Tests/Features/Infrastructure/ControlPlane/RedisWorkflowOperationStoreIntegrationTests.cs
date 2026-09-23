@@ -280,7 +280,19 @@ public sealed class RedisWorkflowOperationStoreIntegrationTests(RedisFixture red
             });
 
             page.Items.Should().BeEmpty();
-            page.HasMore.Should().BeTrue();
+        page.HasMore.Should().BeFalse();
+        page.IsTruncated.Should().BeTrue();
+
+        var beyondWindow = await store.QueryAsync(new WorkflowOperationQuery
+        {
+            Kind = WorkflowOperationKind.Deploy,
+            Status = WorkflowOperationStatus.ManualInterventionRequired,
+            Page = 100,
+            PageSize = 200,
+        });
+        beyondWindow.Items.Should().BeEmpty();
+        beyondWindow.HasMore.Should().BeFalse();
+        beyondWindow.IsTruncated.Should().BeTrue();
         }
         finally
         {

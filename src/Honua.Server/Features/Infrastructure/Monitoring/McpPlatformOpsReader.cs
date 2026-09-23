@@ -124,7 +124,7 @@ internal sealed class McpPlatformOpsReader(
             PageSize = result.PageSize,
             TotalCount = result.TotalCount,
             HasMore = result.HasMore,
-            EvidencePosture = DeployControlEndpoints.BuildDeployOperationsPosture(result.Items.Select(item => item.UpdatedAt), result.Page, result.PageSize, result.HasMore),
+            EvidencePosture = DeployControlEndpoints.BuildDeployOperationsPosture(result.Items.Select(item => item.UpdatedAt), result.Page, result.PageSize, result.HasMore, result.IsTruncated),
         };
 
         return Serialize(list, DeployControlJsonContext.Default.DeployOperationListResponse);
