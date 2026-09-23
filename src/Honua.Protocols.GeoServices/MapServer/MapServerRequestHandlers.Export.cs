@@ -1173,7 +1173,9 @@ internal static partial class MapServerEndpoints
                 return (Array.Empty<ExportRenderLayer>(), null);
             }
 
-            if (requestedStaticLayerIds.Count == 0 && visibility != ExportLayerVisibility.Hide)
+            // An empty show list is malformed. An empty include or exclude list is the
+            // default-visible set (include nothing extra, exclude nothing), not a 400.
+            if (requestedStaticLayerIds.Count == 0 && visibility == ExportLayerVisibility.Show)
             {
                 return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(context, "Invalid layers parameter."));
             }
@@ -1812,9 +1814,7 @@ internal static partial class MapServerEndpoints
     }
 
     /// <summary>
-    /// Treat an empty show/include/exclude selection as the default layer view.
-    /// An empty hide selection means hide nothing, including layers that are
-    /// hidden by default, so it must retain its visibility prefix.
+    /// Treat an empty <c>show:</c> selection as the default layer view.
     /// </summary>
     /// <remarks>
     /// Stock QGIS sends exactly <c>layers=show:</c> when its ArcGIS REST Server
@@ -1822,13 +1822,19 @@ internal static partial class MapServerEndpoints
     /// restriction". Read literally that is a selection keyword with one empty id, and
     /// the empty-token guard answered HTTP 400 - so the layer never drew in QGIS, on a
     /// service whose layers all render individually. An empty <c>layers=</c> already
-    /// takes the no-filter path and produces the full image, so this only routes the
-    /// keyword-with-no-ids spelling to the same place.
+    /// takes the no-filter path and produces the default-visible image, so this only
+    /// routes that one spelling to the same place.
+    ///
+    /// Empty <c>include:</c> and <c>exclude:</c> are not the same request. They must
+    /// keep their prefix so <c>ResolveRenderLayers</c> selects only the default-visible
+    /// layers. Collapsing them to null would draw every dynamic layer, including ones
+    /// whose source has <c>DefaultVisibility=false</c>. An empty <c>hide:</c> means
+    /// hide nothing, including layers hidden by default, so it keeps its prefix too.
     ///
     /// Deliberately narrow. An empty id *inside* a list ("show:1,,2") is still a
-    /// malformed request and still rejected; only a wholly empty list is normalised.
-    /// This follows #4043, where export likewise had to accept the layer spelling a
-    /// real client emits rather than the one the parameter grammar implies.
+    /// malformed request and still rejected; only a wholly empty <c>show:</c> list is
+    /// normalised. This follows #4043, where export likewise had to accept the layer
+    /// spelling a real client emits rather than the one the parameter grammar implies.
     /// </remarks>
     private static string? NormalizeEmptyLayerSelection(string? layersParam)
     {
@@ -1838,13 +1844,10 @@ internal static partial class MapServerEndpoints
         }
 
         var spec = layersParam.Trim();
-        foreach (var keyword in new[] { "show:", "include:", "exclude:" })
+        if (spec.StartsWith("show:", StringComparison.OrdinalIgnoreCase)
+            && spec["show:".Length..].Trim().Length == 0)
         {
-            if (spec.StartsWith(keyword, StringComparison.OrdinalIgnoreCase)
-                && spec[keyword.Length..].Trim().Length == 0)
-            {
-                return null;
-            }
+            return null;
         }
 
         return layersParam;

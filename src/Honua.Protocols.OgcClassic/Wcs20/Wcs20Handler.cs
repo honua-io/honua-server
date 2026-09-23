@@ -106,23 +106,24 @@ internal sealed partial class Wcs20Handler
         context.Items[RequestTelemetryClassifier.OperationItemKey] =
             "wcs." + operation.Trim().ToLowerInvariant();
 
+        var isLegacy = Wcs20Utilities.IsVersion10(
+            GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.Version),
+            GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.AcceptVersions));
+        var protocol = isLegacy ? HonuaTelemetry.Protocols.Wcs10 : HonuaTelemetry.Protocols.Wcs20;
+
         using var telemetry = HonuaTelemetryScope.StartFeature(
             operation,
-            HonuaTelemetry.Protocols.Wcs20,
+            protocol,
             scope.LayerId?.ToString(CultureInfo.InvariantCulture) ?? scope.ServiceId ?? "service");
         telemetry
             .WithTag(HonuaTelemetry.Tags.Operation, operation)
-            .WithTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Wcs20);
+            .WithTag(HonuaTelemetry.Tags.Protocol, protocol);
         if (scope.ServiceId is not null)
         {
             telemetry.WithTag(HonuaTelemetry.Tags.ServiceId, scope.ServiceId);
         }
 
         Wcs20Log.RequestReceived(_logger, operation, scope.DisplayName);
-
-        var isLegacy = Wcs20Utilities.IsVersion10(
-            GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.Version),
-            GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.AcceptVersions));
 
         try
         {
