@@ -1462,10 +1462,10 @@
       "category": "Raster",
       "edition": "Pro",
       "status": null,
-      "entryCount": 5,
-      "provingTestCount": 15,
+      "entryCount": 8,
+      "provingTestCount": 29,
       "maturity": {
-        "implemented": 5
+        "implemented": 8
       },
       "noSurface": null,
       "cite": [],
@@ -1798,7 +1798,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 142,
-      "provingTestCount": 423,
+      "provingTestCount": 424,
       "maturity": {
         "preview": 142
       },
@@ -1824,7 +1824,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 45,
-      "provingTestCount": 379,
+      "provingTestCount": 383,
       "maturity": {
         "implemented": 43,
         "preview": 2
@@ -2296,7 +2296,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 11,
+      "provingTestCount": 26,
       "maturity": {
         "implemented": 2
       },
