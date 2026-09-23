@@ -58,4 +58,10 @@ public sealed record WorkflowOperationPage
     /// Whether at least one more page exists after this one.
     /// </summary>
     public bool HasMore { get; init; }
+
+    /// <summary>
+    /// Whether older terminal operations exist outside the bounded materialization window.
+    /// The filtered result may be incomplete even when this page has no successor.
+    /// </summary>
+    public bool IsTruncated { get; init; }
 }

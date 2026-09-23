@@ -411,6 +411,70 @@ public sealed class OpsFindingsServiceTests
         Assert.DoesNotContain("manual-intervention-deploy-operations:beyond-page-5", coverage.IncludedComponentIds ?? []);
     }
 
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_DeployManualInterventionQueryTruncatedWithNoNextPage_PublishesPartial()
+    {
+        var workflowStore = Substitute.For<IWorkflowOperationStore>();
+        var pages = 0;
+        workflowStore.QueryAsync(Arg.Any<WorkflowOperationQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var query = call.Arg<WorkflowOperationQuery>();
+                pages++;
+                return Task.FromResult(new WorkflowOperationPage
+                {
+                    Items = [],
+                    Page = query.Page,
+                    PageSize = query.PageSize,
+                    TotalCount = 0,
+                    HasMore = false,
+                    IsTruncated = true,
+                });
+            });
+
+        var evaluation = await CreateService(workflowStore: workflowStore).EvaluateWithEvidenceAsync();
+
+        Assert.Equal(1, pages);
+        var source = evaluation.Posture.Sources.Single(
+            item => item.SourceId == EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations);
+        Assert.Equal(EvidencePostureVocabulary.Completeness.Partial, source.Completeness);
+        var coverage = Assert.IsType<EvidenceSourceCoverage>(source.Coverage);
+        Assert.Contains("manual-intervention-deploy-operations:beyond-materialization-window", coverage.ExpectedComponentIds ?? []);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task Evaluate_DeployManualInterventionQueryEarlierTruncationStillPublishesPartial()
+    {
+        var workflowStore = Substitute.For<IWorkflowOperationStore>();
+        var pages = 0;
+        workflowStore.QueryAsync(Arg.Any<WorkflowOperationQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                var query = call.Arg<WorkflowOperationQuery>();
+                pages++;
+                return Task.FromResult(new WorkflowOperationPage
+                {
+                    Items = [],
+                    Page = query.Page,
+                    PageSize = query.PageSize,
+                    TotalCount = 0,
+                    HasMore = query.Page == 1,
+                    IsTruncated = query.Page == 1,
+                });
+            });
+
+        var evaluation = await CreateService(workflowStore: workflowStore).EvaluateWithEvidenceAsync();
+
+        Assert.Equal(2, pages);
+        var source = evaluation.Posture.Sources.Single(
+            item => item.SourceId == EvidencePostureVocabulary.SourceIds.FindingsWorkflowOperations);
+        Assert.Equal(EvidencePostureVocabulary.Completeness.Partial, source.Completeness);
+        var coverage = Assert.IsType<EvidenceSourceCoverage>(source.Coverage);
+        Assert.Contains("manual-intervention-deploy-operations:beyond-materialization-window", coverage.ExpectedComponentIds ?? []);
+    }
+
     /// <summary>
     /// Stubs the store's kind + status query, the read the real store answers for stuck deploys
     /// (the Redis store never lists them as active).
