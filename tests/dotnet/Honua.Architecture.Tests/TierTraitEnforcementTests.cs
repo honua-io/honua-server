@@ -193,6 +193,13 @@ public sealed class TierTraitEnforcementTests
         TierTraitBaseline.AddedEntries([existing, added], [existing])
             .Should().ContainSingle().Which.Should().Be(added,
                 "adding the new overload to the committed baseline must fail the growth guard");
+        TierTraitBaseline.AddedEntries([added], [existing])
+            .Should().ContainSingle().Which.Should().Be(added,
+                "replacing the sole old signature must not grandfather a newly untiered method");
+        var legacyKey = $"{typeof(OverloadedTestFixture).FullName}.BareTheory";
+        TierTraitBaseline.AddedEntries([added], [legacyKey])
+            .Should().ContainSingle().Which.Should().Be(added,
+                "a historical name-only entry cannot authorize a new signature");
     }
 
     private sealed class OverloadedTestFixture
@@ -333,23 +340,6 @@ internal static class TierTraitScanner
         var genericArity = method.GetGenericArguments().Length;
         var parameters = string.Join(",", method.GetParameters().Select(parameter => parameter.ParameterType.ToString()));
         return $"{type.FullName}.{method.Name}`{genericArity}({parameters})";
-    }
-
-    internal static IReadOnlyList<string> CanonicalizeBaselineEntries(IEnumerable<string> entries)
-    {
-        var methodsByLegacyKey = ScannedAssemblies()
-            .SelectMany(assembly => ArchitectureTestHelpers.GetTypesSafely(assembly)
-                .Where(type => type?.FullName is not null)
-                .SelectMany(type => type!.GetMethods(TestMemberFlags)
-                    .Where(IsXunitTestMethod)
-                    .Select(method => (LegacyKey: $"{type.FullName}.{method.Name}", Method: method, Type: type))))
-            .GroupBy(item => item.LegacyKey, StringComparer.Ordinal)
-            .Where(group => group.Skip(1).Any() is false)
-            .ToDictionary(group => group.Key, group => MethodKey(group.Single().Type, group.Single().Method), StringComparer.Ordinal);
-
-        return entries
-            .Select(entry => methodsByLegacyKey.TryGetValue(entry, out var canonical) ? canonical : entry)
-            .ToArray();
     }
 
     private static bool IsXunitTestMethod(MethodInfo method)
@@ -589,10 +579,10 @@ internal static class TierTraitBaseline
             return null;
         }
 
-        return TierTraitScanner.CanonicalizeBaselineEntries(RunGit(repositoryRoot, "show", $"{parent}:{RelativePath}")
+        return RunGit(repositoryRoot, "show", $"{parent}:{RelativePath}")
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(line => !line.StartsWith('#'))
-            .ToArray());
+            .ToArray();
     }
 
     public static string RunGit(string repositoryRoot, params string[] arguments)
