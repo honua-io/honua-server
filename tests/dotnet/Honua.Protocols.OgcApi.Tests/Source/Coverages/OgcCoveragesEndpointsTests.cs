@@ -8,6 +8,7 @@ using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -121,13 +122,65 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
         var bytes = await response.Content.ReadAsByteArrayAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("image/tiff");
-        bytes.Should().Equal([0x49, 0x49, 0x2A, 0x00]);
-        response.Headers.TryGetValues("Content-Bbox", out var bboxes).Should().BeTrue();
-        bboxes!.Single().Should().Contain("-122.5");
 
         _exportQueries.Should().ContainSingle();
-        _exportQueries.Single().OutputFormat.Should().Be(RasterFormat.TIFF);
-        _exportQueries.Single().ClipRegion.Should().NotBeNull();
+        var query = _exportQueries.Single();
+        query.OutputFormat.Should().Be(RasterFormat.TIFF);
+        query.ClipRegion.Should().NotBeNull();
+
+        // #4424: the requested bbox is the whole raster footprint, so the covered extent is
+        // the footprint — but it is now DERIVED from the clip the handler passed down, and the
+        // payload is derived from that extent. A handler that dropped `bbox` on the floor, or
+        // clipped to the wrong window, produces different bytes and a different Content-Bbox.
+        var expectedExtent = ClippedExtent(query, query.OutputSrid ?? 4326);
+        bytes.Should().Equal(SyntheticRasterBytes(
+            RasterFormat.TIFF,
+            expectedExtent,
+            query.OutputWidth ?? 64,
+            query.OutputHeight ?? 64));
+
+        response.Headers.TryGetValues("Content-Bbox", out var bboxes).Should().BeTrue();
+        var reported = bboxes!.Single()
+            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Select(value => double.Parse(value, CultureInfo.InvariantCulture))
+            .ToArray();
+        reported.Should().HaveCount(4);
+        reported[0].Should().BeApproximately(expectedExtent.XMin, 1e-9);
+        reported[1].Should().BeApproximately(expectedExtent.YMin, 1e-9);
+        reported[2].Should().BeApproximately(expectedExtent.XMax, 1e-9);
+        reported[3].Should().BeApproximately(expectedExtent.YMax, 1e-9);
+
+        // The discriminating case the old constant-extent fixture could not express: a bbox
+        // strictly INSIDE the footprint must come back as its own extent, in the headers and
+        // in the payload. Under the old mock both were the full footprint whatever was asked.
+        _exportQueries.Clear();
+        var narrow = await _fixture.Client.GetAsync(
+            $"/ogc/coverages/collections/{WebAppFixture.TestLayerId}/coverage?bbox=-122.45,37.75,-122.4,37.8");
+        narrow.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        _exportQueries.Should().ContainSingle();
+        var narrowQuery = _exportQueries.Single();
+        var narrowExtent = ClippedExtent(narrowQuery, narrowQuery.OutputSrid ?? 4326);
+
+        narrowExtent.XMin.Should().BeApproximately(-122.45, 1e-9);
+        narrowExtent.YMin.Should().BeApproximately(37.75, 1e-9);
+        narrowExtent.XMax.Should().BeApproximately(-122.4, 1e-9);
+        narrowExtent.YMax.Should().BeApproximately(37.8, 1e-9);
+
+        narrow.Headers.TryGetValues("Content-Bbox", out var narrowBboxes).Should().BeTrue();
+        var narrowReported = narrowBboxes!.Single()
+            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Select(value => double.Parse(value, CultureInfo.InvariantCulture))
+            .ToArray();
+        narrowReported.Should().HaveCount(4);
+        narrowReported[0].Should().BeApproximately(-122.45, 1e-9);
+        narrowReported[1].Should().BeApproximately(37.75, 1e-9);
+        narrowReported[2].Should().BeApproximately(-122.4, 1e-9);
+        narrowReported[3].Should().BeApproximately(37.8, 1e-9);
+
+        (await narrow.Content.ReadAsByteArrayAsync()).Should().NotEqual(
+            bytes,
+            "a narrower bbox must not produce the same payload as the full footprint");
     }
 
     [IntegrationTest]
@@ -168,6 +221,23 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
         resolutionQuery.PixelSize.Should().NotBeNull();
         resolutionQuery.PixelSize!.Value.Width.Should().BeApproximately(0.003125, 0.000000001);
         resolutionQuery.PixelSize!.Value.Height.Should().BeApproximately(0.003125, 0.000000001);
+
+        // The clip is measured in metres. A fixture that intersects it with the native
+        // longitude/latitude ordinates produces an inverted, meaningless response bbox.
+        response.Headers.TryGetValues("Content-Bbox", out var projectedBboxes).Should().BeTrue();
+        var projectedBbox = projectedBboxes!.Single()
+            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Select(value => double.Parse(value, CultureInfo.InvariantCulture))
+            .ToArray();
+        var (nativeWest, nativeSouth) = WebMercatorMath.LonLatToWebMercator(NativeExtent.XMin, NativeExtent.YMin);
+        var (nativeEast, nativeNorth) = WebMercatorMath.LonLatToWebMercator(NativeExtent.XMax, NativeExtent.YMax);
+        projectedBbox.Should().HaveCount(4);
+        projectedBbox[0].Should().BeApproximately(Math.Max(nativeWest, -13_650_000), 1e-6);
+        projectedBbox[1].Should().BeApproximately(Math.Max(nativeSouth, 4_530_000), 1e-6);
+        projectedBbox[2].Should().BeApproximately(Math.Min(nativeEast, -13_600_000), 1e-6);
+        projectedBbox[3].Should().BeApproximately(Math.Min(nativeNorth, 4_570_000), 1e-6);
+        projectedBbox[0].Should().BeLessThan(projectedBbox[2]);
+        projectedBbox[1].Should().BeLessThan(projectedBbox[3]);
 
         _exportQueries.Clear();
         response = await _fixture.Client.GetAsync(
@@ -304,27 +374,120 @@ public sealed class OgcCoveragesEndpointsTests : IAsyncLifetime
             {
                 var query = call.ArgAt<RasterQuery>(2);
                 exportQueries.Add(query);
+                var srid = query.OutputSrid ?? 4326;
+                var width = query.OutputWidth ?? 64;
+                var height = query.OutputHeight ?? 64;
+
+                // #4424: the exported extent and payload are DERIVED from the request, not
+                // hard-coded. Previously the mock returned the same constant extent and the
+                // same four bytes whatever was asked for, so `Content-Bbox` contained
+                // "-122.5" for any bbox on the planet and a regression in which `bbox` was
+                // parsed but never applied passed every Coverages test.
+                var extent = ClippedExtent(query, srid);
                 return Task.FromResult(new RasterResult
                 {
-                    Data = query.OutputFormat == RasterFormat.PNG
-                        ? [0x89, 0x50, 0x4E, 0x47]
-                        : [0x49, 0x49, 0x2A, 0x00],
+                    Data = SyntheticRasterBytes(query.OutputFormat, extent, width, height),
                     ContentType = query.OutputFormat.ToContentType(),
-                    Width = query.OutputWidth ?? 64,
-                    Height = query.OutputHeight ?? 64,
-                    Srid = query.OutputSrid ?? 4326,
-                    Extent = new RasterExtent
-                    {
-                        XMin = -122.5,
-                        YMin = 37.7,
-                        XMax = -122.3,
-                        YMax = 37.9,
-                        Srid = query.OutputSrid ?? 4326
-                    },
+                    Width = width,
+                    Height = height,
+                    Srid = srid,
+                    Extent = extent,
                     BandCount = query.Bands?.Length ?? 3,
                     PixelType = "32BF"
                 });
             });
+    }
+
+    /// <summary>
+    /// The native extent of the fixture raster, in CRS84.
+    /// </summary>
+    internal static readonly RasterExtent NativeExtent = new()
+    {
+        XMin = -122.5,
+        YMin = 37.7,
+        XMax = -122.3,
+        YMax = 37.9,
+        Srid = 4326
+    };
+
+    /// <summary>
+    /// The extent a correct export would cover: the requested clip envelope intersected with
+    /// the raster footprint, or the whole footprint when no clip was requested. A handler that
+    /// parsed <c>bbox</c> but never applied it returns the native extent and so fails any
+    /// assertion derived from the requested one.
+    /// </summary>
+    internal static RasterExtent ClippedExtent(RasterQuery query, int srid)
+    {
+        var extent = NativeExtent;
+        if (query.ClipRegion is { } clip)
+        {
+            var clipSrid = clip.Srid ?? NativeExtent.Srid!.Value;
+            var footprint = TransformExtent(NativeExtent, clipSrid);
+            var envelope = new WKBReader().Read(clip.Geometry).EnvelopeInternal;
+            extent = new RasterExtent
+            {
+                XMin = Math.Max(footprint.XMin, envelope.MinX),
+                YMin = Math.Max(footprint.YMin, envelope.MinY),
+                XMax = Math.Min(footprint.XMax, envelope.MaxX),
+                YMax = Math.Min(footprint.YMax, envelope.MaxY),
+                Srid = clipSrid
+            };
+        }
+
+        return TransformExtent(extent, srid);
+    }
+
+    private static RasterExtent TransformExtent(RasterExtent extent, int srid)
+    {
+        if (extent.Srid == srid)
+        {
+            return extent;
+        }
+
+        // The fixture's native CRS is 4326 and its projected requests use 3857.
+        // Use the same shared projection math as the provider instead of comparing
+        // degree and metre ordinates directly.
+        Func<double, double, (double X, double Y)> transform = (extent.Srid, srid) switch
+        {
+            (4326, 3857) => WebMercatorMath.LonLatToWebMercator,
+            (3857, 4326) => WebMercatorMath.WebMercatorToLonLat,
+            _ => throw new NotSupportedException($"Fixture cannot transform {extent.Srid} to {srid}.")
+        };
+        var (minX, minY, maxX, maxY) = WebMercatorMath.TransformSampledExtent(
+            extent.XMin, extent.YMin, extent.XMax, extent.YMax, transform, sampleSegmentsPerEdge: 4);
+        return new RasterExtent
+        {
+            XMin = minX,
+            YMin = minY,
+            XMax = maxX,
+            YMax = maxY,
+            Srid = srid
+        };
+    }
+
+    /// <summary>
+    /// A synthetic raster payload: the real format signature followed by the little-endian
+    /// encoding of the covered extent and the output grid size. There is no encoder in this
+    /// repository, so the bytes cannot be a real GeoTIFF — but they are a pure function of the
+    /// answer, which is what makes a byte-equality assertion falsifiable. A wrong bbox, a
+    /// wrong output size or a wrong SRID all change the payload.
+    /// </summary>
+    internal static byte[] SyntheticRasterBytes(RasterFormat format, RasterExtent extent, int width, int height)
+    {
+        var signature = format == RasterFormat.PNG
+            ? new byte[] { 0x89, 0x50, 0x4E, 0x47 }
+            : [0x49, 0x49, 0x2A, 0x00];
+
+        var payload = new List<byte>(signature);
+        foreach (var value in new[] { extent.XMin, extent.YMin, extent.XMax, extent.YMax })
+        {
+            payload.AddRange(BitConverter.GetBytes(Math.Round(value, 9)));
+        }
+
+        payload.AddRange(BitConverter.GetBytes(width));
+        payload.AddRange(BitConverter.GetBytes(height));
+        payload.AddRange(BitConverter.GetBytes(extent.Srid ?? 0));
+        return [.. payload];
     }
 
     [IntegrationTest]
