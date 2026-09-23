@@ -180,7 +180,7 @@ public sealed class FeatureServerStatisticsFieldsTests(FeatureServerStatisticsFi
         }
     }
 
-    [Fact]
+    [IntegrationTest]
     public void Statistics_CountBeyondInt32_UsesBigIntegerWithoutTruncation()
     {
         var resource = new MetadataV2Resource
