@@ -116,12 +116,16 @@ public sealed class StacQueryablesTests : IClassFixture<WebAppFixture>
 [Collection("Database")]
 public sealed class StacQueryablesAuthorizationTests : IAsyncLifetime
 {
+    private const string AdminPassword = "stac-queryables-admin-key";
+
     private readonly WebAppFixture _fixture = new WebAppFixture()
         .ConfigureWebHost(builder =>
         {
             // Disable the dev-auth passthrough so unauthenticated requests are truly
-            // anonymous (no implicit super-user identity).
+            // anonymous (no implicit super-user identity). An admin key is configured so the
+            // paired authenticated-success case can read the same private collection.
             builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", AdminPassword);
         });
 
     public async Task InitializeAsync()
@@ -146,8 +150,39 @@ public sealed class StacQueryablesAuthorizationTests : IAsyncLifetime
         // Unauthenticated request (no API key, no bearer token).
         var response = await _fixture.Client.GetAsync($"/stac/collections/{collectionId}/queryables");
 
-        // The server must deny the request — 401 (unauthenticated) or 403 (forbidden).
+        // AccessPolicyHelpers reports RequiresAuthentication for an anonymous principal against
+        // AllowAnonymous=false, so the denial is exactly 401 with a challenge — 403 would mean
+        // the caller was authenticated and merely unauthorised, which is a different defect.
         // Before fix BH-S-01 the handler skipped the access check and returned 200.
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Headers.WwwAuthenticate.Should().NotBeEmpty(
+            "a 401 must carry the authentication challenge that tells the client how to authenticate");
+
+        // Nothing is disclosed: no JSON-Schema document, and none of the field names that
+        // the authorised read below returns.
+        response.Content.Headers.ContentType?.MediaType.Should().NotBe("application/schema+json");
+        var body = await response.Content.ReadAsStringAsync();
+        using var denial = JsonDocument.Parse(body);
+        foreach (var field in new[] { "$schema", "queryables", "properties" })
+        {
+            denial.RootElement.TryGetProperty(field, out _).Should().BeFalse(
+                $"the field schema of a private collection must not leak '{field}'");
+        }
+
+        // Paired success on a NON-EMPTY fixture: an admin-credentialed caller reads the same
+        // private collection's queryables and gets the real schema. Without this, the denial
+        // above could not tell "correctly refused" from "endpoint broken for everyone".
+        using var admin = _fixture.CreateClient(
+            client => client.DefaultRequestHeaders.Add("X-API-Key", AdminPassword));
+        var adminResponse = await admin.GetAsync($"/stac/collections/{collectionId}/queryables");
+        var adminBody = await adminResponse.Content.ReadAsStringAsync();
+        adminResponse.StatusCode.Should().Be(HttpStatusCode.OK, adminBody);
+        adminResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/schema+json");
+
+        using var adminJson = JsonDocument.Parse(adminBody);
+        adminJson.RootElement.GetProperty("type").GetString().Should().Be("object");
+        adminJson.RootElement.GetProperty("$id").GetString()
+            .Should().EndWith($"/stac/collections/{collectionId}/queryables");
+        adminJson.RootElement.GetProperty("properties").EnumerateObject().Should().NotBeEmpty();
     }
 }

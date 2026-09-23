@@ -23,9 +23,13 @@ on:
       - 'docs/gis/data/capability-keys.v1.json'
       - 'docs/gis/data/capability-no-surface-allowlist.v1.json'
       - 'docs/gis/data/capability-matrix.v1.json'
+      - 'docs/gis/data/client-certification-checklist.v1.json'
+      - 'docs/gis/CLIENT_CERTIFICATION_CHECKLIST.md'
       - 'docs/gis/data/operation-capability.v1.json'
       - 'tests/baselines/client-compat/**'
       - 'scripts/ci/generate-capability-matrix.py'
+      - 'scripts/certification/build-client-checklist.py'
+      - 'scripts/certification/test_build_client_checklist.py'
       # generate-capability-matrix.py imports parse_timestamp/is_green/
       # freshness_state from capability-impact.py, so helper changes can
       # change the committed matrix.
@@ -85,6 +89,11 @@ jobs:
       - name: Regenerate capability-matrix.v1.json
         run: python3 scripts/ci/generate-capability-matrix.py
 
+      - name: Check client certification checklist projections
+        run: |
+          python3 scripts/certification/test_build_client_checklist.py
+          python3 scripts/certification/build-client-checklist.py --check
+
       - name: Report generated matrix drift (advisory)
         run: bash scripts/ci/report-generated-file-drift.sh docs/gis/data/capability-matrix.v1.json
 
@@ -117,4 +126,3 @@ jobs:
           name: capability-matrix-${{ github.run_id }}
           path: docs/gis/data/capability-matrix.v1.json
           retention-days: 90
-

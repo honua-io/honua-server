@@ -6,6 +6,7 @@ using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Validation.Abstractions;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Capabilities;
@@ -33,7 +34,8 @@ namespace Honua.Protocols.GeoServices.VersionManagementServer;
 /// Branch versioning is Postgres-only and Pro-gated. When the active provider's
 /// <see cref="IVersionManager.SupportsVersioning"/> is false (DuckDB / SQL Server / MySQL), the
 /// mutating and lifecycle operations return a 501 not-supported response; the read-only
-/// service-info / <c>versions</c> / <c>versionInfo</c> operations report an empty version set.
+/// <c>versions</c> / <c>versionInfo</c> operations report an empty version set. Service-info
+/// discovery additionally requires an accessible publication whose bound reader supports branches.
 /// </para>
 /// <para>
 /// In Honua's overlay/moment storage model a version read/edit carries its
@@ -78,6 +80,13 @@ public static class VersionManagementServerEndpoints
         // intentional decision, matching the sibling GeoServices endpoint files.
         group.MapGet("", HandleServiceInfo)
             .WithName("GetVersionManagementServiceInfo")
+            .WithSummary("Get VersionManagementServer service metadata")
+            .WithTags(Tag)
+            .AllowAnonymous();
+
+        // Native ArcPy uses POST even for this read-only discovery resource.
+        group.MapPost("", HandleServiceInfo)
+            .WithName("PostVersionManagementServiceInfo")
             .WithSummary("Get VersionManagementServer service metadata")
             .WithTags(Tag)
             .AllowAnonymous();
@@ -177,11 +186,27 @@ public static class VersionManagementServerEndpoints
         [FromServices] IResourceValidator resourceValidator,
         CancellationToken cancellationToken)
     {
-        var problem = await ValidateServiceAsync(serviceId, context, resourceValidator, cancellationToken)
+        var validation = await ValidateReadableServiceAsync(serviceId, context, resourceValidator, cancellationToken)
             .ConfigureAwait(false);
-        if (problem is not null)
+        if (!validation.IsValid)
         {
-            return problem;
+            return validation.ErrorResult!;
+        }
+
+        var entitlementGate = LicenseGate.RequireEntitlement(
+            context, FeatureCatalog.BranchVersioningKey, "Branch versioning");
+        if (entitlementGate is not null)
+        {
+            return entitlementGate;
+        }
+
+        var graphProvider = context.RequestServices.GetRequiredService<IMetadataV2GraphProvider>();
+        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        if (!await FeatureServerEndpoints.HasAccessibleBranchVersionedPublicationsAsync(
+            context, validation.Service!, snapshot, cancellationToken).ConfigureAwait(false))
+        {
+            return StandardErrorHelpers.CreateNotImplemented(context,
+                "Branch versioning is not supported by the service's accessible publications.");
         }
 
         return Results.Json(new VersionManagementServiceInfo(),
@@ -780,20 +805,31 @@ public static class VersionManagementServerEndpoints
         HttpContext context,
         IResourceValidator resourceValidator,
         CancellationToken cancellationToken)
+        => (await ValidateReadableServiceAsync(serviceId, context, resourceValidator, cancellationToken)
+            .ConfigureAwait(false)).ErrorResult;
+
+    private static async Task<FeatureServerResourceValidationHelpers.ServiceValidationV2Result> ValidateReadableServiceAsync(
+        string serviceId,
+        HttpContext context,
+        IResourceValidator resourceValidator,
+        CancellationToken cancellationToken)
     {
         var validation = await FeatureServerResourceValidationHelpers.ValidateServiceV2Async(
             resourceValidator, serviceId, context, logger: null, cancellationToken).ConfigureAwait(false);
         if (!validation.IsValid)
         {
-            return validation.ErrorResult!;
+            return validation;
         }
 
         // Read-surface RBAC parity with the sibling FeatureServer/GPServer handlers (#1376): version
         // metadata (owners, names) and conflict payloads (attribute/geometry images) must not be
         // readable on a service the caller cannot query. Write operations layer the stricter
         // Update + data-editor checks on top via VersionManagementAuthorization.
-        return await AccessPolicyHelpers.RequireServiceAccessAsync(
+        var accessError = await AccessPolicyHelpers.RequireServiceAccessAsync(
             context, validation.Service!, AuthorizationOperation.Query, cancellationToken).ConfigureAwait(false);
+        return accessError is null
+            ? validation
+            : new FeatureServerResourceValidationHelpers.ServiceValidationV2Result(false, null, accessError);
     }
 
     /// <summary>

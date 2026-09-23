@@ -73,6 +73,10 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
         "GET /.well-known/oauth-protected-resource/mcp",
         // These surfaces have direct endpoint-level tests, but ASP.NET's test-host
         // EndpointDataSource does not expose their route metadata consistently.
+        // The canonical ArcGIS Server Admin service resource is exercised with
+        // both verbs by BranchVersioningMetadataTests.
+        "GET /admin/services/{serviceName}.{serviceType}",
+        "POST /admin/services/{serviceName}.{serviceType}",
         "GET /monitoring/alerts",
         "GET /monitoring/health/comprehensive",
         "GET /monitoring/health/production",

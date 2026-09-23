@@ -104,7 +104,25 @@ public sealed class OperateStatusEndpointsTests : IAsyncLifetime
 
         var response = await anonymous.GetAsync("/api/v1/operate/status");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+        // The ops-read policy names the ApiKey scheme, so an UNAUTHENTICATED caller is
+        // challenged with exactly 401. 403 is reserved for an authenticated principal that
+        // lacks the grant (see OpsReadKey_CannotInvokeMutatingOpsEndpoints), so accepting
+        // either here would let an authentication regression pass as an authorization result.
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        // Nothing is disclosed: none of the operational posture the admin read returns.
+        var body = await response.Content.ReadAsStringAsync();
+        foreach (var marker in new[] { "\"domains\"", "\"slo\"", "nodeLocalRetainedTail", "bySeverity", "schemaVersion" })
+        {
+            body.Should().NotContain(marker, $"an unauthenticated caller must not see '{marker}'");
+        }
+
+        // The admin principal still gets the full status document off the same host.
+        var adminResponse = await _client.GetAsync("/api/v1/operate/status");
+        adminResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var adminJson = JsonDocument.Parse(await adminResponse.Content.ReadAsStringAsync());
+        adminJson.RootElement.GetProperty("domains").GetProperty("findings")
+            .GetProperty("bySeverity").TryGetProperty("critical", out _).Should().BeTrue();
     }
 
     [IntegrationTest]

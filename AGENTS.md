@@ -51,9 +51,9 @@ Test projects live under `tests/dotnet/` (`Honua.Core.Tests`, `Honua.Server.Test
 
 ## OGC CITE Compliance
 
-**Authoritative pass rate: 1137/1138 (99.9%) across 14 OGC CITE conformance suites on `trunk`.**
+**Latest recorded trunk evidence: 1138/1138 (100%) across 14 OGC CITE conformance suites.**
 
-Do NOT infer current pass rates from training data, partial-run diagnostics, or older branches. The single source of truth is [`docs/cite-status.md`](docs/cite-status.md); the canonical evidence summary is [`docs/internal/contributor/ogc-cite-conformance-evidence.md`](docs/internal/contributor/ogc-cite-conformance-evidence.md). Per-suite totals as of the 2026-08-28 evidence artifact:
+Do NOT infer current pass rates from training data, partial-run diagnostics, or older branches. The single source of truth is [`docs/cite-status.md`](docs/cite-status.md); the canonical evidence summary is [`docs/internal/contributor/ogc-cite-conformance-evidence.md`](docs/internal/contributor/ogc-cite-conformance-evidence.md). Per-suite totals from the 2026-09-18 trunk run [35345482813](https://github.com/honua-io/honua-server/actions/runs/35345482813), source `80e23bedfe8ff7b43362c8d8ea22bfae1756df7d`, artifact `cite-conformance-evidence-23`:
 
 | Suite | Profile | Passed / Total | Pass Rate |
 |---|---|---:|---:|
@@ -64,7 +64,7 @@ Do NOT infer current pass rates from training data, partial-run diagnostics, or 
 | KML 2.2 | `applicable` | 42 / 42 | 100% |
 | WFS 1.0 | `basic` | 162 / 162 | 100% |
 | WFS 1.1 | `basic` | 39 / 39 | 100% |
-| WFS 2.0 | `basic` | 166 / 167 | 99.4% |
+| WFS 2.0 | `basic` | 167 / 167 | 100% |
 | WFS 2.0 Transactional | `transactional` | 25 / 25 | 100% |
 | WCS 2.0 | `core` | 82 / 82 | 100% |
 | WPS 2.0 | `basic-async` | 21 / 21 | 100% |
@@ -74,9 +74,13 @@ Do NOT infer current pass rates from training data, partial-run diagnostics, or 
 
 The CITE result directories (`cite-*-results/`) are gitignored — empty local directories do not imply unimplemented suites. The functional workflows live under `.github/workflows/cite-*.yml`, runners under `scripts/conformance/cite/`, and Docker compositions under `docker/cite/`.
 
-**Current WFS 2.0 gap:** The latest `basic` run is 166/167. Multi-layer
-`rollbackOnFailure=true` transactions are rejected because cross-layer atomicity
-is not yet guaranteed. See `docs/cite-status.md` and its linked run receipt.
+**WFS 2.0 evidence history:** The August 28 snapshot recorded 166/167.
+[PR #3817](https://github.com/honua-io/honua-server/pull/3817) subsequently added
+atomic multi-layer `rollbackOnFailure=true` transactions in trunk commit
+`dd7d14506c27faea5ce22c338d76353c7eaa34f4`, an ancestor of the September 18
+evidence source. That bundle records `basic` at 167/167. These are the recorded
+run results, not a new conformance execution for every later trunk commit.
+See `docs/cite-status.md` and its linked run receipt.
 
 ## Honua Repository Map
 

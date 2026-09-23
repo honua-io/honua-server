@@ -1,6 +1,6 @@
 # OGC CITE Conformance Evidence
 
-Last reviewed: 2026-09-15
+Last reviewed: 2026-09-22
 
 This page is the stable, website-linkable summary for Honua Server OGC CITE
 evidence on `trunk`. It is not an OGC certification claim. Formal certification
@@ -11,9 +11,9 @@ Stable GitHub URL:
 `https://github.com/honua-io/honua-server/blob/trunk/docs/internal/contributor/ogc-cite-conformance-evidence.md`
 
 Every suite uses the aggregate evidence bundle from
-[`CITE Evidence Report` run 34994919144](https://github.com/honua-io/honua-server/actions/runs/34994919144)
-completed successfully on 2026-09-15 against source commit
-`b8ea218d07a52fe025d9382063d11b9b2c17c922`. Its `cite-conformance-evidence-21`
+[`CITE Evidence Report` run 35345482813](https://github.com/honua-io/honua-server/actions/runs/35345482813)
+completed successfully on 2026-09-18 against `trunk` source commit
+`80e23bedfe8ff7b43362c8d8ea22bfae1756df7d`. Its `cite-conformance-evidence-23`
 artifact reported `allPassed=true` with 1138 passed tests, 0 failed, 0 skipped,
 and 0 CantTell across 14 suites, including the complete OGC API Features Part 2
 CRS class.

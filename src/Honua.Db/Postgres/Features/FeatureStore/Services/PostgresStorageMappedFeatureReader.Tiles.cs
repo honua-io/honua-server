@@ -89,7 +89,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
                         {extentParameter},
                         {bufferParameter}
                     ) AS geom
-                FROM {_qualifiedTableName}
+                FROM {BuildFeatureSource(effectiveQuery, sql)}
             """);
         AppendFilter(sql, effectiveQuery);
         sql.Append(

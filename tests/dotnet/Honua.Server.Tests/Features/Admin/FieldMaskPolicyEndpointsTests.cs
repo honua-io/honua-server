@@ -130,6 +130,7 @@ public sealed class FieldMaskPolicyEndpointsTests : IAsyncLifetime
     public async Task FieldMaskPolicyEndpoints_RejectAnonymousCallers()
     {
         var anonymous = _fixture.CreateClient();
+        var adminClient = CreateAdminClient();
         var request = new CreateFieldMaskPolicyRequest
         {
             Role = RestrictedRole,
@@ -143,7 +144,24 @@ public sealed class FieldMaskPolicyEndpointsTests : IAsyncLifetime
             "/api/v1/admin/field-mask-policies",
             content2);
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+        // The admin policy names the ApiKey scheme, so an unauthenticated caller is challenged:
+        // exactly 401, never 403 (which would mean authenticated-but-unprivileged).
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        // Nothing is disclosed: no policy id comes back.
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().NotContain("policyId");
+
+        // Nothing is changed: the rejected POST created no policy, read back through the
+        // admin principal (which proves the same surface works for an authorised caller).
+        var listed = await ListPoliciesAsync(adminClient);
+        listed.Should().NotContain(
+            p => p.Role == RestrictedRole && p.Attribute == MaskedAttribute,
+            "an unauthenticated POST must not create a field-mask policy");
+
+        // A GET is refused the same way, so the denial is not write-only.
+        var anonymousList = await anonymous.GetAsync("/api/v1/admin/field-mask-policies");
+        anonymousList.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
     private async Task<Guid> CreatePolicyAsync(HttpClient adminClient)
