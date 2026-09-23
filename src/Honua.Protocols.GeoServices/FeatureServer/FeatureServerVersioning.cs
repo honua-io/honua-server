@@ -4,8 +4,10 @@
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Licensing.Domain;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Models;
+using Honua.Protocols.GeoServices.VersionManagementServer;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -85,6 +87,20 @@ internal static class FeatureServerVersioning
 
         var resolved = await versionManager.ResolveAsync(gdbVersion, cancellationToken).ConfigureAwait(false);
         if (resolved is null)
+        {
+            return (null, StandardErrorHelpers.CreateNotFound(
+                context, $"Version '{gdbVersion}' was not found."));
+        }
+
+        // ResolveAsync returns only the branch context, not its access policy.
+        // Apply the same private-version visibility rule as VMS before the
+        // context can select overlay rows (or target edits). A 404 conceals
+        // private versions from callers who do not own them.
+        var versions = await versionManager.ListAsync(cancellationToken).ConfigureAwait(false);
+        var version = versions.FirstOrDefault(item => item.VersionId == resolved.Value.VersionId);
+        if (version.VersionId != resolved.Value.VersionId ||
+            !VersionAccessPolicy.IsVersionVisible(version, context.User?.Identity?.Name,
+                ServiceDataEditorAuthorization.IsAdminPrincipal(context)))
         {
             return (null, StandardErrorHelpers.CreateNotFound(
                 context, $"Version '{gdbVersion}' was not found."));
