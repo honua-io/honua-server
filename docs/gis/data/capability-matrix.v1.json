@@ -1890,10 +1890,10 @@
       "category": "Serve",
       "edition": "Community",
       "status": null,
-      "entryCount": 8,
-      "provingTestCount": 55,
+      "entryCount": 10,
+      "provingTestCount": 68,
       "maturity": {
-        "implemented": 8
+        "implemented": 10
       },
       "noSurface": null,
       "cite": [],

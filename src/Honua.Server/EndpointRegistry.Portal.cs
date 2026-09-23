@@ -9,7 +9,9 @@ public static partial class EndpointRegistry
     // initializer; this keeps `All` independent of cross-file static-init order.
     private static IReadOnlyList<EndpointDefinition> PortalSharingEndpoints =>
     [
-        // ArcGIS Pro service metadata for connections without a site segment.
+        // ArcGIS Server Admin service metadata and its siteless ArcGIS Pro alias.
+        new("GET", "/admin/services/{serviceName}.{serviceType}"),
+        new("POST", "/admin/services/{serviceName}.{serviceType}"),
         new("GET", "/rest/admin/{serviceName}.{serviceType}"),
         new("POST", "/rest/admin/{serviceName}.{serviceType}"),
 

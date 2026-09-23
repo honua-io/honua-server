@@ -1594,7 +1594,7 @@
       "displayName": "GeoServices REST catalog",
       "surfaceKind": "http-route-family",
       "protocol": "GeoServices REST",
-      "canonicalIdentifier": "/rest/services + /rest/info + SOAP POST /services + /rest/admin/{serviceName}.{serviceType}",
+      "canonicalIdentifier": "/rest/services + /rest/info + SOAP POST /services + /admin/services/{serviceName}.{serviceType} + /rest/admin/{serviceName}.{serviceType}",
       "parentSurfaceId": null,
       "endpointPrefixes": [
         "/rest/info"
@@ -1602,6 +1602,7 @@
       "endpointExactMatches": [
         "/rest/services",
         "/services",
+        "/admin/services/{serviceName}.{serviceType}",
         "/rest/admin/{serviceName}.{serviceType}"
       ],
       "endpointContains": [],

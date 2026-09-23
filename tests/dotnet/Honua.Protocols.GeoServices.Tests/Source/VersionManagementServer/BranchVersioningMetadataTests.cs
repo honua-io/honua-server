@@ -74,9 +74,11 @@ public sealed class BranchVersioningMetadataTests(ITestOutputHelper output) : IA
 
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /admin/services/{serviceName}.{serviceType}")]
+    [Endpoint("POST /admin/services/{serviceName}.{serviceType}")]
     [Endpoint("GET /rest/admin/{serviceName}.{serviceType}")]
     [Endpoint("POST /rest/admin/{serviceName}.{serviceType}")]
-    public async Task SitelessAdminService_GetAndPostReturnTheSameBranchMetadata()
+    public async Task AdminService_GetAndPostReturnTheSameBranchMetadataAtBothRouteSpellings()
     {
         await AssertMetadataAsync(HonuaEdition.Enterprise, experimentalEnabled: true,
             providerSupported: true, expectedData: true, expectedManagement: true);
@@ -85,12 +87,22 @@ public sealed class BranchVersioningMetadataTests(ITestOutputHelper output) : IA
         using var get = await fixture.Client.GetAsync($"{url}?f=json");
         using var form = new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json" });
         using var post = await fixture.Client.PostAsync(url, form);
+        var canonicalUrl = $"/admin/services/{BranchVersioningPublicationFixture.ServiceName}.MapServer";
+        using var canonicalGet = await fixture.Client.GetAsync($"{canonicalUrl}?f=json");
+        using var canonicalForm = new FormUrlEncodedContent(new Dictionary<string, string> { ["f"] = "json" });
+        using var canonicalPost = await fixture.Client.PostAsync(canonicalUrl, canonicalForm);
         get.StatusCode.Should().Be(HttpStatusCode.OK);
         post.StatusCode.Should().Be(HttpStatusCode.OK);
+        canonicalGet.StatusCode.Should().Be(HttpStatusCode.OK);
+        canonicalPost.StatusCode.Should().Be(HttpStatusCode.OK);
         using var getPayload = JsonDocument.Parse(await get.Content.ReadAsStringAsync());
         using var postPayload = JsonDocument.Parse(await post.Content.ReadAsStringAsync());
+        using var canonicalGetPayload = JsonDocument.Parse(await canonicalGet.Content.ReadAsStringAsync());
+        using var canonicalPostPayload = JsonDocument.Parse(await canonicalPost.Content.ReadAsStringAsync());
         getPayload.RootElement.GetProperty("properties").GetProperty("isBranchVersioned").GetString().Should().Be("true");
         postPayload.RootElement.GetRawText().Should().Be(getPayload.RootElement.GetRawText());
+        canonicalGetPayload.RootElement.GetRawText().Should().Be(getPayload.RootElement.GetRawText());
+        canonicalPostPayload.RootElement.GetRawText().Should().Be(getPayload.RootElement.GetRawText());
     }
 
     private async Task AssertMetadataAsync(
