@@ -36,8 +36,8 @@
         "fail": 8
       },
       "qgis-ui": {
-        "pass": 37,
-        "blocked": 51,
+        "pass": 38,
+        "blocked": 50,
         "n/a-no-client": 5,
         "fail": 1
       },
@@ -50,8 +50,8 @@
     },
     "overall": {
       "cells": 376,
-      "closed": 231,
-      "open": 145
+      "closed": 232,
+      "open": 144
     }
   },
   "rows": [
@@ -2955,12 +2955,13 @@
           "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.elevation_scene rule 'point-query': /elevation/{datasetId}/value is a Honua-native HTTP API, not an Esri protocol surface: ArcGIS Pro 3.7.1 publishes no geoprocessing tool or layer type that issues an elevation point query against it. arcpy reads the same pixel only through ImageServer, which is a different cell. Client-surface absence, not a server one - the endpoint answered 100 at (-122.425, 37.77) with noData=False and outOfBounds=False, while ImageServer identify returns '180' (http=200). (ArcGIS Pro 3.7.1 arcpy tool reference: no elevation-service client.)"
         },
         "qgis-ui": {
-          "state": "blocked",
+          "state": "pass",
           "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. Stock arcgismapserver explicitly supports ImageServer rendering, and stock GDAL AGS reads numeric TIFF pixels. Dynamic 0x0 dimensions and the narrower identify-parser failure do not exclude elevation sampling.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "QGIS 3.44.14-Solothurn provider probe, 2026-09-18: the arcgismapserver provider accepts the fixture's ImageServer URL and reports the layer valid, but the raster it exposes is 0x0, identify at the raster centre returns no values, and a block read returns NaN - while the same point answers Band_1=100 over REST identify. docs.qgis.org/3.44 'Using ArcGIS REST Servers' documents Feature and Map services only. There is no QGIS client for an Esri image service, so an Esri elevation point query is unreachable from this client however the server behaves."
-          }
+          },
+          "evidence": "honua-client-compat/evidence/native-qgis-image-tilejson-20260922-resume/results.json - QGIS 3.44.14-Solothurn windows-computer-use on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a, case UI-OP-ELEVATION-POINT-QUERY. Added through Data Source Manager > Raster > File as the supplied standard GDAL AGS XML service definition, not a prepared project or a downloaded TIFF. Layer Properties reports Width 64, Height 64, Data type Float32, provider gdal, GDAL driver WMS, extent -122.5,37.7 : -122.3499,37.84, CRS EPSG:4326 - WGS 84, and Band 1 statistics MAXIMUM=100 MEAN=99.9267578125 MINIMUM=10 VALID_PERCENT=100, Dimensions X:64 Y:64 Bands:1, Origin -122.5,37.84, Pixel Size 0.00234375,-0.0021875. Native Identify at the bound centre returns Band 1 = 100 at coordinate -122.4241, 37.7653, within a pixel of [-122.425,37.77], matching the pre-execution REST identify and /elevation/0/value oracles; MINIMUM=10 corroborates the optional upper-left cell-centre value. The project was then saved as project/elevation-reopen.qgz and reopened from disk - the title bar reads elevation-reopen and the layer is restored from the project rather than re-added - and Identify at the same point returns Band 1 = 100 again. This required configuring the client's TLS trust for GDAL: with no CA bundle the read fails with 'IReadBlock failed at X offset 0, Y offset 0: GDALWMS: Unable to download block 0, 0' and 'OpenSSL verify result: unable to get local issuer certificate (20)'. CURL_CA_BUNDLE and SSL_CERT_FILE alone did not reach GDAL; GDAL_HTTP_CAINFO did, set as a profile-scoped custom environment variable in the isolated honua-cert-20260922 profile. That is client configuration which the fixture expectation already assumes - the Caddy internal CA trusted - not a server behaviour."
         },
         "pyqgis": {
           "state": "pass",
