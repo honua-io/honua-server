@@ -480,6 +480,25 @@ internal sealed partial class Wcs20Handler
             return responseCrsError!;
         }
 
+        var supportedCrs = await ResolveSupportedCrsAsync([nativeSrid], cancellationToken).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(GetQueryValue(query, Wcs20Utilities.Parameters10.Crs)) &&
+            !supportedCrs.Srids.Contains(requestSrid))
+        {
+            return Wcs10ErrorResults.CreateBadRequest(
+                Wcs20Utilities.ExceptionCodes10.InvalidParameterValue,
+                $"CRS 'EPSG:{requestSrid}' is not supported for this coverage.",
+                Wcs20Utilities.Parameters10.Crs);
+        }
+
+        if (!string.IsNullOrWhiteSpace(GetQueryValue(query, Wcs20Utilities.Parameters10.ResponseCrs)) &&
+            !supportedCrs.Srids.Contains(responseSrid))
+        {
+            return Wcs10ErrorResults.CreateBadRequest(
+                Wcs20Utilities.ExceptionCodes10.InvalidParameterValue,
+                $"RESPONSE_CRS 'EPSG:{responseSrid}' is not supported for this coverage.",
+                Wcs20Utilities.Parameters10.ResponseCrs);
+        }
+
         // An omitted BBOX uses the raster's native extent. Relabeling those coordinates
         // with a different request CRS would clip the wrong area.
         if (string.IsNullOrWhiteSpace(GetQueryValue(query, Wcs20Utilities.Parameters.BBox)) &&

@@ -231,6 +231,26 @@ public sealed class Wcs10EndpointsTests : IAsyncLifetime
     }
 
     [IntegrationTheory]
+    [InlineData("CRS")]
+    [InlineData("RESPONSE_CRS")]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs10, "GetCoverage")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    public async Task Wcs10_GetCoverage_UnsupportedCrsIsRejectedBeforeExport(string parameter)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/{WebAppFixture.TestServiceId}/wcs?SERVICE=WCS&VERSION=1.0.0&REQUEST=GetCoverage" +
+            $"&COVERAGE=coverage_0&FORMAT=GeoTIFF&BBOX=-122.5,37.7,-122.35,37.84" +
+            $"&{parameter}=EPSG:999999&WIDTH=16&HEIGHT=16");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var content = await response.Content.ReadAsStringAsync();
+        content.Should().Contain("InvalidParameterValue");
+        content.Should().Contain($"locator=\"{parameter}\"");
+        _exportQueries.Should().BeEmpty();
+    }
+
+    [IntegrationTheory]
     [InlineData("WIDTH=16", 16, 64)]
     [InlineData("HEIGHT=16", 64, 16)]
     [Operation(Operations.Metadata)]
