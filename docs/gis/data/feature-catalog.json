@@ -13820,6 +13820,48 @@
       "capability": "serve.wfs"
     },
     {
+      "id": "get-wps",
+      "route": "/wps",
+      "method": "GET",
+      "family": "WPS 2.0.2",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Protocols.OgcClassic/Wps20/Wps20Endpoint.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Infrastructure.MultiTenancy.TenantDenialContractMatrixTests.TenantDenial_Wps_UsesOws20EnvelopeWithoutHandlerSideEffects",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ConformanceEcho_ConfiguredPublicBaseUrl_IsUsedForLinks",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ConformanceEcho_DefaultOff_IsNotAdvertised",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ConformanceEcho_DescribeAndAll_ExposeEtsDataCategories",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ConformanceEcho_NoPublicBaseUrl_EmitsRelativeLinksAndIgnoresHost",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.DescribeProcess_AllCanonicalProcessesDeclareLiteralDataDomains",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.DescribeProcess_Kvp_ReturnsNamespaceCorrectDescription",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.DescribeProcess_NonJobProcess_ReturnsNoSuchProcess",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.Discovery_RequiresExplicitJobEntryPoint",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.GetCapabilities_AdvertisesAsyncExecutionForCanonicalProcesses",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.GetCapabilities_KvpAcceptVersionsNegotiatesWithoutVersion",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.GetResult_ExposesEveryArtifactOutput",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.GetResult_MapsAdvertisedResultIdentifierAndLiteralMediaType",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.GetStatus_UnknownJob_ReturnsOwsExceptionReport",
+        "Honua.Server.Tests.Infrastructure.Middleware.HeadMethodEndpointTests.Head_WpsGetCapabilities_MatchesGetStatusWithEmptyBodyAndContentLength"
+      ],
+      "proof_ledger_surface": "wps-2.0.2",
+      "maturity": "implemented",
+      "capability": "serve.wps"
+    },
+    {
+      "id": "get-wps-conformance-results-token",
+      "route": "/wps/conformance/results/{token}",
+      "method": "GET",
+      "family": "WPS 2.0.2",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Protocols.OgcClassic/Wps20/Wps20Endpoint.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ConformanceEcho_ConfiguredPublicBaseUrl_IsUsedForLinks"
+      ],
+      "proof_ledger_surface": "wps-2.0.2",
+      "maturity": "implemented",
+      "capability": "serve.wps"
+    },
+    {
       "id": "head-api-v1-rasters-cog-artifactid",
       "route": "/api/v1/rasters/cog/{*artifactId}",
       "method": "HEAD",
@@ -22477,6 +22519,30 @@
       "proof_ledger_surface": "wfs-2.0",
       "maturity": "implemented",
       "capability": "serve.wfs"
+    },
+    {
+      "id": "post-wps",
+      "route": "/wps",
+      "method": "POST",
+      "family": "WPS 2.0.2",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Protocols.OgcClassic/Wps20/Wps20Endpoint.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ConformanceEcho_AsyncResultAndReference_AreImmediateAndDereferenceable",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ConformanceEcho_DefaultOffAlias_UsesCanonicalAuthorization",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ConformanceEcho_Ets11Alias_UsesSameInertEchoBehavior",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ConformanceEcho_ReferenceToPrivateNetwork_IsRejected",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ConformanceEcho_SyncComplex_PreservesXmlPayload",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ConformanceEcho_UnresolvableReference_ReturnsOwsException",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.Execute_WithoutDurableJobStore_ProjectsCapabilityUnavailableReceiptIntoExceptionReport",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.Execute_XmlInputId_SubmitsCanonicalPlan",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.Execute_XmlWithDtd_IsRejectedWithoutEntityExpansion",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.GetCapabilities_XmlWithoutVersion_NegotiatesWps200",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wps20.Wps20EndpointsTests.ReadRequest_XmlWithUndeclaredWpsOperation_ReturnsValidationError"
+      ],
+      "proof_ledger_surface": "wps-2.0.2",
+      "maturity": "implemented",
+      "capability": "serve.wps"
     },
     {
       "id": "put-api-enrich-datasets-id",

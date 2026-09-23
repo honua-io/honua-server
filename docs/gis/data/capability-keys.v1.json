@@ -762,6 +762,13 @@
       "status": "preview"
     },
     {
+      "key": "serve.wps",
+      "displayName": "WPS 2.0",
+      "category": "Serve",
+      "edition": "Community",
+      "description": "Submit and poll processes through OGC WPS 2.0 (GetCapabilities, DescribeProcess, Execute, GetStatus, GetResult)."
+    },
+    {
       "key": "staticmap.high-dpi",
       "displayName": "High-DPI Static Maps",
       "category": "StaticMap",
