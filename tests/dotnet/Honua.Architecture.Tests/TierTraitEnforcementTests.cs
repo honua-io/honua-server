@@ -220,6 +220,21 @@ public sealed class TierTraitEnforcementTests
             "scanning test metadata must not run attribute constructors with process-wide side effects");
     }
 
+    [ArchitectureTest]
+    public void TierDetection_RejectsDiscovererMetadataWithoutITraitAttribute()
+    {
+        var method = typeof(SideEffectFactBase).GetMethod(nameof(SideEffectFactBase.UntieredMethod))!;
+
+        TierTraitScanner.IsXunitTestMethod(method).Should().BeTrue();
+        TierTraitScanner.HasTierBearingAttribute(method).Should().BeFalse(
+            "xUnit v2 ignores discoverers on attributes that do not implement ITraitAttribute");
+    }
+
+    [TraitDiscoverer("Honua.TestKit.Attributes.UnitTestDiscoverer", "Honua.TestKit")]
+    private sealed class DiscovererWithoutTraitInterfaceAttribute : FactAttribute
+    {
+    }
+
     [TraitDiscoverer("Honua.TestKit.Attributes.UnitTestDiscoverer", "Honua.TestKit")]
     private sealed class SideEffectFactAttribute : FactAttribute, ITraitAttribute
     {
@@ -234,6 +249,11 @@ public sealed class TierTraitEnforcementTests
     {
         [SideEffectFact]
         public virtual void TestMethod()
+        {
+        }
+
+        [DiscovererWithoutTraitInterface]
+        public void UntieredMethod()
         {
         }
     }
@@ -611,6 +631,11 @@ internal static class TierTraitScanner
 
     private static bool ResolveEmitsTierTrait(Type attributeType)
     {
+        if (!typeof(ITraitAttribute).IsAssignableFrom(attributeType))
+        {
+            return false;
+        }
+
         var discovererType = ResolveDiscovererType(attributeType);
         if (discovererType is null)
         {
