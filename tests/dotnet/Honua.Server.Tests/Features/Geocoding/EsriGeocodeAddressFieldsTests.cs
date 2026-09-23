@@ -4,12 +4,13 @@
 using FluentAssertions;
 using Honua.Geocoding.Features.Geocoding.Domain;
 using Honua.Server.Features.Geocoding;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Geocoding;
 
 public sealed class EsriGeocodeAddressFieldsTests
 {
-    [Fact]
+    [UnitTest]
     public void Apply_FillsTheAddressFieldsArcpyMaps_AndKeepsProviderKeys()
     {
         var attributes = EsriGeocodeAddressFields.Apply(

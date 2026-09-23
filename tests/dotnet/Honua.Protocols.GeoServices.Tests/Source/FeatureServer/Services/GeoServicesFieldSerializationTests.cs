@@ -14,6 +14,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -52,7 +53,7 @@ public sealed class GeoServicesFieldSerializationTests
         FeatureServerEndpoints.MapFieldInfoV2(field, FieldNames.ObjectId).SqlType.Should().Be(expected);
     }
 
-    [Fact]
+    [UnitTest]
     public void QueryField_JsonColumn_AdvertisesAnEsriStringSqlType()
     {
         var mapped = QueryFormatter.MapFieldInfo(
@@ -63,7 +64,7 @@ public sealed class GeoServicesFieldSerializationTests
         mapped.SqlType.Should().Be("sqlTypeNVarchar");
     }
 
-    [Fact]
+    [UnitTest]
     public void QueryField_JsonObject_IsTextAClientCanReadAsAString()
     {
         using var document = JsonDocument.Parse("""{"a":1}""");
