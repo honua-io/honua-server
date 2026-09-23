@@ -196,15 +196,23 @@ internal static partial class OracleFeatureQueryBuilder
             return;
         }
 
+        // Null/default OutFields projects every column. An explicit empty array projects
+        // none. IsEmpty throws on a default ImmutableArray, so test IsDefault first.
         IEnumerable<string> columns = attributeColumns;
-        if (query.OutFields.HasValue && !query.OutFields.Value.IsDefaultOrEmpty)
+        if (query.OutFields.HasValue && !query.OutFields.Value.IsDefault)
         {
+            var requestedOutFields = query.OutFields.Value;
+            if (requestedOutFields.IsEmpty)
+            {
+                return;
+            }
+
             var resolveColumnName = CreateColumnNameResolver(
                 mapping,
                 attributeColumns,
                 rejectAmbiguousMatch: true);
             var requested = new HashSet<string>(
-                query.OutFields.Value.Select(resolveColumnName),
+                requestedOutFields.Select(resolveColumnName),
                 StringComparer.Ordinal);
             columns = attributeColumns.Where(c => requested.Contains(c));
         }

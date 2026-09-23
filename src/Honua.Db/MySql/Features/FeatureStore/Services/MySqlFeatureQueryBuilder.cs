@@ -195,15 +195,21 @@ internal sealed partial class MySqlFeatureQueryBuilder : IFeatureQueryBuilder
             return string.Empty;
         }
 
+        // Null/default OutFields projects every column. An explicit empty array projects
+        // none. IsEmpty throws on a default ImmutableArray, so test IsDefault first.
         IEnumerable<string> columns;
-        if (query.OutFields.HasValue && !query.OutFields.Value.IsDefaultOrEmpty)
+        if (!query.OutFields.HasValue || query.OutFields.Value.IsDefault)
         {
-            var requested = new HashSet<string>(query.OutFields.Value, StringComparer.OrdinalIgnoreCase);
-            columns = mapping.AttributeColumns.Where(c => requested.Contains(c));
+            columns = mapping.AttributeColumns;
+        }
+        else if (query.OutFields.Value.IsEmpty)
+        {
+            return string.Empty;
         }
         else
         {
-            columns = mapping.AttributeColumns;
+            var requested = new HashSet<string>(query.OutFields.Value, StringComparer.OrdinalIgnoreCase);
+            columns = mapping.AttributeColumns.Where(c => requested.Contains(c));
         }
 
         return string.Join(", ", columns.Select(MySqlIdentifier.Quote));
