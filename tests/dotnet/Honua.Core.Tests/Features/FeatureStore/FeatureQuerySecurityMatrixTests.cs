@@ -208,7 +208,35 @@ public sealed class FeatureQuerySecurityMatrixTests
         filtered.DeleteIds.Should().BeEmpty();
     }
 
-    private static FeatureChange NewChange(long objectId, FeatureChangeOperation operation)
+    [Fact]
+    public void ReplicaChangeMatrixClassifiesUpdatesAndDeletesFromThePreChangeImage()
+    {
+        // Ids 1-4: updates (before, now) = (in, in), (out, in), (in, out), (out, out).
+        // Ids 5-6: deletes visible / not visible before. Id 7: an insert and id 8 an update without a
+        // recorded image are left to the current-state classification.
+        var changes = new[]
+        {
+            NewChange(1, FeatureChangeOperation.Update, preImageChangeId: 101),
+            NewChange(2, FeatureChangeOperation.Update, preImageChangeId: 102),
+            NewChange(3, FeatureChangeOperation.Update, preImageChangeId: 103),
+            NewChange(4, FeatureChangeOperation.Update, preImageChangeId: 104),
+            NewChange(5, FeatureChangeOperation.Delete, preImageChangeId: 105),
+            NewChange(6, FeatureChangeOperation.Delete, preImageChangeId: 106),
+            NewChange(7, FeatureChangeOperation.Insert),
+            NewChange(8, FeatureChangeOperation.Update)
+        };
+
+        var classified = ReplicaSecurity.ClassifyWithPreChangeImage(
+            changes,
+            visibleCurrentIds: new HashSet<long> { 1, 2, 7, 8 },
+            visibleBeforeIds: new HashSet<long> { 1, 3, 5, 8 });
+
+        classified.InsertIds.Should().Equal(2);
+        classified.UpdateIds.Should().Equal(1);
+        classified.DeleteIds.Should().Equal(3, 5);
+    }
+
+    private static FeatureChange NewChange(long objectId, FeatureChangeOperation operation, long? preImageChangeId = null)
         => new()
         {
             ChangeId = objectId,
@@ -216,6 +244,7 @@ public sealed class FeatureQuerySecurityMatrixTests
             LayerId = 1,
             ObjectId = objectId,
             Operation = operation,
-            ChangedAt = DateTimeOffset.UtcNow
+            ChangedAt = DateTimeOffset.UtcNow,
+            PreImageChangeId = preImageChangeId
         };
 }

@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Queries.Filters;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -14,6 +15,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer;
 [Collection("Database")]
 public sealed class PostgresChangeTrackerTests : IClassFixture<WebAppFixture>
 {
+    private static readonly long[] PreImageWindowIds = [1L, 2L, 3L, 4L];
     private readonly WebAppFixture _fixture;
 
     public PostgresChangeTrackerTests(WebAppFixture fixture)
@@ -222,6 +224,131 @@ public sealed class PostgresChangeTrackerTests : IClassFixture<WebAppFixture>
             var filtered = await tracker.GetChangesSinceAsync(0, [0], new HashSet<long> { targetId });
             filtered.Should().NotBeEmpty();
             filtered.Should().OnlyContain(change => change.ObjectId == targetId);
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ExtractChanges)]
+    public async Task GetChangesSince_PreservesTheWindowFirstPreImageAcrossCollapsedOperations()
+    {
+        const int layerId = 990134;
+        const int otherLayerId = 990135;
+        var tracker = _fixture.GetService<IChangeTracker>();
+        var baseline = await tracker.GetCurrentGenerationAsync();
+        await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+
+        async Task<long> RecordAsync(int layer, long objectId, short operation, string? preAttributes = null)
+        {
+            await using var command = new Npgsql.NpgsqlCommand("""
+                INSERT INTO honua.feature_changes
+                    (generation, layer_id, objectid, operation, pre_attributes)
+                VALUES (nextval('honua.sync_generation'), @layer, @objectId, @operation, CAST(@preAttributes AS jsonb))
+                RETURNING change_id;
+                """, connection);
+            command.Parameters.AddWithValue("layer", layer);
+            command.Parameters.AddWithValue("objectId", objectId);
+            command.Parameters.AddWithValue("operation", operation);
+            command.Parameters.AddWithValue("preAttributes", (object?)preAttributes ?? DBNull.Value);
+            return (long)(await command.ExecuteScalarAsync())!;
+        }
+
+        // An insert at the start of the window means the client held no row, even if later
+        // updates/deletes recorded images and the same object id was inserted again.
+        await RecordAsync(layerId, 1, 1);
+        await RecordAsync(layerId, 1, 2, "{}");
+        await RecordAsync(layerId, 1, 3, "{}");
+        await RecordAsync(layerId, 1, 1);
+
+        // A delete followed by a reinsert is an update to a client that held the original row.
+        var firstDelete = await RecordAsync(layerId, 2, 3, "{}");
+        await RecordAsync(layerId, 2, 1);
+
+        // A legacy first event has no trustworthy pre-image; a later captured one cannot stand in for it.
+        await RecordAsync(layerId, 3, 2);
+        await RecordAsync(layerId, 3, 2, "{}");
+
+        var firstUpdate = await RecordAsync(layerId, 4, 2, "{}");
+        await RecordAsync(layerId, 4, 3, "{}");
+        await RecordAsync(layerId, 5, 1);
+        await RecordAsync(layerId, 5, 3, "{}");
+        await RecordAsync(otherLayerId, 4, 2, "{}");
+
+        var changes = await tracker.GetChangesSinceAsync(baseline, [layerId]);
+        changes.Select(change => change.ObjectId).Should().BeEquivalentTo(PreImageWindowIds);
+        changes.Should().OnlyContain(change => change.LayerId == layerId);
+        changes.Single(change => change.ObjectId == 1).Should().Match<FeatureChange>(change =>
+            change.Operation == FeatureChangeOperation.Insert && change.PreImageChangeId == null);
+        changes.Single(change => change.ObjectId == 2).Should().Match<FeatureChange>(change =>
+            change.Operation == FeatureChangeOperation.Update && change.PreImageChangeId == firstDelete);
+        changes.Single(change => change.ObjectId == 3).Should().Match<FeatureChange>(change =>
+            change.Operation == FeatureChangeOperation.Update && change.PreImageChangeId == null);
+        changes.Single(change => change.ObjectId == 4).Should().Match<FeatureChange>(change =>
+            change.Operation == FeatureChangeOperation.Delete && change.PreImageChangeId == firstUpdate);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.ExtractChanges)]
+    public async Task QueryPreChangeObjectIds_UsesPreviousAuditTimestampsForScopeAndReadPolicy()
+    {
+        var schemaContext = (Honua.Infrastructure.Middleware.SchemaContext)_fixture
+            .GetService<Honua.Core.Features.Infrastructure.Abstractions.ISchemaContext>();
+        var previousSchema = schemaContext.CurrentSchema;
+        schemaContext.CurrentSchema = _fixture.CurrentSchema;
+        try
+        {
+            var created = new DateTimeOffset(2020, 1, 2, 0, 0, 0, TimeSpan.Zero);
+            var beforeUpdate = new DateTimeOffset(2021, 2, 3, 0, 0, 0, TimeSpan.Zero);
+            var afterUpdate = new DateTimeOffset(2022, 3, 4, 0, 0, 0, TimeSpan.Zero);
+            long objectId;
+            long changeId;
+            await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!))
+            {
+                await using (var insert = new Npgsql.NpgsqlCommand("""
+                    INSERT INTO features (layer_id, attributes, created_at, updated_at)
+                    VALUES (0, '{}'::jsonb, @created, @beforeUpdate)
+                    RETURNING objectid;
+                    """, connection))
+                {
+                    insert.Parameters.AddWithValue("created", created);
+                    insert.Parameters.AddWithValue("beforeUpdate", beforeUpdate);
+                    objectId = (long)(await insert.ExecuteScalarAsync())!;
+                }
+
+                await using (var update = new Npgsql.NpgsqlCommand("""
+                    UPDATE features SET updated_at = @afterUpdate WHERE objectid = @objectId;
+                    """, connection))
+                {
+                    update.Parameters.AddWithValue("afterUpdate", afterUpdate);
+                    update.Parameters.AddWithValue("objectId", objectId);
+                    await update.ExecuteNonQueryAsync();
+                }
+
+                await using var findChange = new Npgsql.NpgsqlCommand("""
+                    SELECT change_id FROM honua.feature_changes
+                    WHERE layer_id = 0 AND objectid = @objectId AND operation = 2
+                    ORDER BY change_id DESC LIMIT 1;
+                    """, connection);
+                findChange.Parameters.AddWithValue("objectId", objectId);
+                changeId = (long)(await findChange.ExecuteScalarAsync())!;
+            }
+
+            var reader = (IPreChangeImageReader)_fixture.GetService<IFeatureReader>();
+            FeatureQuery Query(DateTimeOffset creation, DateTimeOffset update) => new()
+            {
+                SqlFilter = new SqlFragment("created_at = @p0", [creation]),
+                EnforcedSqlFilter = new SqlFragment("updated_at = @p0", [update])
+            };
+
+            (await reader.QueryPreChangeObjectIdsAsync(0, Query(created, beforeUpdate), [changeId]))
+                .Should().Contain(objectId);
+            (await reader.QueryPreChangeObjectIdsAsync(0, Query(created, afterUpdate), [changeId]))
+                .Should().NotContain(objectId);
+            (await reader.QueryPreChangeObjectIdsAsync(0, Query(created.AddDays(1), beforeUpdate), [changeId]))
+                .Should().NotContain(objectId);
+        }
+        finally
+        {
+            schemaContext.CurrentSchema = previousSchema;
         }
     }
 

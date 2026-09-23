@@ -39,6 +39,15 @@ public readonly record struct FeatureChange
     public string? OriginReplicaId { get; init; }
 
     /// <summary>
+    /// Change whose recorded pre-change image holds the row as it was before the first change in the
+    /// collapsed window, or null when that state is unknown: the window starts with an insert, or the
+    /// change predates pre-change image capture (branch-version overlays do not record one). Replica
+    /// delivery evaluates the replica scope and the caller's row visibility against that image to tell
+    /// a row the client already holds from one it has never received (#4879).
+    /// </summary>
+    public long? PreImageChangeId { get; init; }
+
+    /// <summary>
     /// Type of change that occurred
     /// </summary>
     public required FeatureChangeOperation Operation { get; init; }
