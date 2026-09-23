@@ -690,14 +690,15 @@ internal sealed partial class Wcs20Handler
             return false;
         }
 
-        var values = new double[4];
-        for (var i = 0; i < 4; i++)
+        var values = new double[parts.Length];
+        for (var i = 0; i < parts.Length; i++)
         {
-            if (!double.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out values[i]))
+            if (!double.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out values[i]) ||
+                !double.IsFinite(values[i]))
             {
                 error = Wcs10ErrorResults.CreateBadRequest(
                     Wcs20Utilities.ExceptionCodes10.InvalidParameterValue,
-                    $"BBOX value '{parts[i]}' is not a number.",
+                    $"BBOX value '{parts[i]}' must be a finite number.",
                     Wcs20Utilities.Parameters.BBox);
                 return false;
             }

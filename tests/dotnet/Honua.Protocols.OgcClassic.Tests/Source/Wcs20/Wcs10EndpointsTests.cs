@@ -378,6 +378,28 @@ public sealed class Wcs10EndpointsTests : IAsyncLifetime
         _exportQueries.Should().BeEmpty();
     }
 
+    [IntegrationTheory]
+    [InlineData("NaN,0,1,1")]
+    [InlineData("0,0,Infinity,1")]
+    [InlineData("0,0,1,1,NaN,0")]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs10, "GetCoverage")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    public async Task Wcs10_GetCoverage_NonFiniteBboxIsRejectedBeforeRasterExport(string bbox)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/{WebAppFixture.TestServiceId}/wcs?SERVICE=WCS&VERSION=1.0.0&REQUEST=GetCoverage" +
+            $"&COVERAGE=coverage_0&FORMAT=GeoTIFF&BBOX={bbox}&CRS=EPSG:4326&WIDTH=16&HEIGHT=16");
+
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
+        var exception = XDocument.Parse(body).Root!
+            .Elements(XName.Get("ServiceException", OgcNamespace)).Single();
+        exception.Attribute("code")!.Value.Should().Be("InvalidParameterValue");
+        exception.Attribute("locator")!.Value.Should().Be("BBOX");
+        _exportQueries.Should().BeEmpty();
+    }
+
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [InterfaceOperation(TestProtocols.Wcs10, "DescribeCoverage")]
