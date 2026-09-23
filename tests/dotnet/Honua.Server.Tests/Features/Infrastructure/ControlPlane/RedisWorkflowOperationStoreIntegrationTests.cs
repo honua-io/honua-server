@@ -352,7 +352,7 @@ public sealed class RedisWorkflowOperationStoreIntegrationTests(RedisFixture red
         afterRollback!.OperationId.Should().Be(older.OperationId);
     }
 
-    [Theory]
+    [IntegrationTheory]
     [InlineData(WorkflowOperationStatus.Failed)]
     [InlineData(WorkflowOperationStatus.RolledBack)]
     public async Task WorkflowStore_LaterTerminalDeploySupersedesStuckDespiteOldRecordUpdate(
@@ -375,7 +375,7 @@ public sealed class RedisWorkflowOperationStoreIntegrationTests(RedisFixture red
         (await store.HasLaterDeployOfTargetAsync(stuck)).Should().BeTrue();
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task WorkflowStore_LaterDeployLookupFailsClosedForLegacyAndIgnoresGlobalQueryWindow()
     {
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);

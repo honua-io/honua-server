@@ -180,21 +180,6 @@ public sealed class FeatureServerStatisticsFieldsTests(FeatureServerStatisticsFi
         }
     }
 
-    [Fact]
-    public void Statistics_CountBeyondInt32_UsesBigIntegerWithoutTruncation()
-    {
-        var resource = new MetadataV2Resource
-        {
-            SchemaFields = [new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer }]
-        };
-        const long count = (long)int.MaxValue + 1;
-        var response = FeatureServerQueryHandler.BuildStatisticsResponse(resource,
-            [new StatisticDefinition { StatisticType = StatisticType.Count, OnStatisticField = "objectid", OutStatisticFieldName = "n" }],
-            null, [new Dictionary<string, object?> { ["n"] = count }], false);
-        response.Fields.Should().ContainSingle().Which.Type.Should().Be("esriFieldTypeBigInteger");
-        response.Features.Should().ContainSingle().Which.Attributes["n"].Should().Be(count);
-    }
-
     private async Task<JsonDocument> QueryAsync(bool serviceQuery, string statistics, string where, string? group = null)
     {
         using var form = Form(statistics, where, group, serviceQuery);
@@ -238,6 +223,24 @@ public sealed class FeatureServerStatisticsFieldsTests(FeatureServerStatisticsFi
         fields.Should().OnlyContain(field => !field.GetProperty("editable").GetBoolean());
     }
 
+}
+
+public sealed class FeatureServerStatisticsResponseTests
+{
+    [UnitTest]
+    public void Statistics_CountBeyondInt32_UsesBigIntegerWithoutTruncation()
+    {
+        var resource = new MetadataV2Resource
+        {
+            SchemaFields = [new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.Integer }]
+        };
+        const long count = (long)int.MaxValue + 1;
+        var response = FeatureServerQueryHandler.BuildStatisticsResponse(resource,
+            [new StatisticDefinition { StatisticType = StatisticType.Count, OnStatisticField = "objectid", OutStatisticFieldName = "n" }],
+            null, [new Dictionary<string, object?> { ["n"] = count }], false);
+        response.Fields.Should().ContainSingle().Which.Type.Should().Be("esriFieldTypeBigInteger");
+        response.Features.Should().ContainSingle().Which.Attributes["n"].Should().Be(count);
+    }
 }
 
 public sealed class FeatureServerStatisticsFieldsFixture : IAsyncLifetime

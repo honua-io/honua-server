@@ -821,6 +821,10 @@ jobs:
           --health-retries 5
     steps:
       - uses: actions/checkout@v7
+        with:
+          # The server family runs TierTraitEnforcementTests, which compares the
+          # baseline with HEAD's first parent. Checkout's default depth 1 omits it.
+          fetch-depth: 2
 
       # Reclaim runner disk before the build + coverage run; the modular
       # topology pushed some runners over the free-disk limit. Best-effort.
@@ -2816,6 +2820,9 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
+        with:
+          # TierTraitEnforcementTests compares the baseline with HEAD's first parent.
+          fetch-depth: 2
 
       # Mirror the build job's disk reclaim — the full-solution build can
       # exhaust ubuntu-latest disk once every project writes Release outputs.
