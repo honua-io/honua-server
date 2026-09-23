@@ -304,7 +304,7 @@ public sealed class PostgresChangeTrackerTests : IClassFixture<WebAppFixture>
             await using (var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!))
             {
                 await using (var insert = new Npgsql.NpgsqlCommand("""
-                    INSERT INTO honua.features (layer_id, attributes, created_at, updated_at)
+                    INSERT INTO features (layer_id, attributes, created_at, updated_at)
                     VALUES (0, '{}'::jsonb, @created, @beforeUpdate)
                     RETURNING objectid;
                     """, connection))
@@ -315,7 +315,7 @@ public sealed class PostgresChangeTrackerTests : IClassFixture<WebAppFixture>
                 }
 
                 await using (var update = new Npgsql.NpgsqlCommand("""
-                    UPDATE honua.features SET updated_at = @afterUpdate WHERE objectid = @objectId;
+                    UPDATE features SET updated_at = @afterUpdate WHERE objectid = @objectId;
                     """, connection))
                 {
                     update.Parameters.AddWithValue("afterUpdate", afterUpdate);
