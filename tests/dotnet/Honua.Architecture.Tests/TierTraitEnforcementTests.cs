@@ -162,6 +162,33 @@ public sealed class TierTraitEnforcementTests
     }
 
     [ArchitectureTest]
+    public void ArchitectureCategoryDetection_ReadsXunitTraitConstructorArguments()
+    {
+        TierTraitScanner.HasArchitectureCategoryTrait(typeof(ArchitectureCategoryFixture)).Should().BeTrue();
+        TierTraitScanner.HasArchitectureCategoryTrait(
+            typeof(ArchitectureCategoryFixture).GetMethod(nameof(ArchitectureCategoryFixture.MarkedMethod))!)
+            .Should().BeTrue();
+        TierTraitScanner.HasArchitectureCategoryTrait(
+            typeof(ArchitectureCategoryFixture).GetMethod(nameof(ArchitectureCategoryFixture.OtherMethod))!)
+            .Should().BeFalse();
+        TierTraitScanner.HasArchitectureCategoryTrait(typeof(TierTraitBaseline)).Should().BeFalse();
+    }
+
+    [Trait("Category", "Architecture")]
+    private sealed class ArchitectureCategoryFixture
+    {
+        [Trait("Category", "Architecture")]
+        public void MarkedMethod()
+        {
+        }
+
+        [Trait("Category", "Other")]
+        public void OtherMethod()
+        {
+        }
+    }
+
+    [ArchitectureTest]
     public void TierTraitBaseline_MustBeSortedAndUnique()
     {
         var lines = TierTraitBaseline.ReadLines();
@@ -435,17 +462,19 @@ internal static class TierTraitScanner
         return false;
     }
 
-    private static bool HasArchitectureCategoryTrait(MemberInfo member)
-        => member.GetCustomAttributes(inherit: true).Any(attribute =>
+    internal static bool HasArchitectureCategoryTrait(MemberInfo member)
+        => member.GetCustomAttributesData().Any(attribute =>
         {
-            if (!string.Equals(attribute.GetType().FullName, "Xunit.TraitAttribute", StringComparison.Ordinal))
+            if (!string.Equals(attribute.AttributeType.FullName, "Xunit.TraitAttribute", StringComparison.Ordinal))
             {
                 return false;
             }
 
-            var type = attribute.GetType();
-            var name = type.GetProperty("Name")?.GetValue(attribute) as string;
-            var value = type.GetProperty("Value")?.GetValue(attribute) as string;
+            // xUnit's TraitAttribute stores these constructor arguments without exposing
+            // Name/Value properties, just like its TraitDiscovererAttribute.
+            var arguments = attribute.ConstructorArguments;
+            var name = arguments.Count == 2 ? arguments[0].Value as string : null;
+            var value = arguments.Count == 2 ? arguments[1].Value as string : null;
             return string.Equals(name, "Category", StringComparison.Ordinal) &&
                    string.Equals(value, "Architecture", StringComparison.Ordinal);
         });
