@@ -45,13 +45,28 @@ public sealed class VersionManagementServerEndpointTests : IAsyncLifetime
     [InterfaceOperation(TestProtocols.VersionManagementServer, "serviceInfo")]
     public async Task ServiceInfo_ReturnsCapabilities()
     {
+        BranchVersioningPublicationFixture.ConfigureManagedPublications(_fixture);
         var response = await _fixture.Client.GetAsync(
-            $"/rest/services/{WebAppFixture.TestServiceId}/VersionManagementServer?f=json");
+            $"/rest/services/{BranchVersioningPublicationFixture.ServiceName}/VersionManagementServer?f=json");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
         doc.RootElement.GetProperty("defaultVersionName").GetString().Should().Be("sde.DEFAULT");
         doc.RootElement.GetProperty("capabilities").GetString().Should().Contain("Create");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.VersionManagement)]
+    [Endpoint("POST /rest/services/{serviceId}/VersionManagementServer")]
+    [InterfaceOperation(TestProtocols.VersionManagementServer, "serviceInfo")]
+    public async Task ServiceInfo_PostReturnsSameMetadataAsGet()
+    {
+        BranchVersioningPublicationFixture.ConfigureManagedPublications(_fixture);
+        using var get = await _fixture.Client.GetAsync(
+            $"/rest/services/{BranchVersioningPublicationFixture.ServiceName}/VersionManagementServer?f=json");
+        using var post = await PostFormAsync(
+            $"/rest/services/{BranchVersioningPublicationFixture.ServiceName}/VersionManagementServer", ("f", "json"));
+        await BranchVersioningPublicationFixture.AssertVersionManagementSuccessAsync(get, post);
     }
 
     [IntegrationTest]

@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using System.Text.RegularExpressions;
 using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Caching;
@@ -661,6 +662,13 @@ internal sealed partial class FeatureServerQueryHandler(
                     groupByFields = parsedGroupBy;
                 }
 
+                var statisticsAccessError = await ValidateStatisticsFieldAccessAsync(
+                    context, queryLayer.Resource, statisticsDefs, groupByFields, cancellationToken).ConfigureAwait(false);
+                if (statisticsAccessError != null)
+                {
+                    return StandardErrorHelpers.CreateBadRequest(context, "Invalid statistics fields", [statisticsAccessError]);
+                }
+
                 ImmutableArray<HavingCondition>? havingConditions = null;
                 if (!string.IsNullOrWhiteSpace(validatedParams.Having))
                 {
@@ -727,20 +735,9 @@ internal sealed partial class FeatureServerQueryHandler(
                 var boundedStatisticsRows = statisticsExceeded
                     ? statisticsRows[..queryLimits.MaxRecordCount]
                     : statisticsRows;
-                var statisticsFeatures = boundedStatisticsRows.Select(row => new GeoServicesFeature
-                {
-                    Attributes = new Dictionary<string, object?>(row, StringComparer.OrdinalIgnoreCase),
-                    Geometry = null,
-                    // Aggregate rows have no geometry; omit the geometry key entirely (Esri parity).
-                    IncludeGeometry = false
-                }).ToArray();
-
-                HonuaTelemetry.SetSuccess(featureActivity, statisticsFeatures.Length);
-                var statisticsResponse = new QueryResponse
-                {
-                    Features = statisticsFeatures,
-                    ExceededTransferLimit = statisticsExceeded
-                };
+                var statisticsResponse = BuildStatisticsResponse(
+                    queryLayer.Resource, statisticsDefs, groupByFields, boundedStatisticsRows, statisticsExceeded);
+                HonuaTelemetry.SetSuccess(featureActivity, statisticsResponse.Features!.Length);
                 return await CreateCachedResultAsync(statisticsResponse, FeatureServerJsonContext.Default.QueryResponse, "application/json");
             }
 
@@ -1827,6 +1824,13 @@ internal sealed partial class FeatureServerQueryHandler(
                 groupByFields = parsedGroupBy;
             }
 
+            var statisticsAccessError = await ValidateStatisticsFieldAccessAsync(
+                context, queryLayer.Resource, statisticsDefs, groupByFields, cancellationToken).ConfigureAwait(false);
+            if (statisticsAccessError != null)
+            {
+                throw new ArgumentException(statisticsAccessError);
+            }
+
             ImmutableArray<HavingCondition>? havingConditions = null;
             if (!string.IsNullOrWhiteSpace(validatedParams.Having))
             {
@@ -1877,19 +1881,8 @@ internal sealed partial class FeatureServerQueryHandler(
             var boundedStatisticsRows = statisticsExceeded
                 ? statisticsRows[..queryLimits.MaxRecordCount]
                 : statisticsRows;
-            var statisticsFeatures = boundedStatisticsRows.Select(row => new GeoServicesFeature
-            {
-                Attributes = new Dictionary<string, object?>(row, StringComparer.OrdinalIgnoreCase),
-                Geometry = null,
-                // Aggregate rows have no geometry; omit the geometry key entirely (Esri parity).
-                IncludeGeometry = false
-            }).ToArray();
-
-            return new QueryResponse
-            {
-                Features = statisticsFeatures,
-                ExceededTransferLimit = statisticsExceeded
-            };
+            return BuildStatisticsResponse(
+                queryLayer.Resource, statisticsDefs, groupByFields, boundedStatisticsRows, statisticsExceeded);
         }
 
         var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(queryLayer.Resource);
@@ -2602,6 +2595,123 @@ internal sealed partial class FeatureServerQueryHandler(
         errorMessage = "sqlFormat must be one of: standard, native.";
         return false;
     }
+
+    private static async Task<string?> ValidateStatisticsFieldAccessAsync(
+        HttpContext context,
+        MetadataV2Resource resource,
+        ImmutableArray<StatisticDefinition> statistics,
+        ImmutableArray<string>? groupByFields,
+        CancellationToken cancellationToken)
+    {
+        // Hidden fields are absent from public query fields. Apply the same boundary
+        // to aggregates, and resolve request-scoped masks before emitting alias schema.
+        var unavailableFields = resource.SchemaFields.Where(field => field.Hidden)
+            .Select(field => field.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var maskSource = context.RequestServices.GetService<IFieldMaskSource>();
+        if (maskSource != null)
+        {
+            unavailableFields.UnionWith(await maskSource.ResolveAsync(resource, cancellationToken).ConfigureAwait(false));
+        }
+
+        var unavailable = statistics.Select(statistic => statistic.OnStatisticField)
+            .Concat(groupByFields ?? ImmutableArray<string>.Empty)
+            .FirstOrDefault(unavailableFields.Contains);
+        return unavailable == null ? null : $"Field '{unavailable}' is not available for statistics.";
+    }
+
+    internal static QueryResponse BuildStatisticsResponse(
+        MetadataV2Resource resource,
+        ImmutableArray<StatisticDefinition> statistics,
+        ImmutableArray<string>? groupByFields,
+        ImmutableArray<IReadOnlyDictionary<string, object?>> rows,
+        bool exceededTransferLimit)
+    {
+        // #5045: clients construct aggregate output tables from fields, including
+        // when every value is null or grouping yields no rows. Source declarations
+        // determine the schema; sampling a first feature cannot provide it.
+        var sourceFields = resource.SchemaFields.ToDictionary(field => field.Name, StringComparer.OrdinalIgnoreCase);
+        var fields = new List<GeoServicesFieldInfo>();
+        var fieldIndices = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var objectIdFieldName = GeoServicesObjectIdFieldResolver.ResolveObjectIdFieldName(resource);
+        foreach (var group in groupByFields ?? ImmutableArray<string>.Empty)
+        {
+            var source = SourceField(group);
+            AddField(QueryFormatter.MapFieldInfo(source, objectIdFieldName) with
+            {
+                Name = group,
+                Editable = false,
+                DefaultValue = null
+            });
+        }
+
+        foreach (var statistic in statistics)
+        {
+            var source = SourceField(statistic.OnStatisticField);
+            var type = statistic.StatisticType switch
+            {
+                StatisticType.Count => rows.Any(row => row.TryGetValue(statistic.OutStatisticFieldName, out var value)
+                    && value != null && Convert.ToDecimal(value, CultureInfo.InvariantCulture) > int.MaxValue)
+                    ? MetadataV2FieldType.BigInteger : MetadataV2FieldType.Integer,
+                StatisticType.Sum or StatisticType.Avg or StatisticType.Stddev or StatisticType.Var => MetadataV2FieldType.Double,
+                _ => source.Type
+            };
+            // Esri's statistics response uses integer counts, double-valued numeric
+            // aggregates and the source type for MIN/MAX. An aggregate over an OID
+            // is an ordinary numeric result column, never a synthetic object ID.
+            var output = source with
+            {
+                Name = statistic.OutStatisticFieldName,
+                Alias = statistic.OutStatisticFieldName,
+                Type = type,
+                SqlType = null,
+                Nullable = statistic.StatisticType != StatisticType.Count,
+                Editable = false,
+                DefaultValue = null,
+                Domain = null,
+                Length = statistic.StatisticType is StatisticType.Min or StatisticType.Max ? source.Length : null
+            };
+            AddField(QueryFormatter.MapFieldInfo(output, string.Empty));
+        }
+
+        var dateFields = fields.Where(field => field.Type == "esriFieldTypeDate")
+            .Select(field => field.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var features = rows.Select(row =>
+        {
+            var attributes = row.Where(pair => fieldIndices.ContainsKey(pair.Key))
+                .ToDictionary(pair => pair.Key, pair => GeoServicesAttributeValue(pair.Value), StringComparer.OrdinalIgnoreCase);
+            GeoServicesFieldConventions.CoerceDateAttributes(attributes, dateFields);
+            return new GeoServicesFeature { Attributes = attributes, IncludeGeometry = false };
+        }).ToArray();
+        return new QueryResponse { Fields = fields.ToArray(), Features = features, ExceededTransferLimit = exceededTransferLimit };
+
+        MetadataV2Field SourceField(string name) => sourceFields.TryGetValue(name, out var field)
+            ? field : new MetadataV2Field { Name = name, Type = MetadataV2FieldType.BigInteger };
+
+        void AddField(GeoServicesFieldInfo field)
+        {
+            // Provider dictionaries retain the last column when an aggregate alias
+            // collides with a group key or previous alias. Describe that same column once.
+            if (fieldIndices.TryGetValue(field.Name, out var index))
+            {
+                fields[index] = field;
+            }
+            else
+            {
+                fieldIndices.Add(field.Name, fields.Count);
+                fields.Add(field);
+            }
+        }
+    }
+
+    // Statistics rows use the same Esri string projection as ordinary feature
+    // rows. Keep the compatibility conversion local so the trunk QueryFormatter
+    // remains authoritative after #5042 withdrew its broader formatter change.
+    private static object? GeoServicesAttributeValue(object? value)
+        => FeatureAttributeValueNormalizer.Normalize(value) switch
+        {
+            JsonElement { ValueKind: JsonValueKind.Array or JsonValueKind.Object } element => element.GetRawText(),
+            var normalized => normalized
+        };
 
     private static bool TryParseStatisticsDefinitions(
         string outStatisticsJson,
