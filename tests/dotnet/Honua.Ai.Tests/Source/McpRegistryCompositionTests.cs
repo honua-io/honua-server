@@ -188,14 +188,14 @@ public sealed class McpRegistryCompositionTests
         // honua-server#3363 (coordinator ruling 2026-09-14): eligible Admin operation
         // publication is on by default for the production composition — no
         // Mcp:PublishOperations configuration at all. The committed projection manifest is
-        // the contract: its 66 rows are the Admin API and access catalogs minus the 13
+        // the contract: its 66 rows are the Admin API and access catalogs minus the
         // audited exclusions (digest below). Other admin.* providers (connections, import,
         // cache, configuration, license, metadata releases) and the non-admin honua_op_*
         // families are not audited for MCP and publish only with the explicit
         // Mcp:PublishOperations:Enabled opt-in.
         const int ExpectedPublishedTools = 66;
-        const int ExpectedExclusions = 13;
-        const string ExpectedExclusionDigest = "52ec32f9e4c942b11057f779c664f33df180ff17ff975c62bbed5a8848907fe0";
+        const int ExpectedExclusions = 16;
+        const string ExpectedExclusionDigest = "550bbf8a6ea74ed995d48832ec6e1348e2ac3429b9a2444105b03c4c2f632523";
 
         await using var provider = BuildProductionOperationsComposition(new Dictionary<string, string?>());
         var surface = BuildOperationsSurface(provider);
@@ -232,7 +232,7 @@ public sealed class McpRegistryCompositionTests
             AdminMcpOperationExclusions.All.Select(exclusion => exclusion.ToolName),
             "audited one-time-secret, secret-input and browser-session operations never publish");
         published.Should().NotContain("honua_admin_connections_test_draft",
-            "connection operations accept a plaintext password and are outside the audited projection");
+            "connection draft tests accept connection credentials and are an audited secret-input exclusion");
 
         // #3813/#3819: publication does not restore default full enumeration — no
         // published Admin tool joins the bounded default view.
@@ -253,8 +253,8 @@ public sealed class McpRegistryCompositionTests
         // The explicit full-catalog opt-in keeps its pre-#3363 meaning: every eligible
         // descriptor publishes except the audited exclusions and hand-authored duplicates.
         const int ExpectedCatalogAdminOperations = 110;
-        const int ExpectedExclusionsInCatalog = 5;
-        const int ExpectedPublishedAdminTools = 105;
+        const int ExpectedExclusionsInCatalog = 8;
+        const int ExpectedPublishedAdminTools = 102;
 
         await using var provider = BuildProductionOperationsComposition(new Dictionary<string, string?>
         {
@@ -295,6 +295,60 @@ public sealed class McpRegistryCompositionTests
         catalogOperationIds.Should().Contain("studio.content.create-publication-request");
         published.Should().NotContain(PublishedOperationTool.ProjectName("studio.content.create-publication-request"));
         published.Should().Contain(name => name.StartsWith(PublishedOperationTool.NamePrefix, StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public async Task ProductionOperationsComposition_WithFullCatalogOptIn_PublishesNoSecretLikeInputs()
+    {
+        // honua-server#4880: the full-catalog opt-in must not publish a tool whose input schema
+        // accepts secret material. Secret references (names ending in "Reference") are allowed.
+        await using var provider = BuildProductionOperationsComposition(new Dictionary<string, string?>
+        {
+            ["Mcp:PublishOperations:Enabled"] = "true",
+        });
+        var tools = (await BuildOperationsSurface(provider).GetAllToolsAsync())
+            .OfType<PublishedOperationTool>()
+            .ToArray();
+
+        var secretInputs = tools
+            .SelectMany(tool => InputPropertyNames(tool.Describe().InputSchema)
+                .Where(IsSecretLikeInputName)
+                .Select(name => $"{tool.Name}.{name}"))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
+
+        tools.Should().NotBeEmpty();
+        secretInputs.Should().BeEmpty("published operation tools accept secret references, never secret values");
+    }
+
+    private static readonly System.Text.RegularExpressions.Regex SecretLikeInputName = new(
+        "password|passphrase|secret|credential|token|api[-_]?key|private[-_]?key",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant,
+        TimeSpan.FromSeconds(1));
+
+    private static bool IsSecretLikeInputName(string name) =>
+        SecretLikeInputName.IsMatch(name) &&
+        !name.EndsWith("Reference", StringComparison.Ordinal) &&
+        !name.EndsWith("Type", StringComparison.Ordinal);
+
+    private static IEnumerable<string> InputPropertyNames(JsonElement schema)
+    {
+        if (schema.ValueKind != JsonValueKind.Object)
+            yield break;
+        if (schema.TryGetProperty("properties", out var properties) && properties.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in properties.EnumerateObject())
+            {
+                yield return property.Name;
+                foreach (var nested in InputPropertyNames(property.Value))
+                    yield return $"{property.Name}.{nested}";
+            }
+        }
+        if (schema.TryGetProperty("items", out var items))
+        {
+            foreach (var nested in InputPropertyNames(items))
+                yield return nested;
+        }
     }
 
     [UnitTest]

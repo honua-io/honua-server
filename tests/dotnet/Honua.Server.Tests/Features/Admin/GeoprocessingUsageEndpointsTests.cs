@@ -118,10 +118,31 @@ public sealed class GeoprocessingUsageEndpointsTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/geoprocessing/tools/usage-ranking")]
     public async Task GetUsageRanking_WithoutAdminAuth_IsUnauthorized()
     {
+        // Record a uniquely named invocation so the ranking the admin principal can read is
+        // non-empty. The denial must therefore disclose nothing, not merely refuse an empty
+        // surface; the authenticated-success cases above pin the same endpoint's real result.
+        var telemetry = _fixture.Services.GetRequiredService<IProcessUsageTelemetry>();
+        var privateTool = $"denial-probe-tool-{Guid.NewGuid():N}";
+        telemetry.RecordInvocation(privateTool, succeeded: true);
+
         using var anonymousClient = _fixture.CreateClient();
 
         var response = await anonymousClient.GetAsync("/api/v1/admin/geoprocessing/tools/usage-ranking");
 
-        response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+        // The admin policy names the ApiKey scheme, so an unauthenticated caller is challenged:
+        // exactly 401, never 403 (which would mean the caller was authenticated but unprivileged).
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        // Nothing is disclosed: no ranking envelope and no recorded tool name.
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().NotContain(privateTool);
+        body.Should().NotContain("\"tools\"");
+        body.Should().NotContain("\"invocationCount\"");
+
+        // And the admin principal still sees the recorded invocation, so the denial above is a
+        // refusal of the caller and not an endpoint that is broken for everyone.
+        var adminResponse = await _client.GetAsync("/api/v1/admin/geoprocessing/tools/usage-ranking?limit=1000");
+        adminResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await adminResponse.Content.ReadAsStringAsync()).Should().Contain(privateTool);
     }
 }

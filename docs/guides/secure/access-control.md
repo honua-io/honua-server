@@ -113,6 +113,13 @@ must pass row visibility; when a row policy applies and the event has no before-
 the delete is withheld because its visibility cannot be established. Stream routes
 also require access to the publication in the subscriber's effective tenant.
 
+Offline replica downloads (`synchronizeReplica`, `extractChanges`) judge each update
+and delete against the row image the change log recorded before the change, under the
+caller's current row policy and the replica scope. A delete is delivered only when the
+caller could read the row before it changed, and a row that becomes readable arrives
+as an add. Changes recorded before that image was captured, and branch-version edits,
+have no before-image, so their deletes stay withheld under a row policy.
+
 ## Verify
 
 Run `GET /api/v1/admin/users/{userId}/effective-permissions` in the explorer.

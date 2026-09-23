@@ -1747,6 +1747,11 @@ sql:
   - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS public_objectid BIGINT;"
   - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS origin_replica_id TEXT;"
   - "ALTER TABLE honua.feature_changes ALTER COLUMN origin_replica_id SET DEFAULT NULLIF(current_setting('honua.origin_replica_id', true), '');"
+  # Pre-change row images from migration 121_CaptureFeatureChangePreImage.sql (#4879).
+  - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS pre_geometry geometry;"
+  - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS pre_attributes JSONB;"
+  - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS pre_created_at TIMESTAMPTZ;"
+  - "ALTER TABLE honua.feature_changes ADD COLUMN IF NOT EXISTS pre_updated_at TIMESTAMPTZ;"
   - |
       ALTER TABLE IF EXISTS honua.feature_changes
           ADD COLUMN IF NOT EXISTS event_id TEXT,
@@ -1879,6 +1884,10 @@ sql:
           op SMALLINT;
           ver TEXT;
           ver_uuid UUID;
+          before_geometry geometry;
+          before_attributes JSONB;
+          before_created_at TIMESTAMPTZ;
+          before_updated_at TIMESTAMPTZ;
       BEGIN
           gen := nextval('honua.sync_generation');
           IF TG_OP = 'INSERT' THEN
@@ -1897,6 +1906,12 @@ sql:
               row_attributes := OLD.attributes;
               op := 3;
           END IF;
+          IF TG_OP <> 'INSERT' THEN
+              before_geometry := OLD.geometry::geometry;
+              before_attributes := COALESCE(OLD.attributes, '{}'::jsonb);
+              before_created_at := OLD.created_at;
+              before_updated_at := OLD.updated_at;
+          END IF;
           public_oid := honua.resolve_feature_public_objectid(lid, oid, row_attributes);
           ver := current_setting('honua.gdb_version', true);
           IF ver IS NULL OR ver = '' THEN
@@ -1905,8 +1920,10 @@ sql:
               ver_uuid := ver::UUID;
           END IF;
           INSERT INTO honua.feature_changes
-              (generation, layer_id, objectid, public_objectid, operation, version_id)
-          VALUES (gen, lid, oid, public_oid, op, ver_uuid);
+              (generation, layer_id, objectid, public_objectid, operation, version_id,
+               pre_geometry, pre_attributes, pre_created_at, pre_updated_at)
+          VALUES (gen, lid, oid, public_oid, op, ver_uuid, before_geometry, before_attributes,
+                  before_created_at, before_updated_at);
           IF TG_OP = 'DELETE' THEN
               RETURN OLD;
           END IF;

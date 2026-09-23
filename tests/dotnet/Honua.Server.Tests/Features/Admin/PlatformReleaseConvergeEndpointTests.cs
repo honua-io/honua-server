@@ -191,12 +191,37 @@ public sealed class PlatformReleaseConvergeEndpointTests : IAsyncLifetime
     public async Task Converge_WithoutAdminAuthorization_IsRejected()
     {
         // Disable the dev-auth bypass so the admin authorization gate is actually enforced.
+        // The same stubbed control-plane wiring is registered, so converge really would create
+        // deploy operations here — which is what makes "nothing was changed" falsifiable.
+        const string AuthTestKey = "converge-auth-test-key";
+        var authWorkflowStore = new InMemoryWorkflowOperationStore();
+        var authLadder = new StubGuardrailLadder { Tier = GuardrailTier.DirectExecute };
         var authFixture = new WebAppFixture()
             .ConfigureWebHost(builder =>
             {
                 builder.UseEnvironment("Test");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
-                builder.UseSetting("HONUA_ADMIN_PASSWORD", "converge-auth-test-key");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", AuthTestKey);
+            })
+            .ConfigureServices(services =>
+            {
+                ConfigurePlatformRelease(services);
+
+                services.RemoveAll<IWorkflowOperationStore>();
+                services.RemoveAll<IWorkflowOperationReconciler>();
+                services.RemoveAll<IOperationProposalStore>();
+                services.RemoveAll<IGuardrailLadder>();
+                services.RemoveAll<IProposalNotifier>();
+                services.RemoveAll<IOperationExecutor>();
+                services.RemoveAll<IOperationGateway>();
+
+                services.AddSingleton<IWorkflowOperationStore>(authWorkflowStore);
+                services.AddSingleton<IWorkflowOperationReconciler>(new StubWorkflowOperationReconciler());
+                services.AddSingleton<IOperationProposalStore>(new TestProposalStore());
+                services.AddSingleton<IGuardrailLadder>(authLadder);
+                services.AddSingleton<IProposalNotifier>(new NoOpProposalNotifier());
+                services.AddSingleton<IOperationExecutor, Honua.ControlPlane.Executors.DeployOperationExecutor>();
+                services.AddSingleton<IOperationGateway, Honua.ControlPlane.OperationGateway>();
             });
 
         try
@@ -206,7 +231,31 @@ public sealed class PlatformReleaseConvergeEndpointTests : IAsyncLifetime
 
             var response = await anonymous.PostAsJsonAsync("/api/v1/admin/platform-release/converge", new { });
 
-            response.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden);
+            // The admin policy names the ApiKey scheme, so an unauthenticated caller is
+            // challenged: exactly 401, never 403 (authenticated-but-unprivileged).
+            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+            // Nothing is disclosed: no release identity, no target inventory, no operation ids.
+            var body = await response.Content.ReadAsStringAsync();
+            foreach (var marker in new[] { DeclaredVersion, DeclaredServingArtifact, "srv-divergent", "operationId" })
+            {
+                body.Should().NotContain(marker, $"an unauthenticated caller must not see '{marker}'");
+            }
+
+            // Nothing is changed: the refused converge created no deploy operation.
+            authWorkflowStore.CreatedDeployTargets.Should().BeEmpty(
+                "an unauthenticated converge must not schedule a deployment");
+
+            // The admin principal still converges on the SAME host, so the denial above is a
+            // refusal of the caller and not an endpoint broken for everyone.
+            var admin = authFixture.CreateClient(
+                client => client.DefaultRequestHeaders.Add("X-API-Key", AuthTestKey));
+            var adminResponse = await admin.PostAsJsonAsync("/api/v1/admin/platform-release/converge", new { });
+            var adminBody = await adminResponse.Content.ReadAsStringAsync();
+            adminResponse.StatusCode.Should().Be(HttpStatusCode.OK, adminBody);
+            using var adminDocument = JsonDocument.Parse(adminBody);
+            adminDocument.RootElement.GetProperty("releaseVersion").GetString().Should().Be(DeclaredVersion);
+            authWorkflowStore.CreatedDeployTargets.Should().Contain("srv-divergent");
         }
         finally
         {

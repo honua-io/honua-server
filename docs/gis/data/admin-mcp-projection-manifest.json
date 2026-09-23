@@ -54,7 +54,7 @@
     "evidenceRefs"
   ],
   "exclusions": {
-    "digest": "52ec32f9e4c942b11057f779c664f33df180ff17ff975c62bbed5a8848907fe0",
+    "digest": "550bbf8a6ea74ed995d48832ec6e1348e2ac3429b9a2444105b03c4c2f632523",
     "operations": [
       {
         "OpenApiOperationId": "createAdminApiKey",
@@ -104,6 +104,27 @@
         "ToolName": "honua_admin_oidc_provider_update",
         "ReasonCode": "secret-input",
         "Explanation": "Accepts secret-bearing OIDC provider configuration."
+      },
+      {
+        "OpenApiOperationId": "createConnection",
+        "OperationId": "admin.connections.create",
+        "ToolName": "honua_admin_connections_create",
+        "ReasonCode": "secret-input",
+        "Explanation": "Accepts a plaintext connection password."
+      },
+      {
+        "OpenApiOperationId": "updateConnection",
+        "OperationId": "admin.connections.update",
+        "ToolName": "honua_admin_connections_update",
+        "ReasonCode": "secret-input",
+        "Explanation": "Accepts a plaintext connection password."
+      },
+      {
+        "OpenApiOperationId": "testDraftConnection",
+        "OperationId": "admin.connections.test-draft",
+        "ToolName": "honua_admin_connections_test_draft",
+        "ReasonCode": "secret-input",
+        "Explanation": "Accepts a plaintext connection password."
       },
       {
         "OpenApiOperationId": "getAdminAuthSession",

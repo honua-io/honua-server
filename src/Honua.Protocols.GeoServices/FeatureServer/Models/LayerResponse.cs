@@ -201,9 +201,14 @@ public sealed class LayerResponse
     public LayerRelationshipInfo[] Relationships { get; init; } = [];
 
     /// <summary>
-    /// Whether the layer has static data
+    /// Whether the layer supports versioned data.
     /// </summary>
     public bool IsDataVersioned { get; init; }
+
+    /// <summary>
+    /// Whether the layer supports branch versioning, as advertised by its service.
+    /// </summary>
+    public bool IsDataBranchVersioned { get; init; }
 
     /// <summary>
     /// Whether time is enabled for the layer

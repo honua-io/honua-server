@@ -332,6 +332,64 @@ internal sealed partial class FeatureQueryBuilder : IFeatureQueryBuilder
         }
     }
 
+    /// <summary>
+    /// Object-id query over the pre-change row images the change-tracking trigger recorded for
+    /// <paramref name="changeIds"/> (migration 121, #4879). The images are exposed as a subquery with the
+    /// base table's column shape, like the branch-version overlay, so the same where-clause, enforced
+    /// read policy and spatial filter SQL applies unchanged. Changes without a recorded image never match.
+    /// </summary>
+    public CoreParameterizedQuery BuildPreChangeObjectIdsQuery(
+        int layerId,
+        FeatureQuery query,
+        IReadOnlyCollection<long> changeIds,
+        CoreGeometryStorageType geometryStorageType = CoreGeometryStorageType.Geometry)
+    {
+        ArgumentNullException.ThrowIfNull(changeIds);
+        GuardVersionedReadSupported(query, "pre-change image");
+        if (query.SpatialFilter is { } spatial &&
+            (spatial.SpatialRelationship == SpatialRelationship.NearestNeighbor || spatial.ReturnDistance))
+        {
+            // These shapes bind a geometry ahead of the WHERE parameters, which would collide with the
+            // change-id parameter emitted by the source below.
+            throw new NotSupportedException("Nearest-neighbor or distance-returning reads of pre-change images are not supported.");
+        }
+
+        var sql = _stringBuilderPool.Get();
+        try
+        {
+            var paramIndex = 2;
+            var parameters = new List<object>();
+            var changeIdsParam = paramIndex++;
+            parameters.Add(changeIds.ToArray());
+
+            var objectId = DatabaseSchema.ObjectIdColumn;
+            var layerIdColumn = DatabaseSchema.LayerIdColumn;
+            var geometryImage = geometryStorageType switch
+            {
+                CoreGeometryStorageType.Geography => "c.pre_geometry::geography",
+                CoreGeometryStorageType.Bytea => "ST_AsEWKB(c.pre_geometry)",
+                _ => "c.pre_geometry"
+            };
+
+            sql.Append(CultureInfo.InvariantCulture,
+                $"SELECT {objectId} FROM (SELECT c.{objectId}, c.{layerIdColumn}, {geometryImage} AS {DatabaseSchema.GeometryColumn}, " +
+                $"c.pre_attributes AS {DatabaseSchema.AttributesColumn}, " +
+                $"c.pre_created_at AS created_at, c.pre_updated_at AS updated_at FROM honua.feature_changes c " +
+                $"WHERE c.change_id = ANY(${changeIdsParam}) AND c.pre_attributes IS NOT NULL) AS features " +
+                $"WHERE {layerIdColumn} = $1");
+
+            AppendWhereClause(sql, query, ref paramIndex, parameters);
+            AppendTemporalFilter(sql, query, ref paramIndex, parameters);
+            AppendSpatialFilter(sql, query, geometryStorageType, ref paramIndex, parameters);
+
+            return new CoreParameterizedQuery(sql.ToString(), parameters);
+        }
+        finally
+        {
+            _stringBuilderPool.Return(sql);
+        }
+    }
+
     public CoreParameterizedQuery BuildSelectFlatGeobufQuery(
         MetadataV2Resource resource,
         int layerId,

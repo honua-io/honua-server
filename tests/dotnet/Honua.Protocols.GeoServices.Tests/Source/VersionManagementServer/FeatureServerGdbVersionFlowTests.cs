@@ -23,7 +23,7 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementSer
 [Protocol(TestProtocols.FeatureServer)]
 public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
 {
-    private const string ServiceId = WebAppFixture.TestServiceId;
+    private const string ServiceId = BranchVersioningPublicationFixture.ServiceName;
     private const string VmsBase = "/rest/services/" + ServiceId + "/VersionManagementServer";
     private const string LayerBase = "/rest/services/" + ServiceId + "/FeatureServer/0";
 
@@ -33,7 +33,8 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
     {
         _fixture.WithTestLicense(HonuaEdition.Enterprise);
         await _fixture.InitializeAsync();
-        _fixture.EnableV2ServiceEditingCapabilities(ServiceId, ["Create", "Update", "Delete"]);
+        _fixture.EnableV2ServiceEditingCapabilities(WebAppFixture.TestServiceId, ["Create", "Update", "Delete"]);
+        BranchVersioningPublicationFixture.ConfigureManagedPublications(_fixture);
     }
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
@@ -120,6 +121,8 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+            "the request must succeed: {0}", doc.RootElement.GetRawText());
         doc.RootElement.GetProperty("count").GetInt32().Should().BeGreaterThanOrEqualTo(0);
     }
 
@@ -132,6 +135,8 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+            "the request must succeed: {0}", doc.RootElement.GetRawText());
         doc.RootElement.GetProperty("supportsBranchVersioning").GetBoolean().Should().BeTrue();
         doc.RootElement.GetProperty("hasVersionedData").GetBoolean().Should().BeTrue();
         doc.RootElement.GetProperty("versionManagementServerUrl").GetString()
@@ -209,6 +214,8 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK,
             "create should succeed; body: {0}", await response.Content.ReadAsStringAsync());
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+            "the request must succeed: {0}", doc.RootElement.GetRawText());
         return doc.RootElement.GetProperty("versionInfo").GetProperty("versionGuid").GetString()!;
     }
 
@@ -224,12 +231,16 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK,
             "query should succeed; body: {0}", await response.Content.ReadAsStringAsync());
         using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+            "the request must succeed: {0}", doc.RootElement.GetRawText());
         return doc.RootElement.GetProperty("count").GetInt32();
     }
 
     private static async Task<int> CountByMarkerAsync(HttpResponseMessage applyEditsResponse)
     {
         using var doc = JsonDocument.Parse(await applyEditsResponse.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+            "the request must succeed: {0}", doc.RootElement.GetRawText());
         if (!doc.RootElement.TryGetProperty("addResults", out var addResults))
         {
             return 0;
@@ -259,6 +270,8 @@ public sealed class FeatureServerGdbVersionFlowTests : IAsyncLifetime
     private static async Task<long> FirstAddObjectIdAsync(HttpResponseMessage applyEditsResponse)
     {
         using var doc = JsonDocument.Parse(await applyEditsResponse.Content.ReadAsStringAsync());
+        doc.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+            "the request must succeed: {0}", doc.RootElement.GetRawText());
         var add = doc.RootElement.GetProperty("addResults").EnumerateArray().First();
         return add.GetProperty("objectId").GetInt64();
     }

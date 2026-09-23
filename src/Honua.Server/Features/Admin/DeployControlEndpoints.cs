@@ -406,7 +406,7 @@ internal static class DeployControlEndpoints
                 PageSize = result.PageSize,
                 TotalCount = result.TotalCount,
                 HasMore = result.HasMore,
-                EvidencePosture = BuildDeployOperationsPosture(result.Items.Select(item => item.UpdatedAt), result.Page, result.PageSize, result.HasMore),
+                EvidencePosture = BuildDeployOperationsPosture(result.Items.Select(item => item.UpdatedAt), result.Page, result.PageSize, result.HasMore, result.IsTruncated),
             };
 
             return Results.Json(response, DeployControlJsonContext.Default.DeployOperationListResponse);
@@ -421,7 +421,7 @@ internal static class DeployControlEndpoints
     }
 
     internal static EvidencePosture BuildDeployOperationsPosture(
-        IEnumerable<DateTimeOffset> observations, int page, int pageSize, bool hasMore)
+        IEnumerable<DateTimeOffset> observations, int page, int pageSize, bool hasMore, bool isTruncated = false)
     {
         var generatedAt = DateTimeOffset.UtcNow;
         var values = observations.ToArray();
@@ -434,7 +434,7 @@ internal static class DeployControlEndpoints
                     Page = page,
                     PageSize = pageSize,
                     HasMore = hasMore,
-                    Truncated = hasMore,
+                    Truncated = hasMore || isTruncated,
                     ReturnedFrom = values.Length == 0 ? null : values.Min(),
                     ReturnedTo = values.Length == 0 ? null : observedAt,
                 }));

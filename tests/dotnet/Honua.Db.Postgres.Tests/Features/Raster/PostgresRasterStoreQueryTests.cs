@@ -4,8 +4,10 @@
 using System.Data;
 using System.Data.Common;
 using System.Globalization;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Db.Postgres.Features.Raster;
 using Honua.TestKit;
@@ -21,6 +23,80 @@ namespace Honua.Db.Postgres.Tests.Features.Raster;
 public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
 {
     private const int LayerId = 9002;
+
+    [Fact]
+    public void TransformIfNeeded_BindsRasterExpressionOnce()
+    {
+        const string rasterExpression = "ST_Clip(raster, ST_MakeEnvelope(@minX, @minY, @maxX, @maxY, ST_SRID(raster)))";
+
+        var sql = RasterProjectionSql.TransformIfNeeded(rasterExpression, "@outputSrid");
+
+        sql.Should().Contain($"FROM (SELECT {rasterExpression} AS rast OFFSET 0) projection_source");
+        sql.Split(rasterExpression, StringSplitOptions.None).Should().HaveCount(2);
+        sql.Should().Contain("ST_SRID(projection_source.rast)");
+        sql.Should().Contain("ST_Transform(projection_source.rast, @outputSrid)");
+    }
+
+    [IntegrationTheory]
+    [InlineData("projection")]
+    [InlineData("resize")]
+    [InlineData("projection-and-resize")]
+    public async Task RasterProjection_WithClippedInput_PlannerComputesClipOnce(string operation)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            await InsertQuadrantRasterAsync(schemaName);
+            const string clippedRaster = "ST_Clip(raster, ST_MakeEnvelope(0, 0, 2, 2, ST_SRID(raster)))";
+            var expression = operation switch
+            {
+                "projection" => RasterProjectionSql.TransformIfNeeded(clippedRaster, "4326"),
+                "resize" => RasterProjectionSql.ResizePreservingGrid(clippedRaster, "4", "3"),
+                _ => RasterProjectionSql.ResizePreservingGrid(
+                    RasterProjectionSql.TransformIfNeeded(clippedRaster, "4326"), "4", "3")
+            };
+
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var command = connection.CreateCommand();
+            // Use a real table column so immutable raster expressions cannot be
+            // constant-folded. Inspect PostgreSQL's optimized expressions, not the
+            // generated SQL: a plain SELECT alias is pulled up into every CASE arm.
+            command.CommandText = $"EXPLAIN (VERBOSE, FORMAT JSON, COSTS OFF) SELECT {expression} FROM raster_data";
+            var planJson = (string)(await command.ExecuteScalarAsync())!;
+            using var plan = JsonDocument.Parse(planJson);
+            var outputs = EnumeratePlanOutputs(plan.RootElement[0].GetProperty("Plan")).ToArray();
+
+            outputs.Sum(output => output.Split("st_clip(", StringSplitOptions.None).Length - 1)
+                .Should().Be(1, "the planner must keep a single raster computation below the projection/resize consumers");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    private static IEnumerable<string> EnumeratePlanOutputs(JsonElement node)
+    {
+        if (node.TryGetProperty("Output", out var outputs))
+        {
+            foreach (var output in outputs.EnumerateArray())
+            {
+                yield return output.GetString()!;
+            }
+        }
+
+        if (node.TryGetProperty("Plans", out var children))
+        {
+            foreach (var child in children.EnumerateArray())
+            {
+                foreach (var output in EnumeratePlanOutputs(child))
+                {
+                    yield return output;
+                }
+            }
+        }
+    }
 
     [IntegrationTest]
     public async Task QueryRastersAsync_WithTimestampAndGeometry_UsesLayerSnapshotBeforeGeometryFilter()
@@ -146,6 +222,201 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         {
             await fixture.DropSchemaAsync(schemaName);
         }
+    }
+
+    [IntegrationTheory]
+    [InlineData("single")]
+    [InlineData("mosaic")]
+    [InlineData("map")]
+    public async Task Export_WithUnchangedCrs_PreservesNonSquarePixelGrid(string path)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            var rasterId = await InsertQuadrantRasterAsync(schemaName);
+            await using (var connection = await fixture.GetConnectionAsync(schemaName))
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "UPDATE raster_data SET raster = ST_SetUpperLeft(ST_SetScale(raster, 2, -1), 0, 2) WHERE id = @id";
+                command.Parameters.AddWithValue("id", rasterId);
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var store = CreateStore(schemaName);
+            var query = new RasterQuery { OutputFormat = RasterFormat.TIFF, OutputSrid = 4326 };
+            var result = path switch
+            {
+                "single" => await store.ExportImageAsync(LayerId, rasterId, query),
+                "mosaic" => await store.ExportMosaicAsync(LayerId, [rasterId], RasterMergeStrategy.Newest, query),
+                _ => await new PostgresRasterMapRenderer(
+                    new FixtureConnectionProvider(fixture.DataSource),
+                    NullLogger<PostgresRasterMapRenderer>.Instance, schemaName)
+                    .RenderCollectionMapAsync(LayerId, new MapRenderRequest
+                    {
+                        BoundingBox = [0, 0, 4, 2],
+                        BoundingBoxCrs = 4326,
+                        Crs = 4326,
+                        Width = 2,
+                        Height = 2,
+                        Format = RasterFormat.TIFF
+                    })
+            };
+
+            // Decode actual exported bytes, not just the returned metadata. A same-CRS
+            // ST_Transform used to resample this 2x2 grid into square pixels.
+            var decoded = await ProbeExportedRasterAsync(schemaName, result.Data, 4326,
+                (1, 1.5), (3, 1.5), (1, 0.5), (3, 0.5));
+            decoded.Width.Should().Be(2);
+            decoded.Height.Should().Be(2);
+            decoded.XMin.Should().BeApproximately(0, 1e-9);
+            decoded.XMax.Should().BeApproximately(4, 1e-9);
+            decoded.YMin.Should().BeApproximately(0, 1e-9);
+            decoded.YMax.Should().BeApproximately(2, 1e-9);
+            decoded.Values.Should().Equal(1, 2, 3, 4);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData("single", 64, 64)]
+    [InlineData("mosaic", 64, 64)]
+    [InlineData("map", 64, 64)]
+    [InlineData("single", 32, 16)]
+    [InlineData("mosaic", 32, 16)]
+    [InlineData("map", 32, 16)]
+    public async Task Export_WithExplicitDimensions_PreservesGeographicGrid(string path, int width, int height)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreQueryTests));
+        try
+        {
+            await CreateRasterTableAsync(schemaName);
+            var rasterId = await InsertImageServerProbeRasterAsync(schemaName);
+            await using (var connection = await fixture.GetConnectionAsync(schemaName))
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = "UPDATE raster_data SET raster = ST_SetUpperLeft(ST_SetScale(raster, 0.00234375, -0.0021875), -122.5, 37.84) WHERE id = @id";
+                command.Parameters.AddWithValue("id", rasterId);
+                await command.ExecuteNonQueryAsync();
+            }
+
+            var store = CreateStore(schemaName);
+            var query = new RasterQuery
+            {
+                OutputFormat = RasterFormat.TIFF,
+                OutputSrid = 4326,
+                OutputWidth = width,
+                OutputHeight = height,
+                ClipRegion = new RasterClipRegion
+                {
+                    Geometry = CreateEnvelopeWkb(-122.5, 37.7, -122.35, 37.84),
+                    Srid = 4326
+                }
+            };
+            var result = path switch
+            {
+                "single" => await store.ExportImageAsync(LayerId, rasterId, query),
+                "mosaic" => await store.ExportMosaicAsync(LayerId, [rasterId], RasterMergeStrategy.Newest, query),
+                _ => await new PostgresRasterMapRenderer(
+                    new FixtureConnectionProvider(fixture.DataSource),
+                    NullLogger<PostgresRasterMapRenderer>.Instance, schemaName)
+                    .RenderCollectionMapAsync(LayerId, new MapRenderRequest
+                    {
+                        BoundingBox = [-122.5, 37.7, -122.35, 37.84],
+                        BoundingBoxCrs = 4326,
+                        Crs = 4326,
+                        Width = width,
+                        Height = height,
+                        Format = RasterFormat.TIFF
+                    })
+            };
+
+            // Decode the TIFF: metadata dimensions alone missed ST_Resize changing
+            // the extent even for a 64x64 input and a requested 64x64 output.
+            var decoded = await ProbeExportedRasterAsync(schemaName, result.Data, 4326,
+                (-122.5 + 0.075 / width, 37.84 - 0.07 / height),
+                (-122.35 - 0.075 / width, 37.7 + 0.07 / height));
+            decoded.Width.Should().Be(width);
+            decoded.Height.Should().Be(height);
+            decoded.XMin.Should().BeApproximately(-122.5, 1e-9);
+            decoded.XMax.Should().BeApproximately(-122.35, 1e-9);
+            decoded.YMin.Should().BeApproximately(37.7, 1e-9);
+            decoded.YMax.Should().BeApproximately(37.84, 1e-9);
+            decoded.Values.Should().Equal(7, 7);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task Resize_SmallPixelScale_PreservesGridWithoutTextGeoreference()
+    {
+        await using var connection = await fixture.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH source AS (
+                SELECT ST_AddBand(
+                    ST_MakeEmptyRaster(2, 2, -122.5, 37.84, 0.0005, -0.0005, 0, 0, 4326),
+                    '8BUI'::text, 7, 0) AS rast
+            )
+            SELECT ST_Width(resized), ST_Height(resized), ST_SRID(resized),
+                ST_ScaleX(resized), ST_ScaleY(resized),
+                ST_UpperLeftX(resized), ST_UpperLeftY(resized)
+            FROM (SELECT {RasterProjectionSql.ResizePreservingGrid("rast", "64", "64")} AS resized FROM source) output
+            """;
+
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetInt32(0).Should().Be(64);
+        reader.GetInt32(1).Should().Be(64);
+        reader.GetInt32(2).Should().Be(4326);
+        reader.GetDouble(3).Should().BeApproximately(0.000015625, 1e-12);
+        reader.GetDouble(4).Should().BeApproximately(-0.000015625, 1e-12);
+        reader.GetDouble(5).Should().BeApproximately(-122.5, 1e-9);
+        reader.GetDouble(6).Should().BeApproximately(37.84, 1e-9);
+    }
+
+    [IntegrationTheory]
+    [InlineData(64, 64)]
+    [InlineData(59, 57)]
+    [InlineData(32, 16)]
+    public async Task Resize_RotatedGrid_PreservesFootprintAndExpectedSamples(int width, int height)
+    {
+        await using var connection = await fixture.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH pattern AS (
+                SELECT ST_SetValues(ST_AddBand(
+                    ST_MakeEmptyRaster(64, 64, -122.5, 37.84, 0.00234375, -0.0021875, 0.0005, 0.0003, 4326),
+                    '32BF'::text, 0, -9999), 1, 1, 1,
+                    ARRAY(SELECT ARRAY(SELECT (y * 1000 + x)::double precision
+                        FROM generate_series(1, 64) x) FROM generate_series(1, 64) y)) AS original
+            ), resized AS (
+                SELECT original, {RasterProjectionSql.ResizePreservingGrid("original", "@width", "@height")} AS rast
+                FROM pattern
+            )
+            SELECT ST_Width(rast), ST_Height(rast), ST_SRID(rast),
+                ST_HausdorffDistance(ST_ConvexHull(original), ST_ConvexHull(rast)),
+                (SELECT count(*) FROM generate_series(1, @width) x CROSS JOIN generate_series(1, @height) y
+                 WHERE ST_Value(rast, 1, x, y) IS DISTINCT FROM
+                    ((floor((y - 0.5) * 64 / @height) + 1) * 1000
+                        + floor((x - 0.5) * 64 / @width) + 1)::double precision)
+            FROM resized
+            """;
+        command.Parameters.AddWithValue("width", width);
+        command.Parameters.AddWithValue("height", height);
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetInt32(0).Should().Be(width);
+        reader.GetInt32(1).Should().Be(height);
+        reader.GetInt32(2).Should().Be(4326);
+        reader.GetDouble(3).Should().BeApproximately(0, 1e-9);
+        reader.GetInt64(4).Should().Be(0, "every output pixel must match center-based nearest-neighbor sampling");
     }
 
     [IntegrationTheory]

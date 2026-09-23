@@ -112,6 +112,25 @@ internal static class GeoServicesFieldConventions
         return false;
     }
 
+    /// <summary>
+    /// Converts statistics attributes advertised as timestamps to epoch milliseconds.
+    /// Calendar-date fields are excluded by the caller and retain their date-only form.
+    /// </summary>
+    internal static void CoerceDateAttributes(
+        IDictionary<string, object?> attributes,
+        IReadOnlyCollection<string> dateFieldNames)
+    {
+        foreach (var fieldName in dateFieldNames)
+        {
+            if (attributes.TryGetValue(fieldName, out var value) &&
+                value is not null &&
+                TryConvertToEpochMilliseconds(value, out var epochMilliseconds))
+            {
+                attributes[fieldName] = epochMilliseconds;
+            }
+        }
+    }
+
     private static bool TryConvertJsonElementToEpochMilliseconds(JsonElement element, out long epochMilliseconds)
     {
         switch (element.ValueKind)

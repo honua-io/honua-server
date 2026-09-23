@@ -47987,6 +47987,74 @@
           }
         },
         "additionalProperties": false
+      },
+      "LayerRelationshipBatchUpdateItem": {
+        "type": "object",
+        "required": [
+          "layerId"
+        ],
+        "description": "Complete desired relationship set for one global storage-layer id.",
+        "properties": {
+          "layerId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "relationships": {
+            "type": "array",
+            "maxItems": 64,
+            "description": "Full replacement relationship set.",
+            "items": {
+              "$ref": "#/components/schemas/LayerRelationshipUpdateItem"
+            }
+          }
+        }
+      },
+      "LayerRelationshipBatchUpdateRequest": {
+        "type": "object",
+        "required": [
+          "layers"
+        ],
+        "properties": {
+          "layers": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 64,
+            "items": {
+              "$ref": "#/components/schemas/LayerRelationshipBatchUpdateItem"
+            }
+          }
+        }
+      },
+      "LayerRelationshipBatchResponse": {
+        "type": "object",
+        "properties": {
+          "layers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LayerRelationshipResponse"
+            }
+          }
+        }
+      },
+      "ApiResponseLayerRelationshipBatchResponse": {
+        "type": "object",
+        "description": "Relationship sets from the atomically committed graph snapshot.",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "$ref": "#/components/schemas/LayerRelationshipBatchResponse"
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
       }
     }
   }

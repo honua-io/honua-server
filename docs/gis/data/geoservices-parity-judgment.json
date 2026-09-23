@@ -159,7 +159,7 @@
           "esriPaths": [
             "/FeatureServer/synchronizeReplica"
           ],
-          "notes": "Preview/opt-in in 2026.1. Supports download, upload, and bidirectional sync directions. Downloads apply the replica's stored scope, and a backlog above Limits:Replica:MaxChangesPerLayer per layer is delivered in consecutive generation windows (exceededTransferLimit; the cursor advances to the generation reached). An update that moves a row out of a scoped replica is delivered as a delete; because the change log keeps no pre-change state, a row updated into the scope arrives as an update. Esri id arrays carry the layer's protocol-facing object ids. Broader parity is deferred to release/2026.2."
+          "notes": "Preview/opt-in in 2026.1. Supports download, upload, and bidirectional sync directions. Downloads apply the replica's stored scope, and a backlog above Limits:Replica:MaxChangesPerLayer per layer is delivered in consecutive generation windows (exceededTransferLimit; the cursor advances to the generation reached). Scoped and visibility-filtered downloads classify each row from its pre-change image and its current state: a row updated into the scope arrives as an add, and a row that left the scope, became hidden or was deleted is delivered as a delete only when the client could hold it. Esri id arrays carry the layer's protocol-facing object ids. Broader parity is deferred to release/2026.2."
         },
         {
           "name": "Unregister Replica",
@@ -2599,7 +2599,7 @@
           "esriPaths": [
             "/VersionManagementServer"
           ],
-          "notes": "Returns a hardcoded descriptor (defaultVersionName \"sde.DEFAULT\", capabilities \"Create,Delete,Alter,Reconcile,Post\") after a service-read check only. It does not consult the provider's versioning support, so a non-Postgres store advertises five capabilities whose mutations then return 501."
+          "notes": "GET and POST return the descriptor after service-read, branch-versioning entitlement, and accessible bound-publication capability checks. The descriptor still uses a capability string rather than the Esri capability object and does not expose a durable DEFAULT version GUID; native workspace initialization remains unresolved."
         },
         {
           "name": "List versions; version info",
@@ -2686,6 +2686,14 @@
         ]
       },
       "operations": [
+        {
+          "name": "Service administration metadata",
+          "status": "partial",
+          "esriPaths": [
+            "/rest/admin/{serviceName}.{serviceType}"
+          ],
+          "notes": "Read-only service metadata for connections without a site segment. GET and POST expose the same principal-filtered service and branch-versioning metadata. This does not implement the ArcGIS Server administration mutation API."
+        },
         {
           "name": "Catalog (service directory)",
           "status": "implemented",

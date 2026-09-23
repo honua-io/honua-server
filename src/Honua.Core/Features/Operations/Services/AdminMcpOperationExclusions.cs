@@ -20,7 +20,7 @@ public static class AdminMcpOperationExclusions
         string ReasonCode,
         string Explanation);
 
-    /// <summary>The complete one-time-secret and browser-session exclusion roster.</summary>
+    /// <summary>The complete one-time-secret, secret-input, and browser-session exclusion roster.</summary>
     public static IReadOnlyList<Entry> All { get; } =
     [
         Secret("createAdminApiKey", "admin.api-key.create", "honua_admin_api_key_create", "Creates one-time API-key secret material."),
@@ -30,6 +30,9 @@ public static class AdminMcpOperationExclusions
         Secret("registerOAuthClient", "admin.oauth-client.register", "honua_admin_oauth_client_register", "Returns a newly issued OAuth client secret."),
         SecretInput("createOidcProvider", "admin.oidc-provider.create", "honua_admin_oidc_provider_create", "Accepts secret-bearing OIDC provider configuration."),
         SecretInput("updateOidcProvider", "admin.oidc-provider.update", "honua_admin_oidc_provider_update", "Accepts secret-bearing OIDC provider configuration."),
+        SecretInput("createConnection", "admin.connections.create", "honua_admin_connections_create", "Accepts a plaintext connection password."),
+        SecretInput("updateConnection", "admin.connections.update", "honua_admin_connections_update", "Accepts a plaintext connection password."),
+        SecretInput("testDraftConnection", "admin.connections.test-draft", "honua_admin_connections_test_draft", "Accepts a plaintext connection password."),
         Session("getAdminAuthSession", "admin.auth-session.get", "honua_admin_auth_session_get", "Reads browser-session-bound authentication state."),
         Session("issueAdminOperatorBearer", "admin.auth-session.issue-bearer", "honua_admin_auth_session_issue_bearer", "Issues a bearer from browser-session authority."),
         Session("logoutAdminAuthSession", "admin.auth-session.logout", "honua_admin_auth_session_logout", "Mutates the caller's browser-bound session."),

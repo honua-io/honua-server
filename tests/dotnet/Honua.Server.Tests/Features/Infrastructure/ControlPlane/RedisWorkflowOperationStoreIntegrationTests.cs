@@ -5,6 +5,8 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
 using Honua.TestKit;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using StackExchange.Redis;
 
@@ -14,6 +16,8 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 /// Redis integration tests for durable workflow operation storage and leases.
 /// </summary>
 [Collection("Redis")]
+[Protocol(TestProtocols.Infrastructure)]
+[Operation(Operations.TestInfrastructure)]
 public sealed class RedisWorkflowOperationStoreIntegrationTests(RedisFixture redis)
 {
     [Fact]
@@ -252,6 +256,53 @@ public sealed class RedisWorkflowOperationStoreIntegrationTests(RedisFixture red
         succeededIds.Should().NotContain(activeOperation.OperationId);
     }
 
+    [IntegrationTest]
+    public async Task WorkflowStore_QueryAsync_ReportsTruncatedTerminalIndexEvenWhenFilterHasNoMatches()
+    {
+        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisWorkflowOperationStore(multiplexer, NullLogger<RedisWorkflowOperationStore>.Instance);
+        var database = multiplexer.GetDatabase();
+        var now = DateTimeOffset.UtcNow;
+        var decoyPrefix = $"query-cap-{Guid.NewGuid():N}-";
+        var decoys = Enumerable.Range(0, 1001)
+            .Select(index => new SortedSetEntry(decoyPrefix + index, now.AddMinutes(index).ToUnixTimeMilliseconds()))
+            .ToArray();
+
+        await database.SortedSetAddAsync("controlplane:workflow:terminal", decoys);
+        try
+        {
+            var page = await store.QueryAsync(new WorkflowOperationQuery
+            {
+                Kind = WorkflowOperationKind.Deploy,
+                Status = WorkflowOperationStatus.ManualInterventionRequired,
+                Page = 1,
+                PageSize = 200,
+            });
+
+            page.Items.Should().BeEmpty();
+            page.HasMore.Should().BeFalse();
+            page.IsTruncated.Should().BeTrue();
+
+            // The query prunes expired decoys; restore the same bounded-overflow state
+            // before checking a request far past the materialized page range.
+            await database.SortedSetAddAsync("controlplane:workflow:terminal", decoys);
+            var beyondWindow = await store.QueryAsync(new WorkflowOperationQuery
+            {
+                Kind = WorkflowOperationKind.Deploy,
+                Status = WorkflowOperationStatus.ManualInterventionRequired,
+                Page = 100,
+                PageSize = 200,
+            });
+            beyondWindow.Items.Should().BeEmpty();
+            beyondWindow.HasMore.Should().BeFalse();
+            beyondWindow.IsTruncated.Should().BeTrue();
+        }
+        finally
+        {
+            await database.SortedSetRemoveAsync("controlplane:workflow:terminal", decoys.Select(decoy => decoy.Element).ToArray());
+        }
+    }
+
     [Fact]
     public async Task WorkflowStore_GetMostRecentSucceededDeployByTarget_ReturnsLatestAndPrunesRolledBack()
     {
@@ -354,6 +405,97 @@ public sealed class RedisWorkflowOperationStoreIntegrationTests(RedisFixture red
         finally
         {
             await db.SortedSetRemoveAsync("controlplane:workflow:terminal", decoys.Select(e => e.Element).ToArray());
+        }
+    }
+
+    [IntegrationTest]
+    public async Task WorkflowStore_LaterDeployLookup_PrunesExpiredOlderCreationMember()
+    {
+        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisWorkflowOperationStore(multiplexer, NullLogger<RedisWorkflowOperationStore>.Instance);
+        var database = multiplexer.GetDatabase();
+        var targetId = $"supersession-{Guid.NewGuid():N}";
+        var now = DateTimeOffset.UtcNow;
+        var older = CreateDeployOperationRecord($"older-{Guid.NewGuid():N}", targetId,
+            now.AddMinutes(-10), WorkflowOperationStatus.Failed);
+        var stuck = CreateDeployOperationRecord($"stuck-{Guid.NewGuid():N}", targetId,
+            now.AddMinutes(-5), WorkflowOperationStatus.ManualInterventionRequired);
+
+        (await store.TryCreateAsync(older)).Should().BeTrue();
+        (await store.TryCreateAsync(stuck)).Should().BeTrue();
+        await database.KeyDeleteAsync($"controlplane:workflow:{older.OperationId}");
+
+        (await store.HasLaterDeployOfTargetAsync(stuck)).Should().BeFalse();
+        (await database.SortedSetScoreAsync($"controlplane:workflow:deploy-created:{targetId}", older.OperationId)).Should().BeNull();
+    }
+
+    [IntegrationTest]
+    public async Task WorkflowStore_LaterDeployLookup_KeepsMissingSameMillisecondMemberIncomplete()
+    {
+        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisWorkflowOperationStore(multiplexer, NullLogger<RedisWorkflowOperationStore>.Instance);
+        var database = multiplexer.GetDatabase();
+        var targetId = $"supersession-{Guid.NewGuid():N}";
+        var createdAt = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        var stuck = CreateDeployOperationRecord($"stuck-{Guid.NewGuid():N}", targetId,
+            createdAt, WorkflowOperationStatus.ManualInterventionRequired);
+        var later = CreateDeployOperationRecord($"later-{Guid.NewGuid():N}", targetId,
+            createdAt.AddTicks(1), WorkflowOperationStatus.Failed);
+
+        (await store.TryCreateAsync(stuck)).Should().BeTrue();
+        (await store.TryCreateAsync(later)).Should().BeTrue();
+        await database.KeyDeleteAsync($"controlplane:workflow:{later.OperationId}");
+
+        (await store.HasLaterDeployOfTargetAsync(stuck)).Should().BeNull();
+        (await database.SortedSetScoreAsync($"controlplane:workflow:deploy-created:{targetId}", later.OperationId))
+            .Should().NotBeNull("an equal-score member may be later and cannot be safely pruned");
+    }
+
+    [IntegrationTest]
+    public async Task WorkflowStore_LaterDeployLookup_KeepsCappedEqualMillisecondBoundaryIncomplete()
+    {
+        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisWorkflowOperationStore(multiplexer, NullLogger<RedisWorkflowOperationStore>.Instance);
+        var database = multiplexer.GetDatabase();
+        var targetId = $"supersession-{Guid.NewGuid():N}";
+        var createdAt = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        var stuck = CreateDeployOperationRecord($"stuck-{Guid.NewGuid():N}", targetId,
+            createdAt, WorkflowOperationStatus.ManualInterventionRequired);
+        var later = CreateDeployOperationRecord($"later-{Guid.NewGuid():N}", targetId,
+            createdAt.AddTicks(1), WorkflowOperationStatus.Failed);
+        var boundary = Enumerable.Range(0, 49)
+            .Select(_ => CreateDeployOperationRecord($"boundary-{Guid.NewGuid():N}", targetId,
+                createdAt, WorkflowOperationStatus.Failed))
+            .ToArray();
+
+        var createdOperations = new[] { stuck, later }.Concat(boundary).ToArray();
+        foreach (var operation in createdOperations)
+        {
+            (await store.TryCreateAsync(operation)).Should().BeTrue();
+        }
+
+        var key = $"controlplane:workflow:deploy-created:{targetId}";
+        await database.KeyDeleteAsync(key);
+        await database.SortedSetAddAsync(key,
+            new[] { new SortedSetEntry(stuck.OperationId, createdAt.ToUnixTimeMilliseconds()) }
+                .Concat(boundary.Select(operation => new SortedSetEntry(operation.OperationId, createdAt.ToUnixTimeMilliseconds())))
+                .ToArray());
+
+        try
+        {
+            (await database.SortedSetLengthAsync(key)).Should().Be(50);
+            (await store.HasLaterDeployOfTargetAsync(stuck)).Should().BeNull();
+        }
+        finally
+        {
+            await database.KeyDeleteAsync(key);
+            await database.SortedSetRemoveAsync(
+                "controlplane:workflow:terminal",
+                createdOperations.Select(operation => (RedisValue)operation.OperationId).ToArray());
+            foreach (var operation in createdOperations)
+            {
+                await database.KeyDeleteAsync($"controlplane:workflow:{operation.OperationId}");
+            }
         }
     }
 
