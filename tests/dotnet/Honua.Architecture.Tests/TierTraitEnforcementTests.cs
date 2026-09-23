@@ -108,18 +108,27 @@ public sealed class TierTraitEnforcementTests
             TierTraitBaseline.RunGit(root, "add", "README");
             TierTraitBaseline.RunGit(root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "initial");
 
-            File.WriteAllText(path, "Example.ExistingBareFact\n");
+            var existingMethod = typeof(TierTraitEnforcementTests).GetMethod(
+                nameof(TierDetection_RecognisesTestKitTierAttributes_AndRejectsPlainXunitFacts))!;
+            var legacyKey = $"{typeof(TierTraitEnforcementTests).FullName}.{existingMethod.Name}";
+            var signatureKey = TierTraitScanner.MethodKey(typeof(TierTraitEnforcementTests), existingMethod);
+            File.WriteAllText(path, $"Example.ExistingBareFact\n{legacyKey}\n");
             TierTraitBaseline.RunGit(root, "add", TierTraitBaseline.RelativePath);
             TierTraitBaseline.RunGit(root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "introduce-baseline");
             TierTraitBaseline.ReadFromFirstParent(root).Should().BeNull("the first baseline is allowed to be seeded");
 
-            File.AppendAllText(path, "Example.NewBareFact\n");
+            File.AppendAllText(path, $"Example.NewBareFact\n{signatureKey}\n");
             TierTraitBaseline.RunGit(root, "add", TierTraitBaseline.RelativePath);
             TierTraitBaseline.RunGit(root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "add-untiered-test-and-baseline-line");
 
             var prior = TierTraitBaseline.ReadFromFirstParent(root)!;
-            TierTraitBaseline.AddedEntries(File.ReadAllLines(path), prior)
-                .Should().ContainSingle().Which.Should().Be("Example.NewBareFact");
+            prior.Should().Contain(legacyKey,
+                "a trusted parent baseline entry must not be reinterpreted using today's test methods");
+            var added = TierTraitBaseline.AddedEntries(File.ReadAllLines(path), prior);
+            added.Should().HaveCount(2);
+            added.Should().Contain("Example.NewBareFact");
+            added.Should().Contain(signatureKey,
+                "a legacy name must not authorize an untiered replacement signature");
         }
         finally
         {
