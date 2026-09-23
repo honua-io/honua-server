@@ -139,15 +139,50 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
             stats.Should().ContainSingle();
             stats[0].MinValue.Should().Be(20);
             stats[0].MaxValue.Should().Be(40);
+            stats[0].ValidPixelCount.Should().Be(8,
+                "the snapped margin must not become a valid zero on PostGIS 16 and 17");
 
             var export = await store.ExportMosaicAsync(
                 LayerId, ids, RasterMergeStrategy.Newest, new RasterQuery { OutputFormat = RasterFormat.TIFF });
             export.Data.Should().NotBeEmpty();
+            export.PixelType.Should().Be("64BF", "NoData-less floating bands need a collision-free padding marker");
 
             Band1(await store.IdentifyMosaicAsync(LayerId, ids, RasterMergeStrategy.Newest, 0.5, 1.5, 4326))
                 .Should().Be(20);
             Band1(await store.IdentifyMosaicAsync(LayerId, ids, RasterMergeStrategy.Newest, 3.5, 1.5, 4326))
                 .Should().Be(40, "the snapped raster keeps its own values, and the fill margin is NoData");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData("32BF", 0d)]
+    [InlineData("32BF", -123456.789d)]
+    [InlineData("32BSI", -123457d)]
+    public async Task MosaicStatistics_WithNoDataLessZeroAndFormerDefaultMarkers_CountOnlySourcePixels(
+        string pixelType, double sourceValue)
+    {
+        var schemaName = await CreateSchemaAsync();
+        try
+        {
+            var west = await InsertConstantRasterAsync(
+                schemaName, "west", 0, 2, 1.0, sourceValue, Day(1), pixelType: pixelType);
+            var shifted = await InsertConstantRasterAsync(schemaName, "shifted", 2.5, 2, 1.0, 40, Day(2));
+            var store = CreateStore(schemaName);
+
+            var stats = await store.GetMosaicStatisticsAsync(
+                LayerId, [west, shifted], RasterMergeStrategy.Newest);
+            stats.Should().ContainSingle();
+            var storedValue = pixelType == "32BF" ? (double)(float)sourceValue : sourceValue;
+            stats[0].MinValue.Should().Be(storedValue);
+            stats[0].MaxValue.Should().Be(40);
+            stats[0].ValidPixelCount.Should().Be(8,
+                "the source value is valid but the snapped-out margin is NoData");
+            Band1(await store.IdentifyMosaicAsync(LayerId, [west, shifted], RasterMergeStrategy.Newest, 0.5, 1.5, 4326))
+                .Should().Be(storedValue);
         }
         finally
         {
@@ -474,9 +509,9 @@ public sealed class PostgresRasterStoreUnalignedMosaicTests(PostgresFixture fixt
         command.Parameters.AddWithValue("upperLeftY", upperLeftY);
         command.Parameters.AddWithValue("pixelSize", pixelSize);
         command.Parameters.AddWithValue("pixelSizeY", pixelSizeY ?? pixelSize);
+        command.Parameters.AddWithValue("pixelType", pixelType);
         command.Parameters.AddWithValue("skewX", skewX);
         command.Parameters.AddWithValue("skewY", skewY);
-        command.Parameters.AddWithValue("pixelType", pixelType);
         command.Parameters.AddWithValue("value", value);
         command.Parameters.AddWithValue("acquisition", acquisition.UtcDateTime);
         return (long)(await command.ExecuteScalarAsync())!;
