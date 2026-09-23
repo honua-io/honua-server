@@ -42,6 +42,42 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithEmptyShowSelection_RendersEveryLayer()
+    {
+        // Regression: layers=show: was rejected with "layers parameter contains an empty
+        // layer id." That is exactly what stock QGIS sends when its ArcGIS REST Server
+        // connection is pointed at a MapServer's "(All layers)" entry - captured from
+        // QGIS 3.44.14's own arcgismapserver provider, which means "no restriction" by
+        // it. The service's layers each render individually, and an empty layers= already
+        // produced the full image, so the keyword-with-no-ids spelling now does too.
+        var response = await Fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&bboxSR=4326&imageSR=4326&size=256,256&format=png&transparent=true&f=image&layers=show:");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        (await response.Content.ReadAsByteArrayAsync()).Should().HaveCountGreaterThan(100);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithEmptyIdInsideLayerList_IsStillRejected()
+    {
+        // The normalisation above is deliberately narrow: only a wholly empty selection
+        // list is treated as no filter. An empty id *between* real ids stays malformed,
+        // so a client that drops an id mid-list still learns it rather than silently
+        // receiving an image for the wrong layer set.
+        var response = await Fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&bboxSR=4326&imageSR=4326&size=256,256&format=png&f=image&layers=show:1,,2");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("empty layer id");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_WithJpgPngFormat_ReturnsPngImage()
     {
         // Regression: format=jpgpng was rejected with "Output format 'jpgpng' is not

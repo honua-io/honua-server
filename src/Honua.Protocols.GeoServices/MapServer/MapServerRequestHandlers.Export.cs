@@ -235,7 +235,7 @@ internal static partial class MapServerEndpoints
 
             var timeValue = GetValue(values, "time");
             var timeRelationValue = NormalizeTimeRelation(GetValue(values, "timeRelation"));
-            var layersValue = GetValue(values, "layers");
+            var layersValue = NormalizeEmptyLayerSelection(GetValue(values, "layers"));
             if (HasEmptyLayerToken(layersValue))
             {
                 return StandardErrorHelpers.CreateBadRequest(context, "layers parameter contains an empty layer id.");
@@ -1809,6 +1809,44 @@ internal static partial class MapServerEndpoints
         }
 
         return (ExportLayerVisibility.Show, ParseLayerIds(spec));
+    }
+
+    /// <summary>
+    /// Treat a selection keyword with no ids after it - "show:", "hide:" and the rest -
+    /// as no layer filter at all, the same as omitting the parameter.
+    /// </summary>
+    /// <remarks>
+    /// Stock QGIS sends exactly <c>layers=show:</c> when its ArcGIS REST Server
+    /// connection is pointed at a MapServer's "(All layers)" entry, meaning "no
+    /// restriction". Read literally that is a selection keyword with one empty id, and
+    /// the empty-token guard answered HTTP 400 - so the layer never drew in QGIS, on a
+    /// service whose layers all render individually. An empty <c>layers=</c> already
+    /// takes the no-filter path and produces the full image, so this only routes the
+    /// keyword-with-no-ids spelling to the same place.
+    ///
+    /// Deliberately narrow. An empty id *inside* a list ("show:1,,2") is still a
+    /// malformed request and still rejected; only a wholly empty list is normalised.
+    /// This follows #4043, where export likewise had to accept the layer spelling a
+    /// real client emits rather than the one the parameter grammar implies.
+    /// </remarks>
+    private static string? NormalizeEmptyLayerSelection(string? layersParam)
+    {
+        if (string.IsNullOrWhiteSpace(layersParam))
+        {
+            return layersParam;
+        }
+
+        var spec = layersParam.Trim();
+        foreach (var keyword in new[] { "show:", "hide:", "include:", "exclude:" })
+        {
+            if (spec.StartsWith(keyword, StringComparison.OrdinalIgnoreCase)
+                && spec[keyword.Length..].Trim().Length == 0)
+            {
+                return null;
+            }
+        }
+
+        return layersParam;
     }
 
     private static bool HasEmptyLayerToken(string? layersParam)
