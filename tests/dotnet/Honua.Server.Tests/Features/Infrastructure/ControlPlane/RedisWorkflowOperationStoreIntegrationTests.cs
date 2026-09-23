@@ -468,7 +468,8 @@ public sealed class RedisWorkflowOperationStoreIntegrationTests(RedisFixture red
                 createdAt, WorkflowOperationStatus.Failed))
             .ToArray();
 
-        foreach (var operation in new[] { stuck, later }.Concat(boundary))
+        var createdOperations = new[] { stuck, later }.Concat(boundary).ToArray();
+        foreach (var operation in createdOperations)
         {
             (await store.TryCreateAsync(operation)).Should().BeTrue();
         }
@@ -488,6 +489,13 @@ public sealed class RedisWorkflowOperationStoreIntegrationTests(RedisFixture red
         finally
         {
             await database.KeyDeleteAsync(key);
+            await database.SortedSetRemoveAsync(
+                "controlplane:workflow:terminal",
+                createdOperations.Select(operation => (RedisValue)operation.OperationId).ToArray());
+            foreach (var operation in createdOperations)
+            {
+                await database.KeyDeleteAsync($"controlplane:workflow:{operation.OperationId}");
+            }
         }
     }
 
