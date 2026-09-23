@@ -353,6 +353,34 @@ public sealed class PostgresRasterStoreQueryTests(PostgresFixture fixture)
         }
     }
 
+    [IntegrationTest]
+    public async Task Resize_SmallPixelScale_PreservesGridWithoutTextGeoreference()
+    {
+        await using var connection = await fixture.GetConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"""
+            WITH source AS (
+                SELECT ST_AddBand(
+                    ST_MakeEmptyRaster(2, 2, -122.5, 37.84, 0.0005, -0.0005, 0, 0, 4326),
+                    '8BUI'::text, 7, 0) AS rast
+            )
+            SELECT ST_Width(resized), ST_Height(resized), ST_SRID(resized),
+                ST_ScaleX(resized), ST_ScaleY(resized),
+                ST_UpperLeftX(resized), ST_UpperLeftY(resized)
+            FROM (SELECT {RasterProjectionSql.ResizePreservingGrid("rast", "64", "64")} AS resized FROM source) output
+            """;
+
+        await using var reader = await command.ExecuteReaderAsync();
+        (await reader.ReadAsync()).Should().BeTrue();
+        reader.GetInt32(0).Should().Be(64);
+        reader.GetInt32(1).Should().Be(64);
+        reader.GetInt32(2).Should().Be(4326);
+        reader.GetDouble(3).Should().BeApproximately(0.000015625, 1e-12);
+        reader.GetDouble(4).Should().BeApproximately(-0.000015625, 1e-12);
+        reader.GetDouble(5).Should().BeApproximately(-122.5, 1e-9);
+        reader.GetDouble(6).Should().BeApproximately(37.84, 1e-9);
+    }
+
     [IntegrationTheory]
     [InlineData(64, 64)]
     [InlineData(59, 57)]

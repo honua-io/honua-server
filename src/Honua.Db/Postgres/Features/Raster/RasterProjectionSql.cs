@@ -24,18 +24,20 @@ internal static class RasterProjectionSql
     // while resizing. Resize the pixel array on a unit grid, then restore the
     // source origin and proportionally scaled geographic basis vectors.
     // Keep the same optimizer barrier here: resizing reads its input repeatedly.
+    // Set the restored basis numerically: PostGIS's numeric ST_SetGeoReference overload
+    // formats doubles as text, then rejects scientific notation for small pixel scales.
     internal static string ResizePreservingGrid(string raster, string width, string height)
         => $"""
             (SELECT CASE WHEN ST_Width(resize_source.rast) = {width} AND ST_Height(resize_source.rast) = {height}
                 THEN resize_source.rast
-                ELSE ST_SetSRID(ST_SetGeoReference(
+                ELSE ST_SetSRID(ST_SetUpperLeft(ST_SetSkew(ST_SetScale(
                     ST_Resize(ST_SetSRID(ST_SetGeoReference(resize_source.rast,
                         0, ST_Height(resize_source.rast), 1, -1, 0, 0), 0), {width}, {height}, 'NearestNeighbor'),
-                    ST_UpperLeftX(resize_source.rast), ST_UpperLeftY(resize_source.rast),
                     ST_ScaleX(resize_source.rast) * ST_Width(resize_source.rast) / {width},
-                    ST_ScaleY(resize_source.rast) * ST_Height(resize_source.rast) / {height},
+                    ST_ScaleY(resize_source.rast) * ST_Height(resize_source.rast) / {height}),
                     ST_SkewX(resize_source.rast) * ST_Height(resize_source.rast) / {height},
                     ST_SkewY(resize_source.rast) * ST_Width(resize_source.rast) / {width}),
+                    ST_UpperLeftX(resize_source.rast), ST_UpperLeftY(resize_source.rast)),
                     ST_SRID(resize_source.rast)) END
              FROM (SELECT {raster} AS rast OFFSET 0) resize_source)
             """;
