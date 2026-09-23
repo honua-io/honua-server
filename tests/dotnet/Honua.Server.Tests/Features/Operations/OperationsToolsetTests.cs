@@ -1240,10 +1240,13 @@ public sealed class OperationsToolsetTests
 
         var descriptors = (await catalog.GetSnapshotAsync(CancellationToken.None)).Operations;
         var tools = await source.GetToolsAsync(CancellationToken.None);
+        var expected = descriptors
+            .Where(static descriptor => !AdminMcpOperationExclusions.ContainsOperation(descriptor.OperationId))
+            .Select(static descriptor => PublishedOperationTool.ProjectName(descriptor.OperationId));
 
         descriptors.Should().HaveCount(AdminConnectImportOperationCatalog.Definitions.Count);
         tools.Select(static tool => tool.Name).Should().BeEquivalentTo(
-            descriptors.Select(static descriptor => PublishedOperationTool.ProjectName(descriptor.OperationId)));
+            expected);
         descriptors.Where(static descriptor => descriptor.Policy.SideEffectClass != OperationSideEffectClass.ReadOnly)
             .Should().OnlyContain(static descriptor => descriptor.ApprovalModel == OperationApprovalModel.OperatorGate);
     }
