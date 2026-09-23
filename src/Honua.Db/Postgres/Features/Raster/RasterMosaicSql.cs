@@ -98,7 +98,8 @@ internal static class RasterMosaicSql
     /// A valid 64BF pixel equal to that reserved value instead raises an explicit collision
     /// error; one NoData marker cannot also represent that valid value.
     /// Outside that promotion path, NoData-less bands receive their pixel type's default as
-    /// NoData after resampling so the snapped margin is excluded. Signed and floating pixels
+    /// NoData before resampling so the snapped margin is excluded on every supported PostGIS
+    /// version. Signed and floating pixels
     /// holding that default can therefore be treated as NoData in an unaligned mosaic.
     /// </para>
     /// </remarks>
@@ -147,10 +148,11 @@ internal static class RasterMosaicSql
                  WHERE candidate.rast IS NOT NULL AND NOT ST_IsEmpty(candidate.rast)) AS grid)
             """;
 
-        // The pixel type's default NoData value, i.e. the value PostGIS fills the snapped-out
-        // margin with (rt_band_get_default_nodata).
+        // Explicit fallback NoData values for bands that have no mask. Assign them before
+        // resampling: older PostGIS/GDAL versions otherwise fill the snapped margin with
+        // zero, while newer versions use the pixel type's default NoData value.
         const string DefaultNoData = """
-            CASE ST_BandPixelType(resampled.rast, band.n)
+            CASE ST_BandPixelType(prepared.rast, band.n)
                 WHEN '8BSI' THEN -128
                 WHEN '16BSI' THEN -32768
                 WHEN '32BSI' THEN -123457
@@ -198,17 +200,17 @@ internal static class RasterMosaicSql
                  FROM generate_series(1, ST_NumBands(rast)) AS band(n)))
             """;
 
-        var resampled = $"""
-            (SELECT ST_AddBand(
-                        ST_MakeEmptyRaster(resampled.rast),
-                        (SELECT array_agg(
-                                    CASE WHEN ST_BandNoDataValue(resampled.rast, band.n) IS NULL
-                                         THEN ST_SetBandNoDataValue(ST_Band(resampled.rast, band.n), 1, {DefaultNoData})
-                                         ELSE ST_Band(resampled.rast, band.n)
-                                    END ORDER BY band.n)
-                         FROM generate_series(1, ST_NumBands(resampled.rast)) AS band(n)))
-             FROM (SELECT ST_Resample(prepared.rast, {reference}, 'NearestNeighbor') AS rast) AS resampled)
+        var withNoData = $"""
+            ST_AddBand(
+                ST_MakeEmptyRaster(prepared.rast),
+                (SELECT array_agg(
+                            CASE WHEN ST_BandNoDataValue(prepared.rast, band.n) IS NULL
+                                 THEN ST_SetBandNoDataValue(ST_Band(prepared.rast, band.n), 1, {DefaultNoData})
+                                 ELSE ST_Band(prepared.rast, band.n)
+                            END ORDER BY band.n)
+                 FROM generate_series(1, ST_NumBands(prepared.rast)) AS band(n)))
             """;
+        var resampled = $"ST_Resample({withNoData}, {reference}, 'NearestNeighbor')";
 
         return $"""
             (SELECT CASE
