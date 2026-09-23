@@ -235,7 +235,7 @@ internal static partial class MapServerEndpoints
 
             var timeValue = GetValue(values, "time");
             var timeRelationValue = NormalizeTimeRelation(GetValue(values, "timeRelation"));
-            var layersValue = GetValue(values, "layers");
+            var layersValue = NormalizeEmptyLayerSelection(GetValue(values, "layers"));
             if (HasEmptyLayerToken(layersValue))
             {
                 return StandardErrorHelpers.CreateBadRequest(context, "layers parameter contains an empty layer id.");
@@ -803,6 +803,21 @@ internal static partial class MapServerEndpoints
         var candidate = format.Trim().ToLowerInvariant();
         switch (candidate)
         {
+            case "jpgpng":
+                // Esri "jpgpng" means "JPEG where opaque, PNG where transparency is needed".
+                // This handler emits a single concrete encoding, so normalise to png: it
+                // preserves transparency and is the safe lossless choice for the combined
+                // token. ImageServerExportHandler.TryResolveOutputFormat already does
+                // exactly this, and the two services should not disagree about a format
+                // Esri defines identically for both.
+                //
+                // Omitting it was a real interop break, not a style choice: jpgpng is the
+                // Image Encoding QGIS's ArcGIS REST Server connection defaults to, so a
+                // stock QGIS user adding a Honua MapServer got an empty canvas and
+                // "Error 400: Bad Request" while identify, legend and the service document
+                // all worked.
+                normalized = "png";
+                return true;
             case "png":
             case "png8":
             case "png24":
@@ -1158,7 +1173,9 @@ internal static partial class MapServerEndpoints
                 return (Array.Empty<ExportRenderLayer>(), null);
             }
 
-            if (requestedStaticLayerIds.Count == 0)
+            // An empty show list is malformed. An empty include or exclude list is the
+            // default-visible set (include nothing extra, exclude nothing), not a 400.
+            if (requestedStaticLayerIds.Count == 0 && visibility == ExportLayerVisibility.Show)
             {
                 return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(context, "Invalid layers parameter."));
             }
@@ -1796,6 +1813,46 @@ internal static partial class MapServerEndpoints
         return (ExportLayerVisibility.Show, ParseLayerIds(spec));
     }
 
+    /// <summary>
+    /// Treat an empty <c>show:</c> selection as the default layer view.
+    /// </summary>
+    /// <remarks>
+    /// Stock QGIS sends exactly <c>layers=show:</c> when its ArcGIS REST Server
+    /// connection is pointed at a MapServer's "(All layers)" entry, meaning "no
+    /// restriction". Read literally that is a selection keyword with one empty id, and
+    /// the empty-token guard answered HTTP 400 - so the layer never drew in QGIS, on a
+    /// service whose layers all render individually. An empty <c>layers=</c> already
+    /// takes the no-filter path and produces the default-visible image, so this only
+    /// routes that one spelling to the same place.
+    ///
+    /// Empty <c>include:</c> and <c>exclude:</c> are not the same request. They must
+    /// keep their prefix so <c>ResolveRenderLayers</c> selects only the default-visible
+    /// layers. Collapsing them to null would draw every dynamic layer, including ones
+    /// whose source has <c>DefaultVisibility=false</c>. An empty <c>hide:</c> means
+    /// hide nothing, including layers hidden by default, so it keeps its prefix too.
+    ///
+    /// Deliberately narrow. An empty id *inside* a list ("show:1,,2") is still a
+    /// malformed request and still rejected; only a wholly empty <c>show:</c> list is
+    /// normalised. This follows #4043, where export likewise had to accept the layer
+    /// spelling a real client emits rather than the one the parameter grammar implies.
+    /// </remarks>
+    private static string? NormalizeEmptyLayerSelection(string? layersParam)
+    {
+        if (string.IsNullOrWhiteSpace(layersParam))
+        {
+            return layersParam;
+        }
+
+        var spec = layersParam.Trim();
+        if (spec.StartsWith("show:", StringComparison.OrdinalIgnoreCase)
+            && spec["show:".Length..].Trim().Length == 0)
+        {
+            return null;
+        }
+
+        return layersParam;
+    }
+
     private static bool HasEmptyLayerToken(string? layersParam)
     {
         if (string.IsNullOrWhiteSpace(layersParam))
@@ -1804,6 +1861,11 @@ internal static partial class MapServerEndpoints
         }
 
         var spec = layersParam.Trim();
+        if (spec.Equals("hide:", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
         if (spec.StartsWith("show:", StringComparison.OrdinalIgnoreCase))
         {
             spec = spec["show:".Length..];

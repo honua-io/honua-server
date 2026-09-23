@@ -8,7 +8,7 @@
   "matrixSource": "docs/gis/data/client-certification-matrix.v1.json",
   "proseContract": "docs/gis/CLIENT_CERTIFICATION_FIXTURE_CONTRACT.md",
   "evidenceSchema": "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
-  "fixtureRevision": "sha256:e8e100e7b4d2fbab8be044dac3625a9ef3ad87e7b8a302457cb79e63affd62b9",
+  "fixtureRevision": "sha256:cb28aeb46423d45948cd869c22bb674502760414c3ffd52b86e8821daaa2e925",
   "serverConfigRevision": "sha256:d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a",
   "authPolicyRevision": "sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9",
   "digestAlgorithms": {
@@ -41,8 +41,8 @@
     {
       "path": "tests/seed/client-compat-v1.sql",
       "role": "fixture",
-      "sha256": "sha256:12e00231cb314f93aad2d3a25713198559c976f8b6b317033003eac2590eddd6",
-      "purpose": "Canonical vector seed: base schema, honua.seed_metadata_v2_compat_snapshot, service test_service, canonical layer 0, ten read fixtures, and isolated WFS-T mutation layers 10-12."
+      "sha256": "sha256:9874de13a0c589152d3d5d33364038b5af03365401df930238718f6e88848584",
+      "purpose": "Canonical vector and raster seed: base schema, honua.seed_metadata_v2_compat_snapshot, service test_service, canonical Point layer 0 with a deterministic 64x64 single-band raster and statistics, ten read fixtures, and isolated WFS-T mutation layers 10-12."
     },
     {
       "path": "tests/seed/browser-compat.yaml",
@@ -71,8 +71,26 @@
     {
       "path": "docker/client-compat/seed/run.sh",
       "role": "fixture",
-      "sha256": "sha256:caadbabb9ec114561e05249ee9a115d1eaa0865c76c0af9f4b8951f3a5b5f654",
+      "sha256": "sha256:69b4b9118b4edee033dcde30b79fd24b8f62923c0d5af725c8aa004c60ec981f",
       "purpose": "Definition of which seed files are applied, and in which order, for the client-compat matrix. Adding or removing a fixture input changes this file and therefore fixtureRevision."
+    },
+    {
+      "path": "docker/client-compat/seed/publish-pmtiles.py",
+      "role": "fixture",
+      "sha256": "sha256:90301425ffd2e4f86f008fe36d889257255e509ab032b9d87ca1594fd39f9f37",
+      "purpose": "Publishes the deterministic PMTiles derivative used by client certification."
+    },
+    {
+      "path": "docker/client-compat/seed/publish-cog.py",
+      "role": "fixture",
+      "sha256": "sha256:35d39c53c18d1933992a31f2eeead6647afa6c3324e8028798d6947d5e57139f",
+      "purpose": "Publishes the deterministic COG derivative used by client certification."
+    },
+    {
+      "path": "docker/client-compat/seed/publish-scene.py",
+      "role": "fixture",
+      "sha256": "sha256:2a7283060de2b42bc2f7ff72451a6784a7245c21eacf7a4fec9a0578b7d0a720",
+      "purpose": "Publishes the deterministic scene derivatives used by client certification."
     },
     {
       "path": "tests/config/client-compat-server-v1.json",
@@ -523,9 +541,8 @@
     "raster": {
       "status": "realized",
       "source": "tests/seed/browser-compat.yaml",
-      "description": "One deterministic 64x64 single-band 8BUI raster with every pixel set to 180, anchored at (-122.45, 37.80) with a 0.00109375 degree pixel, plus a matching honua.raster_statistics row (min=max=mean=180, stddev=0, 4096 valid pixels).",
-      "boundLayer": "2000",
-      "gapId": "raster-absent-on-canonical-service"
+      "description": "One deterministic 64x64 single-band 8BUI raster with every pixel set to 180 on browser_compat layer 2000, plus a deterministic 64x64 single-band 8BUI raster with every pixel set to 128 on canonical test_service layer 0, with matching honua.raster_statistics rows.",
+      "boundLayer": "2000"
     },
     "styleAndRender": {
       "status": "partial",
@@ -1259,7 +1276,7 @@
     {
       "id": "NB-DDB-NULL-01",
       "scenarioFacetId": "SF-GEOM-NULL",
-      "description": "4 NULL and 6 populated description values across 10 rows \u2014 the server emits JSON null (not an omitted key or an empty string) and no row was dropped."
+      "description": "4 NULL and 6 populated description values across 10 rows — the server emits JSON null (not an omitted key or an empty string) and no row was dropped."
     },
     {
       "id": "NB-DDB-NULL-02",
@@ -1269,7 +1286,7 @@
     {
       "id": "NB-DDB-PAGE-03",
       "scenarioFacetId": "SF-PAGE-LIMIT",
-      "description": "5 pages of limit=3 produced [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] \u2014 exactly the full set, no duplicates, no gaps, and the walk terminated on an empty page."
+      "description": "5 pages of limit=3 produced [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] — exactly the full set, no duplicates, no gaps, and the walk terminated on an empty page."
     },
     {
       "id": "NB-DDB-PAGE-04",
@@ -1949,12 +1966,12 @@
     {
       "id": "NB-RSF-FMT-01",
       "scenarioFacetId": "SF-EXT-FORMAT",
-      "description": "End-to-end GeoPackage fidelity: the WFS response was written with sf::st_write() and read back with sf::st_read() \u2014 10/10 rows, names match, empty geometries match, max coordinate...."
+      "description": "End-to-end GeoPackage fidelity: the WFS response was written with sf::st_write() and read back with sf::st_read() — 10/10 rows, names match, empty geometries match, max coordinate...."
     },
     {
       "id": "NB-RSF-FMT-02",
       "scenarioFacetId": "SF-EXT-FORMAT",
-      "description": "End-to-end GeoJSON fidelity: the WFS response was written with sf::st_write() and read back with sf::st_read() \u2014 10/10 rows, names match, empty geometries match, max coordinate deviation...."
+      "description": "End-to-end GeoJSON fidelity: the WFS response was written with sf::st_write() and read back with sf::st_read() — 10/10 rows, names match, empty geometries match, max coordinate deviation...."
     },
     {
       "id": "NB-RSF-FMT-03",
@@ -4025,7 +4042,7 @@
     "producer": "tests/python/shared/cert_envelope.py::build_lane_runtime",
     "currentValues": {
       "fixture_revision": {
-        "value": "sha256:12e00231cb314f93aad2d3a25713198559c976f8b6b317033003eac2590eddd6",
+        "value": "sha256:9874de13a0c589152d3d5d33364038b5af03365401df930238718f6e88848584",
         "boundTo": "inputs[tests/seed/client-compat-v1.sql].sha256",
         "convergenceTarget": "fixtureRevision",
         "gapId": "receipt-binding-uses-per-file-digests"
@@ -4101,12 +4118,6 @@
       "id": "edit-path-uncertified",
       "area": "vector-seed",
       "reason": "The py-owslib lane certifies WFS-T insert, update, and delete only on dedicated scratch layers 10-12. No active lane mutates canonical layer 0, and the other advertised Create/Update/Delete/Sync protocol surfaces remain uncertified.",
-      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3435"
-    },
-    {
-      "id": "raster-absent-on-canonical-service",
-      "area": "raster",
-      "reason": "honua.raster_data is seeded only for browser_compat layer 2000. The res-image-layer-0 resource on test_service exists in the Metadata v2 graph with no raster rows behind it, so ImageServer, WCS, and OGC API Coverages on the canonical service have no deterministic content.",
       "trackingIssue": "https://github.com/honua-io/honua-server/issues/3435"
     },
     {

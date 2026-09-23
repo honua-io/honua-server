@@ -2534,6 +2534,42 @@
       ]
     },
     {
+      "surfaceId": "wcs-1.0.0",
+      "displayName": "WCS 1.0.0",
+      "surfaceKind": "nested-standard",
+      "protocol": "WCS 1.0.0",
+      "canonicalIdentifier": "/rest/services/{id}/ImageServer/WCS + /ogc/services/{serviceId}/wcs + /ogc/wcs/{serviceId}",
+      "parentSurfaceId": "image-server",
+      "endpointPrefixes": [
+        "/ogc/services/{serviceId}/wcs",
+        "/ogc/wcs/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [
+        "/ImageServer/WCS"
+      ],
+      "operationKeys": [
+        "WCS-1.0.0::GetCapabilities",
+        "WCS-1.0.0::DescribeCoverage",
+        "WCS-1.0.0::GetCoverage"
+      ],
+      "proofs": [
+        {
+          "proofClass": "operation-coverage",
+          "proofMechanism": "WCS 1.0.0 endpoint integration tests cover capabilities, coverage description, coverage export bytes, and invalid CRS or output-size requests.",
+          "executionLane": "ci:test-all",
+          "evidenceLocations": [
+            "src/Honua.Server/OperationRegistry.cs",
+            "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/Wcs10EndpointsTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": "#5020",
+          "versionCaptureRule": null
+        }
+      ]
+    },
+    {
       "surfaceId": "wps-2.0.2",
       "displayName": "WPS 2.0.2",
       "surfaceKind": "http-route-family",
@@ -3856,6 +3892,49 @@
           "status": "implemented",
           "linkedTicket": "#464",
           "versionCaptureRule": "Record the exact MapLibre GL JS version, run date, and immutable MVT .cert.json link in docs/gis/CLIENT_TEMPLATE_VERSION_MATRIX.md."
+        }
+      ]
+    },
+    {
+      "surfaceId": "cog-range-proxy",
+      "displayName": "Published Cloud Optimized GeoTIFF range proxy",
+      "surfaceKind": "http-route-family",
+      "protocol": "Cloud Optimized GeoTIFF",
+      "canonicalIdentifier": "/api/v1/rasters/cog/{artifactId}",
+      "parentSurfaceId": null,
+      "endpointPrefixes": [
+        "/api/v1/rasters/cog/"
+      ],
+      "endpointExactMatches": [],
+      "endpointContains": [],
+      "operationKeys": [],
+      "proofs": [
+        {
+          "proofClass": "route-coverage",
+          "proofMechanism": "EndpointRegistry coverage plus COG artifact endpoint integration tests (publish, HEAD length, 206 ranges, cache bypass)",
+          "executionLane": "ci:test-all+architecture",
+          "evidenceLocations": [
+            "src/Honua.Server/EndpointRegistry.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/Admin/CogArtifactEndpointTests.cs",
+            "tests/dotnet/Honua.Server.Tests/Features/API/EndpointRegistryDriftTests.cs"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "implemented",
+          "linkedTicket": null,
+          "versionCaptureRule": null
+        },
+        {
+          "proofClass": "real-client-certification",
+          "proofMechanism": "QGIS GDAL /vsicurl suite is prepared in the PyQGIS lane; immutable desktop certification receipt remains pending.",
+          "executionLane": "ci:client-compat-pyqgis",
+          "evidenceLocations": [
+            "tests/python/pyqgis/test_cog_client_compat.py",
+            ".github/workflows/pyqgis-client-compat-nightly.yml"
+          ],
+          "ownerRepo": "honua-server",
+          "status": "planned",
+          "linkedTicket": "#3273",
+          "versionCaptureRule": "Record the QGIS build and GDAL version in the .cert.json envelope."
         }
       ]
     },

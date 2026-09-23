@@ -30,7 +30,7 @@ namespace Honua.Protocols.Ogc.Classic.Wcs20;
 /// CITE conformance: 82/82 (WCS 2.0 `core` profile, 100% pass on trunk).
 /// Authoritative status: <see href="../../../../../../docs/cite-status.md">docs/cite-status.md</see>.
 /// </summary>
-internal sealed class Wcs20Handler
+internal sealed partial class Wcs20Handler
 {
     private static readonly XNamespace Wcs = Wcs20Utilities.WcsNamespace;
     private static readonly XNamespace Ows = Wcs20Utilities.OwsNamespace;
@@ -106,13 +106,18 @@ internal sealed class Wcs20Handler
         context.Items[RequestTelemetryClassifier.OperationItemKey] =
             "wcs." + operation.Trim().ToLowerInvariant();
 
+        var isLegacy = Wcs20Utilities.IsVersion10(
+            GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.Version),
+            GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.AcceptVersions));
+        var protocol = isLegacy ? HonuaTelemetry.Protocols.Wcs10 : HonuaTelemetry.Protocols.Wcs20;
+
         using var telemetry = HonuaTelemetryScope.StartFeature(
             operation,
-            HonuaTelemetry.Protocols.Wcs20,
+            protocol,
             scope.LayerId?.ToString(CultureInfo.InvariantCulture) ?? scope.ServiceId ?? "service");
         telemetry
             .WithTag(HonuaTelemetry.Tags.Operation, operation)
-            .WithTag(HonuaTelemetry.Tags.Protocol, HonuaTelemetry.Protocols.Wcs20);
+            .WithTag(HonuaTelemetry.Tags.Protocol, protocol);
         if (scope.ServiceId is not null)
         {
             telemetry.WithTag(HonuaTelemetry.Tags.ServiceId, scope.ServiceId);
@@ -122,10 +127,23 @@ internal sealed class Wcs20Handler
 
         try
         {
-            var commonError = ValidateCommonParameters(context, operation);
+            var commonError = ValidateCommonParameters(context, operation, isLegacy);
             if (commonError is not null)
             {
                 return commonError;
+            }
+
+            // Version selection, mirroring how Wfs20DispatcherEndpoint serves WFS 1.0.0
+            // and 1.1.0 beside 2.0.0: the routes, endpoint registry entries and
+            // telemetry classifiers stay as they are, and only the encoding differs
+            // (honua-server#5020). Stock QGIS speaks WCS 1.0/1.1 only, so without this
+            // branch no QGIS client can open a coverage.
+            if (isLegacy)
+            {
+                var legacyResult = await HandleWcs10Async(context, scope, operation, cancellationToken)
+                    .ConfigureAwait(false);
+                Wcs20Log.RequestCompleted(_logger, operation, scope.DisplayName);
+                return legacyResult;
             }
 
             IResult result;
@@ -164,7 +182,9 @@ internal sealed class Wcs20Handler
             // a WCS ExceptionReport rather than swallowed or leaked to the client.
             Wcs20Log.RequestFailed(_logger, ex, operation, scope.DisplayName);
             telemetry.RecordException(ex);
-            return Wcs20ErrorResults.CreateInternalServerError("Failed to process WCS request.");
+            return isLegacy
+                ? Wcs10ErrorResults.CreateInternalServerError("Failed to process WCS request.")
+                : Wcs20ErrorResults.CreateInternalServerError("Failed to process WCS request.");
         }
     }
 
@@ -184,7 +204,7 @@ internal sealed class Wcs20Handler
             {
                 return Wcs20ErrorResults.CreateBadRequest(
                     Wcs20Utilities.ExceptionCodes.VersionNegotiationFailed,
-                    $"Unsupported version. This service supports only WCS {Wcs20Utilities.Version}.",
+                    $"Unsupported version. This service supports WCS {Wcs20Utilities.Version} and {Wcs20Utilities.Version10}.",
                     Wcs20Utilities.Parameters.AcceptVersions);
             }
         }
@@ -601,7 +621,8 @@ internal sealed class Wcs20Handler
                 continue;
             }
 
-            coverages.Add(new WcsCoverage(entry.Resource, entry.StorageLayerId, raster.Value, service.Service));
+            coverages.Add(new WcsCoverage(entry.Resource, entry.StorageLayerId, raster.Value, service.Service,
+                entry.Publication.LayerIndex));
         }
 
         return new CoverageListResult(coverages, null);
@@ -670,7 +691,8 @@ internal sealed class Wcs20Handler
         var raster = await GetPrimaryRasterWithExtentAsync(storageLayerId.Value, cancellationToken).ConfigureAwait(false);
         return raster is null
             ? new CoverageResolutionResult(null, null)
-            : new CoverageResolutionResult(new WcsCoverage(resource!, storageLayerId.Value, raster.Value, service.Service), null);
+            : new CoverageResolutionResult(new WcsCoverage(resource!, storageLayerId.Value, raster.Value,
+                service.Service, publication.LayerIndex), null);
     }
 
     private async Task<LayerCoverageResult> ResolveLayerScopedCoverageAsync(
@@ -826,7 +848,20 @@ internal sealed class Wcs20Handler
         // ServiceId-as-name routing used by /ogc/services/{serviceId}/...
         if (!snapshot.Index.ServicesById.TryGetValue(serviceId, out var service))
         {
-            service = snapshot.FindService(serviceId);
+            // A display name does not identify one service. The canonical graph
+            // projects a single logical service across several protocol facets that
+            // intentionally share a name while carrying distinct ids - see
+            // 051_RelaxMetadataV2ServiceNameIndex.sql, which dropped the unique name
+            // index for exactly this reason, and the V1 compat snapshot, which emits
+            // those same-named facets. Taking the first name match and then asking
+            // whether it enables WCS rejects the request whenever the match happens to
+            // be the feature or map facet, even though the image facet serves
+            // coverages: every WCS route answered "WCS is not enabled for this
+            // service" while ImageServer on the same name answered 200. So pick the
+            // facet that actually serves this protocol, and only fall back to a bare
+            // name match so a service genuinely without WCS still reports that.
+            service = FindServiceForProtocol(snapshot, serviceId, WcsProtocolName)
+                ?? snapshot.FindService(serviceId);
         }
 
         if (service is null || !service.IsRoutable())
@@ -855,6 +890,21 @@ internal sealed class Wcs20Handler
 
         return new ServiceResolutionResult(service, null);
     }
+
+    /// <summary>
+    /// Finds the routable service with this display name that enables
+    /// <paramref name="protocol"/>. Returns <c>null</c> when no same-named facet serves
+    /// it, so the caller can fall back to a plain name match and report the protocol as
+    /// disabled rather than the service as missing.
+    /// </summary>
+    private static MetadataV2Service? FindServiceForProtocol(
+        MetadataV2GraphSnapshot snapshot,
+        string serviceName,
+        string protocol)
+        => snapshot.Graph.Services.FirstOrDefault(candidate =>
+            string.Equals(candidate.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase)
+            && candidate.IsRoutable()
+            && IsProtocolEnabled(candidate, protocol));
 
     private static bool IsProtocolEnabled(MetadataV2Service service, string protocol)
         => service.Protocols.Any(enabled => string.Equals(enabled, protocol, StringComparison.OrdinalIgnoreCase));
@@ -933,26 +983,36 @@ internal sealed class Wcs20Handler
         return new WcsSupportedCrs(srids, uris);
     }
 
-    private static IResult? ValidateCommonParameters(HttpContext context, string operation)
+    private static IResult? ValidateCommonParameters(HttpContext context, string operation, bool isLegacy)
     {
         var service = GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.Service);
         if (!string.IsNullOrWhiteSpace(service) &&
             !string.Equals(service, Wcs20Utilities.ServiceType, StringComparison.OrdinalIgnoreCase))
         {
-            return Wcs20ErrorResults.CreateBadRequest(
-                Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
-                "SERVICE must be WCS when supplied.",
-                Wcs20Utilities.Parameters.Service);
+            return isLegacy
+                ? Wcs10ErrorResults.CreateBadRequest(
+                    Wcs20Utilities.ExceptionCodes10.InvalidParameterValue,
+                    "SERVICE must be WCS when supplied.",
+                    Wcs20Utilities.Parameters.Service)
+                : Wcs20ErrorResults.CreateBadRequest(
+                    Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
+                    "SERVICE must be WCS when supplied.",
+                    Wcs20Utilities.Parameters.Service);
         }
 
         var version = GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.Version);
         if (!string.IsNullOrWhiteSpace(version) &&
             !OgcParameterValidator.TryParseVersion(version, Wcs20Utilities.SupportedVersions, out _, out _))
         {
-            return Wcs20ErrorResults.CreateBadRequest(
-                Wcs20Utilities.ExceptionCodes.VersionNegotiationFailed,
-                $"Unsupported version '{version}'. This service supports only WCS {Wcs20Utilities.Version}.",
-                Wcs20Utilities.Parameters.Version);
+            return isLegacy
+                ? Wcs10ErrorResults.CreateBadRequest(
+                    Wcs20Utilities.ExceptionCodes10.InvalidParameterValue,
+                    $"Unsupported version '{version}'. This service supports WCS {Wcs20Utilities.Version} and {Wcs20Utilities.Version10}.",
+                    Wcs20Utilities.Parameters.Version)
+                : Wcs20ErrorResults.CreateBadRequest(
+                    Wcs20Utilities.ExceptionCodes.VersionNegotiationFailed,
+                    $"Unsupported version '{version}'. This service supports WCS {Wcs20Utilities.Version} and {Wcs20Utilities.Version10}.",
+                    Wcs20Utilities.Parameters.Version);
         }
 
         if (!Wcs20Utilities.ImplementedOperations.Contains(operation))
@@ -1134,7 +1194,7 @@ internal sealed class Wcs20Handler
                 new XElement(Ows + "UpperCorner", FormatPosition(extent.XMax, extent.YMax))));
         }
 
-        children.Add(new XElement(Wcs + "CoverageId", FormatCoverageId(coverage.LayerId)));
+        children.Add(new XElement(Wcs + "CoverageId", FormatCoverageId(coverage.PublicationLayerIndex ?? coverage.LayerId)));
         children.Add(new XElement(Wcs + "CoverageSubtype", "RectifiedGridCoverage"));
 
         return new XElement(Wcs + "CoverageSummary", children);
@@ -1167,7 +1227,7 @@ internal sealed class Wcs20Handler
             return false;
         }
 
-        var coverageId = FormatCoverageId(coverage.LayerId);
+        var coverageId = FormatCoverageId(coverage.PublicationLayerIndex ?? coverage.LayerId);
         // Coverage coordinates use x/y order, which CRS84 declares (see CreateCrsUri).
         var srsName = CreateCrsUri(srid);
         description = new XElement(Wcs + "CoverageDescription",
@@ -3000,7 +3060,12 @@ internal sealed class Wcs20Handler
 
     private readonly record struct ServiceResolutionResult(MetadataV2Service? Service, IResult? Error);
 
-    private readonly record struct WcsCoverage(MetadataV2Resource Resource, int LayerId, RasterInfo Raster, MetadataV2Service? Service);
+    private readonly record struct WcsCoverage(
+        MetadataV2Resource Resource,
+        int LayerId,
+        RasterInfo Raster,
+        MetadataV2Service? Service,
+        int? PublicationLayerIndex = null);
 
     private readonly record struct WcsCoverageIdentifier(string Raw, int? LayerId);
 

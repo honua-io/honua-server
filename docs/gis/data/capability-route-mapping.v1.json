@@ -259,6 +259,11 @@
     },
     {
       "family": "Admin API",
+      "routePrefix": "/api/v1/admin/raster-artifacts",
+      "capability": "raster.cloud-cog-serving"
+    },
+    {
+      "family": "Admin API",
       "routePrefix": "/api/v1/admin/oidc",
       "capability": "identity.oidc"
     },
@@ -412,6 +417,10 @@
       "capability": "serve.vector-tiles"
     },
     {
+      "family": "Cloud Optimized GeoTIFF",
+      "capability": "raster.cloud-cog-serving"
+    },
+    {
       "family": "Metrics",
       "capability": "ops.observability"
     },
@@ -490,6 +499,10 @@
     {
       "family": "Terrain-RGB",
       "capability": "raster.terrain-rgb"
+    },
+    {
+      "family": "WCS 1.0.0",
+      "capability": "serve.wcs"
     },
     {
       "family": "WCS 2.0.1",

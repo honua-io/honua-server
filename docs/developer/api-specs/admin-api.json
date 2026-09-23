@@ -20667,6 +20667,60 @@
           }
         }
       }
+    },
+    "/raster-artifacts/cog": {
+      "post": {
+        "tags": [
+          "Cloud Rasters"
+        ],
+        "summary": "Publish Layer Raster As COG",
+        "description": "Exports the publication layer's primary raster as a Cloud Optimized GeoTIFF and stores it under the deterministic object key `cog/{layerId}/{rasterId}.tif`, tagged with the publish operation and the COG media type. Desktop clients (GDAL `/vsicurl`, ArcGIS Pro) read it through `GET|HEAD /api/v1/rasters/cog/{artifactId}`. The proxy checks the current source publication, binding and access policy before serving each request; authorized HEAD responses carry the real length and ranged GETs return 206. Publishing again for the same layer overwrites the same key. A layer with no raster is 400, an unknown or unroutable layer is 404, and an export or upload failure is 500.",
+        "operationId": "publishCogArtifact",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CogArtifactPublishRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The published COG artifact.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CogArtifactDescriptor"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "description": "The raster export or the artifact upload failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {

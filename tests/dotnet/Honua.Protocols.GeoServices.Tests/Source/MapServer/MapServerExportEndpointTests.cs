@@ -42,6 +42,101 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithEmptyShowSelection_RendersEveryLayer()
+    {
+        // Regression: layers=show: was rejected with "layers parameter contains an empty
+        // layer id." That is exactly what stock QGIS sends when its ArcGIS REST Server
+        // connection is pointed at a MapServer's "(All layers)" entry - captured from
+        // QGIS 3.44.14's own arcgismapserver provider, which means "no restriction" by
+        // it. The service's layers each render individually, and an empty layers= already
+        // produced the full image, so the keyword-with-no-ids spelling now does too.
+        var response = await Fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&bboxSR=4326&imageSR=4326&size=256,256&format=png&transparent=true&f=image&layers=show:");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        (await response.Content.ReadAsByteArrayAsync()).Should().HaveCountGreaterThan(100);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithEmptyHideSelection_IncludesLayersHiddenByDefault()
+    {
+        var provider = Fixture.GetService<TestMetadataV2GraphProvider>();
+        var snapshot = Fixture.GetCurrentV2GraphSnapshot();
+        var mapResourceIds = snapshot.Graph.Publications
+            .Where(publication => publication.ServiceId == "svc-test-map")
+            .Select(publication => publication.ResourceId)
+            .ToHashSet(StringComparer.Ordinal);
+        mapResourceIds.Should().NotBeEmpty();
+        provider.SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Resources = snapshot.Graph.Resources.Select(resource => mapResourceIds.Contains(resource.Metadata.Id)
+                ? resource with
+                {
+                    Display = resource.Display is { } display
+                        ? display with { DefaultVisibility = false }
+                        : new MetadataV2ResourceDisplay { DefaultVisibility = false },
+                }
+                : resource).ToArray(),
+        }, schema: Fixture.CurrentSchema);
+
+        var path = $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&bboxSR=4326&imageSR=4326&size=256,256&format=png&transparent=true&f=image";
+        using var defaultResponse = await Fixture.Client.GetAsync(path);
+        using var hiddenNoneResponse = await Fixture.Client.GetAsync(path + "&layers=hide:");
+        defaultResponse.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        hiddenNoneResponse.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        var defaultImage = await defaultResponse.Content.ReadAsByteArrayAsync();
+        var hiddenNoneImage = await hiddenNoneResponse.Content.ReadAsByteArrayAsync();
+        hiddenNoneImage.Should().NotEqual(defaultImage,
+            "hide: must render even layers whose default visibility is false");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithEmptyIdInsideLayerList_IsStillRejected()
+    {
+        // The normalisation above is deliberately narrow: only a wholly empty selection
+        // list is treated as no filter. An empty id *between* real ids stays malformed,
+        // so a client that drops an id mid-list still learns it rather than silently
+        // receiving an image for the wrong layer set.
+        var response = await Fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&bboxSR=4326&imageSR=4326&size=256,256&format=png&f=image&layers=show:1,,2");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("empty layer id");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithJpgPngFormat_ReturnsPngImage()
+    {
+        // Regression: format=jpgpng was rejected with "Output format 'jpgpng' is not
+        // supported." That is the Image Encoding QGIS's ArcGIS REST Server connection
+        // defaults to, so a stock QGIS user adding a Honua MapServer saw an empty canvas
+        // and "Error 400: Bad Request" while identify, legend and the service document
+        // all worked - found by driving QGIS 3.44.14 against the certification fixture.
+        //
+        // ImageServerExportHandler.TryResolveOutputFormat already accepted jpgpng and
+        // normalised it to PNG. The two services must not disagree about a format Esri
+        // defines identically for both, so MapServer now does the same: PNG preserves
+        // transparency and is the safe lossless choice for the combined token.
+        var response = await Fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&bboxSR=4326&imageSR=4326&size=256,256&format=jpgpng&transparent=true&f=image");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        (await response.Content.ReadAsByteArrayAsync()).Should().HaveCountGreaterThan(100);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_WithMalformedBbox_AsImage_ReturnsBadRequest()
     {
         // CERT-ERRH-01: a binary image export (f=image) whose bbox cannot be parsed must be

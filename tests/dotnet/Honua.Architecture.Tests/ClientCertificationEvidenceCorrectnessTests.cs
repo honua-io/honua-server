@@ -23,7 +23,6 @@ public sealed class ClientCertificationEvidenceCorrectnessTests
         "unicode-attribute-values-absent",
         "line-and-polygon-not-on-canonical-service",
         "edit-path-uncertified",
-        "raster-absent-on-canonical-service",
         "style-resources-absent",
         "portal-map-and-dashboard-items-absent",
         "odata-surface-uses-separate-seed",
@@ -101,7 +100,7 @@ public sealed class ClientCertificationEvidenceCorrectnessTests
     }
 
     [ArchitectureTest]
-    public void FrozenFixture_PreservesAllTwentyOneGovernedGaps()
+    public void FrozenFixture_PreservesAllTwentyGovernedGaps()
     {
         var root = ArchitectureTestHelpers.ResolveRepositoryRoot();
         var path = ArchitectureTestHelpers.CombinePath(

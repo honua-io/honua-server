@@ -16,7 +16,7 @@ Expansion (explicitly out of scope here):
 
 | Revision | Value |
 |---|---|
-| `fixtureRevision` | `sha256:e8e100e7b4d2fbab8be044dac3625a9ef3ad87e7b8a302457cb79e63affd62b9` |
+| `fixtureRevision` | `sha256:cb28aeb46423d45948cd869c22bb674502760414c3ffd52b86e8821daaa2e925` |
 | `serverConfigRevision` | `sha256:d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a` |
 | `authPolicyRevision` | `sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9` |
 
@@ -40,11 +40,13 @@ lowercase hex characters. Reproduce with `sha256sum <path>`.
 Because step 3 reproduces `sha256sum` output exactly, the whole algorithm is reproducible by hand:
 
 ```console
-$ LC_ALL=C sha256sum docker/client-compat/seed/run.sh tests/seed/apply-yaml-seed.sh \
+$ LC_ALL=C sha256sum docker/client-compat/seed/publish-cog.py \
+    docker/client-compat/seed/publish-pmtiles.py docker/client-compat/seed/publish-scene.py \
+    docker/client-compat/seed/run.sh tests/seed/apply-yaml-seed.sh \
     tests/seed/browser-compat.yaml tests/seed/client-compat-auth-wave1.yaml \
     tests/seed/client-compat-v1.sql tests/seed/portal-compat.yaml \
     | sha256sum
-5d4255077b525fccb4071098241390bda39e35bb3ed3c323819c45fa96a0738e  -
+cb28aeb46423d45948cd869c22bb674502760414c3ffd52b86e8821daaa2e925  -
 $ LC_ALL=C sha256sum tests/config/client-compat-server-v1.json | sha256sum
 d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a  -
 ```
@@ -60,12 +62,19 @@ not file-backed, which is why it is digested from its declaration rather than fr
 
 | Path | Role |
 |---|---|
+| `docker/client-compat/seed/publish-cog.py` | fixture |
+| `docker/client-compat/seed/publish-pmtiles.py` | fixture |
+| `docker/client-compat/seed/publish-scene.py` | fixture |
 | `tests/seed/client-compat-v1.sql` | fixture |
 | `tests/seed/browser-compat.yaml` | fixture |
 | `tests/seed/portal-compat.yaml` | fixture |
+| `tests/seed/client-compat-auth-wave1.yaml` | fixture |
 | `tests/seed/apply-yaml-seed.sh` | fixture |
 | `docker/client-compat/seed/run.sh` | fixture |
 | `tests/config/client-compat-server-v1.json` | server-config |
+
+`docker/client-compat/seed/publish-*.py` are fixture inputs because they determine the derived
+PMTiles, COG, and scene artifacts. Their code changes must advance `fixtureRevision`.
 
 `docker/client-compat/seed/run.sh` is a fixture input because it defines *which* seed files are
 applied and in what order; adding a fixture input necessarily edits it and therefore moves
@@ -126,13 +135,13 @@ Not covered, recorded as gaps rather than claimed:
 | `line-and-polygon-not-on-canonical-service` | Line and polygon coverage lives on `browser_compat`, whose layers carry only `objectid`, `name`, and `shape`. |
 | `edit-path-uncertified` | The OWSLib lane certifies WFS-T insert/update/delete on scratch layers 10-12, but no lane mutates canonical layer 0 and the other advertised Create/Update/Delete/Sync protocol surfaces remain uncertified. |
 
-Supporting fixtures: the deterministic raster (64×64, single 8BUI band, every pixel 180) and the
-render geometry layers are realized on `browser_compat`; STAC is realized on the canonical service
-with `eo:cloud_cover` as a real numeric queryable; a GP buffer fixture is **not required** for
-2026.1 because no lane binds the GPServer surface; map and dashboard inputs are limited to Portal
-service items (`portal-map-and-dashboard-items-absent`). Raster on the canonical service
-(`raster-absent-on-canonical-service`) and stored style documents (`style-resources-absent`) are
-gaps.
+Supporting fixtures: the deterministic rasters (64×64, single 8BUI band, every pixel 180 on
+`browser_compat` layer 2000 and every pixel 128 on canonical `test_service` layer 0) and the
+render geometry layers are realized by the fixture; STAC is realized on the canonical service with
+`eo:cloud_cover` as a real numeric queryable; a GP buffer fixture is **not required** for 2026.1
+because no lane binds the GPServer surface; map and dashboard inputs are limited to Portal service
+items (`portal-map-and-dashboard-items-absent`). Stored style documents
+(`style-resources-absent`) remain a gap.
 
 ## 4. Auth profiles
 

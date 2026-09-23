@@ -539,6 +539,9 @@ public static class HonuaTelemetry
         /// <summary>OGC Web Feature Service 2.0.</summary>
         public const string Wfs20 = "WFS-2.0";
 
+        /// <summary>OGC Web Coverage Service 1.0.0.</summary>
+        public const string Wcs10 = "WCS-1.0.0";
+
         /// <summary>OGC Web Coverage Service 2.0.1.</summary>
         public const string Wcs20 = "WCS-2.0.1";
 
