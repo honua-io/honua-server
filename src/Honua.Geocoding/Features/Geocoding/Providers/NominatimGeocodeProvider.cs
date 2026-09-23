@@ -535,6 +535,7 @@ internal sealed class NominatimGeocodeProvider : BaseGeocodeProvider
             Region = address.State,
             PostalCode = address.Postcode,
             Country = address.Country,
+            CountryCode = address.CountryCode,
             Neighborhood = address.Neighbourhood ?? address.Suburb
         };
     }
