@@ -1,12 +1,14 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
 using Honua.Core.Features.Security.Domain;
@@ -14,8 +16,10 @@ using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
+using Honua.Server.Features.Protocols.Rasters.CogArtifacts;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -99,6 +103,35 @@ public sealed class CogArtifactEndpointTests : IAsyncLifetime
         descriptor.GetProperty("width").GetInt32().Should().Be(64);
         descriptor.GetProperty("height").GetInt32().Should().Be(64);
         descriptor.GetProperty("srid").GetInt32().Should().Be(4326);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/rasters/cog/{*artifactId}")]
+    public async Task CogProxy_ResolvesS3LowercasedUserMetadataKeys()
+    {
+        var descriptor = await PublishAsync();
+        var artifactId = descriptor.GetProperty("artifactId").GetString()!;
+        var stored = await _fixture.GetOptionalService<ICloudFileStorage>()!
+            .GetMetadataAsync(artifactId);
+        stored.Should().NotBeNull();
+
+        var s3Metadata = stored! with
+        {
+            Metadata = stored.Metadata.ToImmutableDictionary(
+                pair => pair.Key.ToLowerInvariant(),
+                pair => pair.Value,
+                StringComparer.Ordinal),
+        };
+        var storage = Substitute.For<ICloudFileStorage>();
+        storage.GetMetadataAsync(artifactId, Arg.Any<CancellationToken>())
+            .Returns(s3Metadata);
+        var graphProvider = new TestMetadataV2GraphProvider(_fixture.GetCurrentV2GraphSnapshot().Graph);
+        var service = new CogArtifactService(_rasterStore, storage, graphProvider,
+            NullLogger<CogArtifactService>.Instance);
+
+        var resolved = await service.ResolvePublishedAsync(artifactId, CancellationToken.None);
+        resolved.Should().NotBeNull();
+        resolved!.File.FileId.Should().Be(artifactId);
     }
 
     [IntegrationTest]

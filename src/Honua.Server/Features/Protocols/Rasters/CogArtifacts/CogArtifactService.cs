@@ -204,13 +204,25 @@ internal sealed class CogArtifactService
             return null;
         }
 
-        if (!metadata.Metadata.TryGetValue(OperationMetadataKey, out var operation)
+        // S3 lowercases user-metadata keys on retrieval. Preserve the published
+        // values while matching keys across storage providers, and fail closed if
+        // a provider returns two spellings of the same key.
+        var userMetadata = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var pair in metadata.Metadata)
+        {
+            if (!userMetadata.TryAdd(pair.Key, pair.Value))
+            {
+                return null;
+            }
+        }
+
+        if (!userMetadata.TryGetValue(OperationMetadataKey, out var operation)
             || !string.Equals(operation, PublishOperationValue, StringComparison.OrdinalIgnoreCase))
         {
             return null;
         }
 
-        if (!metadata.Metadata.TryGetValue("layerId", out var layerValue) ||
+        if (!userMetadata.TryGetValue("layerId", out var layerValue) ||
             !int.TryParse(layerValue, NumberStyles.None, CultureInfo.InvariantCulture, out var layerId))
         {
             return null;
@@ -218,15 +230,15 @@ internal sealed class CogArtifactService
 
         var source = await ResolveSourceAsync(layerId, cancellationToken).ConfigureAwait(false);
         if (source is null ||
-            !metadata.Metadata.TryGetValue("publicationId", out var publicationId) ||
+            !userMetadata.TryGetValue("publicationId", out var publicationId) ||
             !string.Equals(publicationId, source.Publication.Metadata.Id, StringComparison.Ordinal) ||
-            !metadata.Metadata.TryGetValue("resourceId", out var resourceId) ||
+            !userMetadata.TryGetValue("resourceId", out var resourceId) ||
             !string.Equals(resourceId, source.Resource.Metadata.Id, StringComparison.Ordinal) ||
-            !metadata.Metadata.TryGetValue("serviceId", out var serviceId) ||
+            !userMetadata.TryGetValue("serviceId", out var serviceId) ||
             !string.Equals(serviceId, source.Service.Metadata.Id, StringComparison.Ordinal) ||
-            !metadata.Metadata.TryGetValue("bindingId", out var bindingId) ||
+            !userMetadata.TryGetValue("bindingId", out var bindingId) ||
             !string.Equals(bindingId, source.Binding.Metadata.Id, StringComparison.Ordinal) ||
-            !metadata.Metadata.TryGetValue("bindingFingerprint", out var bindingFingerprint) ||
+            !userMetadata.TryGetValue("bindingFingerprint", out var bindingFingerprint) ||
             !string.Equals(bindingFingerprint, BindingFingerprint(source.Binding), StringComparison.Ordinal))
         {
             return null;

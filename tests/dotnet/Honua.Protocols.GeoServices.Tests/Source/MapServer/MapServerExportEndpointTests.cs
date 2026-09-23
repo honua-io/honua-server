@@ -61,6 +61,42 @@ public sealed class MapServerExportEndpointTests : MapServerEndpointTestBase
     [IntegrationTest]
     [Operation(Operations.Export)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
+    public async Task MapServer_Export_WithEmptyHideSelection_IncludesLayersHiddenByDefault()
+    {
+        var provider = Fixture.GetService<TestMetadataV2GraphProvider>();
+        var snapshot = Fixture.GetCurrentV2GraphSnapshot();
+        var mapResourceIds = snapshot.Graph.Publications
+            .Where(publication => publication.ServiceId == "svc-test-map")
+            .Select(publication => publication.ResourceId)
+            .ToHashSet(StringComparer.Ordinal);
+        mapResourceIds.Should().NotBeEmpty();
+        provider.SetGraph(snapshot.Graph with
+        {
+            Revision = snapshot.Graph.Revision + 1,
+            Resources = snapshot.Graph.Resources.Select(resource => mapResourceIds.Contains(resource.Metadata.Id)
+                ? resource with
+                {
+                    Display = resource.Display is { } display
+                        ? display with { DefaultVisibility = false }
+                        : new MetadataV2ResourceDisplay { DefaultVisibility = false },
+                }
+                : resource).ToArray(),
+        }, schema: Fixture.CurrentSchema);
+
+        var path = $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/export?bbox=-180,-90,180,90&bboxSR=4326&imageSR=4326&size=256,256&format=png&transparent=true&f=image";
+        using var defaultResponse = await Fixture.Client.GetAsync(path);
+        using var hiddenNoneResponse = await Fixture.Client.GetAsync(path + "&layers=hide:");
+        defaultResponse.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        hiddenNoneResponse.Content.Headers.ContentType?.MediaType.Should().Be("image/png");
+        var defaultImage = await defaultResponse.Content.ReadAsByteArrayAsync();
+        var hiddenNoneImage = await hiddenNoneResponse.Content.ReadAsByteArrayAsync();
+        hiddenNoneImage.Should().NotEqual(defaultImage,
+            "hide: must render even layers whose default visibility is false");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Export)]
+    [Endpoint("GET /rest/services/{serviceId}/MapServer/export")]
     public async Task MapServer_Export_WithEmptyIdInsideLayerList_IsStillRejected()
     {
         // The normalisation above is deliberately narrow: only a wholly empty selection

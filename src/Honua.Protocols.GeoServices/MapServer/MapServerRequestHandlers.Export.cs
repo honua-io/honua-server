@@ -1173,7 +1173,7 @@ internal static partial class MapServerEndpoints
                 return (Array.Empty<ExportRenderLayer>(), null);
             }
 
-            if (requestedStaticLayerIds.Count == 0)
+            if (requestedStaticLayerIds.Count == 0 && visibility != ExportLayerVisibility.Hide)
             {
                 return (Array.Empty<ExportRenderLayer>(), StandardErrorHelpers.CreateBadRequest(context, "Invalid layers parameter."));
             }
@@ -1812,8 +1812,9 @@ internal static partial class MapServerEndpoints
     }
 
     /// <summary>
-    /// Treat a selection keyword with no ids after it - "show:", "hide:" and the rest -
-    /// as no layer filter at all, the same as omitting the parameter.
+    /// Treat an empty show/include/exclude selection as the default layer view.
+    /// An empty hide selection means hide nothing, including layers that are
+    /// hidden by default, so it must retain its visibility prefix.
     /// </summary>
     /// <remarks>
     /// Stock QGIS sends exactly <c>layers=show:</c> when its ArcGIS REST Server
@@ -1837,7 +1838,7 @@ internal static partial class MapServerEndpoints
         }
 
         var spec = layersParam.Trim();
-        foreach (var keyword in new[] { "show:", "hide:", "include:", "exclude:" })
+        foreach (var keyword in new[] { "show:", "include:", "exclude:" })
         {
             if (spec.StartsWith(keyword, StringComparison.OrdinalIgnoreCase)
                 && spec[keyword.Length..].Trim().Length == 0)
@@ -1857,6 +1858,11 @@ internal static partial class MapServerEndpoints
         }
 
         var spec = layersParam.Trim();
+        if (spec.Equals("hide:", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
         if (spec.StartsWith("show:", StringComparison.OrdinalIgnoreCase))
         {
             spec = spec["show:".Length..];
