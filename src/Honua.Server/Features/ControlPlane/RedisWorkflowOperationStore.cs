@@ -329,9 +329,10 @@ internal sealed partial class RedisWorkflowOperationStore(
             var candidate = await GetAsync(entry.Element.ToString(), cancellationToken).ConfigureAwait(false);
             if (candidate is null)
             {
-                if (entry.Score > operationCreatedAt)
+                if (entry.Score >= operationCreatedAt)
                 {
-                    // An expired later record may have moved the target; absence is not proof of safety.
+                    // Redis scores have millisecond precision. An expired equal-score record could
+                    // still have been created later within the same millisecond.
                     incomplete = true;
                 }
                 else

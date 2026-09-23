@@ -5,6 +5,8 @@ using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
 using Honua.TestKit;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Microsoft.Extensions.Logging.Abstractions;
 using StackExchange.Redis;
 
@@ -14,6 +16,8 @@ namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
 /// Redis integration tests for durable workflow operation storage and leases.
 /// </summary>
 [Collection("Redis")]
+[Protocol(TestProtocols.Infrastructure)]
+[Operation(Operations.TestInfrastructure)]
 public sealed class RedisWorkflowOperationStoreIntegrationTests(RedisFixture redis)
 {
     [Fact]
@@ -252,7 +256,7 @@ public sealed class RedisWorkflowOperationStoreIntegrationTests(RedisFixture red
         succeededIds.Should().NotContain(activeOperation.OperationId);
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task WorkflowStore_QueryAsync_ReportsTruncatedTerminalIndexEvenWhenFilterHasNoMatches()
     {
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
@@ -389,7 +393,7 @@ public sealed class RedisWorkflowOperationStoreIntegrationTests(RedisFixture red
         }
     }
 
-    [Fact]
+    [IntegrationTest]
     public async Task WorkflowStore_LaterDeployLookup_PrunesExpiredOlderCreationMember()
     {
         await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
@@ -408,6 +412,28 @@ public sealed class RedisWorkflowOperationStoreIntegrationTests(RedisFixture red
 
         (await store.HasLaterDeployOfTargetAsync(stuck)).Should().BeFalse();
         (await database.SortedSetScoreAsync($"controlplane:workflow:deploy-created:{targetId}", older.OperationId)).Should().BeNull();
+    }
+
+    [IntegrationTest]
+    public async Task WorkflowStore_LaterDeployLookup_KeepsMissingSameMillisecondMemberIncomplete()
+    {
+        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisWorkflowOperationStore(multiplexer, NullLogger<RedisWorkflowOperationStore>.Instance);
+        var database = multiplexer.GetDatabase();
+        var targetId = $"supersession-{Guid.NewGuid():N}";
+        var createdAt = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        var stuck = CreateDeployOperationRecord($"stuck-{Guid.NewGuid():N}", targetId,
+            createdAt, WorkflowOperationStatus.ManualInterventionRequired);
+        var later = CreateDeployOperationRecord($"later-{Guid.NewGuid():N}", targetId,
+            createdAt.AddTicks(1), WorkflowOperationStatus.Failed);
+
+        (await store.TryCreateAsync(stuck)).Should().BeTrue();
+        (await store.TryCreateAsync(later)).Should().BeTrue();
+        await database.KeyDeleteAsync($"controlplane:workflow:{later.OperationId}");
+
+        (await store.HasLaterDeployOfTargetAsync(stuck)).Should().BeNull();
+        (await database.SortedSetScoreAsync($"controlplane:workflow:deploy-created:{targetId}", later.OperationId))
+            .Should().NotBeNull("an equal-score member may be later and cannot be safely pruned");
     }
 
     private static WorkflowOperationRecord CreateDeployOperationRecord(
