@@ -7,11 +7,11 @@
     "capabilities": "docs/gis/data/feature-catalog.json"
   },
   "summary": {
-    "operationCount": 494,
+    "operationCount": 495,
     "unresolvedCount": 0,
     "capabilityCount": 23,
     "perSpec": {
-      "admin-api": 402,
+      "admin-api": 403,
       "ogc-api-coverages": 8,
       "ogc-api-features": 19,
       "ogc-api-maps": 9,
@@ -34,7 +34,7 @@
       "import.geoserver": 5,
       "import.geoservices": 10,
       "process.ogc-api-processes": 10,
-      "raster.cloud-cog-serving": 5,
+      "raster.cloud-cog-serving": 6,
       "raster.multidim-coverage": 11,
       "routing.solve": 13,
       "scene.bim-ingest": 1,
@@ -3126,6 +3126,16 @@
       "family": "Admin API",
       "maturity": "implemented",
       "catalogEntryId": "post-api-v1-admin-proposals-id-reject"
+    },
+    {
+      "spec": "admin-api",
+      "method": "POST",
+      "path": "/api/v1/admin/raster-artifacts/cog",
+      "operationId": "publishCogArtifact",
+      "capability": "raster.cloud-cog-serving",
+      "family": "Admin API",
+      "maturity": "implemented",
+      "catalogEntryId": "post-api-v1-admin-raster-artifacts-cog"
     },
     {
       "spec": "admin-api",
