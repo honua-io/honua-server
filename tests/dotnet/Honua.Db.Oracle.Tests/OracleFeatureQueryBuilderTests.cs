@@ -213,6 +213,30 @@ public class OracleFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildSelectQuery_EmptyOutFields_OmitsAttributeColumns()
+    {
+        var mapping = BuildMapping();
+
+        var defaults = OracleFeatureQueryBuilder.BuildSelectQuery(mapping, new FeatureQuery(), _attributeColumns);
+        Assert.Contains("\"name\"", defaults.Sql, StringComparison.Ordinal);
+        Assert.Contains("\"area\"", defaults.Sql, StringComparison.Ordinal);
+        Assert.Contains("\"category\"", defaults.Sql, StringComparison.Ordinal);
+
+        var unset = OracleFeatureQueryBuilder.BuildSelectQuery(
+            mapping, new FeatureQuery { OutFields = default(ImmutableArray<string>) }, _attributeColumns);
+        Assert.Contains("\"name\"", unset.Sql, StringComparison.Ordinal);
+        Assert.Contains("\"area\"", unset.Sql, StringComparison.Ordinal);
+        Assert.Contains("\"category\"", unset.Sql, StringComparison.Ordinal);
+
+        var result = OracleFeatureQueryBuilder.BuildSelectQuery(
+            mapping, new FeatureQuery { OutFields = ImmutableArray<string>.Empty }, _attributeColumns);
+
+        Assert.DoesNotContain("\"name\"", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"area\"", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"category\"", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildSelectQuery_AmbiguousCaseDistinctOutField_Throws()
     {
         var query = new FeatureQuery { OutFields = ["Name"] };

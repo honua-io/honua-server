@@ -147,29 +147,37 @@ internal sealed class DatabricksFeatureQueryBuilder : IDatabricksFeatureQueryBui
             return [];
         }
 
-        if (query.OutFields is { Length: > 0 } outFields)
+        // Null/default OutFields projects every column. An explicit empty array projects
+        // none. Length throws on a default ImmutableArray, so test IsDefault first.
+        if (!query.OutFields.HasValue || query.OutFields.Value.IsDefault)
         {
-            // Only project configured attribute columns; ignore the primary key and
-            // geometry (already projected) and anything not declared in the mapping.
-            var requested = new List<string>(outFields.Length);
-            foreach (var field in outFields)
-            {
-                if (field == "*")
-                {
-                    return mapping.AttributeColumns;
-                }
-
-                foreach (var column in mapping.AttributeColumns.Where(column =>
-                    column.Equals(field, StringComparison.OrdinalIgnoreCase) && !requested.Contains(column)))
-                {
-                    requested.Add(column);
-                }
-            }
-
-            return requested;
+            return mapping.AttributeColumns;
         }
 
-        return mapping.AttributeColumns;
+        var outFields = query.OutFields.Value;
+        if (outFields.IsEmpty)
+        {
+            return [];
+        }
+
+        // Only project configured attribute columns; ignore the primary key and
+        // geometry (already projected) and anything not declared in the mapping.
+        var requested = new List<string>(outFields.Length);
+        foreach (var field in outFields)
+        {
+            if (field == "*")
+            {
+                return mapping.AttributeColumns;
+            }
+
+            foreach (var column in mapping.AttributeColumns.Where(column =>
+                column.Equals(field, StringComparison.OrdinalIgnoreCase) && !requested.Contains(column)))
+            {
+                requested.Add(column);
+            }
+        }
+
+        return requested;
     }
 
     private static void AppendWhere(

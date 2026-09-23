@@ -111,6 +111,28 @@ public class RedshiftFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildSelectQuery_EmptyOutFields_OmitsAttributeColumns()
+    {
+        var defaults = RedshiftFeatureQueryBuilder.BuildSelectQuery(Mapping(), new FeatureQuery(), _attributes);
+        Assert.Contains("\"name\"", defaults.Sql, StringComparison.Ordinal);
+        Assert.Contains("\"area\"", defaults.Sql, StringComparison.Ordinal);
+        Assert.Contains("\"type\"", defaults.Sql, StringComparison.Ordinal);
+
+        var unset = RedshiftFeatureQueryBuilder.BuildSelectQuery(
+            Mapping(), new FeatureQuery { OutFields = default(ImmutableArray<string>) }, _attributes);
+        Assert.Contains("\"name\"", unset.Sql, StringComparison.Ordinal);
+        Assert.Contains("\"area\"", unset.Sql, StringComparison.Ordinal);
+        Assert.Contains("\"type\"", unset.Sql, StringComparison.Ordinal);
+
+        var result = RedshiftFeatureQueryBuilder.BuildSelectQuery(
+            Mapping(), new FeatureQuery { OutFields = ImmutableArray<string>.Empty }, _attributes);
+
+        Assert.DoesNotContain("\"name\"", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"area\"", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"type\"", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildSelectQuery_WithPagination_GeneratesLimitThenOffset()
     {
         var query = new FeatureQuery { Limit = 10, Offset = 20 };
