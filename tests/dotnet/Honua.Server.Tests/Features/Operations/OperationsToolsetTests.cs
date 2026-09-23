@@ -1240,10 +1240,13 @@ public sealed class OperationsToolsetTests
 
         var descriptors = (await catalog.GetSnapshotAsync(CancellationToken.None)).Operations;
         var tools = await source.GetToolsAsync(CancellationToken.None);
+        var expected = descriptors
+            .Where(static descriptor => !AdminMcpOperationExclusions.ContainsOperation(descriptor.OperationId))
+            .Select(static descriptor => PublishedOperationTool.ProjectName(descriptor.OperationId));
 
         descriptors.Should().HaveCount(AdminConnectImportOperationCatalog.Definitions.Count);
         tools.Select(static tool => tool.Name).Should().BeEquivalentTo(
-            descriptors.Select(static descriptor => PublishedOperationTool.ProjectName(descriptor.OperationId)));
+            expected);
         descriptors.Where(static descriptor => descriptor.Policy.SideEffectClass != OperationSideEffectClass.ReadOnly)
             .Should().OnlyContain(static descriptor => descriptor.ApprovalModel == OperationApprovalModel.OperatorGate);
     }
@@ -1403,6 +1406,147 @@ public sealed class OperationsToolsetTests
         (await credentialStore.GetAsync(executionAuthority.Record.Id, CancellationToken.None))!
             .RevokedAt.Should().NotBeNull("operation credentials are single-use");
     }
+
+    [UnitTest]
+    public async Task LaneA_Validation_RequiresSecretReference_ForConnectionDraftTest()
+    {
+        // honua-server#4880: every connection operation requires a secret reference, including
+        // the read-only draft test, so a plaintext password never enters an operation request.
+        var definition = AdminConnectImportOperationCatalog.Definitions.Single(
+            item => item.OperationId == "admin.connections.test-draft");
+        var executor = new AdminConnectImportOperationExecutor(
+            definition, Substitute.For<IHttpClientFactory>(), Substitute.For<IHttpContextAccessor>(),
+            new InMemoryAdminApiKeyStore(TimeProvider.System), TimeProvider.System,
+            new OperationLineageAttestationStore(TimeProvider.System));
+        var parameters = new Dictionary<string, string?>
+        {
+            ["name"] = "roads",
+            ["host"] = "database",
+            ["database"] = "gis",
+            ["username"] = "reader",
+        };
+
+        var withPassword = await executor.ValidateAsync(new OperationRequest
+        {
+            OperationId = definition.OperationId,
+            Parameters = new Dictionary<string, string?>(parameters) { ["password"] = "plaintext" },
+        });
+        var withReference = await executor.ValidateAsync(new OperationRequest
+        {
+            OperationId = definition.OperationId,
+            Parameters = new Dictionary<string, string?>(parameters) { ["secretReference"] = "vault://connection" },
+        });
+
+        withPassword.IsValid.Should().BeFalse();
+        withPassword.Messages.Should().ContainSingle(message => message.Contains("secretReference", StringComparison.Ordinal));
+        withReference.Messages.Should().NotContain(message => message.Contains("secretReference", StringComparison.Ordinal));
+    }
+
+    [UnitTest]
+    public async Task LaneA_ReadOnlyPostOperation_ForReadScopedCaller_UsesCredentialBoundToTheExactRoute()
+    {
+        // honua-server#4880: a read-only operation served by a POST route is authorized on its
+        // semantic read class. The loopback call carries that decision with a single-use
+        // credential bound to the one method and path, instead of the caller's read-only key.
+        var credentialStore = new InMemoryAdminApiKeyStore(TimeProvider.System);
+        var reader = await credentialStore.CreateAsync(
+            "reader", ["admin:read"], null, "reader", CancellationToken.None);
+        AdminApiKeyValidationResult? executionAuthority = null;
+        var handler = new CapturingOperationHandler(async request =>
+        {
+            var executionKey = request.Headers.GetValues("X-API-Key").Single();
+            executionKey.Should().NotBe(reader.Key);
+            request.Headers.GetValues("X-Honua-Tenant").Should().Equal("tenant-a");
+            executionAuthority = await credentialStore.ValidateAsync(executionKey, CancellationToken.None);
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{\"success\":true}") };
+        });
+        var (executor, _) = ConnectImportExecutor("admin.connections.test", handler, credentialStore, current =>
+        {
+            current.Request.Headers["X-API-Key"] = reader.Key;
+            current.Request.Headers["X-Honua-Tenant"] = "tenant-a";
+            current.User = ApiKeyPrincipal(reader.Record.Permissions);
+        });
+
+        var handle = await executor.SubmitAsync(
+            new OperationRequest
+            {
+                OperationId = "admin.connections.test",
+                Parameters = new Dictionary<string, string?> { ["id"] = "connection-1" },
+            },
+            new OperationPolicyContext { TenantId = "tenant-a", PrincipalId = "reader" },
+            CancellationToken.None);
+
+        handle.Status.Should().Be(OperationHandleStatus.Completed);
+        executionAuthority.Should().NotBeNull();
+        executionAuthority!.Record.Permissions.Should().Equal(
+            "admin:operation:POST:/api/v1/admin/connections/connection-1/test",
+            "admin:operation:tenant:tenant-a");
+        (await credentialStore.GetAsync(executionAuthority.Record.Id, CancellationToken.None))!
+            .RevokedAt.Should().NotBeNull("the loopback credential is single-use");
+    }
+
+    [UnitTest]
+    public async Task LaneA_LoopbackTransport_ForwardsCallerCredential_WhenItAlreadyAuthorizesTheRoute()
+    {
+        // Full-admin callers and GET-backed reads keep forwarding the caller's own credential;
+        // a write operation for a read-scoped caller is never given a bound credential.
+        var cases = new (string OperationId, string[] Grants, Dictionary<string, string?> Parameters)[]
+        {
+            ("admin.connections.test", ["admin:*"], new() { ["id"] = "connection-1" }),
+            ("admin.connections.get", ["admin:read"], new() { ["id"] = "connection-1" }),
+            ("admin.connections.delete", ["admin:read"], new() { ["id"] = "connection-1" }),
+        };
+        foreach (var (operationId, grants, parameters) in cases)
+        {
+            var credentialStore = new InMemoryAdminApiKeyStore(TimeProvider.System);
+            var caller = await credentialStore.CreateAsync("caller", grants, null, "caller", CancellationToken.None);
+            var handler = new CapturingOperationHandler(_ =>
+                Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") }));
+            var (executor, _) = ConnectImportExecutor(operationId, handler, credentialStore, current =>
+            {
+                current.Request.Headers["X-API-Key"] = caller.Key;
+                current.User = ApiKeyPrincipal(caller.Record.Permissions);
+            });
+
+            await executor.SubmitAsync(
+                new OperationRequest { OperationId = operationId, Parameters = parameters },
+                new OperationPolicyContext { PrincipalId = "caller" },
+                CancellationToken.None);
+
+            handler.Requests.Should().ContainSingle().Which.Headers.GetValues("X-API-Key")
+                .Should().Equal([caller.Key], operationId);
+            (await credentialStore.ListAsync(CancellationToken.None)).Should().ContainSingle(operationId);
+        }
+    }
+
+    private static (AdminConnectImportOperationExecutor Executor, DefaultHttpContext Current) ConnectImportExecutor(
+        string operationId,
+        HttpMessageHandler handler,
+        IAdminApiKeyStore credentialStore,
+        Action<DefaultHttpContext> configure)
+    {
+        var factory = Substitute.For<IHttpClientFactory>();
+        factory.CreateClient(AdminConnectImportOperationExecutor.HttpClientName).Returns(_ => new HttpClient(handler, disposeHandler: false));
+        var current = new DefaultHttpContext();
+        current.Request.Scheme = "https";
+        current.Request.Host = new HostString("localhost");
+        current.Connection.LocalPort = 8080;
+        configure(current);
+        var accessor = Substitute.For<IHttpContextAccessor>();
+        accessor.HttpContext.Returns(current);
+        var definition = AdminConnectImportOperationCatalog.Definitions.Single(item => item.OperationId == operationId);
+        return (new AdminConnectImportOperationExecutor(
+            definition, factory, accessor, credentialStore, TimeProvider.System,
+            new OperationLineageAttestationStore(TimeProvider.System)), current);
+    }
+
+    private static System.Security.Claims.ClaimsPrincipal ApiKeyPrincipal(IEnumerable<string>? permissions) => new(
+        new System.Security.Claims.ClaimsIdentity(
+            (permissions ?? []).Select(static permission =>
+                    new System.Security.Claims.Claim(AdminApiKeyPermission.PermissionClaimType, permission))
+                .Append(new System.Security.Claims.Claim(
+                    System.Security.Claims.ClaimTypes.Role, AdminApiKeyPermission.ScopedAdminRole)),
+            "ApiKey"));
 
     [UnitTest]
     public async Task AdminStatus_Uses_Canonical_Release_Version()
