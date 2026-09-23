@@ -258,7 +258,7 @@ internal sealed class GeocodingHandler(
                             LatestWkid = outSrid
                         }
                     },
-                    Attributes = ProjectAttributes(candidate.Attributes, outFields)
+                    Attributes = ProjectAttributes(EsriAddressAttributes(candidate), outFields)
                 });
             }
 
@@ -393,11 +393,9 @@ internal sealed class GeocodingHandler(
                 return CreateUnsupportedOutSrResult(context, outSrid);
             }
 
-            var address = new Dictionary<string, string?>(match.Attributes, StringComparer.Ordinal)
-            {
-                ["Match_addr"] = match.Address,
-                ["LongLabel"] = match.Address
-            };
+            var address = new Dictionary<string, string?>(
+                EsriGeocodeAddressFields.Apply(match.Address, match.AddressType, match.StructuredAddress, match.Attributes),
+                StringComparer.Ordinal);
 
             var response = new ReverseGeocodeResponse
             {
@@ -706,7 +704,7 @@ internal sealed class GeocodingHandler(
                     Address = candidate.Address,
                     Score = candidate.Score,
                     Location = location,
-                    Attributes = ProjectAttributes(candidate.Attributes, outFields)
+                    Attributes = ProjectAttributes(EsriAddressAttributes(candidate), outFields)
                 });
             }
 
@@ -1318,6 +1316,14 @@ internal sealed class GeocodingHandler(
 
         return positionalIndex;
     }
+
+    private static IReadOnlyDictionary<string, string?> EsriAddressAttributes(
+        Honua.Geocoding.Features.Geocoding.Domain.GeocodeCandidate candidate)
+        => EsriGeocodeAddressFields.Apply(
+            candidate.Address,
+            candidate.AddressType,
+            candidate.StructuredAddress,
+            candidate.Attributes);
 
     // Projects a provider attribute bag down to the requested outFields, matching
     // field names case-insensitively and preserving the original key casing.

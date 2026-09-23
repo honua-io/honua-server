@@ -989,6 +989,8 @@ public sealed class OgcFeaturesEnhancementsTests : IAsyncLifetime
             "http://www.opengis.net/spec/cql2/1.0/conf/basic-cql2",
             "http://www.opengis.net/spec/cql2/1.0/conf/cql2-text",
             "http://www.opengis.net/spec/cql2/1.0/conf/cql2-json",
+            "http://www.opengis.net/spec/ogcapi-features-4/1.0/conf/create-replace-delete",
+            "http://www.opengis.net/spec/ogcapi-features-4/1.0/conf/update",
         ]);
     }
 

@@ -242,10 +242,15 @@ internal static class CoreEndpoints
                 "http://www.opengis.net/spec/ogcapi-features-3/1.0/conf/features-filter",
                 "http://www.opengis.net/spec/cql2/1.0/conf/basic-cql2",
                 "http://www.opengis.net/spec/cql2/1.0/conf/cql2-text",
-                "http://www.opengis.net/spec/cql2/1.0/conf/cql2-json"
+                "http://www.opengis.net/spec/cql2/1.0/conf/cql2-json",
 
-            // Optional CQL2 extensions and Part 4 remain unadvertised pending
-            // complete class evidence.
+                // Part 4 transactions are served (create, replace, update, delete).
+                // Clients that read /conformance will not attempt them unless these
+                // classes are declared (#5132).
+                "http://www.opengis.net/spec/ogcapi-features-4/1.0/conf/create-replace-delete",
+                "http://www.opengis.net/spec/ogcapi-features-4/1.0/conf/update"
+
+            // Optional CQL2 extensions remain unadvertised pending complete class evidence.
             ).AddRange(OgcConformanceUris.Common)
               .AddRange(OgcConformanceUris.VendorExtensions),
             Links = OgcCoreMetadataUtilities.BuildConformanceLinks(
