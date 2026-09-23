@@ -874,6 +874,7 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
         CancellationToken cancellationToken)
     {
         var collected = new List<WorkflowOperationRecord>();
+        var sawTruncatedWindow = false;
         for (var page = 1; page <= ManualInterventionMaxPages; page++)
         {
             var query = new WorkflowOperationQuery
@@ -896,8 +897,9 @@ internal sealed class OpsFindingsService : IOpsFindingsEvidenceSource
             // A store that ignores the query filters must not widen the rule's scope, and paging over a
             // set that moves under the reader can repeat an operation.
             collected.AddRange((read.Value?.Items ?? []).Where(IsStuckDeploy));
+            sawTruncatedWindow |= read.Value?.IsTruncated == true;
 
-            if (read.Value is { IsTruncated: true, HasMore: false })
+            if (sawTruncatedWindow && read.Value is not { HasMore: true })
             {
                 workflowCollection.ExpectUncollected($"{ManualInterventionComponentId}:beyond-materialization-window");
             }
