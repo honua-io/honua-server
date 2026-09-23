@@ -215,7 +215,9 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task FeatureQuery_PrivateVersionOfAnotherOwner_DoesNotExposeBranch(bool useGuid)
     {
-        const string versionName = "private_query_visibility";
+        // The version registry outlives each fixture when CI supplies a shared database.
+        // Give every theory invocation its own version, including repeated runs.
+        var versionName = $"private_query_visibility_{Guid.NewGuid():N}";
         var owned = await CreateVersionAsync(_ownerToken, versionName, "private-query-description");
         var versionGuid = owned.GetProperty("versionGuid").GetString()!;
         BranchVersioningPublicationFixture.ConfigureManagedPublications(_fixture);
@@ -317,6 +319,8 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
         response.StatusCode.Should().Be(HttpStatusCode.OK, "create should succeed; body: {0}", body);
 
         using var document = JsonDocument.Parse(body);
+        document.RootElement.TryGetProperty("error", out _).Should().BeFalse(
+            "create should succeed without a GeoServices error; body: {0}", body);
         return document.RootElement.GetProperty("versionInfo").Clone();
     }
 
