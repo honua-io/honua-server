@@ -253,6 +253,12 @@ internal static class FeatureRegistrationExtensions
     {
         services.AddSingleton<PMTilesProxyService>();
         services.AddScoped<Honua.Server.Features.Protocols.Rasters.CogArtifacts.CogArtifactService>();
+        // Lets a protocol assembly advertise a published COG without referencing the
+        // server: Honua.Server references the protocols, never the reverse, so STAC
+        // could otherwise only ever offer the GeoJSON representation of a layer whose
+        // raster is published and range-readable.
+        services.AddScoped<Honua.Core.Abstractions.Features.Rasters.Abstractions.ICogArtifactLocator,
+            Honua.Server.Features.Protocols.Rasters.CogArtifacts.CogArtifactLocator>();
         return services;
     }
 
