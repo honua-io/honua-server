@@ -451,6 +451,46 @@ public sealed class RedisWorkflowOperationStoreIntegrationTests(RedisFixture red
             .Should().NotBeNull("an equal-score member may be later and cannot be safely pruned");
     }
 
+    [IntegrationTest]
+    public async Task WorkflowStore_LaterDeployLookup_KeepsCappedEqualMillisecondBoundaryIncomplete()
+    {
+        await using var multiplexer = await ConnectionMultiplexer.ConnectAsync(redis.ConnectionString);
+        var store = new RedisWorkflowOperationStore(multiplexer, NullLogger<RedisWorkflowOperationStore>.Instance);
+        var database = multiplexer.GetDatabase();
+        var targetId = $"supersession-{Guid.NewGuid():N}";
+        var createdAt = DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        var stuck = CreateDeployOperationRecord($"stuck-{Guid.NewGuid():N}", targetId,
+            createdAt, WorkflowOperationStatus.ManualInterventionRequired);
+        var later = CreateDeployOperationRecord($"later-{Guid.NewGuid():N}", targetId,
+            createdAt.AddTicks(1), WorkflowOperationStatus.Failed);
+        var boundary = Enumerable.Range(0, 49)
+            .Select(_ => CreateDeployOperationRecord($"boundary-{Guid.NewGuid():N}", targetId,
+                createdAt, WorkflowOperationStatus.Failed))
+            .ToArray();
+
+        foreach (var operation in new[] { stuck, later }.Concat(boundary))
+        {
+            (await store.TryCreateAsync(operation)).Should().BeTrue();
+        }
+
+        var key = $"controlplane:workflow:deploy-created:{targetId}";
+        await database.KeyDeleteAsync(key);
+        await database.SortedSetAddAsync(key,
+            new[] { new SortedSetEntry(stuck.OperationId, createdAt.ToUnixTimeMilliseconds()) }
+                .Concat(boundary.Select(operation => new SortedSetEntry(operation.OperationId, createdAt.ToUnixTimeMilliseconds())))
+                .ToArray());
+
+        try
+        {
+            (await database.SortedSetLengthAsync(key)).Should().Be(50);
+            (await store.HasLaterDeployOfTargetAsync(stuck)).Should().BeNull();
+        }
+        finally
+        {
+            await database.KeyDeleteAsync(key);
+        }
+    }
+
     private static WorkflowOperationRecord CreateDeployOperationRecord(
         string operationId,
         string targetId,
