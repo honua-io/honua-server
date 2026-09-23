@@ -114,7 +114,8 @@ public sealed class TierTraitEnforcementTests
                 nameof(TierDetection_RecognisesTestKitTierAttributes_AndRejectsPlainXunitFacts))!;
             var legacyKey = $"{typeof(TierTraitEnforcementTests).FullName}.{existingMethod.Name}";
             var signatureKey = TierTraitScanner.MethodKey(typeof(TierTraitEnforcementTests), existingMethod);
-            File.WriteAllText(path, $"Example.ExistingBareFact\n{legacyKey}\n");
+            var legacySignatureKey = signatureKey[(signatureKey.IndexOf(':') + 1)..];
+            File.WriteAllText(path, $"Example.ExistingBareFact\n{legacyKey}\n{legacySignatureKey}\n");
             TierTraitBaseline.RunGit(root, "add", TierTraitBaseline.RelativePath);
             TierTraitBaseline.RunGit(root, "-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "introduce-baseline");
             TierTraitBaseline.ReadFromFirstParent(root).Should().BeNull("the first baseline is allowed to be seeded");
@@ -126,6 +127,8 @@ public sealed class TierTraitEnforcementTests
             var prior = TierTraitBaseline.ReadFromFirstParent(root)!;
             prior.Should().Contain(legacyKey,
                 "a trusted parent baseline entry must not be reinterpreted using today's test methods");
+            prior.Should().Contain(legacySignatureKey,
+                "a signature without assembly identity cannot authorize today's method in a possibly different assembly");
             var added = TierTraitBaseline.AddedEntries(File.ReadAllLines(path), prior);
             added.Should().HaveCount(2);
             added.Should().Contain("Example.NewBareFact");
@@ -308,12 +311,6 @@ public sealed class TierTraitEnforcementTests
             $"{TierTraitBaseline.RelativePath} is machine-generated and must stay sorted so diffs are reviewable");
         lines.Should().OnlyHaveUniqueItems(
             $"{TierTraitBaseline.RelativePath} must not list the same method twice");
-
-        var canonical = lines.First(line => line.Contains(':'));
-        var legacy = canonical[(canonical.IndexOf(':') + 1)..];
-        TierTraitBaseline.CanonicalizeLegacySignatureEntries([legacy])
-            .Should().ContainSingle().Which.Should().Be(canonical,
-                "the one-time assembly prefix migration must preserve exact legacy signatures");
     }
 }
 
@@ -664,32 +661,9 @@ internal static class TierTraitBaseline
             return null;
         }
 
-        var entries = RunGit(repositoryRoot, "show", $"{parent}:{RelativePath}")
+        return RunGit(repositoryRoot, "show", $"{parent}:{RelativePath}")
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(line => !line.StartsWith('#'))
-            .ToArray();
-
-        return CanonicalizeLegacySignatureEntries(entries);
-    }
-
-    /// <summary>
-    /// Converts the pre-assembly-prefix baseline format only when its complete method signature
-    /// still matches exactly one currently scanned method. Name-only historical entries and
-    /// signature replacements deliberately remain untouched, so they cannot grandfather a new
-    /// untiered method during the migration.
-    /// </summary>
-    public static IReadOnlyList<string> CanonicalizeLegacySignatureEntries(IEnumerable<string> entries)
-    {
-        var currentByLegacySignature = TierTraitScanner.UntieredTestMethodNames()
-            .Where(entry => entry.Contains(':'))
-            .GroupBy(entry => entry[(entry.IndexOf(':') + 1)..], StringComparer.Ordinal)
-            .Where(group => group.Skip(1).Any() is false)
-            .ToDictionary(group => group.Key, group => group.Single(), StringComparer.Ordinal);
-
-        return entries
-            .Select(entry => entry.Contains(':')
-                ? entry
-                : currentByLegacySignature.GetValueOrDefault(entry, entry))
             .ToArray();
     }
 
