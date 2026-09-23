@@ -8,6 +8,8 @@ using FluentAssertions;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Xunit;
+using Xunit.Abstractions;
+using Xunit.Sdk;
 
 namespace Honua.Architecture.Tests;
 
@@ -205,6 +207,44 @@ public sealed class TierTraitEnforcementTests
 
         TierTraitScanner.HasTierBearingAttribute(typeof(UnsupportedTierFixture)).Should().BeFalse();
     }
+
+    [ArchitectureTest]
+    public void TierDetection_DoesNotConstructTestAttributesWhileScanningInheritedMethods()
+    {
+        var method = typeof(SideEffectFactDerived).GetMethod(nameof(SideEffectFactDerived.TestMethod))!;
+        var before = SideEffectFactAttribute.ConstructionCount;
+
+        TierTraitScanner.IsXunitTestMethod(method).Should().BeTrue();
+        TierTraitScanner.HasTierBearingAttribute(method).Should().BeTrue();
+        SideEffectFactAttribute.ConstructionCount.Should().Be(before,
+            "scanning test metadata must not run attribute constructors with process-wide side effects");
+    }
+
+    [TraitDiscoverer("Honua.TestKit.Attributes.UnitTestDiscoverer", "Honua.TestKit")]
+    private sealed class SideEffectFactAttribute : FactAttribute, ITraitAttribute
+    {
+        public static int ConstructionCount { get; private set; }
+
+        public SideEffectFactAttribute() => ConstructionCount++;
+    }
+
+    // Reflection-only fixture: it must not be discovered and executed as an xUnit test.
+#pragma warning disable xUnit1000
+    private class SideEffectFactBase
+    {
+        [SideEffectFact]
+        public virtual void TestMethod()
+        {
+        }
+    }
+
+    private sealed class SideEffectFactDerived : SideEffectFactBase
+    {
+        public override void TestMethod()
+        {
+        }
+    }
+#pragma warning restore xUnit1000
 
     [Trait("Tier", "Typo")]
     private sealed class UnsupportedTierFixture
@@ -416,9 +456,50 @@ internal static class TierTraitScanner
         return $"{type.Assembly.GetName().Name}:{type.FullName}.{method.Name}`{genericArity}({parameters})";
     }
 
-    private static bool IsXunitTestMethod(MethodInfo method)
-        => method.GetCustomAttributes(inherit: true)
-            .Any(attribute => IsOrDerivesFromXunitFact(attribute.GetType()));
+    internal static bool IsXunitTestMethod(MethodInfo method)
+        => AttributeMetadata(method).Any(attribute => IsOrDerivesFromXunitFact(attribute.AttributeType));
+
+    private static IEnumerable<CustomAttributeData> AttributeMetadata(MemberInfo member)
+    {
+        foreach (var attribute in member.GetCustomAttributesData())
+        {
+            yield return attribute;
+        }
+
+        if (member is Type type)
+        {
+            for (var parent = type.BaseType; parent is not null; parent = parent.BaseType)
+            {
+                foreach (var attribute in parent.GetCustomAttributesData().Where(IsInheritedAttribute))
+                {
+                    yield return attribute;
+                }
+            }
+        }
+        else if (member is MethodInfo method && method.IsVirtual)
+        {
+            var root = method.GetBaseDefinition();
+            for (var parent = method.DeclaringType?.BaseType; parent is not null; parent = parent.BaseType)
+            {
+                foreach (var inheritedMethod in parent.GetMethods(TestMemberFlags | BindingFlags.DeclaredOnly)
+                             .Where(candidate => candidate.GetBaseDefinition() == root))
+                {
+                    foreach (var attribute in inheritedMethod.GetCustomAttributesData().Where(IsInheritedAttribute))
+                    {
+                        yield return attribute;
+                    }
+                }
+            }
+        }
+    }
+
+    private static bool IsInheritedAttribute(CustomAttributeData attribute)
+    {
+        var usage = attribute.AttributeType.GetCustomAttributesData()
+            .FirstOrDefault(candidate => candidate.AttributeType == typeof(AttributeUsageAttribute));
+        return usage?.NamedArguments.FirstOrDefault(argument => argument.MemberName == nameof(AttributeUsageAttribute.Inherited))
+            .TypedValue.Value is not false;
+    }
 
     private static bool IsOrDerivesFromXunitFact(Type attributeType)
     {
@@ -442,15 +523,14 @@ internal static class TierTraitScanner
     /// </summary>
     internal static bool HasTierBearingAttribute(MemberInfo member)
     {
-        var explicitTraits = member.GetCustomAttributesData()
+        var explicitTraits = AttributeMetadata(member)
             .Where(attribute => attribute.AttributeType == typeof(TraitAttribute) &&
                                 attribute.ConstructorArguments.Count == 2)
             .Select(attribute => new KeyValuePair<string, string>(
                 attribute.ConstructorArguments[0].Value as string ?? string.Empty,
                 attribute.ConstructorArguments[1].Value as string ?? string.Empty));
         return HasExactlyOneSupportedTier(explicitTraits) ||
-               member.GetCustomAttributes(inherit: true)
-                   .Any(attribute => EmitsTierTrait(attribute.GetType()));
+               AttributeMetadata(member).Any(attribute => EmitsTierTrait(attribute.AttributeType));
     }
 
     private static readonly Dictionary<Type, bool> _tierEmittingCache = [];
