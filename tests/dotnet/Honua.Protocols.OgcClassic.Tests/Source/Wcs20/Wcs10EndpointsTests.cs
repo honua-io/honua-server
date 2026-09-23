@@ -10,6 +10,8 @@ using Honua.Core.Features.Raster.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20;
@@ -92,6 +94,97 @@ public sealed class Wcs10EndpointsTests : IAsyncLifetime
         brief.Element(XName.Get("lonLatEnvelope", Wcs10Namespace))!
             .Elements(XName.Get("pos", GmlNamespace))
             .Should().HaveCount(2);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs10, "GetCoverage")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    public async Task Wcs10_ServiceCoverageIdUsesPublicationIndexAndReadsBoundStorageLayer()
+    {
+        const int storageLayerId = 2701;
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        // The WCS route selects the WCS-enabled service facet, not the separate
+        // ImageServer facet that happens to expose the same public layer number.
+        var publication = graph.Publications.Single(candidate =>
+            candidate.ServiceId == "svc-test" && candidate.LayerIndex == WebAppFixture.TestLayerId);
+        var resource = graph.Resources.Single(candidate => candidate.Metadata.Id == publication.ResourceId);
+        var bindingId = publication.StorageBindingId ?? resource.PrimaryStorageBindingId;
+        _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>().SetGraph(graph with
+        {
+            Revision = graph.Revision + 1,
+            StorageBindings = graph.StorageBindings.Select(binding => binding.Metadata.Id == bindingId
+                ? binding with { StorageLayerId = storageLayerId } : binding).ToArray()
+        }, schema: _fixture.CurrentSchema);
+
+        var raster = CreateRasterInfo() with { LayerId = storageLayerId };
+        _rasterStore.GetPrimaryRasterInfoAsync(storageLayerId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterInfo?>(raster));
+        _rasterStore.GetExtentAsync(storageLayerId, TestRasterId, Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<RasterExtent?>(raster.Extent));
+        _rasterStore.ExportImageAsync(storageLayerId, TestRasterId, Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>())
+            .Returns(call =>
+            {
+                _exportQueries.Add(call.ArgAt<RasterQuery>(2));
+                return Task.FromResult(new RasterResult
+                {
+                    Data = [0x49, 0x49, 0x2A, 0x00], ContentType = "image/tiff",
+                    Width = 16, Height = 16, Srid = 4326, Extent = raster.Extent,
+                    BandCount = 1, PixelType = "32BF"
+                });
+            });
+
+        var endpoint = $"/ogc/services/{WebAppFixture.TestServiceId}/wcs?SERVICE=WCS&VERSION=1.0.0";
+        var capabilities = await _fixture.Client.GetAsync(endpoint + "&REQUEST=GetCapabilities");
+        capabilities.StatusCode.Should().Be(HttpStatusCode.OK);
+        var brief = XDocument.Parse(await capabilities.Content.ReadAsStringAsync()).Root!
+            .Descendants(XName.Get("CoverageOfferingBrief", Wcs10Namespace)).Single();
+        brief.Element(XName.Get("name", Wcs10Namespace))!.Value.Should().Be("coverage_0");
+
+        var description = await _fixture.Client.GetAsync(endpoint + "&REQUEST=DescribeCoverage&COVERAGE=coverage_0");
+        description.StatusCode.Should().Be(HttpStatusCode.OK);
+        XDocument.Parse(await description.Content.ReadAsStringAsync()).Root!
+            .Descendants(XName.Get("CoverageOffering", Wcs10Namespace)).Single()
+            .Element(XName.Get("name", Wcs10Namespace))!.Value.Should().Be("coverage_0");
+
+        var export = await _fixture.Client.GetAsync(endpoint + "&REQUEST=GetCoverage&COVERAGE=coverage_0" +
+            "&FORMAT=GeoTIFF&BBOX=-122.5,37.7,-122.35,37.84&CRS=EPSG:4326&WIDTH=16&HEIGHT=16");
+        export.StatusCode.Should().Be(HttpStatusCode.OK, await export.Content.ReadAsStringAsync());
+        _exportQueries.Should().ContainSingle();
+        await _rasterStore.Received(1).ExportImageAsync(storageLayerId, TestRasterId,
+            Arg.Any<RasterQuery>(), Arg.Any<CancellationToken>());
+
+        // The shared resolver also feeds WCS 2.0 identifiers on this route.
+        var modernEndpoint = $"/ogc/services/{WebAppFixture.TestServiceId}/wcs?SERVICE=WCS&VERSION=2.0.1";
+        var modernCapabilities = await _fixture.Client.GetAsync(modernEndpoint + "&REQUEST=GetCapabilities");
+        modernCapabilities.StatusCode.Should().Be(HttpStatusCode.OK);
+        var modernSummary = XDocument.Parse(await modernCapabilities.Content.ReadAsStringAsync()).Root!
+            .Descendants(XName.Get("CoverageSummary", "http://www.opengis.net/wcs/2.0")).Single();
+        modernSummary.Element(XName.Get("CoverageId", "http://www.opengis.net/wcs/2.0"))!
+            .Value.Should().Be("coverage_0");
+        var modernDescription = await _fixture.Client.GetAsync(modernEndpoint +
+            "&REQUEST=DescribeCoverage&COVERAGEID=coverage_0");
+        modernDescription.StatusCode.Should().Be(HttpStatusCode.OK,
+            await modernDescription.Content.ReadAsStringAsync());
+    }
+
+    [IntegrationTheory]
+    [InlineData("GetCapabilities", "")]
+    [InlineData("DescribeCoverage", "&COVERAGE=coverage_0")]
+    [InlineData("GetCoverage", "&COVERAGE=coverage_0&FORMAT=GeoTIFF")]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs10, "GetCoverage")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    public async Task Wcs10_UnknownServiceUsesLegacyErrorEnvelope(string operation, string parameters)
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/nonexistent/wcs?SERVICE=WCS&VERSION=1.0.0&REQUEST={operation}{parameters}");
+        var body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound, body);
+        var root = XDocument.Parse(body).Root!;
+        root.Name.Should().Be(XName.Get("ServiceExceptionReport", OgcNamespace));
+        root.Elements(XName.Get("ServiceException", OgcNamespace)).Should().ContainSingle();
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/vnd.ogc.se_xml");
     }
 
     [IntegrationTest]

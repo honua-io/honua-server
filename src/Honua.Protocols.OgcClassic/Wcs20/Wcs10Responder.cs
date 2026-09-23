@@ -2,9 +2,11 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Xml;
 using System.Xml.Linq;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Domain;
+using Microsoft.AspNetCore.Http.HttpResults;
 using NetTopologySuite.Geometries;
 
 namespace Honua.Protocols.Ogc.Classic.Wcs20;
@@ -92,12 +94,7 @@ internal sealed partial class Wcs20Handler
         var coverageResult = await ResolveCoverageListAsync(context, scope, cancellationToken).ConfigureAwait(false);
         if (coverageResult.Error is not null)
         {
-            // Resolution failures (service not published, WCS not enabled, access denied)
-            // are still reported in the 2.0.1 encoding because the resolver owns those
-            // results and is shared with the 2.0.1 path. The status code is correct in
-            // both encodings; only the body differs. Every error this file raises itself
-            // uses the 1.0.0 encoding.
-            return coverageResult.Error;
+            return TranslateResolverError(coverageResult.Error);
         }
 
         var endpoint = GetCurrentEndpointUrl(context);
@@ -151,7 +148,7 @@ internal sealed partial class Wcs20Handler
 
     private static XElement BuildWcs10CoverageOfferingBrief(WcsCoverage coverage)
     {
-        var coverageId = FormatCoverageId(coverage.LayerId);
+        var coverageId = FormatCoverageId(coverage.PublicationLayerIndex ?? coverage.LayerId);
         var label = coverage.Resource.Metadata.Title ?? coverage.Resource.Metadata.Name ?? coverageId;
         var description = string.IsNullOrWhiteSpace(coverage.Resource.Metadata.Description)
             ? label
@@ -216,7 +213,7 @@ internal sealed partial class Wcs20Handler
             var all = await ResolveCoverageListAsync(context, scope, cancellationToken).ConfigureAwait(false);
             if (all.Error is not null)
             {
-                return all.Error;
+                return TranslateResolverError(all.Error);
             }
 
             coverages.AddRange(all.Coverages);
@@ -236,7 +233,7 @@ internal sealed partial class Wcs20Handler
                 var resolved = await ResolveCoverageAsync(context, scope, identifier, cancellationToken).ConfigureAwait(false);
                 if (resolved.Error is not null)
                 {
-                    return resolved.Error;
+                    return TranslateResolverError(resolved.Error);
                 }
 
                 if (resolved.Coverage is null)
@@ -296,7 +293,7 @@ internal sealed partial class Wcs20Handler
             return false;
         }
 
-        var coverageId = FormatCoverageId(coverage.LayerId);
+        var coverageId = FormatCoverageId(coverage.PublicationLayerIndex ?? coverage.LayerId);
         var label = coverage.Resource.Metadata.Title ?? coverage.Resource.Metadata.Name ?? coverageId;
         var description = string.IsNullOrWhiteSpace(coverage.Resource.Metadata.Description)
             ? label
@@ -440,7 +437,7 @@ internal sealed partial class Wcs20Handler
         var resolved = await ResolveCoverageAsync(context, scope, identifier, cancellationToken).ConfigureAwait(false);
         if (resolved.Error is not null)
         {
-            return resolved.Error;
+            return TranslateResolverError(resolved.Error);
         }
 
         if (resolved.Coverage is null)
@@ -539,6 +536,44 @@ internal sealed partial class Wcs20Handler
         Wcs20Log.CoverageReturned(_logger, identifier.Raw, result.Data.Length, result.ContentType);
 
         return Results.File(result.Data, result.ContentType);
+    }
+
+    private static IResult TranslateResolverError(IResult error)
+    {
+        // Shared graph resolution returns the WCS 2.0 OWS envelope. Keep its HTTP status,
+        // detail and locator, but encode the error for the 1.0 client that made the request.
+        if (error is not ContentHttpResult { ResponseContent: { } body } content)
+        {
+            return Wcs10ErrorResults.CreateInternalServerError("Coverage resolution failed.");
+        }
+
+        XElement? exception;
+        try
+        {
+            exception = XDocument.Parse(body)
+                .Descendants(XName.Get("Exception", Wcs20Utilities.OwsNamespace))
+                .FirstOrDefault();
+        }
+        catch (XmlException)
+        {
+            return Wcs10ErrorResults.CreateInternalServerError("Coverage resolution failed.");
+        }
+
+        if (exception is null)
+        {
+            return Wcs10ErrorResults.CreateInternalServerError("Coverage resolution failed.");
+        }
+
+        var code = exception.Attribute("exceptionCode")?.Value switch
+        {
+            Wcs20Utilities.ExceptionCodes.NoSuchCoverage => Wcs20Utilities.ExceptionCodes10.CoverageNotDefined,
+            Wcs20Utilities.ExceptionCodes.MissingParameterValue => Wcs20Utilities.ExceptionCodes10.MissingParameterValue,
+            _ => Wcs20Utilities.ExceptionCodes10.InvalidParameterValue,
+        };
+        var detail = exception.Element(XName.Get("ExceptionText", Wcs20Utilities.OwsNamespace))?.Value
+            ?? "Coverage resolution failed.";
+        return Wcs10ErrorResults.Create(content.StatusCode ?? StatusCodes.Status500InternalServerError,
+            code, detail, exception.Attribute("locator")?.Value);
     }
 
     private static bool TryResolveWcs10Format(

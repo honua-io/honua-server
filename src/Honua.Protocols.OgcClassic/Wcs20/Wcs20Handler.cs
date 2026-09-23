@@ -616,7 +616,8 @@ internal sealed partial class Wcs20Handler
                 continue;
             }
 
-            coverages.Add(new WcsCoverage(entry.Resource, entry.StorageLayerId, raster.Value, service.Service));
+            coverages.Add(new WcsCoverage(entry.Resource, entry.StorageLayerId, raster.Value, service.Service,
+                entry.Publication.LayerIndex));
         }
 
         return new CoverageListResult(coverages, null);
@@ -685,7 +686,8 @@ internal sealed partial class Wcs20Handler
         var raster = await GetPrimaryRasterWithExtentAsync(storageLayerId.Value, cancellationToken).ConfigureAwait(false);
         return raster is null
             ? new CoverageResolutionResult(null, null)
-            : new CoverageResolutionResult(new WcsCoverage(resource!, storageLayerId.Value, raster.Value, service.Service), null);
+            : new CoverageResolutionResult(new WcsCoverage(resource!, storageLayerId.Value, raster.Value,
+                service.Service, publication.LayerIndex), null);
     }
 
     private async Task<LayerCoverageResult> ResolveLayerScopedCoverageAsync(
@@ -1177,7 +1179,7 @@ internal sealed partial class Wcs20Handler
                 new XElement(Ows + "UpperCorner", FormatPosition(extent.XMax, extent.YMax))));
         }
 
-        children.Add(new XElement(Wcs + "CoverageId", FormatCoverageId(coverage.LayerId)));
+        children.Add(new XElement(Wcs + "CoverageId", FormatCoverageId(coverage.PublicationLayerIndex ?? coverage.LayerId)));
         children.Add(new XElement(Wcs + "CoverageSubtype", "RectifiedGridCoverage"));
 
         return new XElement(Wcs + "CoverageSummary", children);
@@ -1210,7 +1212,7 @@ internal sealed partial class Wcs20Handler
             return false;
         }
 
-        var coverageId = FormatCoverageId(coverage.LayerId);
+        var coverageId = FormatCoverageId(coverage.PublicationLayerIndex ?? coverage.LayerId);
         // Coverage coordinates use x/y order, which CRS84 declares (see CreateCrsUri).
         var srsName = CreateCrsUri(srid);
         description = new XElement(Wcs + "CoverageDescription",
@@ -3043,7 +3045,12 @@ internal sealed partial class Wcs20Handler
 
     private readonly record struct ServiceResolutionResult(MetadataV2Service? Service, IResult? Error);
 
-    private readonly record struct WcsCoverage(MetadataV2Resource Resource, int LayerId, RasterInfo Raster, MetadataV2Service? Service);
+    private readonly record struct WcsCoverage(
+        MetadataV2Resource Resource,
+        int LayerId,
+        RasterInfo Raster,
+        MetadataV2Service? Service,
+        int? PublicationLayerIndex = null);
 
     private readonly record struct WcsCoverageIdentifier(string Raw, int? LayerId);
 

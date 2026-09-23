@@ -36,7 +36,7 @@ internal static class Wcs10ErrorResults
     internal static IResult CreateInternalServerError(string detail)
         => Create(StatusCodes.Status500InternalServerError, Wcs20Utilities.ExceptionCodes10.InvalidParameterValue, detail, null);
 
-    private static IResult Create(int statusCode, string exceptionCode, string detail, string? locator)
+    internal static IResult Create(int statusCode, string exceptionCode, string detail, string? locator)
     {
         // The 1.0.0 ServiceException carries the offending parameter in `locator`, and
         // the message as element text. Unlike OWS there is no separate ExceptionText
