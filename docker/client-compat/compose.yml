@@ -92,6 +92,15 @@ services:
       PGUSER: postgres
       PGPASSWORD: compat_password
       PGDATABASE: honua_compat
+      # The three publishers at the end of run.sh create derived artifacts - the
+      # PMTiles archive, the COG and the 3D Tiles / I3S scene - through the running
+      # server, because LocalFileStorage indexes its objects once at construction and
+      # cannot see a file written to disk afterwards. That publish is authenticated,
+      # and compose does not inherit this from the sibling honua service, so without
+      # it the publishers skip, run.sh treats the skip as non-fatal, and the pmtiles,
+      # cog and 3d-tiles cells fail on a 404 that looks like a missing feature.
+      # Matches HONUA_ADMIN_PASSWORD on the honua service above.
+      HONUA_ADMIN_PASSWORD: ClientCompatAdmin123!
     # The real server must own schema creation and its migration journal.
     # Seeding first creates migration-owned tables without journal entries,
     # which correctly makes startup/readiness reject the fixture (#4731/#4735).
