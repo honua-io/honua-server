@@ -59,6 +59,7 @@ public static partial class EndpointRegistry
         .. StaticMapEndpoints,
         .. GpServerEndpoints,
         .. WfsEndpoints,
+        .. WpsEndpoints,
         .. CatalogExtraEndpoints,
     ];
 }
