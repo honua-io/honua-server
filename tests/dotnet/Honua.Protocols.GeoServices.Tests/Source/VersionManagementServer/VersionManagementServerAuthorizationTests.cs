@@ -215,7 +215,9 @@ public sealed class VersionManagementServerAuthorizationTests : IAsyncLifetime
     [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
     public async Task FeatureQuery_PrivateVersionOfAnotherOwner_DoesNotExposeBranch(bool useGuid)
     {
-        const string versionName = "private_query_visibility";
+        // The version registry outlives each fixture when CI supplies a shared database.
+        // Give every theory invocation its own version, including repeated runs.
+        var versionName = $"private_query_visibility_{Guid.NewGuid():N}";
         var owned = await CreateVersionAsync(_ownerToken, versionName, "private-query-description");
         var versionGuid = owned.GetProperty("versionGuid").GetString()!;
         BranchVersioningPublicationFixture.ConfigureManagedPublications(_fixture);
