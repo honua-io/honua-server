@@ -308,6 +308,12 @@ public sealed class TierTraitEnforcementTests
             $"{TierTraitBaseline.RelativePath} is machine-generated and must stay sorted so diffs are reviewable");
         lines.Should().OnlyHaveUniqueItems(
             $"{TierTraitBaseline.RelativePath} must not list the same method twice");
+
+        var canonical = lines.First(line => line.Contains(':'));
+        var legacy = canonical[(canonical.IndexOf(':') + 1)..];
+        TierTraitBaseline.CanonicalizeLegacySignatureEntries([legacy])
+            .Should().ContainSingle().Which.Should().Be(canonical,
+                "the one-time assembly prefix migration must preserve exact legacy signatures");
     }
 }
 
@@ -658,9 +664,32 @@ internal static class TierTraitBaseline
             return null;
         }
 
-        return RunGit(repositoryRoot, "show", $"{parent}:{RelativePath}")
+        var entries = RunGit(repositoryRoot, "show", $"{parent}:{RelativePath}")
             .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Where(line => !line.StartsWith('#'))
+            .ToArray();
+
+        return CanonicalizeLegacySignatureEntries(entries);
+    }
+
+    /// <summary>
+    /// Converts the pre-assembly-prefix baseline format only when its complete method signature
+    /// still matches exactly one currently scanned method. Name-only historical entries and
+    /// signature replacements deliberately remain untouched, so they cannot grandfather a new
+    /// untiered method during the migration.
+    /// </summary>
+    public static IReadOnlyList<string> CanonicalizeLegacySignatureEntries(IEnumerable<string> entries)
+    {
+        var currentByLegacySignature = TierTraitScanner.UntieredTestMethodNames()
+            .Where(entry => entry.Contains(':'))
+            .GroupBy(entry => entry[(entry.IndexOf(':') + 1)..], StringComparer.Ordinal)
+            .Where(group => group.Skip(1).Any() is false)
+            .ToDictionary(group => group.Key, group => group.Single(), StringComparer.Ordinal);
+
+        return entries
+            .Select(entry => entry.Contains(':')
+                ? entry
+                : currentByLegacySignature.GetValueOrDefault(entry, entry))
             .ToArray();
     }
 
