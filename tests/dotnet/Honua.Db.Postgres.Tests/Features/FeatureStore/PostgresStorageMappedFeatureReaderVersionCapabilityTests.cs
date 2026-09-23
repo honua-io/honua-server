@@ -17,7 +17,7 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 public sealed class PostgresStorageMappedFeatureReaderVersionCapabilityTests
 {
     private const string ManagedConnection = "Host=localhost;Port=5432;Database=managed;Username=capability_test";
-    private static readonly FeatureStorageMapping ManagedMapping = new("features",
+    private static readonly FeatureStorageMapping ManagedMapping = new("features", SchemaName: "honua",
         PrimaryKeyColumn: "objectid", GeometryColumn: "geometry", AttributesColumn: "attributes",
         LayerDiscriminatorColumn: "layer_id", LayerDiscriminatorValue: 7);
 
@@ -25,6 +25,8 @@ public sealed class PostgresStorageMappedFeatureReaderVersionCapabilityTests
     [InlineData("managed", true)]
     [InlineData("source-managed", true)]
     [InlineData("table", false)]
+    [InlineData("external-schema", false)]
+    [InlineData("case-distinct-schema", false)]
     [InlineData("source-table", false)]
     [InlineData("primary-key", false)]
     [InlineData("attributes", false)]
@@ -39,6 +41,8 @@ public sealed class PostgresStorageMappedFeatureReaderVersionCapabilityTests
         {
             "source-managed" => ManagedMapping with { ProviderOptions = sourceOptions },
             "table" => ManagedMapping with { TableName = "external_features" },
+            "external-schema" => ManagedMapping with { SchemaName = "external" },
+            "case-distinct-schema" => ManagedMapping with { SchemaName = "Honua" },
             "source-table" => ManagedMapping with { TableName = "external_features", ProviderOptions = sourceOptions },
             "primary-key" => ManagedMapping with { PrimaryKeyColumn = "fid" },
             "attributes" => ManagedMapping with { AttributesColumn = "properties" },
@@ -123,7 +127,8 @@ public sealed class PostgresStorageMappedFeatureReaderVersionCapabilityTests
         provider.GetConnectionString().Returns(ManagedConnection);
         var pool = new DefaultObjectPoolProvider().Create(
             new Honua.Core.Features.Infrastructure.ServiceRegistration.DictionaryPooledObjectPolicy());
-        return (new PostgresStorageMappedFeatureReader(provider, pool, new MetadataV2Resource(), mapping, connection, encryption), provider);
+        return (new PostgresStorageMappedFeatureReader(provider, pool, new MetadataV2Resource(), mapping,
+            connection, encryption, managedFeatureSchema: "honua"), provider);
     }
 
     private static void AssertNoDatabaseOpened(IAdoNetDatabaseConnectionProvider provider)

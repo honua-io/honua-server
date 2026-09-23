@@ -44,6 +44,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private readonly LayerReadSecurityResolver _readSecurity;
     private readonly ILogger _logger;
     private readonly string _qualifiedTableName;
+    private readonly string? _managedFeatureSchema;
     private readonly string _primaryKeyColumn;
     private readonly string? _geometryColumn;
     private readonly int _storageSrid;
@@ -61,12 +62,14 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         ILogger? logger = null,
         IFilterExpressionService? filterExpressionService = null,
         IRowLevelSecurityFilterSource? rlsFilterSource = null,
-        IFieldMaskSource? fieldMaskSource = null)
+        IFieldMaskSource? fieldMaskSource = null,
+        string? managedFeatureSchema = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _dictionaryPool = dictionaryPool ?? throw new ArgumentNullException(nameof(dictionaryPool));
         _resource = resource ?? throw new ArgumentNullException(nameof(resource));
         _mapping = mapping ?? throw new ArgumentNullException(nameof(mapping));
+        _managedFeatureSchema = string.IsNullOrWhiteSpace(managedFeatureSchema) ? null : managedFeatureSchema.Trim();
         _connection = connection;
         _connectionEncryptionService = connectionEncryptionService;
         _filterExpressionService = filterExpressionService;
@@ -689,7 +692,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         FeatureQuery query,
         CancellationToken cancellationToken)
     {
-        await ValidateVersionedReadAsync(query).ConfigureAwait(false);
+        await ValidateVersionedReadAsync(query, cancellationToken).ConfigureAwait(false);
 
         if (query.EnforcedSqlFilter is null &&
             _resource.PermanentFilter is { Expression: { Length: > 0 } } &&

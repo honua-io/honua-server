@@ -90,6 +90,84 @@ public sealed class PostgresStorageMappedFeatureReaderVersionIntegrationTests(Po
     }
 
     [Fact]
+    public async Task SameShapedExternalFeaturesTable_DoesNotAdvertiseOrApplyManagedBranchDeltas()
+    {
+        // The fixture's isolated schema has a managed-shaped features table with
+        // layer 1, object 1; honua.version_edits has a conflicting update for it.
+        // A writer configured for honua.features must not treat this other schema
+        // as its own table simply because sourceBacked is absent.
+        var reader = CreateReader(managedFeatureSchema: "honua", sourceBacked: false);
+        (await reader.SupportsBranchVersioningAsync()).Should().BeFalse();
+
+        var branchRead = () => reader.QueryAsync(1, Branch);
+        await branchRead.Should().ThrowAsync<NotSupportedException>();
+
+        var baseline = await reader.QueryAsync(1, new FeatureQuery
+        {
+            ObjectIds = [1],
+            Limit = 1
+        });
+        baseline.Items.Should().ContainSingle();
+        Convert.ToInt64(baseline.Items[0].Attributes["count"], CultureInfo.InvariantCulture).Should().Be(1L);
+    }
+
+    [Fact]
+    public async Task UnqualifiedWriter_ResolvesManagedTableBeforeAdvertisingExternalBinding()
+    {
+        // No Database:Schema means the writer resolves unqualified features on its
+        // connection. The isolated binding names a different same-shaped relation.
+        var reader = CreateReader(managedFeatureSchema: "", sourceBacked: false);
+        (await reader.SupportsBranchVersioningAsync()).Should().BeFalse();
+        var branchRead = () => reader.QueryAsync(1, Branch);
+        await branchRead.Should().ThrowAsync<NotSupportedException>();
+    }
+
+    [Fact]
+    public async Task UnqualifiedBinding_UsesResolvedRelationIdentityForManagedBranchOverlay()
+    {
+        var externalSchema = await fixture.CreateIsolatedSchemaAsync("external_branch_binding");
+        try
+        {
+            await fixture.ExecuteAsync($$"""
+                CREATE TABLE {{externalSchema}}.features (
+                    layer_id integer NOT NULL, objectid bigint NOT NULL,
+                    geometry geometry(Point,4326), attributes jsonb,
+                    PRIMARY KEY (layer_id,objectid));
+                INSERT INTO {{externalSchema}}.features VALUES
+                    (1,1,ST_SetSRID(ST_MakePoint(9,9),4326),'{"count":999,"tenant":"a"}');
+                """);
+
+            var managedPath = new NpgsqlConnectionStringBuilder(fixture.ConnectionString)
+            {
+                SearchPath = $"{_schema},{externalSchema},public"
+            };
+            var managedReader = CreateReader(unqualifiedMapping: true, connectionString: managedPath.ConnectionString);
+            (await managedReader.SupportsBranchVersioningAsync()).Should().BeTrue();
+            var managedBranch = await managedReader.QueryAsync(1, Branch with { ObjectIds = [1] });
+            managedBranch.Items.Should().ContainSingle();
+            Convert.ToInt64(managedBranch.Items[0].Attributes["count"], CultureInfo.InvariantCulture)
+                .Should().Be(100L);
+
+            var externalPath = new NpgsqlConnectionStringBuilder(fixture.ConnectionString)
+            {
+                SearchPath = $"{externalSchema},{_schema},public"
+            };
+            var externalReader = CreateReader(unqualifiedMapping: true, connectionString: externalPath.ConnectionString);
+            (await externalReader.SupportsBranchVersioningAsync()).Should().BeFalse();
+            var branchRead = () => externalReader.QueryAsync(1, Branch);
+            await branchRead.Should().ThrowAsync<NotSupportedException>();
+            var baseline = await externalReader.QueryAsync(1, new FeatureQuery { ObjectIds = [1] });
+            baseline.Items.Should().ContainSingle();
+            Convert.ToInt64(baseline.Items[0].Attributes["count"], CultureInfo.InvariantCulture)
+                .Should().Be(999L);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(externalSchema);
+        }
+    }
+
+    [Fact]
     public async Task CountIdsAndPages_ApplyFiltersToEffectiveBranchRows()
     {
         var reader = CreateReader();
@@ -226,7 +304,9 @@ public sealed class PostgresStorageMappedFeatureReaderVersionIntegrationTests(Po
             .Equal((IEnumerable<object?>)parameters.GetValue(implicitSql)!);
     }
 
-    private PostgresStorageMappedFeatureReader CreateReader(bool secured = false, bool externalTable = false, DataConnection? connection = null)
+    private PostgresStorageMappedFeatureReader CreateReader(bool secured = false, bool externalTable = false,
+        DataConnection? connection = null, string? managedFeatureSchema = null, bool sourceBacked = true,
+        bool unqualifiedMapping = false, string? connectionString = null)
     {
         var resource = new MetadataV2Resource
         {
@@ -255,15 +335,19 @@ public sealed class PostgresStorageMappedFeatureReaderVersionIntegrationTests(Po
         masks.ResolveAsync(resource, Arg.Any<CancellationToken>()).Returns(["secret"]);
         var pool = new DefaultObjectPoolProvider().Create(
             new Honua.Core.Features.Infrastructure.ServiceRegistration.DictionaryPooledObjectPolicy());
-        return new PostgresStorageMappedFeatureReader(new FixtureConnectionProvider(fixture.ConnectionString),
+        return new PostgresStorageMappedFeatureReader(new FixtureConnectionProvider(connectionString ?? fixture.ConnectionString),
             pool, resource,
-            new FeatureStorageMapping(externalTable ? "external_features" : "features", SchemaName: _schema,
+            new FeatureStorageMapping(externalTable ? "external_features" : "features",
+                SchemaName: unqualifiedMapping ? null : _schema,
                 GeometryColumn: "geometry", StorageSrid: 4326, AttributesColumn: "attributes",
                 LayerDiscriminatorColumn: "layer_id", LayerDiscriminatorValue: 1,
-                ProviderOptions: new Dictionary<string, string> { [FeatureStorageMapping.SourceBackedOption] = "true" }),
+                ProviderOptions: sourceBacked
+                    ? new Dictionary<string, string> { [FeatureStorageMapping.SourceBackedOption] = "true" }
+                    : new Dictionary<string, string>()),
             connection: connection, connectionEncryptionService: null,
             filterExpressionService: secured ? filters : null,
-            rlsFilterSource: secured ? rls : null, fieldMaskSource: secured ? masks : null);
+            rlsFilterSource: secured ? rls : null, fieldMaskSource: secured ? masks : null,
+            managedFeatureSchema: managedFeatureSchema ?? _schema);
     }
 
     private sealed class FixtureConnectionProvider(string connectionString) : IAdoNetDatabaseConnectionProvider

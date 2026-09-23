@@ -38,9 +38,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IBranchVersio
         cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            return await GetUnsupportedBranchReadReasonAsync().ConfigureAwait(false) is null;
+            return await GetUnsupportedBranchReadReasonAsync(cancellationToken).ConfigureAwait(false) is null;
         }
-        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or CryptographicException)
+        catch (Exception ex) when (ex is InvalidOperationException or ArgumentException or CryptographicException or NpgsqlException)
         {
             // Metadata must not advertise a distinct connection whose credentials cannot
             // be resolved. Actual reads preserve the existing diagnostic exception below.
@@ -48,7 +48,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IBranchVersio
         }
     }
 
-    private async Task<string?> GetUnsupportedBranchReadReasonAsync()
+    private async Task<string?> GetUnsupportedBranchReadReasonAsync(CancellationToken cancellationToken)
     {
         if (!HasManagedVersionMapping)
         {
@@ -62,17 +62,50 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IBranchVersio
             return "Branch-versioned reads do not support an external database connection. " +
                 "The managed feature table and version deltas must use the managed connection.";
         }
+        if (!await IsManagedFeatureTableAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return UnsupportedVersionMappingMessage;
+        }
         return null;
     }
 
-    private async Task ValidateVersionedReadAsync(FeatureQuery query)
+    private async Task<bool> IsManagedFeatureTableAsync(CancellationToken cancellationToken)
+    {
+        if (_managedFeatureSchema is not null && !string.IsNullOrWhiteSpace(_mapping.SchemaName))
+        {
+            // PostgreSQL quoted identifiers preserve case, so distinct explicit
+            // schemas cannot name the writer's relation.
+            return string.Equals(_mapping.SchemaName, _managedFeatureSchema, StringComparison.Ordinal);
+        }
+
+        // Resolve an unqualified binding through the connection's search_path.
+        // Without Database:Schema the writer also uses unqualified "features".
+        // Compare relation identities rather than names so either form cannot
+        // borrow managed branch deltas from an external same-named table.
+        await using var connection = await _connectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COALESCE(to_regclass(@bound)::oid = to_regclass(@managed)::oid, false)";
+        var bound = command.CreateParameter();
+        bound.ParameterName = "bound";
+        bound.Value = _qualifiedTableName;
+        command.Parameters.Add(bound);
+        var managed = command.CreateParameter();
+        managed.ParameterName = "managed";
+        managed.Value = _managedFeatureSchema is null
+            ? "\"features\""
+            : $"{ValidateAndQuoteIdentifier(_managedFeatureSchema)}.\"features\"";
+        command.Parameters.Add(managed);
+        return await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false) is true;
+    }
+
+    private async Task ValidateVersionedReadAsync(FeatureQuery query, CancellationToken cancellationToken)
     {
         if (query.VersionContext is not { IsDefault: false })
         {
             return;
         }
 
-        var unsupportedReason = await GetUnsupportedBranchReadReasonAsync().ConfigureAwait(false);
+        var unsupportedReason = await GetUnsupportedBranchReadReasonAsync(cancellationToken).ConfigureAwait(false);
         if (unsupportedReason != null)
         {
             throw new NotSupportedException(unsupportedReason);
