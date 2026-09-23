@@ -1170,10 +1170,10 @@
         },
         "arcpy": {
           "state": "blocked",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "citation": "honua-esri-compat evidence/arcpy-checklist-20260922z/operations.json, ArcGIS Pro 3.7.1.1904 on candidate sha256:cd6e3dd4: arcpy reaches this STAC API - it bound https://host.docker.internal:18443/stac and wrote honua_stac.astac (423 bytes). The download half is unproven because the catalogue publishes no raster asset: across 5 items the only asset media type is application/geo+json. So this is a fixture gap on the server side, tracked by honua-server#3272 (expose registered rasters and COGs as STAC items with COG assets), not an arcpy capability gap. The previous citation described MakeWCSLayer and WCS, which has nothing to do with this cell.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS."
           }
         },
         "qgis-ui": {
@@ -1533,10 +1533,10 @@
         },
         "arcpy": {
           "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. CreateReplica's input contract does not establish absence of every native offline path. CreateReplicaFromServer targets a different GeoDataServer protocol and cannot settle FeatureServer replica/sync.",
+          "citation": "honua-esri-compat evidence/arcpy-checklist-20260922z/operations.json, ArcGIS Pro 3.7.1.1904 on candidate sha256:cd6e3dd4: arcpy.management.CreateReplica answers ERROR 000824 'The tool is not licensed' under the headless propy seat, so the operation was never issued and neither support nor absence was measured. Deliberately not read as a client gap: a headless arcpy probe reports ProductInfo ArcView on this machine while the interactive seat is a signed-in named user, and that reading has already misled this programme once. Settling this cell needs the interactive seat, not another headless run.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "doc.esri.com/en/arcgis-pro/latest/tool-reference/data-management/create-replica.html: arcpy.management.CreateReplica accepts 'Table View; Dataset' - layers and tables referencing versioned, editable data from an enterprise geodatabase. Feature services and REST FeatureServer URLs are not accepted inputs, so no ArcPy call can create a replica against this server. Verified 2026-09-17 against the Pro 3.7 reference."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. CreateReplica's input contract does not establish absence of every native offline path. CreateReplicaFromServer targets a different GeoDataServer protocol and cannot settle FeatureServer replica/sync."
           }
         },
         "qgis-ui": {
