@@ -5426,8 +5426,11 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_FullGet_ServesTheExportedBytesVerbatim",
+        "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_PublicationRebound_DoesNotServePreviousResourceBytes",
         "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_RangeAfterAWarmFullGet_IsNotServedFromTheOutputCache",
         "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_RangeRequest_Returns206WithExactlyThoseBytes",
+        "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_SourceBecomesRestricted_RequiresAccessBeforeBytesOrHeaders",
+        "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_StorageBindingReboundUnderSameId_DoesNotServePreviousBytes",
         "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_UnknownArtifact_Returns404"
       ],
       "proof_ledger_surface": "cog-range-proxy",
@@ -7696,6 +7699,15 @@
       "protocol": "nested-standard",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs10EndpointsTests.Wcs10_DescribeCoverage_ExposesGridLimitsCrsAndFormats",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs10EndpointsTests.Wcs10_DescribeCoverage_UnknownCoverage_ReturnsCoverageNotDefined",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs10EndpointsTests.Wcs10_GetCapabilities_ReturnsTheElementsTheQgisProviderReads",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs10EndpointsTests.Wcs10_GetCoverage_HonoursTheBboxAndPixelSizeFormQgisSends",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs10EndpointsTests.Wcs10_GetCoverage_OneExplicitDimensionPreservesIt",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs10EndpointsTests.Wcs10_GetCoverage_TinyResolutionIsRejectedBeforeIntegerConversion",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs10EndpointsTests.Wcs10_GetCoverage_UnknownFormat_ReturnsLegacyServiceExceptionReport",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs10EndpointsTests.Wcs10_GetCoverage_WithoutBboxRejectsNonnativeRequestCrs",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs10EndpointsTests.Wcs_VersionNegotiation_KeepsTwoPointZeroAsTheDefaultAndIsolatesTheEncodings",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_DescribeCoverage_ServiceRouteUnknownService_ReturnsServiceNotFoundException",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCapabilities_CoverageSubtype_IsBoundUnprefixedQName",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCapabilities_ServiceRoute_ReturnsAccessibleRasterCoverage",
@@ -8709,6 +8721,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Infrastructure.MultiTenancy.TenantDenialContractMatrixTests.TenantDenial_ImageServerWcs_UsesOws20EnvelopeWithoutHandlerSideEffects",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs10EndpointsTests.Wcs10_GetCapabilities_ImageServerRoute_ServesTheLegacyEncoding",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20AuthorizationProofTests.Wcs_DescribeCoverage_WithoutReadRole_IsRefusedAndDescribesNothing",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20AuthorizationProofTests.Wcs_GetCoverage_WithoutReadRole_IsRefusedAndReturnsNoCoverageBytes",
         "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_DescribeCoverage_GeographicGrid_UsesLongitudeLatitudeAndPixelCenters",
@@ -11627,12 +11640,15 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_Export_WithDatelineCrossingBbox_ReturnsImageJson",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_Export_WithDynamicLayerSimpleRenderer_ReturnsImageJson",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_Export_WithDynamicLayers_ReturnsImageJson",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_Export_WithEmptyIdInsideLayerList_IsStillRejected",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_Export_WithEmptyShowSelection_RendersEveryLayer",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_Export_WithGdbVersion_IgnoresParameter",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_Export_WithGeographicAxisOrderBbox_In4326_ReturnsImageJson",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_Export_WithGifFormat_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_Export_WithInvalidJsonEnvelope_RetainsValidation",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_Export_WithInvalidLayerIdentifier_ReturnsBadRequest",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_Export_WithInvalidRequestedLayer_ReturnsBadRequest",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_Export_WithJpgPngFormat_ReturnsPngImage",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_Export_WithJsonArrayLayerDefs_ReturnsOk",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_Export_WithLayerTimeOptions_ReturnsImageJson",
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportEndpointTests.MapServer_Export_WithMalformedBackgroundColor_ReturnsBadRequest",
@@ -13715,7 +13731,8 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
-        "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_Head_ReportsTheArtifactLengthOnEveryProbe"
+        "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_Head_ReportsTheArtifactLengthOnEveryProbe",
+        "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.CogProxy_SourceBecomesRestricted_RequiresAccessBeforeBytesOrHeaders"
       ],
       "proof_ledger_surface": "cog-range-proxy",
       "maturity": "implemented",
@@ -16600,6 +16617,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.PublishCog_AmbiguousImagePublications_Returns404",
         "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.PublishCog_ExportsThePrimaryRasterUnderADeterministicKey",
         "Honua.Server.Tests.Features.Admin.CogArtifactEndpointTests.PublishCog_UnknownLayer_Returns404"
       ],
