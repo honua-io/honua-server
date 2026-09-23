@@ -527,8 +527,6 @@ internal static class TierTraitScanner
             // as tier-bearing, and fails loudly if this path ever starts absorbing one of them.
             return false;
         }
-
-        return false;
     }
 
     internal static bool HasExactlyOneSupportedTier(IEnumerable<KeyValuePair<string, string>> traits)
