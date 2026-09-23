@@ -1005,11 +1005,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no ogc-api-tiles consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['ogcapi'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. The Vector Tile entry's New menu offers exactly New Generic Connection and New ArcGIS Vector Tile Service Connection. Neither reads an OGC API - Tiles landing document to enumerate tilesets, and the QGIS 3.44 manual's OGC client support page documents no OGC API - Tiles client. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/working_with_ogc/ogc_client_support.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI."
           }
         },
         "pyqgis": {
@@ -1841,11 +1841,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922ae/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.gp_server rule '': arcpy.ImportToolbox resolved https://host.docker.internal:18443/arcgis/services;test_service and published task 'Buffer' as arcpy.Buffer_testservice"
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. No specialized GP processing entry was found, but a provider/algorithm registry scan is not operation-specific proof for all discovery/job paths. The broader native SDK scope needs a retained source/request inventory.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. No GPServer surface exists. QGIS Processing is a local framework with GDAL, GRASS and native providers; it is not a client of remote Esri geoprocessing tasks and offers no way to submit, poll or cancel a job on this server. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. No specialized GP processing entry was found, but a provider/algorithm registry scan is not operation-specific proof for all discovery/job paths. The broader native SDK scope needs a retained source/request inventory."
           }
         },
         "pyqgis": {
@@ -1872,11 +1872,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922ae/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.gp_server rule 'task info': task 'Buffer' publishes signature 'Buffer_testservice(wkb, srid, distance, {geodesic})' and 3 typed parameter(s): wkb (String):; srid (Long):; distance (Double):"
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. No specialized GP processing entry was found, but a provider/algorithm registry scan is not operation-specific proof for all discovery/job paths. The broader native SDK scope needs a retained source/request inventory.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. No GPServer surface exists. QGIS Processing is a local framework with GDAL, GRASS and native providers; it is not a client of remote Esri geoprocessing tasks and offers no way to submit, poll or cancel a job on this server. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. No specialized GP processing entry was found, but a provider/algorithm registry scan is not operation-specific proof for all discovery/job paths. The broader native SDK scope needs a retained source/request inventory."
           }
         },
         "pyqgis": {
@@ -1903,11 +1903,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.gp_server rule 'submitjob': calling arcpy.Buffer_testservice returned an arcpy.Result (resultID gp-8603bb894ab5402192496df591fc982e)"
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. No specialized GP processing entry was found, but a provider/algorithm registry scan is not operation-specific proof for all discovery/job paths. The broader native SDK scope needs a retained source/request inventory.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. No GPServer surface exists. QGIS Processing is a local framework with GDAL, GRASS and native providers; it is not a client of remote Esri geoprocessing tasks and offers no way to submit, poll or cancel a job on this server. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. No specialized GP processing entry was found, but a provider/algorithm registry scan is not operation-specific proof for all discovery/job paths. The broader native SDK scope needs a retained source/request inventory."
           }
         },
         "pyqgis": {
@@ -1934,11 +1934,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.gp_server rule 'job status': Result.status reached the terminal code 4"
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. No specialized GP processing entry was found, but a provider/algorithm registry scan is not operation-specific proof for all discovery/job paths. The broader native SDK scope needs a retained source/request inventory.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. No GPServer surface exists. QGIS Processing is a local framework with GDAL, GRASS and native providers; it is not a client of remote Esri geoprocessing tasks and offers no way to submit, poll or cancel a job on this server. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. No specialized GP processing entry was found, but a provider/algorithm registry scan is not operation-specific proof for all discovery/job paths. The broader native SDK scope needs a retained source/request inventory."
           }
         },
         "pyqgis": {
@@ -1965,11 +1965,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.gp_server rule 'job results': Result.getOutput retrieved 1 output(s): ['<geoprocessing record set object object at 0x000002958C8A5990>']"
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. No specialized GP processing entry was found, but a provider/algorithm registry scan is not operation-specific proof for all discovery/job paths. The broader native SDK scope needs a retained source/request inventory.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. No GPServer surface exists. QGIS Processing is a local framework with GDAL, GRASS and native providers; it is not a client of remote Esri geoprocessing tasks and offers no way to submit, poll or cancel a job on this server. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. No specialized GP processing entry was found, but a provider/algorithm registry scan is not operation-specific proof for all discovery/job paths. The broader native SDK scope needs a retained source/request inventory."
           }
         },
         "pyqgis": {
@@ -1996,11 +1996,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922c/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.gp_server rule 'cancel job': Result.cancel() was accepted on the submitted job; status after the call was 8 (a fast task may already have reached a terminal state, which is not a defect)"
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. No specialized GP processing entry was found, but a provider/algorithm registry scan is not operation-specific proof for all discovery/job paths. The broader native SDK scope needs a retained source/request inventory.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. No GPServer surface exists. QGIS Processing is a local framework with GDAL, GRASS and native providers; it is not a client of remote Esri geoprocessing tasks and offers no way to submit, poll or cancel a job on this server. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "honua-client-compat/evidence/native-gp-supplement-qgis-20260916-a: QGIS 3.44.14 registers 9 processing providers and 440 algorithms, of which zero reference arcgis, esri or gpserver."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. No specialized GP processing entry was found, but a provider/algorithm registry scan is not operation-specific proof for all discovery/job paths. The broader native SDK scope needs a retained source/request inventory."
           }
         },
         "pyqgis": {
@@ -2035,11 +2035,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922k/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.geocode_server rule 'findaddresscandidates': arcpy bound the locator (https://host.docker.internal:18443/arcgis/rest/services/World/GeocodeServer describes as an AddressLocator) but arcpy.geocoding.GeocodeAddresses could not execute against it: ERROR 000010: Geocode addresses failed. The server answered 200 but its address payload carries only ['LongLabel', 'Match_addr'] of the documented Esri address fields, omits ['AddNum', 'Addr_type', 'Address', 'Block', 'City', 'CountryCode', 'District', 'MetroArea', 'Neighborhood', 'PlaceName', 'Postal', 'PostalExt', 'Region', 'Sector', 'ShortLabel', 'Subregion', 'Territory', 'Type'] (Addr_type in particular, which the tools always map), and returns provider-native keys instead: ['Provider', 'ProviderId', 'display_name', 'licence', 'osm_id', 'osm_type']."
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The old receipt asserts stock QGIS has no Esri locator without an operation-specific native API/source inventory; fresh inventory has not found a specialized path but cannot justify the universal claim.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. The Data Source Manager has exactly one ArcGIS entry, ArcGIS REST Server, backed by the arcgisfeatureserver, arcgismapserver and arcgisvectortileservice providers. It browses service trees and loads feature, map and vector-tile layers; it has no GeocodeServer surface, and QGIS ships no client for the Esri locator API. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: stock QGIS has no Esri locator client."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The old receipt asserts stock QGIS has no Esri locator without an operation-specific native API/source inventory; fresh inventory has not found a specialized path but cannot justify the universal claim."
           }
         },
         "pyqgis": {
@@ -2074,11 +2074,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922x/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.geocode_server rule 'suggest': arcpy.geocoding exposes GeocodeAddresses, ReverseGeocode and GeocodeFile, each of which resolves a complete address to a location; none issues the interactive suggest/typeahead call, which ArcGIS Pro drives from the Locate pane rather than from a geoprocessing tool. This is a client-surface absence, not a server one - the server does implement it (2 suggestion(s) for 'San Fran' over REST). (ArcGIS Pro 3.7.1 arcpy.geocoding tool reference: pro.arcgis.com/en/pro-app/latest/tool-reference/geocoding/an-overview-of-the-geocoding-toolbox.htm)"
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The old receipt asserts stock QGIS has no Esri locator without an operation-specific native API/source inventory; fresh inventory has not found a specialized path but cannot justify the universal claim.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. The Data Source Manager has exactly one ArcGIS entry, ArcGIS REST Server, backed by the arcgisfeatureserver, arcgismapserver and arcgisvectortileservice providers. It browses service trees and loads feature, map and vector-tile layers; it has no GeocodeServer surface, and QGIS ships no client for the Esri locator API. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: stock QGIS has no Esri locator client."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The old receipt asserts stock QGIS has no Esri locator without an operation-specific native API/source inventory; fresh inventory has not found a specialized path but cannot justify the universal claim."
           }
         },
         "pyqgis": {
@@ -2105,11 +2105,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922k/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.geocode_server rule 'reversegeocode': arcpy bound the locator (https://host.docker.internal:18443/arcgis/rest/services/World/GeocodeServer describes as an AddressLocator) but arcpy.geocoding.ReverseGeocode could not execute against it: ERROR 999999: Something unexpected caused the tool to fail. Contact Esri Technical Support (http://esriurl.com/support) to Report a Bug, and refer to the error help for potential solutions or workarounds. The server answered 200 but its address payload carries only ['LongLabel', 'Match_addr'] of the documented Esri address fields, omits ['AddNum', 'Addr_type', 'Address', 'Block', 'City', 'CountryCode', 'District', 'MetroArea', 'Neighborhood', 'PlaceName', 'Postal', 'PostalExt', 'Region', 'Sector', 'ShortLabel', 'Subregion', 'Territory', 'Type'] (Addr_type in particular, which the tools always map), and returns provider-native keys instead: ['Provider', 'ProviderId', 'display_name', 'licence', 'osm_id', 'osm_type']."
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The old receipt asserts stock QGIS has no Esri locator without an operation-specific native API/source inventory; fresh inventory has not found a specialized path but cannot justify the universal claim.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. The Data Source Manager has exactly one ArcGIS entry, ArcGIS REST Server, backed by the arcgisfeatureserver, arcgismapserver and arcgisvectortileservice providers. It browses service trees and loads feature, map and vector-tile layers; it has no GeocodeServer surface, and QGIS ships no client for the Esri locator API. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: stock QGIS has no Esri locator client."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The old receipt asserts stock QGIS has no Esri locator without an operation-specific native API/source inventory; fresh inventory has not found a specialized path but cannot justify the universal claim."
           }
         },
         "pyqgis": {
@@ -2136,11 +2136,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922k/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.geocode_server rule 'geocodeaddresses': arcpy bound the locator (https://host.docker.internal:18443/arcgis/rest/services/World/GeocodeServer describes as an AddressLocator) but arcpy.geocoding.GeocodeAddresses could not execute against it: ERROR 000010: Geocode addresses failed. The server answered 200 but its address payload carries only ['LongLabel', 'Match_addr'] of the documented Esri address fields, omits ['AddNum', 'Addr_type', 'Address', 'Block', 'City', 'CountryCode', 'District', 'MetroArea', 'Neighborhood', 'PlaceName', 'Postal', 'PostalExt', 'Region', 'Sector', 'ShortLabel', 'Subregion', 'Territory', 'Type'] (Addr_type in particular, which the tools always map), and returns provider-native keys instead: ['Provider', 'ProviderId', 'display_name', 'licence', 'osm_id', 'osm_type']."
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The old receipt asserts stock QGIS has no Esri locator without an operation-specific native API/source inventory; fresh inventory has not found a specialized path but cannot justify the universal claim.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. The Data Source Manager has exactly one ArcGIS entry, ArcGIS REST Server, backed by the arcgisfeatureserver, arcgismapserver and arcgisvectortileservice providers. It browses service trees and loads feature, map and vector-tile layers; it has no GeocodeServer surface, and QGIS ships no client for the Esri locator API. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: stock QGIS has no Esri locator client."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The old receipt asserts stock QGIS has no Esri locator without an operation-specific native API/source inventory; fresh inventory has not found a specialized path but cannot justify the universal claim."
           }
         },
         "pyqgis": {
@@ -2172,11 +2172,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no geometryserver consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['geometryserver'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. Observed local GEOS/GDAL computation does not by itself exclude every remote native SDK path. A remote-operation source/request inventory is still required.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. No GeometryServer surface exists in the Data Source Manager or the provider registry. QGIS projects, buffers, measures and evaluates spatial predicates locally through its own geometry engine, which is not a client of the remote GeometryServer operations this row measures. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS performs geometry operations locally through GEOS and GDAL and has no client for a remote Esri geometry service."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. Observed local GEOS/GDAL computation does not by itself exclude every remote native SDK path. A remote-operation source/request inventory is still required."
           }
         },
         "pyqgis": {
@@ -2208,11 +2208,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no geometryserver consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['geometryserver'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. Observed local GEOS/GDAL computation does not by itself exclude every remote native SDK path. A remote-operation source/request inventory is still required.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. No GeometryServer surface exists in the Data Source Manager or the provider registry. QGIS projects, buffers, measures and evaluates spatial predicates locally through its own geometry engine, which is not a client of the remote GeometryServer operations this row measures. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS performs geometry operations locally through GEOS and GDAL and has no client for a remote Esri geometry service."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. Observed local GEOS/GDAL computation does not by itself exclude every remote native SDK path. A remote-operation source/request inventory is still required."
           }
         },
         "pyqgis": {
@@ -2244,11 +2244,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no geometryserver consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['geometryserver'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. Observed local GEOS/GDAL computation does not by itself exclude every remote native SDK path. A remote-operation source/request inventory is still required.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. No GeometryServer surface exists in the Data Source Manager or the provider registry. QGIS projects, buffers, measures and evaluates spatial predicates locally through its own geometry engine, which is not a client of the remote GeometryServer operations this row measures. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS performs geometry operations locally through GEOS and GDAL and has no client for a remote Esri geometry service."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. Observed local GEOS/GDAL computation does not by itself exclude every remote native SDK path. A remote-operation source/request inventory is still required."
           }
         },
         "pyqgis": {
@@ -2280,11 +2280,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no geometryserver consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['geometryserver'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. Observed local GEOS/GDAL computation does not by itself exclude every remote native SDK path. A remote-operation source/request inventory is still required.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. No GeometryServer surface exists in the Data Source Manager or the provider registry. QGIS projects, buffers, measures and evaluates spatial predicates locally through its own geometry engine, which is not a client of the remote GeometryServer operations this row measures. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS performs geometry operations locally through GEOS and GDAL and has no client for a remote Esri geometry service."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. Observed local GEOS/GDAL computation does not by itself exclude every remote native SDK path. A remote-operation source/request inventory is still required."
           }
         },
         "pyqgis": {
@@ -2316,11 +2316,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.na_server rule 'route-solve': arcpy.nax binds a routing service only through Esri's asynchronous routing web tools (FindRoutes, GenerateServiceAreas, ...) and never issues the NAServer solve: Cannot use 'https://host.docker.internal:18443/arcgis/rest/services/test_service/GPServer' for network analysis. [Authentication token required. (status code 499).] (ArcGIS Pro 3.7.1 arcpy.nax reference, network data source: a network dataset, a portal, or a stand-alone routing service dictionary whose url names the web-tool GP service)."
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. No NAServer surface exists. The QGIS Network Analysis toolbox solves routes and service areas against local layers with its own solver; it is not a client of a remote Esri network analysis service. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI."
           }
         },
         "pyqgis": {
@@ -2352,11 +2352,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.na_server rule 'servicearea': arcpy.nax binds a routing service only through Esri's asynchronous routing web tools (FindRoutes, GenerateServiceAreas, ...) and never issues the NAServer solve: Cannot use 'https://host.docker.internal:18443/arcgis/rest/services/test_service/GPServer' for network analysis. [Authentication token required. (status code 499).] (ArcGIS Pro 3.7.1 arcpy.nax reference, network data source: a network dataset, a portal, or a stand-alone routing service dictionary whose url names the web-tool GP service)."
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. No NAServer surface exists. The QGIS Network Analysis toolbox solves routes and service areas against local layers with its own solver; it is not a client of a remote Esri network analysis service. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI."
           }
         },
         "pyqgis": {
@@ -2384,11 +2384,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-standalone-probes-20260919/versionmanagement-arcpy.md - ArcGIS Pro/arcpy 3.7.1.1904: CreateVersion on the FeatureServer URL fails ERROR 000301 workspace is of the wrong type after 14 GET admin/services/test_service.MapServer -> 404; no request reaches the VersionManagementServer, which answers its own resources"
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. A missing dedicated provider or UI is not an operation-specific review of SDK and connection paths for create/reconcile/post; retain the work until the citation is sufficient.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. No VersionManagementServer surface exists. The ArcGIS REST Server entry exposes no versioned-editing workflow, so there is no native operation to create a version or post a reconcile. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS ships no provider or UI for Esri branch versioning."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. A missing dedicated provider or UI is not an operation-specific review of SDK and connection paths for create/reconcile/post; retain the work until the citation is sufficient."
           }
         },
         "pyqgis": {
@@ -2416,11 +2416,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-standalone-probes-20260919/versionmanagement-arcpy.md - ArcGIS Pro/arcpy 3.7.1.1904: CreateVersion on the FeatureServer URL fails ERROR 000301 workspace is of the wrong type after 14 GET admin/services/test_service.MapServer -> 404; no request reaches the VersionManagementServer, which answers its own resources"
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. A missing dedicated provider or UI is not an operation-specific review of SDK and connection paths for create/reconcile/post; retain the work until the citation is sufficient.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. No VersionManagementServer surface exists. The ArcGIS REST Server entry exposes no versioned-editing workflow, so there is no native operation to create a version or post a reconcile. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS ships no provider or UI for Esri branch versioning."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. A missing dedicated provider or UI is not an operation-specific review of SDK and connection paths for create/reconcile/post; retain the work until the citation is sufficient."
           }
         },
         "pyqgis": {
@@ -2452,11 +2452,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no geoservices-soap consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['soap'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. REST discovery observed in one provider does not prove absence of every native SOAP catalog path; review exact request builders and shared providers.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. No SOAP surface exists anywhere in the Data Source Manager. The ArcGIS REST Server entry speaks the REST API only. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "honua-client-compat/evidence/native-uncovered-v1-qgis-20260916-a: QGIS discovers ArcGIS services over REST only and has no SOAP catalog client."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. REST discovery observed in one provider does not prove absence of every native SOAP catalog path; review exact request builders and shared providers."
           }
         },
         "pyqgis": {
@@ -2493,11 +2493,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no odata consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['odata'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. No OData entry exists in the Data Source Manager and no OData provider is registered, so neither the metadata document nor an entity-set query can be issued natively. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI."
           }
         },
         "pyqgis": {
@@ -2534,11 +2534,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no odata consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['odata'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. No OData entry exists in the Data Source Manager and no OData provider is registered, so neither the metadata document nor an entity-set query can be issued natively. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI."
           }
         },
         "pyqgis": {
@@ -2781,11 +2781,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-inventory-20260922/arcpy-inventory.json - ArcGISPro 3.7.1 exposes no ogc-api-edr consumption surface. Enumerated 3511 names across 12 arcpy namespaces; no tool opens or reads such a service, and the word-boundary screen for ['ogcapi'] returned nothing to review. Absence executed against the installed client, not asserted."
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. No OGC API - EDR entry exists in the Data Source Manager and the QGIS 3.44 manual's OGC client support page documents no EDR client. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/working_with_ogc/ogc_client_support.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI."
           }
         },
         "pyqgis": {
@@ -2901,11 +2901,11 @@
           "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922ae/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.elevation_scene rule 'scene-layer': no I3S scene is published for a client to open: /rest/services/browser_compat/SceneServer answers 404 'Not Found' (Scene was not found.). The SceneServer routes are registered on this build and the auth fixture's scene answers 401 rather than 404, so scenes exist as a concept here - what is missing is a published, anonymously readable one. Fixture gap, not a capability gap, and not a client absence: arcpy does add I3S scene layers."
         },
         "qgis-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI.",
+          "state": "n/a-no-client",
+          "citation": "QGIS 3.44.14 offers no UI surface for this operation. The Scene entry's New menu offers exactly New Cesium 3D Tiles Connection and New Quantized Mesh Connection. There is no I3S or SceneServer option, and no i3s provider is registered. Inventory of the Data Source Manager's complete source list, with the Scene and Vector Tile sub-menus, read off the running application on 2026-09-22: honua-client-compat/docs/reports/qgis-ui-surface-inventory-2026-09-22.md. Manual: https://docs.qgis.org/3.44/en/docs/user_manual/managing_data_source/opening_data.html. This is a client capability gap, not a server defect - the candidate's support for the protocol is unaffected and is measured by the other lanes.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "QgsProviderRegistry probe on QGIS 3.44.14-Solothurn: the provider key is absent from the registry."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The citation names no missing provider or receipt; shared GDAL/OGR providers must also be checked. Installed GDAL includes OGCAPI."
           }
         },
         "pyqgis": {
