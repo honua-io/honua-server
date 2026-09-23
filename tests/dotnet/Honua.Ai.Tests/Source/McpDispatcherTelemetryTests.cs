@@ -4,6 +4,7 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Linq;
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Features.Deployment.Abstractions;
 using Honua.Core.Features.Deployment.Domain;
@@ -241,6 +242,28 @@ public sealed class McpDispatcherTelemetryTests
         var tags = samples[0].Tags;
         GetTagString(tags, "resource_family").Should().Be(McpTelemetry.ResourceFamily.Deployments);
         GetTagString(tags, "status").Should().Be(McpTelemetry.Status.Ok);
+    }
+
+    [UnitTest]
+    [Endpoint("POST /mcp")]
+    public async Task DispatchAsync_Ping_ReturnsEmptyObject()
+    {
+        var surface = BuildSurface();
+        var request = new McpJsonRpcRequest
+        {
+            JsonRpc = "2.0",
+            Id = McpTestFactory.ParseJson("1"),
+            Method = "ping"
+        };
+
+        var response = await surface.DispatchAsync(
+            McpTestFactory.AuthenticatedHttpContext(), request, CancellationToken.None);
+
+        response.Should().NotBeNull();
+        response!.Error.Should().BeNull();
+        response.Result.Should().NotBeNull();
+        response.Result!.Value.ValueKind.Should().Be(JsonValueKind.Object);
+        response.Result.Value.GetRawText().Should().Be("{}");
     }
 
     /// <summary>
