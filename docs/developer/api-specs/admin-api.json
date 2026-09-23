@@ -20667,6 +20667,60 @@
           }
         }
       }
+    },
+    "/raster-artifacts/cog": {
+      "post": {
+        "tags": [
+          "Cloud Rasters"
+        ],
+        "summary": "Publish Layer Raster As COG",
+        "description": "Exports the publication layer's primary raster as a Cloud Optimized GeoTIFF and stores it under the deterministic object key `cog/{layerId}/{rasterId}.tif`, tagged with the publish operation and the COG media type. The artifact is then served to desktop clients (GDAL `/vsicurl`, ArcGIS Pro) by the public byte-range proxy `GET|HEAD /api/v1/rasters/cog/{artifactId}`, which answers HEAD with the real length and ranged GETs with 206. Publishing again for the same layer overwrites the same key. A layer with no raster is 400, an unknown or unroutable layer is 404, and an export or upload failure is 500.",
+        "operationId": "publishCogArtifact",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CogArtifactPublishRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The published COG artifact.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CogArtifactDescriptor"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "description": "The raster export or the artifact upload failed.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -47853,6 +47907,86 @@
             "default": true
           }
         }
+      },
+      "CogArtifactDescriptor": {
+        "type": "object",
+        "required": [
+          "artifactId",
+          "layerId",
+          "rasterId",
+          "sizeBytes",
+          "contentType",
+          "url",
+          "width",
+          "height",
+          "bandCount",
+          "publishedAt"
+        ],
+        "properties": {
+          "artifactId": {
+            "type": "string",
+            "description": "Deterministic object key, `cog/{layerId}/{rasterId}.tif`; also the `{artifactId}` of the range proxy.",
+            "example": "cog/0/1.tif"
+          },
+          "layerId": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rasterId": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Identifier of the layer's primary raster."
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "contentType": {
+            "type": "string",
+            "example": "image/tiff; application=geotiff; profile=cloud-optimized"
+          },
+          "url": {
+            "type": "string",
+            "description": "Root-relative range proxy path `/api/v1/rasters/cog/{artifactId}`.",
+            "example": "/api/v1/rasters/cog/cog/0/1.tif"
+          },
+          "width": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "height": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "bandCount": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "srid": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CogArtifactPublishRequest": {
+        "type": "object",
+        "required": [
+          "layerId"
+        ],
+        "properties": {
+          "layerId": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "description": "Publication layer index whose primary raster is exported."
+          }
+        },
+        "additionalProperties": false
       }
     }
   }
