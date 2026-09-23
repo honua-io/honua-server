@@ -949,6 +949,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.AdminServiceResource_ResolvesLayerIdAndAdvertisesCoverageExtension",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.AdminFeatureServer_UsesEffectivePublicCapabilitiesAndQueryLimit",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.AdminService_GetAndPostReturnTheSameBranchMetadataAtBothRouteSpellings",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.DisabledExperimentalCapability_KeepsVersionedDataWithoutVersionManagement",
@@ -7198,8 +7199,11 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetLandingPage_AdvertisesTheSeededDatasetExtent",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetLandingPage_BasicRequest_ReturnsLandingPage",
-        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetLandingPage_LinkObjects_OmitNullOptionalFields"
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetLandingPage_LinkObjects_OmitNullOptionalFields",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetLandingPage_MixedCrsExtent_AgreesWithPostGisBoundaryOracle",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetLandingPage_SecondAnonymousRead_IsNotASharedCacheReplay"
       ],
       "proof_ledger_surface": "ogc-api-maps-and-static-rendering",
       "maturity": "implemented",
@@ -7372,6 +7376,7 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Infrastructure.Rendering.StyledVectorMapRenderTests.RenderDatasetMap_BoundVectorStyle_IsAppliedAtPixelLevelAndVariesByStyle",
+        "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.DatasetMap_WithExplicitBbox_DoesNotFailAsAnUnmappedServerError",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetDatasetMap_WithCollections_ReturnsMap",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetDatasetMap_WithMisalignedRasterCollections_ReturnsMap",
         "Honua.Server.Tests.Features.Protocols.Ogc.Api.Maps.OgcMapsBasicTests.GetDatasetMap_WithoutCollections_ReturnsMap",
@@ -8171,6 +8176,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.AdminServiceResource_ResolvesLayerIdAndAdvertisesCoverageExtension",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.AdminService_GetAndPostReturnTheSameBranchMetadataAtBothRouteSpellings"
       ],
       "proof_ledger_surface": "geoservices-catalog",

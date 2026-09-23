@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Honua.Core.Configuration;
@@ -30,9 +31,12 @@ namespace Honua.Protocols.GeoServices.Sharing;
 /// API resource before they will treat the service as branch versioned; with the
 /// resource absent they fail "ERROR 000301: The workspace is of the wrong type"
 /// (ArcGIS Pro 3.7.1, 2026-09-19, fourteen GETs of the resource recorded before the
-/// error). The resource is the service definition an ArcGIS Server administrator sees;
-/// this projection publishes only what the public FeatureServer root already states
-/// (protocols, capabilities, branch-versioning availability) and nothing about hosting.
+/// error). <c>MakeWCSLayer</c> probes the same document with the coverage URL's integer
+/// layer id (<c>/rest/admin/0.MapServer</c>) and stops on a 404 envelope. The resource
+/// is the service definition an ArcGIS Server administrator sees; this projection
+/// publishes only what the public service root already states (protocols, capabilities,
+/// branch-versioning availability, a WCS extension when the service serves coverages)
+/// and nothing about hosting.
 /// </para>
 /// <para>
 /// Reads require an authenticated principal that can read the service, decided by the
@@ -102,11 +106,8 @@ public static class ArcGisServerAdminEndpoints
         }
 
         var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
-        if (!snapshot.Index.ServicesByName.TryGetValue(serviceName, out var service)
-            && !snapshot.Index.ServicesById.TryGetValue(serviceName, out service))
-        {
-            service = null;
-        }
+        var requestedType = serviceType.Trim();
+        var service = ResolveService(snapshot, serviceName, requestedType);
 
         var baseUrl = BaseUrlResolver.GetBaseUrl(context).TrimEnd('/');
         if (service is null || projector.ProjectItem(snapshot, context.User, service.Metadata.Id, baseUrl) is null)
@@ -115,9 +116,11 @@ public static class ArcGisServerAdminEndpoints
         }
 
         var protocols = new HashSet<string>(service.Protocols, StringComparer.OrdinalIgnoreCase);
-        var requestedType = serviceType.Trim();
-        var servesRequestedType = requestedType.Equals("MapServer", StringComparison.OrdinalIgnoreCase)
-            ? protocols.Contains("MapServer") || protocols.Contains("FeatureServer")
+        var servesRequestedType = requestedType.Equals(ServiceProtocols.MapServer, StringComparison.OrdinalIgnoreCase)
+            ? protocols.Contains(ServiceProtocols.MapServer)
+                || protocols.Contains(ServiceProtocols.FeatureServer)
+                || protocols.Contains(ServiceProtocols.ImageServer)
+                || protocols.Contains(ServiceProtocols.Wcs)
             : protocols.Contains(requestedType);
         if (!servesRequestedType)
         {
@@ -218,7 +221,7 @@ public static class ArcGisServerAdminEndpoints
             extensions.Add(Extension("WMSServer", string.Empty, new JsonObject()));
         }
 
-        if (protocols.Contains("Wcs"))
+        if (protocols.Contains(ServiceProtocols.Wcs) || protocols.Contains(ServiceProtocols.ImageServer))
         {
             extensions.Add(Extension("WCSServer", string.Empty, new JsonObject()));
         }
@@ -244,4 +247,68 @@ public static class ArcGisServerAdminEndpoints
 
     /// <summary>The Admin API spells booleans as strings.</summary>
     private static JsonValue Flag(bool value) => JsonValue.Create(value ? "true" : "false");
+
+    /// <summary>
+    /// Resolves the admin service key. A service name or id wins. An integer that matches
+    /// neither is the storage-layer id arcpy copies out of <c>/rest/services/{id}/ImageServer/WCS</c>
+    /// when it asks for <c>{id}.MapServer</c>.
+    /// </summary>
+    private static MetadataV2Service? ResolveService(
+        MetadataV2GraphSnapshot snapshot, string serviceName, string requestedType)
+    {
+        if (snapshot.Index.ServicesByName.TryGetValue(serviceName, out var byName))
+        {
+            return byName;
+        }
+
+        if (snapshot.Index.ServicesById.TryGetValue(serviceName, out var byId))
+        {
+            return byId;
+        }
+
+        if (!int.TryParse(serviceName, NumberStyles.Integer, CultureInfo.InvariantCulture, out var layerId))
+        {
+            return null;
+        }
+
+        MetadataV2Service? exact = null;
+        MetadataV2Service? feature = null;
+        MetadataV2Service? coverage = null;
+        var mapServerRequest = requestedType.Equals(ServiceProtocols.MapServer, StringComparison.OrdinalIgnoreCase);
+        foreach (var publication in snapshot.Graph.Publications)
+        {
+            if (publication.LayerIndex != layerId || !snapshot.IsRoutable(publication))
+            {
+                continue;
+            }
+
+            if (!snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service))
+            {
+                continue;
+            }
+
+            if (ServiceProtocols.IsProtocolEnabled(service, requestedType))
+            {
+                exact ??= service;
+                continue;
+            }
+
+            if (!mapServerRequest)
+            {
+                continue;
+            }
+
+            if (ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.FeatureServer))
+            {
+                feature ??= service;
+            }
+            else if (ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.ImageServer)
+                || ServiceProtocols.IsProtocolEnabled(service, ServiceProtocols.Wcs))
+            {
+                coverage ??= service;
+            }
+        }
+
+        return exact ?? feature ?? coverage;
+    }
 }
