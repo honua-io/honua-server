@@ -3,13 +3,19 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Honua.Core.Configuration;
+using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Capabilities;
+using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Portal.Abstractions;
+using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Models;
 using Honua.Protocols.GeoServices.FeatureServer;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 
 namespace Honua.Protocols.GeoServices.Sharing;
 
@@ -122,6 +128,39 @@ public static class ArcGisServerAdminEndpoints
             context, service, snapshot, context.RequestAborted).ConfigureAwait(false);
         var versionManagement = FeatureServerEndpoints.IsVersionManagementAvailable(context, branchVersioning);
         var featureServer = protocols.Contains("FeatureServer");
+        var queryLimits = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Query;
+        var maxRecordCount = queryLimits.MaxRecordCount.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        string? featureCapabilities = null;
+        var allowGeometryUpdates = false;
+        if (featureServer)
+        {
+            var (visiblePairs, accessError) = await AccessPolicyHelpers.FilterAccessibleResourcesAsync(
+                context,
+                FeatureServerEndpoints.GetRoutableFeaturePublicationsV2(service, snapshot),
+                static pair => pair.Resource,
+                service,
+                AuthorizationOperation.Metadata,
+                context.RequestAborted).ConfigureAwait(false);
+            if (accessError is not null)
+            {
+                return accessError;
+            }
+
+            var featureReader = context.RequestServices.GetRequiredService<IFeatureReader>();
+            var effectiveFeatureMetadata = FeatureServerEndpoints.MapServiceToResponseV2(
+                service,
+                visiblePairs,
+                snapshot,
+                queryLimits,
+                supportsGeobufOutput: featureReader is IGeobufFeatureStore,
+                supportsAttachmentUploads: FeatureServerEndpoints.HasAttachmentSurface(context.RequestServices),
+                branchVersioningEnabled: branchVersioning,
+                versionManagementEnabled: versionManagement,
+                offlineSyncEnabled: CapabilityFlagOptions.IsExperimentalEnabled(
+                    context.RequestServices.GetRequiredService<IConfiguration>(), "sync.offline"));
+            featureCapabilities = effectiveFeatureMetadata.Capabilities;
+            allowGeometryUpdates = effectiveFeatureMetadata.AllowGeometryUpdates;
+        }
         var document = new JsonObject
         {
             ["serviceName"] = service.Metadata.Name,
@@ -137,9 +176,10 @@ public static class ArcGisServerAdminEndpoints
             {
                 ["isBranchVersioned"] = Flag(branchVersioning && featureServer),
                 ["isDataVersioned"] = Flag(branchVersioning && featureServer),
-                ["maxRecordCount"] = "2000",
+                ["maxRecordCount"] = maxRecordCount,
             },
-            ["extensions"] = BuildExtensions(protocols, branchVersioning, versionManagement),
+            ["extensions"] = BuildExtensions(protocols, branchVersioning, versionManagement,
+                featureCapabilities, maxRecordCount, allowGeometryUpdates),
             ["datasets"] = new JsonArray(),
             ["portalProperties"] = null,
         };
@@ -148,15 +188,16 @@ public static class ArcGisServerAdminEndpoints
         return Results.Text(document.ToJsonString(new JsonSerializerOptions { WriteIndented = pretty }), JsonContentType);
     }
 
-    private static JsonArray BuildExtensions(HashSet<string> protocols, bool branchVersioning, bool versionManagement)
+    private static JsonArray BuildExtensions(HashSet<string> protocols, bool branchVersioning, bool versionManagement,
+        string? featureCapabilities, string maxRecordCount, bool allowGeometryUpdates)
     {
         var extensions = new JsonArray();
         if (protocols.Contains("FeatureServer"))
         {
-            extensions.Add(Extension("FeatureServer", "Query,Create,Update,Delete,Uploads,Editing", new JsonObject
+            extensions.Add(Extension("FeatureServer", featureCapabilities ?? string.Empty, new JsonObject
             {
-                ["maxRecordCount"] = "2000",
-                ["allowGeometryUpdates"] = "true",
+                ["maxRecordCount"] = maxRecordCount,
+                ["allowGeometryUpdates"] = Flag(allowGeometryUpdates),
                 ["enableZDefaults"] = "false",
                 ["isBranchVersioned"] = Flag(branchVersioning),
                 ["allowTrueCurvesUpdates"] = "false",

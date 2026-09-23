@@ -105,6 +105,43 @@ public sealed class BranchVersioningMetadataTests(ITestOutputHelper output) : IA
         canonicalPostPayload.RootElement.GetRawText().Should().Be(getPayload.RootElement.GetRawText());
     }
 
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /admin/services/{serviceName}.{serviceType}")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer")]
+    public async Task AdminFeatureServer_UsesEffectivePublicCapabilitiesAndQueryLimit()
+    {
+        var fixture = new WebAppFixture().WithTestLicense(HonuaEdition.Enterprise);
+        _fixture = fixture;
+        fixture.ConfigureWebHost(builder => builder.UseSetting("Limits:Query:MaxRecordCount", "1234"));
+        await fixture.InitializeAsync();
+        BranchVersioningPublicationFixture.ConfigureManagedPublications(fixture);
+        fixture.UpdateV2ServiceMetadata(BranchVersioningPublicationFixture.ServiceName, capabilities: ["Query"]);
+
+        using var publicResponse = await fixture.Client.GetAsync(
+            $"/rest/services/{BranchVersioningPublicationFixture.ServiceName}/FeatureServer?f=json");
+        using var adminResponse = await fixture.Client.GetAsync(
+            $"/admin/services/{BranchVersioningPublicationFixture.ServiceName}.FeatureServer?f=json");
+        publicResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        adminResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var publicDocument = JsonDocument.Parse(await publicResponse.Content.ReadAsStringAsync());
+        using var adminDocument = JsonDocument.Parse(await adminResponse.Content.ReadAsStringAsync());
+
+        var publicMetadata = publicDocument.RootElement;
+        var adminProperties = adminDocument.RootElement.GetProperty("properties");
+        var featureExtension = adminDocument.RootElement.GetProperty("extensions").EnumerateArray()
+            .Single(extension => extension.GetProperty("typeName").GetString() == "FeatureServer");
+        publicMetadata.GetProperty("capabilities").GetString().Should().Be("Query");
+        featureExtension.GetProperty("capabilities").GetString()
+            .Should().Be(publicMetadata.GetProperty("capabilities").GetString());
+        featureExtension.GetProperty("capabilities").GetString().Should().NotContain("Uploads");
+        publicMetadata.GetProperty("maxRecordCount").GetInt32().Should().Be(1234);
+        adminProperties.GetProperty("maxRecordCount").GetString().Should().Be("1234");
+        featureExtension.GetProperty("properties").GetProperty("maxRecordCount").GetString().Should().Be("1234");
+        featureExtension.GetProperty("properties").GetProperty("allowGeometryUpdates").GetString()
+            .Should().Be(publicMetadata.GetProperty("allowGeometryUpdates").GetBoolean() ? "true" : "false");
+    }
+
     private async Task AssertMetadataAsync(
         HonuaEdition edition, bool experimentalEnabled, bool providerSupported, bool expectedData, bool expectedManagement)
     {
