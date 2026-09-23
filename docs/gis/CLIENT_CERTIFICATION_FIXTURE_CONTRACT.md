@@ -135,13 +135,13 @@ Not covered, recorded as gaps rather than claimed:
 | `line-and-polygon-not-on-canonical-service` | Line and polygon coverage lives on `browser_compat`, whose layers carry only `objectid`, `name`, and `shape`. |
 | `edit-path-uncertified` | The OWSLib lane certifies WFS-T insert/update/delete on scratch layers 10-12, but no lane mutates canonical layer 0 and the other advertised Create/Update/Delete/Sync protocol surfaces remain uncertified. |
 
-Supporting fixtures: the deterministic raster (64×64, single 8BUI band, every pixel 180) and the
-render geometry layers are realized on `browser_compat`; STAC is realized on the canonical service
-with `eo:cloud_cover` as a real numeric queryable; a GP buffer fixture is **not required** for
-2026.1 because no lane binds the GPServer surface; map and dashboard inputs are limited to Portal
-service items (`portal-map-and-dashboard-items-absent`). Raster on the canonical service
-(`raster-absent-on-canonical-service`) and stored style documents (`style-resources-absent`) are
-gaps.
+Supporting fixtures: the deterministic rasters (64×64, single 8BUI band, every pixel 180 on
+`browser_compat` layer 2000 and every pixel 128 on canonical `test_service` layer 0) and the
+render geometry layers are realized by the fixture; STAC is realized on the canonical service with
+`eo:cloud_cover` as a real numeric queryable; a GP buffer fixture is **not required** for 2026.1
+because no lane binds the GPServer surface; map and dashboard inputs are limited to Portal service
+items (`portal-map-and-dashboard-items-absent`). Stored style documents
+(`style-resources-absent`) remain a gap.
 
 ## 4. Auth profiles
 

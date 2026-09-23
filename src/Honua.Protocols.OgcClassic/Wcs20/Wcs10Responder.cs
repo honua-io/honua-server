@@ -704,7 +704,9 @@ internal sealed partial class Wcs20Handler
             }
         }
 
-        if (values[0] >= values[2] || values[1] >= values[3])
+        var maxX = parts.Length == 6 ? values[3] : values[2];
+        var maxY = parts.Length == 6 ? values[4] : values[3];
+        if (values[0] >= maxX || values[1] >= maxY)
         {
             error = Wcs10ErrorResults.CreateBadRequest(
                 Wcs20Utilities.ExceptionCodes10.InvalidParameterValue,
@@ -713,7 +715,7 @@ internal sealed partial class Wcs20Handler
             return false;
         }
 
-        envelope = new Envelope(values[0], values[2], values[1], values[3]);
+        envelope = new Envelope(values[0], maxX, values[1], maxY);
         return true;
     }
 

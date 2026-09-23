@@ -12,6 +12,7 @@ using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Infrastructure;
 using Microsoft.Extensions.DependencyInjection;
+using NetTopologySuite.IO;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20;
@@ -128,9 +129,14 @@ public sealed class Wcs10EndpointsTests : IAsyncLifetime
                 _exportQueries.Add(call.ArgAt<RasterQuery>(2));
                 return Task.FromResult(new RasterResult
                 {
-                    Data = [0x49, 0x49, 0x2A, 0x00], ContentType = "image/tiff",
-                    Width = 16, Height = 16, Srid = 4326, Extent = raster.Extent,
-                    BandCount = 1, PixelType = "32BF"
+                    Data = [0x49, 0x49, 0x2A, 0x00],
+                    ContentType = "image/tiff",
+                    Width = 16,
+                    Height = 16,
+                    Srid = 4326,
+                    Extent = raster.Extent,
+                    BandCount = 1,
+                    PixelType = "32BF"
                 });
             });
 
@@ -310,6 +316,23 @@ public sealed class Wcs10EndpointsTests : IAsyncLifetime
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs10, "GetCapabilities")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    public async Task Wcs10_InvalidCommonParameter_ReturnsLegacyServiceExceptionReport()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/{WebAppFixture.TestServiceId}/wcs?SERVICE=BAD&VERSION=1.0.0&REQUEST=GetCapabilities");
+
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        var root = XDocument.Parse(content).Root!;
+        root.Name.Should().Be(XName.Get("ServiceExceptionReport", OgcNamespace));
+        root.Elements(XName.Get("ServiceException", OgcNamespace)).Single()
+            .Attribute("locator")!.Value.Should().Be("SERVICE");
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
     [InterfaceOperation(TestProtocols.Wcs10, "GetCoverage")]
     [Endpoint("GET /ogc/services/{serviceId}/wcs")]
     public async Task Wcs10_GetCoverage_WithoutBboxRejectsNonnativeRequestCrs()
@@ -398,6 +421,27 @@ public sealed class Wcs10EndpointsTests : IAsyncLifetime
         exception.Attribute("code")!.Value.Should().Be("InvalidParameterValue");
         exception.Attribute("locator")!.Value.Should().Be("BBOX");
         _exportQueries.Should().BeEmpty();
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [InterfaceOperation(TestProtocols.Wcs10, "GetCoverage")]
+    [Endpoint("GET /ogc/services/{serviceId}/wcs")]
+    public async Task Wcs10_GetCoverage_SixValueBboxUsesXyMaxima()
+    {
+        var response = await _fixture.Client.GetAsync(
+            $"/ogc/services/{WebAppFixture.TestServiceId}/wcs?SERVICE=WCS&VERSION=1.0.0&REQUEST=GetCoverage" +
+            "&COVERAGE=coverage_0&FORMAT=GeoTIFF&BBOX=-122.5,37.7,5,-122.35,37.84,30" +
+            "&CRS=EPSG:4326&WIDTH=16&HEIGHT=16");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        _exportQueries.Should().ContainSingle();
+        _exportQueries[0].ClipRegion.Should().NotBeNull();
+        var clip = new WKBReader().Read(_exportQueries[0].ClipRegion!.Value.Geometry).EnvelopeInternal;
+        clip.MinX.Should().BeApproximately(-122.5, 1e-9);
+        clip.MaxX.Should().BeApproximately(-122.35, 1e-9);
+        clip.MinY.Should().BeApproximately(37.7, 1e-9);
+        clip.MaxY.Should().BeApproximately(37.84, 1e-9);
     }
 
     [IntegrationTest]

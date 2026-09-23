@@ -42,7 +42,7 @@
       "path": "tests/seed/client-compat-v1.sql",
       "role": "fixture",
       "sha256": "sha256:9874de13a0c589152d3d5d33364038b5af03365401df930238718f6e88848584",
-      "purpose": "Canonical vector seed: base schema, honua.seed_metadata_v2_compat_snapshot, service test_service, canonical layer 0, ten read fixtures, and isolated WFS-T mutation layers 10-12."
+      "purpose": "Canonical vector and raster seed: base schema, honua.seed_metadata_v2_compat_snapshot, service test_service, canonical Point layer 0 with a deterministic 64x64 single-band raster and statistics, ten read fixtures, and isolated WFS-T mutation layers 10-12."
     },
     {
       "path": "tests/seed/browser-compat.yaml",
@@ -541,9 +541,8 @@
     "raster": {
       "status": "realized",
       "source": "tests/seed/browser-compat.yaml",
-      "description": "One deterministic 64x64 single-band 8BUI raster with every pixel set to 180, anchored at (-122.45, 37.80) with a 0.00109375 degree pixel, plus a matching honua.raster_statistics row (min=max=mean=180, stddev=0, 4096 valid pixels).",
-      "boundLayer": "2000",
-      "gapId": "raster-absent-on-canonical-service"
+      "description": "One deterministic 64x64 single-band 8BUI raster with every pixel set to 180 on browser_compat layer 2000, plus a deterministic 64x64 single-band 8BUI raster with every pixel set to 128 on canonical test_service layer 0, with matching honua.raster_statistics rows.",
+      "boundLayer": "2000"
     },
     "styleAndRender": {
       "status": "partial",
@@ -4119,12 +4118,6 @@
       "id": "edit-path-uncertified",
       "area": "vector-seed",
       "reason": "The py-owslib lane certifies WFS-T insert, update, and delete only on dedicated scratch layers 10-12. No active lane mutates canonical layer 0, and the other advertised Create/Update/Delete/Sync protocol surfaces remain uncertified.",
-      "trackingIssue": "https://github.com/honua-io/honua-server/issues/3435"
-    },
-    {
-      "id": "raster-absent-on-canonical-service",
-      "area": "raster",
-      "reason": "honua.raster_data is seeded only for browser_compat layer 2000. The res-image-layer-0 resource on test_service exists in the Metadata v2 graph with no raster rows behind it, so ImageServer, WCS, and OGC API Coverages on the canonical service have no deterministic content.",
       "trackingIssue": "https://github.com/honua-io/honua-server/issues/3435"
     },
     {

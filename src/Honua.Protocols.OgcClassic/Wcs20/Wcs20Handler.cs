@@ -120,9 +120,13 @@ internal sealed partial class Wcs20Handler
 
         Wcs20Log.RequestReceived(_logger, operation, scope.DisplayName);
 
+        var isLegacy = Wcs20Utilities.IsVersion10(
+            GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.Version),
+            GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.AcceptVersions));
+
         try
         {
-            var commonError = ValidateCommonParameters(context, operation);
+            var commonError = ValidateCommonParameters(context, operation, isLegacy);
             if (commonError is not null)
             {
                 return commonError;
@@ -133,9 +137,7 @@ internal sealed partial class Wcs20Handler
             // telemetry classifiers stay as they are, and only the encoding differs
             // (honua-server#5020). Stock QGIS speaks WCS 1.0/1.1 only, so without this
             // branch no QGIS client can open a coverage.
-            if (Wcs20Utilities.IsVersion10(
-                    GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.Version),
-                    GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.AcceptVersions)))
+            if (isLegacy)
             {
                 var legacyResult = await HandleWcs10Async(context, scope, operation, cancellationToken)
                     .ConfigureAwait(false);
@@ -179,7 +181,9 @@ internal sealed partial class Wcs20Handler
             // a WCS ExceptionReport rather than swallowed or leaked to the client.
             Wcs20Log.RequestFailed(_logger, ex, operation, scope.DisplayName);
             telemetry.RecordException(ex);
-            return Wcs20ErrorResults.CreateInternalServerError("Failed to process WCS request.");
+            return isLegacy
+                ? Wcs10ErrorResults.CreateInternalServerError("Failed to process WCS request.")
+                : Wcs20ErrorResults.CreateInternalServerError("Failed to process WCS request.");
         }
     }
 
@@ -978,26 +982,36 @@ internal sealed partial class Wcs20Handler
         return new WcsSupportedCrs(srids, uris);
     }
 
-    private static IResult? ValidateCommonParameters(HttpContext context, string operation)
+    private static IResult? ValidateCommonParameters(HttpContext context, string operation, bool isLegacy)
     {
         var service = GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.Service);
         if (!string.IsNullOrWhiteSpace(service) &&
             !string.Equals(service, Wcs20Utilities.ServiceType, StringComparison.OrdinalIgnoreCase))
         {
-            return Wcs20ErrorResults.CreateBadRequest(
-                Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
-                "SERVICE must be WCS when supplied.",
-                Wcs20Utilities.Parameters.Service);
+            return isLegacy
+                ? Wcs10ErrorResults.CreateBadRequest(
+                    Wcs20Utilities.ExceptionCodes10.InvalidParameterValue,
+                    "SERVICE must be WCS when supplied.",
+                    Wcs20Utilities.Parameters.Service)
+                : Wcs20ErrorResults.CreateBadRequest(
+                    Wcs20Utilities.ExceptionCodes.InvalidParameterValue,
+                    "SERVICE must be WCS when supplied.",
+                    Wcs20Utilities.Parameters.Service);
         }
 
         var version = GetQueryValue(context.Request.Query, Wcs20Utilities.Parameters.Version);
         if (!string.IsNullOrWhiteSpace(version) &&
             !OgcParameterValidator.TryParseVersion(version, Wcs20Utilities.SupportedVersions, out _, out _))
         {
-            return Wcs20ErrorResults.CreateBadRequest(
-                Wcs20Utilities.ExceptionCodes.VersionNegotiationFailed,
-                $"Unsupported version '{version}'. This service supports WCS {Wcs20Utilities.Version} and {Wcs20Utilities.Version10}.",
-                Wcs20Utilities.Parameters.Version);
+            return isLegacy
+                ? Wcs10ErrorResults.CreateBadRequest(
+                    Wcs20Utilities.ExceptionCodes10.InvalidParameterValue,
+                    $"Unsupported version '{version}'. This service supports WCS {Wcs20Utilities.Version} and {Wcs20Utilities.Version10}.",
+                    Wcs20Utilities.Parameters.Version)
+                : Wcs20ErrorResults.CreateBadRequest(
+                    Wcs20Utilities.ExceptionCodes.VersionNegotiationFailed,
+                    $"Unsupported version '{version}'. This service supports WCS {Wcs20Utilities.Version} and {Wcs20Utilities.Version10}.",
+                    Wcs20Utilities.Parameters.Version);
         }
 
         if (!Wcs20Utilities.ImplementedOperations.Contains(operation))
