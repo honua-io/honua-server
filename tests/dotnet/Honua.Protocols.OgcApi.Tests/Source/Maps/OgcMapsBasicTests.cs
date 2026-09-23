@@ -40,7 +40,11 @@ public class OgcMapsBasicTests : IAsyncLifetime
             .EnumerateArray().First().EnumerateArray()
             .Select(value => value.GetDouble()).ToArray();
         bbox.Should().HaveCount(4);
-        (bbox[0] == -180 && bbox[1] == -90 && bbox[2] == 180 && bbox[3] == 90).Should().BeFalse(
+        var isWholeWorld = Math.Abs(bbox[0] + 180d) <= 1e-9
+            && Math.Abs(bbox[1] + 90d) <= 1e-9
+            && Math.Abs(bbox[2] - 180d) <= 1e-9
+            && Math.Abs(bbox[3] - 90d) <= 1e-9;
+        isWholeWorld.Should().BeFalse(
             "an omitted or real dataset extent must not be replaced with the whole world");
         return bbox;
     }
