@@ -314,8 +314,12 @@ internal sealed partial class RedisWorkflowOperationStore(
         }
 
         var entries = await _database.SortedSetRangeByRankWithScoresAsync(key, 0, -1, Order.Descending).ConfigureAwait(false);
-        var incomplete = false;
         var operationCreatedAt = operation.CreatedAt.ToUnixTimeMilliseconds();
+        // The per-target index retains only the newest members by millisecond score. If the
+        // retained boundary can still be as new as the queried operation, an evicted member may
+        // have a later sub-millisecond CreatedAt even though it is absent from this read.
+        var incomplete = entries.Length >= DeployCreatedTargetCap
+            && entries[^1].Score >= operationCreatedAt;
         foreach (var entry in entries)
         {
             cancellationToken.ThrowIfCancellationRequested();
