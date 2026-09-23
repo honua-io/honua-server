@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Reflection;
 using FluentAssertions;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Constants;
 using Xunit;
 
 namespace Honua.Architecture.Tests;
@@ -168,6 +169,24 @@ public sealed class TierTraitEnforcementTests
             "a plain [Theory] emits no trait at all");
         TierTraitScanner.EmitsTierTrait(typeof(ArchitectureTestAttribute)).Should().BeFalse(
             "[ArchitectureTest] emits Category=Architecture but no Tier, so it must not satisfy the guard");
+    }
+
+    [ArchitectureTest]
+    public void TierDetection_RequiresExactlyOneSupportedTierValue()
+    {
+        foreach (var value in new[] { Tiers.Fast, Tiers.Integration, Tiers.Slow })
+        {
+            TierTraitScanner.HasExactlyOneSupportedTier([new("Tier", value)]).Should().BeTrue();
+        }
+
+        TierTraitScanner.HasExactlyOneSupportedTier([new("Category", "Unit"), new("Tier", Tiers.Fast)])
+            .Should().BeTrue();
+        TierTraitScanner.HasExactlyOneSupportedTier([new("Tier", "Typo")]).Should().BeFalse();
+        TierTraitScanner.HasExactlyOneSupportedTier([new("Tier", "")]).Should().BeFalse();
+        TierTraitScanner.HasExactlyOneSupportedTier([new("Tier", Tiers.Fast), new("Tier", Tiers.Fast)])
+            .Should().BeFalse("duplicate Tier traits make lane selection ambiguous");
+        TierTraitScanner.HasExactlyOneSupportedTier([new("Tier", Tiers.Fast), new("Tier", Tiers.Slow)])
+            .Should().BeFalse("a method must belong to exactly one tier");
     }
 
     [ArchitectureTest]
@@ -488,7 +507,7 @@ internal static class TierTraitScanner
         {
             // The TestKit discoverers ignore their IAttributeInfo argument, so a null is safe
             // and avoids taking a dependency on xUnit's reflection wrappers here.
-            if (getTraits.Invoke(discoverer, [null]) is not System.Collections.IEnumerable traits)
+            if (getTraits.Invoke(discoverer, [null]) is not IEnumerable<KeyValuePair<string, string>> traits)
             {
                 return false;
             }
@@ -497,14 +516,7 @@ internal static class TierTraitScanner
             // discoverer that really does dereference its IAttributeInfo argument throws from
             // MoveNext() — not from Invoke() — and that exception is therefore NOT wrapped in
             // TargetInvocationException.
-            foreach (var trait in traits)
-            {
-                var key = trait?.GetType().GetProperty("Key")?.GetValue(trait) as string;
-                if (string.Equals(key, "Tier", StringComparison.Ordinal))
-                {
-                    return true;
-                }
-            }
+            return HasExactlyOneSupportedTier(traits);
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
@@ -517,6 +529,14 @@ internal static class TierTraitScanner
         }
 
         return false;
+    }
+
+    internal static bool HasExactlyOneSupportedTier(IEnumerable<KeyValuePair<string, string>> traits)
+    {
+        var tiers = traits.Where(trait => string.Equals(trait.Key, "Tier", StringComparison.Ordinal))
+            .Select(trait => trait.Value)
+            .ToArray();
+        return tiers.Length == 1 && tiers[0] is Tiers.Fast or Tiers.Integration or Tiers.Slow;
     }
 
     internal static bool HasArchitectureCategoryTrait(MemberInfo member)
