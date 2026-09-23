@@ -34,7 +34,7 @@ internal sealed record CogArtifactDescriptor
     /// <summary>Media type the proxy serves the artifact with.</summary>
     public required string ContentType { get; init; }
 
-    /// <summary>Root-relative public URL; clients open it with HTTP range requests.</summary>
+    /// <summary>Root-relative URL; authorized clients open it with HTTP range requests.</summary>
     public required string Url { get; init; }
 
     /// <summary>Exported raster width in pixels.</summary>

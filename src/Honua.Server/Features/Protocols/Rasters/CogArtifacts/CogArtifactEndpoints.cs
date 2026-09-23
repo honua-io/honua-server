@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using Honua.Core.Features.Authorization.Domain;
 using Honua.Infrastructure.Authentication;
 using Honua.Infrastructure.Models;
 using Honua.Server.Features.Protocols.Tiles.PMTilesProxy;
@@ -10,8 +11,8 @@ using Microsoft.Net.Http.Headers;
 namespace Honua.Server.Features.Protocols.Rasters.CogArtifacts;
 
 /// <summary>
-/// Admin publish of a layer's raster as a Cloud Optimized GeoTIFF, and the public byte-range
-/// proxy desktop clients read it through (<c>GET</c>/<c>HEAD</c> with <c>Range</c>).
+/// Admin publish of a layer's raster as a Cloud Optimized GeoTIFF, and the source-policy-aware
+/// byte-range proxy desktop clients read it through (<c>GET</c>/<c>HEAD</c> with <c>Range</c>).
 /// </summary>
 internal static class CogArtifactEndpoints
 {
@@ -28,7 +29,7 @@ internal static class CogArtifactEndpoints
         admin.MapPost("/cog", HandlePublish)
             .WithName("PublishCogArtifact")
             .WithSummary("Publish a layer's primary raster as a Cloud Optimized GeoTIFF")
-            .WithDescription("Exports the primary raster of the layer as a COG into file storage under a deterministic key and returns the public range-proxy URL clients read it from");
+            .WithDescription("Exports the primary raster of the layer as a COG into file storage under a deterministic key and returns its source-policy-aware range-proxy URL");
 
         endpoints.MapMethods(
                 "/api/v1/rasters/cog/{*artifactId}",
@@ -37,8 +38,11 @@ internal static class CogArtifactEndpoints
             .WithName("CogArtifactProxy")
             .WithDisplayName("COG Range Proxy")
             .WithSummary("Range-proxied access to a published Cloud Optimized GeoTIFF")
-            .WithDescription("Serves a published COG artifact with HTTP range support so GDAL /vsicurl, ArcGIS Pro and browsers can read tiles without downloading the whole file")
+            .WithDescription("Serves a published COG artifact to callers authorized for its current source, with HTTP range support for GDAL /vsicurl, ArcGIS Pro and browsers")
             .WithTags("Rasters", "COG")
+            // Every read must evaluate the current source policy, including after a
+            // previously public publication becomes restricted or is retired.
+            .CacheOutput(policy => policy.NoCache())
             .ProducesProblem(StatusCodes.Status413PayloadTooLarge);
 
         return endpoints;
@@ -55,7 +59,20 @@ internal static class CogArtifactEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "layerId must be a non-negative publication layer index.");
         }
 
-        var outcome = await service.PublishAsync(request.LayerId, cancellationToken).ConfigureAwait(false);
+        var source = await service.ResolveSourceAsync(request.LayerId, cancellationToken).ConfigureAwait(false);
+        if (source is null)
+        {
+            return TypedResults.NotFound();
+        }
+
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, source.Resource, AuthorizationOperation.Export, source.Service, cancellationToken).ConfigureAwait(false);
+        if (accessError is not null)
+        {
+            return accessError;
+        }
+
+        var outcome = await service.PublishAsync(source, cancellationToken).ConfigureAwait(false);
         return outcome.Status switch
         {
             CogArtifactPublishStatus.Published => Results.Json(
@@ -75,11 +92,20 @@ internal static class CogArtifactEndpoints
         [FromServices] PMTilesProxyService rangeProxy,
         CancellationToken cancellationToken)
     {
-        var metadata = await service.ResolvePublishedAsync(artifactId, cancellationToken).ConfigureAwait(false);
-        if (metadata is null)
+        var target = await service.ResolvePublishedAsync(artifactId, cancellationToken).ConfigureAwait(false);
+        if (target is null)
         {
             return TypedResults.NotFound();
         }
+
+        var accessError = await AccessPolicyHelpers.RequireResourceAccessAsync(
+            context, target.Source.Resource, AuthorizationOperation.Export, target.Source.Service, cancellationToken).ConfigureAwait(false);
+        if (accessError is not null)
+        {
+            return accessError;
+        }
+
+        var metadata = target.File;
 
         var response = context.Response;
         response.Headers[HeaderNames.AcceptRanges] = "bytes";

@@ -6,11 +6,16 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
 using Honua.Core.Features.Raster.Domain;
+using Honua.Core.Features.Security.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
+using Honua.TestKit.Infrastructure;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Admin;
@@ -66,8 +71,13 @@ public sealed class CogArtifactEndpointTests : IAsyncLifetime
             });
 
         _fixture.ReplaceService<IRasterStore>(rasterStore);
+        _fixture.ConfigureWebHost(builder =>
+        {
+            builder.UseSetting("HONUA_DEV_AUTH", "false");
+            builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
+        });
         await _fixture.InitializeAsync();
-        _client = _fixture.Client;
+        _client = _fixture.CreateAdminClient();
     }
 
     public async Task DisposeAsync()
@@ -185,6 +195,132 @@ public sealed class CogArtifactEndpointTests : IAsyncLifetime
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
+
+    [IntegrationTheory]
+    [InlineData("GET", false, false)]
+    [InlineData("HEAD", false, false)]
+    [InlineData("GET", true, false)]
+    [InlineData("GET", false, true)]
+    [InlineData("HEAD", false, true)]
+    [InlineData("GET", true, true)]
+    [Endpoint("GET /api/v1/rasters/cog/{*artifactId}")]
+    [Endpoint("HEAD /api/v1/rasters/cog/{*artifactId}")]
+    public async Task CogProxy_SourceBecomesRestricted_RequiresAccessBeforeBytesOrHeaders(
+        string method, bool range, bool restrictService)
+    {
+        var descriptor = await PublishAsync();
+        var url = descriptor.GetProperty("url").GetString()!;
+        var initial = _fixture.GetCurrentV2GraphSnapshot();
+        var publication = ImagePublication(initial.Graph);
+        var publicPolicy = new AccessPolicy { AllowAnonymous = true };
+        SetGraph(initial.Graph with
+        {
+            Resources = initial.Graph.Resources.Select(resource => resource.Metadata.Id == publication.ResourceId
+                ? resource with { AccessPolicy = publicPolicy } : resource).ToArray(),
+            Services = initial.Graph.Services.Select(service => service.Metadata.Id == publication.ServiceId
+                ? service with { AccessPolicy = publicPolicy } : service).ToArray()
+        });
+
+        using var anonymous = _fixture.CreateClient();
+        using (var warm = await anonymous.GetAsync(url))
+        {
+            warm.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var policy = new AccessPolicy { AllowAnonymous = false, AllowedRoles = ["admin"] };
+        SetGraph(snapshot.Graph with
+        {
+            Resources = snapshot.Graph.Resources.Select(resource => !restrictService && resource.Metadata.Id == publication.ResourceId
+                ? resource with { AccessPolicy = policy } : resource).ToArray(),
+            Services = snapshot.Graph.Services.Select(service => restrictService && service.Metadata.Id == publication.ServiceId
+                ? service with { AccessPolicy = policy } : service).ToArray()
+        });
+
+        using var request = new HttpRequestMessage(new HttpMethod(method), url);
+        if (range)
+        {
+            request.Headers.Range = new RangeHeaderValue(0, 3);
+        }
+        using var response = await anonymous.SendAsync(request);
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Headers.ETag.Should().BeNull();
+        response.Headers.AcceptRanges.Should().NotContain("bytes",
+            "a denied response must not advertise the COG artifact's byte ranges");
+        response.Content.Headers.ContentRange.Should().BeNull();
+
+        using var authorized = _fixture.CreateAdminClient();
+        using var allowed = await authorized.GetAsync(url);
+        allowed.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await allowed.Content.ReadAsByteArrayAsync()).Should().Equal(CogBytes);
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/raster-artifacts/cog")]
+    public async Task PublishCog_AmbiguousImagePublications_Returns404()
+    {
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var publication = ImagePublication(graph);
+        SetGraph(graph with
+        {
+            Publications = [.. graph.Publications, publication with
+            {
+                Metadata = publication.Metadata with { Id = "ambiguous-image-publication" }
+            }]
+        });
+
+        using var response = await _client.PostAsJsonAsync("/api/v1/admin/raster-artifacts/cog",
+            new { layerId = WebAppFixture.TestLayerId });
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/rasters/cog/{*artifactId}")]
+    public async Task CogProxy_PublicationRebound_DoesNotServePreviousResourceBytes()
+    {
+        var descriptor = await PublishAsync();
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var publication = ImagePublication(graph);
+        var resource = graph.Resources.Single(candidate => candidate.Metadata.Id == publication.ResourceId);
+        var replacement = resource with { Metadata = resource.Metadata with { Id = "replacement-cog-resource" } };
+        SetGraph(graph with
+        {
+            Resources = [.. graph.Resources, replacement],
+            Publications = graph.Publications.Select(candidate => candidate.Metadata.Id == publication.Metadata.Id
+                ? candidate with { ResourceId = replacement.Metadata.Id } : candidate).ToArray()
+        });
+
+        using var response = await _client.GetAsync(descriptor.GetProperty("url").GetString()!);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/rasters/cog/{*artifactId}")]
+    public async Task CogProxy_StorageBindingReboundUnderSameId_DoesNotServePreviousBytes()
+    {
+        var descriptor = await PublishAsync();
+        var graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
+        var publication = ImagePublication(graph);
+        var resource = graph.Resources.Single(candidate => candidate.Metadata.Id == publication.ResourceId);
+        var bindingId = publication.StorageBindingId ?? resource.PrimaryStorageBindingId;
+        var binding = graph.StorageBindings.Single(candidate => candidate.Metadata.Id == bindingId);
+        SetGraph(graph with
+        {
+            StorageBindings = graph.StorageBindings.Select(candidate => candidate.Metadata.Id == bindingId
+                ? candidate with { Locator = binding.Locator + "_rebound" } : candidate).ToArray()
+        });
+
+        using var response = await _client.GetAsync(descriptor.GetProperty("url").GetString()!);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    private static MetadataV2Publication ImagePublication(MetadataV2Graph graph)
+        => graph.Publications.Single(publication => publication.LayerIndex == WebAppFixture.TestLayerId &&
+            publication.PublicationType == MetadataV2PublicationType.EsriImageLayer);
+
+    private void SetGraph(MetadataV2Graph graph)
+        => _fixture.Services.GetRequiredService<TestMetadataV2GraphProvider>()
+            .SetGraph(graph with { Revision = graph.Revision + 1 }, schema: _fixture.MetadataGraphSchema);
 
     private async Task<JsonElement> PublishAsync()
     {

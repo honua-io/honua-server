@@ -3,11 +3,14 @@
 
 using System.Collections.Immutable;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Raster.Abstractions;
+using Honua.Core.Features.Raster.CogParser;
 using Honua.Core.Features.Raster.Domain;
 
 namespace Honua.Server.Features.Protocols.Rasters.CogArtifacts;
@@ -27,9 +30,18 @@ internal sealed record CogArtifactPublishOutcome(
     CogArtifactDescriptor? Descriptor,
     string? Error);
 
+internal sealed record CogArtifactSource(
+    int LayerId,
+    MetadataV2Publication Publication,
+    MetadataV2Resource Resource,
+    MetadataV2Service Service,
+    MetadataV2StorageBinding Binding);
+
+internal sealed record CogArtifactReadTarget(CloudFile File, CogArtifactSource Source);
+
 /// <summary>
 /// Exports a layer's primary raster as a Cloud Optimized GeoTIFF into the configured file
-/// storage and resolves published artifacts for the public range proxy.
+/// storage and resolves published artifacts for the source-policy-aware range proxy.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -71,34 +83,27 @@ internal sealed class CogArtifactService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    private static bool LayerIsRoutable(MetadataV2GraphSnapshot snapshot, int layerId)
+    public async Task<CogArtifactSource?> ResolveSourceAsync(int layerId, CancellationToken cancellationToken)
     {
-        foreach (var publication in snapshot.Graph.Publications)
+        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var publication = CogPublicationBinding.Resolve(snapshot, layerId);
+        if (publication is null || snapshot.ResolveResource(publication) is not { } resource ||
+            !snapshot.Index.ServicesById.TryGetValue(publication.ServiceId, out var service) ||
+            snapshot.ResolveStorageBinding(publication) is not { } binding ||
+            !string.Equals(binding.ResourceId, resource.Metadata.Id, StringComparison.Ordinal))
         {
-            if (publication.LayerIndex == layerId && snapshot.IsRoutable(publication))
-            {
-                return true;
-            }
+            return null;
         }
 
-        return false;
+        return new CogArtifactSource(layerId, publication, resource, service, binding);
     }
 
     internal static string BuildObjectKey(int layerId, long rasterId)
         => $"cog/{layerId.ToString(CultureInfo.InvariantCulture)}/{rasterId.ToString(CultureInfo.InvariantCulture)}.tif";
 
-    public async Task<CogArtifactPublishOutcome> PublishAsync(int layerId, CancellationToken cancellationToken)
+    public async Task<CogArtifactPublishOutcome> PublishAsync(CogArtifactSource source, CancellationToken cancellationToken)
     {
-        // A layer is publishable when the graph routes at least one publication to it. The
-        // CogPublicationBinding helper is deliberately not used here: it fails closed when a
-        // layer index carries more than one routable publication, and every fixture layer
-        // that has a raster also has FeatureServer/MapServer/ImageServer publications.
-        var snapshot = await _graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
-        if (!LayerIsRoutable(snapshot, layerId))
-        {
-            return new CogArtifactPublishOutcome(CogArtifactPublishStatus.LayerNotFound, null, "Layer not found.");
-        }
-
+        var layerId = source.LayerId;
         var primary = await _rasterStore.GetPrimaryRasterInfoAsync(layerId, cancellationToken).ConfigureAwait(false);
         if (primary is not { } raster)
         {
@@ -139,6 +144,11 @@ internal sealed class CogArtifactService
             Metadata = ImmutableDictionary<string, string>.Empty
                 .Add(OperationMetadataKey, PublishOperationValue)
                 .Add("layerId", layerId.ToString(CultureInfo.InvariantCulture))
+                .Add("publicationId", source.Publication.Metadata.Id)
+                .Add("resourceId", source.Resource.Metadata.Id)
+                .Add("serviceId", source.Service.Metadata.Id)
+                .Add("bindingId", source.Binding.Metadata.Id)
+                .Add("bindingFingerprint", BindingFingerprint(source.Binding))
                 .Add("rasterId", raster.Id.ToString(CultureInfo.InvariantCulture)),
         }, cancellationToken).ConfigureAwait(false);
 
@@ -168,9 +178,10 @@ internal sealed class CogArtifactService
 
     /// <summary>
     /// Resolves an artifact id to its stored metadata, accepting only objects this surface
-    /// published (media type and operation tag), so the proxy never serves arbitrary files.
+    /// published (media type, operation tag and unchanged source binding), so the proxy
+    /// never serves arbitrary files or rebinds an old artifact to a different resource.
     /// </summary>
-    public async Task<CloudFile?> ResolvePublishedAsync(string artifactId, CancellationToken cancellationToken)
+    public async Task<CogArtifactReadTarget?> ResolvePublishedAsync(string artifactId, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(artifactId))
         {
@@ -194,7 +205,58 @@ internal sealed class CogArtifactService
             return null;
         }
 
-        return metadata;
+        if (!metadata.Metadata.TryGetValue("layerId", out var layerValue) ||
+            !int.TryParse(layerValue, NumberStyles.None, CultureInfo.InvariantCulture, out var layerId))
+        {
+            return null;
+        }
+
+        var source = await ResolveSourceAsync(layerId, cancellationToken).ConfigureAwait(false);
+        if (source is null ||
+            !metadata.Metadata.TryGetValue("publicationId", out var publicationId) ||
+            !string.Equals(publicationId, source.Publication.Metadata.Id, StringComparison.Ordinal) ||
+            !metadata.Metadata.TryGetValue("resourceId", out var resourceId) ||
+            !string.Equals(resourceId, source.Resource.Metadata.Id, StringComparison.Ordinal) ||
+            !metadata.Metadata.TryGetValue("serviceId", out var serviceId) ||
+            !string.Equals(serviceId, source.Service.Metadata.Id, StringComparison.Ordinal) ||
+            !metadata.Metadata.TryGetValue("bindingId", out var bindingId) ||
+            !string.Equals(bindingId, source.Binding.Metadata.Id, StringComparison.Ordinal) ||
+            !metadata.Metadata.TryGetValue("bindingFingerprint", out var bindingFingerprint) ||
+            !string.Equals(bindingFingerprint, BindingFingerprint(source.Binding), StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return new CogArtifactReadTarget(metadata, source);
+    }
+
+    private static string BindingFingerprint(MetadataV2StorageBinding binding)
+    {
+        // Binding IDs can be reused while their source locator changes. Bind a
+        // published snapshot to the source-defining fields, not the graph revision
+        // (policy-only changes must still be evaluated on every read).
+        var text = new StringBuilder();
+        static void Append(StringBuilder target, string? value)
+        {
+            if (value is null)
+            {
+                target.Append("-1:");
+                return;
+            }
+            target.Append(value.Length).Append(':').Append(value);
+        }
+
+        Append(text, binding.ResourceId);
+        Append(text, binding.ConnectionId);
+        Append(text, binding.StorageType.ToString());
+        Append(text, binding.Locator);
+        Append(text, binding.StorageLayerId?.ToString(CultureInfo.InvariantCulture));
+        foreach (var option in binding.Options.OrderBy(item => item.Key, StringComparer.Ordinal))
+        {
+            Append(text, option.Key);
+            Append(text, option.Value.GetRawText());
+        }
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString())));
     }
 }
 
