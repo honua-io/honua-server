@@ -168,7 +168,7 @@ internal sealed partial class StreamingFileImportService
         // (sourceSrid -> targetSrid) pair (#1501). The pipeline is applied only to rows
         // whose source SRID matches the resolved pair; rows carrying a different per-feature
         // SRID (e.g. mixed-CRS FileGDB layers) keep PROJ's default pipeline via a NULL.
-        var datumPipeline = ResolveImportDatumPipeline(sourceSrid, targetSrid);
+        var datumPipeline = ResolveImportDatumPipeline(sourceSrid, targetSrid, TryImportEnvelope(features, sourceSrid));
 
         // Keyed upsert routes the whole batch through a single unnest-driven
         // INSERT ... ON CONFLICT DO UPDATE (honua.bulk_upsert_import_features) so colliding
@@ -303,7 +303,9 @@ internal sealed partial class StreamingFileImportService
         // feature's source SRID matches the resolved pair. The single-row keyed upsert
         // path (this continue-on-error fallback) uses PROJ's default reprojection; the
         // datum-pipelined upsert is covered by the batch fast path.
-        var datumPipeline = isUpsert ? null : ResolveImportDatumPipeline(sourceSrid, targetSrid);
+        var datumPipeline = isUpsert
+            ? null
+            : ResolveImportDatumPipeline(sourceSrid, targetSrid, TryImportEnvelope(features, sourceSrid));
 
         var commandText = isUpsert
             ? UpsertImportFeatureSql
