@@ -169,9 +169,8 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
 
         var ring = await PostBufferRingAsync(body);
         ring.Should().NotBeEmpty();
-        foreach (var vertex in ring)
+        foreach (var ground in ring.Select(vertex => VincentyMeters(0d, 60d, vertex.X, vertex.Y)))
         {
-            var ground = VincentyMeters(0d, 60d, vertex.X, vertex.Y);
             ground.Should().BeApproximately(1000d, 10d);
         }
     }
@@ -196,10 +195,8 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
         """;
 
         var ring = await PostBufferRingAsync(body);
-        var southY = ring.Min(point => point.Y);
-        var northY = ring.Max(point => point.Y);
-        var south = ring.First(point => point.Y == southY);
-        var north = ring.First(point => point.Y == northY);
+        var south = ring.MinBy(point => point.Y);
+        var north = ring.MaxBy(point => point.Y);
         var southOffset = MeridianOffsetDegrees(40d, 1000d);
         var northOffset = MeridianOffsetDegrees(50d, 1000d);
 
@@ -262,7 +259,7 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
             sinSigma = Math.Sqrt(
                 Math.Pow(cosU2 * sinLambda, 2) +
                 Math.Pow(cosU1 * sinU2 - sinU1 * cosU2 * cosLambda, 2));
-            if (sinSigma == 0)
+            if (sinSigma <= 0)
             {
                 return 0;
             }
@@ -270,8 +267,8 @@ public sealed class GeometryServiceBufferTests : IClassFixture<WebAppFixture>
             cosSigma = sinU1 * sinU2 + cosU1 * cosU2 * cosLambda;
             sigma = Math.Atan2(sinSigma, cosSigma);
             var sinAlpha = cosU1 * cosU2 * sinLambda / sinSigma;
-            cosSqAlpha = 1d - sinAlpha * sinAlpha;
-            cos2SigmaM = cosSqAlpha == 0d ? 0d : cosSigma - 2d * sinU1 * sinU2 / cosSqAlpha;
+            cosSqAlpha = Math.Max(0d, 1d - sinAlpha * sinAlpha);
+            cos2SigmaM = cosSqAlpha <= 0d ? 0d : cosSigma - 2d * sinU1 * sinU2 / cosSqAlpha;
             var c = flattening / 16d * cosSqAlpha * (2d + flattening * (4d - 3d * cosSqAlpha));
             var previous = lambda;
             lambda = longitudeDelta + (1d - c) * flattening * sinAlpha

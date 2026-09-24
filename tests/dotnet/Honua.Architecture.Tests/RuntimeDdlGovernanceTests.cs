@@ -11,7 +11,7 @@ namespace Honua.Architecture.Tests;
 /// <summary>
 /// Inventories production C# that can issue DDL. Core Honua schema evolution belongs only in the
 /// numbered migration roots; the allowlist is restricted to bounded generated/output targets,
-/// attempt-scoped routing shadows, and the audited retention-maintenance transaction.
+/// attempt-scoped routing shadows, session-local helper functions, and the audited retention-maintenance transaction.
 /// </summary>
 [Trait("Category", "Architecture")]
 public sealed partial class RuntimeDdlGovernanceTests
@@ -19,6 +19,8 @@ public sealed partial class RuntimeDdlGovernanceTests
     private static readonly IReadOnlyDictionary<string, RuntimeDdlOwner> _allowlist =
         new Dictionary<string, RuntimeDdlOwner>(StringComparer.Ordinal)
         {
+            ["src/Honua.Db/Postgres/Features/GeometryService/PostgresGeometryOperationService.cs"] =
+                new(RuntimeDdlCategory.SessionTemporaryFunction, 3, "PostgresGeometryOperationService owns three fixed-name pg_temp geodesic helpers on its leased connection; pool reset or session termination discards them. No persistent schema is modified."),
             ["src/Honua.Db/Postgres/Features/Migration/OgcWfsImportService.cs"] =
                 new(RuntimeDdlCategory.GeneratedImportTarget, 7, "OgcWfsImportService owns atomic staging promotion and rollback/drop cleanup for its generated target table."),
             ["src/Honua.Db/Postgres/Features/Migration/GeoservicesImportService.cs"] =
@@ -78,6 +80,27 @@ public sealed partial class RuntimeDdlGovernanceTests
             "every runtime DDL exception must name its permitted category, positive occurrence count, and transactional/cleanup owner");
     }
 
+    [ArchitectureTest]
+    public void GeodesicHelpers_ShouldRemainFixedNameSessionTemporaryFunctions()
+    {
+        var projectRoot = FindProjectRoot(Directory.GetCurrentDirectory());
+        var path = Path.Join(projectRoot, "src", "Honua.Db", "Postgres", "Features", "GeometryService", "PostgresGeometryOperationService.cs");
+        var tree = CSharpSyntaxTree.ParseText(File.ReadAllText(path));
+        var functions = tree.GetRoot().DescendantTokens()
+            .SelectMany(token => FunctionDeclarationPattern().Matches(token.ValueText))
+            .Select(match => match.Groups["name"].Value)
+            .ToArray();
+
+        functions.Should().BeEquivalentTo(
+            ["pg_temp.honua_geodesic_line", "pg_temp.honua_geodesic_polygon", "pg_temp.honua_geodesic_segmentize"],
+            "the geometry-service DDL exception permits only these session-local helpers, never persistent functions");
+        CountRuntimeDdlStrings(path).Should().Be(functions.Length,
+            "the geometry-service exception must not absorb other schema changes");
+    }
+
+    [GeneratedRegex(@"CREATE\s+OR\s+REPLACE\s+FUNCTION\s+(?<name>[\w.]+)", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    private static partial Regex FunctionDeclarationPattern();
+
     private static int CountRuntimeDdlStrings(string path)
     {
         var tree = CSharpSyntaxTree.ParseText(File.ReadAllText(path));
@@ -119,5 +142,6 @@ public sealed partial class RuntimeDdlGovernanceTests
         ExternalSinkTarget,
         ExportArtifact,
         RetentionMaintenance,
+        SessionTemporaryFunction,
     }
 }

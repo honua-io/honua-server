@@ -556,7 +556,7 @@ public sealed class GeometryServiceMeasureAnalysisTests : IClassFixture<WebAppFi
             sinSigma = Math.Sqrt(
                 Math.Pow(cosU2 * sinLambda, 2) +
                 Math.Pow(cosU1 * sinU2 - sinU1 * cosU2 * cosLambda, 2));
-            if (sinSigma == 0)
+            if (sinSigma <= 0)
             {
                 return 0;
             }
@@ -564,8 +564,8 @@ public sealed class GeometryServiceMeasureAnalysisTests : IClassFixture<WebAppFi
             cosSigma = sinU1 * sinU2 + cosU1 * cosU2 * cosLambda;
             sigma = Math.Atan2(sinSigma, cosSigma);
             var sinAlpha = cosU1 * cosU2 * sinLambda / sinSigma;
-            cosSqAlpha = 1d - sinAlpha * sinAlpha;
-            cos2SigmaM = cosSqAlpha == 0d ? 0d : cosSigma - 2d * sinU1 * sinU2 / cosSqAlpha;
+            cosSqAlpha = Math.Max(0d, 1d - sinAlpha * sinAlpha);
+            cos2SigmaM = cosSqAlpha <= 0d ? 0d : cosSigma - 2d * sinU1 * sinU2 / cosSqAlpha;
             var c = flattening / 16d * cosSqAlpha * (2d + flattening * (4d - 3d * cosSqAlpha));
             var previous = lambda;
             lambda = longitudeDelta + (1d - c) * flattening * sinAlpha
