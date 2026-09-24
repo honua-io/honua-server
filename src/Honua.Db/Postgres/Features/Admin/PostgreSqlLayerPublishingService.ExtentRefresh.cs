@@ -26,7 +26,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string? geometryColumn,
         int sourceSrid,
         int? managedLayerId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int targetSrid = CatalogExtentSrid)
     {
         if (string.IsNullOrWhiteSpace(geometryColumn))
         {
@@ -52,11 +53,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 SELECT
                     CASE
                         WHEN geom IS NULL OR ST_IsEmpty(geom) THEN NULL
-                        WHEN COALESCE(NULLIF(ST_SRID(geom), 0), @sourceSrid) = @catalogSrid
-                            THEN ST_SetSRID(geom, @catalogSrid)
+                        WHEN COALESCE(NULLIF(ST_SRID(geom), 0), @sourceSrid) = @targetSrid
+                            THEN ST_SetSRID(geom, @targetSrid)
                         ELSE ST_Transform(
                             ST_SetSRID(geom, COALESCE(NULLIF(ST_SRID(geom), 0), @sourceSrid)),
-                            @catalogSrid)
+                            @targetSrid)
                     END AS geom
                 FROM source_geometries
             )
@@ -70,7 +71,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
 
         await using var command = new NpgsqlCommand(sql, connection, transaction);
         command.Parameters.AddWithValue("@sourceSrid", normalizedSourceSrid);
-        command.Parameters.AddWithValue("@catalogSrid", CatalogExtentSrid);
+        command.Parameters.AddWithValue("@targetSrid", targetSrid);
         if (managedLayerId.HasValue)
         {
             command.Parameters.AddWithValue("@managedLayerId", managedLayerId.Value);
@@ -87,7 +88,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             reader.GetDouble(1),
             reader.GetDouble(2),
             reader.GetDouble(3),
-            CatalogExtentSrid);
+            targetSrid);
     }
 
     private static async Task<(LayerExtentRefreshLayerResult Public, LayerExtentInsert? Extent)?> RefreshLayerExtentAsync(
@@ -143,7 +144,22 @@ internal sealed partial class PostgreSqlLayerPublishingService
             HasExtent = extent != null,
             ExtentSrid = extent?.Srid
         };
-        return (publicResult, extent);
+        // Legacy layer/service caches use WGS84; the canonical resource bbox must use
+        // the resource's published CRS. Re-read source geometries rather than transforming
+        // a bounding rectangle, which can lose extrema for nonlinear projections.
+        var resourceExtent = metadata.PublishedSrid == CatalogExtentSrid
+            ? extent
+            : await ReadLayerExtentAsync(
+                connection,
+                transaction,
+                metadata.Schema,
+                metadata.Table,
+                metadata.GeometryColumn,
+                metadata.SourceSrid,
+                metadata.IsManagedStore ? metadata.LayerId : null,
+                cancellationToken,
+                metadata.PublishedSrid).ConfigureAwait(false);
+        return (publicResult, resourceExtent);
     }
 
     private static async Task UpdateServiceExtentAsync(
@@ -202,7 +218,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 table_name,
                 geometry_column,
                 COALESCE(NULLIF(storage_srid, 0), NULLIF(srid, 0), @catalogSrid) AS source_srid,
-                COALESCE(storage_options ->> 'managedStore', 'false') = 'true' AS managed_store
+                COALESCE(storage_options ->> 'managedStore', 'false') = 'true' AS managed_store,
+                COALESCE(NULLIF(srid, 0), @catalogSrid) AS published_srid
             FROM honua.layers
             WHERE layer_id = @layerId;
             """;
@@ -228,6 +245,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
             reader.GetString(3),
             reader.GetString(4),
             reader.GetInt32(5),
-            reader.GetBoolean(6));
+            reader.GetBoolean(6),
+            reader.GetInt32(7));
     }
 }
