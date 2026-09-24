@@ -437,6 +437,58 @@ public sealed class GeometryServiceAdvancedOperationsTests : IClassFixture<WebAp
 
     [IntegrationTest]
     [Operation(Operations.Area)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/areasAndLengths")]
+    public async Task Area_PreserveShapeOnCoarseWebMercatorPolygon_DiffersFromVertexGeodesic()
+    {
+        // A 10° by 1° quadrilateral around 60°N. Vertex-only geodesic area is the
+        // spheroid. preserveShape densifies those edges and measures the result in
+        // Web Mercator metres, which are stretched by about sec(latitude).
+        const double radius = 6_378_137d;
+        var ring = string.Create(System.Globalization.CultureInfo.InvariantCulture, $"""
+            [[[{MercatorX(0, radius):G17},{MercatorY(60, radius):G17}],[{MercatorX(10, radius):G17},{MercatorY(60, radius):G17}],[{MercatorX(10, radius):G17},{MercatorY(61, radius):G17}],[{MercatorX(0, radius):G17},{MercatorY(61, radius):G17}],[{MercatorX(0, radius):G17},{MercatorY(60, radius):G17}]]]
+            """);
+
+        var geodesic = Math.Abs(await PostAreaSquareMetersAsync(ring, "geodesic"));
+        var preserveShape = Math.Abs(await PostAreaSquareMetersAsync(ring, "preserveShape"));
+
+        geodesic.Should().BeGreaterThan(1e10);
+        preserveShape.Should().BeGreaterThan(geodesic * 2d);
+    }
+
+    private async Task<double> PostAreaSquareMetersAsync(string ring, string calculationType)
+    {
+        var body = $$"""
+        {
+            "polygons": [
+                {"rings": {{ring}}}
+            ],
+            "sr": "3857",
+            "lengthUnit": "esriMeters",
+            "areaUnit": "esriSquareMeters",
+            "calculationType": "{{calculationType}}"
+        }
+        """;
+
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/areasAndLengths",
+            requestContent);
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceAreasAndLengthsResponse);
+        result.Should().NotBeNull();
+        result!.Areas.Should().HaveCount(1);
+        return result.Areas![0];
+    }
+
+    private static double MercatorX(double longitudeDegrees, double radius)
+        => longitudeDegrees * Math.PI / 180d * radius;
+
+    private static double MercatorY(double latitudeDegrees, double radius)
+        => Math.Log(Math.Tan(Math.PI / 4d + latitudeDegrees * Math.PI / 360d)) * radius;
+
+    [IntegrationTest]
+    [Operation(Operations.Area)]
     [Endpoint("GET /rest/services/Utilities/Geometry/GeometryServer/areasAndLengths")]
     public async Task Area_GetMissingParameters_Returns400()
     {
