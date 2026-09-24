@@ -131,12 +131,10 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     /// such case the import keeps PROJ's default (2-argument <c>ST_Transform</c>) behavior.
     /// </summary>
     /// <remarks>
-    /// Only forward selections are applied. The catalog synthesizes reverse directions with
-    /// <see cref="DatumTransformationSelection.TransformForward"/> set to <see langword="false"/> but
-    /// keeps the forward <see cref="DatumTransformationSelection.ProjPipeline"/>; applying that forward
-    /// pipeline to reverse-direction input (e.g. a NAD27→NAD83 NADCON shift on NAD83 coordinates) would
-    /// corrupt the result. Until inverse pipelines are emitted, reverse-direction imports fall back to
-    /// PROJ's default path rather than the (wrong-way) explicit pipeline.
+    /// Reverse selections are oriented with <see cref="ProjPipelineInverter"/> before they
+    /// are bound. <c>honua.insert_import_feature</c> executes a non-empty pipeline with
+    /// <c>ST_TransformPipeline</c>. An exact <c>+proj=noop</c> selection is returned as-is;
+    /// the function rewrites that to <c>ST_SetSRID</c> so every ordinate is kept.
     /// </remarks>
     private string? ResolveImportDatumPipeline(int sourceSrid, int targetSrid)
     {
@@ -146,10 +144,9 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         }
 
         if (_datumTransformationCatalog.TryGetDefault(sourceSrid, targetSrid, out var selection)
-            && selection.TransformForward
             && selection.ProjPipeline is { Length: > 0 } pipeline)
         {
-            return pipeline;
+            return ProjPipelineInverter.Orient(pipeline, selection.TransformForward);
         }
 
         return null;

@@ -133,9 +133,10 @@ The file/migration **import** reprojection path (`StreamingFileImportService`) n
 the same auditable Esri-default selection as the query path (#1501). When a feature is
 reprojected on import (`sourceSrid → targetSrid`), the service resolves the catalog's
 Esri-default pipeline via `IDatumTransformationCatalog.TryGetDefault` and applies it
-through the explicit 3-argument `ST_Transform(geom, '<pipeline>', toSrid)` form of
-`honua.insert_import_feature` — the same shape `DatumTransformSql.BuildTransformExpression`
-emits for the query path.
+through `ST_TransformPipeline` inside `honua.insert_import_feature` (migration 123).
+The text argument of `ST_Transform` is a source CRS and cannot execute an operation
+pipeline. An exact `+proj=noop` selection is rewritten to `ST_SetSRID`, matching
+`DatumTransformSql`.
 
 Details and guarantees:
 
@@ -149,11 +150,9 @@ Details and guarantees:
   applied per row **only** when the row's source SRID matches that pair. Rows carrying a
   different per-feature SRID (e.g. mixed-CRS FileGDB layers) fall back to PROJ's default
   pipeline; per-feature pipeline selection for heterogeneous-CRS imports is a follow-up.
-- Only **forward** selections are applied. The catalog synthesizes reverse directions with
-  `TransformForward = false` but keeps the forward pipeline; applying that forward pipeline to
-  reverse-direction input (e.g. a NAD27→NAD83 NADCON shift on NAD83 coordinates) would corrupt
-  the result, so reverse-direction imports fall back to PROJ's default path until inverse
-  pipelines are emitted.
+- Reverse selections are oriented with `ProjPipelineInverter` before they are bound,
+  the same direction fix the query path applies. A reverse NADCON import therefore runs
+  the inverse grid shift rather than PROJ's default pipeline.
 - Grid-gated selections (NADCON/NTv2/GEOID) follow the same explicit-failure contract as
   the query path: a missing grid surfaces as a PostGIS error (mapped to the shared problem
   helper) rather than a silent Helmert approximation. Provisioning the grid data in the
