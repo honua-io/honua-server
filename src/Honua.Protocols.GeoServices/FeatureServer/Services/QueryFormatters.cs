@@ -53,12 +53,14 @@ internal interface IQueryFormatter
 internal sealed class QueryFormatter : IQueryFormatter
 {
     private readonly GeometryLimits _geometryLimits;
+    private readonly GeoParquetLimits _geoParquetLimits;
     private readonly PbfQueryFormatter _pbfFormatter;
     private readonly ILogger<QueryFormatter> _logger;
 
     public QueryFormatter(IOptions<LimitsOptions> limitsOptions, PbfQueryFormatter pbfFormatter, ILogger<QueryFormatter> logger)
     {
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
+        _geoParquetLimits = limitsOptions?.Value?.GeoParquet ?? new GeoParquetLimits();
         _pbfFormatter = pbfFormatter;
         _logger = logger;
     }
@@ -137,7 +139,8 @@ internal sealed class QueryFormatter : IQueryFormatter
             returnM,
             effectiveLimits,
             outFields,
-            _logger);
+            _logger,
+            _geoParquetLimits);
 
         return (response, contentType);
     }
@@ -983,10 +986,12 @@ internal sealed class StreamingQueryFormatter
 {
     private const int FlushInterval = 32;
     private readonly GeometryLimits _geometryLimits;
+    private readonly GeoParquetLimits _geoParquetLimits;
 
     public StreamingQueryFormatter(IOptions<LimitsOptions> limitsOptions)
     {
         _geometryLimits = limitsOptions?.Value?.Geometry ?? new GeometryLimits();
+        _geoParquetLimits = limitsOptions?.Value?.GeoParquet ?? new GeoParquetLimits();
     }
 
     public Task StreamAsGeoServicesJsonAsync(

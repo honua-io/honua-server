@@ -53,6 +53,9 @@ public class LimitsOptions
     /// </summary>
     public QueryLimits Query { get; set; } = new();
 
+    /// <summary>Budgets for GeoParquet query encoding.</summary>
+    public GeoParquetLimits GeoParquet { get; set; } = new();
+
     /// <summary>
     /// Geometry limits for spatial operations.
     /// </summary>

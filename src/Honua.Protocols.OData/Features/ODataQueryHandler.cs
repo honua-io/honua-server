@@ -888,10 +888,15 @@ internal sealed partial class ODataQueryHandler(
                 returnM: false,
                 geometryLimits,
                 outFields,
-                _logger);
+                _logger,
+                limitsOptions?.Value?.GeoParquet);
 
             ODataUtilityService.SetODataHeaders(context);
             return Results.Bytes(payload, contentType);
+        }
+        catch (GeoParquetLimitExceededException)
+        {
+            return StandardErrorHelpers.CreatePayloadTooLarge(context, GeoParquetLimitExceededException.ClientMessage);
         }
         catch (ParquetRuntimeUnavailableException)
         {

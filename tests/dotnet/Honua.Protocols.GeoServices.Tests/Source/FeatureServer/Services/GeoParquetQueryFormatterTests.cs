@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Collections.Immutable;
+using System.Diagnostics;
 using System.Text.Json;
 using Apache.Arrow;
 using FluentAssertions;
@@ -12,11 +13,136 @@ using Honua.Infrastructure.Services;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using NetTopologySuite.Geometries;
 using NetTopologySuite.IO;
+using Honua.TestKit.Attributes;
+using Xunit.Abstractions;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Services;
 
-public sealed class GeoParquetQueryFormatterTests
+public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
 {
+    [UnitTheory]
+    [InlineData(7)]
+    [InlineData(1024)]
+    public async Task FormatAsGeoParquet_MultipleRowGroups_PreservesOrderFieldsAndFinalGeometryType(int batchSize)
+    {
+        const int rowCount = 2051;
+        var resource = CreateResource(
+            Field("objectid", MetadataV2FieldType.BigInteger, nullable: false),
+            Field("name", MetadataV2FieldType.String),
+            Field("excluded", MetadataV2FieldType.String));
+        var features = Enumerable.Range(1, rowCount).Reverse().Select(id => Feature.Create(id,
+            id == 1 ? CreatePointWkbWithZm(10, 20, 42, 9) : CreatePointWkb(10, 20),
+            new Dictionary<string, object?> { ["name"] = $"row-{id}", ["excluded"] = "private" }.ToImmutableDictionary()))
+            .ToImmutableArray();
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(rowCount, features), resource, true, 4326, true, false,
+            new GeometryLimits(), outFields: ["name"],
+            encodingLimits: new GeoParquetLimits { MaxRowsPerBatch = batchSize });
+
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        reader.NumRowGroups.Should().Be((rowCount + batchSize - 1) / batchSize);
+        using var batches = reader.GetRecordBatchReader();
+        var ids = new List<long?>();
+        while (await batches.ReadNextRecordBatchAsync() is { } batch)
+        {
+            using (batch)
+            {
+                batch.Schema.FieldsList.Select(field => field.Name).Should().Equal("objectid", "geometry", "name", "bbox");
+                var objectIds = (Int64Array)batch.Column("objectid");
+                var names = (StringArray)batch.Column("name");
+                for (var row = 0; row < batch.Length; row++)
+                {
+                    var id = objectIds.GetValue(row);
+                    ids.Add(id);
+                    names.GetString(row).Should().Be($"row-{id}");
+                    var point = new WKBReader().Read(((BinaryArray)batch.Column("geometry")).GetBytes(row).ToArray());
+                    point.Coordinate.X.Should().Be(10);
+                    point.Coordinate.Y.Should().Be(20);
+                    if (id == 1)
+                    {
+                        point.Coordinate.Z.Should().Be(42);
+                    }
+                }
+            }
+        }
+        ids.Should().Equal(Enumerable.Range(1, rowCount).Reverse().Select(id => (long?)id));
+        using var metadata = JsonDocument.Parse(reader.Schema.Metadata["geo"]);
+        metadata.RootElement.GetProperty("columns").GetProperty("geometry").GetProperty("geometry_types")
+            .EnumerateArray().Select(value => value.GetString()).Should().Equal("Point", "Point Z");
+    }
+
+    [UnitTest]
+    public void FormatAsGeoParquet_WideSingleRow_RejectsBeforeNativeEncoding()
+    {
+        var feature = Feature.Create(1, null,
+            new Dictionary<string, object?> { ["name"] = new string('x', 4096) }.ToImmutableDictionary());
+        var resource = CreateResource(Field("name", MetadataV2FieldType.String));
+        var act = () => GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]), resource, false, 4326, false, false,
+            new GeometryLimits(), encodingLimits: new GeoParquetLimits { MaxEstimatedBatchBytes = 1024 });
+        act.Should().Throw<GeoParquetLimitExceededException>().WithMessage(GeoParquetLimitExceededException.ClientMessage);
+    }
+
+    [UnitTest]
+    public void FormatAsGeoParquet_InputBudget_RejectsCumulativeRows()
+    {
+        var resource = CreateResource(Field("name", MetadataV2FieldType.String));
+        var features = Enumerable.Range(1, 20).Select(id => Feature.Create(id, null,
+            new Dictionary<string, object?> { ["name"] = new string('x', 100) }.ToImmutableDictionary())).ToImmutableArray();
+        var act = () => GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(20, features), resource, false, 4326, false, false,
+            new GeometryLimits(), encodingLimits: new GeoParquetLimits { MaxEstimatedInputBytes = 4096 });
+        act.Should().Throw<GeoParquetLimitExceededException>();
+    }
+
+    [UnitTest]
+    public void FormatAsGeoParquet_FooterExceedsOutputBudget_UsesSharedBudgetRejection()
+    {
+        var resource = CreateResource(Field("name", MetadataV2FieldType.String));
+        var act = () => GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(0, []), resource, false, 4326, false, false,
+            new GeometryLimits(), encodingLimits: new GeoParquetLimits { MaxResponseBytes = 32 });
+        act.Should().Throw<GeoParquetLimitExceededException>();
+    }
+
+    [UnitTest]
+    public void FormatAsGeoParquet_ByteBoundSplitsBeforeRowBound()
+    {
+        var resource = CreateResource(Field("name", MetadataV2FieldType.String));
+        var features = Enumerable.Range(1, 10).Select(id => Feature.Create(id, null,
+            new Dictionary<string, object?> { ["name"] = new string('x', 100) }.ToImmutableDictionary())).ToImmutableArray();
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(10, features), resource, false, 4326, false, false,
+            new GeometryLimits(), encodingLimits: new GeoParquetLimits { MaxEstimatedBatchBytes = 2048 });
+        using var reader = new ParquetSharp.Arrow.FileReader(new MemoryStream(payload));
+        reader.NumRowGroups.Should().BeGreaterThan(1);
+    }
+
+    [UnitTest]
+    public void FormatAsGeoParquet_WideGeometryPage_RecordsMemoryAndBoundsRowGroups()
+    {
+        const int rowCount = 10000;
+        var resource = CreateResource(Field("name", MetadataV2FieldType.String));
+        var line = new LineString(Enumerable.Range(0, 32).Select(i => new Coordinate(-120 + i * 0.001, 35 + i * 0.001)).ToArray());
+        var geometry = new WKBWriter().Write(line);
+        var features = Enumerable.Range(1, rowCount).Select(id => Feature.Create(id, geometry.ToArray(),
+            new Dictionary<string, object?> { ["name"] = $"{id}:" + new string('x', 512) }.ToImmutableDictionary())).ToImmutableArray();
+        using var process = Process.GetCurrentProcess();
+        var before = GC.GetTotalMemory(false);
+        var allocatedBefore = GC.GetTotalAllocatedBytes();
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(rowCount, features), resource, true, 4326, false, false, new GeometryLimits());
+        process.Refresh();
+        output.WriteLine($"GeoParquet memory receipt: rows={rowCount}; inputWkbBytes={geometry.Length}; textChars=512; " +
+            $"managedBefore={before}; managedAfter={GC.GetTotalMemory(false)}; " +
+            $"allocatedDuring={GC.GetTotalAllocatedBytes() - allocatedBefore}; processPeakWorkingSet={process.PeakWorkingSet64}; payloadBytes={payload.Length}");
+        payload.Length.Should().BeLessThanOrEqualTo(new GeoParquetLimits().MaxResponseBytes);
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        reader.NumRowGroups.Should().BeGreaterThanOrEqualTo(10);
+    }
+
     [Fact]
     public async Task FormatAsGeoParquet_WithFeatures_WritesReadableParquetWithGeoMetadata()
     {

@@ -1231,6 +1231,10 @@ internal sealed partial class FeatureServerQueryHandler(
 
             return StandardErrorHelpers.CreateFromException(context, ex);
         }
+        catch (GeoParquetLimitExceededException)
+        {
+            return StandardErrorHelpers.CreatePayloadTooLarge(context, GeoParquetLimitExceededException.ClientMessage);
+        }
         catch (InvalidOperationException ex)
         {
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
