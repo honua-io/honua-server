@@ -188,6 +188,58 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
         }
     }
 
+    [IntegrationTest]
+    public async Task GetImageTileAsync_ByteBandWithoutNoData_PreservesValidZeroWhenPadding()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreGridTileIntegrationTests));
+        try
+        {
+            await CreateSchemaAsync(schemaName);
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var seed = connection.CreateCommand();
+            seed.CommandText = """
+                INSERT INTO raster_data (layer_id, name, raster)
+                VALUES (@layerId, 'valid-zero', ST_SetValue(
+                    ST_AddBand(ST_MakeEmptyRaster(2, 1, 1, 1, 1, -1, 0, 0, 4326),
+                        '8BUI'::text, 0, NULL), 1, 2, 1, 200))
+                RETURNING id;
+                """;
+            seed.Parameters.AddWithValue("layerId", LayerId);
+            var rasterId = (long)(await seed.ExecuteScalarAsync())!;
+            var window = new RasterTileWindow
+            {
+                MinX = 0, MinY = 0, MaxX = 4, MaxY = 1,
+                Srid = 4326, TileWidth = 4, TileHeight = 1
+            };
+
+            var tile = await CreateStore(schemaName).GetImageTileAsync(
+                LayerId, rasterId, window, RasterFormat.TIFF)
+                ?? throw new InvalidOperationException("Expected a padded GeoTIFF tile.");
+            await using var inspect = connection.CreateCommand();
+            inspect.CommandText = """
+                WITH decoded AS (SELECT ST_FromGDALRaster(@data) AS rast)
+                SELECT ST_Width(rast), ST_Height(rast),
+                       ST_Value(rast, 1, 2, 1), ST_Value(rast, 1, 3, 1),
+                       ST_Value(rast, 1, 1, 1, false), ST_Value(rast, 1, 4, 1, false)
+                FROM decoded;
+                """;
+            inspect.Parameters.AddWithValue("data", tile.Data);
+            await using var reader = await inspect.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetInt32(0).Should().Be(4, "both uncovered edge cells must be present");
+            reader.GetInt32(1).Should().Be(1);
+            reader.IsDBNull(2).Should().BeFalse("zero is valid source data, not a NoData sentinel");
+            reader.GetDouble(2).Should().Be(0);
+            reader.GetDouble(3).Should().Be(200);
+            reader.IsDBNull(4).Should().BeFalse("the left padding cell must exist in the output grid");
+            reader.IsDBNull(5).Should().BeFalse("the right padding cell must exist in the output grid");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
     private PostgresRasterStore CreateStore(string schemaName)
         => new(
             new FixtureConnectionProvider(fixture.DataSource),
