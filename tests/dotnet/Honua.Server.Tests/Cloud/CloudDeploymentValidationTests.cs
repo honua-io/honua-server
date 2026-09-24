@@ -5,6 +5,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Diagnostics.CodeAnalysis;
+using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using System.Text;
 using System.Text.Json;
@@ -82,7 +83,7 @@ public sealed class CloudDeploymentValidationTests
     public async Task DeployPreflight_ReflectsExpectedEnvironmentState()
     {
         using var client = CreateClient();
-        using var request = CreateAdminRequest(HttpMethod.Get, "/api/v1/admin/deploy/preflight");
+        using var request = CreateAdminRequest(HttpMethod.Get, "/api/v1/admin/deploy/preflight?includeDiagnostics=true");
         using var response = await client.SendAsync(request);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -726,7 +727,16 @@ public sealed class CloudDeploymentValidationTests
         };
 
         var sanitized = Regex.Replace(requestedTableName, @"[^a-zA-Z0-9_]", "_").ToLowerInvariant();
-        names.Add("imported_" + sanitized);
+        var physicalName = "imported_" + sanitized;
+        names.Add(physicalName);
+
+        // Current imports reserve identifier space for staging tables and indexes.
+        // Keep the legacy name above for validation against older deployed releases.
+        if (physicalName.Length > 40)
+        {
+            var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(physicalName)))[..12];
+            names.Add($"{physicalName[..27]}_{hash}");
+        }
 
         return names;
     }
