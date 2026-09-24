@@ -357,7 +357,10 @@ public sealed class EndpointRegistryDriftTests : IAsyncLifetime
 
     private static bool ShouldTrackPath(string path)
     {
-        return path.Equals("/csp-violation-report", StringComparison.OrdinalIgnoreCase) ||
+        return path.Equals("/", StringComparison.Ordinal) ||
+               path.Equals("/rest", StringComparison.OrdinalIgnoreCase) ||
+               path.Equals("/arcgis", StringComparison.OrdinalIgnoreCase) ||
+               path.Equals("/csp-violation-report", StringComparison.OrdinalIgnoreCase) ||
                path.Equals("/openapi.json", StringComparison.OrdinalIgnoreCase) ||
                path.Equals("/metrics", StringComparison.OrdinalIgnoreCase) ||
                path.Equals("/oauth/token", StringComparison.OrdinalIgnoreCase) ||
