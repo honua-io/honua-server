@@ -19005,7 +19005,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Area_GeographicInput_ReturnsSquareMeters",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Area_MissingSpatialReference_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Area_PostValidRequest_ReturnsAreaValues",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Area_PreserveShapeCalculationType_ReturnsGeodeticMeasurements"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Area_PreserveShapeCalculationType_ReturnsGeodeticMeasurements",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Area_PreserveShapeOnCoarseWebMercatorPolygon_DiffersFromVertexGeodesic"
       ],
       "proof_ledger_surface": "geometry-service",
       "maturity": "implemented",
@@ -19035,6 +19036,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceBufferTests.Buffer_GeodesicProjectedInSR_ReturnsPolygon",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceBufferTests.Buffer_GeographicLineFrom40NTo50N_KeepsRadiusAtBothEnds",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceBufferTests.Buffer_GeographicPointAt60N_KeepsGroundRadius",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceBufferTests.Buffer_InvalidGeometry_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceBufferTests.Buffer_JsonSpatialReference_ParsesCorrectly",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceBufferTests.Buffer_MalformedGeometryPayload_DoesNotLeakParserDetails",
@@ -19107,6 +19110,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceAdvancedOperationsTests.Densify_UnknownLengthUnit_Returns400",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Densify_EllipticArc_AcceptsEsriTrueCurve",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Densify_FiveElementArc_AcceptsIssueReproduction",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Densify_GeodesicAt60N_KeepsGroundSpacingAndLeavesTheParallel",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Densify_PostPolyline_AddsVertices",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Densify_ReasonableMaxSegmentLengthOverLargeExtent_StillSucceeds",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Densify_TinyMaxSegmentLengthOverLargeExtent_Returns400WithoutOom"
@@ -19142,6 +19146,7 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Distance_GeodesicAntimeridianChord_UsesSpheroidalNearestPoint",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Distance_PostEsriWrappedGeometries_ReturnsClosestDistance",
         "Honua.Server.Tests.Features.Protocols.GeoServices.GeometryService.GeometryServiceMeasureAnalysisTests.Distance_PostPlanarPoints_ReturnsClosestDistance"
       ],
