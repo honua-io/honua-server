@@ -521,6 +521,10 @@
       "capability": "serve.wmts"
     },
     {
+      "family": "WPS 2.0.2",
+      "capability": "serve.wps"
+    },
+    {
       "family": "OGC API Tiles",
       "capability": "serve.ogc-api-tiles"
     }

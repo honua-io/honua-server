@@ -301,7 +301,8 @@ def check_runbook_typing(root: pathlib.Path, excluded) -> list[str]:
         url = entry.get("url", "")
         if base and url.startswith(base):
             url = url[len(base):]
-        rel = url.lstrip("/").split("#", 1)[0]
+        # Phase-A URLs end the slug with a slash (https://honua.io/docs/<slug>/).
+        rel = url.lstrip("/").split("#", 1)[0].strip("/")
         if rel:
             expected.setdefault(f"{rel}.md", why.split(".")[0])
 

@@ -179,6 +179,8 @@ public static class CapabilityKeyCatalog
             HonuaEdition.Community, "Serve coverage data through WCS 2.0.1."),
         new("serve.wfs", "WFS 2.0", Categories.Serve,
             HonuaEdition.Community, "Query and read features through WFS 2.0."),
+        new("serve.wps", "WPS 2.0", Categories.Serve,
+            HonuaEdition.Community, "Submit and poll processes through OGC WPS 2.0 (GetCapabilities, DescribeProcess, Execute, GetStatus, GetResult)."),
         new("serve.vector-tiles", "Vector Tiles (MVT/TileJSON/PMTiles)", Categories.Serve,
             HonuaEdition.Community, "Serve Mapbox Vector Tiles, TileJSON descriptors, and PMTiles archives."),
         new("serve.sensorthings", "OGC SensorThings API", Categories.Serve,

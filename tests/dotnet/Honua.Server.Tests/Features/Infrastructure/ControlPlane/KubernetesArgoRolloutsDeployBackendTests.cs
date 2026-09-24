@@ -281,11 +281,14 @@ public sealed class KubernetesArgoRolloutsDeployBackendTests
                 StableRevisionHash = "stable999"
             }
         };
-        var backend = CreateBackend(client);
+        var backend = CreateBackend(client, RollbackDataPlaneTestSupport.HealthyProbe());
+        var parameters = BaseParameters();
+        RollbackDataPlaneTestSupport.AddProof(parameters);
 
         var observation = await backend.ObserveAsync(CreateOperation(
             currentRevision: PreviousImage,
-            status: WorkflowOperationStatus.RollbackRequested));
+            status: WorkflowOperationStatus.RollbackRequested,
+            parameters: parameters));
 
         observation.Status.Should().Be(WorkflowOperationStatus.RolledBack);
         observation.ObservedRevision.Should().Be(PreviousImage);
@@ -461,10 +464,13 @@ public sealed class KubernetesArgoRolloutsDeployBackendTests
         backend.TargetKind.Should().Be(DeployTargetKind.Kubernetes);
     }
 
-    private static KubernetesArgoRolloutsDeployBackend CreateBackend(StubArgoRolloutsClient? client = null)
+    private static KubernetesArgoRolloutsDeployBackend CreateBackend(
+        StubArgoRolloutsClient? client = null,
+        IRollbackDataPlaneProbe? dataPlaneProbe = null)
         => new(
             client ?? new StubArgoRolloutsClient { RolloutState = ProgressingRollout(DesiredImage) },
-            NullLogger<KubernetesArgoRolloutsDeployBackend>.Instance);
+            NullLogger<KubernetesArgoRolloutsDeployBackend>.Instance,
+            dataPlaneProbe);
 
     private static ArgoRolloutState ProgressingRollout(string image)
         => new()

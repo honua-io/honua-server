@@ -11,6 +11,7 @@ using Honua.Core.Features.Geoprocessing.Abstractions;
 using Honua.Core.Features.Geoprocessing.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Domain;
+using Honua.Geoprocessing;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -40,6 +41,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
     private readonly IJobQueue? _jobQueue;
     private readonly ICloudFileStorage? _storage;
     private readonly IExecutionAdmissionEvaluator? _admissionEvaluator;
+    private readonly ExecutionAdmissionCoordinator _admissionCoordinator;
 
     public TileExportJobService(
         TimeProvider timeProvider,
@@ -48,7 +50,8 @@ internal sealed partial class TileExportJobService : ITileExportJobService
         IExecutionJobStore? jobStore = null,
         IJobQueue? jobQueue = null,
         ICloudFileStorage? storage = null,
-        IExecutionAdmissionEvaluator? admissionEvaluator = null)
+        IExecutionAdmissionEvaluator? admissionEvaluator = null,
+        ExecutionAdmissionCoordinator? admissionCoordinator = null)
     {
         _timeProvider = timeProvider;
         _storageOptions = storageOptions;
@@ -57,6 +60,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
         _jobQueue = jobQueue;
         _storage = storage;
         _admissionEvaluator = admissionEvaluator;
+        _admissionCoordinator = admissionCoordinator ?? ExecutionAdmissionCoordinator.ProcessLocal;
     }
 
     public async Task<ExecutionJobRecord> SubmitAsync(
@@ -91,6 +95,7 @@ internal sealed partial class TileExportJobService : ITileExportJobService
         // lifecycle binding, so a keyed replay through another alias is rejected.
         var requestFingerprint = TileExportRequestIdentity.Compute(plan);
         var partitionKey = BuildPartitionKey(plan);
+        var costWeight = ComputeAdmissionCostWeight(plan);
 
         // Idempotent fast-path: a keyed replay returns the existing job WITHOUT charging admission, so
         // a client retry after a timeout is never rejected (429/503) by the active job count, cost, or
@@ -108,50 +113,81 @@ internal sealed partial class TileExportJobService : ITileExportJobService
             }
         }
 
-        var costWeight = ComputeAdmissionCostWeight(plan);
-        await EnsureAdmittedAsync(partitionKey, principalId, costWeight, cancellationToken).ConfigureAwait(false);
-
-        var now = _timeProvider.GetUtcNow();
-        var record = new ExecutionJobRecord
+        ExecutionJobRecord record;
+        try
         {
-            OperationId = jobId,
-            Status = ExecutionJobStatus.Queued,
-            Priority = OperationPriority.Normal,
-            CreatedAt = now,
-            UpdatedAt = now,
-            CurrentPhase = "Queued",
-            Audit = new OperationAuditInfo
+            // Same check-and-create window as geoprocessing (#4691). Queueing stays outside so a
+            // slow enqueue does not hold the shared lease.
+            await using (var admissionWindow = await _admissionCoordinator.AcquireAsync(cancellationToken).ConfigureAwait(false))
             {
-                RequestedBy = principalId,
-                IdempotencyKey = resolvedKey,
-                CorrelationId = string.IsNullOrWhiteSpace(correlationId) ? null : correlationId.Trim(),
-                RequestFingerprint = requestFingerprint
-            },
-            // The recognized admission envelope is persisted on first-class record fields rather than
-            // in the spec parameters, so the exact-key tile-export contract is never widened: the
-            // partition drives active-concurrency accounting and the cost weight drives active-cost
-            // accounting. The evaluator reads both when they are absent from spec parameters.
-            Concurrency = new OperationConcurrencyPolicy
-            {
-                PartitionKey = partitionKey,
-                RequiresExclusiveLease = false
-            },
-            AdmissionCostWeight = costWeight,
-            Spec = spec
-        };
+                if (resolvedKey is not null)
+                {
+                    var replayInWindow = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+                    if (replayInWindow is not null)
+                    {
+                        EnsureMatchingIdempotentRequest(replayInWindow, requestFingerprint, principalId);
+                        EnsureSubmissionDidNotRollback(replayInWindow);
+                        Log.SubmittedIdempotent(_logger, jobId);
+                        return replayInWindow;
+                    }
+                }
 
-        var created = await jobStore.TryCreateAsync(record, cancellationToken: cancellationToken).ConfigureAwait(false);
-        if (!created)
+                await EnsureAdmittedAsync(partitionKey, principalId, costWeight, cancellationToken).ConfigureAwait(false);
+
+                var now = _timeProvider.GetUtcNow();
+                record = new ExecutionJobRecord
+                {
+                    OperationId = jobId,
+                    Status = ExecutionJobStatus.Queued,
+                    Priority = OperationPriority.Normal,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                    CurrentPhase = "Queued",
+                    Audit = new OperationAuditInfo
+                    {
+                        RequestedBy = principalId,
+                        IdempotencyKey = resolvedKey,
+                        CorrelationId = string.IsNullOrWhiteSpace(correlationId) ? null : correlationId.Trim(),
+                        RequestFingerprint = requestFingerprint
+                    },
+                    // The recognized admission envelope is persisted on first-class record fields rather than
+                    // in the spec parameters, so the exact-key tile-export contract is never widened: the
+                    // partition drives active-concurrency accounting and the cost weight drives active-cost
+                    // accounting. The evaluator reads both when they are absent from spec parameters.
+                    Concurrency = new OperationConcurrencyPolicy
+                    {
+                        PartitionKey = partitionKey,
+                        RequiresExclusiveLease = false
+                    },
+                    AdmissionCostWeight = costWeight,
+                    Spec = spec
+                };
+
+                await admissionWindow.EnsureHeldAsync().ConfigureAwait(false);
+
+                var created = await jobStore.TryCreateAsync(record, cancellationToken: cancellationToken).ConfigureAwait(false);
+                if (!created)
+                {
+                    // Lost a race to a concurrent submission of the same key between the in-window
+                    // read and the create: adopt the winner rather than double-submitting.
+                    var existing = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false)
+                        ?? throw new TileExportStoreUnavailableException(
+                            "Tile-export job could not be created or located during idempotent submission.");
+                    EnsureMatchingIdempotentRequest(existing, requestFingerprint, principalId);
+                    EnsureSubmissionDidNotRollback(existing);
+                    Log.SubmittedIdempotent(_logger, jobId);
+                    return existing;
+                }
+            }
+        }
+        catch (ExecutionAdmissionLeaseException exception)
         {
-            // Lost a race to a concurrent submission of the same key between the fast-path read and
-            // the create: adopt the winner rather than double-submitting.
-            var existing = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false)
-                ?? throw new TileExportStoreUnavailableException(
-                    "Tile-export job could not be created or located during idempotent submission.");
-            EnsureMatchingIdempotentRequest(existing, requestFingerprint, principalId);
-            EnsureSubmissionDidNotRollback(existing);
-            Log.SubmittedIdempotent(_logger, jobId);
-            return existing;
+            throw new TileExportAdmissionException(
+                exception.Outcome,
+                exception.DenyingDimension,
+                exception.PolicyRef,
+                exception.Message,
+                exception.RetryAfterSeconds);
         }
 
         try

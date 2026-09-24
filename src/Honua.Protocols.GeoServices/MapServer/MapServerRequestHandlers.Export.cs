@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using Honua.Core.Features.Authorization.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Abstractions;
@@ -338,7 +339,12 @@ internal static partial class MapServerEndpoints
                     cancellationToken);
             }
 
-            var scaleDenominator = CoordinateTransformer.CalculateScaleDenominator(extent, imageWidth, dpi, bboxSrid.Value);
+            var linearUnitFactor = await CoordinateTransformer.TryResolveLinearUnitFactorAsync(
+                context.RequestServices.GetService<ICrsRegistry>(),
+                bboxSrid.Value,
+                cancellationToken).ConfigureAwait(false);
+            var scaleDenominator = CoordinateTransformer.CalculateScaleDenominator(
+                extent, imageWidth, dpi, bboxSrid.Value, linearUnitFactor);
 
             // Esri layer min/max scale gating (IsLayerVisibleAtScale) and MapLibre minzoom/maxzoom
             // gating are independent: the former is layer metadata, the latter belongs to the bound
@@ -562,7 +568,12 @@ internal static partial class MapServerEndpoints
                     ex.RetryAfterSeconds);
             }
 
-            var scale = CoordinateTransformer.CalculateScaleDenominator(extent, imageWidth, dpi, imageSrid);
+            var reportedUnitFactor = await CoordinateTransformer.TryResolveLinearUnitFactorAsync(
+                context.RequestServices.GetService<ICrsRegistry>(),
+                imageSrid,
+                cancellationToken).ConfigureAwait(false);
+            var scale = CoordinateTransformer.CalculateScaleDenominator(
+                extent, imageWidth, dpi, imageSrid, reportedUnitFactor);
 
             var response = new ExportImageResponse
             {

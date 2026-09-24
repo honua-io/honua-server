@@ -34,6 +34,21 @@ public class OgcMapsBasicTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
+    private static double[] ReadLandingBbox(JsonDocument json)
+    {
+        var bbox = json.RootElement.GetProperty("extent").GetProperty("spatial").GetProperty("bbox")
+            .EnumerateArray().First().EnumerateArray()
+            .Select(value => value.GetDouble()).ToArray();
+        bbox.Should().HaveCount(4);
+        var isWholeWorld = Math.Abs(bbox[0] + 180d) <= 1e-9
+            && Math.Abs(bbox[1] + 90d) <= 1e-9
+            && Math.Abs(bbox[2] - 180d) <= 1e-9
+            && Math.Abs(bbox[3] - 90d) <= 1e-9;
+        isWholeWorld.Should().BeFalse(
+            "an omitted or real dataset extent must not be replaced with the whole world");
+        return bbox;
+    }
+
     private async Task<string> StoreCollectionStyleAsync()
     {
         var snapshot = _fixture.GetCurrentV2GraphSnapshot();
@@ -66,6 +81,126 @@ public class OgcMapsBasicTests : IAsyncLifetime
             .Select(link => link.GetProperty("href").GetString())
             .Should()
             .Contain(href => href != null && href.EndsWith("/ogc/maps/openapi.json", StringComparison.Ordinal));
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps")]
+    [Operation(Operations.Metadata)]
+    public async Task GetLandingPage_AdvertisesTheSeededDatasetExtent()
+    {
+        var response = await _fixture.Client.GetAsync("/ogc/maps");
+        var content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        using var json = JsonDocument.Parse(content);
+
+        // Layer 0 is the only seeded Maps resource that declares a bbox: -123, 37, -122, 38 in CRS84.
+        var bbox = ReadLandingBbox(json);
+        bbox[0].Should().BeApproximately(-123, 1e-6);
+        bbox[1].Should().BeApproximately(37, 1e-6);
+        bbox[2].Should().BeApproximately(-122, 1e-6);
+        bbox[3].Should().BeApproximately(38, 1e-6);
+        json.RootElement.GetProperty("crs").EnumerateArray().Should().NotBeEmpty();
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps")]
+    [Operation(Operations.Metadata)]
+    public async Task GetLandingPage_MixedCrsExtent_AgreesWithPostGisBoundaryOracle()
+    {
+        const double projectedMinX = 530000;
+        const double projectedMinY = 180000;
+        const double projectedMaxX = 531000;
+        const double projectedMaxY = 181000;
+        var snapshot = _fixture.GetCurrentV2GraphSnapshot();
+        var resource = snapshot.Graph.Resources.Single(candidate => candidate.Metadata.Id == "res-layer-1");
+        var original = resource.Spatial;
+        _fixture.UpdateV2ResourceMetadata(1, spatial: new MetadataV2ResourceSpatial
+        {
+            SpatialReference = new MetadataV2SpatialReference { Srid = 27700, Crs = "EPSG:27700" },
+            GeometryType = MetadataV2GeometryType.Point,
+            PrimaryGeometryField = "shape",
+            Bbox = new MetadataV2Bbox
+            {
+                West = projectedMinX,
+                South = projectedMinY,
+                East = projectedMaxX,
+                North = projectedMaxY,
+            },
+        });
+
+        try
+        {
+            var response = await _fixture.Client.GetAsync("/ogc/maps");
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+            using var json = JsonDocument.Parse(content);
+            var bbox = ReadLandingBbox(json);
+
+            await using var connection = await _fixture.Postgres.GetConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT ST_XMin(g), ST_YMin(g), ST_XMax(g), ST_YMax(g)
+                FROM (
+                    SELECT ST_Transform(
+                        ST_Segmentize(
+                            ST_Boundary(ST_MakeEnvelope(@minX, @minY, @maxX, @maxY, @fromSrid)),
+                            250),
+                        @toSrid) AS g
+                ) transformed
+                """;
+            command.Parameters.AddWithValue("minX", projectedMinX);
+            command.Parameters.AddWithValue("minY", projectedMinY);
+            command.Parameters.AddWithValue("maxX", projectedMaxX);
+            command.Parameters.AddWithValue("maxY", projectedMaxY);
+            command.Parameters.AddWithValue("fromSrid", 27700);
+            command.Parameters.AddWithValue("toSrid", 4326);
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            var oracle = (
+                MinX: reader.GetDouble(0),
+                MinY: reader.GetDouble(1),
+                MaxX: reader.GetDouble(2),
+                MaxY: reader.GetDouble(3));
+
+            const double seededMinX = -123;
+            const double seededMinY = 37;
+            const double seededMaxX = -122;
+            const double seededMaxY = 38;
+            bbox[0].Should().BeApproximately(Math.Min(seededMinX, oracle.MinX), 0.02);
+            bbox[1].Should().BeApproximately(Math.Min(seededMinY, oracle.MinY), 0.02);
+            bbox[2].Should().BeApproximately(Math.Max(seededMaxX, oracle.MaxX), 0.02);
+            bbox[3].Should().BeApproximately(Math.Max(seededMaxY, oracle.MaxY), 0.02);
+            (bbox[2] - bbox[0]).Should().BeGreaterThan(10,
+                "the transformed British National Grid box must widen the seeded California extent");
+        }
+        finally
+        {
+            _fixture.UpdateV2ResourceMetadata(1, spatial: original);
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps/map")]
+    [Operation(Operations.Metadata)]
+    public async Task DatasetMap_WithExplicitBbox_DoesNotFailAsAnUnmappedServerError()
+    {
+        var response = await _fixture.Client.GetAsync(
+            "/ogc/maps/map?bbox=-122.6,37.4,-122.4,37.6&bbox-crs=http://www.opengis.net/def/crs/OGC/1.3/CRS84&f=png");
+        ((int)response.StatusCode).Should().NotBe((int)HttpStatusCode.InternalServerError);
+        response.StatusCode.Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.BadRequest);
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /ogc/maps")]
+    [Operation(Operations.Metadata)]
+    public async Task GetLandingPage_SecondAnonymousRead_IsNotASharedCacheReplay()
+    {
+        using var first = await _fixture.Client.GetAsync("/ogc/maps");
+        using var second = await _fixture.Client.GetAsync("/ogc/maps");
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        second.StatusCode.Should().Be(HttpStatusCode.OK);
+        second.Headers.Age.Should().BeNull(
+            "the landing page is per-principal and must not be stored in the shared output cache");
     }
 
     [IntegrationTest]

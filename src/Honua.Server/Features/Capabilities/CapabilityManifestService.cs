@@ -58,6 +58,7 @@ internal sealed class CapabilityManifestService(
     IConsoleActionEvaluator consoleActionEvaluator,
     IMetadataV2EnvironmentSnapshotReader environmentSnapshotReader,
     CapabilityManifestRuntimeInventory runtimeInventory,
+    IEnumerable<IWorkflowOperationStore> workflowOperationStores,
     WarehouseProviderDecisions warehouseProviders,
     ICapabilityRegistry capabilityRegistry,
     ILogger<CapabilityManifestService> logger) : ICapabilityManifestService
@@ -111,6 +112,7 @@ internal sealed class CapabilityManifestService(
         var capabilities = options.ManifestFromRegistry
             ? BuildCapabilitiesFromRegistry(policyContext, gateContext, operationCapabilities)
             : BuildCapabilities(policyContext, operationCapabilities);
+        capabilities = StampRollbackTargets(capabilities, operationCapabilities);
         capabilities = [.. capabilities, .. BuildFileFormatCapabilities(policyContext, request.Principal)];
         var packages = options.ManifestFromRegistry
             ? BuildPackagesFromRegistry(gateContext)
@@ -627,7 +629,11 @@ internal sealed class CapabilityManifestService(
                 requiresAuthentication: true),
             Capability("deploy.rollback", "deploy", context,
                 configured: operationCapabilities.HasDurableOperationStore
-                    && operationCapabilities.AnyConfiguredTargetSupportsRollback,
+                    && operationCapabilities.AnyExecutableRollbackTarget,
+                unavailableReasonOverride: operationCapabilities.HasDurableOperationStore
+                    && !operationCapabilities.AnyExecutableRollbackTarget
+                    ? RollbackNoExecutableTarget
+                    : null,
                 requiresAuthentication: true),
         ];
 
@@ -730,7 +736,7 @@ internal sealed class CapabilityManifestService(
             ["deploy.rollback"] = new()
             {
                 Configured = operationCapabilities.HasDurableOperationStore
-                    && operationCapabilities.AnyConfiguredTargetSupportsRollback,
+                    && operationCapabilities.AnyExecutableRollbackTarget,
                 RequiresAuthentication = true,
             },
         };
@@ -1132,13 +1138,11 @@ internal sealed class CapabilityManifestService(
         string? environment,
         CancellationToken cancellationToken)
     {
+        var claims = new List<RollbackTargetClaim>();
         var configuredTargets = options.ControlPlane.DeployTargets;
         if (configuredTargets.Count == 0)
         {
-            return new OperationCapabilitySummary(
-                HasDurableOperationStore: runtimeInventory.HasDurableOperationStore,
-                HasAutonomyPolicyStore: runtimeInventory.HasAutonomyPolicyStore,
-                AnyConfiguredTargetSupportsRollback: false);
+            return Summary(claims);
         }
 
         var backends = runtimeInventory.DeployBackends.ToDictionary(
@@ -1156,19 +1160,20 @@ internal sealed class CapabilityManifestService(
 
             if (!backends.TryGetValue((target.Backend, target.TargetKind), out var backend))
             {
+                claims.Add(new RollbackTargetClaim(
+                    target.TargetId,
+                    target.Backend,
+                    "missing-backend",
+                    Executable: false,
+                    RollbackBackendMissing));
                 continue;
             }
 
+            bool supportsRollback;
             try
             {
                 var capabilities = await backend.GetCapabilitiesAsync(cancellationToken).ConfigureAwait(false);
-                if (capabilities.SupportsRollback)
-                {
-                    return new OperationCapabilitySummary(
-                        HasDurableOperationStore: runtimeInventory.HasDurableOperationStore,
-                        HasAutonomyPolicyStore: runtimeInventory.HasAutonomyPolicyStore,
-                        AnyConfiguredTargetSupportsRollback: true);
-                }
+                supportsRollback = capabilities.SupportsRollback;
             }
             catch (OperationCanceledException)
             {
@@ -1177,13 +1182,130 @@ internal sealed class CapabilityManifestService(
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 CapabilityManifestLog.DeployCapabilityProbeFailed(logger, backend.BackendName, ex);
+                claims.Add(new RollbackTargetClaim(
+                    target.TargetId,
+                    target.Backend,
+                    "probe-failed",
+                    Executable: false,
+                    RollbackBackendProbeFailed));
+                continue;
+            }
+
+            if (!supportsRollback)
+            {
+                claims.Add(new RollbackTargetClaim(
+                    target.TargetId,
+                    target.Backend,
+                    "handoff",
+                    Executable: false,
+                    RollbackHandoffOnly));
+                continue;
+            }
+
+            if (!await HasRestorablePriorRevisionAsync(target.TargetId, cancellationToken).ConfigureAwait(false))
+            {
+                claims.Add(new RollbackTargetClaim(
+                    target.TargetId,
+                    target.Backend,
+                    "no-prior-revision",
+                    Executable: false,
+                    RollbackPriorRevisionMissing));
+                continue;
+            }
+
+            claims.Add(new RollbackTargetClaim(
+                target.TargetId,
+                target.Backend,
+                "executable",
+                Executable: true,
+                RollbackExecutable));
+        }
+
+        return Summary(claims);
+    }
+
+    private OperationCapabilitySummary Summary(List<RollbackTargetClaim> claims)
+        => new(
+            runtimeInventory.HasDurableOperationStore,
+            runtimeInventory.HasAutonomyPolicyStore,
+            claims.Exists(static claim => claim.Executable),
+            claims);
+
+    private async Task<bool> HasRestorablePriorRevisionAsync(string targetId, CancellationToken cancellationToken)
+    {
+        foreach (var store in workflowOperationStores)
+        {
+            WorkflowOperationRecord? deploy;
+            try
+            {
+                deploy = await store.GetMostRecentSucceededDeployByTargetAsync(targetId, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                CapabilityManifestLog.DeployCapabilityProbeFailed(logger, targetId, ex);
+                return false;
+            }
+
+            if (deploy?.Deploy?.Protection is not { } protection
+                || string.IsNullOrWhiteSpace(protection.PreviousRevision))
+            {
+                continue;
+            }
+
+            if (protection.Phase is DeployProtectionPhase.Observing
+                or DeployProtectionPhase.Protected
+                or DeployProtectionPhase.Recovering)
+            {
+                return true;
             }
         }
 
-        return new OperationCapabilitySummary(
-            HasDurableOperationStore: runtimeInventory.HasDurableOperationStore,
-            HasAutonomyPolicyStore: runtimeInventory.HasAutonomyPolicyStore,
-            AnyConfiguredTargetSupportsRollback: false);
+        return false;
+    }
+
+    private static CapabilityManifestCapability[] StampRollbackTargets(
+        CapabilityManifestCapability[] capabilities,
+        OperationCapabilitySummary summary)
+    {
+        var targets = summary.RollbackTargets
+            .Select(static claim => new CapabilityManifestRollbackTarget
+            {
+                TargetId = claim.TargetId,
+                Backend = claim.Backend,
+                State = claim.State,
+                Executable = claim.Executable,
+                ReasonCode = claim.ReasonCode
+            })
+            .ToArray();
+
+        for (var index = 0; index < capabilities.Length; index++)
+        {
+            if (!string.Equals(capabilities[index].Id, "deploy.rollback", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var reason = capabilities[index].ReasonCode;
+            if (summary.HasDurableOperationStore
+                && !summary.AnyExecutableRollbackTarget
+                && (reason is null || reason == CapabilityReasonCodes.DisabledByConfiguration))
+            {
+                reason = RollbackNoExecutableTarget;
+            }
+
+            capabilities[index] = capabilities[index] with
+            {
+                RollbackTargets = targets,
+                ReasonCode = reason
+            };
+        }
+
+        return capabilities;
     }
 
     private bool IsFieldCollectionSyncSupported()
@@ -1376,10 +1498,25 @@ internal sealed class CapabilityManifestService(
         bool SupportsCancellation,
         bool SupportsProgressPolling);
 
+    private const string RollbackExecutable = "rollback.executable";
+    private const string RollbackHandoffOnly = "rollback.handoff-only";
+    private const string RollbackBackendMissing = "rollback.backend-missing";
+    private const string RollbackBackendProbeFailed = "rollback.backend-probe-failed";
+    private const string RollbackPriorRevisionMissing = "rollback.prior-revision-missing";
+    private const string RollbackNoExecutableTarget = "rollback.no-executable-target";
+
+    private readonly record struct RollbackTargetClaim(
+        string TargetId,
+        string Backend,
+        string State,
+        bool Executable,
+        string ReasonCode);
+
     private readonly record struct OperationCapabilitySummary(
         bool HasDurableOperationStore,
         bool HasAutonomyPolicyStore,
-        bool AnyConfiguredTargetSupportsRollback);
+        bool AnyExecutableRollbackTarget,
+        IReadOnlyList<RollbackTargetClaim> RollbackTargets);
 }
 
 internal static class CapabilityReasonCodes

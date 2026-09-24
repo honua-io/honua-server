@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using Honua.Core.Configuration;
+using Honua.Infrastructure.Helpers;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
@@ -50,6 +51,26 @@ public sealed class GeoServicesFieldSerializationTests
         var field = new MetadataV2Field { Name = "value", Type = fieldType, Nullable = true };
 
         FeatureServerEndpoints.MapFieldInfoV2(field, FieldNames.ObjectId).SqlType.Should().Be(expected);
+    }
+
+    [UnitTest]
+    public void QueryField_JsonColumn_AdvertisesAnEsriStringSqlType()
+    {
+        var mapped = QueryFormatter.MapFieldInfo(
+            new MetadataV2Field { Name = "tags", Type = MetadataV2FieldType.Json, SqlType = "JSONB", Nullable = true },
+            FieldNames.ObjectId);
+
+        mapped.Type.Should().Be("esriFieldTypeString");
+        mapped.SqlType.Should().Be("sqlTypeNVarchar");
+    }
+
+    [UnitTest]
+    public void QueryField_JsonObject_IsTextAClientCanReadAsAString()
+    {
+        using var document = JsonDocument.Parse("""{"a":1}""");
+
+        FeatureAttributeValueNormalizer.Normalize(document.RootElement.Clone())
+            .Should().Be("""{"a":1}""");
     }
 
     // ----- Bug 1: string field length -----

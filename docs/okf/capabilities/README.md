@@ -129,6 +129,7 @@ each page. Some entitlement keys are deliberately not published here at all.
 | [WFS 2.0](serve.wfs.md) | Serve | Community | ga |
 | [WMS 1.3](serve.wms.md) | Serve | Community | ga |
 | [WMTS 1.0](serve.wmts.md) | Serve | Community | **preview** |
+| [WPS 2.0](serve.wps.md) | Serve | Community | ga |
 | [High-DPI Static Maps](staticmap.high-dpi.md) | StaticMap | Pro | ga |
 | [Large Static Maps](staticmap.large-dimensions.md) | StaticMap | Pro | ga |
 | [Rich Static Map Overlays](staticmap.rich-overlays.md) | StaticMap | Pro | ga |

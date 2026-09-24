@@ -638,7 +638,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         {
             Name = field.Name,
             Type = isObjectId ? "esriFieldTypeOID" : GeoServicesFieldConventions.MapFieldType(field.Type),
-            SqlType = field.SqlType ?? MapFieldTypeToSql(field.Type),
+            SqlType = EsriSqlType(field),
             Alias = field.Alias ?? field.Title ?? field.Name,
             // Esri clients (arcpy/.NET SDK) require a positive length on string fields;
             // a null length is mapped to 0 and breaks inserts. Fall back to the
@@ -655,6 +655,23 @@ internal sealed class QueryFormatter : IQueryFormatter
     private static bool IsGeometryField(MetadataV2Field field)
         => field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography;
 
+    /// <summary>
+    /// Esri clients treat <c>sqlType</c> JSONB on an <c>esriFieldTypeString</c> field as
+    /// unreadable and drop the whole row set. Advertise the Esri string sql type instead,
+    /// including when the stored column type is the Postgres name JSONB.
+    /// </summary>
+    private static string EsriSqlType(MetadataV2Field field)
+    {
+        if (field.Type == MetadataV2FieldType.Json
+            || string.Equals(field.SqlType, "JSONB", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(field.SqlType, "JSON", StringComparison.OrdinalIgnoreCase))
+        {
+            return "sqlTypeNVarchar";
+        }
+
+        return field.SqlType ?? MapFieldTypeToSql(field.Type);
+    }
+
     private static string MapFieldTypeToSql(MetadataV2FieldType type)
         => type switch
         {
@@ -667,7 +684,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             MetadataV2FieldType.DateTime => "TIMESTAMP WITH TIME ZONE",
             MetadataV2FieldType.Date => "DATE",
             MetadataV2FieldType.Time => "TIME",
-            MetadataV2FieldType.Json => "JSONB",
+            MetadataV2FieldType.Json => "sqlTypeNVarchar",
             MetadataV2FieldType.Binary => "BYTEA",
             MetadataV2FieldType.Uuid => "UUID",
             MetadataV2FieldType.Geometry => "GEOMETRY",

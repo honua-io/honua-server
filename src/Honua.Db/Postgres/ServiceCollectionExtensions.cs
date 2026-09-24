@@ -26,6 +26,7 @@ using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.FileImport.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.WorkflowPackages.Abstractions;
 using Honua.Core.Features.Infrastructure.Caching;
 using Honua.Core.Features.Infrastructure.Domain;
 using Honua.Core.Features.Infrastructure.Monitoring;
@@ -332,6 +333,15 @@ internal static class ServiceCollectionExtensions
                 configuration["Database:Schema"]));
         services.AddScoped<IAnalysisContentStore>(serviceProvider =>
             new PostgresAnalysisContentStore(
+                serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
+                configuration["Database:Schema"]));
+
+        // Durable workflow package drafts, versions, and publications (#3589).
+        // Replaces the in-memory store when PostGIS is composed, including the test host
+        // which registers that store before AddPostgreSqlServices runs.
+        services.RemoveAll<IWorkflowPackageStore>();
+        services.AddScoped<IWorkflowPackageStore>(serviceProvider =>
+            new Features.WorkflowPackages.PostgresWorkflowPackageStore(
                 serviceProvider.GetRequiredService<IAdoNetDatabaseConnectionProvider>(),
                 configuration["Database:Schema"]));
 

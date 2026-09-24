@@ -136,6 +136,28 @@ internal sealed record AwsEcsDeploymentState
     public int PendingCount { get; init; }
 }
 
+/// <summary>One registered target in an ALB target group, with its health state.</summary>
+internal sealed record AwsAlbTargetHealth
+{
+    public string? TargetId { get; init; }
+
+    public int? Port { get; init; }
+
+    /// <summary>ALB target health state value, for example <c>healthy</c> or <c>unhealthy</c>.</summary>
+    public string? State { get; init; }
+}
+
+/// <summary>Target-health sample for the stable target group that receives rolled-back traffic.</summary>
+internal sealed record AwsAlbTargetHealthState
+{
+    public IReadOnlyList<AwsAlbTargetHealth> Targets { get; init; } = Array.Empty<AwsAlbTargetHealth>();
+
+    public int HealthyCount => Targets.Count(target =>
+        string.Equals(target.State, "healthy", StringComparison.OrdinalIgnoreCase));
+
+    public int RegisteredCount => Targets.Count;
+}
+
 /// <summary>
 /// ALB client surface used by the deploy backend so unit tests can substitute a stub
 /// without exercising the AWS SDK.
@@ -150,6 +172,12 @@ internal interface IAwsAlbClient
     Task<AwsAlbListenerRuleState> UpdateListenerRuleWeightsAsync(
         string ruleArn,
         IReadOnlyList<AwsAlbTargetGroupWeight> weights,
+        string? region,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Reads target health for the stable target group. Empty means the restored plane is not serving.</summary>
+    Task<AwsAlbTargetHealthState> DescribeTargetHealthAsync(
+        string targetGroupArn,
         string? region,
         CancellationToken cancellationToken = default);
 }
@@ -243,6 +271,37 @@ internal sealed class AwsSdkAlbClient : IAwsAlbClient, IDisposable
         var rule = response.Rules?.FirstOrDefault()
             ?? throw new AmazonElasticLoadBalancingV2Exception($"ModifyRule did not return a rule body for '{ruleArn}'.");
         return MapRule(rule);
+    }
+
+    public async Task<AwsAlbTargetHealthState> DescribeTargetHealthAsync(
+        string targetGroupArn,
+        string? region,
+        CancellationToken cancellationToken = default)
+    {
+        var client = GetClient(region);
+        var response = await client.DescribeTargetHealthAsync(
+                new DescribeTargetHealthRequest
+                {
+                    TargetGroupArn = targetGroupArn
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        var targets = new List<AwsAlbTargetHealth>();
+        if (response.TargetHealthDescriptions != null)
+        {
+            foreach (var description in response.TargetHealthDescriptions)
+            {
+                targets.Add(new AwsAlbTargetHealth
+                {
+                    TargetId = description.Target?.Id,
+                    Port = description.Target?.Port,
+                    State = description.TargetHealth?.State?.Value
+                });
+            }
+        }
+
+        return new AwsAlbTargetHealthState { Targets = targets };
     }
 
     private AmazonElasticLoadBalancingV2Client GetClient(string? region)
@@ -458,7 +517,8 @@ internal sealed class AwsSdkEcsClient : IAwsEcsClient, IDisposable
 internal sealed partial class AwsEcsAlbDeployBackend(
     IAwsAlbClient albClient,
     IAwsEcsClient ecsClient,
-    ILogger<AwsEcsAlbDeployBackend> logger) : IDeployBackend
+    ILogger<AwsEcsAlbDeployBackend> logger,
+    IRollbackDataPlaneProbe? dataPlaneProbe = null) : IDeployBackend
 {
     internal const string AdapterBackendName = "honua-aws-ecs-alb";
 
@@ -695,26 +755,14 @@ internal sealed partial class AwsEcsAlbDeployBackend(
 
             if (operation.Status == WorkflowOperationStatus.RollbackRequested)
             {
-                // Rollback is terminal once ALB weights are stable=100/canary=0 and the
-                // canary ECS deployment has settled (PendingCount == 0). The canary
-                // service may still hold warm tasks because operators routinely keep it
-                // scaled out for the next rollout — no traffic flows there. Waiting for
-                // RunningCount to reach zero would leave the operation pinned in
-                // RollbackRequested forever for the common warm-canary topology.
-                // The weight check uses MatchesExpectedShare(0) so an unnormalized rule
-                // (e.g. canary=0/stable=50 with a stray third target group) doesn't
-                // satisfy rollback even though the canary slot reads zero.
-                if (albWeights.MatchesExpectedShare(0) &&
-                    IsCanaryDeploymentSettled(serviceState) &&
-                    string.Equals(serviceState.TaskDefinitionArn, spec.CurrentRevision, StringComparison.Ordinal))
+                // Weights and a settled canary are routing convergence only. A warm canary
+                // (pending == 0, tasks still running) is expected and is not the restored
+                // revision. Terminal RolledBack requires the stable service's task definition,
+                // stable target health, and a functional query — see CompleteEcsRollbackAsync.
+                if (albWeights.MatchesExpectedShare(0) && IsCanaryDeploymentSettled(serviceState))
                 {
-                    return new DeployObservation
-                    {
-                        Status = WorkflowOperationStatus.RolledBack,
-                        ProviderOperationId = operation.ProviderOperationId,
-                        ObservedRevision = serviceState.TaskDefinitionArn,
-                        Message = $"ECS/ALB rollout rolled back: stable target group is serving 100% of traffic and canary service '{target.CanaryService}' has no pending deployment."
-                    };
+                    return await CompleteEcsRollbackAsync(operation, spec, target, cancellationToken)
+                        .ConfigureAwait(false);
                 }
 
                 return new DeployObservation
@@ -888,6 +936,58 @@ internal sealed partial class AwsEcsAlbDeployBackend(
             activity?.SetStatus(ActivityStatusCode.Error);
             return SanitizedFailure(operation, ex);
         }
+    }
+
+    private async Task<DeployObservation> CompleteEcsRollbackAsync(
+        WorkflowOperationRecord operation,
+        DeployOperationSpec spec,
+        AwsEcsAlbDeployTarget target,
+        CancellationToken cancellationToken)
+    {
+        // The canary service task definition is not proof of the restored revision.
+        // Traffic is on the stable target group, so only that service's task definition counts.
+        var stableServiceName = GetParameter(spec.Parameters, "aws.ecs.stable_service");
+        string? stableTaskDefinition = null;
+        var identityAuthoritative = false;
+        if (!string.IsNullOrWhiteSpace(stableServiceName))
+        {
+            var stable = await ecsClient.DescribeServiceAsync(
+                    target.Cluster!,
+                    stableServiceName,
+                    target.Region,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            stableTaskDefinition = stable.TaskDefinitionArn;
+            identityAuthoritative = !string.IsNullOrWhiteSpace(stableTaskDefinition);
+        }
+
+        var health = await albClient.DescribeTargetHealthAsync(
+                target.StableTargetGroupArn!,
+                target.Region,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var functionalQuery = await RollbackDataPlaneCompletion.ProbeFunctionalQueryAsync(
+                dataPlaneProbe,
+                spec.Parameters,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var identityProven = identityAuthoritative &&
+            string.Equals(stableTaskDefinition, spec.CurrentRevision, StringComparison.Ordinal);
+        var decision = RollbackDataPlaneCompletion.Evaluate(
+            new RollbackDataPlaneEvidence
+            {
+                RoutingConverged = true,
+                PriorRevisionIdentityProven = identityProven,
+                ServingIdentityMismatched = identityAuthoritative && !identityProven,
+                ServingRevision = stableTaskDefinition,
+                HealthyEndpointCount = health.HealthyCount,
+                RegisteredEndpointCount = health.RegisteredCount,
+                FunctionalQuery = functionalQuery,
+                RollbackStartedAt = RollbackDataPlaneCompletion.ReadObservationStartedAt(spec.Parameters),
+                Window = RollbackDataPlaneCompletion.ReadObservationWindow(spec.Parameters)
+            },
+            DateTimeOffset.UtcNow);
+        return RollbackDataPlaneCompletion.ToDeployObservation(decision, operation.ProviderOperationId);
     }
 
     private static bool IsAwsRuntimeException(Exception ex)

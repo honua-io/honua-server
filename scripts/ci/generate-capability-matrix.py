@@ -68,6 +68,7 @@ CAPABILITY_TO_CITE_SUITES: dict[str, list[str]] = {
     "serve.wmts": ["WMTS 1.0"],
     "serve.wcs": ["WCS 2.0"],
     "serve.wfs": ["WFS 1.0", "WFS 1.1", "WFS 2.0"],
+    "serve.wps": ["WPS 2.0"],
     "serve.ogc-api-features": ["OGC API Features 1.0"],
     "serve.ogc-api-tiles": ["OGC API Tiles 1.0"],
 }

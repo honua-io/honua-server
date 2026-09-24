@@ -106,6 +106,26 @@ public class MySqlFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildSelectQuery_EmptyOutFields_OmitsAttributeColumns()
+    {
+        var defaults = _builder.BuildSelectQuery(LayerId, new FeatureQuery());
+        Assert.Contains("`name`", defaults.Sql, StringComparison.Ordinal);
+        Assert.Contains("`area`", defaults.Sql, StringComparison.Ordinal);
+        Assert.Contains("`type`", defaults.Sql, StringComparison.Ordinal);
+
+        var unset = _builder.BuildSelectQuery(LayerId, new FeatureQuery { OutFields = default(ImmutableArray<string>) });
+        Assert.Contains("`name`", unset.Sql, StringComparison.Ordinal);
+        Assert.Contains("`area`", unset.Sql, StringComparison.Ordinal);
+        Assert.Contains("`type`", unset.Sql, StringComparison.Ordinal);
+
+        var result = _builder.BuildSelectQuery(LayerId, new FeatureQuery { OutFields = ImmutableArray<string>.Empty });
+
+        Assert.DoesNotContain("`name`", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("`area`", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("`type`", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildSelectQuery_WithPagination_GeneratesNamedLimitOffsetParameters()
     {
         var query = new FeatureQuery { Limit = 10, Offset = 20 };
@@ -602,6 +622,7 @@ public class MySqlFeatureQueryBuilderTests
         var result = builder.BuildSelectQuery(301, query);
 
         Assert.Contains("ST_Distance_Sphere", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("6371008.8", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -72,7 +72,7 @@ def new_tree(stack, manifest: dict | None = None, allowlist: dict | None = None)
     write(
         root,
         "scripts/ci/code-referenced-anchors.v1.json",
-        json.dumps(manifest if manifest is not None else {"docsBaseUrl": "https://docs.honua.io/", "references": []}),
+        json.dumps(manifest if manifest is not None else {"docsBaseUrl": "https://honua.io/docs/", "references": []}),
     )
     write(
         root,
@@ -211,49 +211,49 @@ def test_allowlist_total_must_match(stack) -> None:
 
 
 def manifest(*references, scan=None) -> dict:
-    payload = {"docsBaseUrl": "https://docs.honua.io/", "references": list(references)}
+    payload = {"docsBaseUrl": "https://honua.io/docs/", "references": list(references)}
     if scan is not None:
         payload["sourceScan"] = scan
     return payload
 
 
 def test_manifest_url_resolves_to_file_and_heading(stack) -> None:
-    root = new_tree(stack, manifest=manifest({"url": "https://docs.honua.io/guides/deploy/monitoring#what-to-watch"}))
+    root = new_tree(stack, manifest=manifest({"url": "https://honua.io/docs/guides/deploy/monitoring/#what-to-watch"}))
     code, out, err = run(root, "--skip-links")
     assert_that(code == 0, f"expected pass: {err}")
     assert_that("1 manifest entries checked" in out, out)
 
 
 def test_manifest_moved_heading_fails(stack) -> None:
-    root = new_tree(stack, manifest=manifest({"url": "https://docs.honua.io/guides/deploy/monitoring#what-to-watch-for"}))
+    root = new_tree(stack, manifest=manifest({"url": "https://honua.io/docs/guides/deploy/monitoring/#what-to-watch-for"}))
     code, _, err = run(root, "--skip-links")
     assert_that(code == 1, "a moved heading under a code-referenced URL must fail")
     assert_that("is not a heading" in err, err)
 
 
 def test_manifest_fragment_is_case_sensitive(stack) -> None:
-    root = new_tree(stack, manifest=manifest({"url": "https://docs.honua.io/guides/deploy/monitoring#What-To-Watch"}))
+    root = new_tree(stack, manifest=manifest({"url": "https://honua.io/docs/guides/deploy/monitoring/#What-To-Watch"}))
     code, _, err = run(root, "--skip-links")
     assert_that(code == 1, "manifest fragment matching must preserve case")
     assert_that("anchor '#What-To-Watch'" in err, err)
 
 
 def test_manifest_missing_page_fails(stack) -> None:
-    root = new_tree(stack, manifest=manifest({"url": "https://docs.honua.io/operations/runbook#emergency-procedures"}))
+    root = new_tree(stack, manifest=manifest({"url": "https://honua.io/docs/operations/runbook/#emergency-procedures"}))
     code, _, err = run(root, "--skip-links")
     assert_that(code == 1, "a URL with no page behind it must fail")
     assert_that("does not resolve to a file" in err, err)
 
 
 def test_manifest_readme_directory_url_resolves(stack) -> None:
-    root = new_tree(stack, manifest=manifest({"url": "https://docs.honua.io/guides/operate"}))
+    root = new_tree(stack, manifest=manifest({"url": "https://honua.io/docs/guides/operate/"}))
     write(root, "docs/guides/operate/README.md", "# Operating\n")
     code, _, err = run(root, "--skip-links")
     assert_that(code == 0, f"a bare directory URL must resolve to its README.md: {err}")
 
 
 def test_manifest_redirect_only_url_warns(stack) -> None:
-    root = new_tree(stack, manifest=manifest({"url": "https://docs.honua.io/operator/monitoring#what-to-watch"}))
+    root = new_tree(stack, manifest=manifest({"url": "https://honua.io/docs/operator/monitoring/#what-to-watch"}))
     code, _, err = run(root, "--skip-links")
     assert_that(code == 0, f"a redirect-served URL must warn, not fail: {err}")
     assert_that("resolves only through the .gitbook.yaml redirect" in err, err)
@@ -261,7 +261,7 @@ def test_manifest_redirect_only_url_warns(stack) -> None:
 
 
 def test_pending_pr_entry_warns_then_fails_when_stale(stack) -> None:
-    url = "https://docs.honua.io/guides/deploy/monitoring#redis-is-optional-postgis-is-not"
+    url = "https://honua.io/docs/guides/deploy/monitoring/#redis-is-optional-postgis-is-not"
     root = new_tree(stack, manifest=manifest({"url": url, "pendingPr": 3583}))
     code, _, err = run(root, "--skip-links")
     assert_that(code == 0, f"a pendingPr heading must warn while its branch is open: {err}")
@@ -278,7 +278,7 @@ def test_pending_pr_entry_warns_then_fails_when_stale(stack) -> None:
 def test_unregistered_url_in_source_fails(stack) -> None:
     scan = {"roots": ["src"], "extensions": [".cs"], "excludeDirs": ["bin", "obj"]}
     root = new_tree(stack, manifest=manifest(scan=scan))
-    write(root, "src/Thing.cs", 'const string Ref = "https://docs.honua.io/guides/deploy/monitoring#what-to-watch";\n')
+    write(root, "src/Thing.cs", 'const string Ref = "https://honua.io/docs/guides/deploy/monitoring/#what-to-watch";\n')
     code, _, err = run(root, "--skip-links")
     assert_that(code == 1, "an unregistered code-referenced URL must fail")
     assert_that("not listed in the code-referenced-anchor manifest" in err, err)
@@ -286,15 +286,47 @@ def test_unregistered_url_in_source_fails(stack) -> None:
 
     root = new_tree(
         stack,
-        manifest=manifest({"url": "https://docs.honua.io/guides/deploy/monitoring#what-to-watch"}, scan=scan),
+        manifest=manifest({"url": "https://honua.io/docs/guides/deploy/monitoring/#what-to-watch"}, scan=scan),
     )
-    write(root, "src/Thing.cs", 'const string Ref = "https://docs.honua.io/guides/deploy/monitoring#what-to-watch";\n')
+    write(root, "src/Thing.cs", 'const string Ref = "https://honua.io/docs/guides/deploy/monitoring/#what-to-watch";\n')
     code, _, err = run(root, "--skip-links")
     assert_that(code == 0, f"a registered URL must pass: {err}")
 
 
+def test_dark_host_runtime_url_fails_and_phase_a_url_is_accepted(stack) -> None:
+    """A docs.honua.io runtime URL fails; a honua.io/docs/<slug>/ URL is accepted."""
+    scan = {"roots": ["src"], "extensions": [".cs"], "excludeDirs": ["bin", "obj"]}
+    phase_a = "https://honua.io/docs/guides/deploy/monitoring/#what-to-watch"
+    dark = "https://docs.honua.io/guides/deploy/monitoring/#what-to-watch"
+    root = new_tree(stack, manifest=manifest({"url": phase_a}, scan=scan))
+    write(root, "src/Thing.cs", f'const string Ref = "{dark}";\n')
+    code, _, err = run(root, "--skip-links")
+    assert_that(code == 1, "a docs.honua.io runtime URL must fail the gate")
+    assert_that("dark host" in err, err)
+    assert_that("docs.honua.io" in err, err)
+
+    write(root, "src/Thing.cs", f'const string Ref = "{phase_a}";\n')
+    code, _, err = run(root, "--skip-links")
+    assert_that(code == 0, f"a honua.io/docs/.../ URL must be accepted: {err}")
+
+
+def test_phase_a_url_without_trailing_slash_fails(stack) -> None:
+    url = "https://honua.io/docs/guides/deploy/monitoring#what-to-watch"
+    root = new_tree(stack, manifest=manifest({"url": url}))
+    code, _, err = run(root, "--skip-links")
+    assert_that(code == 1, "a phase-A URL without a trailing slash must fail")
+    assert_that("not a canonical phase-A URL" in err, err)
+
+    scan = {"roots": ["src"], "extensions": [".cs"], "excludeDirs": ["bin", "obj"]}
+    root = new_tree(stack, manifest=manifest(scan=scan))
+    write(root, "src/Thing.cs", f'const string Ref = "{url}";\n')
+    code, _, err = run(root, "--skip-links")
+    assert_that(code == 1, "a phase-A runtime URL without a trailing slash must fail")
+    assert_that("not a canonical phase-A URL" in err, err)
+
+
 def test_duplicate_manifest_entry_fails(stack) -> None:
-    url = "https://docs.honua.io/guides/deploy/monitoring#what-to-watch"
+    url = "https://honua.io/docs/guides/deploy/monitoring/#what-to-watch"
     root = new_tree(stack, manifest=manifest({"url": url}, {"url": url}))
     code, _, err = run(root, "--skip-links")
     assert_that(code == 1, "a duplicated manifest entry must fail")
@@ -328,11 +360,15 @@ def test_live_runbook_annotations_all_resolve() -> None:
     urls = [line.split('"')[1] for line in alerts.splitlines() if "runbook_url:" in line]
     assert_that(len(urls) == 19, f"expected 19 runbook_url annotations, found {len(urls)}")
     assert_that(
-        not any("/operations/runbook" in url for url in urls),
-        "docs.honua.io/operations/ does not exist; no runbook_url may point at it",
+        not any("docs.honua.io" in url or "/operations/runbook" in url for url in urls),
+        "the dark docs host and /operations/runbook are not runtime runbook targets",
     )
     assert_that(
-        all("#" in url and url.rsplit("#", 1)[1] for url in urls),
+        all(url.startswith("https://honua.io/docs/") and "/#" in url for url in urls),
+        "every runbook_url must be a phase-A URL with a trailing slash before its fragment",
+    )
+    assert_that(
+        all(url.rsplit("#", 1)[1] for url in urls),
         "every runbook_url must target a specific runbook heading",
     )
 

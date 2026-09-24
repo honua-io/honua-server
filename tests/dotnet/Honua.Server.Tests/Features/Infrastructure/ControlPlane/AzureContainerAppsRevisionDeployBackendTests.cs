@@ -219,12 +219,15 @@ public sealed class AzureContainerAppsRevisionDeployBackendTests
                 ]
             }
         };
-        var backend = CreateBackend(revisionClient);
+        var backend = CreateBackend(revisionClient, RollbackDataPlaneTestSupport.HealthyProbe());
+        var parameters = CreateParameters();
+        RollbackDataPlaneTestSupport.AddProof(parameters);
 
         var observation = await backend.ObserveAsync(CreateOperation(
             desiredRevision: "myapp--v2",
             currentRevision: "myapp--v1",
-            status: WorkflowOperationStatus.RollbackRequested));
+            status: WorkflowOperationStatus.RollbackRequested,
+            parameters: parameters));
 
         observation.Status.Should().Be(WorkflowOperationStatus.RolledBack);
         observation.ObservedRevision.Should().Be("myapp--v1");
@@ -280,10 +283,12 @@ public sealed class AzureContainerAppsRevisionDeployBackendTests
     }
 
     private static AzureContainerAppsRevisionDeployBackend CreateBackend(
-        StubAzureContainerAppsRevisionClient? revisionClient = null)
+        StubAzureContainerAppsRevisionClient? revisionClient = null,
+        IRollbackDataPlaneProbe? dataPlaneProbe = null)
         => new(
             revisionClient ?? new StubAzureContainerAppsRevisionClient(),
-            NullLogger<AzureContainerAppsRevisionDeployBackend>.Instance);
+            NullLogger<AzureContainerAppsRevisionDeployBackend>.Instance,
+            dataPlaneProbe);
 
     private static DeployOperationSpec CreateSpec(
         string desiredRevision,
@@ -356,6 +361,10 @@ public sealed class AzureContainerAppsRevisionDeployBackendTests
 
         public List<string> ActivatedRevisions { get; } = [];
 
+        public string HealthState { get; set; } = "Healthy";
+
+        public bool RevisionActive { get; set; } = true;
+
         public Task<AzureContainerAppsTrafficState> GetTrafficStateAsync(
             string subscriptionId, string resourceGroupName, string appName,
             CancellationToken cancellationToken = default)
@@ -368,9 +377,9 @@ public sealed class AzureContainerAppsRevisionDeployBackendTests
             {
                 RevisionName = revisionName,
                 ProvisioningState = "Provisioned",
-                RunningState = "Running",
-                Active = true,
-                HealthState = "Healthy"
+                RunningState = RevisionActive ? "Running" : "Stopped",
+                Active = RevisionActive,
+                HealthState = HealthState
             });
 
         public Task<AzureContainerAppsTrafficUpdateResult> UpdateTrafficAsync(

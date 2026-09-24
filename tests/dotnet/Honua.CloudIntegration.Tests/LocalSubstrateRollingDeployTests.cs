@@ -352,7 +352,9 @@ public sealed class LocalSubstrateRollingDeployTests : IClassFixture<LocalSubstr
                     [SelfHostedDeployParameterKeys.Image] = _docker.V2Image,
                     [SelfHostedDeployParameterKeys.ActivePort] = _options.ActivePort.ToString(CultureInfo.InvariantCulture),
                     [SelfHostedDeployParameterKeys.StandbyPort] = _options.StandbyPort.ToString(CultureInfo.InvariantCulture),
-                    [SelfHostedDeployParameterKeys.ContainerPort] = _options.ContainerPort.ToString(CultureInfo.InvariantCulture)
+                    [SelfHostedDeployParameterKeys.ContainerPort] = _options.ContainerPort.ToString(CultureInfo.InvariantCulture),
+                    [RollbackDataPlaneCompletion.FunctionalQueryExpectedContainsParameterKey] = LocalSubstrateDockerFixture.V1Marker,
+                    [RollbackDataPlaneCompletion.FunctionalQueryForbiddenContainsParameterKey] = LocalSubstrateDockerFixture.V2Marker
                 }
             };
 

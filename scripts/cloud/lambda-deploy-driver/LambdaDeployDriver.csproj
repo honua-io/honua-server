@@ -10,5 +10,6 @@
     <!-- Compile the actual deploy path: no copy, CLI reimplementation, or production change. -->
     <Compile Include="../../../src/Honua.Cloud/Aws/Features/ControlPlane/AwsLambdaGitOpsDeployBackend.cs" Link="AwsLambdaGitOpsDeployBackend.cs" />
     <Compile Include="../../../src/Honua.Cloud/Aws/Features/ControlPlane/AwsLambdaAliasClient.cs" Link="AwsLambdaAliasClient.cs" />
+    <Compile Include="../../../src/Honua.Cloud/Aws/Features/AwsClientEndpoint.cs" Link="AwsClientEndpoint.cs" />
   </ItemGroup>
 </Project>

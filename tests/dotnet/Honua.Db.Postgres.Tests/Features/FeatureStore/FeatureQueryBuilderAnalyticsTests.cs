@@ -152,6 +152,87 @@ public sealed class FeatureQueryBuilderAnalyticsTests
     }
 
     [Fact]
+    public void BuildClusterQuery_GeographicLayer_UsesAzimuthalEquidistantMeters()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery
+        {
+            SpatialReferenceSrid = 4326,
+            SpatialFilter = new SpatialFilter
+            {
+                Geometry = [0x01],
+                Srid = 4326,
+                SpatialRelationship = SpatialRelationship.EnvelopeIntersects,
+                IsSimpleEnvelope = true,
+                EnvelopeMinX = -10,
+                EnvelopeMinY = 59,
+                EnvelopeMaxX = 10,
+                EnvelopeMaxY = 61
+            }
+        };
+        var clusterQuery = new ClusterQuery
+        {
+            Algorithm = ClusterAlgorithm.DbScan,
+            Eps = 1000d,
+            MinPoints = 1,
+            DistanceUnit = DistanceUnit.Meters,
+            ReturnHullPerCluster = false,
+            MaxInputFeatures = 100
+        };
+
+        var result = queryBuilder.BuildClusterQuery(layerId: 1, query, clusterQuery);
+
+        result.Sql.Should().Contain("+proj=aeqd");
+        result.Sql.Should().Contain("+lat_0=60");
+        result.Sql.Should().Contain("+ellps=WGS84");
+        result.Sql.Should().NotContain("ST_Transform(geom, 3857)");
+        result.Sql.Should().NotContain("ST_Transform(ST_SetSRID");
+    }
+
+    [Fact]
+    public void BuildDensityQuery_GeographicLayer_ProjectsCellsBackFromAzimuthalPlane()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery { SpatialReferenceSrid = 4326 };
+        var densityQuery = new DensityQuery
+        {
+            Mode = DensityBinningMode.SquareGrid,
+            CellSizeMeters = 1000d,
+            MaxInputFeatures = 100,
+            MaxCells = 10
+        };
+
+        var result = queryBuilder.BuildDensityQuery(layerId: 1, query, densityQuery);
+
+        result.Sql.Should().Contain("+proj=aeqd");
+        result.Sql.Should().Contain("ST_TransformPipeline(c.cell,");
+        result.Sql.Should().NotContain("ST_Transform(c.cell, 4326)");
+        result.Sql.Should().NotContain("ST_SetSRID(ST_Extent(pt)::geometry, 3857)");
+    }
+
+    [Fact]
+    public void BuildClusterQuery_WebMercatorLayer_StaysPlanar()
+    {
+        var queryBuilder = CreateQueryBuilder();
+        var query = new FeatureQuery { SpatialReferenceSrid = 3857 };
+        var clusterQuery = new ClusterQuery
+        {
+            Algorithm = ClusterAlgorithm.DbScan,
+            Eps = 1000d,
+            MinPoints = 1,
+            DistanceUnit = DistanceUnit.Meters,
+            ReturnHullPerCluster = false,
+            MaxInputFeatures = 100
+        };
+
+        var result = queryBuilder.BuildClusterQuery(layerId: 1, query, clusterQuery);
+
+        result.Sql.Should().NotContain("+proj=aeqd");
+        result.Sql.Should().NotContain("ST_Transform(geom, 3857)");
+        result.Sql.Should().Contain("ST_ClusterDBSCAN(");
+    }
+
+    [Fact]
     public void BuildSpatialJoinQuery_WithByteaStorage_UsesDecodedOperandsInPredicateAndOutput()
     {
         var queryBuilder = CreateQueryBuilder();

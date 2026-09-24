@@ -290,7 +290,12 @@ internal static partial class MapServerEndpoints
             var filterExpressionService = context.RequestServices.GetRequiredService<IFilterExpressionService>();
             var maxIdentifyResults = context.RequestServices.GetRequiredService<IOptions<LimitsOptions>>().Value.Query.MaxRecordCount;
 
-            var scaleDenominator = CoordinateTransformer.CalculateScaleDenominator(mapExtent, imageWidth, imageDpi, geometrySrid);
+            var linearUnitFactor = await CoordinateTransformer.TryResolveLinearUnitFactorAsync(
+                context.RequestServices.GetService<ICrsRegistry>(),
+                geometrySrid,
+                cancellationToken).ConfigureAwait(false);
+            var scaleDenominator = CoordinateTransformer.CalculateScaleDenominator(
+                mapExtent, imageWidth, imageDpi, geometrySrid, linearUnitFactor);
             var identifyAccessCandidates = ResolveIdentifyAccessCandidateLayers(
                 publishedLayers,
                 layersParam,

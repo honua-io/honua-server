@@ -70,4 +70,21 @@ public interface IWorkflowPackageStore
     Task<IReadOnlyList<WorkflowPublication>> ListPublicationsAsync(
         string? packageId = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deletes a publication.
+    /// </summary>
+    /// <returns>The deleted publication, or <see langword="null"/> when it did not exist.</returns>
+    Task<WorkflowPublication?> DeletePublicationAsync(
+        string publicationId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sets the lifecycle status of an existing publication.
+    /// </summary>
+    /// <returns>The updated publication, or <see langword="null"/> when it did not exist.</returns>
+    Task<WorkflowPublication?> SetPublicationStatusAsync(
+        string publicationId,
+        WorkflowPublicationStatus status,
+        CancellationToken cancellationToken = default);
 }

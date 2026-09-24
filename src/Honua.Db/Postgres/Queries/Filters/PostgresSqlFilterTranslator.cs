@@ -278,7 +278,8 @@ internal sealed class PostgresSqlFilterTranslator : SqlFilterExpressionVisitorBa
     // list: a spheroid/geography measurement is only sound for the WGS 84-compatible degree CRSes,
     // and matching the DuckDB provider's narrow gate avoids Postgres-vs-DuckDB divergence. The
     // narrow bucket differs from the pre-#2732 6-code fallback (4326/4269/4267/4258/4619/4283):
-    // it drops 4619 (SWEREF99) and adds 4617 (NAD83(CSRS)) / 4759 (NAD83(NSRS2007)); the primary
+    // it drops 4619 (SWEREF99) and 4267 (NAD27) and adds 4617 (NAD83(CSRS)) / 4759
+    // (NAD83(NSRS2007)); the primary
     // spatial_ref_sys-derived path still classifies 4619 correctly, so only the registry-miss
     // fallback is affected.
     private static bool IsLikelyGeographicSrid(int srid)

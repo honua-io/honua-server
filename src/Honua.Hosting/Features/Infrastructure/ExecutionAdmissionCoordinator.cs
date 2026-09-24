@@ -33,9 +33,10 @@ namespace Honua.Geoprocessing;
 /// <para>
 /// The shared lease fails closed. When Redis is composed but unreachable, or the lease cannot be
 /// taken within the bounded wait, or it expired before the record could be created, the submission
-/// is rejected with a backpressure <see cref="GeoprocessingAdmissionException"/> carrying
+/// is rejected with a backpressure <see cref="ExecutionAdmissionLeaseException"/> carrying
 /// Retry-After — never admitted against per-node state. Without a multiplexer (single-node
-/// deployments) only the local gate applies, which is exact for a single node.
+/// deployments) only the local gate applies, which is exact for a single node. Callers translate
+/// that exception at their own boundary.
 /// </para>
 /// </remarks>
 internal sealed class ExecutionAdmissionCoordinator
@@ -102,7 +103,7 @@ internal sealed class ExecutionAdmissionCoordinator
     /// Enters the admission window. Dispose the returned lease as soon as the job record has been
     /// created (or the submission has been rejected).
     /// </summary>
-    /// <exception cref="GeoprocessingAdmissionException">
+    /// <exception cref="ExecutionAdmissionLeaseException">
     /// The shared lease could not be obtained: Redis is unreachable or the lease stayed contended
     /// beyond <see cref="ExecutionAdmissionOptions.SharedLeaseAcquireTimeoutMilliseconds"/>.
     /// </exception>
@@ -134,7 +135,7 @@ internal sealed class ExecutionAdmissionCoordinator
                 var waited = _timeProvider.GetElapsedTime(started);
                 if (waited >= maxWait)
                 {
-                    ExecutionAdmissionLog.SharedLeaseContended(_logger, (long)waited.TotalMilliseconds);
+                    ExecutionAdmissionLeaseLog.SharedLeaseContended(_logger, (long)waited.TotalMilliseconds);
                     throw Reject(
                         ContendedPolicyRef,
                         "Execution admission is saturated by concurrent submissions; retry later.",
@@ -162,7 +163,7 @@ internal sealed class ExecutionAdmissionCoordinator
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
         {
-            ExecutionAdmissionLog.SharedLeaseUnavailable(_logger, ex);
+            ExecutionAdmissionLeaseLog.SharedLeaseUnavailable(_logger, ex);
             throw Reject(
                 UnavailablePolicyRef,
                 "Shared execution admission state is unavailable; retry later.",
@@ -170,7 +171,7 @@ internal sealed class ExecutionAdmissionCoordinator
         }
     }
 
-    private static GeoprocessingAdmissionException Reject(string policyRef, string reason, int retryAfterSeconds)
+    private static ExecutionAdmissionLeaseException Reject(string policyRef, string reason, int retryAfterSeconds)
         => new(
             ExecutionAdmissionOutcome.Denied,
             ExecutionAdmissionDimension.Backpressure,
@@ -221,7 +222,7 @@ internal sealed class ExecutionAdmissionCoordinator
             }
             catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
             {
-                ExecutionAdmissionLog.SharedLeaseUnavailable(_owner._logger, ex);
+                ExecutionAdmissionLeaseLog.SharedLeaseUnavailable(_owner._logger, ex);
                 throw Reject(
                     UnavailablePolicyRef,
                     "Shared execution admission state is unavailable; retry later.",
@@ -230,7 +231,7 @@ internal sealed class ExecutionAdmissionCoordinator
 
             if (!extended)
             {
-                ExecutionAdmissionLog.SharedLeaseLost(_owner._logger);
+                ExecutionAdmissionLeaseLog.SharedLeaseLost(_owner._logger);
                 throw Reject(
                     LeaseLostPolicyRef,
                     "Execution admission could not be confirmed before the job was created; retry later.",
@@ -255,7 +256,7 @@ internal sealed class ExecutionAdmissionCoordinator
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 // The lease TTL bounds how long a failed release can block other nodes.
-                ExecutionAdmissionLog.SharedLeaseReleaseFailed(_owner._logger, ex);
+                ExecutionAdmissionLeaseLog.SharedLeaseReleaseFailed(_owner._logger, ex);
             }
             finally
             {

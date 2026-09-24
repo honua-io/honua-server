@@ -833,97 +833,111 @@ internal sealed class GeoprocessingJobService : IGeoprocessingJobService
         // submissions on any node cannot all admit against the same snapshot. The lease covers
         // only evaluate-then-create: once the record exists it is counted by every node, so the
         // progress row, queueing, and backend submission run after the lease is released.
+        // The shared coordinator throws ExecutionAdmissionLeaseException; this boundary keeps the
+        // public submit path on GeoprocessingAdmissionException.
         ExecutionJobRecord jobRecord;
-        await using (var admissionWindow = await _dispatcher.EnterAdmissionWindowAsync(cancellationToken).ConfigureAwait(false))
+        try
         {
-            // Records are only created inside this window, so a keyed replay whose first attempt
-            // (on any node) won the race is resolved here — before admission charges the replay a
-            // second rate slot or rejects it against its own original's active-job footprint.
-            if (resolvedKey is not null)
+            await using (var admissionWindow = await _dispatcher.EnterAdmissionWindowAsync(cancellationToken).ConfigureAwait(false))
             {
-                var existingInWindow = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-                if (existingInWindow != null)
+                // Records are only created inside this window, so a keyed replay whose first attempt
+                // (on any node) won the race is resolved here — before admission charges the replay a
+                // second rate slot or rejects it against its own original's active-job footprint.
+                if (resolvedKey is not null)
                 {
-                    EnsureMatchingIdempotentRequest(existingInWindow, requestFingerprint, principal);
-                    EnsureSubmissionDidNotRollback(existingInWindow);
-                    GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
-                    return existingInWindow;
-                }
-            }
-
-            var admission = await _dispatcher.EnsureAdmittedAsync(
-                principal, partitionKey, costWeight, priority, cancellationToken).ConfigureAwait(false);
-
-            if (admission != null)
-            {
-                specParams[ExecutionAdmissionEvaluator.CostWeightParameterKey] =
-                    costWeight.ToString("R", CultureInfo.InvariantCulture);
-                if (!string.IsNullOrEmpty(partitionKey))
-                {
-                    specParams[ExecutionAdmissionEvaluator.PartitionKeyParameterKey] = partitionKey;
-                }
-            }
-
-            var workload = await _dispatcher.ResolveWorkloadAsync(isCustomCode, cancellationToken).ConfigureAwait(false);
-            // A custom-code job forces the custom-code runtime profile so the claim
-            // fence routes it to the custom-code Batch workload (and away from the lean
-            // dispatcher and the GDAL worker); otherwise stamp the catalog-required profile.
-            var requiredRuntimeProfile = isCustomCode
-                ? CustomCodeJobContract.RuntimeProfile
-                : ResolveRequiredRuntimeProfile(plan, processCatalog);
-            var spec = BuildSpec(
-                plan, specParams, requestMetadataKeys, workload, requiredRuntimeProfile, resourceProfile);
-
-            jobRecord = new ExecutionJobRecord
-            {
-                OperationId = jobId,
-                Status = ExecutionJobStatus.Queued,
-                Priority = priority,
-                CreatedAt = now,
-                UpdatedAt = now,
-                CurrentPhase = "Queued",
-                Audit = new OperationAuditInfo
-                {
-                    IdempotencyKey = resolvedKey,
-                    RequestedBy = ResolvePrincipalId(principal),
-                    RequestFingerprint = requestFingerprint,
-                    CustomCodeOwnerScope = ownerScope,
-                    // Pin the submitter's row/field security identity (#3068). Submit time is the
-                    // only moment the principal exists — the worker that later runs this job has no
-                    // HttpContext — so without this capture the background read would resolve NO
-                    // RLS predicate and an EMPTY field mask and hand a restricted caller
-                    // unrestricted data through a job artifact. Persisted on the durable record, so
-                    // it survives a restart and is available to whichever node dequeues the job.
-                    SubmitterSecurityContext = resolvedSecurityContext
-                },
-                Spec = spec,
-                // The workload's supported timeout policy must be durable on the job
-                // record. Workers and reconciliation then share the same deadline after
-                // claiming, restart, or a serving-node handoff.
-                TimeoutPolicy = GpResourceProfile.ResolveTimeoutPolicy(spec.Parameters)
-            };
-
-            // A lease that expired while this node was paused may already be held by another
-            // node admitting against the same snapshot: confirm (and extend) it right before the
-            // record becomes visible, or reject without creating anything.
-            await admissionWindow.EnsureHeldAsync().ConfigureAwait(false);
-
-            var created = await jobStore.TryCreateAsync(jobRecord, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
-
-            if (!created)
-            {
-                var existing = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
-                if (existing != null)
-                {
-                    EnsureMatchingIdempotentRequest(existing, requestFingerprint, principal);
-                    EnsureSubmissionDidNotRollback(existing);
-                    GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
-                    return existing;
+                    var existingInWindow = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+                    if (existingInWindow != null)
+                    {
+                        EnsureMatchingIdempotentRequest(existingInWindow, requestFingerprint, principal);
+                        EnsureSubmissionDidNotRollback(existingInWindow);
+                        GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
+                        return existingInWindow;
+                    }
                 }
 
-                throw new InvalidOperationException("Failed to create or locate execution job.");
+                var admission = await _dispatcher.EnsureAdmittedAsync(
+                    principal, partitionKey, costWeight, priority, cancellationToken).ConfigureAwait(false);
+
+                if (admission != null)
+                {
+                    specParams[ExecutionAdmissionEvaluator.CostWeightParameterKey] =
+                        costWeight.ToString("R", CultureInfo.InvariantCulture);
+                    if (!string.IsNullOrEmpty(partitionKey))
+                    {
+                        specParams[ExecutionAdmissionEvaluator.PartitionKeyParameterKey] = partitionKey;
+                    }
+                }
+
+                var workload = await _dispatcher.ResolveWorkloadAsync(isCustomCode, cancellationToken).ConfigureAwait(false);
+                // A custom-code job forces the custom-code runtime profile so the claim
+                // fence routes it to the custom-code Batch workload (and away from the lean
+                // dispatcher and the GDAL worker); otherwise stamp the catalog-required profile.
+                var requiredRuntimeProfile = isCustomCode
+                    ? CustomCodeJobContract.RuntimeProfile
+                    : ResolveRequiredRuntimeProfile(plan, processCatalog);
+                var spec = BuildSpec(
+                    plan, specParams, requestMetadataKeys, workload, requiredRuntimeProfile, resourceProfile);
+
+                jobRecord = new ExecutionJobRecord
+                {
+                    OperationId = jobId,
+                    Status = ExecutionJobStatus.Queued,
+                    Priority = priority,
+                    CreatedAt = now,
+                    UpdatedAt = now,
+                    CurrentPhase = "Queued",
+                    Audit = new OperationAuditInfo
+                    {
+                        IdempotencyKey = resolvedKey,
+                        RequestedBy = ResolvePrincipalId(principal),
+                        RequestFingerprint = requestFingerprint,
+                        CustomCodeOwnerScope = ownerScope,
+                        // Pin the submitter's row/field security identity (#3068). Submit time is the
+                        // only moment the principal exists — the worker that later runs this job has no
+                        // HttpContext — so without this capture the background read would resolve NO
+                        // RLS predicate and an EMPTY field mask and hand a restricted caller
+                        // unrestricted data through a job artifact. Persisted on the durable record, so
+                        // it survives a restart and is available to whichever node dequeues the job.
+                        SubmitterSecurityContext = resolvedSecurityContext
+                    },
+                    Spec = spec,
+                    // The workload's supported timeout policy must be durable on the job
+                    // record. Workers and reconciliation then share the same deadline after
+                    // claiming, restart, or a serving-node handoff.
+                    TimeoutPolicy = GpResourceProfile.ResolveTimeoutPolicy(spec.Parameters)
+                };
+
+                // A lease that expired while this node was paused may already be held by another
+                // node admitting against the same snapshot: confirm (and extend) it right before the
+                // record becomes visible, or reject without creating anything.
+                await admissionWindow.EnsureHeldAsync().ConfigureAwait(false);
+
+                var created = await jobStore.TryCreateAsync(jobRecord, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (!created)
+                {
+                    var existing = await jobStore.GetAsync(jobId, cancellationToken).ConfigureAwait(false);
+                    if (existing != null)
+                    {
+                        EnsureMatchingIdempotentRequest(existing, requestFingerprint, principal);
+                        EnsureSubmissionDidNotRollback(existing);
+                        GeoprocessingServiceLog.JobSubmittedIdempotent(_logger, jobId);
+                        return existing;
+                    }
+
+                    throw new InvalidOperationException("Failed to create or locate execution job.");
+                }
             }
+        }
+        catch (ExecutionAdmissionLeaseException exception)
+        {
+            throw new GeoprocessingAdmissionException(
+                exception.Outcome,
+                exception.DenyingDimension,
+                exception.PolicyRef,
+                exception.Message,
+                exception.RetryAfterSeconds);
         }
 
         try

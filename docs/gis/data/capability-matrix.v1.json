@@ -4,8 +4,7 @@
     "GeoPackage 1.2",
     "KML 2.2",
     "WFS 2.0 Transactional",
-    "WMS 1.1.1",
-    "WPS 2.0"
+    "WMS 1.1.1"
   ],
   "schemaVersion": "1.2.0",
   "generator": "scripts/ci/generate-capability-matrix.py",
@@ -1462,10 +1461,10 @@
       "category": "Raster",
       "edition": "Pro",
       "status": null,
-      "entryCount": 5,
-      "provingTestCount": 15,
+      "entryCount": 8,
+      "provingTestCount": 29,
       "maturity": {
-        "implemented": 5
+        "implemented": 8
       },
       "noSurface": null,
       "cite": [],
@@ -1798,7 +1797,7 @@
       "edition": "Community",
       "status": "preview",
       "entryCount": 142,
-      "provingTestCount": 423,
+      "provingTestCount": 424,
       "maturity": {
         "preview": 142
       },
@@ -1824,7 +1823,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 45,
-      "provingTestCount": 379,
+      "provingTestCount": 383,
       "maturity": {
         "implemented": 43,
         "preview": 2
@@ -2296,7 +2295,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 2,
-      "provingTestCount": 11,
+      "provingTestCount": 26,
       "maturity": {
         "implemented": 2
       },
@@ -2502,6 +2501,32 @@
       "geobench": [
         "wmts"
       ]
+    },
+    {
+      "key": "serve.wps",
+      "displayName": "WPS 2.0",
+      "category": "Serve",
+      "edition": "Community",
+      "status": null,
+      "entryCount": 3,
+      "provingTestCount": 27,
+      "maturity": {
+        "implemented": 3
+      },
+      "noSurface": null,
+      "cite": [
+        {
+          "suite": "WPS 2.0",
+          "profile": "basic-async",
+          "passed": 21,
+          "total": 21,
+          "passRate": 100.0
+        }
+      ],
+      "parity": [],
+      "esriAssess": [],
+      "interop": [],
+      "geobench": []
     },
     {
       "key": "staticmap.high-dpi",
