@@ -689,6 +689,20 @@
       "capability": "admin.control-plane"
     },
     {
+      "id": "delete-api-v1-console-workflow-publications-publicationid",
+      "route": "/api/v1/console/workflow-publications/{publicationId}",
+      "method": "DELETE",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.DeletingOrDisablingSchedulePublication_RemovesOrDisablesOwningWorkflowDefinition"
+      ],
+      "proof_ledger_surface": "console-content-rbac",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
       "id": "delete-api-v1-streaming-conformance-runs-runid",
       "route": "/api/v1/streaming/conformance/runs/{runId}",
       "method": "DELETE",
@@ -17573,6 +17587,20 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.RunPublication_WithReservedProvenanceOverride_PreservesStampedProvenance",
         "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.WorkflowLifecycle_ValidatesDryRunsPublishesTargetsAndStampsJobProvenance"
+      ],
+      "proof_ledger_surface": "console-content-rbac",
+      "maturity": "implemented",
+      "capability": "admin.control-plane"
+    },
+    {
+      "id": "post-api-v1-console-workflow-publications-publicationid-status",
+      "route": "/api/v1/console/workflow-publications/{publicationId}/status",
+      "method": "POST",
+      "family": "Admin API",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.WorkflowPackages.WorkflowPackageEndpointsTests.DeletingOrDisablingSchedulePublication_RemovesOrDisablesOwningWorkflowDefinition"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",

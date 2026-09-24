@@ -80,6 +80,8 @@ public static partial class EndpointRegistry
         new("POST", "/api/v1/console/workflow-packages/{packageId}/versions/{packageVersion}/dry-run"),
         new("POST", "/api/v1/console/workflow-packages/{packageId}/versions/{packageVersion}/publish"),
         new("GET", "/api/v1/console/workflow-publications"),
+        new("DELETE", "/api/v1/console/workflow-publications/{publicationId}"),
+        new("POST", "/api/v1/console/workflow-publications/{publicationId}/status"),
         new("POST", "/api/v1/console/workflow-publications/{publicationId}/runs"),
     ];
 }
