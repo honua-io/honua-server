@@ -429,6 +429,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
     }
 
     [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
     public async Task CanonicalRunner_OnPopulatedInitialSchema_PreservesCoreRowsAndBackfillsOnUpgradeAndRestart()
     {
         var assembly = typeof(Program).Assembly;
