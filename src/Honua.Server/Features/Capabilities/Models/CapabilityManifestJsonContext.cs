@@ -16,6 +16,8 @@ namespace Honua.Server.Features.Capabilities.Models;
 [JsonSerializable(typeof(CapabilityManifestPackages))]
 [JsonSerializable(typeof(CapabilityManifestPackageFamily))]
 [JsonSerializable(typeof(CapabilityManifestCapability))]
+[JsonSerializable(typeof(CapabilityManifestRollbackTarget))]
+[JsonSerializable(typeof(CapabilityManifestRollbackTarget[]))]
 [JsonSerializable(typeof(CapabilityManifestTransports))]
 [JsonSerializable(typeof(CapabilityManifestTransportState))]
 [JsonSerializable(typeof(CapabilityManifestLimits))]

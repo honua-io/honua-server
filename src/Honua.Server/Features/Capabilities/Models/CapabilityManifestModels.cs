@@ -162,6 +162,33 @@ internal sealed record CapabilityManifestCapability
     public string? MinimumEdition { get; init; }
 
     public string? MessageKey { get; init; }
+
+    /// <summary>
+    /// Per-target rollback claims. Present only on <c>deploy.rollback</c>. A global
+    /// <see cref="Available"/> value does not apply to every target; each entry says
+    /// whether that target can execute a rollback and why.
+    /// </summary>
+    public CapabilityManifestRollbackTarget[]? RollbackTargets { get; init; }
+}
+
+/// <summary>
+/// One deploy target's rollback claim inside <c>deploy.rollback</c>.
+/// </summary>
+internal sealed record CapabilityManifestRollbackTarget
+{
+    public required string TargetId { get; init; }
+
+    public required string Backend { get; init; }
+
+    /// <summary>
+    /// <c>executable</c>, <c>handoff</c>, <c>missing-backend</c>, <c>probe-failed</c>,
+    /// or <c>no-prior-revision</c>.
+    /// </summary>
+    public required string State { get; init; }
+
+    public required bool Executable { get; init; }
+
+    public required string ReasonCode { get; init; }
 }
 
 internal sealed record CapabilityManifestTransports
