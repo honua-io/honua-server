@@ -30,27 +30,26 @@
         "fail": 2
       },
       "arcpy": {
-        "pass": 29,
+        "pass": 31,
         "n/a-no-client": 51,
-        "blocked": 6,
-        "fail": 8
+        "fail": 11,
+        "blocked": 1
       },
       "qgis-ui": {
         "pass": 40,
-        "blocked": 44,
-        "n/a-no-client": 9,
+        "blocked": 20,
+        "n/a-no-client": 33,
         "fail": 1
       },
       "pyqgis": {
-        "pass": 58,
-        "blocked": 9,
-        "n/a-no-client": 27
+        "pass": 65,
+        "n/a-no-client": 29
       }
     },
     "overall": {
       "cells": 376,
-      "closed": 238,
-      "open": 138
+      "closed": 273,
+      "open": 103
     }
   },
   "rows": [
@@ -566,20 +565,21 @@
           }
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "fail",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat evidence/arcpy-checklist-20260923d - ArcGISPro 3.7.1 on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02. arcpy_probes.wcs rule 'getcapabilities 1.0.0': GetCapabilities returned 1651 bytes advertising 'coverage_0', but arcpy.management.MakeWCSLayer could not bind coverage_0 at https://host.docker.internal:18443/rest/services/test_service/ImageServer/WCS?coverage=coverage_0: ERROR 999999: Something unexpected caused the tool to fail. Contact Esri Technical Support (http://esriurl.com/support) to Report a Bug, and refer to the error help for potential solutions or workarounds.. The failure surfaces as a Honua 404 raised inside the tool's own request sequence, and the server log shows arcpy probing ArcGIS Server site paths this build does not serve (/rest/admin/0.MapServer, /services/rest/info, /arcgis) - the same discovery walk that fails the versionmanagementserver cells. Adding the /arcgis site alias to the URL does not change it. Note QGIS's wcs provider also declines this coverage (\"Cannot describe coverage\"), so two independent stock clients cannot consume a WCS 2.0.1 surface that answers all three operations correctly over HTTP. Which side is at fault is not established here."
         },
         "qgis-ui": {
           "state": "blocked",
           "evidence": "honua-client-compat/evidence/native-qgis-ui-20260922-frozen/results.json - QGIS 3.44.14-Solothurn windows-computer-use on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a, case UI-OP-WCS-GETCAPABILITIES. Attempted and blocked on the server, not the client. A WCS connection 'honua-wcs' to rest/services/browser_compat/MapServer/WCS was created and Connect issued a correct request - QGIS's own dialog reports the tried URL as '...?SERVICE=WCS&REQUEST=GetCapabilities&AcceptVersions=1.1.0,1.0.0'. The server answered with a JSON Esri error envelope, {\"error\":{\"code\":404,\"message\":\"Not Found\",...}}, so QGIS raised a Dom Exception: 'Could not get WCS capabilities: error occurred while parsing element at line 1 column 1'. This candidate serves no WCS - the capability lives on the withdrawn feat/wcs-10-serving branch - so there is nothing for the client to read. Recorded blocked rather than fail: the client behaved correctly and the cell stays in the denominator. This one client attempt covers both advertised versions."
         },
         "pyqgis": {
-          "state": "blocked",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922n/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the candidate declines WCS 1.0.0: GetCapabilities on /rest/services/0/ImageServer/WCS answered HTTP 400. The build's capability key is 'serve.wcs / WCS 2.0.1' and honua-server#5020 tracks serving 1.0.0. Server version gap, not a client absence."
+          "state": "pass",
+          "evidence": "honua-client-compat evidence/pyqgis-rebind-20260923d - QGIS 3.44.14-Solothurn stock PyQGIS on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02. GetCapabilities on /rest/services/0/ImageServer/WCS returned a wcs:Capabilities document (1618 bytes) advertising coverage_0"
         }
       }
     },
@@ -597,20 +597,21 @@
           }
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "fail",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat evidence/arcpy-checklist-20260923d - ArcGISPro 3.7.1 on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02. arcpy_probes.wcs rule 'describecoverage 1.0.0': arcpy.management.MakeWCSLayer could not bind coverage_0 at https://host.docker.internal:18443/rest/services/test_service/ImageServer/WCS?coverage=coverage_0: ERROR 999999: Something unexpected caused the tool to fail. Contact Esri Technical Support (http://esriurl.com/support) to Report a Bug, and refer to the error help for potential solutions or workarounds."
         },
         "qgis-ui": {
           "state": "blocked",
           "evidence": "honua-client-compat/evidence/native-qgis-ui-20260922-frozen/results.json - QGIS 3.44.14-Solothurn windows-computer-use on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a, case UI-OP-WCS-DESCRIBECOVERAGE. Attempted and blocked on the server, not the client. A WCS connection 'honua-wcs' to rest/services/browser_compat/MapServer/WCS was created and Connect issued a correct request - QGIS's own dialog reports the tried URL as '...?SERVICE=WCS&REQUEST=GetCapabilities&AcceptVersions=1.1.0,1.0.0'. The server answered with a JSON Esri error envelope, {\"error\":{\"code\":404,\"message\":\"Not Found\",...}}, so QGIS raised a Dom Exception: 'Could not get WCS capabilities: error occurred while parsing element at line 1 column 1'. This candidate serves no WCS - the capability lives on the withdrawn feat/wcs-10-serving branch - so there is nothing for the client to read. Recorded blocked rather than fail: the client behaved correctly and the cell stays in the denominator. This one client attempt covers both advertised versions."
         },
         "pyqgis": {
-          "state": "blocked",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922n/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the candidate declines WCS 1.0.0: GetCapabilities on /rest/services/0/ImageServer/WCS answered HTTP 400. The build's capability key is 'serve.wcs / WCS 2.0.1' and honua-server#5020 tracks serving 1.0.0. Server version gap, not a client absence."
+          "state": "pass",
+          "evidence": "honua-client-compat evidence/pyqgis-rebind-20260923d - QGIS 3.44.14-Solothurn stock PyQGIS on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02. the wcs provider described coverage_0 and built a layer"
         }
       }
     },
@@ -628,20 +629,21 @@
           }
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "fail",
           "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
           "previous_exclusion": {
             "state": "n/a-no-client",
             "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
-          }
+          },
+          "evidence": "honua-esri-compat evidence/arcpy-checklist-20260923d - ArcGISPro 3.7.1 on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02. arcpy_probes.wcs rule 'getcoverage 1.0.0': arcpy.management.MakeWCSLayer could not bind coverage_0 at https://host.docker.internal:18443/rest/services/test_service/ImageServer/WCS?coverage=coverage_0: ERROR 999999: Something unexpected caused the tool to fail. Contact Esri Technical Support (http://esriurl.com/support) to Report a Bug, and refer to the error help for potential solutions or workarounds."
         },
         "qgis-ui": {
           "state": "blocked",
           "evidence": "honua-client-compat/evidence/native-qgis-ui-20260922-frozen/results.json - QGIS 3.44.14-Solothurn windows-computer-use on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a, case UI-OP-WCS-GETCOVERAGE. Attempted and blocked on the server, not the client. A WCS connection 'honua-wcs' to rest/services/browser_compat/MapServer/WCS was created and Connect issued a correct request - QGIS's own dialog reports the tried URL as '...?SERVICE=WCS&REQUEST=GetCapabilities&AcceptVersions=1.1.0,1.0.0'. The server answered with a JSON Esri error envelope, {\"error\":{\"code\":404,\"message\":\"Not Found\",...}}, so QGIS raised a Dom Exception: 'Could not get WCS capabilities: error occurred while parsing element at line 1 column 1'. This candidate serves no WCS - the capability lives on the withdrawn feat/wcs-10-serving branch - so there is nothing for the client to read. Recorded blocked rather than fail: the client behaved correctly and the cell stays in the denominator. This one client attempt covers both advertised versions."
         },
         "pyqgis": {
-          "state": "blocked",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922n/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the candidate declines WCS 1.0.0: GetCapabilities on /rest/services/0/ImageServer/WCS answered HTTP 400. The build's capability key is 'serve.wcs / WCS 2.0.1' and honua-server#5020 tracks serving 1.0.0. Server version gap, not a client absence."
+          "state": "pass",
+          "evidence": "honua-client-compat evidence/pyqgis-rebind-20260923d - QGIS 3.44.14-Solothurn stock PyQGIS on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02. the wcs provider built a coverage layer and drew a block from coverage_0"
         }
       }
     },
@@ -712,7 +714,7 @@
           "evidence": "honua-client-compat/evidence/native-qgis-ui-20260922-frozen/results.json - QGIS 3.44.14-Solothurn windows-computer-use on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a, case UI-OP-WCS-DESCRIBECOVERAGE. Attempted and blocked on the server, not the client. A WCS connection 'honua-wcs' to rest/services/browser_compat/MapServer/WCS was created and Connect issued a correct request - QGIS's own dialog reports the tried URL as '...?SERVICE=WCS&REQUEST=GetCapabilities&AcceptVersions=1.1.0,1.0.0'. The server answered with a JSON Esri error envelope, {\"error\":{\"code\":404,\"message\":\"Not Found\",...}}, so QGIS raised a Dom Exception: 'Could not get WCS capabilities: error occurred while parsing element at line 1 column 1'. This candidate serves no WCS - the capability lives on the withdrawn feat/wcs-10-serving branch - so there is nothing for the client to read. Recorded blocked rather than fail: the client behaved correctly and the cell stays in the denominator. This one client attempt covers both advertised versions."
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "previous_exclusion": {
             "state": "n/a-superseded",
             "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
@@ -721,7 +723,7 @@
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The dedicated WCS provider's version limit does not exclude the bundled GDAL provider: a fresh QgsRasterLayer/GDAL WCS 2.0.1 diagnostic loads 64x64 and reads a non-NoData pixel."
           },
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922n/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. QGIS's wcs provider stops at 'Cannot describe coverage' after a single successful versionless GetCapabilities; it never issues DescribeCoverage, though the server answers it over HTTP (200, 2169 bytes of wcs:CoverageDescriptions) and advertises coverage_0 in the Contents the provider just read. No version overlap between a 2.0.1-only server and this provider - blocked on honua-server#5020, not a defect on either side"
+          "evidence": "honua-client-compat evidence/pyqgis-rebind-20260923d - QGIS 3.44.14-Solothurn stock PyQGIS on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02. QGIS's wcs provider stops at 'Cannot describe coverage' after a single successful versionless GetCapabilities; it never issues DescribeCoverage, though the server answers it over HTTP (200, 2169 bytes of wcs:CoverageDescriptions) and advertises coverage_0 in the Contents the provider just read. Measured against a server that now answers both versions: the provider binds at 1.0.0 and refuses 1.1.0 and 2.0.1 alike, and negotiates 1.0.0 when left to choose. QGIS implements WCS 1.0.0 only, so this version is a client-surface absence, not a server gap"
         }
       }
     },
@@ -752,7 +754,7 @@
           "evidence": "honua-client-compat/evidence/native-qgis-ui-20260922-frozen/results.json - QGIS 3.44.14-Solothurn windows-computer-use on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a, case UI-OP-WCS-GETCOVERAGE. Attempted and blocked on the server, not the client. A WCS connection 'honua-wcs' to rest/services/browser_compat/MapServer/WCS was created and Connect issued a correct request - QGIS's own dialog reports the tried URL as '...?SERVICE=WCS&REQUEST=GetCapabilities&AcceptVersions=1.1.0,1.0.0'. The server answered with a JSON Esri error envelope, {\"error\":{\"code\":404,\"message\":\"Not Found\",...}}, so QGIS raised a Dom Exception: 'Could not get WCS capabilities: error occurred while parsing element at line 1 column 1'. This candidate serves no WCS - the capability lives on the withdrawn feat/wcs-10-serving branch - so there is nothing for the client to read. Recorded blocked rather than fail: the client behaved correctly and the cell stays in the denominator. This one client attempt covers both advertised versions."
         },
         "pyqgis": {
-          "state": "blocked",
+          "state": "n/a-no-client",
           "previous_exclusion": {
             "state": "n/a-superseded",
             "citation": "QgsProviderRegistry on 3.44.14: 'OGC Web Coverage Service version 1.0/1.1 data provider'. The server also serves 1.0.0, which is the version this client is certified on, so 2.0.1 is superseded for this lane."
@@ -761,7 +763,7 @@
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. The dedicated WCS provider's version limit does not exclude the bundled GDAL provider: a fresh QgsRasterLayer/GDAL WCS 2.0.1 diagnostic loads 64x64 and reads a non-NoData pixel."
           },
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922n/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. the provider built no layer to draw from: it abandons after GetCapabilities without reaching DescribeCoverage, so it never requests a coverage. GetCoverage over HTTP answers 200 with 16776 bytes, so the surface works - there is no version overlap. Blocked on honua-server#5020"
+          "evidence": "honua-client-compat evidence/pyqgis-rebind-20260923d - QGIS 3.44.14-Solothurn stock PyQGIS on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02. the provider built no layer to draw from at 2.0.1: QGIS implements WCS 1.0.0 only, measured by asking it for each version against a server that serves both. GetCoverage over HTTP answers 200 with 16776 bytes, so the surface is there and the 1.0.0 rows certify it; this version is a client-surface absence. https://docs.qgis.org/3.44/en/docs/user_manual/working_with_ogc/ogc_client_support.html"
         }
       }
     },
@@ -1169,20 +1171,21 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
+          "state": "pass",
           "citation": "honua-esri-compat evidence/arcpy-checklist-20260922z/operations.json, ArcGIS Pro 3.7.1.1904 on candidate sha256:cd6e3dd4: arcpy reaches this STAC API - it bound https://host.docker.internal:18443/stac and wrote honua_stac.astac (423 bytes). The download half is unproven because the catalogue publishes no raster asset: across 5 items the only asset media type is application/geo+json. So this is a fixture gap on the server side, tracked by honua-server#3272 (expose registered rasters and COGs as STAC items with COG assets), not an arcpy capability gap. The previous citation described MakeWCSLayer and WCS, which has nothing to do with this cell.",
           "previous_exclusion": {
             "state": "blocked",
             "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS."
-          }
+          },
+          "evidence": "honua-esri-compat evidence/arcpy-checklist-20260923d - ArcGISPro 3.7.1 on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02. arcpy bound https://host.docker.internal:18443/stac (honua_stac.astac, 423 bytes), followed /stac/search to asset 'cog' on item 1 (image/tiff; application=geotiff; profile=cloud-optimized) and opened its href with arcpy.Raster over /vsicurl/, reading 64x64 in 1 band(s)"
         },
         "qgis-ui": {
           "state": "blocked",
           "evidence": "honua-client-compat/evidence/native-qgis-ui-20260922-frozen/results.json - QGIS 3.44.14-Solothurn windows-computer-use on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a, case UI-OP-STAC-ASSET-DOWNLOAD. Attempted and blocked on the fixture, not the client. With the STAC search returning the fixture's items and item 1/0 selected in the results list, the Add button stays disabled - QGIS finds the item but has no asset it can add. That matches what the server publishes: StacMappingService builds exactly one asset per item, keyed 'geojson', whose href points back into OGC Features (application/geo+json), and a /stac/search of five items returns that as the only asset type present. QGIS's STAC integration adds raster and vector data assets, not a GeoJSON link to another API. Nothing is downloadable here, so the operation cannot be exercised until the catalogue publishes a real data asset. Recorded blocked rather than fail: the client searched correctly and correctly declined to offer an add."
         },
         "pyqgis": {
-          "state": "blocked",
-          "evidence": "Demoted from pass on sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a: the catalogue publishes no downloadable data asset: StacMappingService builds exactly one asset per item, keyed 'geojson', whose href points back into OGC Features, and the only asset type across the fixture's items is application/geo+json. The operation is not available on this candidate, so no client can certify it here and this is a server capability gap, not a client absence - the cell stays in the coverage denominator rather than becoming n/a. PRIOR CITATION, preserved and not withdrawn as a record of what was measured on an earlier build: tests/baselines/client-compat/pyqgis/desktop-qgis-stac.cert.json - CERT-RNDR-URL-01, protocol stac 1.0.0, client desktop-qgis 3.44.14-Solothurn, 4 passed 0 failed"
+          "state": "pass",
+          "evidence": "honua-client-compat evidence/pyqgis-rebind-20260923d - QGIS 3.44.14-Solothurn stock PyQGIS on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02. the client followed /stac/search to asset 'cog' on item 1 (image/tiff; application=geotiff; profile=cloud-optimized) and opened its href with the gdal provider over /vsicurl/, reading 64x64 in EPSG:4326 and drawing a block from it"
         }
       }
     },
@@ -2821,8 +2824,8 @@
           "evidence": "honua-client-compat/evidence/native-qgis-ui-20260922-frozen/results.json - QGIS 3.44.14-Solothurn windows-computer-use on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a, case UI-OP-PMTILES-ARCHIVE-READ. The client surface exists; the server publishes no archive. Data Source Manager > Vector Tile > New offers 'New Generic Connection...', which is the path a PMTiles archive URL is entered through, alongside the ArcGIS variant used for the vectortileserver cases that passed. The candidate publishes no PMTiles archive: there is no pmtiles route in the server's route registry (EndpointRegistry.*.cs) and /pmtiles returns HTTP 404 with an empty body. The case asks for the published archive to be added from its HTTP URL, and no such URL exists on this build. Blocked on the fixture, not the client."
         },
         "pyqgis": {
-          "state": "blocked",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922n/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. PMTilesProxyEndpoints serves /api/v1/tiles/pmtiles/{*artifactId} on this build (probing artifact '0' answers HTTP 404, a real artifact lookup rather than an absent route), but the certification fixture publishes no PMTiles artifact for a client to read. Fixture gap, not a capability gap."
+          "state": "pass",
+          "evidence": "honua-client-compat evidence/pyqgis-rebind-20260923d - QGIS 3.44.14-Solothurn stock PyQGIS on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02. GET /api/v1/tiles/pmtiles/pmtiles/test_service/0/WebMercatorQuad.pmtiles answers HTTP 200 with 6597 bytes beginning b'PMTiles'; a PMTiles v3 archive read through the client's own HTTP stack"
         }
       }
     },
@@ -2883,8 +2886,8 @@
           "evidence": "Demoted from pass on sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a: the candidate publishes no COG: 16e3ba0bc added POST /api/v1/admin/raster-artifacts/cog and GET /api/v1/rasters/cog/{artifactId}, and 45fdbed07 (the #5027 withdrawal) deleted the endpoints, service, models, seed and tests. 16e3ba0bc is not an ancestor of the candidate. Nothing substitutes: ImageServer and WCS render on demand and stamp Accept-Ranges: none, and ImageServer/{rasterId}/rasterFile is a capability-honest 404. The operation is not available on this candidate, so no client can certify it here and this is a server capability gap, not a client absence - the cell stays in the coverage denominator rather than becoming n/a. PRIOR CITATION, preserved and not withdrawn as a record of what was measured on an earlier build: honua-client-compat/evidence/native-qgis-cog-20260919-a/results.json - UI-OP-COG-RANGE-READ, QGIS 3.44.14-Solothurn (windows-computer-use receipt: Data Source Manager > Raster > Protocol HTTP/HTTPS/FTP added /api/v1/rasters/cog/cog/0/1.tif through the gdal provider, Layer Properties 64x64 Float32 EPSG:4326, Identify Band 1 = 100 == ImageServer identify; server log shows GDAL/3.13.3 HEAD 200 and Range GET 206), pass"
         },
         "pyqgis": {
-          "state": "blocked",
-          "evidence": "Demoted from pass on sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a: the candidate publishes no COG: 16e3ba0bc added POST /api/v1/admin/raster-artifacts/cog and GET /api/v1/rasters/cog/{artifactId}, and 45fdbed07 (the #5027 withdrawal) deleted the endpoints, service, models, seed and tests. 16e3ba0bc is not an ancestor of the candidate. Nothing substitutes: ImageServer and WCS render on demand and stamp Accept-Ranges: none, and ImageServer/{rasterId}/rasterFile is a capability-honest 404. The operation is not available on this candidate, so no client can certify it here and this is a server capability gap, not a client absence - the cell stays in the coverage denominator rather than becoming n/a. PRIOR CITATION, preserved and not withdrawn as a record of what was measured on an earlier build: tests/baselines/client-compat/pyqgis/desktop-qgis-cog.cert.json - CERT-RNDR-01, protocol cog GeoTIFF, client desktop-qgis 3.44.14-Solothurn, 4 passed 0 failed"
+          "state": "pass",
+          "evidence": "honua-client-compat evidence/pyqgis-rebind-20260923e - QGIS 3.44.14-Solothurn stock PyQGIS on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02. GET /api/v1/rasters/cog/cog/0/1.tif with Range: bytes=0-3 answers HTTP 206 carrying the TIFF magic b'II*\\x00', and QGIS's gdal provider opened the same href over /vsicurl/ at 64x64 in EPSG:4326 and drew a block from it"
         }
       }
     },
@@ -2897,8 +2900,8 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "blocked",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922ae/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.elevation_scene rule 'scene-layer': no I3S scene is published for a client to open: /rest/services/browser_compat/SceneServer answers 404 'Not Found' (Scene was not found.). The SceneServer routes are registered on this build and the auth fixture's scene answers 401 rather than 404, so scenes exist as a concept here - what is missing is a published, anonymously readable one. Fixture gap, not a capability gap, and not a client absence: arcpy does add I3S scene layers."
+          "state": "pass",
+          "evidence": "honua-esri-compat evidence/arcpy-checklist-20260923d - ArcGISPro 3.7.1 on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02. arcpy_probes.elevation_scene rule 'scene-layer': i3s-scene layer added and loaded in ArcGIS Pro (1 layer(s) in map)"
         },
         "qgis-ui": {
           "state": "n/a-no-client",
@@ -2941,8 +2944,8 @@
           "evidence": "honua-client-compat/evidence/native-qgis-ui-20260922-frozen/results.json - QGIS 3.44.14-Solothurn windows-computer-use on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a, case UI-OP-3DTILES-TILESET. The client surface exists; the server publishes nothing to connect it to. Data Source Manager > Scene > New offers exactly the connection type this case names - 'New Cesium 3D Tiles Connection...' (alongside 'New Quantized Mesh Connection...') - so QGIS 3.44.14 can consume a Cesium 3D Tiles tileset. The candidate publishes none: there is no 3d-tiles route anywhere in the server's own route registry (EndpointRegistry.*.cs), which is the authority used elsewhere in this run to find endpoints the /rest/services catalogue omits. With no published tileset URL there is nothing to enter in the connection dialog. Blocked on the fixture, not the client."
         },
         "pyqgis": {
-          "state": "blocked",
-          "evidence": "honua-client-compat/evidence/pyqgis-rebind-20260922n/operations.json - QGIS 3.44.14 LTR stock PyQGIS on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. /scenes/{sceneId}/tileset.json is served on this build - an unknown id answers HTTP 404 'Scene was not found' and the seeded cert-auth-scene answers 401 rather than 404, so scenes exist - but no anonymously readable scene is published for a client to open. Fixture gap, not a capability gap."
+          "state": "pass",
+          "evidence": "honua-client-compat evidence/pyqgis-rebind-20260923d - QGIS 3.44.14-Solothurn stock PyQGIS on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02. /scenes/cert-browser-polygons/tileset.json answers HTTP 200; walking it to a tile payload: tile_0000.glb serves 1420 bytes beginning b'glTF'. A tileset that serves no tile is a skeleton, so the tile itself is what decides this."
         }
       }
     },
