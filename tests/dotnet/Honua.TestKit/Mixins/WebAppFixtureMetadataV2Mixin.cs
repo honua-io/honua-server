@@ -134,7 +134,10 @@ internal static class WebAppFixtureMetadataV2Mixin
                     options: new Dictionary<string, JsonElement>
                     {
                         ["geometryColumn"] = JsonSerializer.SerializeToElement("geometry"),
-                        ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes")
+                        ["attributesColumn"] = JsonSerializer.SerializeToElement("attributes"),
+                        // Match the production compatibility snapshot: each resource
+                        // owns only its layer_id partition of the shared features table.
+                        ["layerDiscriminatorColumn"] = JsonSerializer.SerializeToElement("layer_id")
                     });
 
             if (defaultServiceLayerIndices.Contains(layerIndex))
