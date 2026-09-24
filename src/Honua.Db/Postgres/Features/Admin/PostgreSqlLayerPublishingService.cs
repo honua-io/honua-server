@@ -435,7 +435,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 srid, cancellationToken).ConfigureAwait(false);
         }
 
-        await RefreshLayerExtentAsync(connection, transaction, layerId, cancellationToken);
+        var refreshedExtent = await RefreshLayerExtentAsync(connection, transaction, layerId, cancellationToken);
 
         await EnsureServiceLayerAsync(connection, transaction, serviceName, layerId, cancellationToken);
         await UpdateServiceExtentAsync(connection, transaction, serviceName, cancellationToken);
@@ -458,7 +458,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                     geometryType,
                     srid,
                     fields,
-                    extent,
+                    refreshedExtent?.Extent,
                     publicationCapabilities,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -911,8 +911,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         // Mirror the recomputed extents into the canonical Metadata v2 graph so the
         // FeatureServer / OGC API Features / OData metadata endpoints (which read
-        // resource.Spatial.Bbox from the V2 snapshot) reflect the same extent the v1
-        // honua.layers cache just got.
+        // resource.Spatial.Bbox from the V2 snapshot) receive bounds in each resource CRS.
+        // The legacy honua.layers cache remains in WGS84.
         await SyncRefreshedExtentsIntoV2GraphAsync(refreshedExtents, cancellationToken).ConfigureAwait(false);
 
         var layersWithExtent = layers.Count(layer => layer.HasExtent);
@@ -971,7 +971,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         string Table,
         string GeometryColumn,
         int SourceSrid,
-        bool IsManagedStore);
+        bool IsManagedStore,
+        int PublishedSrid);
 
     private readonly record struct GeometryHealth(
         long FeatureCount,
