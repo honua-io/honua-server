@@ -145,6 +145,40 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
             "STAC catalog must be returned as JSON");
     }
 
+    // --- ArcGIS site root (#5158) ---
+
+    [IntegrationTest]
+    [Operation(Operations.GetServiceInfo)]
+    [Endpoint("GET /")]
+    [Endpoint("GET /rest")]
+    [Endpoint("GET /arcgis")]
+    public async Task SiteRoot_RedirectsToTheServicesDirectory()
+    {
+        using var client = _fixture.CreateClient(allowAutoRedirect: false);
+        foreach (var path in new[] { "/", "/rest", "/arcgis" })
+        {
+            using var get = await client.GetAsync(path);
+            AssertRedirectsToServicesDirectory(get, path);
+
+            using var head = await client.SendAsync(new HttpRequestMessage(HttpMethod.Head, path));
+            AssertRedirectsToServicesDirectory(head, path);
+        }
+
+        using var following = _fixture.CreateClient(allowAutoRedirect: true);
+        using var followed = await following.GetAsync("/");
+        followed.StatusCode.Should().Be(HttpStatusCode.OK);
+        followed.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+    }
+
+    private static void AssertRedirectsToServicesDirectory(HttpResponseMessage response, string path)
+    {
+        response.StatusCode.Should().Be(HttpStatusCode.Redirect, $"{path} is an ArcGIS site-root probe and must not 404");
+        response.Headers.Location.Should().NotBeNull();
+        var location = response.Headers.Location!;
+        var locationPath = location.IsAbsoluteUri ? location.AbsolutePath : location.OriginalString;
+        locationPath.Should().Be("/rest/services");
+    }
+
     // --- GeoServices /rest/services ---
 
     [IntegrationTest]

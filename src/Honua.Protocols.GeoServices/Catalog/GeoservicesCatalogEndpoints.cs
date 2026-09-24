@@ -51,6 +51,25 @@ internal static class GeoservicesCatalogEndpoints
     /// </summary>
     public static IEndpointRouteBuilder MapGeoservicesCatalogEndpoints(this IEndpointRouteBuilder endpoints)
     {
+        // ArcGIS Server answers the site root, the /rest prefix, and the /arcgis web-adaptor
+        // prefix by redirecting to the services directory. arcpy's MakeWCSLayer probe is a
+        // HEAD / that 404s when those paths are absent (#5158).
+        // HEAD is rewritten to GET before matching, so a GET mapping also answers arcpy's HEAD probe.
+        // Trailing-slash twins are not registered separately: they match the same candidate and
+        // make the root ambiguous.
+        var siteRootPaths = new[] { "/", "/rest", "/arcgis" };
+        for (var index = 0; index < siteRootPaths.Length; index++)
+        {
+            endpoints.MapGet(siteRootPaths[index], HandleSiteRoot)
+                .WithDisplayName($"GeoServices Site Root {siteRootPaths[index]}")
+                .WithName($"GeoServicesSiteRoot{index}")
+                .WithSummary("Redirect the ArcGIS site root to the services directory")
+                .WithDescription("Returns the same redirect ArcGIS Server uses from the site root, /rest, and /arcgis to /rest/services.")
+                .WithTags("GeoServices Catalog")
+                .AllowAnonymous()
+                .Produces(StatusCodes.Status302Found);
+        }
+
         // Both roots answer GET or POST. Esri clients POST to /rest/info and /rest/services
         // during connection and token negotiation, and the Esri REST contract is that a
         // resource accepts either verb; a GET-only mapping answered those POSTs with a 404
@@ -114,6 +133,9 @@ internal static class GeoservicesCatalogEndpoints
 
         return endpoints;
     }
+
+    private static IResult HandleSiteRoot()
+        => Results.Redirect("/rest/services");
 
     // ArcGIS Pro's site-root connection form probes GET /services before it posts
     // catalog operations, so the bare form answers with the same contract as ?wsdl.

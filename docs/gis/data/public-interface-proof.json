@@ -1600,6 +1600,9 @@
         "/rest/info"
       ],
       "endpointExactMatches": [
+        "/",
+        "/rest",
+        "/arcgis",
         "/rest/services",
         "/services",
         "/admin/services/{serviceName}.{serviceType}",
