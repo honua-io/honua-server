@@ -87,6 +87,22 @@ public class SharedModelTests
     }
 
     [Fact]
+    public void SpatialReference_Create_WithWkt1Geocentric_IsNotGeographicEvenWhenWkidIsGeographic()
+    {
+        // WKID 4326 is on the geographic allowlist. WKT must win, and the WKT1 token is
+        // GEOCCS — the substring GEOCS matches neither GEOCCS nor GEOGCS.
+        var spatialRef = SpatialReference.Create(
+            4326,
+            null,
+            null,
+            null,
+            "GEOCCS[\"WGS 84\",DATUM[\"WGS_1984\",SPHEROID[\"WGS 84\",6378137,298.257223563]],PRIMEM[\"Greenwich\",0],UNIT[\"metre\",1]]");
+
+        spatialRef.IsGeographic.Should().BeFalse();
+        spatialRef.IsProjected.Should().BeTrue();
+    }
+
+    [Fact]
     public void SpatialReference_Create_WithGeographicWkt_IsGeographic()
     {
         var spatialRef = SpatialReference.Create(
