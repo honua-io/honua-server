@@ -134,6 +134,26 @@ public class DuckDBFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildSelectQuery_EmptyOutFields_OmitsAttributeColumns()
+    {
+        var defaults = _builder.BuildSelectQuery(TestLayerId, new FeatureQuery());
+        Assert.Contains("\"name\"", defaults.Sql);
+        Assert.Contains("\"area\"", defaults.Sql);
+        Assert.Contains("\"type\"", defaults.Sql);
+
+        var unset = _builder.BuildSelectQuery(TestLayerId, new FeatureQuery { OutFields = default(ImmutableArray<string>) });
+        Assert.Contains("\"name\"", unset.Sql);
+        Assert.Contains("\"area\"", unset.Sql);
+        Assert.Contains("\"type\"", unset.Sql);
+
+        var result = _builder.BuildSelectQuery(TestLayerId, new FeatureQuery { OutFields = ImmutableArray<string>.Empty });
+
+        Assert.DoesNotContain("\"name\"", result.Sql);
+        Assert.DoesNotContain("\"area\"", result.Sql);
+        Assert.DoesNotContain("\"type\"", result.Sql);
+    }
+
+    [Fact]
     public void BuildSelectQuery_WithPagination_GeneratesLimitOffset()
     {
         var query = new FeatureQuery { Limit = 10, Offset = 20 };

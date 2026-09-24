@@ -74,6 +74,36 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
 
     [IntegrationTest]
     [Operation(Operations.Metadata)]
+    [Endpoint("GET /admin/services/{serviceName}.{serviceType}")]
+    [Endpoint("GET /rest/admin/{serviceName}.{serviceType}")]
+    public async Task AdminServiceResource_ResolvesLayerIdAndAdvertisesCoverageExtension()
+    {
+        // arcpy.management.MakeWCSLayer copies the integer out of
+        // /rest/services/{id}/ImageServer/WCS and probes {id}.MapServer. That integer is a
+        // storage-layer id, not a service name (#5036).
+        foreach (var path in new[]
+        {
+            $"/admin/services/{WebAppFixture.TestLayerId}.MapServer?f=json",
+            $"/rest/admin/{WebAppFixture.TestLayerId}.MapServer?f=json",
+            $"/admin/services/{WebAppFixture.TestServiceId}.MapServer?f=json"
+        })
+        {
+            var response = await Fixture.Client.GetAsync(path);
+            var content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+            using var json = JsonDocument.Parse(content);
+            json.RootElement.GetProperty("type").GetString().Should().Be("MapServer");
+            json.RootElement.GetProperty("configuredState").GetString().Should().Be("STARTED");
+            var extensionNames = json.RootElement.GetProperty("extensions").EnumerateArray()
+                .Select(extension => extension.GetProperty("typeName").GetString())
+                .ToArray();
+            extensionNames.Should().Contain("FeatureServer");
+            extensionNames.Should().Contain("WCSServer");
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer")]
     public async Task MapServer_Metadata_MapsGovernanceToDocumentInfo()
     {

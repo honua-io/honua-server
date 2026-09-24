@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using Honua.Core.Exceptions;
 using Honua.Core.Features.Catalog.Domain;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -193,6 +194,23 @@ public class DatabricksFeatureQueryBuilderTests
     public void BuildSelect_ExcludeAttributes_ProjectsNoAttributeColumns()
     {
         var statement = Builder.BuildSelect(Mapping(), new FeatureQuery { ExcludeAttributes = true });
+
+        Assert.DoesNotContain("`name`", statement.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("`owner`", statement.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildSelect_EmptyOutFields_ProjectsNoAttributeColumns()
+    {
+        var defaults = Builder.BuildSelect(Mapping(), new FeatureQuery());
+        Assert.Contains("`name`", defaults.Sql, StringComparison.Ordinal);
+        Assert.Contains("`owner`", defaults.Sql, StringComparison.Ordinal);
+
+        var unset = Builder.BuildSelect(Mapping(), new FeatureQuery { OutFields = default(ImmutableArray<string>) });
+        Assert.Contains("`name`", unset.Sql, StringComparison.Ordinal);
+        Assert.Contains("`owner`", unset.Sql, StringComparison.Ordinal);
+
+        var statement = Builder.BuildSelect(Mapping(), new FeatureQuery { OutFields = ImmutableArray<string>.Empty });
 
         Assert.DoesNotContain("`name`", statement.Sql, StringComparison.Ordinal);
         Assert.DoesNotContain("`owner`", statement.Sql, StringComparison.Ordinal);

@@ -99,6 +99,30 @@ public class SnowflakeFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildSelectQuery_EmptyOutFields_OmitsAttributeColumns()
+    {
+        var mapping = BuildMapping();
+
+        var defaults = SnowflakeFeatureQueryBuilder.BuildSelectQuery(mapping, new FeatureQuery(), _attributeColumns);
+        Assert.Contains("\"NAME\"", defaults.Sql, StringComparison.Ordinal);
+        Assert.Contains("\"AREA\"", defaults.Sql, StringComparison.Ordinal);
+        Assert.Contains("\"CATEGORY\"", defaults.Sql, StringComparison.Ordinal);
+
+        var unset = SnowflakeFeatureQueryBuilder.BuildSelectQuery(
+            mapping, new FeatureQuery { OutFields = default(ImmutableArray<string>) }, _attributeColumns);
+        Assert.Contains("\"NAME\"", unset.Sql, StringComparison.Ordinal);
+        Assert.Contains("\"AREA\"", unset.Sql, StringComparison.Ordinal);
+        Assert.Contains("\"CATEGORY\"", unset.Sql, StringComparison.Ordinal);
+
+        var result = SnowflakeFeatureQueryBuilder.BuildSelectQuery(
+            mapping, new FeatureQuery { OutFields = ImmutableArray<string>.Empty }, _attributeColumns);
+
+        Assert.DoesNotContain("\"NAME\"", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"AREA\"", result.Sql, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"CATEGORY\"", result.Sql, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildSelectQuery_OutFields_LimitsProjection()
     {
         var mapping = BuildMapping();

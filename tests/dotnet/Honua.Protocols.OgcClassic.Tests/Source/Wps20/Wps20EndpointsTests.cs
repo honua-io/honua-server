@@ -718,6 +718,7 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
     [IntegrationTest]
     [Operation(Operations.ContractTesting)]
     [Endpoint("GET /wps")]
+    [Endpoint("GET /wps/conformance/results/{token}")]
     public async Task ConformanceEcho_ConfiguredPublicBaseUrl_IsUsedForLinks()
     {
         await using var fixture = CreateConformanceFixture(publicBaseUrl: "https://cite.example.test/root");
@@ -732,6 +733,16 @@ public sealed class Wps20EndpointsTests : IAsyncLifetime
         capabilities.Should().Contain("https://cite.example.test/root/wps");
         resultXml.Should().Contain("https://cite.example.test/root/wps/conformance/results/");
         capabilities.Should().NotContain("http://localhost/wps");
+        const string marker = "/wps/conformance/results/";
+        var markerIndex = resultXml.IndexOf(marker, StringComparison.Ordinal);
+        markerIndex.Should().BeGreaterThanOrEqualTo(0, resultXml);
+        var tokenStart = markerIndex + marker.Length;
+        var tokenEnd = resultXml.IndexOfAny(['"', '<', '&'], tokenStart);
+        tokenEnd.Should().BeGreaterThan(tokenStart, resultXml);
+        var token = resultXml[tokenStart..tokenEnd];
+        var reference = await fixture.Client.GetAsync($"/wps/conformance/results/{token}");
+        reference.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await reference.Content.ReadAsStringAsync()).Should().Be("aloha");
         Honua.Protocols.Ogc.Classic.Wps20.Wps20ConformanceEcho.MaxConcurrentReferenceFetches.Should().Be(4);
     }
 

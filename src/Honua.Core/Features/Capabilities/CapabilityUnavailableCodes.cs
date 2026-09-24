@@ -68,7 +68,7 @@ public static class CapabilityUnavailableCodes
 
     /// <summary>Canonical documentation anchor for the Redis-optional install decision.</summary>
     public const string RedisRemediationRef =
-        "https://docs.honua.io/guides/deploy/docker-compose#redis-is-optional-postgis-is-not";
+        "https://honua.io/docs/guides/deploy/docker-compose/#redis-is-optional-postgis-is-not";
 
     /// <summary>
     /// Remediation for a host where Redis IS configured but the Pro <c>caching.redis</c>
@@ -84,7 +84,7 @@ public static class CapabilityUnavailableCodes
 
     /// <summary>Documentation anchor for the entitlement remediation.</summary>
     public const string EntitlementRemediationRef =
-        "https://docs.honua.io/guides/deploy/docker-compose#redis-is-configured-but-not-entitled";
+        "https://honua.io/docs/guides/deploy/docker-compose/#redis-is-configured-but-not-entitled";
 
     /// <summary>Detail sentence for a refusal caused by an unentitled (but present) Redis.</summary>
     public const string UnentitledRedisDetail =

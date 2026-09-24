@@ -177,7 +177,7 @@ def test_a_remediation_target_must_be_typed_runbook():
     )
     base = registry.get("docsBaseUrl", "").rstrip("/")
     cited = [
-        entry["url"][len(base):].lstrip("/").split("#")[0] + ".md"
+        entry["url"][len(base):].lstrip("/").split("#")[0].strip("/") + ".md"
         for entry in registry["references"]
         if MODULE.REMEDIATION_RE.search(entry.get("why", "")) and entry["url"].startswith(base)
     ]
