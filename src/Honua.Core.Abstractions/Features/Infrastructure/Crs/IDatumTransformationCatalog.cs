@@ -6,15 +6,6 @@ using System.Diagnostics.CodeAnalysis;
 namespace Honua.Core.Features.Infrastructure.Crs;
 
 /// <summary>
-/// Longitude/latitude envelope used to choose a datum grid by area of use.
-/// </summary>
-/// <param name="West">West longitude, degrees.</param>
-/// <param name="South">South latitude, degrees.</param>
-/// <param name="East">East longitude, degrees.</param>
-/// <param name="North">North latitude, degrees.</param>
-public readonly record struct DatumAreaEnvelope(double West, double South, double East, double North);
-
-/// <summary>
 /// Resolves datum (geographic) transformations for a source-to-target reprojection,
 /// matching ArcGIS' default geotransformation selection so reprojected geometry
 /// lands within a documented tolerance of Esri output.

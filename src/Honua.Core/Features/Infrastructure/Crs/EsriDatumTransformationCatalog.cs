@@ -9,6 +9,15 @@ using System.Text.Json.Serialization;
 namespace Honua.Core.Features.Infrastructure.Crs;
 
 /// <summary>
+/// Longitude/latitude envelope used to choose a datum grid by area of use.
+/// </summary>
+/// <param name="West">West longitude, degrees.</param>
+/// <param name="South">South latitude, degrees.</param>
+/// <param name="East">East longitude, degrees.</param>
+/// <param name="North">North latitude, degrees.</param>
+public readonly record struct DatumAreaEnvelope(double West, double South, double East, double North);
+
+/// <summary>
 /// <see cref="IDatumTransformationCatalog"/> backed by an embedded, auditable table of
 /// Esri default geotransformations. Models the Esri-parity selections as data so the
 /// table can be reviewed and extended without code changes.
