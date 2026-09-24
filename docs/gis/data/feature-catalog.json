@@ -8236,7 +8236,8 @@
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.AdminServiceResource_ResolvesLayerIdAndAdvertisesCoverageExtension",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.AdminService_GetAndPostReturnTheSameBranchMetadataAtBothRouteSpellings"
+        "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.BranchVersioningMetadataTests.AdminService_GetAndPostReturnTheSameBranchMetadataAtBothRouteSpellings",
+        "Honua.Server.Tests.Features.Sharing.PortalFacadeDiscoveryContractTests.AdminProjection_AnonymousCanReadOnlyPublicServices"
       ],
       "proof_ledger_surface": "geoservices-catalog",
       "maturity": "implemented",
@@ -8794,6 +8795,20 @@
       "capability": "printing.pdf-output"
     },
     {
+      "id": "get-rest-services-foldername",
+      "route": "/rest/services/{folderName}",
+      "method": "GET",
+      "family": "GeoServices REST",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.ServiceFolder_ReturnsOnlyTheRequestedServicesCatalogEntries"
+      ],
+      "proof_ledger_surface": "geoservices-catalog",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-root"
+    },
+    {
       "id": "get-rest-services-id-imageserver",
       "route": "/rest/services/{id}/ImageServer",
       "method": "GET",
@@ -9332,7 +9347,7 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_AreaAndPerimeterEnvelope_ReturnsBasicMensuration",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_AreaAndPerimeter_AntimeridianPolygon_ReturnsFiniteArea",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_Centroid_AntimeridianRing_LandsOnCorrectSide",
-        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_DistanceAndAngle_GeographicAzimuth_UsesGreatCircleBearing",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_DistanceAndAngle_GeographicAzimuth_UsesEllipsoidalBearing",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_DistanceAndAngle_GeographicDegrees_ReturnsGroundMeters",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_DistanceAndAngle_GetAndPost_ReturnsBasicMensuration",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.Measure_DistanceAndAngle_WebMercatorAtHighLatitude_ReturnsGroundDistance",
@@ -10376,6 +10391,8 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.FeatureServerGdbVersionFlowTests.Query_WithoutGdbVersion_IsUnaffectedByVersioning",
         "Honua.Server.Tests.Features.Protocols.GeoServices.VersionManagementServer.VersionManagementServerAuthorizationTests.FeatureQuery_PrivateVersionOfAnotherOwner_DoesNotExposeBranch",
         "Honua.Server.Tests.Features.Protocols.Mcp.McpBearerAuthenticationTests.FeatureServerQuery_BearerWithoutTenant_IsRejectedBeforeDefaultSchema",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpRestFeatureReadParityIntegrationTests.FeatureRead_DeniedPrincipal_ReceivesZeroRecordsOverMcpAndRest",
+        "Honua.Server.Tests.Features.Protocols.Mcp.McpRestFeatureReadParityIntegrationTests.FeatureRead_SamePrincipalOverRestAndMcp_ReturnsTheSameRecordSetAndNoDeniedLayerRows",
         "Honua.Server.Tests.Features.Protocols.PrefixedSchemaFieldProjectionTests.QueryFeatures_WithPrefixedSchemaFieldInOutFields_IncludesFieldInAttributes",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.FeatureServerQuery_GrantScopedToOtherLayer_DeniesUngrantedLayer",
         "Honua.Server.Tests.Features.Security.CrossProtocolPermissionMatrixTests.FeatureServerQuery_GrantScopedToTargetLayer_AllowsThatLayer",
@@ -10872,6 +10889,20 @@
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoute_NumericLeadingServiceId_DispatchesToNamedRoute",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerBasicTests.ServiceNameRoutes_DispatchToImageServerSurface",
         "Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer.ImageServerEndpointsTests.ServiceRoutes_AliasedPublication_BindHandlersToResolvedPublicationNotLayerIndex"
+      ],
+      "proof_ledger_surface": "image-server",
+      "maturity": "preview",
+      "capability": "serve.geoservices-imageserver"
+    },
+    {
+      "id": "get-rest-services-serviceid-imageserver-wcs",
+      "route": "/rest/services/{serviceId}/ImageServer/WCS",
+      "method": "GET",
+      "family": "GeoServices REST ImageServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.Ogc.Classic.Wcs20.Wcs20EndpointsTests.Wcs_GetCapabilities_CoverageSubtype_IsBoundUnprefixedQName"
       ],
       "proof_ledger_surface": "image-server",
       "maturity": "preview",
@@ -19436,6 +19467,20 @@
       "proof_ledger_surface": "printing-tools",
       "maturity": "implemented",
       "capability": "printing.pdf-output"
+    },
+    {
+      "id": "post-rest-services-foldername",
+      "route": "/rest/services/{folderName}",
+      "method": "POST",
+      "family": "GeoServices REST",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.Catalog.GeoservicesCatalogEndpointTests.ServiceFolder_ReturnsOnlyTheRequestedServicesCatalogEntries"
+      ],
+      "proof_ledger_surface": "geoservices-catalog",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-root"
     },
     {
       "id": "post-rest-services-id-imageserver",
