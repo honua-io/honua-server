@@ -170,7 +170,10 @@ EOF
 # docs/internal/evidence/client-certification-2cc2213/fixes-4994-4995/.
 # This lane is not a complete ETS-equivalent class certification. Part 2 CRS
 # also has the complete ETS class in cite-evidence-report.yml. Exact equality
-# continues to reject unevidenced optional CQL2 and Features Part 4 classes.
+# continues to reject unevidenced optional classes. Features Part 4 discovery
+# was enabled in #5147; OgcFeaturesTransactionTests exercises create, replace,
+# update, delete, and conditional writes, and OgcFeaturesEnhancementsTests
+# asserts this same declaration boundary.
 python3 - "$RESULTS_DIR/conformance.json" <<'PY'
 import json
 import sys
@@ -183,6 +186,8 @@ expected = {
     "http://www.opengis.net/spec/cql2/1.0/conf/basic-cql2",
     "http://www.opengis.net/spec/cql2/1.0/conf/cql2-text",
     "http://www.opengis.net/spec/cql2/1.0/conf/cql2-json",
+    "http://www.opengis.net/spec/ogcapi-features-4/1.0/conf/create-replace-delete",
+    "http://www.opengis.net/spec/ogcapi-features-4/1.0/conf/update",
 }
 target_prefixes = (
     "http://www.opengis.net/spec/ogcapi-features-2/",
