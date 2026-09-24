@@ -39,11 +39,14 @@ namespace Honua.Protocols.GeoServices.Sharing;
 /// and nothing about hosting.
 /// </para>
 /// <para>
-/// Reads require an authenticated principal that can read the service, decided by the
-/// same portal item projector the Sharing facade uses, so a hidden service stays hidden
-/// (404, never 403) and an anonymous caller is refused (401), as on ArcGIS Server where
-/// the Admin API requires a token. arcpy sends its portal token as <c>token=</c>, which
-/// the portal token authentication handler accepts on every route.
+/// Visibility is decided by the same portal item projector the Sharing facade uses, so
+/// a service the caller cannot see stays hidden (404, never 403) and the capabilities
+/// are computed only from the layers that caller may read. Reads are <b>not</b>
+/// additionally gated on being authenticated: arcpy composes this request itself, so a
+/// token on the workspace URL never reaches it, and Pro attaches a portal session token
+/// only to federated servers - so an authenticated-only resource is one arcpy can never
+/// read, which is what left #5036 failing after the resource existed. Serving it
+/// anonymously publishes no more than the public FeatureServer root already does.
 /// </para>
 /// </remarks>
 public static class ArcGisServerAdminEndpoints
@@ -98,12 +101,24 @@ public static class ArcGisServerAdminEndpoints
             return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");
         }
 
-        if (context.User.Identity?.IsAuthenticated != true)
-        {
-            // ArcGIS Server's Admin API refuses an unauthenticated read outright; clients
-            // that hold a portal token retry with token= (query or form), never anonymously.
-            return StandardErrorHelpers.CreateUnauthorized(context, "Authentication is required to read the service definition.");
-        }
+        // Deliberately NOT refusing an anonymous caller here. The original rule assumed a
+        // client holding a portal token would retry with token=; measurement says
+        // otherwise. arcpy composes this request itself, so a token appended to the
+        // workspace URL never reaches it, and SignInToPortal does not help either -
+        // ArcGIS Pro attaches a portal session token only to servers the portal declares
+        // federated, and a stand-alone Honua site is not one. A single MakeWCSLayer call
+        // was recorded issuing GET /rest/admin/{service}.MapServer and taking the 401 as
+        // final, after a successful SignInToPortal. CreateVersion does the same and stops
+        // at "ERROR 000301: The workspace is of the wrong type" - which is the whole of
+        // #5036.
+        //
+        // Nothing is widened by serving it. Visibility is still decided per principal,
+        // twice and below: ProjectItem answers null for a service this caller cannot see
+        // (404, never 403), and FilterAccessibleResourcesAsync reduces the layer set the
+        // capabilities are computed from. What is left to publish - protocols,
+        // capabilities, maxRecordCount, branch-versioning availability - is exactly what
+        // /rest/services/{service}/FeatureServer already states to the same caller, and
+        // the remaining fields are the fixed strings an Admin API response carries.
 
         var snapshot = await graphProvider.GetCurrentAsync(context.RequestAborted).ConfigureAwait(false);
         var requestedType = serviceType.Trim();
