@@ -362,7 +362,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             {
                 if (ShouldIncludeGeoServicesAttribute(name, declaredAttributeFields, runtimeAttributeFields))
                 {
-                    all[name] = FeatureAttributeValueNormalizer.Normalize(value);
+                    all[name] = GeoServicesAttributeProjection.ToEsriValue(value);
                 }
             }
 
@@ -386,7 +386,7 @@ internal sealed class QueryFormatter : IQueryFormatter
         if (!suppressObjectId)
         {
             filtered[objectIdFieldName] = attributes.TryGetValue(objectIdFieldName, out object? objectIdFromAttributes)
-                ? FeatureAttributeValueNormalizer.Normalize(objectIdFromAttributes)
+                ? GeoServicesAttributeProjection.ToEsriValue(objectIdFromAttributes)
                 : objectIdValue;
         }
 
@@ -394,7 +394,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             attributes.ContainsKey(field)
             && ShouldIncludeGeoServicesAttribute(field, declaredAttributeFields, runtimeAttributeFields)))
         {
-            filtered[field] = FeatureAttributeValueNormalizer.Normalize(attributes[field]);
+            filtered[field] = GeoServicesAttributeProjection.ToEsriValue(attributes[field]);
         }
 
         return filtered;

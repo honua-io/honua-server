@@ -21,6 +21,7 @@ using Honua.Protocols.GeoServices.MapServer.Models;
 using Honua.ServiceDefaults;
 using Microsoft.Extensions.Options;
 using static Honua.Infrastructure.Helpers.DelimitedParameterHelpers;
+using Honua.Protocols.GeoServices.FeatureServer.Services;
 
 namespace Honua.Protocols.GeoServices.MapServer;
 
@@ -286,7 +287,7 @@ internal static partial class MapServerEndpoints
                                 continue;
                             }
 
-                            attributes[kvp.Key] = FeatureAttributeValueNormalizer.Normalize(kvp.Value);
+                            attributes[kvp.Key] = GeoServicesAttributeProjection.ToEsriValue(kvp.Value);
                         }
 
                         GeoServicesFieldConventions.CoerceTemporalAttributes(attributes, temporalFieldTypes);

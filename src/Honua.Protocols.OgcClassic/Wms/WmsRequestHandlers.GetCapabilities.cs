@@ -253,6 +253,16 @@ internal static partial class WmsRequestHandlers
         }
     }
 
+    /// <summary>
+    /// The WMS 1.3.0 resolution value that declares a temporal interval continuous.
+    /// </summary>
+    /// <remarks>
+    /// Annex C defines a dimension extent as <c>min/max/resolution</c>. A resolution of
+    /// <c>0</c> means the interval is continuous; an ISO 8601 duration would mean the
+    /// values are discrete and spaced by that period.
+    /// </remarks>
+    private const string ContinuousTemporalResolution = "0";
+
     private static void AppendWmsTemporalDimension(
         StringBuilder sb,
         WmsLayer layer,
@@ -275,7 +285,14 @@ internal static partial class WmsRequestHandlers
 
         var min = FormatWmsTemporalInstant(range.Min.Value);
         var max = FormatWmsTemporalInstant(range.Max.Value);
-        var extent = $"{min}/{max}/PT0S";
+        // WMS 1.3.0 Annex C spells a continuous interval "min/max/0": the third element
+        // is a resolution, and the literal 0 is what declares that every instant in the
+        // interval is available. "PT0S" looks like the same statement in ISO 8601 but is
+        // a zero-length duration, which is not a valid resolution. ArcGIS Pro rejects the
+        // dimension outright and reports the layer as not time-enabled, while QGIS
+        // tolerates it - so the spelling alone decided whether a client saw the time
+        // dimension at all. See honua-server#5172.
+        var extent = $"{min}/{max}/{ContinuousTemporalResolution}";
 
         if (isWms111)
         {

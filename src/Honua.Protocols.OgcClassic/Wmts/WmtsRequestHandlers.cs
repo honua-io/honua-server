@@ -1595,6 +1595,18 @@ internal static class WmtsRequestHandlers
     /// dimension default value from the layer's temporal extent for capabilities
     /// rendering. Non-temporal layers skip the database call entirely.
     /// </summary>
+    /// <summary>
+    /// The resolution value that declares a temporal interval continuous.
+    /// </summary>
+    /// <remarks>
+    /// A time dimension value of <c>min/max/resolution</c> follows the same ISO 8601
+    /// convention WMS 1.3.0 Annex C states: <c>0</c> means every instant in the interval
+    /// is available, while a duration means the values are discrete and spaced by that
+    /// period. <c>PT0S</c> is a zero-length duration and is not a valid resolution -
+    /// ArcGIS Pro rejects a dimension declared that way. See honua-server#5172.
+    /// </remarks>
+    private const string ContinuousTemporalResolution = "0";
+
     private static async Task<WmtsDimensionDefinition[]> GetWmtsDimensionDefinitionsAsync(
         WmtsLayer layer,
         IFeatureReader? featureReader,
@@ -1625,7 +1637,7 @@ internal static class WmtsRequestHandlers
         var max = TemporalExtentHelpers.FormatOgcTemporalValue(range.Value.Max.Value);
         var populated = new WmtsDimensionDefinition(
             Identifier: "time",
-            Values: [$"{min}/{max}/PT0S"],
+            Values: [$"{min}/{max}/{ContinuousTemporalResolution}"],
             DefaultValue: max,
             SupportsCurrent: true,
             CurrentValue: max);
@@ -1682,7 +1694,7 @@ internal static class WmtsRequestHandlers
         var max = TemporalExtentHelpers.FormatOgcTemporalValue(range.Max.Value);
         var populated = new WmtsDimensionDefinition(
             Identifier: "time",
-            Values: [$"{min}/{max}/PT0S"],
+            Values: [$"{min}/{max}/{ContinuousTemporalResolution}"],
             DefaultValue: max,
             SupportsCurrent: true,
             CurrentValue: max);

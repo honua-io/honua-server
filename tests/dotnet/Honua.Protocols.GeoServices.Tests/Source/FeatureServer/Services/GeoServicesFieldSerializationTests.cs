@@ -375,6 +375,56 @@ public sealed class GeoServicesFieldSerializationTests
         }
     }
 
+    // ----- Bug 3: array-valued columns must agree with esriFieldTypeString (#5171) -----
+
+    [Theory]
+    [InlineData("[\"red\",\"blue\"]")]
+    [InlineData("[0,1,2]")]
+    [InlineData("{\"a\":1}")]
+    public async Task Json_ArrayOrObjectValue_IsEmittedAsStringNotRawJson(string rawJson)
+    {
+        var (formatter, _) = CreateFormatter();
+        var resource = CreateResource(
+            new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+            new MetadataV2Field { Name = "tags", Type = MetadataV2FieldType.String });
+
+        using var value = JsonDocument.Parse(rawJson);
+        var feature = Feature.Create(
+            1,
+            geometry: null,
+            new Dictionary<string, object?>
+            {
+                ["objectid"] = 1L,
+                ["tags"] = value.RootElement.Clone()
+            }.ToImmutableDictionary());
+
+        var (response, _) = await formatter.FormatQueryResultAsync(
+            QueryResult<Feature>.Create(1, [feature]),
+            resource,
+            format: "json",
+            returnGeometry: false,
+            outputSrid: null,
+            returnZ: false,
+            returnM: false,
+            geometryPrecision: null,
+            maxAllowableOffset: null);
+
+        var json = JsonSerializer.Serialize(response, FeatureServerJsonContext.Default.QueryResponse);
+        using var document = JsonDocument.Parse(json);
+        var attributes = document.RootElement.GetProperty("features")[0].GetProperty("attributes");
+
+        var field = response.Should().BeOfType<QueryResponse>().Subject
+            .Fields!.Single(f => f.Name == "tags");
+        field.Type.Should().Be("esriFieldTypeString");
+
+        attributes.GetProperty("tags").ValueKind.Should().Be(JsonValueKind.String,
+            "GeoServices has no array or object type, so a value published as "
+            + "esriFieldTypeString must be a JSON string; an arcpy cursor selecting a "
+            + "field whose value disagrees with its declared type returns zero rows and "
+            + "raises nothing (#5171)");
+        attributes.GetProperty("tags").GetString().Should().Be(rawJson);
+    }
+
     private static (QueryFormatter Formatter, LimitsOptions Limits) CreateFormatter()
     {
         var limitsOptions = Options.Create(new LimitsOptions());

@@ -43,10 +43,13 @@ public sealed class OgcClassicWmtsTemporalTests : IAsyncLifetime
 
         // WMTS dimension element with the "time" identifier and an explicit
         // <Default> populated from the layer extent. The continuous-extent
-        // <Value> is rendered using the resolved min/max range (PT0S step).
+        // <Value> is rendered using the resolved min/max range with a continuous-interval
+        // resolution of 0. It previously used "PT0S", a zero-length duration that is not
+        // a valid resolution and that ArcGIS Pro rejects. See honua-server#5172.
         content.Should().Contain("<ows:Identifier>time</ows:Identifier>");
         content.Should().Contain("<Default>");
-        content.Should().Contain("PT0S");
+        content.Should().Contain("/0<");
+        content.Should().NotContain("PT0S");
     }
 
     [IntegrationTest]
