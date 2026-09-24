@@ -2728,15 +2728,13 @@ internal sealed partial class FeatureServerQueryHandler(
         }
     }
 
-    // Statistics rows use the same Esri string projection as ordinary feature
-    // rows. Keep the compatibility conversion local so the trunk QueryFormatter
-    // remains authoritative after #5042 withdrew its broader formatter change.
+    // Statistics rows and ordinary feature rows now share one Esri projection. This
+    // conversion was kept local because #5042 withdrew the broader formatter change as
+    // part of reverting #5027 wholesale - for Admin, Import and GP task-name parity
+    // regressions, not for anything this does. Ordinary rows need it for the same
+    // reason statistics rows did: see GeoServicesAttributeProjection.
     private static object? GeoServicesAttributeValue(object? value)
-        => FeatureAttributeValueNormalizer.Normalize(value) switch
-        {
-            JsonElement { ValueKind: JsonValueKind.Array or JsonValueKind.Object } element => element.GetRawText(),
-            var normalized => normalized
-        };
+        => GeoServicesAttributeProjection.ToEsriValue(value);
 
     private static bool TryParseStatisticsDefinitions(
         string outStatisticsJson,

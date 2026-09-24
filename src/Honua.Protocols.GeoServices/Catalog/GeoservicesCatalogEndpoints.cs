@@ -85,6 +85,23 @@ internal static class GeoservicesCatalogEndpoints
             .Produces<ServicesDirectoryResponse>(StatusCodes.Status200OK, JsonContentType)
             .Produces(StatusCodes.Status400BadRequest);
 
+        // A service's own node in the catalogue. Esri clients walking a service URL ask for
+        // the parent of "{service}/{ServiceType}" before they will use it: a single
+        // MakeWCSLayer call issues GET /rest/services/{service} and, on receiving a 404
+        // envelope, aborts with the opaque "ERROR 999999 ... Error code: 404" - after the
+        // WCS conversation itself has already succeeded (#5158). Honua's catalogue is
+        // root-only and has no folders, so this answers with the folder-shaped document
+        // Esri expects, listing the service-type entries published under that name.
+        endpoints.Map("/rest/services/{folderName}", HandleGetServiceFolder)
+            .WithDisplayName("GeoServices Service Folder")
+            .WithName("GeoServicesServiceFolder")
+            .WithSummary("List the service-type entries published under one service name")
+            .WithDescription("Esri clients resolve a service URL through its parent node before using it; this answers that node with the same projection the catalogue root uses, filtered to one name.")
+            .WithTags("GeoServices Catalog")
+            .WithMetadata(new HttpMethodMetadata(new[] { HttpMethods.Get, HttpMethods.Post }))
+            .Produces<ServicesDirectoryResponse>(StatusCodes.Status200OK, JsonContentType)
+            .Produces(StatusCodes.Status400BadRequest);
+
         endpoints.Map("/rest/info", HandleGetRestInfo)
             .WithDisplayName("GeoServices REST Info")
             .WithName("GeoServicesRestInfo")
@@ -904,6 +921,62 @@ internal static class GeoservicesCatalogEndpoints
         };
 
         GeoservicesCatalogEndpointLogging.LogServicesDirectoryReturned(logger, response.Services.Length);
+
+        return Results.Json(response, GeoservicesCatalogJsonContext.Default.ServicesDirectoryResponse, contentType: JsonContentType);
+    }
+
+    /// <summary>
+    /// One service's node in the catalogue: the folder-shaped document an Esri client
+    /// reads when it resolves a service URL.
+    /// </summary>
+    /// <remarks>
+    /// Reuses <see cref="BuildServiceDirectoryProjectionAsync"/> rather than enumerating
+    /// separately, so this node can never disagree with the catalogue root about what is
+    /// published or about who may see it - the projection already applies per-resource
+    /// access filtering. A name with no visible entries answers the GeoServices
+    /// not-found envelope, which is the correct answer for a folder that does not exist;
+    /// the defect in #5158 was giving that answer for a service that does.
+    /// </remarks>
+    private static async Task<IResult> HandleGetServiceFolder(
+        HttpContext context,
+        string folderName,
+        string? f,
+        [FromServices] IMetadataV2GraphProvider graphProvider,
+        [FromServices] IRasterStore rasterStore,
+        [FromServices] ILicenseStatusProvider licenseStatusProvider,
+        [FromServices] ILogger<GeoservicesCatalogLog> logger)
+    {
+        f = await GeoServicesRequestValueHelpers.ReadFormValueOrDefaultAsync(
+            context.Request, "f", f, context.RequestAborted).ConfigureAwait(false);
+        if (!IsSupportedFormat(f))
+        {
+            return StandardErrorHelpers.CreateBadRequest(context, "Output format must be json or pjson.");
+        }
+
+        var projection = await BuildServiceDirectoryProjectionAsync(
+            context,
+            graphProvider,
+            rasterStore,
+            licenseStatusProvider,
+            logger).ConfigureAwait(false);
+        if (projection.AccessError is not null)
+        {
+            return projection.AccessError;
+        }
+
+        var entries = projection.Entries
+            .Where(entry => string.Equals(entry.Name, folderName, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        if (entries.Length == 0)
+        {
+            return StandardErrorHelpers.CreateNotFound(
+                context, $"Folder '{folderName}' was not found.");
+        }
+
+        var response = new ServicesDirectoryResponse
+        {
+            Services = [.. entries]
+        };
 
         return Results.Json(response, GeoservicesCatalogJsonContext.Default.ServicesDirectoryResponse, contentType: JsonContentType);
     }

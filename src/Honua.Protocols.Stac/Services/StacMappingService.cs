@@ -15,6 +15,8 @@ using Honua.Protocols.Ogc.Common;
 using Honua.Protocols.Stac.Models;
 using NetTopologySuite.IO;
 
+using Honua.Core.Abstractions.Features.Rasters.Abstractions;
+
 namespace Honua.Protocols.Stac.Services;
 
 /// <summary>
@@ -249,7 +251,8 @@ internal sealed class StacMappingService
         int layerIndex,
         string baseUrl,
         IReadOnlySet<string>? selectedProperties = null,
-        int? geometrySrid = null)
+        int? geometrySrid = null,
+        CogArtifactReference? cogArtifact = null)
     {
         var collectionId = layerIndex.ToString(CultureInfo.InvariantCulture);
         var itemId = ResolveItemId(feature, resource);
@@ -344,6 +347,26 @@ internal sealed class StacMappingService
                 Roles = ImmutableArray.Create("data"),
             }
         };
+
+        // A layer with a published COG gets it alongside the GeoJSON. This is what
+        // makes the catalogue usable to a raster client: a STAC reader picks an asset
+        // by media type, and the cloud-optimized profile is the token it keys on -
+        // QGIS resolves an asset to a loadable layer URI only when it is present, and
+        // a catalogue that advertises only application/geo+json gives a raster client
+        // nothing to open even when the raster is published and range-readable.
+        // Null whenever nothing is published, which is every vector layer.
+        if (cogArtifact is not null)
+        {
+            assets["cog"] = new StacAsset
+            {
+                Href = cogArtifact.Href.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+                    ? cogArtifact.Href
+                    : $"{baseUrl}{cogArtifact.Href}",
+                Title = "Cloud Optimized GeoTIFF",
+                Type = cogArtifact.ContentType,
+                Roles = ImmutableArray.Create("data", "cloud-optimized"),
+            };
+        }
 
         return new StacItem
         {

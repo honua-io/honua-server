@@ -14,6 +14,8 @@ public static partial class EndpointRegistry
         new("GET", "/arcgis"),
         new("GET", "/rest/services"),
         new("POST", "/rest/services"),
+        new("GET", "/rest/services/{folderName}"),
+        new("POST", "/rest/services/{folderName}"),
         new("GET", "/rest/info"),
         new("POST", "/rest/info"),
         new("GET", "/rest/services/{locatorName}/GeocodeServer"),

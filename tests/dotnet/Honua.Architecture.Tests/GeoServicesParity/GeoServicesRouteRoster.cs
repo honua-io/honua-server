@@ -211,6 +211,7 @@ internal static class GeoServicesRouteRoster
 
         if (string.Equals(path, "/rest/info", StringComparison.OrdinalIgnoreCase)
             || string.Equals(path, "/rest/services", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(path, "/rest/services/{folderName}", StringComparison.OrdinalIgnoreCase)
             || string.Equals(path, "/rest/admin/{serviceName}.{serviceType}", StringComparison.OrdinalIgnoreCase))
         {
             return (CatalogServiceType, path);

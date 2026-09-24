@@ -1604,6 +1604,7 @@
         "/rest",
         "/arcgis",
         "/rest/services",
+        "/rest/services/{folderName}",
         "/services",
         "/admin/services/{serviceName}.{serviceType}",
         "/rest/admin/{serviceName}.{serviceType}"

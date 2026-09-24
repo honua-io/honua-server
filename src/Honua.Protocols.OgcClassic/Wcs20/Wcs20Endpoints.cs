@@ -32,6 +32,36 @@ internal static class Wcs20Endpoints
             .Produces(StatusCodes.Status501NotImplemented, contentType: Wcs20Utilities.XmlContentType)
             .CacheOutput(policy => policy.NoCache());
 
+        // Esri desktop clients read the service name out of the WCS URL and then ask
+        // the Admin API for "{serviceName}.MapServer" to validate it. Against the
+        // layer-scoped route above they parse the layer id, ask for "0.MapServer",
+        // and get a legitimate 404 that arcpy surfaces as ERROR 999999 - measured by
+        // logging MakeWCSLayer's own request sequence, which goes /rest/info,
+        // /rest/services/{id}/ImageServer, then /rest/admin/{id}.MapServer before it
+        // ever reaches the coverage. /rest/admin/test_service.MapServer answers 200,
+        // so the only thing missing is a WCS URL that carries the service name.
+        //
+        // Same shape as the /arcgis site-segment alias: the capability was already
+        // there, addressed the way this server names things rather than the way an
+        // Esri client expects to find it. The {id:int} constraint above is the more
+        // specific match, so numeric ids keep going to the layer-scoped handler.
+        endpoints.MapGet("/rest/services/{serviceId}/ImageServer/WCS",
+                static (HttpContext context, string serviceId, Wcs20Handler handler) =>
+                    handler.HandleAsync(context, Wcs20RouteScope.ForService(serviceId)))
+            .WithDisplayName("WCS 2.0.1 ImageServer Service (by service name)")
+            .WithName("ImageServerWcs20ByServiceName")
+            .WithSummary("OGC Web Coverage Service 2.0.1")
+            .WithDescription("Service-scoped WCS 2.0.1 at the ImageServer path Esri desktop clients address")
+            .WithTags("WCS", "OGC", "ImageServer")
+            .Produces(StatusCodes.Status200OK, contentType: Wcs20Utilities.XmlContentType)
+            .Produces(StatusCodes.Status200OK, contentType: Wcs20Utilities.TiffContentType)
+            .Produces(StatusCodes.Status200OK, contentType: Wcs20Utilities.PngContentType)
+            .Produces(StatusCodes.Status200OK, contentType: Wcs20Utilities.JpegContentType)
+            .Produces(StatusCodes.Status400BadRequest, contentType: Wcs20Utilities.XmlContentType)
+            .Produces(StatusCodes.Status404NotFound, contentType: Wcs20Utilities.XmlContentType)
+            .Produces(StatusCodes.Status501NotImplemented, contentType: Wcs20Utilities.XmlContentType)
+            .CacheOutput(policy => policy.NoCache());
+
         endpoints.MapGet("/ogc/services/{serviceId}/wcs",
                 static (HttpContext context, string serviceId, Wcs20Handler handler) =>
                     handler.HandleAsync(context, Wcs20RouteScope.ForService(serviceId)))

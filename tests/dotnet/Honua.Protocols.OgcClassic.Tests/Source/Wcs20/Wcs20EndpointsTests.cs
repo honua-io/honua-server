@@ -35,14 +35,18 @@ public sealed class Wcs20EndpointsTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData("/ogc/services/{0}/wcs")]
+    [InlineData("/rest/services/{0}/ImageServer/WCS")]
     [Operation(Operations.Metadata)]
     [InterfaceOperation(TestProtocols.Wcs201, "GetCapabilities")]
     [Endpoint("GET /ogc/services/{serviceId}/wcs")]
-    public async Task Wcs_GetCapabilities_CoverageSubtype_IsBoundUnprefixedQName()
+    [Endpoint("GET /rest/services/{serviceId}/ImageServer/WCS")]
+    public async Task Wcs_GetCapabilities_CoverageSubtype_IsBoundUnprefixedQName(string routeTemplate)
     {
+        var endpoint = string.Format(CultureInfo.InvariantCulture, routeTemplate, WebAppFixture.TestServiceId);
         var response = await _fixture.Client.GetAsync(
-            $"/ogc/services/{WebAppFixture.TestServiceId}/wcs?SERVICE=WCS&REQUEST=GetCapabilities&VERSION=2.0.1");
+            $"{endpoint}?SERVICE=WCS&REQUEST=GetCapabilities&VERSION=2.0.1");
         var content = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
         var subtype = XDocument.Parse(content).Descendants(XName.Get("CoverageSubtype", "http://www.opengis.net/wcs/2.0")).Single();
