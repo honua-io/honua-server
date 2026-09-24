@@ -1890,12 +1890,12 @@ public class ImageServerEndpointsTests
 
             measure.Should().NotBeNull();
             measure!.Area.Should().NotBeNull();
-            // 10x5 EPSG:3857 envelope near the equator: ground area/perimeter ≈ the map-unit
-            // values (Web Mercator scale ≈ 1 at the equator), now measured geodesically (#2734).
-            measure.Area!.Value.Should().BeApproximately(50d, 0.2d);
+            // Independent PROJ WGS84 geodesic reference after inverse EPSG:3857 projection.
+            // Web Mercator's spherical northing differs from ellipsoidal ground distance.
+            measure.Area!.Value.Should().BeApproximately(49.665281d, 0.2d);
             measure.Area.Unit.Should().Be("esriSquareMeters");
             measure.Perimeter.Should().NotBeNull();
-            measure.Perimeter!.Value.Should().BeApproximately(30d, 0.1d);
+            measure.Perimeter!.Value.Should().BeApproximately(29.933056d, 0.1d);
             measure.Perimeter.Unit.Should().Be("esriMeters");
         }
         finally
@@ -1972,8 +1972,8 @@ public class ImageServerEndpointsTests
         // #2734: a 3857 (Web Mercator) segment must be measured as TRUE GROUND distance, not the
         // planar map-unit length. The two points are lon 0° and lon 1° at lat 60°N, expressed in
         // Web-Mercator meters (y = 8399737.89 is the Mercator ordinate of 60°N; x = 111319.49 is
-        // the Mercator abscissa of lon 1°). The great-circle ground distance between them is
-        // 55597.01 m on the mean-radius sphere (R = 6371008.8 m). The buggy planar
+        // the Mercator abscissa of lon 1°). The WGS84 ellipsoidal ground distance between them is
+        // 55799.470393 m (independent PROJ geodesic reference). The buggy planar
         // sqrt(dx²+dy²) would report 111319.49 m — ~2x overstated, exactly 1/cos(60°).
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
         try
@@ -1990,7 +1990,7 @@ public class ImageServerEndpointsTests
 
             measure.Should().NotBeNull();
             measure!.Distance.Should().NotBeNull();
-            measure.Distance!.Value.Should().BeApproximately(55597.01d, 1d);
+            measure.Distance!.Value.Should().BeApproximately(55799.470393d, 1d);
             measure.Distance.Unit.Should().Be("esriMeters");
             // Guard against a regression back to the planar (2x overstated) value.
             measure.Distance.Value.Should().BeLessThan(60000d);
@@ -2004,11 +2004,11 @@ public class ImageServerEndpointsTests
     [IntegrationTest]
     [Endpoint("GET /rest/services/{id}/ImageServer/measure")]
     [Operation(Operations.Distance)]
-    public async Task Measure_DistanceAndAngle_GeographicAzimuth_UsesGreatCircleBearing()
+    public async Task Measure_DistanceAndAngle_GeographicAzimuth_UsesEllipsoidalBearing()
     {
         // #2734: azimuth for geographic inputs must include cos(lat) longitude scaling. From
-        // (lon 0, lat 60°N) to (lon 1, lat 61°N) the great-circle initial bearing is 25.78°
-        // (standard atan2 initial-bearing formula; radius-independent), consistent with the
+        // (lon 0, lat 60°N) to (lon 1, lat 61°N) the WGS84 initial bearing is 25.819476°
+        // (independent PROJ geodesic reference), consistent with the
         // geodesic distance in the same response. The buggy planar atan2(dLon, dLat) reported
         // 45° regardless of latitude.
         var fixture = await CreateFixtureAsync(CreateRasterStoreSubstitute());
@@ -2026,7 +2026,7 @@ public class ImageServerEndpointsTests
 
             measure.Should().NotBeNull();
             measure!.AzimuthAngle.Should().NotBeNull();
-            measure.AzimuthAngle!.Value.Should().BeApproximately(25.7824d, 1e-3);
+            measure.AzimuthAngle!.Value.Should().BeApproximately(25.819476d, 1e-3);
             measure.AzimuthAngle.Unit.Should().Be("esriDUDecimalDegrees");
             // Guard against a regression to the cos(lat)-free planar bearing (45°).
             measure.AzimuthAngle.Value.Should().BeLessThan(40d);
@@ -4110,13 +4110,12 @@ public class ImageServerEndpointsTests
         measure!.Name.Should().Be("test-raster");
         measure.SensorName.Should().Be("Unknown");
         measure.Distance.Should().NotBeNull();
-        // (0,0)->(3,4) in EPSG:3857 near the equator: the ground distance is ~5 m (Web Mercator
-        // scale ≈ 1 at the equator), computed geodesically on the mean-radius sphere (#2734).
-        measure.Distance!.Value.Should().BeApproximately(5d, 0.05d);
+        // Independent PROJ WGS84 inverse after transforming (0,0)->(3,4) from EPSG:3857.
+        measure.Distance!.Value.Should().BeApproximately(4.978604d, 0.05d);
         measure.Distance.Unit.Should().Be("esriMeters");
         measure.AzimuthAngle.Should().NotBeNull();
-        // 3-east / 4-north near the equator still gives atan(3/4) ≈ 36.87° true bearing.
-        measure.AzimuthAngle!.Value.Should().BeApproximately(36.86989764584402d, 1e-4);
+        // Spherical Web Mercator northing requires ellipsoidal correction even at the equator.
+        measure.AzimuthAngle!.Value.Should().BeApproximately(37.05479786d, 1e-4);
         measure.AzimuthAngle.Unit.Should().Be("esriDUDecimalDegrees");
     }
 
