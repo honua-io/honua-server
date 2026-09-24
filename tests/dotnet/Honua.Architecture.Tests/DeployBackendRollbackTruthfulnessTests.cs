@@ -169,6 +169,7 @@ public sealed class DeployBackendRollbackTruthfulnessTests
         services.AddSingleton<IContainerRuntimeClient>(world);
         services.AddSingleton<IProxyStateSwapper>(world);
         services.AddSingleton<ILocalReplicaHealthProbe>(world);
+        services.AddSingleton<IRollbackDataPlaneProbe>(world);
         services.AddSingleton<IOptions<SelfHostedDeployOptions>>(Options.Create(new SelfHostedDeployOptions
         {
             Enabled = true,
@@ -211,6 +212,7 @@ public sealed class DeployBackendRollbackTruthfulnessTests
                 ["aws.region"] = "us-east-1",
                 ["aws.ecs.cluster"] = "honua-prod",
                 ["aws.ecs.canary_service"] = "honua-canary",
+                ["aws.ecs.stable_service"] = "honua-stable",
                 ["aws.alb.listener_rule_arn"] = "listener-rule",
                 ["aws.alb.canary_target_group_arn"] = "canary-tg",
                 ["aws.alb.stable_target_group_arn"] = "stable-tg"
@@ -240,6 +242,10 @@ public sealed class DeployBackendRollbackTruthfulnessTests
                 [SelfHostedDeployParameterKeys.ContainerPort] = "8080"
             }
         };
+        parameters[RollbackDataPlaneCompletion.ReadinessUrlParameterKey] = "https://probe.example/healthz";
+        parameters[RollbackDataPlaneCompletion.FunctionalQueryUrlParameterKey] = "https://probe.example/golden";
+        parameters[RollbackDataPlaneCompletion.FunctionalQueryExpectedContainsParameterKey] = "marker:revision-prior";
+        parameters[RollbackDataPlaneCompletion.FunctionalQueryForbiddenContainsParameterKey] = "marker:revision-candidate";
         return new WorkflowOperationRecord
         {
             OperationId = $"rollback-contract-{Guid.NewGuid():N}",
@@ -285,13 +291,14 @@ public sealed class DeployBackendRollbackTruthfulnessTests
 
     private sealed class ProviderWorld : IArgoRolloutsClient, IAwsAlbClient, IAwsEcsClient, IAwsLambdaAliasClient,
         IAzureContainerAppsRevisionClient, IAzureFunctionsSlotClient, IContainerRuntimeClient,
-        IProxyStateSwapper, ILocalReplicaHealthProbe
+        IProxyStateSwapper, ILocalReplicaHealthProbe, IRollbackDataPlaneProbe
     {
         private string _scenario = "exact-prior";
         private int _rollbackCalls;
         private ArgoRolloutState _argo = Argo(Candidate, false, "candidate-hash");
         private AwsAlbListenerRuleState _alb = Alb(0, 100);
         private AwsEcsServiceState _ecs = Ecs(Candidate);
+        private AwsEcsServiceState _stable = Ecs(Candidate);
         private AwsLambdaAliasState _lambda = Lambda(Candidate);
         private AzureContainerAppsTrafficState _containerApp = ContainerApp(Candidate);
         private AzureFunctionsSiteConfigState _production = Functions(Candidate);
@@ -306,7 +313,7 @@ public sealed class DeployBackendRollbackTruthfulnessTests
             => backend switch
             {
                 "honua-kubernetes-argo-rollouts" => $"phase={_argo.Phase};aborted={_argo.IsAborted};currentHash={_argo.CurrentPodHash ?? "<missing>"};stableHash={_argo.StableRevisionHash ?? "<missing>"};image={_argo.PodTemplateImage ?? "<missing>"}",
-                "honua-aws-ecs-alb" => $"taskDefinition={_ecs.TaskDefinitionArn ?? "<missing>"};status={_ecs.Status ?? "<missing>"};running={_ecs.RunningCount};desired={_ecs.DesiredCount}",
+                "honua-aws-ecs-alb" => $"canaryTaskDefinition={_ecs.TaskDefinitionArn ?? "<missing>"};stableTaskDefinition={_stable.TaskDefinitionArn ?? "<missing>"};status={_ecs.Status ?? "<missing>"};running={_ecs.RunningCount};desired={_ecs.DesiredCount}",
                 "honua-azure-container-apps-revision" => string.Join(',', _containerApp.Traffic.Select(weight => $"{weight.RevisionName}:{weight.Weight}")),
                 "honua-gitops-aws-lambda" => $"alias={_lambda.AliasName ?? "<missing>"};version={_lambda.FunctionVersion ?? "<missing>"}",
                 "honua-gitops-azure-functions" => $"productionImage={_production.LinuxFxVersion ?? "<missing>"};slotImage={_slot.LinuxFxVersion ?? "<missing>"}",
@@ -317,7 +324,7 @@ public sealed class DeployBackendRollbackTruthfulnessTests
         public void Configure(string backend, string scenario)
         {
             _scenario = scenario; _rollbackCalls = 0;
-            _argo = Argo(Candidate, false, "candidate-hash"); _alb = Alb(0, 100); _ecs = Ecs(Candidate);
+            _argo = Argo(Candidate, false, "candidate-hash"); _alb = Alb(0, 100); _ecs = Ecs(Candidate); _stable = Ecs(Candidate);
             _lambda = Lambda(Candidate); _containerApp = ContainerApp(Candidate); _production = Functions(Candidate);
             _slot = Functions(Prior); _activeDestination = "http://127.0.0.1:18081/";
             _containers = [Container("rollback-contract-18081", YarpRollingDeployBackend.RoleStandby, Candidate, true)];
@@ -344,7 +351,10 @@ public sealed class DeployBackendRollbackTruthfulnessTests
             switch (backend)
             {
                 case "honua-kubernetes-argo-rollouts": _argo = Argo(revision, true, "prior-hash"); break;
-                case "honua-aws-ecs-alb": _ecs = Ecs(revision); break;
+                case "honua-aws-ecs-alb":
+                    _stable = Ecs(revision);
+                    _ecs = _scenario == "exact-prior" ? Ecs(Candidate) : Ecs(revision);
+                    break;
                 case "honua-azure-container-apps-revision": _containerApp = ContainerApp(revision); break;
                 case "honua-gitops-aws-lambda": _lambda = Lambda(revision); break;
                 case "honua-gitops-azure-functions": _production = Functions(revision); break;
@@ -372,12 +382,17 @@ public sealed class DeployBackendRollbackTruthfulnessTests
         }
 
         public Task<AwsAlbListenerRuleState> GetListenerRuleWeightsAsync(string ruleArn, string? region, CancellationToken cancellationToken = default) => Task.FromResult(_alb);
+        public Task<AwsAlbTargetHealthState> DescribeTargetHealthAsync(string targetGroupArn, string? region, CancellationToken cancellationToken = default)
+            => Task.FromResult(_scenario == "exact-prior"
+                ? new AwsAlbTargetHealthState { Targets = [new AwsAlbTargetHealth { TargetId = "stable", State = "healthy" }] }
+                : new AwsAlbTargetHealthState());
         public Task<AwsAlbListenerRuleState> UpdateListenerRuleWeightsAsync(string ruleArn, IReadOnlyList<AwsAlbTargetGroupWeight> weights, string? region, CancellationToken cancellationToken = default)
         {
             if (ShouldFailTransiently()) throw new AmazonClientException("transient provider failure");
             if (!IsNoOp()) _alb = Alb(0, 100); return Task.FromResult(_alb);
         }
-        public Task<AwsEcsServiceState> DescribeServiceAsync(string cluster, string serviceName, string? region, CancellationToken cancellationToken = default) => Task.FromResult(_ecs);
+        public Task<AwsEcsServiceState> DescribeServiceAsync(string cluster, string serviceName, string? region, CancellationToken cancellationToken = default)
+            => Task.FromResult(string.Equals(serviceName, "honua-stable", StringComparison.Ordinal) ? _stable : _ecs);
         public Task UpdateServiceTaskDefinitionAsync(string cluster, string serviceName, string taskDefinitionArn, string? region, CancellationToken cancellationToken = default)
         {
             if (ShouldFailTransiently()) throw new AmazonClientException("transient provider failure");
@@ -426,7 +441,24 @@ public sealed class DeployBackendRollbackTruthfulnessTests
         }
         public Task<IReadOnlyList<ContainerSummary>> ListAsync(string executable, IReadOnlyDictionary<string, string> labelSelectors, CancellationToken cancellationToken) => Task.FromResult<IReadOnlyList<ContainerSummary>>(_containers.ToArray());
         public Task SwapAsync(string destinationAddress, CancellationToken cancellationToken) { _activeDestination = destinationAddress; return Task.CompletedTask; }
-        public Task<LocalReplicaHealthResult> ProbeAsync(string url, int samples, int timeoutSeconds, int expectedStatusCode, CancellationToken cancellationToken) => Task.FromResult(new LocalReplicaHealthResult { Attempts = samples });
+        public Task<LocalReplicaHealthResult> ProbeAsync(string url, int samples, int timeoutSeconds, int expectedStatusCode, CancellationToken cancellationToken)
+            => Task.FromResult(new LocalReplicaHealthResult
+            {
+                Attempts = samples,
+                Reached = true,
+                Body = _scenario == "exact-prior" ? "marker:revision-prior" : "{\"error\":{\"message\":\"candidate\"}}"
+            });
+
+        public Task<RollbackReadinessProbeResult> ProbeReadinessAsync(RollbackReadinessProbeRequest request, CancellationToken cancellationToken = default)
+            => Task.FromResult(new RollbackReadinessProbeResult { Proven = _scenario == "exact-prior" });
+
+        public Task<RollbackFunctionalProbeResult> ProbeFunctionalQueryAsync(RollbackFunctionalProbeRequest request, CancellationToken cancellationToken = default)
+            => Task.FromResult(new RollbackFunctionalProbeResult
+            {
+                Verdict = _scenario == "exact-prior"
+                    ? RollbackFunctionalQueryVerdict.MatchedPriorMarker
+                    : RollbackFunctionalQueryVerdict.ServedOtherMarker
+            });
 
         private static ArgoRolloutState Argo(string image, bool aborted, string? hash) => new()
         {

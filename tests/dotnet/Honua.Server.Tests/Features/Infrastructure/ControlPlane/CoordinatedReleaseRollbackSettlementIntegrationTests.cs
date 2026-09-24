@@ -458,7 +458,10 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
                 [SelfHostedDeployParameterKeys.ActivePort] = options.Value.ActivePort.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 [SelfHostedDeployParameterKeys.StandbyPort] = options.Value.StandbyPort.ToString(System.Globalization.CultureInfo.InvariantCulture),
                 [SelfHostedDeployParameterKeys.ContainerPort] = options.Value.ContainerPort.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                [SelfHostedDeployParameterKeys.Image] = DesiredRevision
+                [SelfHostedDeployParameterKeys.Image] = DesiredRevision,
+                [RollbackDataPlaneCompletion.FunctionalQueryPathParameterKey] = "/body",
+                [RollbackDataPlaneCompletion.LocalFunctionalQueryExpectedContainsParameterKey] = CurrentRevision,
+                [RollbackDataPlaneCompletion.LocalFunctionalQueryForbiddenContainsParameterKey] = DesiredRevision
             }
         };
 
@@ -560,15 +563,21 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
         {
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(timeoutSeconds) };
             var failures = 0;
+            var reached = false;
+            string? body = null;
             for (var i = 0; i < samples; i++)
             {
                 try
                 {
                     using var response = await client.GetAsync(url, cancellationToken);
+                    reached = true;
                     if ((int)response.StatusCode != expectedStatusCode)
                     {
                         failures++;
+                        continue;
                     }
+
+                    body ??= await response.Content.ReadAsStringAsync(cancellationToken);
                 }
                 catch (HttpRequestException)
                 {
@@ -580,6 +589,8 @@ public sealed class CoordinatedReleaseRollbackSettlementIntegrationTests(ITestOu
             {
                 Attempts = samples,
                 Failures = failures,
+                Reached = reached,
+                Body = body,
                 Detail = failures == 0 ? "local marker server healthy" : "local marker server unhealthy"
             };
         }

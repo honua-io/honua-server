@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.ControlPlane.Abstractions;
+using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
 using Honua.Server.Features.Orchestration;
 using Microsoft.Extensions.Options;
@@ -51,6 +52,7 @@ internal static class BatchAndDeployBackendsRegistration
 #endif
         // Provider-independent synthetic /healthz/ready gate inherited by every deploy backend.
         services.AddSingleton<IDeployHealthProbe, HttpDeployHealthProbe>();
+        services.AddSingleton<IRollbackDataPlaneProbe, HttpRollbackDataPlaneProbe>();
         services.AddSingleton<IDeployTelemetrySignalEvaluator, DeployTelemetrySignalEvaluator>();
 
         // Shared Kubernetes API request factory (in-cluster / out-of-cluster auth) consumed

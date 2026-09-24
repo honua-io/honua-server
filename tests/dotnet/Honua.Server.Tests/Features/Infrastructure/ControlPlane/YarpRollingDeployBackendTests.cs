@@ -353,13 +353,16 @@ public sealed class YarpRollingDeployBackendTests
     [Fact]
     public async Task RollbackAsync_BeforeCutover_StopsStandbyOnly()
     {
-        var backend = CreateBackend(out var runtime, out var proxy, out _);
+        var backend = CreateBackend(out var runtime, out var proxy, out var probe);
+        probe.Body = RollbackDataPlaneTestSupport.PriorMarker;
+        probe.Reached = true;
         runtime.SeedActive(ActiveContainerName(), CurrentRevision);
         await backend.StartAsync(CreateOperation(WorkflowOperationStatus.Submitted));
 
-        var observation = await backend.RollbackAsync(CreateOperation(WorkflowOperationStatus.RollbackRequested));
+        var observation = await backend.RollbackAsync(CreateProvenRollbackOperation());
 
         observation.Status.Should().Be(WorkflowOperationStatus.RolledBack);
+        observation.ObservedRevision.Should().Be(CurrentRevision);
         runtime.StopRequests.Should().Contain(StandbyContainerName());
         runtime.StopRequests.Should().NotContain(ActiveContainerName());
         // Proxy was never repointed because the old replica was never touched.
@@ -573,6 +576,19 @@ public sealed class YarpRollingDeployBackendTests
     private static WorkflowOperationRecord CreateOperation(WorkflowOperationStatus status)
         => CreateOperation(status, CreateSpec());
 
+    private static WorkflowOperationRecord CreateProvenRollbackOperation()
+    {
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [SelfHostedDeployParameterKeys.Image] = DesiredRevision,
+            [SelfHostedDeployParameterKeys.ActivePort] = "18080",
+            [SelfHostedDeployParameterKeys.StandbyPort] = "18081",
+            [SelfHostedDeployParameterKeys.ContainerPort] = "8080"
+        };
+        RollbackDataPlaneTestSupport.AddProof(parameters);
+        return CreateOperation(WorkflowOperationStatus.RollbackRequested, CreateSpec() with { Parameters = parameters });
+    }
+
     private static WorkflowOperationRecord CreateOperation(WorkflowOperationStatus status, DeployOperationSpec spec)
     {
         var now = DateTimeOffset.UtcNow;
@@ -666,6 +682,10 @@ public sealed class YarpRollingDeployBackendTests
     {
         public bool Healthy { get; set; } = true;
 
+        public bool Reached { get; set; } = true;
+
+        public string? Body { get; set; }
+
         public Task<LocalReplicaHealthResult> ProbeAsync(
             string url,
             int samples,
@@ -676,6 +696,8 @@ public sealed class YarpRollingDeployBackendTests
             {
                 Attempts = samples,
                 Failures = Healthy ? 0 : samples,
+                Reached = Reached,
+                Body = Body,
                 Detail = Healthy ? "healthy" : "unhealthy"
             });
     }
