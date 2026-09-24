@@ -1924,7 +1924,8 @@
               "/ImageServer/WCS"
             ],
             "honuaEndpoints": [
-              "GET /rest/services/{id}/ImageServer/WCS"
+              "GET /rest/services/{id}/ImageServer/WCS",
+              "GET /rest/services/{serviceId}/ImageServer/WCS"
             ],
             "capabilityMaturity": [
               "preview"
@@ -4052,6 +4053,21 @@
               "implemented"
             ],
             "notes": "Read-only service metadata for connections without a site segment. GET and POST expose the same principal-filtered service and branch-versioning metadata. This does not implement the ArcGIS Server administration mutation API."
+          },
+          {
+            "name": "Service-name catalog node",
+            "status": "partial",
+            "esriPaths": [
+              "/rest/services/{folderName}"
+            ],
+            "honuaEndpoints": [
+              "GET /rest/services/{folderName}",
+              "POST /rest/services/{folderName}"
+            ],
+            "capabilityMaturity": [
+              "implemented"
+            ],
+            "notes": "GET and POST expose the visible service-type entries for one service name using the same RBAC-filtered projection as the root directory. Supports client traversal through a service\u0027s parent node; nested folder hierarchies are not implemented."
           }
         ],
         "stub": [
