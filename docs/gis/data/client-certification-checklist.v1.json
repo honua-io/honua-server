@@ -190,13 +190,13 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "state": "fail",
           "previous_exclusion": {
             "state": "n/a-no-client",
-            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+            "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922n/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.wms rule 'time-dimension': https://host.docker.internal:18443/ogc/services/browser_compat/wms advertises no <Dimension name=\"time\"> on any layer, so there is no temporal dimension for a client to drive. This is a fixture property, not a client absence: arcpy does read time from a WMS layer (Layer.isTimeEnabled / Layer.time), and it reported 0 time-enabled layer(s) here."
           },
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922n/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.wms rule 'time-dimension': https://host.docker.internal:18443/ogc/services/browser_compat/wms advertises no <Dimension name=\"time\"> on any layer, so there is no temporal dimension for a client to drive. This is a fixture property, not a client absence: arcpy does read time from a WMS layer (Layer.isTimeEnabled / Layer.time), and it reported 0 time-enabled layer(s) here."
+          "evidence": "honua-esri-compat evidence/arcpy-checklist-20260923d, ArcGIS Pro 3.7.1.1904 on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02 (deploymentRevision ee053b9bf): this cell was closed as a client absence on a run against browser_compat, a service that advertises no <Dimension name=\"time\"> at all. Measuring a service with no temporal dimension establishes nothing about whether the client can drive one. test_service does advertise it, and against that service arcpy reports no time-enabled layer because the declared extent is '2024-01-01T12:00:00Z/2024-01-10T12:00:00Z/PT0S'. WMS 1.3.0 spells a continuous interval with a resolution of 0; PT0S is a zero-length duration and is not a valid resolution. QGIS 3.44.14 tolerates it and passes the same cell, so the two client families disagree solely over a spelling the specification does not permit. Server defect, tracked as honua-server#5172."
         },
         "qgis-ui": {
           "state": "pass",
@@ -1387,8 +1387,12 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904, UI-FEAT-CREATE, UI-FEAT-EDIT, UI-FEAT-DELETE: Create Features digitised objectid 2044 (POST /FeatureServer/applyEdits 200, independent query returned the point at -122.3854312, 37.7664971), the Attributes pane changed value 60->61 and back (each state re-read from the service), and table Delete + Save Edits removed 2044 (independent count back to 12)"
         },
         "arcpy": {
-          "state": "pass",
-          "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260919-f-edit/certification/20260919T162438Z-desktop-arcgis-featureserver.cert.json - FS-OP-APPLY-EDITS (and ADD/UPDATE/DELETE-FEATURES, FS-OP-APPEND), ArcGIS Pro/arcpy 3.7.1.1904: da.InsertCursor over the token-bearing layer URL committed one feature (new objectid observed from a fresh ArcPy process), da.UpdateCursor.deleteRow removed it and the count returned to 10; Append added and cleanup restored the fixture; run verdict pass"
+          "state": "fail",
+          "evidence": "honua-esri-compat evidence/arcpy-checklist-20260923d, ArcGIS Pro 3.7.1.1904 on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02: the applyEdits round-trip against test_service/FeatureServer/0 inserts nothing - before=10 added=[] final=10, with insertRow raising SystemError '... returned NULL without setting an exception'. Root cause measured by per-field bisection: the layer declares 'tags' and 'numbers' as esriFieldTypeString and returns JSON arrays in them ([\"red\",\"blue\"], [0,1,2]). An arcpy cursor selecting either field yields zero rows with no error, so the probe builds its insert template from an empty result set. Every other field returns all 10 rows. The server itself accepts the edit over REST with a token (count 10 -> 11 -> 10), so this is the field-type contract, not the write path. Server defect, tracked as honua-server#5171. The prior pass predates the field being populated this way and is preserved below.",
+          "previous_exclusion": {
+            "state": "pass",
+            "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260919-f-edit/certification/20260919T162438Z-desktop-arcgis-featureserver.cert.json - FS-OP-APPLY-EDITS (and ADD/UPDATE/DELETE-FEATURES, FS-OP-APPEND), ArcGIS Pro/arcpy 3.7.1.1904: da.InsertCursor over the token-bearing layer URL committed one feature (new objectid observed from a fresh ArcPy process), da.UpdateCursor.deleteRow removed it and the count returned to 10; Append added and cleanup restored the fixture; run verdict pass"
+          }
         },
         "qgis-ui": {
           "state": "blocked",
@@ -2878,8 +2882,12 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "n/a-no-client",
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922k/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.cog case CERT-CONN-01: https://host.docker.internal:18443/api/v1/rasters/cog/cog/0/1.tif is unavailable and this build publishes no raster artifacts: POST api/v1/admin/raster-artifacts/cog is itself 404, so the COG range proxy is not implemented here and there is nothing for the client to certify"
+          "state": "pass",
+          "evidence": "honua-esri-compat evidence/arcpy-checklist-20260923d, ArcGIS Pro 3.7.1.1904 on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02: closed as a client absence when the candidate published no COG, which made the absence untestable rather than established. This candidate restores the publisher, and arcpy does have a surface: following /stac/search to the 'cog' asset on item 1 (image/tiff; application=geotiff; profile=cloud-optimized) and opening its href with arcpy.Raster over /vsicurl/ reads 64x64 in 1 band. The artifact answers a Range request with 206 and the TIFF magic, so the read is a range read and not a whole-file fetch.",
+          "previous_exclusion": {
+            "state": "n/a-no-client",
+            "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922k/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.cog case CERT-CONN-01: https://host.docker.internal:18443/api/v1/rasters/cog/cog/0/1.tif is unavailable and this build publishes no raster artifacts: POST api/v1/admin/raster-artifacts/cog is itself 404, so the COG range proxy is not implemented here and there is nothing for the client to certify"
+          }
         },
         "qgis-ui": {
           "state": "blocked",
