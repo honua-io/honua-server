@@ -189,7 +189,7 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
                 SELECT zoom_level, ST_Width(ST_FromGDALRaster(tile_data)), ST_Height(ST_FromGDALRaster(tile_data))
                 FROM raster_tiles WHERE raster_data_id = @id;
                 """;
-            command.Parameters.AddWithValue("id", result.RasterId.Value);
+            command.Parameters.AddWithValue("id", result.RasterId!.Value);
             await using var reader = await command.ExecuteReaderAsync();
             var zooms = new HashSet<int>();
             while (await reader.ReadAsync())
