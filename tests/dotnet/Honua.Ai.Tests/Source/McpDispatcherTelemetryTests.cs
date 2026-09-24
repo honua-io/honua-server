@@ -263,7 +263,7 @@ public sealed class McpDispatcherTelemetryTests
         response!.Error.Should().BeNull();
         response.Result.Should().NotBeNull();
         response.Result!.Value.ValueKind.Should().Be(JsonValueKind.Object);
-        response.Result.Value.GetRawText().Should().Be("{}");
+        response.Result!.Value.GetRawText().Should().Be("{}");
     }
 
     /// <summary>
