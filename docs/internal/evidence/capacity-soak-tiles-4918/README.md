@@ -81,6 +81,23 @@ and the configured budget. The server previously refused 44% of tile requests wi
 line naming the limit; with the caching fix the line is emitted once per tile per TTL rather than
 once per request.
 
+## #4916
+
+Both attested receipts on pin `548b7a5263da5a3f2381eb43f232687cdf92b0bf` fail the frozen
+worst-scenario latency lock for the same reason, so the repeat is not runner variance:
+
+| Run | p95 | p99 | Worst scenario |
+|---|---:|---:|---|
+| [34923808977](https://github.com/honua-io/honua-server/actions/runs/34923808977) | 1223.68 ms | 1982.46 ms | `tiles_load` |
+| [34924256277](https://github.com/honua-io/honua-server/actions/runs/34924256277) | 1221.63 ms | 1951.74 ms | `tiles_load` |
+
+That pin, and the second sample's head `f820af6712`, are ancestors of the tile output-cache
+fix in #4926. The gate value is the worst scenario, and that scenario is the uncached 204/413
+tile workload this note describes. Other scenarios on the first receipt stay under the 822 ms
+p95 lock; `spatial_query_load` p99 is 1401.86 ms and shares the PostGIS the uncached tile
+encodes were saturating. An attested passing receipt on a candidate that contains #4926 is
+still required. The soak was not rerun from this change.
+
 ## Test evidence
 
 `tests/dotnet/Honua.Server.Tests/Features/Infrastructure/Rendering/TileOutcomeOutputCacheTests.cs`
