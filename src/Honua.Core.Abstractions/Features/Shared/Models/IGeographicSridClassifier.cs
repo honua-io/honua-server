@@ -60,4 +60,15 @@ public interface IGeographicSridClassifier
     /// <see langword="false"/>.
     /// </returns>
     ValueTask<bool> IsGeographicForMeasurementAsync(int srid, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Resolves the metres-per-native-unit factor for a projected <paramref name="srid"/> from the
+    /// live registry (<c>CrsDefinition.LinearUnitFactor</c>), or <see langword="null"/> when the SRID
+    /// is geographic, absent from the registry, or no registry is configured — callers should fall
+    /// back to a static unit table in that case.
+    /// </summary>
+    /// <param name="srid">EPSG SRID.</param>
+    /// <param name="cancellationToken">Cancellation token for async registry resolution.</param>
+    /// <returns>Metres per native unit, or <see langword="null"/> when unavailable.</returns>
+    ValueTask<double?> TryResolveLinearUnitFactorAsync(int srid, CancellationToken cancellationToken = default);
 }

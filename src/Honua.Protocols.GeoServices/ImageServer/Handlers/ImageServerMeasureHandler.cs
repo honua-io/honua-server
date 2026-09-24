@@ -45,22 +45,19 @@ internal sealed class ImageServerMeasureHandler
     private readonly IElevationService? _elevationService;
     private readonly ICoordinateTransformService? _transformService;
     private readonly IGeographicSridClassifier? _geographicSridClassifier;
-    private readonly ICrsRegistry? _crsRegistry;
 
     public ImageServerMeasureHandler(
         IRasterStore rasterStore,
         ILogger<ImageServerMeasureHandler> logger,
         IElevationService? elevationService = null,
         ICoordinateTransformService? transformService = null,
-        IGeographicSridClassifier? geographicSridClassifier = null,
-        ICrsRegistry? crsRegistry = null)
+        IGeographicSridClassifier? geographicSridClassifier = null)
     {
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _elevationService = elevationService;
         _transformService = transformService;
         _geographicSridClassifier = geographicSridClassifier;
-        _crsRegistry = crsRegistry;
     }
 
     /// <summary>
@@ -661,16 +658,14 @@ internal sealed class ImageServerMeasureHandler
             return 1d;
         }
 
-        if (_crsRegistry is not null)
+        if (_geographicSridClassifier is not null)
         {
-            var definition = await _crsRegistry.ResolveBySridAsync(wkid, cancellationToken).ConfigureAwait(false);
-            // Geographic definitions store radians per degree. Planar mensuration only
-            // applies this factor to projected units; geographic measures use the ellipsoid.
-            if (definition is { IsGeographic: false, LinearUnitFactor: double factor }
-                && factor > 0
-                && double.IsFinite(factor))
+            var factor = await _geographicSridClassifier
+                .TryResolveLinearUnitFactorAsync(wkid, cancellationToken)
+                .ConfigureAwait(false);
+            if (factor is double resolved)
             {
-                return factor;
+                return resolved;
             }
         }
 
