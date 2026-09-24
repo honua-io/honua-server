@@ -1488,6 +1488,17 @@ internal sealed class StreamingQueryFormatter
             case DateOnly dateOnly:
                 writer.WriteString(propertyName, dateOnly.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
                 break;
+            // GeoServices has no array or object field type, so a column whose values are
+            // neither is published as esriFieldTypeString and the value has to agree. The
+            // default arm below writes complex values as raw JSON, which emits an array
+            // for a field the same response declares a string. ArcGIS Pro stops reading
+            // the feature array at the first such row: a cursor over a layer whose first
+            // nine rows are strings and whose tenth is an array returns nine rows, and one
+            // whose first row is an array returns none - silently, with no error. See
+            // GeoServicesAttributeProjection and honua-server#5171.
+            case JsonElement { ValueKind: JsonValueKind.Array or JsonValueKind.Object } element:
+                writer.WriteString(propertyName, element.GetRawText());
+                break;
             default:
                 // For complex objects, serialize to JSON and write as raw JSON
                 writer.WritePropertyName(propertyName);

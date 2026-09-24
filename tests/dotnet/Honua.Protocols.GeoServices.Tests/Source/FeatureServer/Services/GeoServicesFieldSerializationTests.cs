@@ -447,6 +447,55 @@ public sealed class GeoServicesFieldSerializationTests
         attributes.GetProperty("tags").GetString().Should().Be(rawJson);
     }
 
+    [Theory]
+    [InlineData("buffered")]
+    [InlineData("streaming")]
+    [InlineData("top-features")]
+    public async Task Json_ArrayValue_IsAStringOnEveryQueryPath(string path)
+    {
+        // The buffered path was fixed first and the streaming path was not, which hid the
+        // defect: a probe issuing a plain query saw a string, while ArcGIS Pro - which
+        // sends orderByFields and resultOffset, and so takes the streaming path - still
+        // received an array and silently stopped reading at that row. Pin all three.
+        var resource = CreateResource(
+            new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+            new MetadataV2Field { Name = "tags", Type = MetadataV2FieldType.String });
+
+        using var value = JsonDocument.Parse("[\"red\",\"blue\"]");
+        var feature = Feature.Create(1, null, new Dictionary<string, object?>
+        {
+            ["objectid"] = 1L,
+            ["tags"] = value.RootElement.Clone()
+        }.ToImmutableDictionary());
+
+        string json;
+        if (path == "top-features")
+        {
+            var response = FeatureServerEndpoints.BuildTopFeaturesJsonResponse(
+                QueryResult<Feature>.Create(1, [feature]), resource, false, null);
+            json = JsonSerializer.Serialize(response, FeatureServerJsonContext.Default.QueryResponse);
+        }
+        else if (path == "streaming")
+        {
+            json = await StreamGeoServicesJsonAsync(
+                new StreamingQueryFormatter(Options.Create(new LimitsOptions())), feature, resource);
+        }
+        else
+        {
+            var (formatter, _) = CreateFormatter();
+            var (response, _) = await formatter.FormatQueryResultAsync(
+                QueryResult<Feature>.Create(1, [feature]), resource, "json", false, null, false, false, null, null);
+            json = JsonSerializer.Serialize(response, FeatureServerJsonContext.Default.QueryResponse);
+        }
+
+        using var document = JsonDocument.Parse(json);
+        var attributes = document.RootElement.GetProperty("features")[0].GetProperty("attributes");
+        attributes.GetProperty("tags").ValueKind.Should().Be(JsonValueKind.String,
+            "an esriFieldTypeString value must be a JSON string on every query path; "
+            + "ArcGIS Pro stops reading the feature array at the first row that is not (#5171)");
+        attributes.GetProperty("tags").GetString().Should().Be("[\"red\",\"blue\"]");
+    }
+
     private static (QueryFormatter Formatter, LimitsOptions Limits) CreateFormatter()
     {
         var limitsOptions = Options.Create(new LimitsOptions());
