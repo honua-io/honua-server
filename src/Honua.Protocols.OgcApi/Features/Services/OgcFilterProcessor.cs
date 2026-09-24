@@ -615,7 +615,8 @@ internal sealed partial class OgcFilterProcessor
             EnvelopeMinX = bbox.MinX <= bbox.MaxX ? bbox.MinX : null,
             EnvelopeMinY = bbox.MinX <= bbox.MaxX ? bbox.MinY : null,
             EnvelopeMaxX = bbox.MinX <= bbox.MaxX ? bbox.MaxX : null,
-            EnvelopeMaxY = bbox.MinX <= bbox.MaxX ? bbox.MaxY : null
+            EnvelopeMaxY = bbox.MinX <= bbox.MaxX ? bbox.MaxY : null,
+            AntimeridianSplit = bbox.MinX > bbox.MaxX
         };
     }
 

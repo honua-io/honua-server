@@ -12,6 +12,7 @@ using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
@@ -666,7 +667,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         if (query.SpatialFilter.HasValue && _geometryColumn != null)
         {
-            conditions.Add(BuildSpatialFilter(query.SpatialFilter.Value, sql));
+            conditions.Add(BuildSpatialFilter(query, sql));
         }
 
         if (query.TemporalFilter.HasValue)
@@ -1022,15 +1023,16 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             candidate.Name.Equals(fieldName, StringComparison.OrdinalIgnoreCase))?.Type;
     }
 
-    private string BuildSpatialFilter(SpatialFilter filter, SqlBuilder sql)
+    private string BuildSpatialFilter(FeatureQuery query, SqlBuilder sql)
     {
+        var filter = query.SpatialFilter!.Value;
         var geometryColumn = $"{_geometryColumn}::geometry";
         if (filter.SpatialRelationship == SpatialRelationship.NearestNeighbor)
         {
             return $"{geometryColumn} IS NOT NULL";
         }
 
-        var filterGeometry = BuildFilterGeometryExpression(filter, sql);
+        var filterGeometry = BuildFilterGeometryExpression(query, sql);
 
         return filter.SpatialRelationship switch
         {
@@ -1044,7 +1046,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             // can never ST_Contains an enclosing envelope.
             SpatialRelationship.Within => $"ST_Within({filterGeometry}, {geometryColumn})",
             SpatialRelationship.Contains => $"ST_Contains({filterGeometry}, {geometryColumn})",
-            SpatialRelationship.EnvelopeIntersects => $"{geometryColumn} && {filterGeometry}",
+            SpatialRelationship.EnvelopeIntersects => filter.AntimeridianSplit
+                ? $"({geometryColumn} && ST_GeometryN({filterGeometry}, 1) OR {geometryColumn} && ST_GeometryN({filterGeometry}, 2))"
+                : $"{geometryColumn} && {filterGeometry}",
             SpatialRelationship.Crosses => $"ST_Crosses({geometryColumn}, {filterGeometry})",
             SpatialRelationship.Touches => $"ST_Touches({geometryColumn}, {filterGeometry})",
             SpatialRelationship.Overlaps => $"ST_Overlaps({geometryColumn}, {filterGeometry})",
@@ -1056,8 +1060,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         };
     }
 
-    private string BuildFilterGeometryExpression(SpatialFilter filter, SqlBuilder sql)
+    private string BuildFilterGeometryExpression(FeatureQuery query, SqlBuilder sql)
     {
+        var filter = query.SpatialFilter!.Value;
         if (filter.IsSimpleEnvelope &&
             filter.EnvelopeMinX.HasValue &&
             filter.EnvelopeMinY.HasValue &&
@@ -1070,22 +1075,25 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             var maxY = sql.AddParameter(filter.EnvelopeMaxY.Value);
             var srid = filter.Srid ?? _storageSrid;
             var envelope = $"ST_MakeEnvelope({minX}, {minY}, {maxX}, {maxY}, {srid})";
-            return TransformFilterGeometryIfNeeded(envelope, srid);
+            return TransformFilterGeometryIfNeeded(envelope, srid, query.SpatialFilterDatumTransformation);
         }
 
         var geometryParameter = sql.AddParameter(filter.Geometry);
         var sourceSrid = filter.Srid ?? _storageSrid;
         var rawGeometry = $"ST_GeomFromEWKB({geometryParameter})";
         var geometry = $"ST_SetSRID({rawGeometry}, COALESCE(NULLIF(ST_SRID({rawGeometry}), 0), {sourceSrid}))";
-        return TransformFilterGeometryIfNeeded(geometry, sourceSrid);
+        return TransformFilterGeometryIfNeeded(geometry, sourceSrid, query.SpatialFilterDatumTransformation);
     }
 
-    private string TransformFilterGeometryIfNeeded(string geometryExpression, int sourceSrid)
+    private string TransformFilterGeometryIfNeeded(
+        string geometryExpression,
+        int sourceSrid,
+        DatumTransformationSelection? selection)
     {
         var targetSrid = _storageSrid;
         return sourceSrid == targetSrid
             ? geometryExpression
-            : $"ST_Transform({geometryExpression}, {targetSrid})";
+            : DatumTransformSql.BuildTransformExpression(geometryExpression, targetSrid, selection);
     }
 
     private string BuildDistancePredicate(
@@ -1781,7 +1789,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         }
 
         var geometryColumn = $"{_geometryColumn}::geometry";
-        var filterGeometry = BuildFilterGeometryExpression(query.SpatialFilter!.Value, sql);
+        var filterGeometry = BuildFilterGeometryExpression(query, sql);
         return ShouldUseGeodesicNearestNeighbor()
             ? BuildGeodesicDistanceExpression(geometryColumn, filterGeometry)
             : $"{geometryColumn} <-> {filterGeometry}";
@@ -1790,7 +1798,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private string BuildNearestNeighborDistanceExpression(FeatureQuery query, SqlBuilder sql)
     {
         var geometryColumn = $"{_geometryColumn}::geometry";
-        var filterGeometry = BuildFilterGeometryExpression(query.SpatialFilter!.Value, sql);
+        var filterGeometry = BuildFilterGeometryExpression(query, sql);
         return ShouldUseGeodesicNearestNeighbor()
             ? BuildGeodesicDistanceExpression(geometryColumn, filterGeometry)
             : $"ST_Distance({geometryColumn}, {filterGeometry})";
