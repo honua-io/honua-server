@@ -27,6 +27,7 @@ public class ImageServerParameterValidationTests : IClassFixture<ImageServerPara
     private readonly WebAppFixture _fixture;
     private readonly HttpClient _client;
     private const int TestLayerId = 0;
+    private static readonly string[] CachedTileFormats = ["png", "jpeg"];
 
     public ImageServerParameterValidationTests(ImageServerParameterFixture fixture)
     {
@@ -484,7 +485,7 @@ public class ImageServerParameterValidationTests : IClassFixture<ImageServerPara
 
             var rule = Uri.EscapeDataString(
                 $"{{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[{rasterId}]}}");
-            foreach (var format in new[] { "png", "jpeg" })
+            foreach (var format in CachedTileFormats)
             {
                 var url = $"/rest/services/{TestLayerId}/ImageServer/tile/0/0/0?format={format}&mosaicRule={rule}";
                 using var denied = await _fixture.Client.GetAsync(url);
