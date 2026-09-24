@@ -211,7 +211,10 @@ public sealed partial class LayerPublishingIntegrationTests
         deletedReadback.StatusCode.Should().Be(HttpStatusCode.NotFound);
         using var finalQuery = JsonDocument.Parse(await _client.GetStringAsync($"{featureServer}/query?f=json&where=1%3D1&outFields=*&returnGeometry=true"));
         finalQuery.RootElement.GetProperty("features").GetArrayLength().Should().Be(1);
-        finalQuery.RootElement.GetProperty("features")[0].GetProperty("attributes").GetProperty("properties").GetProperty("name").GetString().Should().Be("Created");
+        // GeoServices advertises JSON columns as esriFieldTypeString.
+        using var finalProperties = JsonDocument.Parse(
+            finalQuery.RootElement.GetProperty("features")[0].GetProperty("attributes").GetProperty("properties").GetString()!);
+        finalProperties.RootElement.GetProperty("name").GetString().Should().Be("Created");
         using var sourceAfter = JsonDocument.Parse(await _client.GetStringAsync(sourceQuery));
         sourceAfter.RootElement.GetProperty("features").GetRawText().Should().Be(originalSourceFeatures);
     }
