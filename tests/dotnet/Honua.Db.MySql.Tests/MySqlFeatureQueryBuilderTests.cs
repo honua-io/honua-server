@@ -622,6 +622,7 @@ public class MySqlFeatureQueryBuilderTests
         var result = builder.BuildSelectQuery(301, query);
 
         Assert.Contains("ST_Distance_Sphere", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("6371008.8", result.Sql, StringComparison.Ordinal);
     }
 
     [Fact]
