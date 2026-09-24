@@ -95,6 +95,14 @@ public readonly record struct FeatureQuery
     public DatumTransformationSelection? OutputDatumTransformation { get; init; }
 
     /// <summary>
+    /// Optional datum transformation for a spatial filter whose SRID differs from
+    /// <see cref="SpatialReferenceSrid"/>. This is the filter CRS to the layer CRS,
+    /// independent of <see cref="OutputDatumTransformation"/> (layer CRS to output CRS).
+    /// When unset, providers use two-argument <c>ST_Transform</c>.
+    /// </summary>
+    public DatumTransformationSelection? SpatialFilterDatumTransformation { get; init; }
+
+    /// <summary>
     /// Optional output axis order for formats that encode coordinates according to CRS axis definitions.
     /// </summary>
     public AxisOrder? OutputAxisOrder { get; init; }
@@ -364,6 +372,12 @@ public readonly record struct SpatialFilter
     /// Whether to include the computed distance value in results for KNN queries.
     /// </summary>
     public bool ReturnDistance { get; init; }
+
+    /// <summary>
+    /// True when the filter geometry was split into two envelopes around the antimeridian.
+    /// Index checks must test each half. The union bounding box would cover every longitude.
+    /// </summary>
+    public bool AntimeridianSplit { get; init; }
 
     /// <summary>
     /// Creates a spatial filter

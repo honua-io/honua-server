@@ -4,6 +4,7 @@
 using System.Globalization;
 using System.Text;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Db.Postgres.Features.Infrastructure;
@@ -75,7 +76,11 @@ internal sealed partial class FeatureQueryBuilder
                 }
                 else
                 {
-                    clause = $"{geometryOperand} && {filterGeometry} AND ST_Intersects({geometryOperand}, {filterGeometry})";
+                    clause = IndexedAnd(
+                        geometryOperand,
+                        filterGeometry,
+                        filter.AntimeridianSplit,
+                        $"ST_Intersects({geometryOperand}, {filterGeometry})");
                 }
                 break;
 
@@ -83,35 +88,56 @@ internal sealed partial class FeatureQueryBuilder
                 // Esri semantics: esriSpatialRelWithin = filter geometry is within feature geometry.
                 // PostGIS: ST_Within(filter, feature) = filter is within feature.
                 filterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
-                clause = $"{geometryOperand} && {filterGeometry} AND ST_Within({filterGeometry}, {geometryOperand})";
+                clause = IndexedAnd(
+                    geometryOperand,
+                    filterGeometry,
+                    filter.AntimeridianSplit,
+                    $"ST_Within({filterGeometry}, {geometryOperand})");
                 break;
 
             case SpatialRelationship.Contains:
                 // Esri semantics: esriSpatialRelContains = filter geometry contains feature geometry.
                 // PostGIS: ST_Contains(filter, feature) = filter contains feature.
                 filterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
-                clause = $"{geometryOperand} && {filterGeometry} AND ST_Contains({filterGeometry}, {geometryOperand})";
+                clause = IndexedAnd(
+                    geometryOperand,
+                    filterGeometry,
+                    filter.AntimeridianSplit,
+                    $"ST_Contains({filterGeometry}, {geometryOperand})");
                 break;
 
             case SpatialRelationship.EnvelopeIntersects:
-                // Already optimized - pure index operation
+                // Already optimized - pure index operation. A date-line split must probe each
+                // half; the union box of the two halves covers every longitude.
                 filterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
-                clause = $"{geometryOperand} && {filterGeometry}";
+                clause = IndexProbe(geometryOperand, filterGeometry, filter.AntimeridianSplit);
                 break;
 
             case SpatialRelationship.Crosses:
                 filterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
-                clause = $"{geometryOperand} && {filterGeometry} AND ST_Crosses({geometryOperand}, {filterGeometry})";
+                clause = IndexedAnd(
+                    geometryOperand,
+                    filterGeometry,
+                    filter.AntimeridianSplit,
+                    $"ST_Crosses({geometryOperand}, {filterGeometry})");
                 break;
 
             case SpatialRelationship.Touches:
                 filterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
-                clause = $"{geometryOperand} && {filterGeometry} AND ST_Touches({geometryOperand}, {filterGeometry})";
+                clause = IndexedAnd(
+                    geometryOperand,
+                    filterGeometry,
+                    filter.AntimeridianSplit,
+                    $"ST_Touches({geometryOperand}, {filterGeometry})");
                 break;
 
             case SpatialRelationship.Overlaps:
                 filterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
-                clause = $"{geometryOperand} && {filterGeometry} AND ST_Overlaps({geometryOperand}, {filterGeometry})";
+                clause = IndexedAnd(
+                    geometryOperand,
+                    filterGeometry,
+                    filter.AntimeridianSplit,
+                    $"ST_Overlaps({geometryOperand}, {filterGeometry})");
                 break;
 
             case SpatialRelationship.Disjoint:
@@ -122,7 +148,11 @@ internal sealed partial class FeatureQueryBuilder
 
             case SpatialRelationship.Equals:
                 filterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
-                clause = $"{geometryOperand} && {filterGeometry} AND ST_Equals({geometryOperand}, {filterGeometry})";
+                clause = IndexedAnd(
+                    geometryOperand,
+                    filterGeometry,
+                    filter.AntimeridianSplit,
+                    $"ST_Equals({geometryOperand}, {filterGeometry})");
                 break;
 
             case SpatialRelationship.WithinDistance:
@@ -161,7 +191,11 @@ internal sealed partial class FeatureQueryBuilder
             default:
                 // PERFORMANCE OPTIMIZATION: Default to bbox + intersects for best performance
                 filterGeometry = BuildSpatialFilterGeometryExpression(filter, query, ref paramIndex, parameters);
-                clause = $"{geometryOperand} && {filterGeometry} AND ST_Intersects({geometryOperand}, {filterGeometry})";
+                clause = IndexedAnd(
+                    geometryOperand,
+                    filterGeometry,
+                    filter.AntimeridianSplit,
+                    $"ST_Intersects({geometryOperand}, {filterGeometry})");
                 break;
         }
 
@@ -247,9 +281,8 @@ internal sealed partial class FeatureQueryBuilder
         var storageSrid = spatialReferenceSrid ?? SpatialReference.WGS84.Wkid;
 
         // Bias classification toward "geographic" only for the curated list plus the unlisted
-        // EPSG geographic 2D range (4000-4999). Misclassifying projected-metre storage as
-        // geographic would under-expand (degrees << metres) and drop matches, so everything else
-        // is treated as metre-unit projected storage. Full CRS-unit resolution is deferred to #2732.
+        // EPSG geographic 2D range (4000-4999). Misclassifying projected storage as geographic
+        // would under-expand (degrees << metres) and drop matches.
         var isGeographicStorage =
             DistanceConversions.IsGeographicSrid(storageSrid) || IsUnlistedGeographicSridRange(storageSrid);
 
@@ -279,12 +312,46 @@ internal sealed partial class FeatureQueryBuilder
                    $" OR {geometryOperand} && ST_Translate({envelope}, -360, 0))";
         }
 
-        // Projected storage is assumed to use metre units (the dominant case and consistent
-        // with the geography exact predicate, which always yields metres). Non-metre projected
-        // CRSs are out of scope for this minimal fix (#2732).
+        // Expand by the layer's native unit. A US-foot CRS stores coordinates in feet, so
+        // expanding by the raw metre count under-covers and drops matches the exact
+        // geography test would have kept. A missing spatial_ref_sys row still expands by metres.
         var metres = distanceInMeters.ToString("R", CultureInfo.InvariantCulture);
-        return $"{geometryOperand} && ST_Expand({storageFilterGeometry}, {metres})";
+        var nativeExpansion = $"({metres} / {ProjectedMetersPerUnitSql(storageSrid)})";
+        return $"{geometryOperand} && ST_Expand({storageFilterGeometry}, {nativeExpansion})";
     }
+
+    /// <summary>
+    /// Scalar SQL for metres per projected unit of <paramref name="srid"/>, from
+    /// <c>spatial_ref_sys</c>. Preference matches <see cref="CrsLinearUnitFactor"/>:
+    /// <c>+to_meter</c>, then <c>+units</c>, otherwise 1.
+    /// </summary>
+    private static string ProjectedMetersPerUnitSql(int srid)
+    {
+        var usFoot = CrsLinearUnitFactor.UsSurveyFootMeters.ToString("R", CultureInfo.InvariantCulture);
+        var foot = CrsLinearUnitFactor.InternationalFootMeters.ToString("R", CultureInfo.InvariantCulture);
+        return "COALESCE((SELECT CASE "
+            + "WHEN COALESCE(proj4text, '') ~ '\\+to_meter=' THEN NULLIF(substring(proj4text FROM '\\+to_meter=([0-9.eE+-]+)'), '')::double precision "
+            + $"WHEN COALESCE(proj4text, '') ILIKE '%+units=us-ft%' OR COALESCE(proj4text, '') ILIKE '%+units=ftus%' THEN {usFoot} "
+            + $"WHEN COALESCE(proj4text, '') ILIKE '%+units=ft%' OR COALESCE(proj4text, '') ILIKE '%+units=foot%' THEN {foot} "
+            + "WHEN COALESCE(proj4text, '') ILIKE '%+units=ind-ft%' THEN 0.3047995102481469 "
+            + "WHEN COALESCE(proj4text, '') ILIKE '%+units=km%' THEN 1000 "
+            + "WHEN COALESCE(proj4text, '') ILIKE '%+units=m%' OR COALESCE(proj4text, '') ILIKE '%+units=meter%' OR COALESCE(proj4text, '') ILIKE '%+units=metre%' THEN 1 "
+            + "ELSE NULL END FROM spatial_ref_sys WHERE srid = "
+            + srid.ToString(CultureInfo.InvariantCulture)
+            + " LIMIT 1), 1.0)";
+    }
+
+    private static string IndexProbe(string geometryOperand, string filterGeometry, bool antimeridianSplit)
+        => antimeridianSplit
+            ? $"({geometryOperand} && ST_GeometryN({filterGeometry}, 1) OR {geometryOperand} && ST_GeometryN({filterGeometry}, 2))"
+            : $"{geometryOperand} && {filterGeometry}";
+
+    private static string IndexedAnd(
+        string geometryOperand,
+        string filterGeometry,
+        bool antimeridianSplit,
+        string predicate)
+        => $"{IndexProbe(geometryOperand, filterGeometry, antimeridianSplit)} AND {predicate}";
 
     private static bool IsUnlistedGeographicSridRange(int srid)
         => srid is >= 4000 and <= 4999 && !DistanceConversions.IsGeographicSrid(srid);

@@ -28,11 +28,34 @@ public sealed class GeoServicesSpatialFilterBuilderTests
             4326);
 
         filter.Srid.Should().Be(4326);
+        filter.AntimeridianSplit.Should().BeTrue();
+        filter.IsSimpleEnvelope.Should().BeFalse();
 
         var geometry = new WKBReader().Read(filter.Geometry);
         geometry.Should().BeOfType<MultiPolygon>();
 
         var multiPolygon = (MultiPolygon)geometry;
         multiPolygon.NumGeometries.Should().Be(2);
+    }
+
+    [UnitTest]
+    public void BuildSpatialFilter_WithUnwrappedPacificEnvelope_FoldsAcrossTheAntimeridian()
+    {
+        var filter = GeoServicesSpatialFilterBuilder.BuildSpatialFilter(
+            new QueryParameters(),
+            new GeoServicesGeometry
+            {
+                Xmin = 170,
+                Ymin = -10,
+                Xmax = 190,
+                Ymax = 10
+            },
+            4326);
+
+        filter.AntimeridianSplit.Should().BeTrue();
+
+        var multiPolygon = new WKBReader().Read(filter.Geometry).Should().BeOfType<MultiPolygon>().Subject;
+        multiPolygon.NumGeometries.Should().Be(2);
+        multiPolygon.Coordinates.Should().OnlyContain(coordinate => coordinate.X >= -180d && coordinate.X <= 180d);
     }
 }

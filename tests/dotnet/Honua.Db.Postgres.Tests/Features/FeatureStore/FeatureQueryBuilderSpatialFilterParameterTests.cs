@@ -3,6 +3,7 @@
 
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Tiles;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
@@ -293,6 +294,90 @@ public sealed class FeatureQueryBuilderSpatialFilterParameterTests
         result.Sql.Should().Contain("ST_DWithin(");
         result.Sql.Should().Contain("ST_Transform(");
         result.Sql.Should().Contain("::geography");
+        result.Sql.Should().Contain("spatial_ref_sys");
+        result.Sql.Should().Contain("+to_meter=");
+    }
+
+    [Fact]
+    public void BuildSelectQuery_WithinDistanceFootStorage_ExpandsByTheCrsUnit()
+    {
+        var poolProvider = new DefaultObjectPoolProvider();
+        var stringBuilderPool = poolProvider.Create(new FeatureStoreStringBuilderPooledObjectPolicy());
+        var queryBuilder = new FeatureQueryBuilder(stringBuilderPool, new GeometryProcessor());
+
+        var query = new FeatureQuery
+        {
+            SpatialReferenceSrid = 2264,
+            SpatialFilter = SpatialFilter.CreateDistanceFilter(
+                [1, 2, 3, 4],
+                distance: 1000,
+                unit: DistanceUnit.Meters,
+                withinDistance: true,
+                srid: 2264)
+        };
+
+        var result = queryBuilder.BuildSelectQuery(layerId: 1, query);
+
+        result.Sql.Should().Contain("ST_Expand(");
+        result.Sql.Should().Contain("spatial_ref_sys");
+        result.Sql.Should().Contain("WHERE srid = 2264");
+        result.Sql.Should().NotContain("cos(radians(");
+    }
+
+    [Fact]
+    public void BuildSelectQuery_AntimeridianSplit_ProbesEachHalf()
+    {
+        var poolProvider = new DefaultObjectPoolProvider();
+        var stringBuilderPool = poolProvider.Create(new FeatureStoreStringBuilderPooledObjectPolicy());
+        var queryBuilder = new FeatureQueryBuilder(stringBuilderPool, new GeometryProcessor());
+
+        var query = new FeatureQuery
+        {
+            SpatialReferenceSrid = 4326,
+            SpatialFilter = SpatialFilter.Create(
+                [1, 2, 3, 4],
+                SpatialRelationship.Intersects,
+                srid: 4326) with
+            {
+                AntimeridianSplit = true
+            }
+        };
+
+        var result = queryBuilder.BuildSelectQuery(layerId: 1, query);
+
+        result.Sql.Should().Contain("ST_GeometryN(");
+        result.Sql.Should().Contain("ST_Intersects(");
+    }
+
+    [Fact]
+    public void BuildSelectQuery_CrossDatumFilter_UsesCatalogPipeline()
+    {
+        var poolProvider = new DefaultObjectPoolProvider();
+        var stringBuilderPool = poolProvider.Create(new FeatureStoreStringBuilderPooledObjectPolicy());
+        var queryBuilder = new FeatureQueryBuilder(stringBuilderPool, new GeometryProcessor());
+
+        var query = new FeatureQuery
+        {
+            SpatialReferenceSrid = 4326,
+            SpatialFilterDatumTransformation = new DatumTransformationSelection
+            {
+                Name = "NAD_1927_To_NAD_1983_NADCON",
+                FromSrid = 4267,
+                ToSrid = 4326,
+                ProjPipeline = "+proj=pipeline +step +proj=hgridshift +grids=us_noaa_conus.tif",
+                TransformForward = true
+            },
+            SpatialFilter = SpatialFilter.Create(
+                [1, 2, 3, 4],
+                SpatialRelationship.Intersects,
+                srid: 4267)
+        };
+
+        var result = queryBuilder.BuildSelectQuery(layerId: 1, query);
+
+        result.Sql.Should().Contain("ST_TransformPipeline(");
+        result.Sql.Should().Contain("us_noaa_conus.tif");
+        result.Sql.Should().NotContain("ST_Transform(ST_GeomFromEWKB(");
     }
 
     [Fact]

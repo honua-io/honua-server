@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 
 namespace Honua.Protocols.GeoServices;
@@ -74,6 +75,24 @@ internal static class GeoServicesSpatialFilterBuilder
             Xmax: double xmax,
             Ymax: not null
         } && xmin <= xmax;
+        var crossesAntimeridian = inputSrid is int geographicSrid
+            && SpatialReference.Create(geographicSrid).IsGeographic
+            && geometry.Xmin is double envelopeMinX
+            && geometry.Ymin is double envelopeMinY
+            && geometry.Xmax is double envelopeMaxX
+            && geometry.Ymax is double envelopeMaxY
+            && GeographicEnvelope.TryNormalize(
+                envelopeMinX,
+                envelopeMinY,
+                envelopeMaxX,
+                envelopeMaxY,
+                out var normalized,
+                out _)
+            && normalized.CrossesAntimeridian;
+        if (crossesAntimeridian)
+        {
+            isSimpleEnvelope = false;
+        }
 
         return new SpatialFilter
         {
@@ -86,7 +105,8 @@ internal static class GeoServicesSpatialFilterBuilder
             EnvelopeMinX = isSimpleEnvelope ? geometry.Xmin : null,
             EnvelopeMinY = isSimpleEnvelope ? geometry.Ymin : null,
             EnvelopeMaxX = isSimpleEnvelope ? geometry.Xmax : null,
-            EnvelopeMaxY = isSimpleEnvelope ? geometry.Ymax : null
+            EnvelopeMaxY = isSimpleEnvelope ? geometry.Ymax : null,
+            AntimeridianSplit = crossesAntimeridian
         };
     }
 

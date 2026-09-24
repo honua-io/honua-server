@@ -145,7 +145,10 @@ internal sealed class GeometryProcessor : IGeometryProcessor
         if (filter.Srid.HasValue && query.SpatialReferenceSrid.HasValue &&
             filter.Srid.Value != query.SpatialReferenceSrid.Value)
         {
-            geometryExpression = $"ST_Transform({geometryExpression}, {query.SpatialReferenceSrid.Value})";
+            geometryExpression = DatumTransformSql.BuildTransformExpression(
+                geometryExpression,
+                query.SpatialReferenceSrid.Value,
+                query.SpatialFilterDatumTransformation);
         }
 
         return geometryExpression;

@@ -285,11 +285,17 @@ internal static partial class GeoServicesGeometryConverter
         double maxX,
         double maxY)
     {
-        if (IsGeographicSrid(factory.SRID) && minX > maxX)
+        if (IsGeographicSrid(factory.SRID)
+            && GeographicEnvelope.TryNormalize(minX, minY, maxX, maxY, out var parts, out _))
         {
-            var eastHemisphere = CreateEnvelopePolygon(factory, minX, minY, 180.0, maxY);
-            var westHemisphere = CreateEnvelopePolygon(factory, -180.0, minY, maxX, maxY);
-            return factory.CreateMultiPolygon([eastHemisphere, westHemisphere]);
+            if (parts.CrossesAntimeridian)
+            {
+                var eastHemisphere = CreateEnvelopePolygon(factory, parts.West, parts.South, 180.0, parts.North);
+                var westHemisphere = CreateEnvelopePolygon(factory, -180.0, parts.South, parts.East, parts.North);
+                return factory.CreateMultiPolygon([eastHemisphere, westHemisphere]);
+            }
+
+            return CreateEnvelopePolygon(factory, parts.West, parts.South, parts.East, parts.North);
         }
 
         return factory.ToGeometry(new Envelope(minX, maxX, minY, maxY));

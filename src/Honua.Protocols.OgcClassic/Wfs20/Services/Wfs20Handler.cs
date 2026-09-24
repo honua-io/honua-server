@@ -602,7 +602,8 @@ internal sealed partial class Wfs20Handler
             EnvelopeMinX = minX <= maxX ? minX : null,
             EnvelopeMinY = minX <= maxX ? minY : null,
             EnvelopeMaxX = minX <= maxX ? maxX : null,
-            EnvelopeMaxY = minX <= maxX ? maxY : null
+            EnvelopeMaxY = minX <= maxX ? maxY : null,
+            AntimeridianSplit = crsDefinition.IsGeographic && minX > maxX
         };
     }
 

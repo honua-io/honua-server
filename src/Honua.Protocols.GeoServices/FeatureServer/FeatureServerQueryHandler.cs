@@ -1657,6 +1657,25 @@ internal sealed partial class FeatureServerQueryHandler(
             query = query with { OutputDatumTransformation = datumSelection };
         }
 
+        // The client's datumTransformation names the layer-to-output pipeline. The filter
+        // has its own pair (filter SRID to layer SRID) and uses the catalog default, not
+        // that client WKID. No catalog entry leaves the selection unset so the predicate
+        // keeps two-argument ST_Transform.
+        if (query.SpatialFilter is { Srid: int filterSrid }
+            && filterSrid > 0
+            && filterSrid != layerSrid
+            && GeoServicesDatumTransformationResolver.TryResolve(
+                _datumTransformationCatalog,
+                datumTransformationValue: null,
+                filterSrid,
+                layerSrid,
+                out var filterSelection,
+                out _)
+            && filterSelection is not null)
+        {
+            query = query with { SpatialFilterDatumTransformation = filterSelection };
+        }
+
         return (query, outputSrid, null);
     }
 
@@ -2176,20 +2195,36 @@ internal sealed partial class FeatureServerQueryHandler(
                 return ValidationResult.Failure("Envelope geometry must include xmin, ymin, xmax, and ymax values.");
             }
 
-            if (!TryValidateCoordinatePair(geometry.Xmin, geometry.Ymin, isGeographic, out errorMessage) ||
-                !TryValidateCoordinatePair(geometry.Xmax, geometry.Ymax, isGeographic, out errorMessage))
+            if (isGeographic)
             {
-                return ValidationResult.Failure(errorMessage!);
+                if (!GeographicEnvelope.TryNormalize(
+                        geometry.Xmin.Value,
+                        geometry.Ymin.Value,
+                        geometry.Xmax.Value,
+                        geometry.Ymax.Value,
+                        out _,
+                        out errorMessage))
+                {
+                    return ValidationResult.Failure(errorMessage!);
+                }
             }
-
-            if (geometry.Ymin.Value > geometry.Ymax.Value)
+            else
             {
-                return ValidationResult.Failure("Envelope latitude range is invalid.");
-            }
+                if (!TryValidateCoordinatePair(geometry.Xmin, geometry.Ymin, isGeographic: false, out errorMessage) ||
+                    !TryValidateCoordinatePair(geometry.Xmax, geometry.Ymax, isGeographic: false, out errorMessage))
+                {
+                    return ValidationResult.Failure(errorMessage!);
+                }
 
-            if (!isGeographic && geometry.Xmin.Value > geometry.Xmax.Value)
-            {
-                return ValidationResult.Failure("Envelope x range is invalid.");
+                if (geometry.Ymin.Value > geometry.Ymax.Value)
+                {
+                    return ValidationResult.Failure("Envelope latitude range is invalid.");
+                }
+
+                if (geometry.Xmin.Value > geometry.Xmax.Value)
+                {
+                    return ValidationResult.Failure("Envelope x range is invalid.");
+                }
             }
         }
 
