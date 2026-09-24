@@ -9,6 +9,9 @@ public static partial class EndpointRegistry
     // initializer; this keeps `All` independent of cross-file static-init order.
     private static IReadOnlyList<EndpointDefinition> GeocodeEndpoints =>
     [
+        new("GET", "/"),
+        new("GET", "/rest"),
+        new("GET", "/arcgis"),
         new("GET", "/rest/services"),
         new("POST", "/rest/services"),
         new("GET", "/rest/info"),

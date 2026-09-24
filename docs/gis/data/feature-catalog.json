@@ -938,6 +938,20 @@
       "capability": "identity.scim"
     },
     {
+      "id": "get",
+      "route": "/",
+      "method": "GET",
+      "family": "GeoServices REST",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Infrastructure.EmptyServerCatalogEndpointTests.SiteRoot_RedirectsToTheServicesDirectory"
+      ],
+      "proof_ledger_surface": "geoservices-catalog",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-root"
+    },
+    {
       "id": "get-well-known-oauth-protected-resource-mcp",
       "route": "/.well-known/oauth-protected-resource/mcp",
       "method": "GET",
@@ -5904,6 +5918,20 @@
       "capability": "serve.vector-tiles"
     },
     {
+      "id": "get-arcgis",
+      "route": "/arcgis",
+      "method": "GET",
+      "family": "GeoServices REST",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Infrastructure.EmptyServerCatalogEndpointTests.SiteRoot_RedirectsToTheServicesDirectory"
+      ],
+      "proof_ledger_surface": "geoservices-catalog",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-root"
+    },
+    {
       "id": "get-docs",
       "route": "/docs",
       "method": "GET",
@@ -8184,6 +8212,20 @@
       "proof_ledger_surface": "ogc-api-features",
       "maturity": "implemented",
       "capability": "serve.ogc-api-features"
+    },
+    {
+      "id": "get-rest",
+      "route": "/rest",
+      "method": "GET",
+      "family": "GeoServices REST",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Infrastructure.EmptyServerCatalogEndpointTests.SiteRoot_RedirectsToTheServicesDirectory"
+      ],
+      "proof_ledger_surface": "geoservices-catalog",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-root"
     },
     {
       "id": "get-rest-admin-servicename-servicetype",
