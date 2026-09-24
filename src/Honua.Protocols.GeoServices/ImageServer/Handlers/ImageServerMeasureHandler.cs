@@ -45,19 +45,22 @@ internal sealed class ImageServerMeasureHandler
     private readonly IElevationService? _elevationService;
     private readonly ICoordinateTransformService? _transformService;
     private readonly IGeographicSridClassifier? _geographicSridClassifier;
+    private readonly ICrsRegistry? _crsRegistry;
 
     public ImageServerMeasureHandler(
         IRasterStore rasterStore,
         ILogger<ImageServerMeasureHandler> logger,
         IElevationService? elevationService = null,
         ICoordinateTransformService? transformService = null,
-        IGeographicSridClassifier? geographicSridClassifier = null)
+        IGeographicSridClassifier? geographicSridClassifier = null,
+        ICrsRegistry? crsRegistry = null)
     {
         _rasterStore = rasterStore ?? throw new ArgumentNullException(nameof(rasterStore));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _elevationService = elevationService;
         _transformService = transformService;
         _geographicSridClassifier = geographicSridClassifier;
+        _crsRegistry = crsRegistry;
     }
 
     /// <summary>
@@ -441,7 +444,7 @@ internal sealed class ImageServerMeasureHandler
         // with the CRS linear unit converted to meters (US survey-foot State Plane zones are
         // not metric). Both operands share the request's geometryType/SRID, so a space
         // mismatch is a corner case handled conservatively as planar.
-        var metersPerUnit = LinearUnitToMeters(from.Srid ?? to.Srid);
+        var metersPerUnit = await ResolveMetersPerUnitAsync(from.Srid ?? to.Srid, cancellationToken).ConfigureAwait(false);
         var planarDistance = ImageServerMensurationMath.PlanarDistanceMeters(from.X, from.Y, to.X, to.Y) * metersPerUnit;
         var planarAzimuth = ImageServerMensurationMath.PlanarBearingDegrees(from.X, from.Y, to.X, to.Y);
         return (planarDistance, planarAzimuth);
@@ -514,7 +517,7 @@ internal sealed class ImageServerMeasureHandler
         {
             // Planar fallback: convert the CRS linear unit to meters (length scales by the
             // factor, area by its square).
-            var metersPerUnit = LinearUnitToMeters(geometry.Srid);
+            var metersPerUnit = await ResolveMetersPerUnitAsync(geometry.Srid, cancellationToken).ConfigureAwait(false);
             areaSquareMeters = ImageServerMensurationMath.PlanarRingAreaSquareMeters(coordinates) * metersPerUnit * metersPerUnit;
             perimeterMeters = PlanarPerimeterMeters(coordinates) * metersPerUnit;
         }
@@ -651,8 +654,28 @@ internal sealed class ImageServerMeasureHandler
     /// Meters-per-linear-unit factor for a projected SRID in the planar fallback, via the shared
     /// static lookup (US survey-foot State Plane zones; 1.0 for metric/unknown CRSes) (#2734).
     /// </summary>
-    private static double LinearUnitToMeters(int? srid)
-        => srid is int wkid ? CoordinateTransformer.LinearUnitToMeters(wkid) : 1d;
+    private async ValueTask<double> ResolveMetersPerUnitAsync(int? srid, CancellationToken cancellationToken)
+    {
+        if (srid is not int wkid)
+        {
+            return 1d;
+        }
+
+        if (_crsRegistry is not null)
+        {
+            var definition = await _crsRegistry.ResolveBySridAsync(wkid, cancellationToken).ConfigureAwait(false);
+            // Geographic definitions store radians per degree. Planar mensuration only
+            // applies this factor to projected units; geographic measures use the ellipsoid.
+            if (definition is { IsGeographic: false, LinearUnitFactor: double factor }
+                && factor > 0
+                && double.IsFinite(factor))
+            {
+                return factor;
+            }
+        }
+
+        return CoordinateTransformer.LinearUnitToMeters(wkid);
+    }
 
     private static double PlanarPerimeterMeters((double X, double Y)[] ring)
     {
