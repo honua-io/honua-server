@@ -16,6 +16,13 @@ namespace Honua.Architecture.Tests;
 [Trait("Category", "Architecture")]
 public sealed partial class RuntimeDdlGovernanceTests
 {
+    private static readonly string[] _geodesicTemporaryFunctions =
+    [
+        "pg_temp.honua_geodesic_line",
+        "pg_temp.honua_geodesic_polygon",
+        "pg_temp.honua_geodesic_segmentize",
+    ];
+
     private static readonly IReadOnlyDictionary<string, RuntimeDdlOwner> _allowlist =
         new Dictionary<string, RuntimeDdlOwner>(StringComparer.Ordinal)
         {
@@ -92,7 +99,7 @@ public sealed partial class RuntimeDdlGovernanceTests
             .ToArray();
 
         functions.Should().BeEquivalentTo(
-            new[] { "pg_temp.honua_geodesic_line", "pg_temp.honua_geodesic_polygon", "pg_temp.honua_geodesic_segmentize" },
+            _geodesicTemporaryFunctions,
             "the geometry-service DDL exception permits only these session-local helpers, never persistent functions");
         CountRuntimeDdlStrings(path).Should().Be(functions.Length,
             "the geometry-service exception must not absorb other schema changes");
