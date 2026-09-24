@@ -412,15 +412,36 @@ internal sealed class PostgresGeometryOperationService(
 
         await using var cmd = connection.CreateCommand();
         // Geographic CRS detection must be authoritative (WKT prefix or +proj=longlat).
-        // The prior 4000–4999 range rule misclassified projected and geocentric CRS that
-        // fall in that range (notably EPSG:4978 WGS84 geocentric 3D Cartesian).
+        // WKT2 uses GEODCRS for both ellipsoidal geographic CRS and Cartesian geocentric
+        // CRS (EPSG:4978). A bare GEODCRS prefix treats ECEF coordinates as latitude and
+        // sends them through the geography measurement branch. Geocentric detection
+        // mirrors SpatialReference.IsGeocentricByWkt: GEOCCS, +proj=geocent, and
+        // GEODCRS whose CS is Cartesian are not geographic. Ellipsoidal GEODCRS stays
+        // geographic.
         cmd.CommandText = """
             SELECT
                 CASE
+                    WHEN COALESCE(proj4text, '') ILIKE '%+proj=geocent%'
+                        OR upper(ltrim(COALESCE(srtext, ''))) LIKE 'GEOCCS[%'
+                        OR (
+                            upper(ltrim(COALESCE(srtext, ''))) LIKE 'GEODCRS[%'
+                            AND upper(COALESCE(srtext, '')) LIKE '%CS[CARTESIAN%'
+                        )
+                    THEN FALSE
                     WHEN upper(ltrim(COALESCE(srtext, ''))) LIKE 'GEOGCS[%'
                         OR upper(ltrim(COALESCE(srtext, ''))) LIKE 'GEOGRAPHICCRS[%'
-                        OR upper(ltrim(COALESCE(srtext, ''))) LIKE 'GEODCRS[%'
+                        OR upper(ltrim(COALESCE(srtext, ''))) LIKE 'GEOGCRS[%'
                         OR COALESCE(proj4text, '') ILIKE '%+proj=longlat%'
+                        OR COALESCE(proj4text, '') ILIKE '%+proj=latlong%'
+                        OR COALESCE(proj4text, '') ILIKE '%+proj=latlon%'
+                        OR (
+                            upper(ltrim(COALESCE(srtext, ''))) LIKE 'GEODCRS[%'
+                            AND (
+                                upper(COALESCE(srtext, '')) LIKE '%CS[ELLIPSOIDAL%'
+                                OR upper(COALESCE(srtext, '')) LIKE '%AXIS["LATITUDE"%'
+                                OR upper(COALESCE(srtext, '')) LIKE '%AXIS["LONGITUDE"%'
+                            )
+                        )
                     THEN TRUE
                     ELSE FALSE
                 END AS is_geographic,
