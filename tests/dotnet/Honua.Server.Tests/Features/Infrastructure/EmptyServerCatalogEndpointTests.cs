@@ -160,7 +160,8 @@ public sealed class EmptyServerCatalogEndpointTests : IAsyncLifetime
             using var get = await client.GetAsync(path);
             AssertRedirectsToServicesDirectory(get, path);
 
-            using var head = await client.SendAsync(new HttpRequestMessage(HttpMethod.Head, path));
+            using var headRequest = new HttpRequestMessage(HttpMethod.Head, path);
+            using var head = await client.SendAsync(headRequest);
             AssertRedirectsToServicesDirectory(head, path);
         }
 
