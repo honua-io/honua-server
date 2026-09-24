@@ -75,23 +75,32 @@ internal static class GeoServicesSpatialFilterBuilder
             Xmax: double xmax,
             Ymax: not null
         } && xmin <= xmax;
-        var crossesAntimeridian = inputSrid is int geographicSrid
+        var envelopeMinX = geometry.Xmin;
+        var envelopeMinY = geometry.Ymin;
+        var envelopeMaxX = geometry.Xmax;
+        var envelopeMaxY = geometry.Ymax;
+        var crossesAntimeridian = false;
+        if (inputSrid is int geographicSrid
             && SpatialReference.Create(geographicSrid).IsGeographic
-            && geometry.Xmin is double envelopeMinX
-            && geometry.Ymin is double envelopeMinY
-            && geometry.Xmax is double envelopeMaxX
-            && geometry.Ymax is double envelopeMaxY
+            && envelopeMinX.HasValue
+            && envelopeMinY.HasValue
+            && envelopeMaxX.HasValue
+            && envelopeMaxY.HasValue
             && GeographicEnvelope.TryNormalize(
-                envelopeMinX,
-                envelopeMinY,
-                envelopeMaxX,
-                envelopeMaxY,
+                envelopeMinX.Value,
+                envelopeMinY.Value,
+                envelopeMaxX.Value,
+                envelopeMaxY.Value,
                 out var normalized,
-                out _)
-            && normalized.CrossesAntimeridian;
-        if (crossesAntimeridian)
+                out _))
         {
-            isSimpleEnvelope = false;
+            crossesAntimeridian = normalized.CrossesAntimeridian;
+            isSimpleEnvelope = !crossesAntimeridian;
+            // The SQL envelope fast path must use the same bounds as the normalized WKB.
+            envelopeMinX = normalized.West;
+            envelopeMinY = normalized.South;
+            envelopeMaxX = normalized.East;
+            envelopeMaxY = normalized.North;
         }
 
         return new SpatialFilter
@@ -102,10 +111,10 @@ internal static class GeoServicesSpatialFilterBuilder
             ReturnDistance = queryParams.ReturnDistance,
             IsSimpleEnvelope = isSimpleEnvelope,
             AllowEnvelopeOnly = relationship == SpatialRelationship.EnvelopeIntersects && isSimpleEnvelope,
-            EnvelopeMinX = isSimpleEnvelope ? geometry.Xmin : null,
-            EnvelopeMinY = isSimpleEnvelope ? geometry.Ymin : null,
-            EnvelopeMaxX = isSimpleEnvelope ? geometry.Xmax : null,
-            EnvelopeMaxY = isSimpleEnvelope ? geometry.Ymax : null,
+            EnvelopeMinX = isSimpleEnvelope ? envelopeMinX : null,
+            EnvelopeMinY = isSimpleEnvelope ? envelopeMinY : null,
+            EnvelopeMaxX = isSimpleEnvelope ? envelopeMaxX : null,
+            EnvelopeMaxY = isSimpleEnvelope ? envelopeMaxY : null,
             AntimeridianSplit = crossesAntimeridian
         };
     }

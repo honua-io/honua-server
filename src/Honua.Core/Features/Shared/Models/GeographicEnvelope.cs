@@ -87,7 +87,8 @@ public static class GeographicEnvelope
             return true;
         }
 
-        if (width == 360d)
+        // Wider spans were rejected above, so this is exactly the full-world boundary.
+        if (width >= 360d)
         {
             normalized = new Normalized(-180d, minY, 180d, maxY, CrossesAntimeridian: false);
             return true;
