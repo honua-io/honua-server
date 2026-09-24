@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Linq;
 using System.Net;
 using System.Runtime.CompilerServices;
@@ -787,6 +788,165 @@ public sealed class CapabilityManifestEndpointTests : IAsyncLifetime
             await fixture.DisposeAsync();
         }
     }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_RollbackClaimsAreTargetScoped()
+    {
+        var automatic = RollbackBackend("rollback-auto", supportsRollback: true);
+        var handoff = RollbackBackend("rollback-handoff", supportsRollback: false);
+        var probe = RollbackBackend("rollback-probe", supportsRollback: true, probeFails: true);
+        var store = Substitute.For<IWorkflowOperationStore>();
+        store.GetMostRecentSucceededDeployByTargetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((WorkflowOperationRecord?)null);
+        store.GetMostRecentSucceededDeployByTargetAsync("auto-prior", Arg.Any<CancellationToken>())
+            .Returns(ProtectedDeploy("auto-prior"));
+
+        var fixture = CreateManifestFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IDeployBackend>();
+                services.AddSingleton(automatic);
+                services.AddSingleton(handoff);
+                services.AddSingleton(probe);
+                services.AddSingleton(store);
+                services.Configure<ControlPlaneOptions>(configured => configured.DeployTargets.AddRange(
+                [
+                    Target("auto-prior", automatic.BackendName, "test"),
+                    Target("auto-none", automatic.BackendName, "test"),
+                    Target("handoff", handoff.BackendName, "test"),
+                    Target("missing", "rollback-absent", "test"),
+                    Target("probe", probe.BackendName, "test"),
+                    Target("other-env", automatic.BackendName, "prod")
+                ]));
+            });
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest?environment=test");
+            using var document = await ReadDocumentAsync(response);
+            var rollback = GetCapability(document.RootElement, "deploy.rollback");
+
+            rollback.GetProperty("available").GetBoolean().Should().BeTrue(
+                "one target in the environment has a backend that supports rollback and a restorable prior revision");
+            var claims = rollback.GetProperty("rollbackTargets").EnumerateArray().ToArray();
+            claims.Select(claim => claim.GetProperty("targetId").GetString()).Should().Equal(
+                "auto-prior", "auto-none", "handoff", "missing", "probe");
+            Claim(claims, "auto-prior").GetProperty("executable").GetBoolean().Should().BeTrue();
+            Claim(claims, "auto-prior").GetProperty("reasonCode").GetString().Should().Be("rollback.executable");
+            Claim(claims, "auto-none").GetProperty("state").GetString().Should().Be("no-prior-revision");
+            Claim(claims, "auto-none").GetProperty("executable").GetBoolean().Should().BeFalse();
+            Claim(claims, "handoff").GetProperty("reasonCode").GetString().Should().Be("rollback.handoff-only");
+            Claim(claims, "missing").GetProperty("reasonCode").GetString().Should().Be("rollback.backend-missing");
+            Claim(claims, "probe").GetProperty("reasonCode").GetString().Should().Be("rollback.backend-probe-failed");
+            claims.Should().NotContain(claim => claim.GetProperty("targetId").GetString() == "other-env");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("GET /api/v1/capabilities/manifest")]
+    public async Task GetManifest_RollbackWithoutPriorRevision_IsNotAvailable()
+    {
+        var automatic = RollbackBackend("rollback-auto", supportsRollback: true);
+        var store = Substitute.For<IWorkflowOperationStore>();
+        store.GetMostRecentSucceededDeployByTargetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns((WorkflowOperationRecord?)null);
+        var fixture = CreateManifestFixture()
+            .ConfigureServices(services =>
+            {
+                services.RemoveAll<IDeployBackend>();
+                services.AddSingleton(automatic);
+                services.AddSingleton(store);
+                services.Configure<ControlPlaneOptions>(configured => configured.DeployTargets.Add(
+                    Target("auto-none", automatic.BackendName, "test")));
+            });
+        await fixture.InitializeAsync();
+
+        try
+        {
+            using var client = fixture.CreateAdminClient();
+            using var response = await client.GetAsync("/api/v1/capabilities/manifest?environment=test");
+            using var document = await ReadDocumentAsync(response);
+            var rollback = GetCapability(document.RootElement, "deploy.rollback");
+
+            rollback.GetProperty("available").GetBoolean().Should().BeFalse(
+                "SupportsRollback without a restorable prior revision is not an executable rollback");
+            rollback.GetProperty("reasonCode").GetString().Should().Be("rollback.no-executable-target");
+            var claim = rollback.GetProperty("rollbackTargets").EnumerateArray().Single();
+            claim.GetProperty("targetId").GetString().Should().Be("auto-none");
+            claim.GetProperty("executable").GetBoolean().Should().BeFalse();
+            claim.GetProperty("reasonCode").GetString().Should().Be("rollback.prior-revision-missing");
+        }
+        finally
+        {
+            await fixture.DisposeAsync();
+        }
+    }
+
+    private static IDeployBackend RollbackBackend(string name, bool supportsRollback, bool probeFails = false)
+    {
+        var backend = Substitute.For<IDeployBackend>();
+        backend.BackendName.Returns(name);
+        backend.TargetKind.Returns(DeployTargetKind.Kubernetes);
+        if (probeFails)
+        {
+            backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>())
+                .Returns(_ => Task.FromException<DeployBackendCapabilities>(new InvalidOperationException("probe down")));
+        }
+        else
+        {
+            backend.GetCapabilitiesAsync(Arg.Any<CancellationToken>())
+                .Returns(new DeployBackendCapabilities { SupportsRollback = supportsRollback });
+        }
+
+        return backend;
+    }
+
+    private static DeployTargetOptions Target(string targetId, string backend, string environment)
+        => new()
+        {
+            TargetId = targetId,
+            Backend = backend,
+            TargetKind = DeployTargetKind.Kubernetes,
+            Environment = environment
+        };
+
+    private static WorkflowOperationRecord ProtectedDeploy(string targetId)
+        => new()
+        {
+            OperationId = "op-" + targetId,
+            Kind = WorkflowOperationKind.Deploy,
+            Status = WorkflowOperationStatus.Succeeded,
+            CreatedAt = DateTimeOffset.Parse("2026-09-01T00:00:00Z", CultureInfo.InvariantCulture),
+            UpdatedAt = DateTimeOffset.Parse("2026-09-01T00:00:00Z", CultureInfo.InvariantCulture),
+            Deploy = new DeployOperationSpec
+            {
+                TargetId = targetId,
+                TargetKind = DeployTargetKind.Kubernetes,
+                Backend = "rollback-auto",
+                Environment = "test",
+                TargetName = targetId,
+                DesiredRevision = "rev-now",
+                Protection = new DeployProtectionState
+                {
+                    PreviousRevision = "rev-prior",
+                    CandidateRevision = "rev-now",
+                    FirstExposureAt = DateTimeOffset.Parse("2026-09-01T00:00:00Z", CultureInfo.InvariantCulture),
+                    ObservationDeadline = DateTimeOffset.Parse("2026-09-01T01:00:00Z", CultureInfo.InvariantCulture),
+                    PolicyDigest = "digest",
+                    Phase = DeployProtectionPhase.Protected
+                }
+            }
+        };
+
+    private static JsonElement Claim(JsonElement[] claims, string targetId)
+        => claims.Single(claim => claim.GetProperty("targetId").GetString() == targetId);
 
     [IntegrationTest]
     [Endpoint("GET /api/v1/capabilities/manifest")]
