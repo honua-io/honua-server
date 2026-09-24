@@ -188,8 +188,10 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
         }
     }
 
-    [IntegrationTest]
-    public async Task GetImageTileAsync_ByteBandWithoutNoData_PreservesValidZeroWhenPadding()
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetImageTileAsync_ByteBand_PreservesNoDataMetadataWhenPadding(bool hasNoData)
     {
         var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreGridTileIntegrationTests));
         try
@@ -201,15 +203,22 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
                 INSERT INTO raster_data (layer_id, name, raster)
                 VALUES (@layerId, 'valid-zero', ST_SetValue(
                     ST_AddBand(ST_MakeEmptyRaster(2, 1, 1, 1, 1, -1, 0, 0, 4326),
-                        '8BUI'::text, 0, NULL), 1, 2, 1, 200))
+                        '8BUI'::text, 0, @noData), 1, 2, 1, 200))
                 RETURNING id;
                 """;
             seed.Parameters.AddWithValue("layerId", LayerId);
+            seed.Parameters.AddWithValue("noData", NpgsqlTypes.NpgsqlDbType.Double,
+                hasNoData ? (object)255.0 : DBNull.Value);
             var rasterId = (long)(await seed.ExecuteScalarAsync())!;
             var window = new RasterTileWindow
             {
-                MinX = 0, MinY = 0, MaxX = 4, MaxY = 1,
-                Srid = 4326, TileWidth = 4, TileHeight = 1
+                MinX = 0,
+                MinY = 0,
+                MaxX = 4,
+                MaxY = 1,
+                Srid = 4326,
+                TileWidth = 4,
+                TileHeight = 1
             };
 
             var tile = await CreateStore(schemaName).GetImageTileAsync(
@@ -220,7 +229,8 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
                 WITH decoded AS (SELECT ST_FromGDALRaster(@data) AS rast)
                 SELECT ST_Width(rast), ST_Height(rast),
                        ST_Value(rast, 1, 2, 1), ST_Value(rast, 1, 3, 1),
-                       ST_Value(rast, 1, 1, 1, false), ST_Value(rast, 1, 4, 1, false)
+                       ST_Value(rast, 1, 1, 1), ST_Value(rast, 1, 4, 1),
+                       ST_BandNoDataValue(rast, 1)
                 FROM decoded;
                 """;
             inspect.Parameters.AddWithValue("data", tile.Data);
@@ -231,8 +241,61 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
             reader.IsDBNull(2).Should().BeFalse("zero is valid source data, not a NoData sentinel");
             reader.GetDouble(2).Should().Be(0);
             reader.GetDouble(3).Should().Be(200);
-            reader.IsDBNull(4).Should().BeFalse("the left padding cell must exist in the output grid");
-            reader.IsDBNull(5).Should().BeFalse("the right padding cell must exist in the output grid");
+            reader.IsDBNull(4).Should().Be(hasNoData);
+            reader.IsDBNull(5).Should().Be(hasNoData);
+            reader.IsDBNull(6).Should().Be(!hasNoData);
+            if (hasNoData)
+            {
+                reader.GetDouble(6).Should().Be(255, "an existing source sentinel must be retained");
+            }
+            else
+            {
+                reader.GetDouble(4).Should().Be(0, "a band without NoData uses opaque zero background");
+                reader.GetDouble(5).Should().Be(0, "a band without NoData uses opaque zero background");
+            }
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task FrameAlignedRaster_MixedBandMetadata_PreservesTypesAndEachNoDataValue()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreGridTileIntegrationTests));
+        try
+        {
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"""
+                WITH source AS (
+                    SELECT ST_AddBand(ST_AddBand(
+                        ST_MakeEmptyRaster(2, 1, 1, 1, 1, -1, 0, 0, 4326),
+                        '8BUI'::text, 0, NULL), '16BSI'::text, 0, -9999) AS rast
+                ), grid AS (
+                    SELECT ST_MakeEmptyRaster(4, 1, 0, 1, 1, -1, 0, 0, 4326) AS rast
+                ), framed AS MATERIALIZED (
+                    SELECT {RasterGridFrameSql.FrameAlignedRaster("s.rast", "g.rast")} AS rast
+                    FROM source s, grid g
+                )
+                SELECT ST_NumBands(rast), ST_BandPixelType(rast, 1), ST_BandPixelType(rast, 2),
+                       ST_BandNoDataValue(rast, 1), ST_BandNoDataValue(rast, 2),
+                       ST_Value(rast, 1, 2, 1), ST_Value(rast, 2, 2, 1),
+                       ST_Value(rast, 1, 1, 1), ST_Value(rast, 2, 1, 1)
+                FROM framed;
+                """;
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetInt32(0).Should().Be(2);
+            reader.GetString(1).Should().Be("8BUI");
+            reader.GetString(2).Should().Be("16BSI");
+            reader.IsDBNull(3).Should().BeTrue();
+            reader.GetDouble(4).Should().Be(-9999);
+            reader.GetDouble(5).Should().Be(0, "the byte band's zero is valid data");
+            reader.GetDouble(6).Should().Be(0, "the signed band's zero differs from its sentinel");
+            reader.GetDouble(7).Should().Be(0, "the band without NoData retains background padding");
+            reader.IsDBNull(8).Should().BeTrue("the signed band's padding uses its existing sentinel");
         }
         finally
         {

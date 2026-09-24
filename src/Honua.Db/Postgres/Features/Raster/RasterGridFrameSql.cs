@@ -10,7 +10,9 @@ internal static class RasterGridFrameSql
 {
     /// <summary>
     /// Frames trusted SQL raster expressions onto the reference grid. Resampling alone preserves
-    /// the source extent; the NoData canvas supplies uncovered cells and clipping removes overflow.
+    /// the source extent; the canvas supplies uncovered cells and clipping removes overflow.
+    /// Source NoData metadata is restored after union/clipping so valid zero pixels survive.
+    /// Bands without a NoData value retain opaque zero background in uncovered cells.
     /// </summary>
     internal static string FrameAlignedRaster(string rasterExpression, string gridExpression)
         => $"""
@@ -34,9 +36,17 @@ internal static class RasterGridFrameSql
                         UNION ALL
                         SELECT rast, 2 AS layer_order FROM frame_input WHERE rast IS NOT NULL
                     ) layers
+                ),
+                frame_clipped AS MATERIALIZED (
+                    SELECT ST_Clip(u.rast, ST_Envelope(i.grid), TRUE) AS rast
+                    FROM frame_union u, frame_input i
+                    WHERE i.rast IS NOT NULL
                 )
-                SELECT ST_Clip(u.rast, ST_Envelope(i.grid), TRUE)
-                FROM frame_union u, frame_input i
+                SELECT ST_AddBand(i.grid, ARRAY(
+                    SELECT ST_SetBandNoDataValue(ST_Band(c.rast, n), 1, ST_BandNoDataValue(i.rast, n))
+                    FROM generate_series(1, ST_NumBands(i.rast)) AS n
+                    ORDER BY n), 1)
+                FROM frame_clipped c, frame_input i
                 WHERE i.rast IS NOT NULL
             )
             """;
