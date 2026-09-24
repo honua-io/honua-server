@@ -21,7 +21,7 @@ public sealed class PostgresFixture : IAsyncLifetime
     private static readonly SemaphoreSlim _sharedLock = new(1, 1);
     private static readonly PostgresSharedState SharedState = new();
     private static readonly string[] SharedStoreMigrations =
-        ["113_AddDurableQuerySnapshots.sql", "119_CreateGeoprocessingWorkspaces.sql"];
+        ["113_AddDurableQuerySnapshots.sql", "119_CreateGeoprocessingWorkspaces.sql", "122_CreateWorkflowPackages.sql"];
 
     private sealed class PostgresSharedState
     {

@@ -288,9 +288,9 @@ internal sealed class WorkflowPackageService(
             : null;
         if (request.Target == WorkflowPublicationTarget.Schedule)
         {
-            // A Schedule publication's only durable receipt is the compiled WorkflowDefinition
+            // A Schedule publication's scheduler receipt is the compiled WorkflowDefinition
             // written to the Redis-backed IWorkflowDefinitionStore: that record is what the cron
-            // scheduler enumerates, while the publication itself lives in a process-local store.
+            // scheduler enumerates. The publication row itself is durable when PostGIS is composed.
             // On a host composed without it (a Redis-less install — see
             // OrchestrationServiceCollectionExtensions.AddOrchestration, which registers nothing
             // when IConnectionMultiplexer is absent) this method used to skip the write and still
@@ -431,6 +431,81 @@ internal sealed class WorkflowPackageService(
         string? packageId,
         CancellationToken cancellationToken)
         => store.ListPublicationsAsync(packageId, cancellationToken);
+
+    /// <summary>
+    /// Deletes a publication and, for a schedule publication, removes the owning workflow
+    /// definition so the scheduler cannot keep firing it.
+    /// </summary>
+    public async Task<WorkflowPublication?> DeletePublicationAsync(
+        string publicationId,
+        CancellationToken cancellationToken)
+    {
+        var existing = await store.GetPublicationAsync(publicationId, cancellationToken).ConfigureAwait(false);
+        if (existing is null)
+        {
+            return null;
+        }
+
+        await SyncScheduleDefinitionAsync(existing, remove: true, enabled: false, cancellationToken).ConfigureAwait(false);
+        return await store.DeletePublicationAsync(publicationId, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Sets a publication's status and, for a schedule publication, enables or disables the
+    /// owning workflow definition's trigger to match.
+    /// </summary>
+    public async Task<WorkflowPublication?> SetPublicationStatusAsync(
+        string publicationId,
+        WorkflowPublicationStatus status,
+        CancellationToken cancellationToken)
+    {
+        var existing = await store.GetPublicationAsync(publicationId, cancellationToken).ConfigureAwait(false);
+        if (existing is null)
+        {
+            return null;
+        }
+
+        await SyncScheduleDefinitionAsync(
+            existing,
+            remove: false,
+            enabled: status == WorkflowPublicationStatus.Active,
+            cancellationToken).ConfigureAwait(false);
+        return await store.SetPublicationStatusAsync(publicationId, status, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task SyncScheduleDefinitionAsync(
+        WorkflowPublication publication,
+        bool remove,
+        bool enabled,
+        CancellationToken cancellationToken)
+    {
+        if (publication.Target != WorkflowPublicationTarget.Schedule
+            || string.IsNullOrWhiteSpace(publication.WorkflowDefinitionId)
+            || workflowDefinitionStore is null)
+        {
+            return;
+        }
+
+        if (remove)
+        {
+            await workflowDefinitionStore.DeleteAsync(publication.WorkflowDefinitionId, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        var definition = await workflowDefinitionStore.GetAsync(publication.WorkflowDefinitionId, cancellationToken).ConfigureAwait(false);
+        if (definition?.Trigger is null)
+        {
+            return;
+        }
+
+        await workflowDefinitionStore.SetAsync(
+            definition with
+            {
+                Trigger = definition.Trigger with { Enabled = enabled },
+                UpdatedAt = clock.GetUtcNow()
+            },
+            cancellationToken).ConfigureAwait(false);
+    }
 
     public async Task<WorkflowPublicationRunResult> RunPublicationAsync(
         string publicationId,

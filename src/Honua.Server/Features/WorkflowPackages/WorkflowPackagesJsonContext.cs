@@ -28,6 +28,7 @@ namespace Honua.Server.Features.WorkflowPackages;
 [JsonSerializable(typeof(ApiResponse<object>))]
 [JsonSerializable(typeof(SaveWorkflowPackageRequest))]
 [JsonSerializable(typeof(PublishWorkflowPackageRequest))]
+[JsonSerializable(typeof(SetWorkflowPublicationStatusRequest))]
 [JsonSerializable(typeof(RunWorkflowPublicationRequest))]
 [JsonSerializable(typeof(WorkflowNodeRegistrySnapshot))]
 [JsonSerializable(typeof(WorkflowNodeProviderSnapshot))]
