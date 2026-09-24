@@ -8,6 +8,8 @@ using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
+using Honua.Infrastructure.Services;
+using Honua.TestKit.Attributes;
 using Honua.Protocols.GeoServices.FeatureServer.Models;
 using Honua.Protocols.GeoServices.FeatureServer.Services;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -19,6 +21,22 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.FeatureServer.Servic
 
 public sealed class QueryFormatterTests
 {
+    [UnitTest]
+    public async Task FormatQueryResultAsync_Parquet_UsesConfiguredByteBudget()
+    {
+        var options = Options.Create(new LimitsOptions
+        {
+            GeoParquet = new GeoParquetLimits { MaxEstimatedInputBytes = 256 }
+        });
+        var formatter = new QueryFormatter(options, new PbfQueryFormatter(options), NullLogger<QueryFormatter>.Instance);
+        var feature = Feature.Create(1, null, ImmutableDictionary<string, object?>.Empty.Add("name", new string('x', 100)));
+        var act = async () => await formatter.FormatQueryResultAsync(
+            QueryResult<Feature>.Create(1, [feature]), CreatePointLayer(),
+            format: "parquet", returnGeometry: false, outputSrid: 4326, returnZ: false, returnM: false,
+            geometryPrecision: null, maxAllowableOffset: null);
+        await act.Should().ThrowAsync<GeoParquetLimitExceededException>();
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

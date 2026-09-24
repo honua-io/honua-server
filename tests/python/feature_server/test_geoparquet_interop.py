@@ -192,7 +192,7 @@ class TestGeoParquetSdkInterop:
         self, postgis, worker_schema, http_client, test_service_id, test_layer_id, out_sr
     ):
         """Decode a multi-row fixture against arithmetic, including a null final row."""
-        row_count = 1025
+        row_count = 10000
         with postgis.get_connection(worker_schema) as connection:
             connection.execute("TRUNCATE features RESTART IDENTITY")
             connection.execute(
@@ -215,6 +215,11 @@ class TestGeoParquetSdkInterop:
                     "resultRecordCount": row_count, "orderByFields": "objectid ASC"},
         )
         _require_parquet_available(response)
+        footer = pyarrow_parquet.ParquetFile(io.BytesIO(response.content)).metadata
+        assert footer.num_rows == row_count
+        assert footer.num_row_groups > 1
+        assert all(0 < footer.row_group(i).num_rows <= 1024 for i in range(footer.num_row_groups))
+        assert sum(footer.row_group(i).num_rows for i in range(footer.num_row_groups)) == row_count
         frame = gpd.read_parquet(io.BytesIO(response.content))
         assert frame.crs.equals(pyproj.CRS.from_epsg(out_sr), ignore_axis_order=True)
         assert frame["objectid"].tolist() == list(range(1, row_count + 1))
@@ -252,3 +257,17 @@ class TestGeoParquetSdkInterop:
             assert row.geometry.x == pytest.approx(x, abs=1e-7, rel=0)
             assert row.geometry.y == pytest.approx(y, abs=1e-7, rel=0)
             assert bbox == pytest.approx(dict(xmin=x, ymin=y, xmax=x, ymax=y), abs=1e-7, rel=0)
+
+        # A page boundary must preserve provider ordering and field selection across row groups.
+        page = http_client.get(
+            f"/rest/services/{test_service_id}/FeatureServer/{test_layer_id}/query",
+            params={"where": "1=1", "f": "parquet", "outSR": out_sr,
+                    "resultRecordCount": 1025, "resultOffset": 3,
+                    "orderByFields": "objectid DESC", "outFields": "name"},
+        )
+        _require_parquet_available(page)
+        page_table = pyarrow_parquet.read_table(io.BytesIO(page.content))
+        assert page_table.column_names == ["objectid", "geometry", "name", "bbox"]
+        expected_ids = list(range(row_count - 3, row_count - 3 - 1025, -1))
+        assert page_table["objectid"].to_pylist() == expected_ids
+        assert page_table["name"].to_pylist() == [f"fixture-{i}" for i in expected_ids]
