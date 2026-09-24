@@ -5,9 +5,11 @@ using System.Globalization;
 using System.Net;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
+using Honua.Infrastructure.Monitoring;
 using Honua.Server.Startup;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -153,6 +155,11 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
         // so the fixture assertions run as that principal here too — an anonymous client is
         // refused on the scratch layer's writes and would not be exercising the lane's path.
         using var client = factory.CreateClient();
+        factory.Services.GetRequiredService<IDatabaseMigrationRunner>()
+            .Should().BeOfType<PostgresDatabaseMigrationRunner>();
+        factory.Services.GetRequiredService<MigrationState>().Status
+            .Should().Be(MigrationLifecycleStatus.Succeeded,
+                "this integration host must execute real startup migrations, not the seed-only bypass");
         client.DefaultRequestHeaders.Add("X-API-Key", WebAppFixture.SharedAdminPassword);
 
         // --- test_service/0 serves exactly the ten client-compat-v1 records --------------------
@@ -305,9 +312,10 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
         => ConfiguredWebApplicationFactory.Create(
             builder =>
             {
-                // Migrations are already applied by the runner above; the host must read the
-                // database as it finds it, exactly as the certified Lambda image does.
-                builder.UseSetting("HONUA_SKIP_MIGRATIONS", "true");
+                // Keep the real startup runner enabled over the populated migrated database.
+                // Query and write assertions below therefore exercise the shipped schema and
+                // journal reconciliation, independently of the hand-mirrored server.yaml fixture.
+                builder.UseSetting("HONUA_SKIP_MIGRATIONS", "false");
                 builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
                 builder.ConfigureAppConfiguration((_, configuration) =>
                     configuration.AddInMemoryCollection(
@@ -315,8 +323,16 @@ public sealed class ClientCompatSeedMigratedDatabaseTests
                             connectionString,
                             new Dictionary<string, string?>
                             {
-                                ["HONUA_ADMIN_PASSWORD"] = WebAppFixture.SharedAdminPassword
+                                ["HONUA_ADMIN_PASSWORD"] = WebAppFixture.SharedAdminPassword,
+                                ["HONUA_SKIP_MIGRATIONS"] = "false"
                             })));
+                builder.ConfigureTestServices(services =>
+                {
+                    services.RemoveAll<IDatabaseMigrationRunner>();
+                    services.AddSingleton<IDatabaseMigrationRunner>(new PostgresDatabaseMigrationRunner(
+                        new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest),
+                        ServerCoreSchemaMigrations.Manifest));
+                });
 
                 if (!licensed)
                 {
