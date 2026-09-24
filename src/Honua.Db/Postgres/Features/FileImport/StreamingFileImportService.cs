@@ -17,6 +17,7 @@ using FileGdb = Honua.Core.Features.FileImport.Services.FileGdb;
 using Honua.Core.Features.Migration.Abstractions;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
+using NetTopologySuite.Features;
 using Honua.Core.Features.FileImport.Abstractions;
 using Honua.Core.Features.FileImport.Domain;
 using Honua.Core.Features.FileImport.Services;
@@ -136,11 +137,37 @@ internal sealed partial class StreamingFileImportService : IFileImportService
     /// <c>ST_TransformPipeline</c>. An exact <c>+proj=noop</c> selection is returned as-is;
     /// the function rewrites that to <c>ST_SetSRID</c> so every ordinate is kept.
     /// </remarks>
-    private string? ResolveImportDatumPipeline(int sourceSrid, int targetSrid)
+    private string? ResolveImportDatumPipeline(
+        int sourceSrid,
+        int targetSrid,
+        DatumAreaEnvelope? envelope = null)
     {
         if (sourceSrid == targetSrid || _datumTransformationCatalog is null)
         {
             return null;
+        }
+
+        if (envelope is { } area)
+        {
+            if (_datumTransformationCatalog.TryGetForEnvelope(
+                    sourceSrid,
+                    targetSrid,
+                    area.West,
+                    area.South,
+                    area.East,
+                    area.North,
+                    out var areaSelection)
+                && areaSelection.ProjPipeline is { Length: > 0 } areaPipeline)
+            {
+                return ProjPipelineInverter.Orient(areaPipeline, areaSelection.TransformForward);
+            }
+
+            if (_datumTransformationCatalog.HasAreaOfUse(sourceSrid, targetSrid))
+            {
+                // The envelope is in no catalog area, or it meets more than one.
+                // Do not fall back to the CONUS NAD27 grid.
+                return null;
+            }
         }
 
         if (_datumTransformationCatalog.TryGetDefault(sourceSrid, targetSrid, out var selection)
@@ -150,6 +177,36 @@ internal sealed partial class StreamingFileImportService : IFileImportService
         }
 
         return null;
+    }
+
+    private static DatumAreaEnvelope? TryImportEnvelope(IReadOnlyList<IFeature> features, int sourceSrid)
+    {
+        if (!GeographicSridClassifier.IsGeographicSrid(sourceSrid))
+        {
+            return null;
+        }
+
+        double? west = null;
+        double? south = null;
+        double? east = null;
+        double? north = null;
+        foreach (var feature in features)
+        {
+            var envelope = feature.Geometry?.EnvelopeInternal;
+            if (envelope is null || envelope.IsNull)
+            {
+                continue;
+            }
+
+            west = west is null ? envelope.MinX : Math.Min(west.Value, envelope.MinX);
+            south = south is null ? envelope.MinY : Math.Min(south.Value, envelope.MinY);
+            east = east is null ? envelope.MaxX : Math.Max(east.Value, envelope.MaxX);
+            north = north is null ? envelope.MaxY : Math.Max(north.Value, envelope.MaxY);
+        }
+
+        return west is null || south is null || east is null || north is null
+            ? null
+            : new DatumAreaEnvelope(west.Value, south.Value, east.Value, north.Value);
     }
 
     /// <inheritdoc/>

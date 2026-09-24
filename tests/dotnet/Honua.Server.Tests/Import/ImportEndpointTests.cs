@@ -664,8 +664,10 @@ public class ImportEndpointTests : IAsyncLifetime
             var features = queryDocument.RootElement.GetProperty("features");
             features.GetArrayLength().Should().Be(1);
             features[0].GetProperty("attributes").GetProperty("id").GetInt64().Should().Be(1);
-            features[0].GetProperty("attributes")
-                .GetProperty("properties")
+            // GeoServices advertises JSON columns as esriFieldTypeString.
+            using var importedProperties = JsonDocument.Parse(
+                features[0].GetProperty("attributes").GetProperty("properties").GetString()!);
+            importedProperties.RootElement
                 .GetProperty("name")
                 .GetString()
                 .Should()

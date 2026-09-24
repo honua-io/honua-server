@@ -5,6 +5,7 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.GeoServices.GeometryService.Models;
 using Honua.Infrastructure.Models;
@@ -386,6 +387,12 @@ internal sealed class GeometryServiceHandler(
             var transformationOutSr = await _spatialReferenceResolver
                 .ResolveGeodeticBaseSridAsync(outputSrid, ct)
                 .ConfigureAwait(false);
+            DatumAreaEnvelope? projectEnvelope = null;
+            if (TryGeographicGeometryEnvelope(geomStrings, transformationInSr, out var west, out var south, out var east, out var north))
+            {
+                projectEnvelope = new DatumAreaEnvelope(west, south, east, north);
+            }
+
             if (!GeoServicesDatumTransformationResolver.TryResolveWithDirection(
                     datumCatalog,
                     transformationValue,
@@ -393,7 +400,8 @@ internal sealed class GeometryServiceHandler(
                     transformationInSr,
                     transformationOutSr,
                     out var datumSelection,
-                    out var datumError))
+                    out var datumError,
+                    projectEnvelope))
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, "project", datumError ?? "Invalid transformation");
                 return CreateError(context, 400, datumError ?? "Invalid transformation.");
@@ -2640,6 +2648,71 @@ internal sealed class GeometryServiceHandler(
         }
 
         return target;
+    }
+
+    private bool TryGeographicGeometryEnvelope(
+        string[] geometryJson,
+        int srid,
+        out double west,
+        out double south,
+        out double east,
+        out double north)
+    {
+        west = south = east = north = 0;
+        if (!GeographicSridClassifier.IsGeographicSrid(srid) || geometryJson.Length == 0)
+        {
+            return false;
+        }
+
+        var any = false;
+        var minX = 0d;
+        var minY = 0d;
+        var maxX = 0d;
+        var maxY = 0d;
+        foreach (var json in geometryJson)
+        {
+            Geometry geometry;
+            try
+            {
+                geometry = ReadGeometry(json);
+            }
+            catch (ArgumentException)
+            {
+                return false;
+            }
+
+            var envelope = geometry.EnvelopeInternal;
+            if (envelope.IsNull)
+            {
+                continue;
+            }
+
+            if (!any)
+            {
+                minX = envelope.MinX;
+                minY = envelope.MinY;
+                maxX = envelope.MaxX;
+                maxY = envelope.MaxY;
+                any = true;
+                continue;
+            }
+
+            minX = Math.Min(minX, envelope.MinX);
+            minY = Math.Min(minY, envelope.MinY);
+            maxX = Math.Max(maxX, envelope.MaxX);
+            maxY = Math.Max(maxY, envelope.MaxY);
+        }
+
+        if (!any)
+        {
+            return false;
+        }
+
+        west = minX;
+        south = minY;
+        east = maxX;
+        north = maxY;
+        return true;
     }
 
     private IResult ExecuteFindTransformations(

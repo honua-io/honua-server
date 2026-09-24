@@ -63,6 +63,53 @@ public sealed class EsriDatumTransformationCatalogTests
         selection.Name.Should().Be("NAD_1927_To_NAD_1983_NADCON");
         selection.RequiredGrids.Should().Contain("us_noaa_conus.tif");
         selection.ProjPipeline.Should().Contain("hgridshift");
+        selection.ProjPipeline.Should().Contain("us_noaa_conus.tif");
+    }
+
+    [UnitTest]
+    public void TryGetForEnvelope_Anchorage_SelectsAlaskaGrid()
+    {
+        var found = _catalog.TryGetForEnvelope(Nad27, Nad83, -150.2, 61.1, -149.7, 61.3, out var selection);
+
+        found.Should().BeTrue();
+        selection!.ProjPipeline.Should().Contain("us_noaa_alaska.tif");
+    }
+
+    [UnitTest]
+    public void TryGetForEnvelope_Denver_SelectsConusGrid()
+    {
+        var found = _catalog.TryGetForEnvelope(Nad27, Nad83, -105.1, 39.6, -104.8, 39.8, out var selection);
+
+        found.Should().BeTrue();
+        selection!.Wkid.Should().Be(1241);
+        selection.ProjPipeline.Should().Contain("us_noaa_conus.tif");
+    }
+
+    [UnitTest]
+    public void TryGetForEnvelope_BoxInsideConusAndCanada_DoesNotUseConus()
+    {
+        var found = _catalog.TryGetForEnvelope(Nad27, Nad83, -79.6, 43.6, -79.2, 43.9, out var selection);
+
+        found.Should().BeFalse();
+        selection.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void TryGetForEnvelope_HawaiiNad27_DoesNotUseConus()
+    {
+        var found = _catalog.TryGetForEnvelope(Nad27, Nad83, -158.1, 21.2, -157.7, 21.4, out var selection);
+
+        found.Should().BeFalse();
+        selection.Should().BeNull();
+    }
+
+    [UnitTest]
+    public void TryGetForEnvelope_Honolulu_SelectsOldHawaiianGrid()
+    {
+        var found = _catalog.TryGetForEnvelope(4135, 4269, -158.1, 21.2, -157.7, 21.4, out var selection);
+
+        found.Should().BeTrue();
+        selection!.ProjPipeline.Should().Contain("us_noaa_hawaii.tif");
     }
 
     [Theory]

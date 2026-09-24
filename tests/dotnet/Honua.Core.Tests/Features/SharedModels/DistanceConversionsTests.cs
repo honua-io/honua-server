@@ -107,26 +107,26 @@ public sealed class DistanceConversionsTests
             .Should().BeApproximately(-5000.0, Tolerance);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(4326)]
     [InlineData(4269)]
-    [InlineData(4267)]
     [InlineData(4258)]
     [InlineData(4283)]
     [InlineData(4617)]
     [InlineData(4759)]
-    public void IsGeographicSrid_KnownGeographicSrids_ReturnsTrue(int srid)
+    public void IsGeographicSrid_GeodesicSafeSrids_ReturnsTrue(int srid)
     {
         DistanceConversions.IsGeographicSrid(srid).Should().BeTrue();
     }
 
-    [Theory]
+    [UnitTheory]
+    [InlineData(4267)]  // NAD27 requires a datum transform before WGS 84 distance calculations.
     [InlineData(3857)]  // Web Mercator
     [InlineData(2154)]  // RGF93 / Lambert-93
     [InlineData(0)]
     [InlineData(-1)]
     [InlineData(int.MaxValue)]
-    public void IsGeographicSrid_ProjectedOrUnknown_ReturnsFalse(int srid)
+    public void IsGeographicSrid_UnsafeProjectedOrUnknown_ReturnsFalse(int srid)
     {
         DistanceConversions.IsGeographicSrid(srid).Should().BeFalse();
     }

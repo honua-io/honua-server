@@ -1647,7 +1647,8 @@ internal sealed partial class FeatureServerQueryHandler(
                 layerSrid,
                 effectiveOutputSrid,
                 out var datumSelection,
-                out var datumError))
+                out var datumError,
+                TryGeographicQueryEnvelope(query, layerSrid)))
         {
             return (null, null, datumError);
         }
@@ -1672,7 +1673,8 @@ internal sealed partial class FeatureServerQueryHandler(
         int layerSrid,
         int? outputSrid,
         out DatumTransformationSelection? selection,
-        out IResult? error)
+        out IResult? error,
+        DatumAreaEnvelope? envelope = null)
     {
         selection = null;
         error = null;
@@ -1693,7 +1695,8 @@ internal sealed partial class FeatureServerQueryHandler(
                 layerSrid,
                 outputSrid.Value,
                 out selection,
-                out var resolveError))
+                out var resolveError,
+                envelope))
         {
             error = StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid datumTransformation",
@@ -1707,6 +1710,28 @@ internal sealed partial class FeatureServerQueryHandler(
         }
 
         return true;
+    }
+
+    private static DatumAreaEnvelope? TryGeographicQueryEnvelope(FeatureQuery query, int layerSrid)
+    {
+        if (!GeographicSridClassifier.IsGeographicSrid(layerSrid)
+            || query.SpatialFilter is not { IsSimpleEnvelope: true } filter
+            || filter.EnvelopeMinX is not double west
+            || filter.EnvelopeMinY is not double south
+            || filter.EnvelopeMaxX is not double east
+            || filter.EnvelopeMaxY is not double north)
+        {
+            return null;
+        }
+
+        if (filter.Srid is int filterSrid
+            && filterSrid != layerSrid
+            && !GeographicSridClassifier.IsGeographicSrid(filterSrid))
+        {
+            return null;
+        }
+
+        return new DatumAreaEnvelope(west, south, east, north);
     }
 
     private static bool ShouldUseInternalObjectIdsFastPath(MetadataV2Resource resource)

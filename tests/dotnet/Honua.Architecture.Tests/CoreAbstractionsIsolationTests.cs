@@ -33,6 +33,8 @@ public sealed class CoreAbstractionsIsolationTests
 
     private static readonly string[] ApprovedConcreteInfrastructureContracts =
     {
+        // Provider-neutral bounds shared by query, import, and geometry datum selection.
+        "Honua.Core.Features.Infrastructure.Crs.DatumAreaEnvelope",
         "Honua.Core.Features.Infrastructure.Crs.DatumTransformationSelection",
         "Honua.Core.Features.Infrastructure.Events.Outbox.FeatureChangeOutboxEntry",
         "Honua.Core.Features.Infrastructure.Events.Outbox.OutboxBacklogMetrics",
