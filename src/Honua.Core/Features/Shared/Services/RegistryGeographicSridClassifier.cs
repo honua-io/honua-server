@@ -73,4 +73,23 @@ public sealed class RegistryGeographicSridClassifier : IGeographicSridClassifier
         var definition = await _registry.ResolveBySridAsync(srid, cancellationToken).ConfigureAwait(false);
         return definition?.IsGeographic;
     }
+
+    /// <inheritdoc />
+    public async ValueTask<double?> TryResolveLinearUnitFactorAsync(int srid, CancellationToken cancellationToken = default)
+    {
+        if (_registry is null || srid <= 0)
+        {
+            return null;
+        }
+
+        var definition = await _registry.ResolveBySridAsync(srid, cancellationToken).ConfigureAwait(false);
+        if (definition is { IsGeographic: false, LinearUnitFactor: double factor }
+            && factor > 0
+            && double.IsFinite(factor))
+        {
+            return factor;
+        }
+
+        return null;
+    }
 }

@@ -263,6 +263,28 @@ public class CoordinateTransformerTests
     }
 
     [UnitTest]
+    public void CalculateScaleDenominator_ExplicitSurveyFootFactor_ScalesAgainstMeterFallback()
+    {
+        // EPSG:2866 is outside the static foot table, so the no-registry path treats the
+        // extent as metres. The registry factor (US survey foot) shrinks the denominator ~3.28×.
+        var extent = new SkiaMapRenderer.RenderExtent(0, 0, 10_000, 10_000);
+        var asMeters = CoordinateTransformer.CalculateScaleDenominator(extent, 256, 96, 2866);
+        var asFeet = CoordinateTransformer.CalculateScaleDenominator(extent, 256, 96, 2866, 1200d / 3937d);
+
+        (asFeet / asMeters).Should().BeApproximately(1200d / 3937d, 1e-9);
+    }
+
+    [UnitTest]
+    public void CalculateScaleDenominator_DegreeFactor_MatchesBuiltInGeographicScale()
+    {
+        var extent = new SkiaMapRenderer.RenderExtent(-1, 40, 1, 42);
+        var builtin = CoordinateTransformer.CalculateScaleDenominator(extent, 256, 96, 4326);
+        var withDegreeFactor = CoordinateTransformer.CalculateScaleDenominator(extent, 256, 96, 4326, Math.PI / 180d);
+
+        withDegreeFactor.Should().BeApproximately(builtin, Math.Abs(builtin) * 1e-12 + 1e-6);
+    }
+
+    [UnitTest]
     public void LinearUnitToMeters_MeterSrid_ReturnsOne()
     {
         CoordinateTransformer.LinearUnitToMeters(3857).Should().Be(1.0);

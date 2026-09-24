@@ -441,7 +441,7 @@ internal sealed class ImageServerMeasureHandler
         // with the CRS linear unit converted to meters (US survey-foot State Plane zones are
         // not metric). Both operands share the request's geometryType/SRID, so a space
         // mismatch is a corner case handled conservatively as planar.
-        var metersPerUnit = LinearUnitToMeters(from.Srid ?? to.Srid);
+        var metersPerUnit = await ResolveMetersPerUnitAsync(from.Srid ?? to.Srid, cancellationToken).ConfigureAwait(false);
         var planarDistance = ImageServerMensurationMath.PlanarDistanceMeters(from.X, from.Y, to.X, to.Y) * metersPerUnit;
         var planarAzimuth = ImageServerMensurationMath.PlanarBearingDegrees(from.X, from.Y, to.X, to.Y);
         return (planarDistance, planarAzimuth);
@@ -514,7 +514,7 @@ internal sealed class ImageServerMeasureHandler
         {
             // Planar fallback: convert the CRS linear unit to meters (length scales by the
             // factor, area by its square).
-            var metersPerUnit = LinearUnitToMeters(geometry.Srid);
+            var metersPerUnit = await ResolveMetersPerUnitAsync(geometry.Srid, cancellationToken).ConfigureAwait(false);
             areaSquareMeters = ImageServerMensurationMath.PlanarRingAreaSquareMeters(coordinates) * metersPerUnit * metersPerUnit;
             perimeterMeters = PlanarPerimeterMeters(coordinates) * metersPerUnit;
         }
@@ -651,8 +651,26 @@ internal sealed class ImageServerMeasureHandler
     /// Meters-per-linear-unit factor for a projected SRID in the planar fallback, via the shared
     /// static lookup (US survey-foot State Plane zones; 1.0 for metric/unknown CRSes) (#2734).
     /// </summary>
-    private static double LinearUnitToMeters(int? srid)
-        => srid is int wkid ? CoordinateTransformer.LinearUnitToMeters(wkid) : 1d;
+    private async ValueTask<double> ResolveMetersPerUnitAsync(int? srid, CancellationToken cancellationToken)
+    {
+        if (srid is not int wkid)
+        {
+            return 1d;
+        }
+
+        if (_geographicSridClassifier is not null)
+        {
+            var factor = await _geographicSridClassifier
+                .TryResolveLinearUnitFactorAsync(wkid, cancellationToken)
+                .ConfigureAwait(false);
+            if (factor is double resolved)
+            {
+                return resolved;
+            }
+        }
+
+        return CoordinateTransformer.LinearUnitToMeters(wkid);
+    }
 
     private static double PlanarPerimeterMeters((double X, double Y)[] ring)
     {

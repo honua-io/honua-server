@@ -200,12 +200,13 @@ internal static class MonitoredCoordinateTransformer
         int imageWidth,
         int dpi,
         int srid,
-        IPerformanceMonitor? performanceMonitor = null)
+        IPerformanceMonitor? performanceMonitor = null,
+        double? linearUnitFactor = null)
     {
         var stopwatch = Stopwatch.StartNew();
         try
         {
-            var result = CoordinateTransformer.CalculateScaleDenominator(extent, imageWidth, dpi, srid);
+            var result = CoordinateTransformer.CalculateScaleDenominator(extent, imageWidth, dpi, srid, linearUnitFactor);
 
             stopwatch.Stop();
             performanceMonitor?.RecordGeospatialOperation(

@@ -155,7 +155,8 @@ internal sealed class PrintingToolsBackgroundService : BackgroundService
                 _logger,
                 cancellationToken,
                 callerPrincipal: job.CallerPrincipal,
-                accessPolicyEvaluator: accessPolicyEvaluator);
+                accessPolicyEvaluator: accessPolicyEvaluator,
+                crsRegistry: scope.ServiceProvider.GetService<ICrsRegistry>());
 
             if (result is null)
             {

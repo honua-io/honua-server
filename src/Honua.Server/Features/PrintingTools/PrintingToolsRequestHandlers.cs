@@ -61,7 +61,8 @@ internal static class PrintingToolsRequestHandlers
         ILogger logger,
         CancellationToken cancellationToken,
         ClaimsPrincipal? callerPrincipal = null,
-        IAccessPolicyEvaluator? accessPolicyEvaluator = null)
+        IAccessPolicyEvaluator? accessPolicyEvaluator = null,
+        ICrsRegistry? crsRegistry = null)
     {
         using var activity = HonuaTelemetry.ActivitySource.StartActivity("print.execute", ActivityKind.Internal);
         activity?.SetTag(HonuaTelemetry.Tags.Protocol, "PrintingTools");
@@ -95,7 +96,7 @@ internal static class PrintingToolsRequestHandlers
 
             // Render map frame
             var mapFrameBytes = await RenderMapFrameAsync(
-                webMap, template, dpi, resolvedLayers, featureReader, logger, cancellationToken);
+                webMap, template, dpi, resolvedLayers, featureReader, logger, cancellationToken, crsRegistry);
 
             if (mapFrameBytes is null)
             {
@@ -115,7 +116,9 @@ internal static class PrintingToolsRequestHandlers
             var attributionText = webMap.LayoutOptions?.CopyrightText ?? "Powered by Honua";
 
             // Calculate scale denominator from extent (only needed for layout templates with a scale bar)
-            var scaleDenominator = template.IsMapOnly ? 0.0 : CalculateScaleDenominator(webMap, template, dpi);
+            var scaleDenominator = template.IsMapOnly
+                ? 0.0
+                : await CalculateScaleDenominatorAsync(webMap, template, dpi, crsRegistry, cancellationToken).ConfigureAwait(false);
 
             // Compose the layout — full-page dimensions for layout templates, map-frame for MAP_ONLY
             var (pageWidthPx, pageHeightPx) = template.IsMapOnly
@@ -187,7 +190,8 @@ internal static class PrintingToolsRequestHandlers
         IReadOnlyList<ResolvedLayer> resolvedLayers,
         IFeatureReader featureReader,
         ILogger logger,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ICrsRegistry? crsRegistry = null)
     {
         var extent = webMap.MapOptions?.Extent;
         if (extent is null)
@@ -209,8 +213,10 @@ internal static class PrintingToolsRequestHandlers
         // scale centered on the original extent (per ExportWebMap spec).
         if (webMap.MapOptions.Scale is > 0)
         {
+            var linearUnitFactor = await CoordinateTransformer.TryResolveLinearUnitFactorAsync(
+                crsRegistry, extentSrid, cancellationToken).ConfigureAwait(false);
             renderExtent = CoordinateTransformer.AdjustExtentForScale(
-                renderExtent, webMap.MapOptions.Scale.Value, imageWidth, imageHeight, dpi, extentSrid);
+                renderExtent, webMap.MapOptions.Scale.Value, imageWidth, imageHeight, dpi, extentSrid, linearUnitFactor);
         }
 
         // Derived from the scale-adjusted extent so a mapOptions.scale request gates its styles at
@@ -594,7 +600,12 @@ internal static class PrintingToolsRequestHandlers
         return ((int)(template.MapFrame.Width * dpi / 72f), (int)(template.MapFrame.Height * dpi / 72f));
     }
 
-    private static double CalculateScaleDenominator(WebMapDefinition webMap, PrintLayoutTemplate template, int dpi)
+    private static async Task<double> CalculateScaleDenominatorAsync(
+        WebMapDefinition webMap,
+        PrintLayoutTemplate template,
+        int dpi,
+        ICrsRegistry? crsRegistry,
+        CancellationToken cancellationToken)
     {
         if (webMap.MapOptions?.Scale is > 0)
         {
@@ -612,7 +623,9 @@ internal static class PrintingToolsRequestHandlers
         // narrowing across statements, so the null-forgiving operator is safe.
         var srid = ResolveExtentSrid(extent.SpatialReference, webMap.MapOptions!.SpatialReference);
 
-        return CoordinateTransformer.CalculateScaleDenominator(renderExtent, imageWidth, dpi, srid);
+        var linearUnitFactor = await CoordinateTransformer.TryResolveLinearUnitFactorAsync(
+            crsRegistry, srid, cancellationToken).ConfigureAwait(false);
+        return CoordinateTransformer.CalculateScaleDenominator(renderExtent, imageWidth, dpi, srid, linearUnitFactor);
     }
 
     /// <summary>

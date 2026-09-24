@@ -4,6 +4,7 @@
 using System.Collections.Concurrent;
 using System.Globalization;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Shared.Models;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -25,11 +26,23 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
     // carry the same WKT the catalog would have returned; without it every WKT consumer
     // (shapefile .prj, GeoPackage gpkg_spatial_ref_sys) got null for the two commonest SRIDs.
     private static readonly CrsDefinition _crs84Definition =
-        new(Crs84Uri, 4326, AxisOrder.EastNorth, true) { Wkt = WellKnownCrsWkt.Epsg4326 };
+        new(Crs84Uri, 4326, AxisOrder.EastNorth, true)
+        {
+            Wkt = WellKnownCrsWkt.Epsg4326,
+            LinearUnitFactor = CrsLinearUnitFactor.Resolve(null, WellKnownCrsWkt.Epsg4326, isGeographic: true)
+        };
     private static readonly CrsDefinition _epsg4326Definition =
-        new($"{EpsgUriPrefix}4326", 4326, AxisOrder.NorthEast, true) { Wkt = WellKnownCrsWkt.Epsg4326 };
+        new($"{EpsgUriPrefix}4326", 4326, AxisOrder.NorthEast, true)
+        {
+            Wkt = WellKnownCrsWkt.Epsg4326,
+            LinearUnitFactor = CrsLinearUnitFactor.Resolve(null, WellKnownCrsWkt.Epsg4326, isGeographic: true)
+        };
     private static readonly CrsDefinition _epsg3857Definition =
-        new($"{EpsgUriPrefix}3857", 3857, AxisOrder.EastNorth, false) { Wkt = WellKnownCrsWkt.Epsg3857 };
+        new($"{EpsgUriPrefix}3857", 3857, AxisOrder.EastNorth, false)
+        {
+            Wkt = WellKnownCrsWkt.Epsg3857,
+            LinearUnitFactor = CrsLinearUnitFactor.Resolve(null, WellKnownCrsWkt.Epsg3857, isGeographic: false)
+        };
     private static readonly TimeSpan _cacheRetention = TimeSpan.FromHours(24);
     private const int MaxCacheEntries = 10000;
 
@@ -205,7 +218,8 @@ internal sealed partial class PostgresCrsRegistry : ICrsRegistry
             var uri = FormattableString.Invariant($"{EpsgUriPrefix}{srid}");
             return new CrsDefinition(uri, srid, axisOrder, isGeographic)
             {
-                Wkt = srtext
+                Wkt = srtext,
+                LinearUnitFactor = CrsLinearUnitFactor.Resolve(proj4text, srtext, isGeographic)
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException && !IsTransientConnectionError(ex))

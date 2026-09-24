@@ -346,7 +346,9 @@ internal static class PrintingToolsEndpoints
             result = await PrintingToolsRequestHandlers.ExecuteAsync(
                 req.WebMap, req.Format, req.TemplateName, req.Dpi,
                 resourceValidator, metadataGraphProvider, featureReader, styleCatalog, req.Logger, cancellationToken,
-                callerPrincipal: context.User, accessPolicyEvaluator: accessPolicyEvaluator);
+                callerPrincipal: context.User,
+                accessPolicyEvaluator: accessPolicyEvaluator,
+                crsRegistry: context.RequestServices.GetService<ICrsRegistry>());
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
