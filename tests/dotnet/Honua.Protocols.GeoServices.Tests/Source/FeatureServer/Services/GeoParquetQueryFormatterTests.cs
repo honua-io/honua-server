@@ -73,6 +73,21 @@ public sealed class GeoParquetQueryFormatterTests(ITestOutputHelper output)
     }
 
     [UnitTest]
+    public async Task FormatAsGeoParquet_UndefinedJsonAttribute_PreservesEmptyString()
+    {
+        var resource = CreateResource(Field("name", MetadataV2FieldType.String));
+        var feature = Feature.Create(1, null,
+            ImmutableDictionary<string, object?>.Empty.Add("name", default(JsonElement)));
+        var (payload, _) = GeoParquetQueryFormatter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(1, [feature]), resource, false, 4326, false, false, new GeometryLimits());
+        using var stream = new MemoryStream(payload);
+        using var reader = new ParquetSharp.Arrow.FileReader(stream);
+        using var batches = reader.GetRecordBatchReader();
+        using var batch = await batches.ReadNextRecordBatchAsync();
+        ((StringArray)batch!.Column("name")).GetString(0).Should().BeEmpty();
+    }
+
+    [UnitTest]
     public void FormatAsGeoParquet_WideSingleRow_RejectsBeforeNativeEncoding()
     {
         var feature = Feature.Create(1, null,

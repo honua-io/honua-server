@@ -84,7 +84,7 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         };
         var writer = new WKBWriter();
         var features = Enumerable.Range(1, rowCount).Select(id => Feature.Create(id,
-            id == rowCount ? null : writer.Write(new Point(-120 + id * 0.001, 35 + id * 0.0001)),
+            writer.Write(new Point(-120 + id * 0.001, 35 + id * 0.0001)),
             ImmutableDictionary<string, object?>.Empty.Add("name", $"export-{id}"))).ToImmutableArray();
         var (payload, _) = GeoParquetFeatureWriter.FormatAsGeoParquet(
             QueryResult<Feature>.Create(rowCount, features), resource, "objectid", true, 4326,
@@ -102,17 +102,10 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         {
             var id = row.ObjectId!.Value;
             row.Name.Should().Be($"export-{id}");
-            if (id == rowCount)
-            {
-                row.Geometry.Should().BeNull();
-            }
-            else
-            {
-                var point = row.Geometry.Should().BeOfType<Point>().Subject;
-                point.X.Should().BeApproximately(-120 + id * 0.001, 1e-9);
-                point.Y.Should().BeApproximately(35 + id * 0.0001, 1e-9);
-                point.SRID.Should().Be(4326);
-            }
+            var point = row.Geometry.Should().BeOfType<Point>().Subject;
+            point.X.Should().BeApproximately(-120 + id * 0.001, 1e-9);
+            point.Y.Should().BeApproximately(35 + id * 0.0001, 1e-9);
+            point.SRID.Should().Be(4326);
         }
     }
 

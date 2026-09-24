@@ -40,6 +40,7 @@ public static partial class GeoParquetFeatureWriter
                 {
                     string text => 6L * text.Length,
                     byte[] binary => 2L * binary.Length,
+                    JsonElement { ValueKind: JsonValueKind.Undefined } => 64L,
                     JsonElement json => 6L * json.GetRawText().Length,
                     _ => 64L
                 });
