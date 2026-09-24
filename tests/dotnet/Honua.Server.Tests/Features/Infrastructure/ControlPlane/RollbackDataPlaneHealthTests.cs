@@ -4,6 +4,7 @@
 using FluentAssertions;
 using Honua.Core.Features.ControlPlane.Domain;
 using Honua.ControlPlane;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Honua.Server.Tests.Features.Infrastructure.ControlPlane;
@@ -17,7 +18,7 @@ public sealed class RollbackDataPlaneHealthTests
 {
     private static readonly DateTimeOffset Now = new(2026, 9, 23, 12, 0, 0, TimeSpan.Zero);
 
-    [Fact]
+    [UnitTest]
     public void Evaluate_HealthyRestoredTarget_Completes()
     {
         var decision = RollbackDataPlaneCompletion.Evaluate(ProvenEvidence(), Now);
@@ -28,7 +29,7 @@ public sealed class RollbackDataPlaneHealthTests
         RollbackDataPlaneCompletion.ToStatus(decision.Disposition).Should().Be(WorkflowOperationStatus.RolledBack);
     }
 
-    [Fact]
+    [UnitTest]
     public void Evaluate_ConvergedWeightsWithEmptyStableTargets_StaysNonTerminalThenRequiresIntervention()
     {
         var evidence = ProvenEvidence() with
@@ -50,7 +51,7 @@ public sealed class RollbackDataPlaneHealthTests
         expired.Message.Should().Contain("registered=0");
     }
 
-    [Fact]
+    [UnitTest]
     public void Evaluate_ConvergedWeightsWithUnhealthyStableTargets_DoesNotComplete()
     {
         var evidence = ProvenEvidence() with
@@ -65,7 +66,7 @@ public sealed class RollbackDataPlaneHealthTests
             .Disposition.Should().Be(RollbackDataPlaneDisposition.ManualInterventionRequired);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData(RollbackFunctionalQueryVerdict.ServedOtherMarker)]
     [InlineData(RollbackFunctionalQueryVerdict.ServedErrorEnvelope)]
     public void Evaluate_WrongOrErrorFunctionalQuery_FailsAfterTheWindow(RollbackFunctionalQueryVerdict verdict)
@@ -82,7 +83,7 @@ public sealed class RollbackDataPlaneHealthTests
         RollbackDataPlaneCompletion.ToStatus(decision.Disposition).Should().NotBe(WorkflowOperationStatus.RolledBack);
     }
 
-    [Fact]
+    [UnitTest]
     public void Evaluate_ServingIdentityMismatch_RequiresInterventionImmediately()
     {
         var decision = RollbackDataPlaneCompletion.Evaluate(
@@ -99,7 +100,7 @@ public sealed class RollbackDataPlaneHealthTests
         decision.ObservedRevision.Should().Be("revision-b");
     }
 
-    [Fact]
+    [UnitTest]
     public void Classify_ErrorEnvelopeAndWrongMarker_AreNotAMatch()
     {
         HttpRollbackDataPlaneProbe.Classify(new DeployGoldenQueryResult
@@ -121,7 +122,7 @@ public sealed class RollbackDataPlaneHealthTests
         }).Should().Be(RollbackFunctionalQueryVerdict.MatchedPriorMarker);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Ecs_EmptyOrUnhealthyStableTargets_WithConvergedWeights_CannotRollBack()
     {
         foreach (var health in new[]
@@ -146,7 +147,7 @@ public sealed class RollbackDataPlaneHealthTests
         }
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Ecs_HealthyStableTarget_CanComplete_WithoutUsingTheCanaryTaskDefinition()
     {
         var backend = CreateEcsBackend(
@@ -164,7 +165,7 @@ public sealed class RollbackDataPlaneHealthTests
         observation.Message.Should().Contain(EcsPriorTask);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task ContainerApps_UnhealthyRevisionAtFullTraffic_CannotRollBack()
     {
         var client = new UnhealthyContainerAppsClient();
@@ -188,7 +189,7 @@ public sealed class RollbackDataPlaneHealthTests
         expired.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Lambda_AliasConvergedButQueryServesCandidate_CannotRollBack()
     {
         var probe = RollbackDataPlaneTestSupport.HealthyProbe();
@@ -224,7 +225,7 @@ public sealed class RollbackDataPlaneHealthTests
         expired.ObservedRevision.Should().Be("41");
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Functions_ImageConvergedButReadinessMissing_CannotRollBack()
     {
         var probe = RollbackDataPlaneTestSupport.HealthyProbe();
@@ -251,7 +252,7 @@ public sealed class RollbackDataPlaneHealthTests
         expired.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Argo_RevertedButUnhealthy_CannotRollBack()
     {
         var backend = new KubernetesArgoRolloutsDeployBackend(
@@ -276,7 +277,7 @@ public sealed class RollbackDataPlaneHealthTests
         expired.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Yarp_ConvergedProxyWithUnhealthyOrWrongMarker_CannotRollBack()
     {
         var unhealthy = await ObserveYarpAsync(healthy: false, body: RollbackDataPlaneTestSupport.PriorMarker, expired: false);
@@ -292,7 +293,7 @@ public sealed class RollbackDataPlaneHealthTests
         empty.Status.Should().Be(WorkflowOperationStatus.ManualInterventionRequired);
     }
 
-    [Fact]
+    [UnitTest]
     public async Task Yarp_HealthyRestoredReplica_CanComplete()
     {
         var observation = await ObserveYarpAsync(healthy: true, body: RollbackDataPlaneTestSupport.PriorMarker, expired: false);
