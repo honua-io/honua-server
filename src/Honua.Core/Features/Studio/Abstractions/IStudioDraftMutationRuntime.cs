@@ -79,6 +79,24 @@ public sealed record StudioDraftMutationContext
     /// <c>studio.publication_proposal</c>). The action tier can only tighten the edition policy.
     /// </summary>
     public string? ActionDiscriminator { get; init; }
+
+    /// <summary>
+    /// When <see langword="true"/>, a Studio publication request executes in this call.
+    /// Only an adapter that has already established the caller is an admin may set it.
+    /// The runtime then publishes through the same actuator an approved proposal would
+    /// run, before the <c>studio.publication_proposal</c> guardrail is applied, and it
+    /// does not send that principal through the proposal approve route (honua-server#5207).
+    /// </summary>
+    public bool PublishImmediately { get; init; }
+
+    /// <summary>Operation id of a Studio publication request.</summary>
+    public const string PublicationOperationId = "studio.content.create-publication-request";
+
+    /// <summary>
+    /// Authorization outcome that lets a Studio publication request execute before the
+    /// guardrail ladder. Meaningful only for <see cref="PublicationOperationId"/>.
+    /// </summary>
+    public const string AdminDirectPublicationOutcome = "admin-direct-publication";
 }
 
 /// <summary>Durable envelope plus the typed projection produced by its actuator.</summary>

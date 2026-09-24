@@ -6,6 +6,7 @@ using Honua.Core.Features.Guardrails.Domain;
 using Honua.Core.Features.Operations.Abstractions;
 using Honua.Core.Features.Operations.Domain;
 using Honua.Core.Features.Operations.Policy;
+using Honua.Core.Features.Studio.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace Honua.Core.Features.Operations.Services;
@@ -49,6 +50,16 @@ public sealed class CanonicalOperationPolicyDecisionPoint : IOperationPolicyDeci
         // Carry that decision into this single PDP instead of masquerading it as an
         // approved proposal (proposal identity must only identify a real proposal).
         if (string.Equals(context.AuthorizationOutcome, "autonomy-authorized", StringComparison.Ordinal))
+        {
+            return Task.FromResult(PolicyDecision.Allowed);
+        }
+
+        // An admin Studio publication executes before the proposal guardrail. The
+        // outcome is scoped to that one operation so it cannot loosen any other class.
+        // It is not an approved proposal: the same principal must not be sent through
+        // the approve route (honua-server#5207).
+        if (string.Equals(context.AuthorizationOutcome, StudioDraftMutationContext.AdminDirectPublicationOutcome, StringComparison.Ordinal)
+            && string.Equals(request.OperationId, StudioDraftMutationContext.PublicationOperationId, StringComparison.Ordinal))
         {
             return Task.FromResult(PolicyDecision.Allowed);
         }

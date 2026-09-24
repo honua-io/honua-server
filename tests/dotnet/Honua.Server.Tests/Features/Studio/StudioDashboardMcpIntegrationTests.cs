@@ -6,7 +6,6 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using FluentAssertions;
-using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.Guardrails;
 using Honua.Core.Features.Guardrails.Abstractions;
 using Honua.Core.Features.Guardrails.Domain;
@@ -257,26 +256,22 @@ public sealed class StudioDashboardMcpIntegrationTests : IAsyncLifetime
             reader.ServiceProvider.GetRequiredService<IStudioPackageStore>().PersistenceMode
                 .Should().Be(StudioPackagePersistenceMode.Durable);
 
-            // Composition is complete. Enable the operator's approval guardrail
-            // on the proposing host before submitting the immutable publication intent.
+            // Composition is complete. The class override still requires approval, and an
+            // admin publishes in the same call anyway: the proposal floor is not applied.
             _fixture.Services.GetRequiredService<IOptions<GuardrailLadderOptions>>().Value
                 .Overrides[nameof(OperationClass.StudioDraftMutation)] = nameof(GuardrailTier.RequiresApproval);
             _fixture.Services.GetRequiredService<IGuardrailLadder>().Resolve(OperationClass.StudioDraftMutation)
                 .Tier.Should().Be(GuardrailTier.RequiresApproval);
+            const string route = "/studio/dashboard-fixture";
             var intent = await CallAsync("propose_publication",
-                $$"""{"itemId":"{{version.ItemId}}","versionId":"{{version.VersionId}}","contentHash":"{{expectedHash}}","route":"/studio/dashboard-fixture","visibility":"personal"}""");
-            intent.GetProperty("status").GetString().Should().Be("AwaitingApproval");
-            intent.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeTrue();
-            intent.GetProperty("proposalId").GetString().Should().NotBeNullOrWhiteSpace();
-            intent.GetProperty("proposalUri").GetString()
-                .Should().Be($"honua://proposals/{intent.GetProperty("proposalId").GetString()}");
-            var proposalStore = _fixture.Services.GetRequiredService<IOperationProposalStore>();
-            var proposal = await proposalStore.GetAsync(intent.GetProperty("proposalId").GetString()!);
-            proposal.Should().NotBeNull();
-            proposal!.OperationId.Should().Be("studio.content.create-publication-request");
+                $$"""{"itemId":"{{version.ItemId}}","versionId":"{{version.VersionId}}","contentHash":"{{expectedHash}}","route":"{{route}}","visibility":"personal"}""");
+            intent.GetProperty("status").GetString().Should().Be("Published");
+            intent.GetProperty("humanConfirmationRequired").GetBoolean().Should().BeFalse();
+            intent.GetProperty("shareUrl").GetString().Should().Be(StudioPublishedRoutes.BuildActiveUrl(route));
+            intent.TryGetProperty("proposalId", out _).Should().BeFalse();
             var pointers = await lifecycle.GetPointersAsync(version.ItemId);
             pointers!.CurrentVersionId.Should().Be(version.VersionId);
-            pointers.PublishedVersionId.Should().BeNull();
+            pointers.PublishedVersionId.Should().Be(version.VersionId);
             (await lifecycle.GetVersionAsync(version.ItemId, version.VersionId))!.ContentHash.Should().Be(expectedHash);
         }
         finally

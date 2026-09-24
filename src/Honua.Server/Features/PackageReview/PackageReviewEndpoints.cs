@@ -171,8 +171,8 @@ internal static partial class PackageReviewEndpoints
             return MutationRefused(context, versionReceipt.Operation, "Map package could not be versioned");
         }
 
-        // Publication is proposed, never executed, on this route: like honua_studio_propose_publication,
-        // the published pointer only moves after a separate authorized principal approves the proposal.
+        // Publication is proposed, never executed, on this route. An admin MCP propose publishes
+        // in the same call; this REST route still waits for a separate principal.
         var proposalReceipt = await mutationRuntime.CreatePublicationRequestAsync(
             version.ItemId,
             version.VersionId,
