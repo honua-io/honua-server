@@ -16,6 +16,8 @@ using Honua.Protocols.Stac.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
+using Honua.Core.Abstractions.Features.Rasters.Abstractions;
+
 namespace Honua.Protocols.Stac;
 
 /// <summary>
@@ -59,7 +61,8 @@ internal static class ItemEndpoints
         [FromQuery] string? bbox,
         [FromQuery] string? datetime,
         [FromServices] IFeatureReader featureReader,
-        [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
+        [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger,
+        [FromServices] ICogArtifactLocator? cogArtifactLocator = null)
     {
         using var activity = StacTelemetry.StartActivity(
             StacTelemetry.Operations.Items,
@@ -165,8 +168,13 @@ internal static class ItemEndpoints
                 omitCount,
                 cancellationToken) : PagedQueryResult<Feature>.Create([], totalCount: omitCount ? null : 0);
 
+            var cogArtifact = cogArtifactLocator is null
+                ? null
+                : await cogArtifactLocator.TryResolveAsync(layerId, cancellationToken)
+                    .ConfigureAwait(false);
             var items = result.Items
-                .Select(f => StacMappingService.MapFeatureToItem(f, resource, publication, layerId, baseUrl, geometrySrid: Wgs84Srid))
+                .Select(f => StacMappingService.MapFeatureToItem(f, resource, publication,
+                    layerId, baseUrl, geometrySrid: Wgs84Srid, cogArtifact: cogArtifact))
                 .ToImmutableArray();
 
             var stacBase = $"{baseUrl}/stac";
@@ -239,7 +247,8 @@ internal static class ItemEndpoints
         string itemId,
         HttpContext context,
         [FromServices] IFeatureReader featureReader,
-        [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger)
+        [FromServices] ILogger<StacEndpoints.StacEndpointsLog> logger,
+        [FromServices] ICogArtifactLocator? cogArtifactLocator = null)
     {
         using var activity = StacTelemetry.StartActivity(
             StacTelemetry.Operations.Item,
@@ -342,7 +351,11 @@ internal static class ItemEndpoints
             }
 
             var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-            var item = StacMappingService.MapFeatureToItem(feature.Value, resource, publication, layerId, baseUrl, geometrySrid: Wgs84Srid);
+            var cogArtifact = cogArtifactLocator is null
+                ? null
+                : await cogArtifactLocator.TryResolveAsync(layerId, cancellationToken).ConfigureAwait(false);
+            var item = StacMappingService.MapFeatureToItem(feature.Value, resource, publication,
+                layerId, baseUrl, geometrySrid: Wgs84Srid, cogArtifact: cogArtifact);
 
             StacTelemetry.SetResultCount(activity, 1);
             return Results.Json(item, StacJsonContext.Default.StacItem, MediaTypes.GeoJson);

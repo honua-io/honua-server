@@ -1647,7 +1647,8 @@ internal sealed partial class FeatureServerQueryHandler(
                 layerSrid,
                 effectiveOutputSrid,
                 out var datumSelection,
-                out var datumError))
+                out var datumError,
+                TryGeographicQueryEnvelope(query, layerSrid)))
         {
             return (null, null, datumError);
         }
@@ -1691,7 +1692,8 @@ internal sealed partial class FeatureServerQueryHandler(
         int layerSrid,
         int? outputSrid,
         out DatumTransformationSelection? selection,
-        out IResult? error)
+        out IResult? error,
+        DatumAreaEnvelope? envelope = null)
     {
         selection = null;
         error = null;
@@ -1712,7 +1714,8 @@ internal sealed partial class FeatureServerQueryHandler(
                 layerSrid,
                 outputSrid.Value,
                 out selection,
-                out var resolveError))
+                out var resolveError,
+                envelope))
         {
             error = StandardErrorHelpers.CreateBadRequest(context,
                 "Invalid datumTransformation",
@@ -1726,6 +1729,28 @@ internal sealed partial class FeatureServerQueryHandler(
         }
 
         return true;
+    }
+
+    private static DatumAreaEnvelope? TryGeographicQueryEnvelope(FeatureQuery query, int layerSrid)
+    {
+        if (!GeographicSridClassifier.IsGeographicSrid(layerSrid)
+            || query.SpatialFilter is not { IsSimpleEnvelope: true } filter
+            || filter.EnvelopeMinX is not double west
+            || filter.EnvelopeMinY is not double south
+            || filter.EnvelopeMaxX is not double east
+            || filter.EnvelopeMaxY is not double north)
+        {
+            return null;
+        }
+
+        if (filter.Srid is int filterSrid
+            && filterSrid != layerSrid
+            && !GeographicSridClassifier.IsGeographicSrid(filterSrid))
+        {
+            return null;
+        }
+
+        return new DatumAreaEnvelope(west, south, east, north);
     }
 
     private static bool ShouldUseInternalObjectIdsFastPath(MetadataV2Resource resource)
@@ -2738,15 +2763,13 @@ internal sealed partial class FeatureServerQueryHandler(
         }
     }
 
-    // Statistics rows use the same Esri string projection as ordinary feature
-    // rows. Keep the compatibility conversion local so the trunk QueryFormatter
-    // remains authoritative after #5042 withdrew its broader formatter change.
+    // Statistics rows and ordinary feature rows now share one Esri projection. This
+    // conversion was kept local because #5042 withdrew the broader formatter change as
+    // part of reverting #5027 wholesale - for Admin, Import and GP task-name parity
+    // regressions, not for anything this does. Ordinary rows need it for the same
+    // reason statistics rows did: see GeoServicesAttributeProjection.
     private static object? GeoServicesAttributeValue(object? value)
-        => FeatureAttributeValueNormalizer.Normalize(value) switch
-        {
-            JsonElement { ValueKind: JsonValueKind.Array or JsonValueKind.Object } element => element.GetRawText(),
-            var normalized => normalized
-        };
+        => GeoServicesAttributeProjection.ToEsriValue(value);
 
     private static bool TryParseStatisticsDefinitions(
         string outStatisticsJson,

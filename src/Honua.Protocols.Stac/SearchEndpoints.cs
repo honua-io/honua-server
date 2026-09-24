@@ -23,6 +23,8 @@ using Honua.Core.Features.Geometry.Abstractions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 
+using Honua.Core.Abstractions.Features.Rasters.Abstractions;
+
 namespace Honua.Protocols.Stac;
 
 /// <summary>
@@ -141,7 +143,8 @@ internal static class SearchEndpoints
             deps.GeometryService,
             deps.FilterProcessor,
             defaultFilterLangIsText: true,
-            deps.Logger);
+            deps.Logger,
+            cogArtifactLocator: deps.CogArtifactLocator);
     }
 
     private static async Task<IResult> HandleSearchPost(
@@ -169,7 +172,8 @@ internal static class SearchEndpoints
             deps.FilterProcessor,
             defaultFilterLangIsText: false,
             deps.Logger,
-            isPostSearch: true);
+            isPostSearch: true,
+            cogArtifactLocator: deps.CogArtifactLocator);
     }
 
     private static async Task<IResult> ExecuteSearchAsync(
@@ -181,7 +185,8 @@ internal static class SearchEndpoints
         Cql2FilterProcessor filterProcessor,
         bool defaultFilterLangIsText,
         ILogger logger,
-        bool isPostSearch = false)
+        bool isPostSearch = false,
+        ICogArtifactLocator? cogArtifactLocator = null)
     {
         using var activity = StacTelemetry.StartActivity(
             StacTelemetry.Operations.SearchExecute,
@@ -302,7 +307,8 @@ internal static class SearchEndpoints
                     targetList,
                     normalizedIds,
                     effectiveLimit,
-                    isPostSearch);
+                    isPostSearch,
+                    cogArtifactLocator);
             }
 
             var allTargets = targets.ToArray();
@@ -320,7 +326,8 @@ internal static class SearchEndpoints
                 allTargets,
                 null,
                 effectiveLimit,
-                isPostSearch);
+                isPostSearch,
+                cogArtifactLocator);
         }
         catch (OperationCanceledException ex)
             when (TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context).IsCancellationRequested)
@@ -351,8 +358,34 @@ internal static class SearchEndpoints
         StacV2Lookups.ResolvedStacPublication[] targets,
         ImmutableArray<string>? requestedItemIds,
         int effectiveLimit,
-        bool isPostSearch)
+        bool isPostSearch,
+        ICogArtifactLocator? cogArtifactLocator = null)
     {
+        // Search spans collections and a page can revisit a layer many times, while
+        // each lookup confirms the artifact against storage. Resolve once per layer
+        // and reuse. Pre-resolved because the projections below are synchronous
+        // Select lambdas that cannot await.
+        var cogByLayer = new Dictionary<int, CogArtifactReference?>();
+
+        async ValueTask<CogArtifactReference?> CogForLayerAsync(int layer, CancellationToken ct)
+        {
+            if (cogArtifactLocator is null)
+            {
+                return null;
+            }
+
+            if (cogByLayer.TryGetValue(layer, out var cached))
+            {
+                return cached;
+            }
+
+            var resolved = await cogArtifactLocator
+                .TryResolveAsync(layer, ct)
+                .ConfigureAwait(false);
+            cogByLayer[layer] = resolved;
+            return resolved;
+        }
+
         using var activity = StacTelemetry.StartActivity(
             StacTelemetry.Operations.SearchWork,
             "/stac/search",
@@ -489,6 +522,7 @@ internal static class SearchEndpoints
                     var remaining = pageLimit - allItems.Count;
                     if (remaining > 0)
                     {
+                        var matchedCog = await CogForLayerAsync(layerId, cancellationToken);
                         allItems.AddRange(matchedFeatures
                             .Skip(remainingSkip)
                             .Take(remaining)
@@ -500,7 +534,8 @@ internal static class SearchEndpoints
                                     layerId,
                                     baseUrl,
                                     projection?.SelectedProperties,
-                                    geometrySrid: Wgs84Srid),
+                                    geometrySrid: Wgs84Srid,
+                                    cogArtifact: matchedCog),
                                 projection)));
                     }
 
@@ -574,10 +609,12 @@ internal static class SearchEndpoints
                             targetReader, storageLayerId,
                             query with { Offset = localOffset, Limit = pageLimit - allItems.Count },
                             true, cancellationToken);
+                        var pageCog = await CogForLayerAsync(layerId, cancellationToken);
                         allItems.AddRange(page.Items.Select(f => ApplyFieldProjection(
                             StacMappingService.MapFeatureToItem(
                                 f, target.Resource, target.Publication, layerId, baseUrl,
-                                projection?.SelectedProperties, geometrySrid: Wgs84Srid), projection)));
+                                projection?.SelectedProperties, geometrySrid: Wgs84Srid,
+                                cogArtifact: pageCog), projection)));
                     }
 
                     continue;
@@ -600,6 +637,7 @@ internal static class SearchEndpoints
 
                     var result = await StacPageReader.ReadAsync(
                         targetReader, storageLayerId, query, false, cancellationToken, layerCount);
+                    var layerCog = await CogForLayerAsync(layerId, cancellationToken);
                     allItems.AddRange(result.Items
                         .Select(f => ApplyFieldProjection(
                             StacMappingService.MapFeatureToItem(
@@ -609,7 +647,8 @@ internal static class SearchEndpoints
                                 layerId,
                                 baseUrl,
                                 projection?.SelectedProperties,
-                                geometrySrid: Wgs84Srid),
+                                geometrySrid: Wgs84Srid,
+                                cogArtifact: layerCog),
                             projection)));
                 }
                 else if (allItems.Count < effectiveLimit)
@@ -620,6 +659,7 @@ internal static class SearchEndpoints
                     var result = await targetReader.QueryAsync(storageLayerId, query, cancellationToken);
                     totalMatched += result.TotalCount;
 
+                    var layerCog = await CogForLayerAsync(layerId, cancellationToken);
                     allItems.AddRange(result.Features
                         .Select(f => ApplyFieldProjection(
                             StacMappingService.MapFeatureToItem(
@@ -629,7 +669,8 @@ internal static class SearchEndpoints
                                 layerId,
                                 baseUrl,
                                 projection?.SelectedProperties,
-                                geometrySrid: Wgs84Srid),
+                                geometrySrid: Wgs84Srid,
+                                cogArtifact: layerCog),
                             projection)));
                 }
                 else
@@ -673,9 +714,21 @@ internal static class SearchEndpoints
                     });
                 }
 
-                allItems.AddRange(globallyOrderedCandidates
+                var pageCandidates = globallyOrderedCandidates
+
                     .Skip(offset)
+
                     .Take(effectiveLimit)
+
+                    .ToList();
+                // Candidates span layers, so warm every one this page touches before
+                // projecting - the projection itself cannot await.
+                foreach (var layer in pageCandidates.Select(c => c.Target.LayerIndex).Distinct())
+                {
+                    await CogForLayerAsync(layer, cancellationToken);
+                }
+
+                allItems.AddRange(pageCandidates
                     .Select(candidate => ApplyFieldProjection(
                         StacMappingService.MapFeatureToItem(
                             candidate.Feature,
@@ -684,7 +737,8 @@ internal static class SearchEndpoints
                             candidate.Target.LayerIndex,
                             baseUrl,
                             candidate.Projection?.SelectedProperties,
-                            geometrySrid: Wgs84Srid),
+                            geometrySrid: Wgs84Srid,
+                            cogArtifact: cogByLayer.TryGetValue(candidate.Target.LayerIndex, out var c) ? c : null),
                         candidate.Projection)));
             }
 

@@ -18,7 +18,7 @@ Advertise the server's capability manifest for SDK/agent discovery (#1186).
 | Edition | Community |
 | Surface maturity | 2 implemented |
 | Registry entries | 2 |
-| Proving tests | 40 |
+| Proving tests | 42 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

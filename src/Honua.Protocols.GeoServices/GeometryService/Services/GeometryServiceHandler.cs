@@ -5,6 +5,7 @@ using System.Text.Json;
 using Honua.Core.Configuration;
 using Honua.Core.Features.GeometryService.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Infrastructure.Crs;
 using Honua.Core.Features.Shared.Models;
 using Honua.Protocols.GeoServices.GeometryService.Models;
 using Honua.Infrastructure.Models;
@@ -32,6 +33,13 @@ internal sealed class GeometryServiceHandler(
     private const int MaxGeometryJsonLengthUpperBound = 10_000_000;
     private const int MaxRelationPairsPerRequest = 100_000;
     private const double MeanEarthRadiusMeters = 6_371_000d;
+
+    /// <summary>
+    /// Ground spacing for <c>calculationType=preserveShape</c>. Edges longer than this
+    /// are densified on the spheroid before the planar measure. Smaller geometries use
+    /// a tighter spacing so a short edge is still subdivided.
+    /// </summary>
+    private const double PreserveShapeSegmentMeters = 10_000d;
 
     // Densify generates ceil(segmentLength / maxSegmentLength) interpolated vertices per
     // segment into an in-memory CoordinateList. A tiny maxSegmentLength over a large extent
@@ -386,6 +394,12 @@ internal sealed class GeometryServiceHandler(
             var transformationOutSr = await _spatialReferenceResolver
                 .ResolveGeodeticBaseSridAsync(outputSrid, ct)
                 .ConfigureAwait(false);
+            DatumAreaEnvelope? projectEnvelope = null;
+            if (TryGeographicGeometryEnvelope(geomStrings, transformationInSr, out var west, out var south, out var east, out var north))
+            {
+                projectEnvelope = new DatumAreaEnvelope(west, south, east, north);
+            }
+
             if (!GeoServicesDatumTransformationResolver.TryResolveWithDirection(
                     datumCatalog,
                     transformationValue,
@@ -393,7 +407,8 @@ internal sealed class GeometryServiceHandler(
                     transformationInSr,
                     transformationOutSr,
                     out var datumSelection,
-                    out var datumError))
+                    out var datumError,
+                    projectEnvelope))
             {
                 GeometryServiceLog.InvalidGeometryInput(_logger, "project", datumError ?? "Invalid transformation");
                 return CreateError(context, 400, datumError ?? "Invalid transformation.");
@@ -1009,21 +1024,16 @@ internal sealed class GeometryServiceHandler(
             // Esri densify spec: when geodesic=true, maxSegmentLength is expressed in
             // lengthUnit (meters when omitted) rather than SR units; when geodesic=false
             // (or omitted) maxSegmentLength is in SR units and lengthUnit is ignored.
-            // Convert to native SR units so e.g. sr=4326&geodesic=true&maxSegmentLength=1000
-            // means 1000 meters (~0.009 degrees) instead of 1000 degrees, which silently
-            // returned the input undensified. Densification itself remains planar in the
-            // SR; the geodesic conversion uses a mean-earth-radius degree length.
+            // geodesic=true: maxSegmentLength is a ground length. Vertices are inserted
+            // along the spheroid. geodesic=false keeps planar densify in SR units.
             var geodesicDensify = GeometryServiceRequestParser.ParseBool(
                 GeometryServiceRequestParser.GetValue(values, "geodesic"));
             var maxSegmentLengthNative = maxSegmentLength;
             if (geodesicDensify)
             {
                 var lengthUnit = GeometryServiceRequestParser.GetValue(values, "lengthUnit");
-                var spatialContext = await ResolveMeasurementSpatialContextAsync(context.RequestServices, sr!.Value, ct)
-                    .ConfigureAwait(false);
                 maxSegmentLengthNative = maxSegmentLength
-                    * GeometryServiceRequestParser.GetUnitMultiplier(lengthUnit)
-                    / spatialContext.MetersPerNativeUnit;
+                    * GeometryServiceRequestParser.GetUnitMultiplier(lengthUnit);
             }
 
             var parameters = new DensifyParameters
@@ -1031,11 +1041,17 @@ internal sealed class GeometryServiceHandler(
                 GeometryJsonStrings = geomStrings,
                 GeometryType = geomType,
                 SR = sr!.Value,
-                MaxSegmentLength = maxSegmentLengthNative
+                MaxSegmentLength = maxSegmentLengthNative,
+                Geodesic = geodesicDensify
             };
 
+            var spatialContext = await ResolveMeasurementSpatialContextAsync(
+                context.RequestServices,
+                parameters.SR,
+                ct).ConfigureAwait(false);
+
             GeometryServiceLog.RequestParsed(_logger, "densify", parameters.GeometryJsonStrings.Length, parameters.GeometryType);
-            return ExecuteDensify(parameters, scope);
+            return await ExecuteDensifyAsync(parameters, spatialContext, scope, ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -2642,6 +2658,71 @@ internal sealed class GeometryServiceHandler(
         return target;
     }
 
+    private bool TryGeographicGeometryEnvelope(
+        string[] geometryJson,
+        int srid,
+        out double west,
+        out double south,
+        out double east,
+        out double north)
+    {
+        west = south = east = north = 0;
+        if (!GeographicSridClassifier.IsGeographicSrid(srid) || geometryJson.Length == 0)
+        {
+            return false;
+        }
+
+        var any = false;
+        var minX = 0d;
+        var minY = 0d;
+        var maxX = 0d;
+        var maxY = 0d;
+        foreach (var json in geometryJson)
+        {
+            Geometry geometry;
+            try
+            {
+                geometry = ReadGeometry(json);
+            }
+            catch (ArgumentException)
+            {
+                return false;
+            }
+
+            var envelope = geometry.EnvelopeInternal;
+            if (envelope.IsNull)
+            {
+                continue;
+            }
+
+            if (!any)
+            {
+                minX = envelope.MinX;
+                minY = envelope.MinY;
+                maxX = envelope.MaxX;
+                maxY = envelope.MaxY;
+                any = true;
+                continue;
+            }
+
+            minX = Math.Min(minX, envelope.MinX);
+            minY = Math.Min(minY, envelope.MinY);
+            maxX = Math.Max(maxX, envelope.MaxX);
+            maxY = Math.Max(maxY, envelope.MaxY);
+        }
+
+        if (!any)
+        {
+            return false;
+        }
+
+        west = minX;
+        south = minY;
+        east = maxX;
+        north = maxY;
+        return true;
+    }
+
     private IResult ExecuteFindTransformations(
         FindTransformationsParameters parameters,
         Core.Features.Infrastructure.Crs.IDatumTransformationCatalog datumCatalog,
@@ -2687,15 +2768,12 @@ internal sealed class GeometryServiceHandler(
         double distanceMeters;
         if (parameters.Geodesic)
         {
-            // Build a polyline between the closest points of the two geometries and
-            // measure it geodesically through the shared measurement pipeline (projects
-            // to EPSG:4326 and uses ST_Length on geography). This reuses the same
-            // geodesic path that 'lengths' relies on.
-            var nearest = NetTopologySuite.Operation.Distance.DistanceOp.NearestPoints(geometry1, geometry2);
-            var lineWkb = new WKBWriter().Write(
-                geometry1.Factory.CreateLineString([nearest[0], nearest[1]]));
-            var measurementGeometry = await ProjectForGeodeticMeasurementAsync(lineWkb, parameters.SR, ct).ConfigureAwait(false);
-            distanceMeters = await _operationService.LengthAsync(measurementGeometry, 4326, ct).ConfigureAwait(false);
+            var writer = new WKBWriter();
+            distanceMeters = await _operationService.DistanceAsync(
+                writer.Write(geometry1),
+                writer.Write(geometry2),
+                parameters.SR,
+                ct).ConfigureAwait(false);
         }
         else
         {
@@ -2750,29 +2828,47 @@ internal sealed class GeometryServiceHandler(
         return Results.Json(response, GeometryServiceJsonContext.Default.GeometryServiceRelationResponse, contentType: "application/json");
     }
 
-    private IResult ExecuteDensify(DensifyParameters parameters, HonuaTelemetryScope scope)
+    private async Task<IResult> ExecuteDensifyAsync(
+        DensifyParameters parameters,
+        MeasurementSpatialContext spatialContext,
+        HonuaTelemetryScope scope,
+        CancellationToken ct)
     {
         var writer = new WKBWriter();
-        var densified = parameters.GeometryJsonStrings
-            .Select(geomJson =>
+        var densified = new List<byte[]>(parameters.GeometryJsonStrings.Length);
+        foreach (var geomJson in parameters.GeometryJsonStrings)
+        {
+            ct.ThrowIfCancellationRequested();
+            var geometry = ReadGeometry(geomJson);
+            // Bound the interpolated output BEFORE densifying. NTS and geography segmentize
+            // add roughly (totalLength / maxSegmentLength) coordinates; reject when that would
+            // exceed the per-geometry vertex cap so a tiny maxSegmentLength over a large extent
+            // cannot OOM the host (#2064). maxSegmentLength is already validated > 0 / finite.
+            var lengthInSegmentUnits = parameters.Geodesic
+                ? geometry.Length * spatialContext.MetersPerNativeUnit
+                : geometry.Length;
+            var estimatedVertices = lengthInSegmentUnits / parameters.MaxSegmentLength;
+            if (double.IsNaN(estimatedVertices)
+                || estimatedVertices > MaxDensifiedVerticesPerGeometry)
             {
-                var geometry = ReadGeometry(geomJson);
-                // Bound the interpolated output BEFORE densifying. NTS adds roughly
-                // (totalLength / maxSegmentLength) coordinates; reject when that would exceed the
-                // per-geometry vertex cap so a tiny maxSegmentLength over a large extent cannot OOM
-                // the host (#2064). maxSegmentLength is already validated > 0 / finite upstream.
-                var estimatedVertices = geometry.Length / parameters.MaxSegmentLength;
-                if (double.IsNaN(estimatedVertices)
-                    || estimatedVertices > MaxDensifiedVerticesPerGeometry)
-                {
-                    throw new ArgumentException(
-                        "densify would generate too many vertices; maxSegmentLength is too small for the geometry extent.");
-                }
+                throw new ArgumentException(
+                    "densify would generate too many vertices; maxSegmentLength is too small for the geometry extent.");
+            }
 
-                var result = NetTopologySuite.Densify.Densifier.Densify(geometry, parameters.MaxSegmentLength);
-                return writer.Write(result);
-            })
-            .ToList();
+            if (parameters.Geodesic)
+            {
+                var geodesic = await _operationService.SegmentizeGeodesicAsync(
+                    writer.Write(geometry),
+                    parameters.SR,
+                    parameters.MaxSegmentLength,
+                    ct).ConfigureAwait(false);
+                densified.Add(geodesic);
+                continue;
+            }
+
+            var result = NetTopologySuite.Densify.Densifier.Densify(geometry, parameters.MaxSegmentLength);
+            densified.Add(writer.Write(result));
+        }
 
         var response = ConvertToResponse(densified, parameters.SR, parameters.GeometryType);
         GeometryServiceLog.SimplifyOperationCompleted(_logger, parameters.GeometryJsonStrings.Length);
@@ -3171,6 +3267,23 @@ internal sealed class GeometryServiceHandler(
                 continue;
             }
 
+            if (parameters.CalculationType == MeasurementCalculationType.PreserveShape)
+            {
+                var spacing = ResolvePreserveShapeSpacingMeters(geometry, spatialContext);
+                var densified = await _operationService.SegmentizeGeodesicAsync(wkb, parameters.SR, spacing, ct)
+                    .ConfigureAwait(false);
+                var densifiedGeometry = new WKBReader().Read(densified);
+                lengths[i] = ConvertPlanarLengthFromNativeUnits(
+                    densifiedGeometry.Length,
+                    spatialContext,
+                    parameters.LengthUnit);
+                areas[i] = ConvertPlanarAreaFromNativeUnits(
+                    ApplyPlanarAreaOrientation(densifiedGeometry.Area, parameters.GeometryJsonStrings[i]),
+                    spatialContext,
+                    parameters.AreaUnit);
+                continue;
+            }
+
             var measurementGeometry = await ProjectForGeodeticMeasurementAsync(wkb, parameters.SR, ct).ConfigureAwait(false);
             var measurementBoundary = new WKBWriter().Write(new WKBReader().Read(measurementGeometry).Boundary);
             var area = await _operationService.AreaAsync(measurementGeometry, 4326, ct).ConfigureAwait(false);
@@ -3205,6 +3318,19 @@ internal sealed class GeometryServiceHandler(
                 var geometry = new WKBReader().Read(wkb);
                 values[i] = ConvertPlanarLengthFromNativeUnits(
                     geometry.Length,
+                    spatialContext,
+                    parameters.LengthUnit);
+                continue;
+            }
+
+            if (parameters.CalculationType == MeasurementCalculationType.PreserveShape)
+            {
+                var geometry = new WKBReader().Read(wkb);
+                var spacing = ResolvePreserveShapeSpacingMeters(geometry, spatialContext);
+                var densified = await _operationService.SegmentizeGeodesicAsync(wkb, parameters.SR, spacing, ct)
+                    .ConfigureAwait(false);
+                values[i] = ConvertPlanarLengthFromNativeUnits(
+                    new WKBReader().Read(densified).Length,
                     spatialContext,
                     parameters.LengthUnit);
                 continue;
@@ -3528,6 +3654,21 @@ internal sealed class GeometryServiceHandler(
         => keys
             .Select(key => GeometryServiceRequestParser.GetValue(values, key))
             .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+
+    private static double ResolvePreserveShapeSpacingMeters(
+        Geometry geometry,
+        MeasurementSpatialContext spatialContext)
+    {
+        var envelope = geometry.EnvelopeInternal;
+        var extentNative = Math.Max(envelope.Width, envelope.Height);
+        var extentMeters = extentNative * spatialContext.MetersPerNativeUnit;
+        if (!double.IsFinite(extentMeters) || extentMeters <= 0)
+        {
+            return PreserveShapeSegmentMeters;
+        }
+
+        return Math.Min(PreserveShapeSegmentMeters, Math.Max(extentMeters / 8d, 1d));
+    }
 
     private async Task<byte[]> ProjectForGeodeticMeasurementAsync(byte[] wkb, int srid, CancellationToken ct)
     {

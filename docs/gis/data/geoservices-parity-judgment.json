@@ -2703,6 +2703,14 @@
           "notes": "Graph-backed service directory, RBAC-filtered per principal, listing every service type a publication exposes. Returns 401/403 rather than a misleading empty list when every publication is denied. Does not emit folders; currentVersion is deliberately omitted (see knownLimitations)."
         },
         {
+          "name": "Service-name catalog node",
+          "status": "partial",
+          "esriPaths": [
+            "/rest/services/{folderName}"
+          ],
+          "notes": "GET and POST expose the visible service-type entries for one service name using the same RBAC-filtered projection as the root directory. Supports client traversal through a service's parent node; nested folder hierarchies are not implemented."
+        },
+        {
           "name": "REST Info",
           "status": "stub",
           "esriPaths": [
