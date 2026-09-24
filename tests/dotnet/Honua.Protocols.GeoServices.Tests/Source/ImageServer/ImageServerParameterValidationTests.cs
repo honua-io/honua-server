@@ -457,6 +457,44 @@ public class ImageServerParameterValidationTests : IClassFixture<ImageServerPara
 
     #endregion
 
+    [IntegrationTest]
+    [Operation(Operations.GetTile)]
+    [Endpoint("GET /rest/services/{id}/ImageServer/tile/{level}/{row}/{col}")]
+    public async Task GetImageTile_SingleRasterWithLegacyCroppedCache_RegeneratesFullFrame()
+    {
+        await RasterIntegrationTestData.RunWithIssue522MosaicAsync(_fixture, async () =>
+        {
+            await using var connection = await _fixture.Postgres.GetConnectionAsync(_fixture.CurrentSchema!);
+            await using var idCommand = connection.CreateCommand();
+            idCommand.CommandText = "SELECT id FROM honua.raster_data WHERE layer_id = 0 AND name = 'east';";
+            var rasterId = (long)(await idCommand.ExecuteScalarAsync())!;
+
+            using var cropped = new SKBitmap(3, 2);
+            cropped.Erase(SKColors.Red);
+            using var encoded = cropped.Encode(SKEncodedImageFormat.Png, 100);
+            await using var insert = connection.CreateCommand();
+            insert.CommandText = """
+                INSERT INTO honua.raster_tiles
+                    (raster_data_id, zoom_level, tile_x, tile_y, tile_data, content_type)
+                VALUES (@id, 0, 0, 0, @data, 'image/png');
+                """;
+            insert.Parameters.AddWithValue("id", rasterId);
+            insert.Parameters.AddWithValue("data", encoded.ToArray());
+            await insert.ExecuteNonQueryAsync();
+
+            var rule = Uri.EscapeDataString(
+                $"{{\"mosaicMethod\":\"esriMosaicLockRaster\",\"lockRasterIds\":[{rasterId}]}}");
+            foreach (var format in new[] { "png", "jpeg" })
+            {
+                var url = $"/rest/services/{TestLayerId}/ImageServer/tile/0/0/0?format={format}&mosaicRule={rule}";
+                using var denied = await _fixture.Client.GetAsync(url);
+                await AssertDeniedAsync(denied);
+                using var response = await _client.GetAsync(url);
+                await AssertImageAsync(response, $"image/{format}", 256, 256);
+            }
+        });
+    }
+
     private async Task<HttpResponseMessage> GetSeededAsync(string url)
     {
         HttpResponseMessage response = null!;

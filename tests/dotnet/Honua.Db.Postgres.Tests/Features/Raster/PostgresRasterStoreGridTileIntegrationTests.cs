@@ -109,6 +109,8 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
 
             var expectedCellSize = (window.MaxX - window.MinX) / 256.0; // 45deg / 256px
             var decoded = await InspectGeoTiffTileAsync(schemaName, geotiffTile.Data);
+            decoded.Width.Should().Be(256);
+            decoded.Height.Should().Be(256);
             decoded.Srid.Should().Be(4326, "the source in 3857 must be reprojected into the 4326 gridset SRID");
             decoded.ScaleX.Should().BeApproximately(expectedCellSize, 1e-6,
                 "the rendered tile must sit on the WorldCRS84Quad cell grid (45deg / 256px)");
@@ -169,6 +171,8 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
             tile.Data.Should().NotBeEmpty();
 
             var decoded = await InspectGeoTiffTileAsync(schemaName, tile.Data);
+            decoded.Width.Should().Be(256);
+            decoded.Height.Should().Be(256);
             decoded.Srid.Should().Be(4326, "the mosaic must be reprojected into the 4326 gridset SRID");
 
             // West ground point must carry the west source, east ground point the east source: the
@@ -262,7 +266,7 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
     // Decodes the returned GeoTIFF tile in PostGIS (GeoTIFF preserves georeferencing, so the CRS
     // and cell size survive the round trip) and reports its SRID, X cell size, and the pixel value
     // at the tile-centre ground point (lon 22.5, lat 22.5 for tile col=4,row=1,level=2).
-    private async Task<(int Srid, double ScaleX, double CentreValue)> InspectGeoTiffTileAsync(
+    private async Task<(int Srid, double ScaleX, double CentreValue, int Width, int Height)> InspectGeoTiffTileAsync(
         string schemaName, byte[] tile)
     {
         await using var connection = await fixture.GetConnectionAsync(schemaName);
@@ -271,7 +275,8 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
             WITH decoded AS (SELECT ST_FromGDALRaster(@data) AS rast)
             SELECT ST_SRID(rast),
                    ST_ScaleX(rast),
-                   ST_Value(rast, 1, ST_SetSRID(ST_MakePoint(22.5, 22.5), 4326))
+                   ST_Value(rast, 1, ST_SetSRID(ST_MakePoint(22.5, 22.5), 4326)),
+                   ST_Width(rast), ST_Height(rast)
             FROM decoded;
             """;
         command.Parameters.AddWithValue("data", tile);
@@ -281,7 +286,7 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
         var scaleX = reader.GetDouble(1);
         reader.IsDBNull(2).Should().BeFalse("the tile centre must be a covered (non-NODATA) pixel");
         var centre = reader.GetDouble(2);
-        return (srid, scaleX, centre);
+        return (srid, scaleX, centre, reader.GetInt32(3), reader.GetInt32(4));
     }
 
     private async Task<double> SampleGeoTiffAtWorldPointAsync(string schemaName, byte[] tile, double lon, double lat)

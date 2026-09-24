@@ -50,6 +50,8 @@ internal static class ImageServerTileCacheKey
         // layer/raster/merge/time/format inputs so a change in any of them yields a distinct key.
         var behaviorHash = GeoServicesCloudTileCache.Hash(string.Join(
             '|',
+            // Invalidate legacy source-sized tile payloads without changing the lifecycle key layout.
+            "grid-frame-v1",
             metadataEtag,
             publicationId,
             layerId.ToString(CultureInfo.InvariantCulture),
