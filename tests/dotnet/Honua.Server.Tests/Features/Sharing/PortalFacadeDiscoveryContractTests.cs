@@ -111,6 +111,29 @@ public sealed class PortalFacadeDiscoveryContractTests : IAsyncLifetime
 
     public Task DisposeAsync() => _fixture.DisposeAsync();
 
+    [IntegrationTheory]
+    [InlineData(PublicServiceId, true)]
+    [InlineData(OrgServiceId, false)]
+    [InlineData(PrivateServiceId, false)]
+    [Operation(Operations.Security)]
+    [Endpoint("GET /rest/admin/{serviceName}.{serviceType}")]
+    public async Task AdminProjection_AnonymousCanReadOnlyPublicServices(string serviceId, bool visible)
+    {
+        using var client = _fixture.CreateClient();
+        using var response = await client.GetAsync($"/rest/admin/{serviceId}.FeatureServer?f=json");
+
+        if (!visible)
+        {
+            await response.AssertGeoServicesErrorAsync(404);
+            return;
+        }
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("type").GetString().Should().Be("FeatureServer");
+        document.RootElement.GetProperty("serviceName").GetString().Should().Be("Public Basemap");
+    }
+
     [IntegrationTest]
     [Operation(Operations.Security)]
     [Endpoint("GET /sharing/rest/search")]

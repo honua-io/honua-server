@@ -36,6 +36,32 @@ public sealed class GeoservicesCatalogEndpointTests : IClassFixture<WebAppFixtur
 
     public GeoservicesCatalogEndpointTests(WebAppFixture fixture) => _fixture = fixture;
 
+    [IntegrationTheory]
+    [InlineData("GET")]
+    [InlineData("POST")]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{folderName}")]
+    [Endpoint("POST /rest/services/{folderName}")]
+    public async Task ServiceFolder_ReturnsOnlyTheRequestedServicesCatalogEntries(string method)
+    {
+        using var rootResponse = await _fixture.Client.GetAsync("/rest/services?f=json");
+        rootResponse.Be200Ok();
+        using var root = JsonDocument.Parse(await rootResponse.Content.ReadAsStringAsync());
+        var entries = root.RootElement.GetProperty("services").EnumerateArray().ToArray();
+        entries.Should().NotBeEmpty();
+        var name = entries[0].GetProperty("name").GetString()!;
+        var expected = entries.Where(entry => entry.GetProperty("name").GetString() == name)
+            .Select(entry => entry.GetRawText()).ToArray();
+
+        using var request = new HttpRequestMessage(new HttpMethod(method),
+            $"/rest/services/{Uri.EscapeDataString(name)}?f=json");
+        using var response = await _fixture.Client.SendAsync(request);
+        response.Be200Ok();
+        using var folder = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        folder.RootElement.GetProperty("services").EnumerateArray()
+            .Select(entry => entry.GetRawText()).Should().BeEquivalentTo(expected);
+    }
+
     [IntegrationTest]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services")]
