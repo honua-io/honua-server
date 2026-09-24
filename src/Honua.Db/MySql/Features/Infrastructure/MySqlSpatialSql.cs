@@ -48,4 +48,19 @@ internal static class MySqlSpatialSql
     /// </summary>
     public static bool IsDistanceSphereCompatibleSrid(int srid) =>
         srid is 0 or 4326;
+
+    /// <summary>
+    /// IUGG mean Earth radius, metres. MySQL <c>ST_Distance_Sphere</c> is a sphere, and
+    /// without this argument the engine uses its own default radius.
+    /// </summary>
+    public const double DistanceSphereRadiusMeters = 6_371_008.8;
+
+    /// <summary>
+    /// <c>ST_Distance_Sphere(left, right, radius)</c> with the explicit mean-Earth radius.
+    /// </summary>
+    public static string DistanceSphere(string left, string right)
+    {
+        var radius = DistanceSphereRadiusMeters.ToString(CultureInfo.InvariantCulture);
+        return $"ST_Distance_Sphere({left}, {right}, {radius})";
+    }
 }

@@ -169,6 +169,7 @@ public class MySqlSqlFilterTranslatorTests
         var result = _translator.Translate(filter, pointResource);
 
         Assert.Contains("ST_Distance_Sphere", result.Sql, StringComparison.Ordinal);
+        Assert.Contains("6371008.8", result.Sql, StringComparison.Ordinal);
         Assert.Contains("<= @p1", result.Sql, StringComparison.Ordinal);
     }
 

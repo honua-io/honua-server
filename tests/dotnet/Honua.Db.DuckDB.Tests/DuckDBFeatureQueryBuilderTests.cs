@@ -631,6 +631,29 @@ public class DuckDBFeatureQueryBuilderTests
     }
 
     [Fact]
+    public void BuildSelectQuery_WithinDistance_Nad27_Throws()
+    {
+        // NAD27 degrees are not WGS 84. A direct spheroid distance skips the datum shift.
+        var geographicMapping = new DuckDBLayerMapping
+        {
+            LayerId = 1,
+            TableName = "parcels_nad27",
+            GeometryColumn = "geom",
+            ObjectIdColumn = "id",
+            Srid = 4267,
+            AttributeColumns = ["name"]
+        };
+        var registry = new DuckDBLayerRegistry([geographicMapping]);
+        var builder = new DuckDBFeatureQueryBuilder(registry);
+        var query = new FeatureQuery
+        {
+            SpatialFilter = SpatialFilter.CreateDistanceFilter([1, 2, 3, 4], 1000.0, DistanceUnit.Meters)
+        };
+
+        Assert.Throws<NotSupportedException>(() => builder.BuildSelectQuery(1, query));
+    }
+
+    [Fact]
     public void BuildSelectQuery_WithinDistance_ProjectedSrid_UsesDWithin()
     {
         // UTM zone 10N (SRID 32610) is a projected CRS — meters are CRS units

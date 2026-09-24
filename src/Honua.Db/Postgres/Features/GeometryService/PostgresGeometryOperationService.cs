@@ -487,8 +487,9 @@ internal sealed class PostgresGeometryOperationService(
     // uses the canonical NARROW geodesic-safe bucket (#2732/#2731) rather than the broad geographic
     // list — a geography measurement is only sound for the WGS 84-compatible degree CRSes, and this
     // matches the DuckDB provider's narrow gate. The narrow bucket differs from the pre-#2732
-    // 6-code fallback (4326/4269/4267/4258/4619/4283): it drops 4619 (SWEREF99) and adds
-    // 4617 (NAD83(CSRS)) / 4759 (NAD83(NSRS2007)); the primary spatial_ref_sys-derived path still
+    // 6-code fallback (4326/4269/4267/4258/4619/4283): it drops 4619 (SWEREF99) and 4267
+    // (NAD27, whose degrees are not WGS 84) and adds 4617 (NAD83(CSRS)) / 4759
+    // (NAD83(NSRS2007)); the primary spatial_ref_sys-derived path still
     // classifies 4619 correctly, so only the registry-miss fallback is affected.
     private static bool IsLikelyGeographicSrid(int srid)
         => GeographicSridClassifier.IsGeodesicDistanceSafeSrid(srid);

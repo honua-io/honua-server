@@ -177,13 +177,13 @@ and to filter expressions translated through `MySqlSqlFilterTranslator`.
 | `Within`              | `ST_Within(col, ST_GeomFromWKB(?, srid))` |
 | `Contains`            | `ST_Contains(col, ST_GeomFromWKB(?, srid))` |
 | `Crosses` / `Touches` / `Overlaps` / `Disjoint` / `Equals` | matching `ST_*` function |
-| `WithinDistance` (Point/MultiPoint only) | `ST_Distance_Sphere(col, ST_GeomFromWKB(?, srid)) <= ?` |
-| `BeyondDistance` (Point/MultiPoint only) | `ST_Distance_Sphere(col, ST_GeomFromWKB(?, srid)) > ?` |
+| `WithinDistance` (Point/MultiPoint only) | `ST_Distance_Sphere(col, ST_GeomFromWKB(?, srid), 6371008.8) <= ?` |
+| `BeyondDistance` (Point/MultiPoint only) | `ST_Distance_Sphere(col, ST_GeomFromWKB(?, srid), 6371008.8) > ?` |
 | `NearestNeighbor`     | `NotSupportedException` — not implemented |
 
-`ST_Distance_Sphere` is documented by both engines as a WGS84 spherical
-**approximation**; the resulting distance differs from a true geodesic
-calculation. For accurate geodesic distance use a PostGIS-backed layer.
+`ST_Distance_Sphere` is a sphere, not a WGS 84 spheroid. Honua passes an
+explicit mean-Earth radius of 6371008.8 m. The result still differs from a
+geodesic on the ellipsoid. For that distance use a PostGIS-backed layer.
 Distance filters on layers whose geometry type is anything other than
 `Point` or `MultiPoint` raise `NotSupportedException`. The guard is
 applied uniformly in `MySqlFeatureQueryBuilder.Spatial` and

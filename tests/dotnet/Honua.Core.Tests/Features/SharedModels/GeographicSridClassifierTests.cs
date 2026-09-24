@@ -64,7 +64,6 @@ public sealed class GeographicSridClassifierTests
     [Theory]
     [InlineData(4326)]
     [InlineData(4269)]
-    [InlineData(4267)]
     [InlineData(4258)]
     [InlineData(4283)]
     [InlineData(4617)]
@@ -82,6 +81,7 @@ public sealed class GeographicSridClassifierTests
     [InlineData(4490)]  // CGCS2000
     [InlineData(4979)]  // WGS 84 3D
     [InlineData(4619)]  // SWEREF99 — geographic but NOT geodesic-safe (dropped from the Postgres fallback in #2732).
+    [InlineData(4267)]  // NAD27 — geographic, but a direct WGS 84 spheroid distance skips the datum shift.
     // Projected / geocentric.
     [InlineData(3857)]
     [InlineData(4978)]
