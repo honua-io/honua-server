@@ -18,7 +18,7 @@ Query and edit features through the OData v4 protocol surface.
 | Edition | Community |
 | Surface maturity | 30 implemented |
 | Registry entries | 30 |
-| Proving tests | 229 |
+| Proving tests | 230 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

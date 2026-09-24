@@ -1642,7 +1642,6 @@
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerFindHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerMeasureHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerLegendHandler.cs",
-          "src/Honua.Protocols.GeoServices/ImageServer/Handlers/ImageServerAnalyzeHandler.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Services/ImageServerCatalogReader.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Services/ImageServerCatalogFilterEvaluator.cs",
           "src/Honua.Protocols.GeoServices/ImageServer/Services/ImageServerMosaicHelpers.cs",
@@ -1662,7 +1661,6 @@
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerCatalogQueryHandlerTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerStatisticsHistogramsHandlerTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerLegendHandlerTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerAnalyzeHandlerTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/ImageServer/ImageServerKmlTests.cs",
           "tests/dotnet/Honua.Protocols.OgcClassic.Tests/Source/Wcs20/Wcs20EndpointsTests.cs"
         ]
