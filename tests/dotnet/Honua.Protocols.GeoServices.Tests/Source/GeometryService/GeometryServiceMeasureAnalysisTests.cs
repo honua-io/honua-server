@@ -114,6 +114,45 @@ public sealed class GeometryServiceMeasureAnalysisTests : IClassFixture<WebAppFi
         result!.Distance.Should().BeApproximately(5.0, 0.001);
     }
 
+    [IntegrationTest]
+    [Operation(Operations.Distance)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/distance")]
+    public async Task Distance_GeodesicAntimeridianChord_UsesSpheroidalNearestPoint()
+    {
+        // The lon/lat chord from 170° to -170° is the long way around. Planar nearest-point
+        // distance from (180, 0) is about 1,112 km. On the spheroid the edge is the 20° arc
+        // across the antimeridian, and the point lies on it.
+        var body = """
+        {
+            "geometry1": {"x": 180, "y": 0},
+            "geometry2": {"paths": [[[170, 0], [-170, 0]]]},
+            "sr": "4326",
+            "geodesic": "GEODESIC",
+            "distanceUnit": "esriMeters"
+        }
+        """;
+
+        var geodesic = await PostDistanceAsync(body.Replace("GEODESIC", "true", StringComparison.Ordinal));
+        var planar = await PostDistanceAsync(body.Replace("GEODESIC", "false", StringComparison.Ordinal));
+
+        geodesic.Should().BeLessThan(1d);
+        planar.Should().BeGreaterThan(1_000_000d);
+        (planar - geodesic).Should().BeGreaterThan(1_000d);
+    }
+
+    private async Task<double> PostDistanceAsync(string body)
+    {
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/distance",
+            requestContent);
+        response.Be200Ok();
+        var content = await response.Content.ReadAsStringAsync();
+        var result = JsonSerializer.Deserialize(content, GeometryServiceJsonContext.Default.GeometryServiceDistanceResponse);
+        result.Should().NotBeNull();
+        return result!.Distance;
+    }
+
     // --- relation ---
 
     [IntegrationTest]
@@ -442,6 +481,108 @@ public sealed class GeometryServiceMeasureAnalysisTests : IClassFixture<WebAppFi
         var paths = result.Geometries![0];
         paths.TryGetProperty("paths", out var pathsElement).Should().BeTrue();
         pathsElement[0].GetArrayLength().Should().BeGreaterThan(2);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Densify)]
+    [Endpoint("POST /rest/services/Utilities/Geometry/GeometryServer/densify")]
+    public async Task Densify_GeodesicAt60N_KeepsGroundSpacingAndLeavesTheParallel()
+    {
+        var body = """
+        {
+            "geometries": {
+                "geometryType": "esriGeometryPolyline",
+                "geometries": [
+                    {"paths": [[[0, 60], [10, 60]]]}
+                ]
+            },
+            "sr": "4326",
+            "geodesic": true,
+            "maxSegmentLength": 1000,
+            "lengthUnit": "esriMeters"
+        }
+        """;
+
+        using var requestContent = new StringContent(body, Encoding.UTF8, "application/json");
+        var response = await _fixture.Client.PostAsync(
+            "/rest/services/Utilities/Geometry/GeometryServer/densify",
+            requestContent);
+
+        response.Be200Ok();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var path = document.RootElement.GetProperty("geometries")[0].GetProperty("paths")[0];
+        path.GetArrayLength().Should().BeGreaterThan(2);
+
+        var coordinates = path.EnumerateArray()
+            .Select(point => (X: point[0].GetDouble(), Y: point[1].GetDouble()))
+            .ToArray();
+        var offChord = coordinates.Any(point => Math.Abs(point.Y - 60d) * 111_320d > 100d);
+        offChord.Should().BeTrue("a geodesic at 60°N bows off the straight parallel by more than 100 m");
+
+        var lengths = new double[coordinates.Length - 1];
+        for (var i = 1; i < coordinates.Length; i++)
+        {
+            lengths[i - 1] = VincentyMeters(coordinates[i - 1].X, coordinates[i - 1].Y, coordinates[i].X, coordinates[i].Y);
+        }
+
+        lengths.Max().Should().BeLessThan(1_010d);
+        lengths.Where(length => length > 100d).Should().OnlyContain(length => Math.Abs(length - 1_000d) / 1_000d < 0.01d);
+    }
+
+    private static double VincentyMeters(double lon1, double lat1, double lon2, double lat2)
+    {
+        const double semiMajor = 6_378_137d;
+        const double flattening = 1d / 298.257223563d;
+        var semiMinor = semiMajor * (1d - flattening);
+        var phi1 = lat1 * Math.PI / 180d;
+        var phi2 = lat2 * Math.PI / 180d;
+        var longitudeDelta = (lon2 - lon1) * Math.PI / 180d;
+        var u1 = Math.Atan((1d - flattening) * Math.Tan(phi1));
+        var u2 = Math.Atan((1d - flattening) * Math.Tan(phi2));
+        var sinU1 = Math.Sin(u1);
+        var cosU1 = Math.Cos(u1);
+        var sinU2 = Math.Sin(u2);
+        var cosU2 = Math.Cos(u2);
+        var lambda = longitudeDelta;
+        double sinSigma = 0;
+        double cosSigma = 0;
+        double sigma = 0;
+        double cosSqAlpha = 0;
+        double cos2SigmaM = 0;
+        for (var iteration = 0; iteration < 100; iteration++)
+        {
+            var sinLambda = Math.Sin(lambda);
+            var cosLambda = Math.Cos(lambda);
+            sinSigma = Math.Sqrt(
+                Math.Pow(cosU2 * sinLambda, 2) +
+                Math.Pow(cosU1 * sinU2 - sinU1 * cosU2 * cosLambda, 2));
+            if (sinSigma <= 0)
+            {
+                return 0;
+            }
+
+            cosSigma = sinU1 * sinU2 + cosU1 * cosU2 * cosLambda;
+            sigma = Math.Atan2(sinSigma, cosSigma);
+            var sinAlpha = cosU1 * cosU2 * sinLambda / sinSigma;
+            cosSqAlpha = Math.Max(0d, 1d - sinAlpha * sinAlpha);
+            cos2SigmaM = cosSqAlpha <= 0d ? 0d : cosSigma - 2d * sinU1 * sinU2 / cosSqAlpha;
+            var c = flattening / 16d * cosSqAlpha * (2d + flattening * (4d - 3d * cosSqAlpha));
+            var previous = lambda;
+            lambda = longitudeDelta + (1d - c) * flattening * sinAlpha
+                * (sigma + c * sinSigma * (cos2SigmaM + c * cosSigma * (-1d + 2d * cos2SigmaM * cos2SigmaM)));
+            if (Math.Abs(lambda - previous) < 1e-12)
+            {
+                break;
+            }
+        }
+
+        var uSq = cosSqAlpha * (semiMajor * semiMajor - semiMinor * semiMinor) / (semiMinor * semiMinor);
+        var aCoeff = 1d + uSq / 16384d * (4096d + uSq * (-768d + uSq * (320d - 175d * uSq)));
+        var bCoeff = uSq / 1024d * (256d + uSq * (-128d + uSq * (74d - 47d * uSq)));
+        var deltaSigma = bCoeff * sinSigma * (cos2SigmaM + bCoeff / 4d
+            * (cosSigma * (-1d + 2d * cos2SigmaM * cos2SigmaM)
+                - bCoeff / 6d * cos2SigmaM * (-3d + 4d * sinSigma * sinSigma) * (-3d + 4d * cos2SigmaM * cos2SigmaM)));
+        return semiMinor * aCoeff * (sigma - deltaSigma);
     }
 
     // --- convexHull ---
