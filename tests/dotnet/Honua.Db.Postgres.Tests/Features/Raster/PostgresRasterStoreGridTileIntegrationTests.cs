@@ -109,6 +109,8 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
 
             var expectedCellSize = (window.MaxX - window.MinX) / 256.0; // 45deg / 256px
             var decoded = await InspectGeoTiffTileAsync(schemaName, geotiffTile.Data);
+            decoded.Width.Should().Be(256);
+            decoded.Height.Should().Be(256);
             decoded.Srid.Should().Be(4326, "the source in 3857 must be reprojected into the 4326 gridset SRID");
             decoded.ScaleX.Should().BeApproximately(expectedCellSize, 1e-6,
                 "the rendered tile must sit on the WorldCRS84Quad cell grid (45deg / 256px)");
@@ -169,6 +171,8 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
             tile.Data.Should().NotBeEmpty();
 
             var decoded = await InspectGeoTiffTileAsync(schemaName, tile.Data);
+            decoded.Width.Should().Be(256);
+            decoded.Height.Should().Be(256);
             decoded.Srid.Should().Be(4326, "the mosaic must be reprojected into the 4326 gridset SRID");
 
             // West ground point must carry the west source, east ground point the east source: the
@@ -177,6 +181,121 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
             var eastSample = await SampleGeoTiffAtWorldPointAsync(schemaName, result.Value.Data, lon: 40, lat: 22.5);
             westSample.Should().Be(WestValue, "the west ground point must carry the reprojected west source");
             eastSample.Should().Be(EastValue, "the east ground point must carry the reprojected east source");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetImageTileAsync_ByteBand_PreservesNoDataMetadataWhenPadding(bool hasNoData)
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreGridTileIntegrationTests));
+        try
+        {
+            await CreateSchemaAsync(schemaName);
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var seed = connection.CreateCommand();
+            seed.CommandText = """
+                INSERT INTO raster_data (layer_id, name, raster)
+                VALUES (@layerId, 'valid-zero', ST_SetValue(
+                    ST_AddBand(ST_MakeEmptyRaster(2, 1, 1, 1, 1, -1, 0, 0, 4326),
+                        '8BUI'::text, 0, @noData), 1, 2, 1, 200))
+                RETURNING id;
+                """;
+            seed.Parameters.AddWithValue("layerId", LayerId);
+            seed.Parameters.AddWithValue("noData", NpgsqlTypes.NpgsqlDbType.Double,
+                hasNoData ? (object)255.0 : DBNull.Value);
+            var rasterId = (long)(await seed.ExecuteScalarAsync())!;
+            var window = new RasterTileWindow
+            {
+                MinX = 0,
+                MinY = 0,
+                MaxX = 4,
+                MaxY = 1,
+                Srid = 4326,
+                TileWidth = 4,
+                TileHeight = 1
+            };
+
+            var tile = await CreateStore(schemaName).GetImageTileAsync(
+                LayerId, rasterId, window, RasterFormat.TIFF)
+                ?? throw new InvalidOperationException("Expected a padded GeoTIFF tile.");
+            await using var inspect = connection.CreateCommand();
+            inspect.CommandText = """
+                WITH decoded AS (SELECT ST_FromGDALRaster(@data) AS rast)
+                SELECT ST_Width(rast), ST_Height(rast),
+                       ST_Value(rast, 1, 2, 1), ST_Value(rast, 1, 3, 1),
+                       ST_Value(rast, 1, 1, 1), ST_Value(rast, 1, 4, 1),
+                       ST_BandNoDataValue(rast, 1)
+                FROM decoded;
+                """;
+            inspect.Parameters.AddWithValue("data", tile.Data);
+            await using var reader = await inspect.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetInt32(0).Should().Be(4, "both uncovered edge cells must be present");
+            reader.GetInt32(1).Should().Be(1);
+            reader.IsDBNull(2).Should().BeFalse("zero is valid source data, not a NoData sentinel");
+            reader.GetDouble(2).Should().Be(0);
+            reader.GetDouble(3).Should().Be(200);
+            reader.IsDBNull(4).Should().Be(hasNoData);
+            reader.IsDBNull(5).Should().Be(hasNoData);
+            reader.IsDBNull(6).Should().Be(!hasNoData);
+            if (hasNoData)
+            {
+                reader.GetDouble(6).Should().Be(255, "an existing source sentinel must be retained");
+            }
+            else
+            {
+                reader.GetDouble(4).Should().Be(0, "a band without NoData uses opaque zero background");
+                reader.GetDouble(5).Should().Be(0, "a band without NoData uses opaque zero background");
+            }
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task FrameAlignedRaster_MixedBandMetadata_PreservesTypesAndEachNoDataValue()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync(nameof(PostgresRasterStoreGridTileIntegrationTests));
+        try
+        {
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"""
+                WITH source AS (
+                    SELECT ST_AddBand(ST_AddBand(
+                        ST_MakeEmptyRaster(2, 1, 1, 1, 1, -1, 0, 0, 4326),
+                        '8BUI'::text, 0, NULL), '16BSI'::text, 0, -9999) AS rast
+                ), grid AS (
+                    SELECT ST_MakeEmptyRaster(4, 1, 0, 1, 1, -1, 0, 0, 4326) AS rast
+                ), framed AS MATERIALIZED (
+                    SELECT {RasterGridFrameSql.FrameAlignedRaster("s.rast", "g.rast")} AS rast
+                    FROM source s, grid g
+                )
+                SELECT ST_NumBands(rast), ST_BandPixelType(rast, 1), ST_BandPixelType(rast, 2),
+                       ST_BandNoDataValue(rast, 1), ST_BandNoDataValue(rast, 2),
+                       ST_Value(rast, 1, 2, 1), ST_Value(rast, 2, 2, 1),
+                       ST_Value(rast, 1, 1, 1), ST_Value(rast, 2, 1, 1)
+                FROM framed;
+                """;
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetInt32(0).Should().Be(2);
+            reader.GetString(1).Should().Be("8BUI");
+            reader.GetString(2).Should().Be("16BSI");
+            reader.IsDBNull(3).Should().BeTrue();
+            reader.GetDouble(4).Should().Be(-9999);
+            reader.GetDouble(5).Should().Be(0, "the byte band's zero is valid data");
+            reader.GetDouble(6).Should().Be(0, "the signed band's zero differs from its sentinel");
+            reader.GetDouble(7).Should().Be(0, "the band without NoData retains background padding");
+            reader.IsDBNull(8).Should().BeTrue("the signed band's padding uses its existing sentinel");
         }
         finally
         {
@@ -262,7 +381,7 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
     // Decodes the returned GeoTIFF tile in PostGIS (GeoTIFF preserves georeferencing, so the CRS
     // and cell size survive the round trip) and reports its SRID, X cell size, and the pixel value
     // at the tile-centre ground point (lon 22.5, lat 22.5 for tile col=4,row=1,level=2).
-    private async Task<(int Srid, double ScaleX, double CentreValue)> InspectGeoTiffTileAsync(
+    private async Task<(int Srid, double ScaleX, double CentreValue, int Width, int Height)> InspectGeoTiffTileAsync(
         string schemaName, byte[] tile)
     {
         await using var connection = await fixture.GetConnectionAsync(schemaName);
@@ -271,7 +390,8 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
             WITH decoded AS (SELECT ST_FromGDALRaster(@data) AS rast)
             SELECT ST_SRID(rast),
                    ST_ScaleX(rast),
-                   ST_Value(rast, 1, ST_SetSRID(ST_MakePoint(22.5, 22.5), 4326))
+                   ST_Value(rast, 1, ST_SetSRID(ST_MakePoint(22.5, 22.5), 4326)),
+                   ST_Width(rast), ST_Height(rast)
             FROM decoded;
             """;
         command.Parameters.AddWithValue("data", tile);
@@ -281,7 +401,7 @@ public sealed class PostgresRasterStoreGridTileIntegrationTests(PostgresFixture 
         var scaleX = reader.GetDouble(1);
         reader.IsDBNull(2).Should().BeFalse("the tile centre must be a covered (non-NODATA) pixel");
         var centre = reader.GetDouble(2);
-        return (srid, scaleX, centre);
+        return (srid, scaleX, centre, reader.GetInt32(3), reader.GetInt32(4));
     }
 
     private async Task<double> SampleGeoTiffAtWorldPointAsync(string schemaName, byte[] tile, double lon, double lat)
