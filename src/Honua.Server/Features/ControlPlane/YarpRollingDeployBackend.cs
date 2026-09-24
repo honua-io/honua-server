@@ -2,6 +2,8 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using Honua.Core.Features.ControlPlane.Abstractions;
 using Honua.Core.Features.ControlPlane.Domain;
 
@@ -145,6 +147,12 @@ internal sealed record LocalReplicaHealthResult
 
     /// <summary>Whether every issued probe returned the expected status.</summary>
     public bool Healthy => Attempts > 0 && Failures == 0;
+
+    /// <summary>Whether at least one probe received an HTTP response (as opposed to a transport failure).</summary>
+    public bool Reached { get; init; }
+
+    /// <summary>Response body of a reached probe, used as the local functional-query sample.</summary>
+    public string? Body { get; init; }
 
     /// <summary>Human-readable detail for the operation phase message.</summary>
     public string? Detail { get; init; }
@@ -352,30 +360,22 @@ internal sealed partial class YarpRollingDeployBackend(
 
             if (operation.Status == WorkflowOperationStatus.RollbackRequested)
             {
-                // Rollback settles once the standby replica is gone and the active replica is serving.
+                // The standby being gone is routing convergence only. The active replica still has
+                // to prove it is the prior revision, ready, and answering the functional query.
                 var standbyGone = replicas.Standby is null || !replicas.Standby.Running;
-                string? activeRevision = null;
-                var activeIsPriorRevision = replicas.Active is { Running: true } active &&
-                    active.Labels.TryGetValue(LabelRevision, out activeRevision) &&
-                    string.Equals(activeRevision, spec.CurrentRevision, StringComparison.OrdinalIgnoreCase);
-                if (standbyGone && activeIsPriorRevision)
+                if (!standbyGone)
                 {
                     return new DeployObservation
                     {
-                        Status = WorkflowOperationStatus.RolledBack,
+                        Status = WorkflowOperationStatus.RollbackRequested,
                         ProviderOperationId = operation.ProviderOperationId,
-                        ObservedRevision = activeRevision,
-                        Message = "Rolling deploy rolled back: the standby replica was stopped and the active replica is serving."
+                        ObservedRevision = spec.CurrentRevision,
+                        Message = "Rolling deploy rollback is still settling the standby replica."
                     };
                 }
 
-                return new DeployObservation
-                {
-                    Status = WorkflowOperationStatus.RollbackRequested,
-                    ProviderOperationId = operation.ProviderOperationId,
-                    ObservedRevision = spec.CurrentRevision,
-                    Message = "Rolling deploy rollback is still settling the standby replica."
-                };
+                return await CompleteLocalRollbackAsync(operation, spec, target, replicas.Active, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             if (replicas.Standby is null || !replicas.Standby.Running)
@@ -552,20 +552,16 @@ internal sealed partial class YarpRollingDeployBackend(
 
             if (!alreadyPromoted)
             {
-                // Pre-cutover rollback: the old replica was never touched. Just stop the standby.
+                // Pre-cutover rollback: the old replica was never touched. Stop the standby, then
+                // prove the still-serving replica before the operation may terminate as RolledBack.
                 if (replicas.Standby is { } standby)
                 {
                     await containerRuntime.StopAsync(target.ContainerRuntime, standby.Name, cancellationToken).ConfigureAwait(false);
                 }
 
                 Log.RollbackRequested(logger, operation.OperationId, spec.TargetId, promoted: false);
-                return new DeployObservation
-                {
-                    Status = WorkflowOperationStatus.RolledBack,
-                    ProviderOperationId = operation.ProviderOperationId,
-                    ObservedRevision = spec.CurrentRevision,
-                    Message = "Rolling deploy rolled back before cutover: the standby replica was stopped and the old replica was never touched."
-                };
+                return await CompleteLocalRollbackAsync(operation, spec, target, replicas.Active, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             // Post-cutover rollback: repoint the proxy at the old replica if it is still running.
@@ -710,9 +706,124 @@ internal sealed partial class YarpRollingDeployBackend(
         await containerRuntime.StopAsync(target.ContainerRuntime, name, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<LocalReplicaHealthResult> ProbeStandbyAsync(SelfHostedDeployTarget target, CancellationToken cancellationToken)
+    private async Task<DeployObservation> CompleteLocalRollbackAsync(
+        WorkflowOperationRecord operation,
+        DeployOperationSpec spec,
+        SelfHostedDeployTarget target,
+        ContainerSummary? active,
+        CancellationToken cancellationToken)
     {
-        var url = ReplicaHealthUrl(target, target.StandbyPort);
+        string? activeRevision = null;
+        var activeRunning = active is { Running: true };
+        var hasRevisionLabel = activeRunning &&
+            active!.Labels.TryGetValue(LabelRevision, out activeRevision) &&
+            !string.IsNullOrWhiteSpace(activeRevision);
+        var identityProven = hasRevisionLabel &&
+            string.Equals(activeRevision, spec.CurrentRevision, StringComparison.OrdinalIgnoreCase);
+        var identityMismatched = hasRevisionLabel && !identityProven;
+
+        var readiness = activeRunning
+            ? await ProbeReplicaAsync(target, target.ActivePort, cancellationToken).ConfigureAwait(false)
+            : new LocalReplicaHealthResult { Attempts = 0, Failures = 0 };
+        var functional = await ClassifyLocalFunctionalQueryAsync(spec, target, readiness, cancellationToken)
+            .ConfigureAwait(false);
+        var decision = RollbackDataPlaneCompletion.Evaluate(
+            new RollbackDataPlaneEvidence
+            {
+                RoutingConverged = true,
+                PriorRevisionIdentityProven = identityProven,
+                ServingIdentityMismatched = identityMismatched,
+                ServingRevision = hasRevisionLabel ? activeRevision : null,
+                HealthyEndpointCount = readiness.Healthy ? 1 : 0,
+                RegisteredEndpointCount = activeRunning ? 1 : 0,
+                FunctionalQuery = functional,
+                RollbackStartedAt = RollbackDataPlaneCompletion.ReadObservationStartedAt(spec.Parameters),
+                Window = RollbackDataPlaneCompletion.ReadObservationWindow(spec.Parameters)
+            },
+            DateTimeOffset.UtcNow);
+        return RollbackDataPlaneCompletion.ToDeployObservation(decision, operation.ProviderOperationId);
+    }
+
+    private async Task<RollbackFunctionalQueryVerdict> ClassifyLocalFunctionalQueryAsync(
+        DeployOperationSpec spec,
+        SelfHostedDeployTarget target,
+        LocalReplicaHealthResult readiness,
+        CancellationToken cancellationToken)
+    {
+        var expectation = RollbackDataPlaneCompletion.ReadFunctionalExpectation(spec.Parameters);
+        if (!expectation.IsConfigured)
+        {
+            return RollbackFunctionalQueryVerdict.NotProven;
+        }
+
+        var sample = readiness;
+        if (!string.IsNullOrWhiteSpace(expectation.Path))
+        {
+            var path = expectation.Path.StartsWith('/') ? expectation.Path : "/" + expectation.Path;
+            var url = $"http://{target.Host}:{target.ActivePort.ToString(CultureInfo.InvariantCulture)}{path}";
+            sample = await healthProbe.ProbeAsync(
+                    url,
+                    1,
+                    _options.HealthProbeTimeoutSeconds,
+                    expectation.ExpectedStatusCode,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (!sample.Reached && sample.Body is null)
+        {
+            return RollbackFunctionalQueryVerdict.Unreachable;
+        }
+
+        if (!string.IsNullOrWhiteSpace(sample.Body))
+        {
+            var bytes = Encoding.UTF8.GetBytes(sample.Body);
+            if (DeployProbeBodyInspector.DescribeErrorEnvelope(bytes) != null)
+            {
+                return RollbackFunctionalQueryVerdict.ServedErrorEnvelope;
+            }
+        }
+        else if (!sample.Healthy)
+        {
+            return RollbackFunctionalQueryVerdict.Unreachable;
+        }
+
+        var text = sample.Body ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(expectation.ForbiddenContains) &&
+            text.Contains(expectation.ForbiddenContains, StringComparison.Ordinal))
+        {
+            return RollbackFunctionalQueryVerdict.ServedOtherMarker;
+        }
+
+        if (!string.IsNullOrWhiteSpace(expectation.ExpectedContains) &&
+            !text.Contains(expectation.ExpectedContains, StringComparison.Ordinal))
+        {
+            return RollbackFunctionalQueryVerdict.ServedOtherMarker;
+        }
+
+        if (!string.IsNullOrWhiteSpace(expectation.ExpectedSha256))
+        {
+            var actual = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text)));
+            if (!string.Equals(actual, expectation.ExpectedSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                return RollbackFunctionalQueryVerdict.ServedOtherMarker;
+            }
+        }
+
+        return sample.Healthy || !string.IsNullOrWhiteSpace(sample.Body)
+            ? RollbackFunctionalQueryVerdict.MatchedPriorMarker
+            : RollbackFunctionalQueryVerdict.Unreachable;
+    }
+
+    private async Task<LocalReplicaHealthResult> ProbeStandbyAsync(SelfHostedDeployTarget target, CancellationToken cancellationToken)
+        => await ProbeReplicaAsync(target, target.StandbyPort, cancellationToken).ConfigureAwait(false);
+
+    private async Task<LocalReplicaHealthResult> ProbeReplicaAsync(
+        SelfHostedDeployTarget target,
+        int port,
+        CancellationToken cancellationToken)
+    {
+        var url = ReplicaHealthUrl(target, port);
         return await healthProbe.ProbeAsync(
                 url,
                 _options.HealthProbeSamples,

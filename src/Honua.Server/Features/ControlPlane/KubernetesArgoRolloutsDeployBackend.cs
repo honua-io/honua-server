@@ -28,7 +28,8 @@ namespace Honua.ControlPlane;
 /// </summary>
 internal sealed partial class KubernetesArgoRolloutsDeployBackend(
     IArgoRolloutsClient rolloutsClient,
-    ILogger<KubernetesArgoRolloutsDeployBackend> logger) : IDeployBackend
+    ILogger<KubernetesArgoRolloutsDeployBackend> logger,
+    IRollbackDataPlaneProbe? dataPlaneProbe = null) : IDeployBackend
 {
     internal const string AdapterBackendName = "honua-kubernetes-argo-rollouts";
 
@@ -216,7 +217,8 @@ internal sealed partial class KubernetesArgoRolloutsDeployBackend(
 
             if (operation.Status == WorkflowOperationStatus.RollbackRequested)
             {
-                return ObserveRollback(operation, spec, target, rollout, observedImage);
+                return await ObserveRollbackAsync(operation, spec, rollout, observedImage, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             // A degraded rollout (failed analysis, progress-deadline exceeded, or an
@@ -411,39 +413,50 @@ internal sealed partial class KubernetesArgoRolloutsDeployBackend(
         }
     }
 
-    private static DeployObservation ObserveRollback(
+    private async Task<DeployObservation> ObserveRollbackAsync(
         WorkflowOperationRecord operation,
         DeployOperationSpec spec,
-        ArgoRolloutsDeployTarget target,
         ArgoRolloutState rollout,
-        string? observedImage)
+        string? observedImage,
+        CancellationToken cancellationToken)
     {
-        // An aborted rollout is terminal as RolledBack once Argo has reverted to the
-        // stable revision: the rollout is Healthy again and the current pod hash has
-        // settled back onto the stable ReplicaSet. While the controller is still draining
-        // the canary the operation stays RollbackRequested.
-        var revertedToStable = rollout.IsAborted &&
-            rollout.Phase == ArgoRolloutPhase.Healthy &&
+        // Controller convergence is aborted + stable hash + the prior image. Phase Healthy is
+        // readiness, not a substitute for the functional query. A degraded-but-reverted rollout
+        // stays non-terminal until the data-plane window expires.
+        var routingConverged = rollout.IsAborted &&
             IsFullyPromoted(rollout) &&
             ImagesMatch(observedImage, spec.CurrentRevision);
-        if (revertedToStable)
+        if (!routingConverged)
         {
             return new DeployObservation
             {
-                Status = WorkflowOperationStatus.RolledBack,
+                Status = WorkflowOperationStatus.RollbackRequested,
                 ProviderOperationId = operation.ProviderOperationId,
                 ObservedRevision = observedImage,
-                Message = $"Argo Rollout '{target.RolloutName}' rolled back to the stable revision."
+                Message = $"Argo Rollout rollback is still settling (phase={rollout.Phase}, aborted={rollout.IsAborted})."
             };
         }
 
-        return new DeployObservation
-        {
-            Status = WorkflowOperationStatus.RollbackRequested,
-            ProviderOperationId = operation.ProviderOperationId,
-            ObservedRevision = observedImage,
-            Message = $"Argo Rollout '{target.RolloutName}' rollback is still settling (phase={rollout.Phase}, aborted={rollout.IsAborted})."
-        };
+        var ready = rollout.Phase == ArgoRolloutPhase.Healthy;
+        var functionalQuery = await RollbackDataPlaneCompletion.ProbeFunctionalQueryAsync(
+                dataPlaneProbe,
+                spec.Parameters,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var decision = RollbackDataPlaneCompletion.Evaluate(
+            new RollbackDataPlaneEvidence
+            {
+                RoutingConverged = true,
+                PriorRevisionIdentityProven = true,
+                ServingRevision = observedImage,
+                HealthyEndpointCount = ready ? 1 : 0,
+                RegisteredEndpointCount = 1,
+                FunctionalQuery = functionalQuery,
+                RollbackStartedAt = RollbackDataPlaneCompletion.ReadObservationStartedAt(spec.Parameters),
+                Window = RollbackDataPlaneCompletion.ReadObservationWindow(spec.Parameters)
+            },
+            DateTimeOffset.UtcNow);
+        return RollbackDataPlaneCompletion.ToDeployObservation(decision, operation.ProviderOperationId);
     }
 
     // A rollout is fully promoted when the desired (current) pod hash has become the

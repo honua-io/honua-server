@@ -20,6 +20,7 @@ public sealed class AwsEcsAlbDeployBackendTests
     private const string StableTargetGroupArn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/honua-stable/0123abcdef";
     private const string TaskDefArn = "arn:aws:ecs:us-east-1:123456789012:task-definition/honua-app:42";
     private const string PreviousTaskDefArn = "arn:aws:ecs:us-east-1:123456789012:task-definition/honua-app:41";
+    private const string StableService = "honua-prod-stable";
 
     [Fact]
     public async Task PlanAsync_MissingCluster_HasBlockingReason()
@@ -215,74 +216,25 @@ public sealed class AwsEcsAlbDeployBackendTests
     [Fact]
     public async Task ObserveAsync_RollbackRequested_StableFullWeight_ReturnsRolledBack()
     {
-        var albClient = new StubAwsAlbClient
-        {
-            RuleState = new AwsAlbListenerRuleState
-            {
-                ListenerRuleArn = ListenerRuleArn,
-                TargetGroupWeights =
-                [
-                    new AwsAlbTargetGroupWeight { TargetGroupArn = CanaryTargetGroupArn, Weight = 0 },
-                    new AwsAlbTargetGroupWeight { TargetGroupArn = StableTargetGroupArn, Weight = 100 }
-                ]
-            }
-        };
-        var ecsClient = new StubAwsEcsClient
-        {
-            ServiceState = new AwsEcsServiceState
-            {
-                ServiceName = CanaryService,
-                TaskDefinitionArn = PreviousTaskDefArn,
-                RunningCount = 0,
-                DesiredCount = 0,
-                PendingCount = 0,
-                Status = "ACTIVE"
-            }
-        };
-        var backend = CreateBackend(albClient, ecsClient);
-
-        var observation = await backend.ObserveAsync(CreateOperation(
-            currentRevision: PreviousTaskDefArn,
-            status: WorkflowOperationStatus.RollbackRequested));
+        var (backend, _) = CreateProvenRollbackBackend(canaryRunning: 0);
+        var observation = await backend.ObserveAsync(CreateProvenRollbackOperation());
 
         observation.Status.Should().Be(WorkflowOperationStatus.RolledBack);
+        observation.ObservedRevision.Should().Be(PreviousTaskDefArn);
+        observation.Message.Should().Contain("healthy=1");
     }
 
     [Fact]
     public async Task ObserveAsync_RollbackRequested_WarmCanaryAtSteadyState_ReturnsRolledBack()
     {
-        var albClient = new StubAwsAlbClient
-        {
-            RuleState = new AwsAlbListenerRuleState
-            {
-                ListenerRuleArn = ListenerRuleArn,
-                TargetGroupWeights =
-                [
-                    new AwsAlbTargetGroupWeight { TargetGroupArn = CanaryTargetGroupArn, Weight = 0 },
-                    new AwsAlbTargetGroupWeight { TargetGroupArn = StableTargetGroupArn, Weight = 100 }
-                ]
-            }
-        };
-        var ecsClient = new StubAwsEcsClient
-        {
-            ServiceState = new AwsEcsServiceState
-            {
-                ServiceName = CanaryService,
-                TaskDefinitionArn = PreviousTaskDefArn,
-                RunningCount = 2,
-                DesiredCount = 2,
-                PendingCount = 0,
-                Status = "ACTIVE"
-            }
-        };
-        var backend = CreateBackend(albClient, ecsClient);
-
-        var observation = await backend.ObserveAsync(CreateOperation(
-            currentRevision: PreviousTaskDefArn,
-            status: WorkflowOperationStatus.RollbackRequested));
+        var (backend, _) = CreateProvenRollbackBackend(canaryRunning: 2);
+        var observation = await backend.ObserveAsync(CreateProvenRollbackOperation());
 
         observation.Status.Should().Be(WorkflowOperationStatus.RolledBack);
-        observation.Message.Should().Contain("no pending deployment");
+        observation.ObservedRevision.Should().Be(PreviousTaskDefArn);
+        observation.ObservedRevision.Should().NotBe(TaskDefArn);
+        observation.Message.Should().Contain(PreviousTaskDefArn);
+        observation.Message.Should().Contain("healthy=1");
     }
 
     [Fact]
@@ -903,13 +855,68 @@ public sealed class AwsEcsAlbDeployBackendTests
         backend.TargetKind.Should().Be(DeployTargetKind.AwsEcs);
     }
 
+    private static (AwsEcsAlbDeployBackend Backend, StubAwsEcsClient Ecs) CreateProvenRollbackBackend(int canaryRunning)
+    {
+        var albClient = new StubAwsAlbClient
+        {
+            RuleState = new AwsAlbListenerRuleState
+            {
+                ListenerRuleArn = ListenerRuleArn,
+                TargetGroupWeights =
+                [
+                    new AwsAlbTargetGroupWeight { TargetGroupArn = CanaryTargetGroupArn, Weight = 0 },
+                    new AwsAlbTargetGroupWeight { TargetGroupArn = StableTargetGroupArn, Weight = 100 }
+                ]
+            },
+            TargetHealth = new AwsAlbTargetHealthState
+            {
+                Targets = [new AwsAlbTargetHealth { TargetId = "stable-1", Port = 8080, State = "healthy" }]
+            }
+        };
+        var ecsClient = new StubAwsEcsClient
+        {
+            ServiceState = new AwsEcsServiceState
+            {
+                ServiceName = CanaryService,
+                TaskDefinitionArn = TaskDefArn,
+                RunningCount = canaryRunning,
+                DesiredCount = canaryRunning,
+                PendingCount = 0,
+                Status = "ACTIVE"
+            }
+        };
+        ecsClient.ServicesByName[StableService] = new AwsEcsServiceState
+        {
+            ServiceName = StableService,
+            TaskDefinitionArn = PreviousTaskDefArn,
+            RunningCount = 2,
+            DesiredCount = 2,
+            PendingCount = 0,
+            Status = "ACTIVE"
+        };
+        return (CreateBackend(albClient, ecsClient, RollbackDataPlaneTestSupport.HealthyProbe()), ecsClient);
+    }
+
+    private static WorkflowOperationRecord CreateProvenRollbackOperation()
+    {
+        var parameters = BaseParameters();
+        parameters["aws.ecs.stable_service"] = StableService;
+        RollbackDataPlaneTestSupport.AddProof(parameters);
+        return CreateOperation(
+            currentRevision: PreviousTaskDefArn,
+            status: WorkflowOperationStatus.RollbackRequested,
+            parameters: parameters);
+    }
+
     private static AwsEcsAlbDeployBackend CreateBackend(
         StubAwsAlbClient? albClient = null,
-        StubAwsEcsClient? ecsClient = null)
+        StubAwsEcsClient? ecsClient = null,
+        IRollbackDataPlaneProbe? dataPlaneProbe = null)
         => new(
             albClient ?? new StubAwsAlbClient(),
             ecsClient ?? new StubAwsEcsClient(),
-            NullLogger<AwsEcsAlbDeployBackend>.Instance);
+            NullLogger<AwsEcsAlbDeployBackend>.Instance,
+            dataPlaneProbe);
 
     private static DeployOperationSpec CreateSpec(
         string desiredRevision = TaskDefArn,
@@ -1025,6 +1032,21 @@ public sealed class AwsEcsAlbDeployBackendTests
 
         public Exception? UpdateException { get; set; }
 
+        public AwsAlbTargetHealthState TargetHealth { get; set; } = new();
+
+        public Task<AwsAlbTargetHealthState> DescribeTargetHealthAsync(
+            string targetGroupArn,
+            string? region,
+            CancellationToken cancellationToken = default)
+        {
+            if (DescribeException != null)
+            {
+                throw DescribeException;
+            }
+
+            return Task.FromResult(TargetHealth);
+        }
+
         public Task<AwsAlbListenerRuleState> GetListenerRuleWeightsAsync(
             string ruleArn,
             string? region,
@@ -1077,6 +1099,8 @@ public sealed class AwsEcsAlbDeployBackendTests
 
         public Exception? UpdateException { get; set; }
 
+        public Dictionary<string, AwsEcsServiceState> ServicesByName { get; } = new(StringComparer.Ordinal);
+
         public Task<AwsEcsServiceState> DescribeServiceAsync(
             string cluster,
             string serviceName,
@@ -1086,6 +1110,11 @@ public sealed class AwsEcsAlbDeployBackendTests
             if (DescribeException != null)
             {
                 throw DescribeException;
+            }
+
+            if (ServicesByName.TryGetValue(serviceName, out var named))
+            {
+                return Task.FromResult(named);
             }
 
             return Task.FromResult(ServiceState);

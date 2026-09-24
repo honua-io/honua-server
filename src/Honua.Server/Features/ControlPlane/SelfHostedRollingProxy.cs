@@ -377,6 +377,8 @@ internal sealed partial class HttpLocalReplicaHealthProbe(
         var timeout = Math.Max(1, timeoutSeconds);
         var client = httpClientFactory.CreateClient(ControlPlaneHttpClients.Probe);
         var failures = 0;
+        var reached = false;
+        string? body = null;
 
         for (var attempt = 0; attempt < clampedSamples; attempt++)
         {
@@ -389,10 +391,14 @@ internal sealed partial class HttpLocalReplicaHealthProbe(
                 using var response = await client
                     .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeoutCts.Token)
                     .ConfigureAwait(false);
+                reached = true;
                 if ((int)response.StatusCode != expectedStatusCode)
                 {
                     failures++;
+                    continue;
                 }
+
+                body ??= await ReadProbeBodyAsync(response, timeoutCts.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -415,8 +421,37 @@ internal sealed partial class HttpLocalReplicaHealthProbe(
         {
             Attempts = clampedSamples,
             Failures = failures,
+            Reached = reached,
+            Body = body,
             Detail = $"{failures} of {clampedSamples} replica health checks did not return {expectedStatusCode.ToString(CultureInfo.InvariantCulture)}."
         };
+    }
+
+    private static async Task<string?> ReadProbeBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        const int limit = 65_536;
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        using var buffer = new MemoryStream();
+        var rented = new byte[4096];
+        var total = 0;
+        while (true)
+        {
+            var read = await stream.ReadAsync(rented.AsMemory(), cancellationToken).ConfigureAwait(false);
+            if (read == 0)
+            {
+                break;
+            }
+
+            total += read;
+            if (total > limit)
+            {
+                return null;
+            }
+
+            buffer.Write(rented, 0, read);
+        }
+
+        return Encoding.UTF8.GetString(buffer.ToArray());
     }
 
     private static partial class Log

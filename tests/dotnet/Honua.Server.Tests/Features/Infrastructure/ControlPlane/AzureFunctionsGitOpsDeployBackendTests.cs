@@ -118,12 +118,18 @@ public sealed class AzureFunctionsGitOpsDeployBackendTests
                 LinuxFxVersion = "DOCKER|ghcr.io/honua-io/honua-server:new"
             }
         };
-        var backend = new AzureFunctionsGitOpsDeployBackend(slotClient, NullLogger<AzureFunctionsGitOpsDeployBackend>.Instance);
+        var backend = new AzureFunctionsGitOpsDeployBackend(
+            slotClient,
+            NullLogger<AzureFunctionsGitOpsDeployBackend>.Instance,
+            RollbackDataPlaneTestSupport.HealthyProbe());
+        var parameters = CreateParameters();
+        RollbackDataPlaneTestSupport.AddProof(parameters);
 
         var observation = await backend.ObserveAsync(CreateOperation(
             "staging",
             "production",
-            WorkflowOperationStatus.RollbackRequested));
+            WorkflowOperationStatus.RollbackRequested,
+            parameters));
 
         observation.Status.Should().Be(WorkflowOperationStatus.RolledBack);
         observation.ObservedRevision.Should().Be("ghcr.io/honua-io/honua-server:old");
@@ -148,9 +154,10 @@ public sealed class AzureFunctionsGitOpsDeployBackendTests
     private static WorkflowOperationRecord CreateOperation(
         string desiredRevision,
         string? currentRevision,
-        WorkflowOperationStatus status = WorkflowOperationStatus.Submitted)
+        WorkflowOperationStatus status = WorkflowOperationStatus.Submitted,
+        IReadOnlyDictionary<string, string>? parameters = null)
     {
-        var spec = CreateSpec(desiredRevision) with
+        var spec = CreateSpec(desiredRevision, parameters) with
         {
             CurrentRevision = currentRevision
         };

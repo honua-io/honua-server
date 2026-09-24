@@ -223,12 +223,22 @@ public sealed class AwsLambdaGitOpsDeployBackendTests
                 FunctionVersion = "41"
             }
         };
-        var backend = new AwsLambdaGitOpsDeployBackend(aliasClient, NullLogger<AwsLambdaGitOpsDeployBackend>.Instance);
+        var backend = new AwsLambdaGitOpsDeployBackend(
+            aliasClient,
+            NullLogger<AwsLambdaGitOpsDeployBackend>.Instance,
+            RollbackDataPlaneTestSupport.HealthyProbe());
+        var parameters = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["lambda.alias_name"] = "live",
+            ["target.resource_id"] = "arn:aws:lambda:us-east-1:123456789012:function:honua-prod-lambda"
+        };
+        RollbackDataPlaneTestSupport.AddProof(parameters);
 
         var observation = await backend.ObserveAsync(CreateOperation(
             desiredRevision: "42",
             currentRevision: "41",
-            status: WorkflowOperationStatus.RollbackRequested));
+            status: WorkflowOperationStatus.RollbackRequested,
+            parameters: parameters));
 
         observation.Status.Should().Be(WorkflowOperationStatus.RolledBack);
         observation.ObservedRevision.Should().Be("41");
