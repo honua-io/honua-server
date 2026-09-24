@@ -134,7 +134,8 @@ internal static class Wgs84Vincenty
             sinSigma = Math.Sqrt(
                 Math.Pow(cosU2 * sinLambda, 2)
                 + Math.Pow((cosU1 * sinU2) - (sinU1 * cosU2 * cosLambda), 2));
-            if (sinSigma == 0)
+            // A non-positive norm cannot be used as a divisor.
+            if (sinSigma <= 0)
             {
                 return true;
             }
@@ -142,8 +143,8 @@ internal static class Wgs84Vincenty
             cosSigma = (sinU1 * sinU2) + (cosU1 * cosU2 * cosLambda);
             sigma = Math.Atan2(sinSigma, cosSigma);
             sinAlpha = cosU1 * cosU2 * sinLambda / sinSigma;
-            cosSquaredAlpha = 1.0 - (sinAlpha * sinAlpha);
-            cos2SigmaM = cosSquaredAlpha == 0
+            cosSquaredAlpha = Math.Max(0, 1.0 - (sinAlpha * sinAlpha));
+            cos2SigmaM = cosSquaredAlpha <= 0
                 ? 0
                 : cosSigma - (2.0 * sinU1 * sinU2 / cosSquaredAlpha);
             var c = Flattening / 16.0 * cosSquaredAlpha * (2.0 + (Flattening * (4.0 - (3.0 * cosSquaredAlpha))));

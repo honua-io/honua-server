@@ -17,6 +17,17 @@ namespace Honua.Server.Tests.Features.Protocols.GeoServices.ImageServer;
 /// </summary>
 public sealed class ImageServerMensurationMathTests
 {
+    [UnitTheory]
+    [InlineData(0d, 0d, 0d)]
+    [InlineData(1d, 0d, 111319.490793d)]
+    [InlineData(0d, 1d, 110574.388558d)]
+    public void GeodesicDistanceMeters_CoincidentAndEquatorialLimitsRemainFinite(
+        double longitude, double latitude, double expectedMeters)
+    {
+        ImageServerMensurationMath.GeodesicDistanceMeters(0d, 0d, longitude, latitude)
+            .Should().BeApproximately(expectedMeters, 0.001d);
+    }
+
     private const double MeanRadius = 6371008.8;
 
     [UnitTest]
