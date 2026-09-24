@@ -832,27 +832,9 @@ internal static partial class FeatureServerEndpoints
         };
 
     private static string MapFieldTypeToSqlV2(MetadataV2FieldType type)
-        // Metadata v2 deliberately erases the provider's physical SQL type. Emit only
-        // portable Esri sqlType enumeration members we can prove from the logical type;
-        // sqlTypeOther is the Esri-safe value when that relationship is ambiguous.
-        => type switch
-        {
-            MetadataV2FieldType.String => "sqlTypeNVarchar",
-            MetadataV2FieldType.Integer => "sqlTypeInteger",
-            MetadataV2FieldType.BigInteger => "sqlTypeOther",
-            MetadataV2FieldType.Double => "sqlTypeFloat",
-            MetadataV2FieldType.Float => "sqlTypeFloat",
-            MetadataV2FieldType.Boolean => "sqlTypeOther",
-            MetadataV2FieldType.DateTime => "sqlTypeOther",
-            MetadataV2FieldType.Date => "sqlTypeOther",
-            MetadataV2FieldType.Time => "sqlTypeNVarchar",
-            MetadataV2FieldType.Json => "sqlTypeNVarchar",
-            MetadataV2FieldType.Binary => "sqlTypeOther",
-            MetadataV2FieldType.Uuid => "sqlTypeOther",
-            MetadataV2FieldType.Geometry => "sqlTypeOther",
-            MetadataV2FieldType.Geography => "sqlTypeOther",
-            _ => "sqlTypeOther"
-        };
+        // Shared with the query response so the layer resource and /query cannot
+        // disagree about the same field (honua-server#5197).
+        => GeoServicesFieldConventions.MapSqlType(type);
 
     /// <summary>
     /// Reads the service's declared capability list from <c>service.Options["capabilities"]</c>.
