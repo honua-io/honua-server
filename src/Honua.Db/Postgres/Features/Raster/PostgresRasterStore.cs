@@ -1387,9 +1387,25 @@ internal sealed class PostgresRasterStore : IRasterStore
                 FROM {sourceCte} s, frame_grid g
                 WHERE s.rast IS NOT NULL
             ),
+            frame_canvas AS (
+                SELECT ST_AddBand(g.rast, ARRAY(
+                           SELECT ROW(NULL, m.pixeltype, COALESCE(m.nodatavalue, 0), COALESCE(m.nodatavalue, 0))::addbandarg
+                           FROM generate_series(1, ST_NumBands(d.rast)) AS n,
+                                LATERAL ST_BandMetaData(d.rast, n) AS m
+                           ORDER BY n)) AS rast
+                FROM frame_grid g, frame_data d
+            ),
+            frame_union AS (
+                SELECT ST_Union(layers.rast, 'LAST' ORDER BY layers.layer_order) AS rast
+                FROM (
+                    SELECT rast, 1 AS layer_order FROM frame_canvas
+                    UNION ALL
+                    SELECT rast, 2 AS layer_order FROM frame_data
+                ) layers
+            ),
             transformed AS (
-                SELECT {RasterGridFrameSql.FrameAlignedRaster("d.rast", "g.rast")} AS rast
-                FROM frame_data d, frame_grid g
+                SELECT ST_Clip(u.rast, ST_Envelope(g.rast), TRUE) AS rast
+                FROM frame_union u, frame_grid g
             )
             """;
     }
