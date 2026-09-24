@@ -24,8 +24,8 @@ namespace Honua.Ai.Protocols.Mcp;
 /// (diagnose/tune/upgrade-planning with rollback gates) lives in the private
 /// <c>honua-devops</c> operator surface, not here.
 /// Hosts the tool and resource catalogs, routes <c>initialize</c>,
-/// <c>notifications/initialized</c>, <c>tools/list</c>, <c>tools/call</c>,
-/// <c>resources/list</c>, <c>resources/templates/list</c>,
+/// <c>ping</c>, <c>notifications/initialized</c>, <c>tools/list</c>,
+/// <c>tools/call</c>, <c>resources/list</c>, <c>resources/templates/list</c>,
 /// <c>resources/read</c>, <c>prompts/list</c>, and <c>prompts/get</c> methods,
 /// and converts domain exceptions into JSON-RPC errors via
 /// <see cref="McpErrorMapper"/>.
@@ -161,7 +161,7 @@ internal sealed class McpDataAccessSurface
 
         // Tag the ambient activity with the MCP protocol and JSON-RPC method as
         // early as possible so every dispatched method — including the handler-
-        // less ones (initialize, tools/list, resources/list,
+        // less ones (initialize, ping, tools/list, resources/list,
         // resources/templates/list) and the anonymous auth short-circuits in
         // CallToolAsync / ReadResourceAsync — shows up alongside gRPC and
         // GPServer traffic. Concrete tool and resource handlers override the
@@ -174,6 +174,7 @@ internal sealed class McpDataAccessSurface
             return request.Method switch
             {
                 "initialize" => HandleInitialize(httpContext, request),
+                "ping" => Ping(request),
                 "tools/list" => await ListToolsAsync(httpContext, request, cancellationToken).ConfigureAwait(false),
                 "tools/call" => await CallToolAsync(httpContext, request, cancellationToken).ConfigureAwait(false),
                 "resources/list" => ListResources(request),
@@ -987,6 +988,21 @@ internal sealed class McpDataAccessSurface
         }
 
         return McpErrorMapper.Codes.Internal;
+    }
+
+    /// <summary>
+    /// MCP <c>ping</c> is a liveness check. The result must be a successful
+    /// JSON-RPC response whose <c>result</c> is an empty object, not
+    /// method-not-found.
+    /// </summary>
+    private static McpJsonRpcResponse Ping(McpJsonRpcRequest request)
+    {
+        using var document = JsonDocument.Parse("{}");
+        return new McpJsonRpcResponse
+        {
+            Id = request.Id,
+            Result = document.RootElement.Clone()
+        };
     }
 
     private static McpJsonRpcResponse SuccessResponse<T>(
