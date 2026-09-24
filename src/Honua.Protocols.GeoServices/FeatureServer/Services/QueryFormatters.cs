@@ -563,16 +563,16 @@ internal sealed class QueryFormatter : IQueryFormatter
     {
         return value switch
         {
-            sbyte or byte or short or ushort or int or uint => CreateRuntimeFieldInfo(name, "esriFieldTypeInteger", "INTEGER"),
-            long or ulong => CreateRuntimeFieldInfo(name, "esriFieldTypeBigInteger", "BIGINT"),
-            float => CreateRuntimeFieldInfo(name, "esriFieldTypeSingle", "REAL"),
-            double or decimal => CreateRuntimeFieldInfo(name, "esriFieldTypeDouble", "DOUBLE PRECISION"),
-            bool => CreateRuntimeFieldInfo(name, "esriFieldTypeSmallInteger", "BOOLEAN"),
-            DateTimeOffset or DateTime => CreateRuntimeFieldInfo(name, "esriFieldTypeDate", "TIMESTAMP WITH TIME ZONE"),
-            DateOnly => CreateRuntimeFieldInfo(name, "esriFieldTypeDateOnly", "DATE"),
-            TimeOnly or TimeSpan => CreateRuntimeFieldInfo(name, "esriFieldTypeString", "TIME"),
-            Guid => CreateRuntimeFieldInfo(name, "esriFieldTypeGUID", "UUID"),
-            byte[] => CreateRuntimeFieldInfo(name, "esriFieldTypeBlob", "BYTEA"),
+            sbyte or byte or short or ushort or int or uint => CreateRuntimeFieldInfo(name, "esriFieldTypeInteger", "sqlTypeInteger"),
+            long or ulong => CreateRuntimeFieldInfo(name, "esriFieldTypeBigInteger", "sqlTypeOther"),
+            float => CreateRuntimeFieldInfo(name, "esriFieldTypeSingle", "sqlTypeFloat"),
+            double or decimal => CreateRuntimeFieldInfo(name, "esriFieldTypeDouble", "sqlTypeFloat"),
+            bool => CreateRuntimeFieldInfo(name, "esriFieldTypeSmallInteger", "sqlTypeOther"),
+            DateTimeOffset or DateTime => CreateRuntimeFieldInfo(name, "esriFieldTypeDate", "sqlTypeOther"),
+            DateOnly => CreateRuntimeFieldInfo(name, "esriFieldTypeDateOnly", "sqlTypeOther"),
+            TimeOnly or TimeSpan => CreateRuntimeFieldInfo(name, "esriFieldTypeString", "sqlTypeNVarchar"),
+            Guid => CreateRuntimeFieldInfo(name, "esriFieldTypeGUID", "sqlTypeOther"),
+            byte[] => CreateRuntimeFieldInfo(name, "esriFieldTypeBlob", "sqlTypeOther"),
             string => CreateRuntimeFieldInfo(
                 name,
                 "esriFieldTypeString",
@@ -636,11 +636,18 @@ internal sealed class QueryFormatter : IQueryFormatter
         // The layer's object-id field must be typed esriFieldTypeOID regardless of its
         // SQL type so Esri clients can locate the OID field by type (see issue #1299).
         var isObjectId = field.Name.Equals(objectIdFieldName, StringComparison.OrdinalIgnoreCase);
-        var isString = !isObjectId && field.Type == MetadataV2FieldType.String;
+        var geoServicesType = isObjectId
+            ? "esriFieldTypeOID"
+            : GeoServicesFieldConventions.MapFieldType(field.Type);
+        // Decided from the MAPPED Esri type, not the logical one: a Json or Time column is
+        // published as esriFieldTypeString and needs a positive length just as much as a
+        // String column does. Keying off MetadataV2FieldType.String left those two with a
+        // null length in query responses while the layer resource gave them 256 (#5197).
+        var isString = !isObjectId && geoServicesType == "esriFieldTypeString";
         return new GeoServicesFieldInfo
         {
             Name = field.Name,
-            Type = isObjectId ? "esriFieldTypeOID" : GeoServicesFieldConventions.MapFieldType(field.Type),
+            Type = geoServicesType,
             SqlType = EsriSqlType(field),
             Alias = field.Alias ?? field.Title ?? field.Name,
             // Esri clients (arcpy/.NET SDK) require a positive length on string fields;
@@ -659,41 +666,18 @@ internal sealed class QueryFormatter : IQueryFormatter
         => field.Type is MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography;
 
     /// <summary>
-    /// Esri clients treat <c>sqlType</c> JSONB on an <c>esriFieldTypeString</c> field as
-    /// unreadable and drop the whole row set. Advertise the Esri string sql type instead,
-    /// including when the stored column type is the Postgres name JSONB.
+    /// The Esri <c>sqlType</c> for a field, never the provider's physical type name.
     /// </summary>
+    /// <remarks>
+    /// Esri clients treat a non-enumeration <c>sqlType</c> on an
+    /// <c>esriFieldTypeString</c> field as unreadable. This used to fall back to
+    /// <c>field.SqlType</c>, which is the PostgreSQL name, so a query response described
+    /// the object id as <c>INTEGER</c> where the layer resource described it as
+    /// <c>sqlTypeInteger</c>. Both now resolve through the same mapping (#5197).
+    /// </remarks>
     private static string EsriSqlType(MetadataV2Field field)
-    {
-        if (field.Type == MetadataV2FieldType.Json
-            || string.Equals(field.SqlType, "JSONB", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(field.SqlType, "JSON", StringComparison.OrdinalIgnoreCase))
-        {
-            return "sqlTypeNVarchar";
-        }
+        => GeoServicesFieldConventions.MapSqlType(field.Type);
 
-        return field.SqlType ?? MapFieldTypeToSql(field.Type);
-    }
-
-    private static string MapFieldTypeToSql(MetadataV2FieldType type)
-        => type switch
-        {
-            MetadataV2FieldType.String => "TEXT",
-            MetadataV2FieldType.Integer => "INTEGER",
-            MetadataV2FieldType.BigInteger => "BIGINT",
-            MetadataV2FieldType.Double => "DOUBLE PRECISION",
-            MetadataV2FieldType.Float => "REAL",
-            MetadataV2FieldType.Boolean => "BOOLEAN",
-            MetadataV2FieldType.DateTime => "TIMESTAMP WITH TIME ZONE",
-            MetadataV2FieldType.Date => "DATE",
-            MetadataV2FieldType.Time => "TIME",
-            MetadataV2FieldType.Json => "sqlTypeNVarchar",
-            MetadataV2FieldType.Binary => "BYTEA",
-            MetadataV2FieldType.Uuid => "UUID",
-            MetadataV2FieldType.Geometry => "GEOMETRY",
-            MetadataV2FieldType.Geography => "GEOGRAPHY",
-            _ => "TEXT"
-        };
 
     /// <summary>
     /// Converts WKB geometry to GeoJSON format

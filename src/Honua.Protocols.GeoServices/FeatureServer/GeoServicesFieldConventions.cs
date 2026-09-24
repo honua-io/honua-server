@@ -41,6 +41,38 @@ internal static class GeoServicesFieldConventions
     /// client field-type contract (<c>tests/js/shared/esri-field-types.json</c>). Calendar
     /// dates advertise <c>esriFieldTypeDateOnly</c>; timestamps keep <c>esriFieldTypeDate</c>.
     /// </summary>
+    /// <summary>
+    /// The Esri <c>sqlType</c> enumeration member for a logical field type.
+    /// </summary>
+    /// <remarks>
+    /// Metadata v2 deliberately erases the provider's physical SQL type, so this emits
+    /// only portable Esri enumeration members that follow from the logical type, with
+    /// <c>sqlTypeOther</c> as the Esri-safe value where the relationship is ambiguous.
+    /// It lives here because the layer resource and the query response must answer the
+    /// same thing for the same field: they disagreed, the query response reporting
+    /// PostgreSQL names such as <c>INTEGER</c> and <c>JSONB</c> where the layer resource
+    /// reported <c>sqlTypeInteger</c> and <c>sqlTypeNVarchar</c> (honua-server#5197).
+    /// </remarks>
+    internal static string MapSqlType(MetadataV2FieldType type)
+        => type switch
+        {
+            MetadataV2FieldType.String => "sqlTypeNVarchar",
+            MetadataV2FieldType.Integer => "sqlTypeInteger",
+            MetadataV2FieldType.BigInteger => "sqlTypeOther",
+            MetadataV2FieldType.Double => "sqlTypeFloat",
+            MetadataV2FieldType.Float => "sqlTypeFloat",
+            MetadataV2FieldType.Boolean => "sqlTypeOther",
+            MetadataV2FieldType.DateTime => "sqlTypeOther",
+            MetadataV2FieldType.Date => "sqlTypeOther",
+            MetadataV2FieldType.Time => "sqlTypeNVarchar",
+            MetadataV2FieldType.Json => "sqlTypeNVarchar",
+            MetadataV2FieldType.Binary => "sqlTypeOther",
+            MetadataV2FieldType.Uuid => "sqlTypeOther",
+            MetadataV2FieldType.Geometry => "sqlTypeOther",
+            MetadataV2FieldType.Geography => "sqlTypeOther",
+            _ => "sqlTypeOther"
+        };
+
     internal static string MapFieldType(MetadataV2FieldType type)
         => type switch
         {

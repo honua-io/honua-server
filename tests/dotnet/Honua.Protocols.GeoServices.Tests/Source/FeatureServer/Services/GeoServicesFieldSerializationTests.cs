@@ -496,6 +496,54 @@ public sealed class GeoServicesFieldSerializationTests
         attributes.GetProperty("tags").GetString().Should().Be("[\"red\",\"blue\"]");
     }
 
+    // ----- Bug 4: the query response must describe a field as the layer resource does (#5197) -----
+
+    [Fact]
+    public async Task Json_QueryFieldBlock_AgreesWithTheLayerResource()
+    {
+        // These two descriptions of the same field disagreed: the layer resource reported
+        // sqlTypeInteger / sqlTypeNVarchar and a length of 256, while /query reported the
+        // PostgreSQL names INTEGER and JSONB and omitted length entirely. A client that
+        // trusts the declaration cannot read a field it is told is an unknown SQL type,
+        // and a null length maps to 0 and breaks inserts.
+        var fields = new[]
+        {
+            new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },
+            new MetadataV2Field { Name = "tags", Type = MetadataV2FieldType.Json },
+            new MetadataV2Field { Name = "event_time", Type = MetadataV2FieldType.Time },
+            new MetadataV2Field { Name = "count", Type = MetadataV2FieldType.Integer },
+            new MetadataV2Field { Name = "ratio", Type = MetadataV2FieldType.Double },
+        };
+        var resource = CreateResource(fields);
+
+        var (formatter, _) = CreateFormatter();
+        var (response, _) = await formatter.FormatQueryResultAsync(
+            QueryResult<Feature>.Create(0, []), resource, "json", false, null, false, false, null, null);
+        var queried = response.Should().BeOfType<QueryResponse>().Subject
+            .Fields!.ToDictionary(f => f.Name, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var field in fields)
+        {
+            var declared = FeatureServerEndpoints.MapFieldInfoV2(field, FieldNames.ObjectId);
+            var actual = queried[field.Name];
+
+            actual.Type.Should().Be(declared.Type,
+                "the query response and the layer resource must agree on {0}'s type", field.Name);
+            actual.SqlType.Should().Be(declared.SqlType,
+                "the query response and the layer resource must agree on {0}'s sqlType", field.Name);
+            actual.SqlType.Should().StartWith("sqlType",
+                "{0} must carry an Esri sqlType enumeration member, not a provider type name", field.Name);
+            actual.Length.Should().Be(declared.Length,
+                "the query response and the layer resource must agree on {0}'s length", field.Name);
+        }
+
+        // The two that used to differ, stated explicitly so a regression is unambiguous.
+        queried["tags"].SqlType.Should().Be("sqlTypeNVarchar");
+        queried["tags"].Length.Should().Be(DefaultStringLength);
+        queried[FieldNames.ObjectId].SqlType.Should().Be("sqlTypeInteger");
+    }
+
     private static (QueryFormatter Formatter, LimitsOptions Limits) CreateFormatter()
     {
         var limitsOptions = Options.Create(new LimitsOptions());
