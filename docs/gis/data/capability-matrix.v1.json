@@ -1796,10 +1796,10 @@
       "category": "Serve",
       "edition": "Community",
       "status": "preview",
-      "entryCount": 142,
-      "provingTestCount": 424,
+      "entryCount": 143,
+      "provingTestCount": 425,
       "maturity": {
-        "preview": 142
+        "preview": 143
       },
       "noSurface": null,
       "cite": [],
@@ -1889,10 +1889,10 @@
       "category": "Serve",
       "edition": "Community",
       "status": null,
-      "entryCount": 13,
-      "provingTestCount": 74,
+      "entryCount": 15,
+      "provingTestCount": 77,
       "maturity": {
-        "implemented": 13
+        "implemented": 15
       },
       "noSurface": null,
       "cite": [],
