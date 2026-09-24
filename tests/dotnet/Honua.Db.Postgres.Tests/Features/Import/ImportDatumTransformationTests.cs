@@ -22,7 +22,7 @@ namespace Honua.Db.Postgres.Tests.Features.Import;
 /// Verifies the file-import reprojection path routes through the auditable
 /// Esri-default datum-transformation catalog (#1501). Imports that resolve a curated
 /// PROJ pipeline for the <c>(sourceSrid -&gt; targetSrid)</c> pair must apply it through
-/// the explicit 3-argument <c>ST_Transform</c> overload of <c>honua.insert_import_feature</c>;
+/// <c>ST_TransformPipeline</c> inside <c>honua.insert_import_feature</c>;
 /// imports with no curated default keep PROJ's default (2-argument) behavior.
 /// </summary>
 [Collection("Database")]
@@ -41,6 +41,22 @@ public sealed class ImportDatumTransformationTests(PostgresFixture fixture)
             EXECUTE format('DROP TABLE IF EXISTS %I.%I', schema_name, table_name);
             EXECUTE format(
                 'CREATE TABLE %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY(Geometry, %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
+                schema_name, table_name, target_srid);
+            EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIST (geometry)', 'idx_' || table_name || '_geometry', schema_name, table_name);
+        END;
+        $$;
+
+        CREATE OR REPLACE FUNCTION honua.ensure_import_table(
+            schema_name text,
+            table_name text,
+            target_srid integer DEFAULT 4326)
+        RETURNS void
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', schema_name);
+            EXECUTE format(
+                'CREATE TABLE IF NOT EXISTS %I.%I (id SERIAL PRIMARY KEY, geometry GEOMETRY(Geometry, %s), properties JSONB, created_at TIMESTAMPTZ DEFAULT NOW())',
                 schema_name, table_name, target_srid);
             EXECUTE format('CREATE INDEX IF NOT EXISTS %I ON %I.%I USING GIST (geometry)', 'idx_' || table_name || '_geometry', schema_name, table_name);
         END;
@@ -76,14 +92,19 @@ public sealed class ImportDatumTransformationTests(PostgresFixture fixture)
         LANGUAGE plpgsql
         AS $$
         BEGIN
-            IF datum_transformation_pipeline IS NULL OR length(datum_transformation_pipeline) = 0 THEN
+            IF datum_transformation_pipeline IS NULL OR length(btrim(datum_transformation_pipeline)) = 0 THEN
                 EXECUTE format(
                     'INSERT INTO %I.%I (geometry, properties) VALUES (ST_Transform(ST_GeomFromWKB($1, $2), $3), $4)',
                     schema_name, table_name)
                 USING wkb, source_srid, target_srid, properties;
+            ELSIF btrim(datum_transformation_pipeline) = '+proj=noop' THEN
+                EXECUTE format(
+                    'INSERT INTO %I.%I (geometry, properties) VALUES (ST_SetSRID(ST_GeomFromWKB($1, $2), $3), $4)',
+                    schema_name, table_name)
+                USING wkb, source_srid, target_srid, properties;
             ELSE
                 EXECUTE format(
-                    'INSERT INTO %I.%I (geometry, properties) VALUES (ST_Transform(ST_GeomFromWKB($1, $2), $4, $3), $5)',
+                    'INSERT INTO %I.%I (geometry, properties) VALUES (ST_TransformPipeline(ST_GeomFromWKB($1, $2), $4, $3), $5)',
                     schema_name, table_name)
                 USING wkb, source_srid, target_srid, datum_transformation_pipeline, properties;
             END IF;
@@ -140,14 +161,14 @@ public sealed class ImportDatumTransformationTests(PostgresFixture fixture)
             await EnsureImportFunctionsAsync();
 
             // A catalog that returns a syntactically invalid PROJ pipeline for the pair.
-            // The import can only fail if that pipeline string actually reaches PostGIS'
-            // 3-argument ST_Transform — proving the import path honors the catalog selection
+            // The import can only fail if that pipeline string actually reaches
+            // ST_TransformPipeline — proving the import path honors the catalog selection
             // rather than silently using the 2-argument default.
             var service = CreateService(schema, new InvalidPipelineCatalog());
             var result = await ImportPointAsync(service, schema, "datum_routed", sourceSrid: 4269, targetSrid: 4326);
 
             result.Success.Should().BeFalse(
-                "the catalog's pipeline must be routed into ST_Transform, and an invalid pipeline must surface as a failure");
+                "the catalog's pipeline must be routed into ST_TransformPipeline, and an invalid pipeline must surface as a failure");
         }
         finally
         {
@@ -200,22 +221,66 @@ public sealed class ImportDatumTransformationTests(PostgresFixture fixture)
     }
 
     [IntegrationTest]
-    public async Task ImportFileAsync_ReverseDirectionSelection_FallsBackToDefaultPath()
+    public async Task ImportFileAsync_ReverseDirectionSelection_AppliesInvertedPipeline()
     {
         var schema = await fixture.CreateIsolatedSchemaAsync(nameof(ImportDatumTransformationTests));
         try
         {
             await EnsureImportFunctionsAsync();
 
-            // A reverse-direction selection (TransformForward = false) carries the forward pipeline,
-            // which must NOT be applied in reverse (it would corrupt coordinates). The import must skip
-            // the explicit pipeline and use PROJ's default 2-argument path — so even though the catalog
-            // hands back a syntactically invalid pipeline, the import succeeds because it is never used.
+            // A reverse selection used to be dropped. The invalid pipeline must now be inverted
+            // and executed, so the import fails instead of silently using ST_Transform.
             var service = CreateService(schema, new ReverseDirectionPipelineCatalog());
             var result = await ImportPointAsync(service, schema, "datum_reverse", sourceSrid: 4269, targetSrid: 4326);
 
+            result.Success.Should().BeFalse(
+                "a reverse catalog selection must be inverted and executed, not dropped");
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ImportFileAsync_AffinePipeline_ShiftsByTheCatalogOffsets()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(ImportDatumTransformationTests));
+        try
+        {
+            await EnsureImportFunctionsAsync();
+
+            var service = CreateService(schema, new AffinePipelineCatalog(forward: true));
+            var result = await ImportPointAsync(service, schema, "datum_affine", sourceSrid: 4269, targetSrid: 4326);
+
             result.Success.Should().BeTrue(result.ErrorMessage);
-            result.FeatureCount.Should().Be(1);
+            var (x, y, srid) = await ReadSinglePointAsync(schema, "imported_datum_affine");
+            srid.Should().Be(4326);
+            x.Should().BeApproximately(Nad83Lon + 2d, 1e-6);
+            y.Should().BeApproximately(Nad83Lat - 3d, 1e-6);
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schema);
+        }
+    }
+
+    [IntegrationTest]
+    public async Task ImportFileAsync_ReverseAffinePipeline_SubtractsTheCatalogOffsets()
+    {
+        var schema = await fixture.CreateIsolatedSchemaAsync(nameof(ImportDatumTransformationTests));
+        try
+        {
+            await EnsureImportFunctionsAsync();
+
+            var service = CreateService(schema, new AffinePipelineCatalog(forward: false));
+            var result = await ImportPointAsync(service, schema, "datum_affine_inv", sourceSrid: 4269, targetSrid: 4326);
+
+            result.Success.Should().BeTrue(result.ErrorMessage);
+            var (x, y, srid) = await ReadSinglePointAsync(schema, "imported_datum_affine_inv");
+            srid.Should().Be(4326);
+            x.Should().BeApproximately(Nad83Lon - 2d, 1e-6);
+            y.Should().BeApproximately(Nad83Lat + 3d, 1e-6);
         }
         finally
         {
@@ -303,9 +368,8 @@ public sealed class ImportDatumTransformationTests(PostgresFixture fixture)
     }
 
     /// <summary>
-    /// A catalog that returns a reverse-direction selection (<c>TransformForward = false</c>) carrying a
-    /// forward (and here deliberately invalid) pipeline, used to prove the import path does NOT apply the
-    /// forward pipeline in reverse but falls back to PROJ's default path.
+    /// A catalog that returns a reverse-direction selection carrying an invalid forward pipeline.
+    /// The import path must invert and execute it, so the import fails.
     /// </summary>
     private sealed class ReverseDirectionPipelineCatalog : IDatumTransformationCatalog
     {
@@ -318,6 +382,31 @@ public sealed class ImportDatumTransformationTests(PostgresFixture fixture)
                 ToSrid = toSrid,
                 ProjPipeline = "+proj=pipeline +step +proj=honua_not_a_real_operation",
                 TransformForward = false,
+            };
+            return true;
+        }
+
+        public bool TryGetByWkid(int wkid, int fromSrid, int toSrid, [NotNullWhen(true)] out DatumTransformationSelection? selection)
+        {
+            selection = null;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Affine offsets of (+2, -3). The reverse direction must subtract those offsets.
+    /// </summary>
+    private sealed class AffinePipelineCatalog(bool forward) : IDatumTransformationCatalog
+    {
+        public bool TryGetDefault(int fromSrid, int toSrid, [NotNullWhen(true)] out DatumTransformationSelection? selection)
+        {
+            selection = new DatumTransformationSelection
+            {
+                Name = "Honua_Test_Affine",
+                FromSrid = fromSrid,
+                ToSrid = toSrid,
+                ProjPipeline = "+proj=pipeline +step +proj=affine +xoff=2 +yoff=-3",
+                TransformForward = forward,
             };
             return true;
         }
