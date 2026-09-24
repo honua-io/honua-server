@@ -22,9 +22,10 @@ public sealed class ImageServerMensurationMathTests
     [UnitTest]
     public void GeodesicDistanceMeters_OneDegreeLatitude_IsAboutOneEleventhOfADegreeArc()
     {
-        // 1° of latitude on the mean-radius sphere is R * pi / 180 ≈ 111194.9 m.
+        // 1° of latitude at the equator on the WGS 84 ellipsoid is the meridional radius
+        // times one degree, about 110574.3 m. A mean-radius haversine returns 111195 m.
         var distance = ImageServerMensurationMath.GeodesicDistanceMeters(0, 0, 0, 1);
-        distance.Should().BeApproximately(MeanRadius * Math.PI / 180d, 1e-3);
+        distance.Should().BeApproximately(110574.3d, 0.1d);
     }
 
     [UnitTest]
@@ -58,7 +59,7 @@ public sealed class ImageServerMensurationMathTests
         ImageServerMensurationMath.TryConvertToLonLat(bx, by, 3857, out var blon, out var blat).Should().BeTrue();
 
         ImageServerMensurationMath.GeodesicDistanceMeters(alon, alat, blon, blat)
-            .Should().BeApproximately(1000d, 1d);
+            .Should().BeApproximately(1000d, 15d);
     }
 
     [UnitTest]
@@ -108,14 +109,15 @@ public sealed class ImageServerMensurationMathTests
     [UnitTest]
     public void GeodesicRingAreaSquareMeters_OneDegreeSquareAtEquator_IsAboutExpected()
     {
-        // A 1°×1° cell at the equator ≈ (111194.9 m)² ≈ 1.236e10 m².
+        // A 1°×1° cell at the equator on the WGS 84 ellipsoid is about
+        // 110574 m × 111319 m ≈ 1.2309e10 m². The old equirectangular sphere was 1.236e10.
         var ring = new (double Lon, double Lat)[]
         {
             (0, 0), (1, 0), (1, 1), (0, 1), (0, 0)
         };
         var area = ImageServerMensurationMath.GeodesicRingAreaSquareMeters(ring);
-        var expected = Math.Pow(MeanRadius * Math.PI / 180d, 2);
-        area.Should().BeApproximately(expected, expected * 0.01);
+        const double expected = 1.2309072079294865e10;
+        area.Should().BeApproximately(expected, expected * 0.005);
     }
 
     [UnitTest]
