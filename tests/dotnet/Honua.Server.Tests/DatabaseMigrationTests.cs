@@ -432,10 +432,16 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
     public async Task CanonicalRunner_OnPopulatedInitialSchema_PreservesCoreRowsAndBackfillsOnUpgradeAndRestart()
     {
         var assembly = typeof(Program).Assembly;
+        // Match the canonical runner: unqualified shipped DDL belongs in public even
+        // when the fixture connection has a different default search path.
+        var migrationConnectionString = new Npgsql.NpgsqlConnectionStringBuilder(_connectionString)
+        {
+            SearchPath = "public"
+        }.ConnectionString;
         // Install an actual shipped baseline and journal it as an existing deployment. All
         // subsequent scripts from both roots must execute over rows, not an empty schema.
         var baseline = DeployChanges.To
-            .PostgresqlDatabase(_connectionString)
+            .PostgresqlDatabase(migrationConnectionString)
             .JournalToPostgresqlTable("public", "schema_versions")
             .WithScriptsEmbeddedInAssembly(assembly, name =>
                 name.EndsWith(".001_CreateHonuaSchema.sql", StringComparison.Ordinal))
@@ -446,7 +452,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         baseline.Successful.Should().BeTrue($"baseline must be installed: {baseline.Error}");
         baseline.Scripts.Should().ContainSingle();
 
-        await using var connection = new Npgsql.NpgsqlConnection(_connectionString);
+        await using var connection = new Npgsql.NpgsqlConnection(migrationConnectionString);
         await connection.OpenAsync();
         await using (var seed = connection.CreateCommand())
         {
