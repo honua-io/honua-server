@@ -92,7 +92,7 @@ public sealed partial class RuntimeDdlGovernanceTests
             .ToArray();
 
         functions.Should().BeEquivalentTo(
-            ["pg_temp.honua_geodesic_line", "pg_temp.honua_geodesic_polygon", "pg_temp.honua_geodesic_segmentize"],
+            new[] { "pg_temp.honua_geodesic_line", "pg_temp.honua_geodesic_polygon", "pg_temp.honua_geodesic_segmentize" },
             "the geometry-service DDL exception permits only these session-local helpers, never persistent functions");
         CountRuntimeDdlStrings(path).Should().Be(functions.Length,
             "the geometry-service exception must not absorb other schema changes");
