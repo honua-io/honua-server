@@ -58,6 +58,7 @@ public static partial class EndpointRegistry
         new("GET", "/ogc/services/{serviceId}/wmts"),
         new("GET", "/ogc/services/{serviceId}/wms"),
         new("GET", "/ogc/services/{serviceId}/wcs"),
+        new("GET", "/rest/services/{serviceId}/ImageServer/WCS"),
         new("GET", "/ogc/wcs/{serviceId}"),
     ];
 }

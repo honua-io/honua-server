@@ -377,7 +377,7 @@ public sealed class GeoServicesFieldSerializationTests
 
     // ----- Bug 3: array-valued columns must agree with esriFieldTypeString (#5171) -----
 
-    [Theory]
+    [UnitTheory]
     [InlineData("[\"red\",\"blue\"]")]
     [InlineData("[0,1,2]")]
     [InlineData("{\"a\":1}")]
