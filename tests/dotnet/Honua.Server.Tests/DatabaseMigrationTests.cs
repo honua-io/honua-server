@@ -452,7 +452,7 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
         {
             seed.CommandText = """
                 INSERT INTO honua.services (service_name, description, srid, supported_formats, capabilities)
-                VALUES ('upgrade_receipt', 'Customer service: caf?', 4326, ARRAY['JSON', 'GeoJSON'], ARRAY['Query']);
+                VALUES ('upgrade_receipt', 'Customer service: café', 4326, ARRAY['JSON', 'GeoJSON'], ARRAY['Query']);
                 INSERT INTO honua.layers (layer_id, layer_name, description, table_schema, table_name,
                     geometry_type, srid, storage_options, min_scale, max_scale, default_visibility, enabled)
                 VALUES (4413, 'Customer points', 'Keep metadata', 'public', 'features', 'Point', 4326,
@@ -462,10 +462,10 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
                 INSERT INTO honua.layer_fields (layer_id, field_name, field_type, field_order,
                     max_length, nullable, default_value, description, domain, hidden)
                 VALUES (4413, 'name', 'text', 1, 128, false, 'unknown', 'Customer field',
-                    '{"type":"codedValue","codedValues":[{"name":"Caf?","code":"A"}]}', true);
+                    '{"type":"codedValue","codedValues":[{"name":"Café","code":"A"}]}', true);
                 INSERT INTO public.features (objectid, layer_id, geometry, attributes)
                 VALUES (441301, 4413, ST_GeomFromEWKT('SRID=4326;POINT Z(-157.8 21.3 42.25)'),
-                        '{"name":"Caf?","count":9007199254740991,"active":true,"optional":null}'),
+                        '{"name":"Café","count":9007199254740991,"active":true,"optional":null}'),
                        (441302, 4413, NULL, '{"name":"No geometry","count":-19,"active":false}');
                 """;
             await seed.ExecuteNonQueryAsync();
@@ -489,6 +489,9 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             await using var snapshot = new Npgsql.NpgsqlCommand(sql, connection);
             snapshots.Add((sql, (string)(await snapshot.ExecuteScalarAsync())!));
         }
+
+        snapshots.Should().Contain(snapshot => snapshot.Json.Contains("Caf\u00e9", StringComparison.Ordinal),
+            "the receipt must exercise non-ASCII customer text");
 
         var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
         var planner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest);
