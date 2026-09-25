@@ -19,6 +19,95 @@ STREAK = ROOT / "scripts/qualification/gp-canary-streak.sh"
 
 
 class GpQualificationHarnessTests(unittest.TestCase):
+    def test_timeout_failures_restore_environment_and_topology_before_follow_up(self):
+        source = HARNESS.read_text(encoding="utf-8")
+        functions = "\n".join(
+            re.search(rf"^{name}\(\) \{{\n.*?^\}}", source, re.M | re.S).group(0)
+            for name in ("run_timeout_live", "run_timeout_case", "scenario_fail")
+        )
+        for initial in ("unset", "custom"):
+            for failure in ("setup", "readiness", "submit", "barrier"):
+                with self.subTest(initial=initial, failure=failure), tempfile.TemporaryDirectory() as directory:
+                    script = functions + r'''
+set -uo pipefail
+scenario_finding=""; scenario_cleanup_failure=""; scenario_name=timeout
+native_payload='{}'
+unset HONUA_GP_TIMEOUT_SECONDS HONUA_GP_QUALIFICATION_BARRIER_ROOT HONUA_GP_QUALIFICATION_EXECUTOR_MODE
+if [[ "$TEST_INITIAL" == custom ]]; then
+  export HONUA_GP_TIMEOUT_SECONDS=7199 HONUA_GP_QUALIFICATION_BARRIER_ROOT=/original HONUA_GP_QUALIFICATION_EXECUTOR_MODE=original
+fi
+environment_state() {
+  printf '%s\n' "${HONUA_GP_TIMEOUT_SECONDS+x}:${HONUA_GP_TIMEOUT_SECONDS-}" \
+    "${HONUA_GP_QUALIFICATION_BARRIER_ROOT+x}:${HONUA_GP_QUALIFICATION_BARRIER_ROOT-}" \
+    "${HONUA_GP_QUALIFICATION_EXECUTOR_MODE+x}:${HONUA_GP_QUALIFICATION_EXECUTOR_MODE-}"
+}
+environment_state > before
+compose() {
+  if [[ "${HONUA_GP_TIMEOUT_SECONDS-}" == 2 ]]; then
+    [[ "$TEST_FAILURE" != setup ]] || return 41
+  else
+    environment_state > restored
+  fi
+}
+wait_ready() {
+  [[ "${HONUA_GP_TIMEOUT_SECONDS-}" != 2 || "$TEST_FAILURE" != readiness ]] || return 42
+}
+wait_peer_ready() { environment_state >> peer-ready; }
+now() { echo timestamp; }
+submit_async() { [[ "$TEST_FAILURE" != submit ]] || return 43; echo job-1; }
+object_file_count() { echo 0; }
+jq() { return 0; }
+wait_barrier() { scenario_fail 'native barrier failed'; }
+write_receipt() { echo unexpected-pass > receipt; }
+status=0
+run_timeout_live ignore-cancellation || status=$?
+[[ "$status" != 0 ]] || exit 51
+[[ ! -e receipt ]] || exit 52
+environment_state > after
+cmp before after && cmp before restored || exit 53
+# Both front doors must be ready in the restored environment.
+tail -n 3 peer-ready > last-peer-ready
+cmp before last-peer-ready || exit 54
+[[ "$TEST_FAILURE" != barrier || "$scenario_finding" == 'native barrier failed' ]] || exit 55
+'''
+                    completed = subprocess.run(
+                        ["bash", "-c", script], cwd=directory,
+                        env={**os.environ, "TEST_INITIAL": initial, "TEST_FAILURE": failure},
+                        capture_output=True, text=True, check=False,
+                    )
+                    self.assertEqual(0, completed.returncode, completed.stderr)
+
+    def test_timeout_restoration_failure_prevents_a_pass_receipt(self):
+        source = HARNESS.read_text(encoding="utf-8")
+        wrapper = re.search(r"^run_timeout_live\(\) \{\n.*?^\}", source, re.M | re.S).group(0)
+        for failure in ("compose", "ready", "peer"):
+            for case_status in (0, 17):
+                with self.subTest(failure=failure, case_status=case_status):
+                    script = wrapper + r'''
+set -uo pipefail
+scenario_name=timeout; scenario_finding=""; scenario_cleanup_failure=""
+run_timeout_case() {
+  job=job-1; state=failed
+  if (( TEST_CASE_STATUS != 0 )); then scenario_finding='original failure'; fi
+  return "$TEST_CASE_STATUS"
+}
+compose() { [[ "$TEST_FAILURE" != compose ]]; }
+wait_ready() { [[ "$TEST_FAILURE" != ready ]]; }
+wait_peer_ready() { [[ "$TEST_FAILURE" != peer ]]; }
+write_receipt() { echo unexpected-pass; }
+status=0
+run_timeout_live cooperative || status=$?
+[[ "$status" != 0 && "$scenario_cleanup_failure" == *restoration* ]] || exit 61
+[[ "$TEST_CASE_STATUS" == 0 || "$scenario_finding" == 'original failure;'* ]] || exit 62
+'''
+                    completed = subprocess.run(
+                        ["bash", "-c", script],
+                        env={**os.environ, "TEST_FAILURE": failure, "TEST_CASE_STATUS": str(case_status)},
+                        capture_output=True, text=True, check=False,
+                    )
+                    self.assertEqual(0, completed.returncode, completed.stderr)
+                    self.assertNotIn("unexpected-pass", completed.stdout)
+
     def test_receipt_serialization_failure_is_reported_as_missing_evidence(self):
         with tempfile.TemporaryDirectory(prefix="gp-receipt-failure-") as directory:
             fake_jq = Path(directory) / "jq"
