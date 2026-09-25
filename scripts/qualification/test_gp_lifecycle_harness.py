@@ -19,6 +19,43 @@ STREAK = ROOT / "scripts/qualification/gp-canary-streak.sh"
 
 
 class GpQualificationHarnessTests(unittest.TestCase):
+    def test_failed_timeout_restoration_blocks_follow_up_but_allows_final_cleanup(self):
+        source = HARNESS.read_text(encoding="utf-8")
+        functions = "\n".join(
+            re.search(rf"^{name}\(\) \{{\n.*?^\}}", source, re.M | re.S).group(0)
+            for name in ("run_timeout_live", "run_scenario")
+        )
+        for restoration_fails in ("yes", "no"):
+            with self.subTest(restoration_fails=restoration_fails), tempfile.TemporaryDirectory() as directory:
+                script = functions + r'''
+set -uo pipefail
+runtime_taint=""; preflight_failure=""; lane=self-test; receipt_root="$PWD"
+scenario_state_reset() { scenario_name="$1"; scenario_finding=""; scenario_cleanup_failure=""; }
+run_timeout_case() { scenario_finding='original assertion failure'; return 17; }
+compose() { [[ "$TEST_RESTORATION_FAILS" != yes ]]; }
+wait_ready() { return 0; }
+wait_peer_ready() { return 0; }
+write_receipt() { printf '%s\n%s\n' "$2" "$3" > "$receipt_root/$1.json"; }
+follow_up() { echo executed > follow-up-executed; }
+cleanup() { echo executed > cleanup-executed; }
+run_scenario timeout run_timeout_live cooperative && exit 71
+run_scenario next follow_up || true
+run_scenario cleanup cleanup || exit 72
+[[ -e cleanup-executed ]] || exit 73
+if [[ "$TEST_RESTORATION_FAILS" == yes ]]; then
+  [[ ! -e follow-up-executed ]] || exit 74
+  grep -q 'not executed: timeout qualification topology restoration failed' next.json || exit 75
+else
+  [[ -e follow-up-executed && -z "$runtime_taint" ]] || exit 76
+fi
+'''
+                completed = subprocess.run(
+                    ["bash", "-c", script], cwd=directory,
+                    env={**os.environ, "TEST_RESTORATION_FAILS": restoration_fails},
+                    capture_output=True, text=True, check=False,
+                )
+                self.assertEqual(0, completed.returncode, completed.stderr)
+
     def test_timeout_failures_restore_environment_and_topology_before_follow_up(self):
         source = HARNESS.read_text(encoding="utf-8")
         functions = "\n".join(

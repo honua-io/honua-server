@@ -81,6 +81,7 @@ scenario_evidence_file=""
 scenario_finding=""
 scenario_cleanup_failure=""
 preflight_failure=""
+runtime_taint=""
 failures=0
 finished=0
 observed_candidate_file="${receipt_root}/.observed-candidate.json"
@@ -925,6 +926,7 @@ run_timeout_live() {
   fi
   if (( cleanup_result != 0 )); then
     scenario_cleanup_failure="timeout qualification topology restoration failed"
+    runtime_taint="${scenario_cleanup_failure}"
     scenario_finding="${scenario_finding:+${scenario_finding}; }${scenario_cleanup_failure}"
     return 1
   fi
@@ -1257,6 +1259,10 @@ run_scenario() {
   local name="$1" function="$2" result=0 outcome finding
   shift 2
   scenario_state_reset "${name}"
+  if [[ -n "${runtime_taint}" && "${name}" != cleanup ]]; then
+    write_receipt "${name}" fail "not executed: ${runtime_taint}"
+    return 1
+  fi
   "${function}" "$@" || result=$?
   outcome=pass; finding=""
   if (( result != 0 )); then
