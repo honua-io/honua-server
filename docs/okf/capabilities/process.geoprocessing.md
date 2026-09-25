@@ -18,7 +18,7 @@ Submit and poll geoprocessing tasks through the Esri GeoServices GPServer surfac
 | Edition | Community |
 | Surface maturity | 15 implemented |
 | Registry entries | 15 |
-| Proving tests | 159 |
+| Proving tests | 162 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
