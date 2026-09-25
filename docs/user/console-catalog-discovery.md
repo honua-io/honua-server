@@ -1,3 +1,8 @@
+---
+type: reference
+title: "Console catalog discovery"
+description: "Explicit workspace mappings for authorized published service discovery."
+---
 # Console catalog discovery
 
 The Console discovery registry can project published FeatureServer and MapServer
