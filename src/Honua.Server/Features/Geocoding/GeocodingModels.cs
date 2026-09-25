@@ -109,12 +109,41 @@ internal sealed record GeocodeServerInfoResponse
     public required string Capabilities { get; init; }
 
     // Output fields present on every candidate's attribute bag. ArcGIS clients
-    // introspect candidateFields to discover the result schema; Honua advertises
-    // only the fields it consistently emits rather than a full Esri locator schema.
+    // introspect candidateFields to discover the result schema, and
+    // arcpy.geocoding.GeocodeAddresses builds its output table from it - so declaring a
+    // subset is not a conservative choice, it is a wrong one. With only Match_addr and
+    // Provider declared while findAddressCandidates returned twenty-nine attributes, the
+    // tool failed "ERROR 000010: Geocode addresses failed" against a locator it had
+    // already bound and described as an AddressLocator, because it could not map a
+    // result schema it had been told nothing about - Addr_type in particular, which the
+    // geocoding tools always map. Refs honua-server#5145.
+    //
+    // Every documented field is declared, matching what EsriGeocodeAddressFields emits
+    // on every candidate. The two must agree: this is the same defect as the query
+    // response and the layer resource disagreeing about a field (#5197).
     [JsonPropertyName("candidateFields")]
     public GeocodeAddressField[] CandidateFields { get; init; } =
     [
         new GeocodeAddressField { Name = "Match_addr", Alias = "Match Address" },
+        new GeocodeAddressField { Name = "LongLabel", Alias = "Long Label" },
+        new GeocodeAddressField { Name = "ShortLabel", Alias = "Short Label" },
+        new GeocodeAddressField { Name = "Addr_type", Alias = "Address Type" },
+        new GeocodeAddressField { Name = "Type", Alias = "Type" },
+        new GeocodeAddressField { Name = "PlaceName", Alias = "Place Name" },
+        new GeocodeAddressField { Name = "AddNum", Alias = "Address Number" },
+        new GeocodeAddressField { Name = "Address", Alias = "Address" },
+        new GeocodeAddressField { Name = "Block", Alias = "Block" },
+        new GeocodeAddressField { Name = "Sector", Alias = "Sector" },
+        new GeocodeAddressField { Name = "Neighborhood", Alias = "Neighborhood" },
+        new GeocodeAddressField { Name = "District", Alias = "District" },
+        new GeocodeAddressField { Name = "City", Alias = "City" },
+        new GeocodeAddressField { Name = "MetroArea", Alias = "Metro Area" },
+        new GeocodeAddressField { Name = "Subregion", Alias = "Subregion" },
+        new GeocodeAddressField { Name = "Region", Alias = "Region" },
+        new GeocodeAddressField { Name = "Territory", Alias = "Territory" },
+        new GeocodeAddressField { Name = "Postal", Alias = "Postal" },
+        new GeocodeAddressField { Name = "PostalExt", Alias = "Postal Ext" },
+        new GeocodeAddressField { Name = "CountryCode", Alias = "Country Code" },
         new GeocodeAddressField { Name = "Provider", Alias = "Provider" }
     ];
 
