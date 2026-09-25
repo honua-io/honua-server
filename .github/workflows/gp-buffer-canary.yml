@@ -39,7 +39,7 @@ jobs:
       HONUA_WORKER_IMAGE: ghcr.io/honua-io/honua-server@sha256:14b597d78aa6889d3adb2b0e5e2fdbfd4617da4eb11c12079b9655ec7f709b55
       HONUA_REHEARSAL_DIGEST: sha256:14b597d78aa6889d3adb2b0e5e2fdbfd4617da4eb11c12079b9655ec7f709b55
       HONUA_REHEARSAL_SOURCE_SHA: fe1636ca0a3cbd3ec3994f5faafa3490672694e7
-      HONUA_GP_OBJECT_ROOT: ${{ runner.temp }}/gp-canary-rehearsal-objects
+      HONUA_GP_OBJECT_ROOT: ${{ github.workspace }}/.gp-canary-rehearsal-objects
       COMPOSE_FILE: docker/gp-reliability/compose.yml:docker/gp-reliability/canary-rehearsal.yml
       COMPOSE_PROJECT_NAME: gp-canary-rehearsal
     steps:
