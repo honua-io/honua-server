@@ -342,6 +342,9 @@ jobs:
           name: cng-conformance-results-${{ github.run_number }}
           path: |
             cng-results/
+          # Zarr metadata uses dotfiles; retain actual bytes for receipt audits.
+          # Build credentials are held in mktemp outside this results directory.
+          include-hidden-files: true
           retention-days: 30
 
       - name: Fail on conformance issues
