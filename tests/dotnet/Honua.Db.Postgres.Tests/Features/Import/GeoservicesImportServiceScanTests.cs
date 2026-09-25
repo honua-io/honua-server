@@ -160,7 +160,7 @@ public sealed class GeoservicesImportServiceScanTests
     public async Task ScanSourceAsync_WithExpiredTokenError_ReportsExpiredTokenPostureWithoutSecretValues()
     {
         const string accessToken = "expired-arcgis-token";
-        var service = CreateService(new ArcGisErrorHandler(498, "Invalid token."));
+        var service = CreateService(new ArcGisErrorHandler(498, $"Invalid token: {accessToken}."));
 
         var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
         {
@@ -226,6 +226,73 @@ public sealed class GeoservicesImportServiceScanTests
         resource.HasAttachments.Should().BeNull();
         resource.Compatibility.Warnings.Should().NotContain(warning => warning.Contains("Attachments", StringComparison.Ordinal));
         artifact.ExternalDependencies.Should().NotContain(dependency => dependency.Kind == "attachments");
+    }
+
+    [Fact]
+    public async Task ScanSourceAsync_PublishedSdkMetadata_PreservesUnknownAndExplicitFieldNullability()
+    {
+        var service = CreateService(new GeoservicesScanHandler(
+            serviceDescription: "Parcel Viewer",
+            spatialReferenceJson: JsonSerializer.Serialize(new { wkt = SpatialReference.WebMercator.Wkt }),
+            fieldsJson: """
+                [{"name":"OMITTED","type":"esriFieldTypeString"},
+                 {"name":"REQUIRED","type":"esriFieldTypeString","nullable":false},
+                 {"name":"OPTIONAL","type":"esriFieldTypeString","nullable":true},
+                 {"name":"NULL","type":"esriFieldTypeString","nullable":null}]
+                """));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5
+        });
+
+        var resource = artifact.Resources.Should().ContainSingle().Subject;
+        resource.Fields.ToDictionary(static field => field.Name, static field => field.Nullable)
+            .Should().BeEquivalentTo(new Dictionary<string, bool?>
+            {
+                ["OMITTED"] = null,
+                ["REQUIRED"] = false,
+                ["OPTIONAL"] = true,
+                ["NULL"] = null
+            });
+        resource.HasAttachments.Should().BeNull();
+        resource.FeatureCount.Should().Be(42);
+        var spatialReference = resource.SpatialReferences.Should().ContainSingle().Subject;
+        spatialReference.SourceValue.Should().Be(SpatialReference.WebMercator.Wkt);
+        artifact.Source.Version.Should().Be("11.2");
+    }
+
+    [Theory]
+    [InlineData("{}", null)]
+    [InlineData("{\"count\":null}", null)]
+    [InlineData("{\"count\":0}", 0)]
+    public async Task ScanSourceAsync_UnavailableCount_IsDistinctFromEmptySource(string countJson, int? expectedCount)
+    {
+        var handler = new GeoservicesScanHandler(
+            serviceDescription: "Parcel Viewer",
+            spatialReferenceJson: """{"wkid":3857}""",
+            countJson: countJson);
+        var service = CreateService(handler);
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5
+        });
+
+        handler.CountRequestCount.Should().Be(1, "the configured count response must actually be consumed");
+        artifact.Resources.Should().ContainSingle().Subject.FeatureCount.Should().Be(expectedCount);
+        var countWarnings = artifact.ScanCompleteness.Warnings.Where(static warning =>
+            warning.Contains("Feature count was unavailable", StringComparison.Ordinal));
+        if (expectedCount.HasValue)
+        {
+            countWarnings.Should().BeEmpty();
+        }
+        else
+        {
+            countWarnings.Should().ContainSingle();
+        }
     }
 
     [Fact]
@@ -391,22 +458,26 @@ public sealed class GeoservicesImportServiceScanTests
         private readonly string? _expectedToken;
         private readonly JsonElement _spatialReference;
         private readonly string? _fieldsJson;
+        private readonly string _countJson;
 
         public GeoservicesScanHandler(
             string serviceDescription,
             string spatialReferenceJson,
             string? rendererUrl = null,
             string? expectedToken = null,
-            string? fieldsJson = null)
+            string? fieldsJson = null,
+            string countJson = "{\"count\":42}")
         {
             _serviceDescription = serviceDescription;
             _rendererUrl = rendererUrl;
             _expectedToken = expectedToken;
             _fieldsJson = fieldsJson;
+            _countJson = countJson;
             _spatialReference = JsonDocument.Parse(spatialReferenceJson).RootElement.Clone();
         }
 
         public int RequestCount { get; private set; }
+        public int CountRequestCount { get; private set; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -460,7 +531,8 @@ public sealed class GeoservicesImportServiceScanTests
                       }
                     }
                     """,
-                "/arcgis/rest/services/Parcels/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json" => """{"count":42}""",
+                _ when request.RequestUri?.AbsolutePath == "/arcgis/rest/services/Parcels/FeatureServer/0/query"
+                    => CountResponse(request),
                 _ => throw new InvalidOperationException($"Unexpected ArcGIS request path: {pathAndQuery}")
             };
 
@@ -470,6 +542,25 @@ public sealed class GeoservicesImportServiceScanTests
             {
                 Content = new StringContent(payload, Encoding.UTF8, "application/json")
             });
+        }
+
+        private string CountResponse(HttpRequestMessage request)
+        {
+            request.Method.Should().Be(HttpMethod.Get);
+            // Query parameter order is not part of the ArcGIS protocol contract.
+            var parameters = request.RequestUri!.Query.TrimStart('?')
+                .Split('&', StringSplitOptions.RemoveEmptyEntries)
+                .Select(static parameter => parameter.Split('=', 2))
+                .ToDictionary(static pair => Uri.UnescapeDataString(pair[0]),
+                    static pair => Uri.UnescapeDataString(pair[1]), StringComparer.Ordinal);
+            parameters.Should().BeEquivalentTo(new Dictionary<string, string>
+            {
+                ["where"] = "1=1",
+                ["f"] = "json",
+                ["returnCountOnly"] = "true"
+            });
+            CountRequestCount++;
+            return _countJson;
         }
     }
 

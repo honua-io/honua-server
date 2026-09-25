@@ -136,24 +136,6 @@ internal sealed partial class GeoservicesImportService
     private static string GetResourceId(string serviceName, GeoservicesResourceReference resourceReference)
         => $"resource:{serviceName}:{resourceReference.Kind}:{resourceReference.Id}";
 
-    private static bool TryReadArcGisError(JsonElement rootElement, out int? code, out string message)
-    {
-        code = null;
-        message = string.Empty;
-
-        if (!rootElement.TryGetProperty("error", out var errorElement) || errorElement.ValueKind != JsonValueKind.Object)
-        {
-            return false;
-        }
-
-        code = GetOptionalIntProperty(errorElement, "code");
-        message = GetOptionalStringProperty(errorElement, "message") ?? "ArcGIS service returned an error.";
-        return true;
-    }
-
-    private static bool IsAuthError(int? code)
-        => code is 401 or 403 or 498 or 499;
-
     private static bool TryGetSpatialReference(JsonElement element, out JsonElement spatialReference)
     {
         if (element.TryGetProperty("spatialReference", out spatialReference) &&

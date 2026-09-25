@@ -339,7 +339,48 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
 
     private async Task AssertHydrantsReadBackAsync(string schema, string table)
     {
+        await using var scope = _host.Web.Services.CreateAsyncScope();
+        var sourceClient = scope.ServiceProvider.GetRequiredService<ArcGisRestClient>();
+        using var sourceMetadata = await sourceClient.GetLayerMetadataAsync(
+            FieldOpsFeatureServer.ServiceUrl, 0, 0, 30, null, CancellationToken.None);
+        var sourceFields = sourceMetadata.RootElement.GetProperty("fields").EnumerateArray()
+            .ToDictionary(static field => field.GetProperty("name").GetString()!, static field => field);
+        sourceFields["NAME"].GetProperty("nullable").GetBoolean().Should().BeFalse(
+            "the published SDK must preserve the source's explicit false metadata");
+        sourceFields["PRESSURE_PSI"].TryGetProperty("nullable", out _).Should().BeFalse(
+            "an omitted source flag must remain absent in raw metadata");
+        var sourceLayer = await sourceClient.GetLayerInfoAsync(
+            FieldOpsFeatureServer.ServiceUrl, 0, 30, 0, CancellationToken.None);
+        sourceLayer.Fields.Single(static field => field.Name == "NAME").Nullable.Should().BeFalse();
+        sourceLayer.Fields.Single(static field => field.Name == "PRESSURE_PSI").Nullable.Should().BeTrue(
+            "typed import metadata defaults an omitted nullable flag to permissive");
+
         await using var connection = await _host.Web.Postgres.GetConnectionAsync(schema);
+
+        await using (var fieldMetadata = connection.CreateCommand())
+        {
+            fieldMetadata.CommandText = """
+                SELECT lower(column_name), is_nullable
+                FROM information_schema.columns
+                WHERE table_schema = @schema AND table_name = @table
+                  AND lower(column_name) IN ('name', 'pressure_psi')
+                ORDER BY lower(column_name)
+                """;
+            fieldMetadata.Parameters.AddWithValue("schema", schema);
+            fieldMetadata.Parameters.AddWithValue("table", table);
+            var nullability = new Dictionary<string, string>();
+            await using var reader = await fieldMetadata.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                nullability.Add(reader.GetString(0), reader.GetString(1));
+            }
+
+            nullability.Should().BeEquivalentTo(new Dictionary<string, string>
+            {
+                ["name"] = "YES",
+                ["pressure_psi"] = "YES"
+            }, "import tables retain the established permissive storage policy even when source metadata declares a field required");
+        }
 
         await using (var geometryColumn = connection.CreateCommand())
         {
@@ -577,16 +618,21 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
         private static JsonArray HydrantFields() => new(
             Field("OBJECTID", "esriFieldTypeOID", nullable: false),
             Field("NAME", "esriFieldTypeString", nullable: false, length: 16),
-            Field("PRESSURE_PSI", "esriFieldTypeDouble", nullable: true));
+            // Omitted nullable must retain the importer's permissive default through the published SDK.
+            Field("PRESSURE_PSI", "esriFieldTypeDouble", nullable: null));
 
         private static JsonArray InspectionFields() => new(
             Field("OBJECTID", "esriFieldTypeOID", nullable: false),
             Field("HYDRANT_ID", "esriFieldTypeInteger", nullable: false),
             Field("RESULT", "esriFieldTypeString", nullable: false, length: 8));
 
-        private static JsonObject Field(string name, string type, bool nullable, int? length = null)
+        private static JsonObject Field(string name, string type, bool? nullable, int? length = null)
         {
-            var field = new JsonObject { ["name"] = name, ["alias"] = name, ["type"] = type, ["nullable"] = nullable };
+            var field = new JsonObject { ["name"] = name, ["alias"] = name, ["type"] = type };
+            if (nullable.HasValue)
+            {
+                field["nullable"] = nullable.Value;
+            }
             if (length is not null)
             {
                 field["length"] = length;

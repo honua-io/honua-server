@@ -13,13 +13,13 @@
     "credentialsSupplied": false,
     "accessConfirmed": false,
     "notes": [
-      "Token Required"
+      "The ArcGIS service requires valid credentials with read access for discovery."
     ]
   },
   "scanCompleteness": {
     "status": "failed",
     "warnings": [
-      "Token Required"
+      "The ArcGIS service requires valid credentials with read access for discovery."
     ],
     "missingArtifacts": [
       "source-inventory"
@@ -39,7 +39,7 @@
     "code": "ARCGIS_TOKEN_REQUIRED",
     "reason": "The scan did not complete successfully.",
     "warnings": [
-      "Token Required"
+      "The ArcGIS service requires valid credentials with read access for discovery."
     ],
     "manualSteps": [
       "Provide a valid ArcGIS token or credentials and rerun the scan."

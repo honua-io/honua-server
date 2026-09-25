@@ -79,6 +79,120 @@ public sealed class ArcGisRestClientSourceSdkTests
         geometry.GetProperty("m").GetDouble().Should().Be(4);
     }
 
+    [Theory]
+    [MemberData(nameof(SourceRoots))]
+    public async Task MetadataReads_UseEverySourceRoot_AndPreserveRawSourcePresence(string serviceUrl, string expectedServicePath)
+    {
+        const string metadata = """
+            {"id":3,"name":"Inspection","type":"Feature Layer",
+             "extent":{"xmin":1,"ymin":2,"xmax":3,"ymax":4,"spatialReference":{"wkt":"LOCAL_CS[\"Survey\"]","vendorFlag":true}},
+             "fields":[{"name":"OMITTED","type":"esriFieldTypeString"},
+                       {"name":"REQUIRED","type":"esriFieldTypeString","nullable":false,"editable":false},
+                       {"name":"OPTIONAL","type":"esriFieldTypeString","nullable":true,"editable":true}],
+             "vendorMetadata":{"largeId":9007199254740993,"explicitNull":null}}
+            """;
+        var handler = new ScriptedHandler(request => request.RequestUri!.AbsolutePath.EndsWith("/query", StringComparison.Ordinal)
+            ? Json("""{"count":2}""")
+            : Json(metadata));
+        var client = CreateClient(handler);
+        var credentials = TokenCredentials("metadata-secret");
+
+        using var service = await client.GetServiceMetadataAsync(serviceUrl, 0, 5, credentials, CancellationToken.None);
+        using var layer = await client.GetLayerMetadataAsync(serviceUrl, 3, 0, 5, credentials, CancellationToken.None);
+        var typed = await client.GetLayerInfoAsync(serviceUrl, 3, 5, 0, CancellationToken.None, credentials);
+
+        service.RootElement.GetRawText().Should().Be(metadata);
+        layer.RootElement.GetRawText().Should().Be(metadata);
+        layer.RootElement.TryGetProperty("hasAttachments", out _).Should().BeFalse();
+        layer.RootElement.GetProperty("fields")[0].TryGetProperty("nullable", out _).Should().BeFalse();
+        layer.RootElement.GetProperty("extent").GetProperty("spatialReference").TryGetProperty("wkid", out _).Should().BeFalse();
+        layer.RootElement.GetProperty("vendorMetadata").GetProperty("largeId").GetInt64().Should().Be(9_007_199_254_740_993);
+        typed.Fields.Select(static field => field.Nullable).Should().Equal(true, false, true);
+        typed.SpatialReferenceWkid.Should().BeNull();
+        typed.MaxRecordCount.Should().BeNull();
+        typed.FeatureCount.Should().Be(2);
+        handler.Requests.Select(static request => request.Uri.AbsolutePath).Should().Equal(
+            expectedServicePath, expectedServicePath + "/3", expectedServicePath + "/3", expectedServicePath + "/3/query");
+        handler.Requests.Should().OnlyContain(request => request.EsriAuthorization == "Bearer metadata-secret"
+            && !request.Uri.Query.Contains("metadata-secret", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RawMetadata_RetriesTransientTransportFailure_WithoutLosingUnknownProperties(bool layer)
+    {
+        var handler = new ScriptedHandler(request => request.Attempt == 1
+            ? Json("{}", HttpStatusCode.ServiceUnavailable)
+            : Json("""{"vendorProperty":null}"""));
+        var client = CreateClient(handler);
+
+        using var document = await ReadRawMetadataAsync(client, layer, maxRetries: 1);
+
+        document.RootElement.GetProperty("vendorProperty").ValueKind.Should().Be(System.Text.Json.JsonValueKind.Null);
+        handler.Requests.Should().HaveCount(2);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RawMetadata_RejectsDeclaredOversizedBody_WithoutRetry(bool layer)
+    {
+        var handler = new ScriptedHandler(_ => new CallerOwnedHttpResponseMessage(HttpStatusCode.OK)
+        {
+            Content = new DeclaredLengthContent(MigrationHttpContentReader.DefaultMaxResponseBytes + 1)
+        });
+        var client = CreateClient(handler);
+
+        var exception = await Assert.ThrowsAsync<HttpRequestException>(() => ReadRawMetadataAsync(client, layer, maxRetries: 2));
+
+        exception.Message.Should().Contain("exceeding");
+        handler.Requests.Should().ContainSingle();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RawMetadata_MalformedJson_ReportsSanitizedErrorWithoutRetry(bool layer)
+    {
+        var handler = new ScriptedHandler(_ => Json("{invalid-source-secret"));
+        var client = CreateClient(handler);
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => ReadRawMetadataAsync(client, layer, maxRetries: 2));
+
+        exception.Message.Should().Contain("Failed to parse ArcGIS JSON").And.NotContain("invalid-source-secret");
+        exception.InnerException.Should().BeNull();
+        handler.Requests.Should().ContainSingle();
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RawMetadata_CallerCancellation_PropagatesWithoutRetry(bool layer)
+    {
+        using var cancellation = new CancellationTokenSource();
+        var handler = new ScriptedHandler(_ =>
+        {
+            cancellation.Cancel();
+            cancellation.Token.ThrowIfCancellationRequested();
+            return Json("{}");
+        });
+        var client = CreateClient(handler);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ReadRawMetadataAsync(client, layer, 2, cancellation.Token));
+
+        handler.Requests.Should().ContainSingle();
+    }
+
+    private static Task<System.Text.Json.JsonDocument> ReadRawMetadataAsync(
+        ArcGisRestClient client, bool layer, int maxRetries, CancellationToken cancellationToken = default)
+    {
+        const string source = "https://gis.example.com/arcgis/rest/services/Inspections/FeatureServer";
+        return layer
+            ? client.GetLayerMetadataAsync(source, 3, maxRetries, 5, null, cancellationToken)
+            : client.GetServiceMetadataAsync(source, maxRetries, 5, null, cancellationToken);
+    }
+
     [Fact]
     public async Task QueryFeaturesAsync_ObjectIdWindow_SendsIdsWithoutOffsetPaging()
     {

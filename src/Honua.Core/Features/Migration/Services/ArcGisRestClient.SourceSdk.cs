@@ -23,6 +23,33 @@ internal sealed partial class ArcGisRestClient
 {
     private const string DefaultSdkEnvelopeMessage = "GeoServices returned an error.";
 
+    internal Task<JsonDocument> GetServiceMetadataAsync(
+        string serviceUrl,
+        int maxRetries,
+        int timeoutSeconds,
+        GeoservicesCredentialDescriptor? credentials,
+        CancellationToken cancellationToken)
+    {
+        var normalizedUrl = NormalizeServiceUrl(serviceUrl);
+        return ExecuteSourceRequestAsync(
+            normalizedUrl, $"{normalizedUrl}?f=json", timeoutSeconds, maxRetries, credentials,
+            static (client, serviceId, ct) => client.GetServiceMetadataAsync(serviceId, ct), cancellationToken);
+    }
+
+    internal Task<JsonDocument> GetLayerMetadataAsync(
+        string serviceUrl,
+        int layerId,
+        int maxRetries,
+        int timeoutSeconds,
+        GeoservicesCredentialDescriptor? credentials,
+        CancellationToken cancellationToken)
+    {
+        var normalizedUrl = NormalizeServiceUrl(serviceUrl);
+        return ExecuteSourceRequestAsync(
+            normalizedUrl, $"{normalizedUrl}/{layerId}?f=json", timeoutSeconds, maxRetries, credentials,
+            (client, serviceId, ct) => client.GetLayerMetadataAsync(serviceId, layerId, ct), cancellationToken);
+    }
+
     private async Task<T> ExecuteSourceRequestAsync<T>(
         string normalizedUrl,
         string resourceUrl,
@@ -144,6 +171,9 @@ internal sealed partial class ArcGisRestClient
     {
         switch (exception)
         {
+            case JsonException:
+                return new InvalidOperationException($"Failed to parse ArcGIS JSON from '{RedactArcGisTokenParameters(resourceUrl)}'.");
+
             case HonuaFeatureServerResponseTooLargeException tooLarge:
                 return new HttpRequestException(tooLarge.DeclaredContentLength is { } declared
                     ? $"Migration source response declares {declared} bytes, exceeding the {tooLarge.MaxResponseBytes}-byte limit."
@@ -185,16 +215,11 @@ internal sealed partial class ArcGisRestClient
     // ArcGIS never advertises 0 for maxRecordCount or a wkid; the SDK reports an omitted member as 0.
     private static int? AdvertisedOrNull(int? value) => value is > 0 ? value : null;
 
-    private static JsonElement? GetAdditionalElement(Dictionary<string, JsonElement>? additionalProperties, string name)
-        => additionalProperties is not null
-            && additionalProperties.TryGetValue(name, out var value)
-            && value.ValueKind is not (JsonValueKind.Null or JsonValueKind.Undefined)
-            ? value
-            : null;
-
-    private static string? GetAdditionalString(Dictionary<string, JsonElement>? additionalProperties, string name)
-        => GetAdditionalElement(additionalProperties, name) is { ValueKind: JsonValueKind.String } value
-            ? value.GetString()
+    private static bool? GetOptionalSourceBoolean(JsonElement? element, string name)
+        => element is { ValueKind: JsonValueKind.Object } value
+            && value.TryGetProperty(name, out var property)
+            && property.ValueKind is JsonValueKind.True or JsonValueKind.False
+            ? property.GetBoolean()
             : null;
 
     /// <summary>

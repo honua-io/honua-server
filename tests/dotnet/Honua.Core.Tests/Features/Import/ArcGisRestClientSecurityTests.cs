@@ -88,12 +88,12 @@ public sealed class ArcGisRestClientSecurityTests
     }
 
     [Fact]
-    public async Task GetJsonDocumentAsync_WithBasicCredentials_SendsAuthorizationHeaderWithoutQuerySecret()
+    public async Task GetServiceMetadataAsync_WithBasicCredentials_SendsAuthorizationHeaderWithoutQuerySecret()
     {
         var handler = new RecordingHandler("{}");
         var client = CreateClient(handler, (_, _) => Task.FromResult(new[] { IPAddress.Parse("93.184.216.34") }));
 
-        using var document = await client.GetJsonDocumentAsync(
+        using var document = await client.GetServiceMetadataAsync(
             "https://example.com/arcgis/rest/services/Test/FeatureServer?f=json",
             maxRetries: 0,
             timeoutSeconds: 5,
