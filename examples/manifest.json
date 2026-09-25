@@ -4474,7 +4474,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 227,
+      "line": 235,
       "language": "jsonc"
     },
     {
