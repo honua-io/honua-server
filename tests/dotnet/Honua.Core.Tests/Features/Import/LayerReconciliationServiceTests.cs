@@ -417,6 +417,34 @@ public sealed class LayerReconciliationServiceTests
         reader.SampleQueries.Should().BeEmpty();
     }
 
+    [Theory]
+    [InlineData(false, null, false)]
+    [InlineData(true, "STATUS = 'open'", false)]
+    [InlineData(false, "STATUS = 'open'", true)]
+    public async Task Reconcile_ProviderWithoutFilterService_OnlyFilteredSharedTargetFails(bool dedicated, string? filter, bool fails)
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 1, Extent = FeatureExtent.Create(0, 0, 1, 1, 4326),
+            Sample = BuildSample(("OBJECTID", "NAME"), validGeometry: true, rows: 1)
+        };
+        var request = BuildRequest(1, BoundingBox.Create(0, 0, 1, 1, 4326), ["OBJECTID", "NAME"]);
+        request = request with
+        {
+            Layers = [request.Layers[0] with { FilterMirror = filter, TargetContainsOnlyImportedFeatures = dedicated }]
+        };
+        var metadata = new Mock<IMetadataV2GraphProvider>(MockBehavior.Strict);
+        var service = new LayerReconciliationService(reader, TimeProvider.System, NullLogger<LayerReconciliationService>.Instance,
+            new ReconciliationQueryBuilder(metadata.Object));
+
+        var result = await service.ReconcileAsync(request);
+
+        result.Layers[0].Count.Classification.Should().Be(fails ? "fail" : "pass");
+        reader.CountQueries.Should().HaveCount(fails ? 0 : 1);
+        reader.SampleQueries.Should().HaveCount(fails ? 0 : 1);
+        metadata.VerifyNoOtherCalls();
+    }
+
     private static LayerReconciliationService NewFilteredService(StubFeatureReader reader, Action<FilterExpression>? translated = null)
     {
         var resource = new MetadataV2Resource { Metadata = new() { Id = "target" } };
