@@ -125,8 +125,8 @@ public sealed record LayerReconciliationLayerInput
 
     /// <summary>
     /// Source field name to published target field name. Applied to <see cref="FilterMirror"/>
-    /// before a shared target executes it. Identifiers inside quotes are not rewritten.
-    /// Ignored for a dedicated import target.
+    /// before a shared target executes it. Parsed field references, including quoted names,
+    /// are mapped; literals and function names are preserved. Ignored for a dedicated import target.
     /// </summary>
     public IReadOnlyDictionary<string, string>? FilterFieldMappings { get; init; }
 }
