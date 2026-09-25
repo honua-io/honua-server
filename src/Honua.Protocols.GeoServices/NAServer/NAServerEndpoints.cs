@@ -113,6 +113,17 @@ internal static class NAServerEndpoints
             .Produces<NAServerLocationAllocationResponse>(StatusCodes.Status200OK, JsonContentType)
             .AllowAnonymous();
 
+        // Anonymous stateless computation, matching Route/solve and the GPServer alias.
+        // Both URLs use one adapter, so format, option and provider gates are identical.
+        endpoints.MapMethods($"{RouteBase}/FindRoutes/execute", ["GET", "POST"],
+                static (HttpContext context, CancellationToken ct) => FindRoutesWebTool.ExecuteAsync(context, ct))
+            .WithDisplayName("NAServer FindRoutes Execute")
+            .WithName("NAServerFindRoutesExecute")
+            .WithSummary("Execute the ordered-stop, minutes-only FindRoutes tool")
+            .WithTags("NAServer")
+            .Produces(StatusCodes.Status200OK, contentType: JsonContentType)
+            .AllowAnonymous();
+
         // Metadata resources (#5035): the service resource and the per-solver analysis
         // layer resources ArcGIS Pro and arcpy.nax read before they will bind a
         // stand-alone routing service. They describe the same provider the solves run
@@ -180,6 +191,21 @@ internal static class NAServerEndpoints
         }
 
         var layerName = context.Request.RouteValues["layerName"]?.ToString() ?? string.Empty;
+
+        // Esri's ready-to-use routing tools are addressed against the NAServer URL, not
+        // the utility GPServer: arcpy.nax composes "{naServerUrl}/FindRoutes" and refuses
+        // the stand-alone binding when it 404s, with "Portal ... is not configured with
+        // the 'Route' web tool". Publishing the task on the GPServer alone was not
+        // enough - measured, the client never asks there for it (#5192). Same document
+        // either way, so the two spellings cannot disagree.
+        if (NAServerMetadata.IsRoutingWebTool(layerName))
+        {
+            return Results.Text(
+                NAServerMetadata.Serialize(
+                    NAServerMetadata.BuildUtilityTaskInfo(layerName), IsPrettyJson(context, parameters)),
+                JsonContentType);
+        }
+
         var capabilities = await routing.GetCapabilitiesAsync(ct).ConfigureAwait(false);
         var dataset = await ResolveDatasetAsync(datasets, configuration, ct).ConfigureAwait(false);
         var document = NAServerMetadata.BuildLayerResource(layerName, capabilities, dataset, configuration);
@@ -376,38 +402,12 @@ internal static class NAServerEndpoints
         IReadOnlyList<RouteBarrier> barriers,
         string? travelMode)
     {
-        // Barriers: every requested barrier kind must be advertised. If any kind is
-        // unsupported (or barriers are supplied to a provider that supports none),
-        // reject rather than dropping the barrier and returning an unsafe solve.
-        if (barriers.Count > 0)
-        {
-            foreach (var kind in barriers.Select(b => b.Kind).Distinct().Where(kind => !capabilities.SupportedBarrierKinds.Contains(kind)))
-            {
-                return SetSpanErrorAndReturn(
-                    StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        $"{kind} barriers are not supported by the configured routing provider."),
-                    "NAServer barrier kind unsupported by provider");
-            }
-        }
-
-        // Travel mode: an absent mode always uses the provider default. A supplied
-        // mode must be one the provider advertises (case-insensitive).
-        if (!string.IsNullOrWhiteSpace(travelMode))
-        {
-            var supported = capabilities.SupportedTravelModes
-                .Any(m => string.Equals(m, travelMode, StringComparison.OrdinalIgnoreCase));
-            if (!supported)
-            {
-                return SetSpanErrorAndReturn(
-                    StandardErrorHelpers.CreateBadRequest(
-                        context,
-                        $"travelMode '{travelMode}' is not supported by the configured routing provider."),
-                    "NAServer travelMode unsupported by provider");
-            }
-        }
-
-        return null;
+        var error = RoutingRequestValidation.ValidateCapabilities(capabilities, barriers, travelMode);
+        return error is null
+            ? null
+            : SetSpanErrorAndReturn(
+                StandardErrorHelpers.CreateBadRequest(context, error),
+                "NAServer input unsupported by provider");
     }
 
     /// <summary>

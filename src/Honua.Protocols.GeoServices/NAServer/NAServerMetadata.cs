@@ -45,6 +45,14 @@ internal static class NAServerMetadata
     /// <inheritdoc cref="GetTravelModesTask"/>
     public const string GetToolInfoTask = "GetToolInfo";
 
+    /// <summary>
+    /// Esri's ready-to-use routing tool name. <c>arcpy.nax</c> does not call
+    /// <c>NAServer/Route/solve</c> directly: it resolves this tool on the utility
+    /// service and refuses the stand-alone binding when it is absent, with
+    /// "Portal ... is not configured with the 'Route' web tool" (#5192).
+    /// </summary>
+    public const string FindRoutesTask = "FindRoutes";
+
     /// <summary>Impedance attribute name advertised for every travel mode.</summary>
     public const string TimeAttributeName = "TravelTime";
 
@@ -75,7 +83,15 @@ internal static class NAServerMetadata
     public static bool IsUtilityTask(string? taskName)
         => taskName is not null
            && (taskName.Equals(GetTravelModesTask, StringComparison.OrdinalIgnoreCase)
-               || taskName.Equals(GetToolInfoTask, StringComparison.OrdinalIgnoreCase));
+               || taskName.Equals(GetToolInfoTask, StringComparison.OrdinalIgnoreCase)
+               || taskName.Equals(FindRoutesTask, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Whether the name is one of Esri's ready-to-use routing tools, which are addressed
+    /// against the NAServer URL as though they were analysis layers.
+    /// </summary>
+    public static bool IsRoutingWebTool(string? name)
+        => name is not null && name.Equals(FindRoutesTask, StringComparison.OrdinalIgnoreCase);
 
     public static bool IsKnownLayer(string? layerName)
         => layerName is not null && Layers.Any(l => l.Name.Equals(layerName, StringComparison.OrdinalIgnoreCase));
@@ -243,6 +259,11 @@ internal static class NAServerMetadata
     /// <summary>The utility task resource (<c>GET .../GPServer/GetTravelModes</c>).</summary>
     public static JsonObject BuildUtilityTaskInfo(string taskName)
     {
+        if (taskName.Equals(FindRoutesTask, StringComparison.OrdinalIgnoreCase))
+        {
+            return BuildFindRoutesTaskInfo();
+        }
+
         var isTravelModes = taskName.Equals(GetTravelModesTask, StringComparison.OrdinalIgnoreCase);
         var parameters = new JsonArray();
         if (!isTravelModes)
@@ -642,6 +663,58 @@ internal static class NAServerMetadata
         }
 
         return field;
+    }
+
+    /// <summary>
+    /// The <c>FindRoutes</c> task resource, in the shape Esri's ready-to-use routing
+    /// tool advertises.
+    /// </summary>
+    /// <remarks>
+    /// This bounded synchronous subset uses the published parameter names - <c>Stops</c>,
+    /// <c>Measurement_Units</c>, <c>Travel_Mode</c>, <c>Output_Routes</c>,
+    /// <c>Solve_Succeeded</c>. It supports only Minutes and stops in input order;
+    /// full arcpy.nax binding remains unverified (#5192). This projects the synchronous
+    /// NAServer Route solve, so there is no job to poll and advertising an async execution type
+    /// would send the client to submitJob for a task with no job form.
+    /// </remarks>
+    private static JsonObject BuildFindRoutesTaskInfo()
+    {
+        var parameters = new JsonArray
+        {
+            Parameter("Stops", "GPFeatureRecordSetLayer", "Stops",
+                "The locations to visit in input order. Two or more are required.",
+                "esriGPParameterDirectionInput", "esriGPParameterTypeRequired", null),
+            Parameter("Measurement_Units", "GPString", "Measurement Units",
+                "Only Minutes is supported; other units are rejected.",
+                "esriGPParameterDirectionInput", "esriGPParameterTypeOptional", "Minutes"),
+            Parameter("Travel_Mode", "GPString", "Travel Mode",
+                "A mode returned by GetTravelModes; omitted or empty uses the provider default.",
+                "esriGPParameterDirectionInput", "esriGPParameterTypeOptional", null),
+            Parameter("Reorder_Stops_to_Find_Optimal_Routes", "GPBoolean",
+                "Reorder Stops to Find Optimal Route",
+                "Only false is supported: stops are visited in input order; true is rejected.",
+                "esriGPParameterDirectionInput", "esriGPParameterTypeOptional", "false"),
+            Parameter("Output_Routes", "GPFeatureRecordSetLayer", "Output Routes",
+                "One feature per solved route, carrying Total_Length and Total_TravelTime.",
+                "esriGPParameterDirectionOutput", "esriGPParameterTypeDerived", null),
+            Parameter("Solve_Succeeded", "GPBoolean", "Solve Succeeded",
+                "Whether the solve produced a route.",
+                "esriGPParameterDirectionOutput", "esriGPParameterTypeDerived", null),
+        };
+
+        parameters[1]!["choiceList"] = new JsonArray("Minutes");
+        parameters[3]!["defaultValue"] = false;
+
+        return new JsonObject
+        {
+            ["name"] = FindRoutesTask,
+            ["displayName"] = "Find Routes",
+            ["description"] = "Routes through stops in input order, reporting travel time in minutes. Other units and stop optimization are unsupported. This synchronous subset does not establish full arcpy.nax compatibility.",
+            ["category"] = "network-analysis",
+            ["helpUrl"] = "",
+            ["executionType"] = "esriExecutionTypeSynchronous",
+            ["parameters"] = parameters,
+        };
     }
 
     private static JsonObject Parameter(

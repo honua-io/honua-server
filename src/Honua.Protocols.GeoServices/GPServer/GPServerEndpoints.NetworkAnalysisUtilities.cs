@@ -45,6 +45,11 @@ internal static partial class GPServerEndpoints
         string taskName,
         CancellationToken ct)
     {
+        if (taskName.Equals(NAServerMetadata.FindRoutesTask, StringComparison.OrdinalIgnoreCase))
+        {
+            return await FindRoutesWebTool.ExecuteAsync(context, ct).ConfigureAwait(false);
+        }
+
         var parameters = await GPServerParameterTranslation.ReadRequestParametersAsync(context, ct);
         var formatError = ValidateJsonFormat(context, parameters);
         if (formatError is not null)
@@ -74,4 +79,5 @@ internal static partial class GPServerEndpoints
         var document = NAServerMetadata.BuildGetToolInfoResult(serviceName, toolName, capabilities, configuration);
         return Results.Text(NAServerMetadata.Serialize(document, pretty), NetworkAnalysisUtilitiesContentType);
     }
+
 }

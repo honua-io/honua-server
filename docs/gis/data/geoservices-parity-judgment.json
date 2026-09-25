@@ -2462,6 +2462,7 @@
       "evidence": {
         "code": [
           "src/Honua.Protocols.GeoServices/NAServer/NAServerEndpoints.cs",
+          "src/Honua.Protocols.GeoServices/NAServer/FindRoutesWebTool.cs",
           "src/Honua.Protocols.GeoServices/NAServer/NAServerMetadata.cs",
           "src/Honua.Protocols.GeoServices/NAServer/NAServerParameterTranslation.cs",
           "src/Honua.Protocols.GeoServices/NAServer/NAServerResultMapping.cs",
@@ -2471,7 +2472,8 @@
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerEndpointTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerTranslationUnitTests.cs",
           "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/NAServer/NAServerMetadataEndpointTests.cs",
-          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/NetworkAnalysisUtilitiesTaskTests.cs"
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/NetworkAnalysisUtilitiesTaskTests.cs",
+          "tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/GPServer/FindRoutesExecuteTests.cs"
         ]
       },
       "operations": [
@@ -2490,6 +2492,14 @@
             "/NAServer/{layerName}"
           ],
           "notes": "GET and POST return the Esri network analysis layer resource for Route, ServiceArea, ClosestFacility, ODCostMatrix and LocationAllocation: impedance and travel modes projected from the active network dataset's travel profiles, network attributes and sources, input network classes and the configured service limits. Unknown or unsupported layers answer 404. Together with the GetTravelModes/GetToolInfo utility tasks every GPServer resolves, this is the stand-alone binding surface ArcGIS Pro and arcpy read (#5035); a native Pro replay is still pending."
+        },
+        {
+          "name": "FindRoutes synchronous subset",
+          "status": "partial",
+          "esriPaths": [
+            "/NAServer/FindRoutes/execute"
+          ],
+          "notes": "GET and POST execute the same bounded adapter as GPServer/FindRoutes/execute: input-order stops, Minutes-only travel time, provider-validated modes and barriers. Unsupported units, stop optimization, unknown options and conflicting aliases return errors before solving. There is no submitJob form; full arcpy.nax binding remains open in #5192."
         },
         {
           "name": "Route solve",

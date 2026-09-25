@@ -129,8 +129,11 @@ public sealed class GeoServicesFieldSerializationTests
         queryResponse.Fields!.Single(f => f.Name == "code").Length.Should().Be(32);
     }
 
-    [Fact]
-    public async Task Json_RuntimeStringField_ReportsPositiveLength()
+    [UnitTheory]
+    [InlineData("string")]
+    [InlineData("time")]
+    [InlineData("duration")]
+    public async Task Json_RuntimeStringField_ReportsEsriSqlTypeAndPositiveLength(string kind)
     {
         var (formatter, _) = CreateFormatter();
         var resource = CreateResource(
@@ -143,7 +146,12 @@ public sealed class GeoServicesFieldSerializationTests
             {
                 ["objectid"] = 1L,
                 // Undeclared runtime string attribute -> inferred field metadata.
-                ["runtime_label"] = "hello"
+                ["runtime_label"] = kind switch
+                {
+                    "time" => new TimeOnly(12, 30),
+                    "duration" => TimeSpan.FromMinutes(90),
+                    _ => (object)"hello",
+                }
             }.ToImmutableDictionary());
 
         var (response, _) = await formatter.FormatQueryResultAsync(
@@ -160,6 +168,7 @@ public sealed class GeoServicesFieldSerializationTests
         var queryResponse = response.Should().BeOfType<QueryResponse>().Subject;
         var runtimeField = queryResponse.Fields!.Single(f => f.Name == "runtime_label");
         runtimeField.Type.Should().Be("esriFieldTypeString");
+        runtimeField.SqlType.Should().Be("sqlTypeNVarchar");
         runtimeField.Length.Should().Be(DefaultStringLength);
     }
 
@@ -445,6 +454,143 @@ public sealed class GeoServicesFieldSerializationTests
             + "field whose value disagrees with its declared type returns zero rows and "
             + "raises nothing (#5171)");
         attributes.GetProperty("tags").GetString().Should().Be(rawJson);
+    }
+
+    [UnitTheory]
+    [InlineData("buffered", "[1,2]")]
+    [InlineData("streaming", "[1,2]")]
+    [InlineData("top-features", "[1,2]")]
+    [InlineData("buffered", "{\"key\":\"value\"}")]
+    [InlineData("streaming", "{\"key\":\"value\"}")]
+    [InlineData("top-features", "{\"key\":\"value\"}")]
+    public async Task Json_ComplexValue_IsAStringOnEveryQueryPath(string path, string rawJson)
+    {
+        // The buffered path was fixed first and the streaming path was not, which hid the
+        // defect: a probe issuing a plain query saw a string, while ArcGIS Pro - which
+        // sends orderByFields and resultOffset, and so takes the streaming path - still
+        // received an array and silently stopped reading at that row. Pin all three.
+        var resource = CreateResource(
+            new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+            new MetadataV2Field { Name = "tags", Type = MetadataV2FieldType.String });
+
+        using var value = JsonDocument.Parse(rawJson);
+        var feature = Feature.Create(1, null, new Dictionary<string, object?>
+        {
+            ["objectid"] = 1L,
+            ["tags"] = value.RootElement.Clone()
+        }.ToImmutableDictionary());
+
+        string json;
+        if (path == "top-features")
+        {
+            var response = FeatureServerEndpoints.BuildTopFeaturesJsonResponse(
+                QueryResult<Feature>.Create(1, [feature]), resource, false, null);
+            json = JsonSerializer.Serialize(response, FeatureServerJsonContext.Default.QueryResponse);
+        }
+        else if (path == "streaming")
+        {
+            json = await StreamGeoServicesJsonAsync(
+                new StreamingQueryFormatter(Options.Create(new LimitsOptions())), feature, resource);
+        }
+        else
+        {
+            var (formatter, _) = CreateFormatter();
+            var (response, _) = await formatter.FormatQueryResultAsync(
+                QueryResult<Feature>.Create(1, [feature]), resource, "json", false, null, false, false, null, null);
+            json = JsonSerializer.Serialize(response, FeatureServerJsonContext.Default.QueryResponse);
+        }
+
+        using var document = JsonDocument.Parse(json);
+        var attributes = document.RootElement.GetProperty("features")[0].GetProperty("attributes");
+        attributes.GetProperty("tags").ValueKind.Should().Be(JsonValueKind.String,
+            "an esriFieldTypeString value must be a JSON string on every query path; "
+            + "ArcGIS Pro stops reading the feature array at the first row that is not (#5171)");
+        attributes.GetProperty("tags").GetString().Should().Be(rawJson);
+    }
+
+    [UnitTheory]
+    [InlineData("buffered", "[1,2]", JsonValueKind.Array)]
+    [InlineData("streaming", "[1,2]", JsonValueKind.Array)]
+    [InlineData("buffered", "{\"key\":\"value\"}", JsonValueKind.Object)]
+    [InlineData("streaming", "{\"key\":\"value\"}", JsonValueKind.Object)]
+    public async Task GeoJson_ComplexValue_PreservesItsJsonType(string path, string rawJson, JsonValueKind expectedKind)
+    {
+        var resource = CreateResource(
+            new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+            new MetadataV2Field { Name = "tags", Type = MetadataV2FieldType.Json });
+        using var value = JsonDocument.Parse(rawJson);
+        var feature = Feature.Create(1, null, new Dictionary<string, object?>
+        {
+            ["objectid"] = 1L,
+            ["tags"] = value.RootElement.Clone()
+        }.ToImmutableDictionary());
+
+        string json;
+        if (path == "streaming")
+        {
+            json = await StreamGeoJsonAsync(
+                new StreamingQueryFormatter(Options.Create(new LimitsOptions())), feature, resource);
+        }
+        else
+        {
+            var (formatter, _) = CreateFormatter();
+            var (response, _) = await formatter.FormatQueryResultAsync(
+                QueryResult<Feature>.Create(1, [feature]), resource, "geojson", false, null, false, false, null, null);
+            json = JsonSerializer.Serialize(response, FeatureServerJsonContext.Default.GeoJsonFeatureSet);
+        }
+
+        using var document = JsonDocument.Parse(json);
+        var property = document.RootElement.GetProperty("features")[0].GetProperty("properties").GetProperty("tags");
+        property.ValueKind.Should().Be(expectedKind, "GeoJSON accepts arrays and objects; the Esri string-field restriction must not leak into it");
+        property.GetRawText().Should().Be(rawJson);
+    }
+
+    // ----- Bug 4: the query response must describe a field as the layer resource does (#5197) -----
+
+    [UnitTest]
+    public async Task Json_QueryFieldBlock_AgreesWithTheLayerResource()
+    {
+        // These two descriptions of the same field disagreed: the layer resource reported
+        // sqlTypeInteger / sqlTypeNVarchar and a length of 256, while /query reported the
+        // PostgreSQL names INTEGER and JSONB and omitted length entirely. A client that
+        // trusts the declaration cannot read a field it is told is an unknown SQL type,
+        // and a null length maps to 0 and breaks inserts.
+        var fields = new[]
+        {
+            new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+            new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },
+            new MetadataV2Field { Name = "tags", Type = MetadataV2FieldType.Json },
+            new MetadataV2Field { Name = "event_time", Type = MetadataV2FieldType.Time },
+            new MetadataV2Field { Name = "count", Type = MetadataV2FieldType.Integer },
+            new MetadataV2Field { Name = "ratio", Type = MetadataV2FieldType.Double },
+        };
+        var resource = CreateResource(fields);
+
+        var (formatter, _) = CreateFormatter();
+        var (response, _) = await formatter.FormatQueryResultAsync(
+            QueryResult<Feature>.Create(0, []), resource, "json", false, null, false, false, null, null);
+        var queried = response.Should().BeOfType<QueryResponse>().Subject
+            .Fields!.ToDictionary(f => f.Name, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var field in fields)
+        {
+            var declared = FeatureServerEndpoints.MapFieldInfoV2(field, FieldNames.ObjectId);
+            var actual = queried[field.Name];
+
+            actual.Type.Should().Be(declared.Type,
+                "the query response and the layer resource must agree on {0}'s type", field.Name);
+            actual.SqlType.Should().Be(declared.SqlType,
+                "the query response and the layer resource must agree on {0}'s sqlType", field.Name);
+            actual.SqlType.Should().StartWith("sqlType",
+                "{0} must carry an Esri sqlType enumeration member, not a provider type name", field.Name);
+            actual.Length.Should().Be(declared.Length,
+                "the query response and the layer resource must agree on {0}'s length", field.Name);
+        }
+
+        // The two that used to differ, stated explicitly so a regression is unambiguous.
+        queried["tags"].SqlType.Should().Be("sqlTypeNVarchar");
+        queried["tags"].Length.Should().Be(DefaultStringLength);
+        queried[FieldNames.ObjectId].SqlType.Should().Be("sqlTypeInteger");
     }
 
     private static (QueryFormatter Formatter, LimitsOptions Limits) CreateFormatter()
