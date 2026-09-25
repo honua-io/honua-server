@@ -55,9 +55,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
         IReadOnlyList<LayerFieldInsert> fields,
         LayerExtentInsert? extent,
         IReadOnlyList<string> capabilities,
+        PublicationScope publicationScope,
+        bool requireExistingScopedService,
         CancellationToken cancellationToken)
     {
         var (graph, expectedEtag) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
+        // Recheck the exact persisted write base. A concurrent graph change is then protected
+        // by its ETag; a rejected scope leaves the SQL layer transaction uncommitted.
+        ValidatePublicationScope(graph, serviceName, publicationScope, requireExistingScopedService);
         var now = DateTimeOffset.UtcNow;
         var layerIdText = layerId.ToString(CultureInfo.InvariantCulture);
         var service = BuildPublishedService(graph, serviceName, srid, now);
@@ -102,6 +107,24 @@ internal sealed partial class PostgreSqlLayerPublishingService
             request.Enabled,
             now);
         var connection = BuildPublishedConnection(request.ConnectionId, now);
+        if (connection is not null)
+        {
+            connection = connection with
+            {
+                Metadata = PreserveDependencyMetadata(
+                    graph.Connections.FirstOrDefault(candidate => candidate.Metadata.Id == connection.Metadata.Id)?.Metadata,
+                    connection.Metadata,
+                    publicationScope)
+            };
+        }
+        service = service with { Metadata = ApplyPublicationScope(service.Metadata, publicationScope) };
+        resource = resource with { Metadata = ApplyPublicationScope(resource.Metadata, publicationScope) };
+        binding = binding with { Metadata = ApplyPublicationScope(binding.Metadata, publicationScope) };
+        featurePublication = featurePublication with { Metadata = ApplyPublicationScope(featurePublication.Metadata, publicationScope) };
+        if (stacPublication is not null)
+        {
+            stacPublication = stacPublication with { Metadata = ApplyPublicationScope(stacPublication.Metadata, publicationScope) };
+        }
         service = service with
         {
             PublicationIds = service.PublicationIds
@@ -126,7 +149,14 @@ internal sealed partial class PostgreSqlLayerPublishingService
         var resourcesWithStyles = UpsertById(graph.Resources, resource, static item => item.Metadata.Id);
         foreach (var styleResource in styleResources)
         {
-            resourcesWithStyles = UpsertById(resourcesWithStyles, styleResource, static item => item.Metadata.Id);
+            var scopedStyle = styleResource with
+            {
+                Metadata = PreserveDependencyMetadata(
+                    graph.Resources.FirstOrDefault(candidate => candidate.Metadata.Id == styleResource.Metadata.Id)?.Metadata,
+                    styleResource.Metadata,
+                    publicationScope)
+            };
+            resourcesWithStyles = UpsertById(resourcesWithStyles, scopedStyle, static item => item.Metadata.Id);
         }
 
         var updatedGraph = graph with
@@ -202,6 +232,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
 
         var (graph, expectedEtag) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
+        ValidateTenantAccess(graph, serviceName: null, layerIds, _tenantContext?.TenantId);
         var updatedGraph = BuildLayerEnabledMetadataV2Graph(
             graph,
             layerIds,
@@ -2645,6 +2676,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         DateTimeOffset now,
         bool enabled = true)
     {
+        ValidateLegacyLinkScope(graph, serviceName, layerId);
         var storageLayerBindings = graph.StorageBindings
             .Where(candidate => candidate.StorageLayerId == layerId)
             .ToArray();
@@ -3009,6 +3041,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
 
         var graph = snapshot.Graph;
+
+        ValidateTenantAccess(graph, serviceName: null, refreshedExtents.Keys.ToHashSet(), _tenantContext?.TenantId);
 
         // Map layer_id -> resource ids (a layer may be published into multiple services).
         var affectedResourceIds = new HashSet<string>(StringComparer.Ordinal);

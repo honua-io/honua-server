@@ -33,7 +33,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
     string? metadataSchema = null,
     Honua.Core.Features.Styling.Abstractions.IStyleCatalog? styleCatalog = null,
     Honua.Core.Features.Infrastructure.Abstractions.IAdoNetDatabaseConnectionProvider? featureStoreConnections = null,
-    LayerPublishingOptions? publishingOptions = null) : ILayerPublishingService
+    LayerPublishingOptions? publishingOptions = null,
+    Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext? tenantContext = null) : ILayerPublishingService
 {
     private const string DefaultServiceName = "default";
     private const int CatalogExtentSrid = 4326;
@@ -57,6 +58,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
     private readonly ITableDiscoveryService _tableDiscoveryService = tableDiscoveryService;
     private readonly IMetadataV2GraphStore _metadataGraphStore = metadataGraphStore;
+    private readonly Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext? _tenantContext = tenantContext;
 
     // The publish path loads the current graph as the base it mutates and saves. It must
     // read only the genuinely-activated snapshot, never the V1-catalog compat synthesis
@@ -103,6 +105,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
         var normalizedService = NormalizeServiceName(serviceName);
+        await ValidateTenantAccessAsync(normalizedService, null, cancellationToken).ConfigureAwait(false);
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -216,6 +219,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         }
 
         var serviceName = NormalizeServiceName(request.ServiceName);
+        var publicationScope = ResolvePublicationScope(request.Namespace, _tenantContext?.TenantId);
+        var (scopeGraph, _) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
+        ValidatePublicationScope(scopeGraph, serviceName, publicationScope);
         var isManagedStore = request.StorageMode == LayerStorageMode.Managed || request.CreateEditableCopy;
         var publicationCapabilities = ResolvePublicationCapabilities(
             request.Capabilities ?? (request.CreateEditableCopy ? _editableCapabilities : null), isManagedStore);
@@ -354,7 +360,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             .CaptureTransactionIdAsync(connection, transaction, cancellationToken)
             .ConfigureAwait(false);
 
-        await EnsureServiceAsync(connection, transaction, serviceName, srid, request.ConnectionId, cancellationToken);
+        var serviceCreated = await EnsureServiceAsync(connection, transaction, serviceName, srid, request.ConnectionId, cancellationToken);
         await AcquireLayerPublishLockAsync(connection, transaction, schema, table, cancellationToken);
 
         // A managed-store layer is an independent copy of the source rows, so the one-layer-
@@ -460,6 +466,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                     fields,
                     refreshedExtent?.Extent,
                     publicationCapabilities,
+                    publicationScope,
+                    requireExistingScopedService: !serviceCreated && publicationScope.Namespace is not null,
                     cancellationToken)
                 .ConfigureAwait(false);
 
@@ -527,6 +535,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         }
 
         var normalizedService = NormalizeServiceName(serviceName);
+        await ValidateTenantAccessAsync(normalizedService, null, cancellationToken).ConfigureAwait(false);
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -534,6 +543,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         var transactionId = await PostgresTransactionOutcomeObserver
             .CaptureTransactionIdAsync(connection, transaction, cancellationToken)
             .ConfigureAwait(false);
+
+        var (linkGraph, _) = await LoadCurrentOrEmptyGraphAsync(cancellationToken).ConfigureAwait(false);
+        ValidateLegacyLinkScope(linkGraph, normalizedService, layerId);
 
         var layer = await GetLayerSummaryByIdAsync(connection, transaction, layerId, cancellationToken)
             .ConfigureAwait(false);
@@ -725,6 +737,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         }
 
         var normalizedService = NormalizeServiceName(serviceName);
+        await ValidateTenantAccessAsync(normalizedService, null, cancellationToken).ConfigureAwait(false);
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -745,6 +758,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
             .ConfigureAwait(false);
         layer = hydratedLayers[0];
 
+        await ValidateTenantAccessAsync(normalizedService, new HashSet<int> { layerId }, cancellationToken).ConfigureAwait(false);
         await SetLayerEnabledCoreAsync(connection, transaction, layerId, enabled, cancellationToken)
             .ConfigureAwait(false);
         layer = CloneWithEnabled(layer, enabled);
@@ -774,6 +788,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
         var normalizedService = NormalizeServiceName(serviceName);
+        await ValidateTenantAccessAsync(normalizedService, null, cancellationToken).ConfigureAwait(false);
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -787,6 +802,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 normalizedService,
                 cancellationToken)
             .ConfigureAwait(false);
+
+        await ValidateTenantAccessAsync(normalizedService, layerIds.ToHashSet(), cancellationToken).ConfigureAwait(false);
 
         const string updateSql = """
             UPDATE honua.layers
@@ -869,6 +886,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
         var normalizedService = NormalizeServiceName(serviceName);
+        await ValidateTenantAccessAsync(normalizedService, null, cancellationToken).ConfigureAwait(false);
 
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync(cancellationToken);
@@ -886,6 +904,8 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                 normalizedService,
                 cancellationToken)
             .ConfigureAwait(false);
+
+        await ValidateTenantAccessAsync(normalizedService, layerIds.ToHashSet(), cancellationToken).ConfigureAwait(false);
 
         var layers = new List<LayerExtentRefreshLayerResult>(layerIds.Count);
         var refreshedExtents = new Dictionary<int, LayerExtentInsert?>(layerIds.Count);
@@ -907,6 +927,7 @@ internal sealed partial class PostgreSqlLayerPublishingService(
 
         await UpdateServiceExtentAsync(connection, transaction, normalizedService, cancellationToken)
             .ConfigureAwait(false);
+        await ValidateTenantAccessAsync(normalizedService, layerIds.ToHashSet(), cancellationToken).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 
         // Mirror the recomputed extents into the canonical Metadata v2 graph so the

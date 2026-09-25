@@ -455,7 +455,8 @@ internal static class ServiceCollectionExtensions
                 configuration["Database:Schema"],
                 serviceProvider.GetService<IStyleCatalog>(),
                 serviceProvider.GetService<IAdoNetDatabaseConnectionProvider>(),
-                serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<LayerPublishingOptions>>().Value));
+                serviceProvider.GetRequiredService<Microsoft.Extensions.Options.IOptions<LayerPublishingOptions>>().Value,
+                serviceProvider.GetService<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>()));
 
         // Register health checker
         services.AddScoped<IDatabaseHealthChecker, PostgresDatabaseHealthChecker>();

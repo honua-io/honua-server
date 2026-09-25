@@ -398,7 +398,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         }
     }
 
-    private static async Task EnsureServiceAsync(
+    private static async Task<bool> EnsureServiceAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         string serviceName,
@@ -433,7 +433,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         command.Parameters.AddWithValue("@capabilities", _defaultCapabilities);
         command.Parameters.AddWithValue("@connectionId", (object?)persistedConnectionId ?? DBNull.Value);
 
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        return await command.ExecuteNonQueryAsync(cancellationToken) > 0;
     }
 
     private static async Task<Guid?> ResolvePersistedConnectionIdAsync(

@@ -114,6 +114,10 @@ internal static class LayerPublishingEndpoints
 
             return TypedResults.Ok(ApiResponse<IReadOnlyList<PublishedLayerSummary>>.CreateSuccess(layers));
         }
+        catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.NotFound)
+        {
+            return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
+        }
         catch (LayerPublishingException ex)
         {
             LayerPublishingLog.LayerListFailed(logger, ex.Message, ex);
@@ -164,6 +168,19 @@ internal static class LayerPublishingEndpoints
         {
             var errors = string.Join(", ", validationResults.Select(r => r.ErrorMessage));
             return TypedResults.BadRequest(ApiResponse<object>.Failure($"Validation failed: {errors}"));
+        }
+
+        if (!LayerPublicationNamespace.IsValid(request.Namespace))
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                "Validation failed: namespace must contain 1-128 ASCII letters, digits, '.', '_' or '-'."));
+        }
+
+        if (request.Namespace is not null && string.IsNullOrWhiteSpace(context.RequestServices
+                .GetService<Honua.Core.Features.MultiTenancy.Abstractions.ITenantContext>()?.TenantId))
+        {
+            return TypedResults.BadRequest(ApiResponse<object>.Failure(
+                "Validation failed: namespaced publication requires a resolved tenant."));
         }
 
         if (!LayerSourceGovernance.TryCreate(
@@ -233,6 +250,7 @@ internal static class LayerPublishingEndpoints
                 Subtypes = request.Subtypes,
                 AttributeRules = request.AttributeRules,
                 ServiceName = request.ServiceName,
+                Namespace = request.Namespace,
                 ConnectionId = connectionId,
                 Enabled = request.Enabled,
                 SourceGovernance = sourceGovernance,
@@ -598,6 +616,10 @@ internal static class LayerPublishingEndpoints
 
             return TypedResults.Ok(ApiResponse<PublishedLayerSummary>.CreateSuccess(result));
         }
+        catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.NotFound)
+        {
+            return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
+        }
         catch (LayerPublishingException ex)
         {
             LayerPublishingLog.LayerToggleFailed(logger, ex);
@@ -668,6 +690,10 @@ internal static class LayerPublishingEndpoints
                 logger).ConfigureAwait(false);
 
             return TypedResults.Ok(ApiResponse<IReadOnlyList<PublishedLayerSummary>>.CreateSuccess(result));
+        }
+        catch (LayerPublishingException ex) when (ex.ErrorKind == LayerPublishingErrorKind.NotFound)
+        {
+            return TypedResults.NotFound(ApiResponse<object>.Failure("The requested resource was not found."));
         }
         catch (LayerPublishingException ex)
         {
