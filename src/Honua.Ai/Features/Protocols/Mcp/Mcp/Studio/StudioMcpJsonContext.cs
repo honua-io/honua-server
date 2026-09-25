@@ -25,6 +25,8 @@ namespace Honua.Ai.Protocols.Mcp.Studio;
 /// </summary>
 [JsonSerializable(typeof(McpStudioSaveVersionArgument))]
 [JsonSerializable(typeof(McpStudioReopenVersionArgument))]
+[JsonSerializable(typeof(McpStudioGetVersionArgument))]
+[JsonSerializable(typeof(McpStudioGetVersionOutput))]
 [JsonSerializable(typeof(McpStudioSaveVersionOutput))]
 [JsonSerializable(typeof(McpStudioCreateDraftArgument))]
 [JsonSerializable(typeof(McpStudioDraftMutationOutput))]

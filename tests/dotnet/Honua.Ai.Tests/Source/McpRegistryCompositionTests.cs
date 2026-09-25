@@ -189,13 +189,14 @@ public sealed class McpRegistryCompositionTests
         // publication is on by default for the production composition — no
         // Mcp:PublishOperations configuration at all. The committed projection manifest is
         // the contract: its 66 rows are the Admin API and access catalogs minus the
-        // audited exclusions (digest below). Other admin.* providers (connections, import,
-        // cache, configuration, license, metadata releases) and the non-admin honua_op_*
-        // families are not audited for MCP and publish only with the explicit
-        // Mcp:PublishOperations:Enabled opt-in.
-        const int ExpectedPublishedTools = 66;
-        const int ExpectedExclusions = 16;
-        const string ExpectedExclusionDigest = "550bbf8a6ea74ed995d48832ec6e1348e2ac3429b9a2444105b03c4c2f632523";
+        // audited exclusions (digest below). The closed operator roster adds four tools
+        // (server status, connection create, connection test, import-from-URL) without
+        // enabling the full catalog. Other admin.* providers stay opt-in.
+        const int ExpectedManifestTools = 66;
+        const int ExpectedRosterAdditions = 4;
+        const int ExpectedPublishedTools = ExpectedManifestTools + ExpectedRosterAdditions;
+        const int ExpectedExclusions = 15;
+        const string ExpectedExclusionDigest = "62eb9da003bacee33a5972b31527e5a7c964a8f60308414a33ce6087eb4efae2";
 
         await using var provider = BuildProductionOperationsComposition(new Dictionary<string, string?>());
         var surface = BuildOperationsSurface(provider);
@@ -219,13 +220,24 @@ public sealed class McpRegistryCompositionTests
         }.Should().BeEquivalentTo(new
         {
             Published = ExpectedPublishedTools,
-            ManifestRows = ExpectedPublishedTools,
+            ManifestRows = ExpectedManifestTools,
             Exclusions = ExpectedExclusions,
             ManifestExclusions = ExpectedExclusions,
         });
 
-        published.Should().Equal(manifestToolNames,
-            "the default production composition publishes exactly the committed audited Admin projection");
+        var rosterAdditions = new[]
+        {
+            "honua_admin_connections_create",
+            "honua_admin_connections_test",
+            "honua_admin_import_upload_url",
+            "honua_admin_server_status",
+        };
+        published.Should().Equal(
+            manifestToolNames.Concat(rosterAdditions).Order(StringComparer.Ordinal).ToArray(),
+            "the default production composition publishes the committed audited Admin projection plus the closed operator roster");
+        manifestToolNames.Should().HaveCount(ExpectedManifestTools);
+        rosterAdditions.Should().HaveCount(ExpectedRosterAdditions);
+        published.Should().Contain(rosterAdditions);
         AdminMcpOperationExclusions.Digest.Should().Be(ExpectedExclusionDigest);
         manifestExclusions.GetProperty("digest").GetString().Should().Be(ExpectedExclusionDigest);
         published.Should().NotIntersectWith(
@@ -253,8 +265,8 @@ public sealed class McpRegistryCompositionTests
         // The explicit full-catalog opt-in keeps its pre-#3363 meaning: every eligible
         // descriptor publishes except the audited exclusions and hand-authored duplicates.
         const int ExpectedCatalogAdminOperations = 110;
-        const int ExpectedExclusionsInCatalog = 8;
-        const int ExpectedPublishedAdminTools = 102;
+        const int ExpectedExclusionsInCatalog = 7;
+        const int ExpectedPublishedAdminTools = 103;
 
         await using var provider = BuildProductionOperationsComposition(new Dictionary<string, string?>
         {

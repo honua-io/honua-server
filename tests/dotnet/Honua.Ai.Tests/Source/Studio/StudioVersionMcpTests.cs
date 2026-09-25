@@ -216,6 +216,44 @@ public sealed class StudioVersionMcpTests
     }
 
     [UnitTest]
+    public async Task GetVersion_ReturnsTopLevelIdentity_AndDoesNotAdvanceTheDraft()
+    {
+        using var provider = LifecycleProvider();
+        var lifecycle = provider.GetRequiredService<IStudioPackageLifecycleService>();
+        var draft = await SeedAsync(lifecycle);
+        var instances = new VolatileOperationInstanceStore();
+        var runtime = Runtime(lifecycle, instances, PolicyDecisionKind.Allow);
+        var context = McpTestFactory.AuthenticatedHttpContextWithServices(services =>
+        {
+            services.AddSingleton(lifecycle);
+            services.AddSingleton<IStudioDraftMutationRuntime>(runtime);
+            McpTestFactory.AddAllowingStudioAuthorization(services);
+        });
+        var jobs = Substitute.For<IGeoprocessingJobService>();
+        var save = new SaveStudioVersionTool(jobs, NullLogger<SaveStudioVersionTool>.Instance);
+        var saved = await save.InvokeAsync(context,
+            McpTestFactory.ParseJson($$"""{"draftId":"{{draft.DraftId}}","generation":1}"""), default);
+        var versionId = saved.StructuredContent!.Value.GetProperty("version").GetProperty("versionId").GetGuid();
+        var contentHash = saved.StructuredContent!.Value.GetProperty("version").GetProperty("contentHash").GetString();
+        (await lifecycle.GetDraftAsync(draft.DraftId))!.Generation.Should().Be(2);
+
+        var read = new GetStudioVersionTool(jobs, NullLogger<GetStudioVersionTool>.Instance);
+        var got = await read.InvokeAsync(context,
+            McpTestFactory.ParseJson($$"""{"itemId":"{{draft.ItemId}}","versionId":"{{versionId}}"}"""), default);
+        got.IsError.Should().BeFalse(got.StructuredContent?.GetRawText());
+        var body = got.StructuredContent!.Value;
+        body.TryGetProperty("version", out _).Should().BeFalse("get version does not nest the identity");
+        body.GetProperty("versionId").GetGuid().Should().Be(versionId);
+        body.GetProperty("contentHash").GetString().Should().Be(contentHash);
+        (await lifecycle.GetDraftAsync(draft.DraftId))!.Generation.Should().Be(2);
+
+        var missing = () => read.InvokeAsync(context,
+            McpTestFactory.ParseJson($$"""{"itemId":"{{draft.ItemId}}","versionId":"{{Guid.NewGuid()}}"}"""), default);
+        var exception = await missing.Should().ThrowAsync<GeoprocessingNotFoundException>();
+        McpErrorMapper.Map(exception.Which).Data!.Code.Should().Be(McpErrorMapper.Codes.NotFound);
+    }
+
+    [UnitTest]
     public async Task Save_StaleGeneration_RefusesBeforeSaving()
     {
         using var provider = LifecycleProvider();

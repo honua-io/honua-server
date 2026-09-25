@@ -29,6 +29,12 @@ internal static class StudioMcpSchemas
           "itemId":{"type":"string","format":"uuid"},"versionId":{"type":"string","format":"uuid"}}}
         """);
 
+    public static readonly JsonElement GetVersionArgumentSchema = Parse("""
+        {"type":"object","required":["itemId","versionId"],"additionalProperties":false,"properties":{
+          "itemId":{"type":"string","format":"uuid","description":"Studio content item id."},
+          "versionId":{"type":"string","format":"uuid","description":"Saved version id."}}}
+        """);
+
     /// <summary>Maximum accepted length for free-text fields (packageKey, ids, titles, notes).</summary>
     public const int MaxShortTextLength = 200;
 
