@@ -153,6 +153,15 @@ def main():
         receipt["error"] = f"{type(error).__name__}: {error}"
         print(receipt["error"], flush=True)
     finally:
+        if receipt["outcome"] != "bound":
+            # Preserve diagnostic output even when setup, the scan or binding
+            # failed before archival. A log-fetch failure cannot hide the cause.
+            try:
+                logs = command(*COMPOSE, "logs", "--no-color", "--no-log-prefix", "zarr-worker")
+                (artifacts / "derived-zarr-worker.log").write_text(logs, encoding="utf-8")
+                receipt["worker_log_sha256"] = hashlib.sha256(logs.encode()).hexdigest()
+            except Exception as log_error:
+                receipt["worker_log_error"] = f"{type(log_error).__name__}: {log_error}"
         receipt["completed_at"] = now()
         (artifacts / "derived-zarr-receipt.json").write_text(json.dumps(receipt, indent=2), encoding="utf-8")
     return 0 if receipt["outcome"] == "bound" else 1
