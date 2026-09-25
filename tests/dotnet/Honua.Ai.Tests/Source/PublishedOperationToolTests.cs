@@ -207,6 +207,63 @@ public sealed class PublishedOperationToolTests
         invoker.SubmitCount.Should().Be(1);
     }
 
+    [UnitTheory]
+    [InlineData("password")]
+    [InlineData("Password")]
+    [InlineData("apiKey")]
+    [InlineData("token")]
+    public async Task Invoke_ConnectionCreateWithInlineSecret_RejectsBeforeDispatch(string field)
+    {
+        var descriptor = AdminConnectImportOperationCatalog.Descriptors.Single(
+            operation => operation.OperationId == "admin.connections.create");
+        var tool = new PublishedOperationTool(descriptor, "cat-v1", NullLogger.Instance);
+        tool.Describe().InputSchema.GetProperty("properties").TryGetProperty(field, out _).Should().BeFalse();
+        var invoker = new CountingInvoker(_ => CompletedHandle(descriptor.OperationId));
+        var authorization = Substitute.For<IAuthorizationService>();
+        authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object>(), AuthenticationExtensions.AdminPolicy)
+            .Returns(AuthorizationResult.Success());
+        var arguments = Args(JsonSerializer.Serialize(new Dictionary<string, string>
+        {
+            ["name"] = "inline-secret-must-not-dispatch",
+            ["secretReference"] = "env:HONUA_TEST_CONNECTION",
+            ["secretType"] = "env",
+            [field] = "sensitive-value-must-not-be-echoed",
+        }));
+
+        var invoke = () => tool.InvokeAsync(
+            Context(invoker, authorization: authorization, roles: ["admin"]), arguments, CancellationToken.None);
+
+        var error = await invoke.Should().ThrowAsync<GeoprocessingValidationException>();
+        error.Which.Message.Should().NotContain("sensitive-value-must-not-be-echoed");
+        invoker.SubmitCount.Should().Be(0, "unadvertised inline credentials must never enter the operation runtime");
+    }
+
+    [UnitTest]
+    public async Task Invoke_ConnectionCreateWithSecretReference_PreservesReferenceAndType()
+    {
+        var descriptor = AdminConnectImportOperationCatalog.Descriptors.Single(
+            operation => operation.OperationId == "admin.connections.create");
+        var tool = new PublishedOperationTool(descriptor, "cat-v1", NullLogger.Instance);
+        var invoker = new CountingInvoker(request =>
+        {
+            request.Parameters["secretReference"].Should().Be("env:HONUA_TEST_CONNECTION");
+            request.Parameters["secretType"].Should().Be("env");
+            request.Parameters.Should().NotContainKey("password");
+            return CompletedHandle(descriptor.OperationId);
+        });
+        var authorization = Substitute.For<IAuthorizationService>();
+        authorization.AuthorizeAsync(Arg.Any<ClaimsPrincipal>(), Arg.Any<object>(), AuthenticationExtensions.AdminPolicy)
+            .Returns(AuthorizationResult.Success());
+
+        var result = await tool.InvokeAsync(
+            Context(invoker, authorization: authorization, roles: ["admin"]),
+            Args("""{"name":"reference-only","secretReference":"env:HONUA_TEST_CONNECTION","secretType":"env"}"""),
+            CancellationToken.None);
+
+        result.IsError.Should().BeFalse();
+        invoker.SubmitCount.Should().Be(1);
+    }
+
     // ---- Governance through the policy decision point --------------------------
 
     [UnitTest]
