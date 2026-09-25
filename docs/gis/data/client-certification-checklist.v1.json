@@ -305,7 +305,11 @@
       "operation": "RESTful-tile-path",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "fail",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (revision c9f739e6d): Pro reads the WMTS capabilities but CANNOT create a layer from the endpoint. Add Data From Path was given /ogc/services/browser_compat/wmts; Pro issued NINE requests to it under its own user agent - so it fetched and parsed the document - then raised a modal 'Invalid Path / Failed to create layer from ...'. No GetTile followed and no layer entered Contents. Discovery works: the Catalog types the item 'WMTS Service' and enumerates Browser Lines (2001), Browser Points (2000), Browser Polygons (2002). The failure is specifically layer creation. TWO CANDIDATE SERVER-SIDE CAUSES, neither confirmed: (1) the capabilities carries NO ResourceURL template, so no RESTful tile path is advertised - which is what this case tests; (2) SupportedCRS is the legacy versioned URN 'urn:ogc:def:crs:EPSG:6.18:3:3857' rather than 'urn:ogc:def:crs:EPSG::3857', which some clients reject. The document is otherwise well formed: 53657 bytes, TileMatrixSets WebMercatorQuad and WorldCRS84Quad with WellKnownScaleSet, Format image/png, GetFeatureInfo advertised (InfoFormat application/json, text/plain). wmts.GetFeatureInfo was NOT reached and is deliberately left not-started: the layer never loaded, so there was nothing to identify against.",
+          "previous_exclusion": {
+            "state": "not-started"
+          }
         },
         "arcpy": {
           "state": "n/a-no-client",
