@@ -106,12 +106,13 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
                 sslRequired = false,
                 sslMode = "Disable",
             });
-            var connectionBody = ResponseJson(created);
+            using var connectionBody = ResponseJson(created);
             var connectionId = connectionBody.RootElement.GetProperty("data").GetProperty("connectionId").GetString();
             connectionId.Should().NotBeNullOrWhiteSpace();
 
             var tested = await CallOkAsync(admin, "honua_admin_connections_test", new { id = connectionId });
-            ResponseJson(tested).RootElement.GetProperty("data").GetProperty("connectionId").GetString()
+            using var testBody = ResponseJson(tested);
+            testBody.RootElement.GetProperty("data").GetProperty("connectionId").GetString()
                 .Should().Be(connectionId);
 
             var tableName = $"roster{suffix}";
@@ -146,7 +147,8 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
                 layerName = "Parcels",
                 serviceName,
             });
-            ResponseJson(published).RootElement.GetProperty("data").GetProperty("layerId").GetInt32()
+            using var publishBody = ResponseJson(published);
+            publishBody.RootElement.GetProperty("data").GetProperty("layerId").GetInt32()
                 .Should().BeGreaterThan(0);
 
             var policy = await CallOkAsync(admin, "honua_admin_services_access_policy_set", new
@@ -155,7 +157,7 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
                 allowAnonymous = true,
                 allowAnonymousWrite = false,
             });
-            var policyBody = ResponseJson(policy);
+            using var policyBody = ResponseJson(policy);
             policyBody.RootElement.GetProperty("data").GetProperty("serviceName").GetString().Should().Be(serviceName);
             policyBody.RootElement.GetProperty("data").GetProperty("accessPolicy").GetProperty("allowAnonymous")
                 .GetBoolean().Should().BeTrue();
@@ -240,12 +242,10 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
     private sealed class StaticGeoJsonHandler : DelegatingHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-        {
-            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            // HttpClient transfers ownership of the returned response to the import caller.
+            => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(GeoJson, Encoding.UTF8, "application/geo+json"),
-            };
-            return Task.FromResult(response);
-        }
+            });
     }
 }

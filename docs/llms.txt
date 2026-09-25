@@ -68,7 +68,7 @@ Each link resolves to the page's source on `trunk`. These pages are also rendere
 - [Run Studio standalone](https://github.com/honua-io/honua-server/blob/trunk/docs/studio/run-standalone.md): There is no released standalone Studio bundle or container yet; embed from source or drive the server through MCP or an SDK instead.
 - [Embed Studio](https://github.com/honua-io/honua-server/blob/trunk/docs/studio/embed.md): Embedding is a preview browser surface in 2026.1.
 - [Bring your own model](https://github.com/honua-io/honua-server/blob/trunk/docs/studio/byom.md): The 2026.1 preview path keeps provider credentials in honua-server.
-- [Studio MCP tools](https://github.com/honua-io/honua-server/blob/trunk/docs/studio/mcp-tools.md): The server publishes 19 typed Studio tools through /mcp.
+- [Studio MCP tools](https://github.com/honua-io/honua-server/blob/trunk/docs/studio/mcp-tools.md): The server publishes 20 typed Studio tools through /mcp.
 - [Drive Studio from Claude Desktop](https://github.com/honua-io/honua-server/blob/trunk/docs/studio/drive-from-claude-desktop.md): Claude Desktop can act as an external MCP host for the same draft tools.
 - [Use the JavaScript Studio agent](https://github.com/honua-io/honua-server/blob/trunk/docs/studio/sdk-js-studio-agent.md): @honua/sdk-js/studio-agent is experimental and matches the 2026.1 preview proxy and MCP contracts.
 - [Use the .NET lifecycle client](https://github.com/honua-io/honua-server/blob/trunk/docs/studio/dotnet-lifecycle.md): Honua.Sdk.Studio exposes the durable draft/version lifecycle independently of the preview browser UI.
