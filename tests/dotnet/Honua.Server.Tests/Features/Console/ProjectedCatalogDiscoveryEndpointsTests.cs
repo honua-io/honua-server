@@ -74,18 +74,33 @@ public sealed class ProjectedCatalogDiscoveryEndpointsTests
         using var directoryResponse = await admin.GetAsync("/rest/services?f=json");
         Assert.Equal(HttpStatusCode.OK, directoryResponse.StatusCode);
         using var directory = JsonDocument.Parse(await directoryResponse.Content.ReadAsStringAsync());
-        var canonical = directory.RootElement.GetProperty("services").EnumerateArray()
-            .Select(entry => entry.GetProperty("url").GetString()).Order().ToArray();
+        var directoryEntries = directory.RootElement.GetProperty("services").EnumerateArray().ToArray();
+        var canonical = directoryEntries
+            .Where(entry => entry.GetProperty("type").GetString() is "FeatureServer" or "MapServer")
+            .Select(entry => (Name: entry.GetProperty("name").GetString(),
+                Type: entry.GetProperty("type").GetString(), Url: entry.GetProperty("url").GetString()))
+            .OrderBy(entry => entry.Url).ToArray();
         Assert.Equal(2, canonical.Length);
         using var detailResponse = await admin.GetAsync("/api/v1/console/catalog-endpoints/default/esri");
         Assert.Equal(HttpStatusCode.OK, detailResponse.StatusCode);
         using var detail = JsonDocument.Parse(await detailResponse.Content.ReadAsStringAsync());
         var items = detail.RootElement.GetProperty("data").GetProperty("items").EnumerateArray().ToArray();
-        Assert.Equal(canonical, items.Select(item => item.GetProperty("resource").GetString()).Order().ToArray());
+        Assert.Equal(canonical.Select(entry => (entry.Name, entry.Url)), items
+            .Select(item => (Name: item.GetProperty("title").GetString(), Url: item.GetProperty("resource").GetString()))
+            .OrderBy(item => item.Url));
+        var excludedUrls = directoryEntries
+            .Where(entry => entry.GetProperty("type").GetString() is not ("FeatureServer" or "MapServer"))
+            .Select(entry => entry.GetProperty("url").GetString()).ToHashSet(StringComparer.Ordinal);
+        Assert.DoesNotContain(items, item => excludedUrls.Contains(item.GetProperty("resource").GetString()));
         foreach (var item in items)
         {
             using var itemResponse = await admin.GetAsync("/api/v1/console/catalog-endpoints/default/esri/items/" + item.GetProperty("id").GetString());
             Assert.Equal(HttpStatusCode.OK, itemResponse.StatusCode);
+            using var itemPayload = JsonDocument.Parse(await itemResponse.Content.ReadAsStringAsync());
+            var protocol = itemPayload.RootElement.GetProperty("data").GetProperty("groups").EnumerateArray()
+                .SelectMany(group => group.GetProperty("fields").EnumerateArray())
+                .Single(field => field.GetProperty("label").GetString() == "Protocol").GetProperty("value").GetString();
+            Assert.Equal(canonical.Single(entry => entry.Url == item.GetProperty("resource").GetString()).Type, protocol);
         }
     }
 }
