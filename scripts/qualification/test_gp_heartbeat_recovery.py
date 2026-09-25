@@ -73,6 +73,7 @@ grep -q 'not executed: heartbeat recovery topology restoration failed' following
         retry = {"updatedAt": "2026-09-25T20:01:31Z", "nextRetryAt": "2026-09-25T20:02:01Z",
                  "attemptCount": 1, "artifactReferences": [], "claimedBy": None}
         variants = [(retry, True)]
+        variants.append(({key: value for key, value in retry.items() if key != "claimedBy"}, True))
         for change in ({"updatedAt": "2026-09-25T20:01:00Z"},
                        {"nextRetryAt": "2026-09-25T20:01:32Z"},
                        {"attemptCount": 2}, {"artifactReferences": ["leaked"]},
@@ -88,6 +89,21 @@ if [[ "$EXPECTED" == pass ]]; then [[ "$result" == 0 ]]; else [[ "$result" != 0 
 '''
                 self.run_shell(script, ORIGINAL=json.dumps(original), RETRY=json.dumps(candidate),
                                EXPECTED="pass" if expected else "fail")
+
+    def test_completed_record_comparison_detects_stale_metadata_writes(self):
+        winner = {"status": 3, "attemptCount": 2, "claimedBy": "winner", "version": 11,
+                  "currentPhase": "Completed", "percentComplete": 100, "warnings": [],
+                  "artifactReferences": ["winning-reference"], "updatedAt": "terminal-time",
+                  "spec": {"operation": "original"}}
+        mutations = [{"version": 12}, {"currentPhase": "Running"}, {"percentComplete": 15},
+                     {"warnings": ["stale-warning"]}, {"updatedAt": "stale-time"},
+                     {"spec": {"operation": "stale"}}, {"artifactReferences": ["stale-reference"]}]
+        for mutation in mutations:
+            with self.subTest(mutation=mutation):
+                script = functions(RECOVERY, "heartbeat_winner_projection") + r'''
+[[ "$(heartbeat_winner_projection <<<"$WINNER")" != "$(heartbeat_winner_projection <<<"$STALE")" ]]
+'''
+                self.run_shell(script, WINNER=json.dumps(winner), STALE=json.dumps({**winner, **mutation}))
 
     def test_resilience_uses_natural_recovery_helper_and_propagates_failure(self):
         script = functions(HARNESS, "run_stale_lease") + r'''

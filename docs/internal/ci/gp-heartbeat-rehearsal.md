@@ -15,7 +15,8 @@ cleanup receipts. No cloud resources or public worker images are created.
 The native fixture is the existing 500-point `gdal.ogr2ogr` workload with
 independently known IDs and coordinates. Original and recovery workers mount
 separate barrier directories and resolve the same image ID, digest reference,
-and source revision. The original container is paused after its real native
+and source revision. Redis is the runner-local Compose instance; this is not
+ElastiCache, network partition, or Redis failover evidence. The original container is paused after its real native
 process starts. This suspends its heartbeat without changing Redis records,
 queue indexes, timestamps, retry policies, or retention settings.
 
@@ -25,7 +26,8 @@ winning attempt must complete with one staged artifact. The original process
 is then unpaused and released; its own retained log must show the exact job's
 terminal transition rejected because ownership changed. Killing the old
 worker during cleanup never satisfies that observation. The winning owner,
-attempt, terminal record, descriptor, and authenticated output bytes must stay
+attempt, entire canonical job record (including version, progress, and warnings),
+descriptor, and authenticated output bytes must stay
 unchanged through another 65 seconds (two reconciliation intervals). Any
 losing-attempt staging must disappear through the configured ordinary output
 sweeper, leaving exactly one output object.

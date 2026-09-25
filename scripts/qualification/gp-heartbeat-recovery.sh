@@ -61,7 +61,10 @@ heartbeat_barrier() {
 }
 
 heartbeat_winner_projection() {
-  jq -Sc '{status,claimedBy,claimedAt,attemptCount,completedAt,artifactReferences,cancellationRequestedAt}'
+  # Terminal callbacks/reads write separate stores. No ExecutionJobRecord field,
+  # including version, progress, warnings or timestamps, is volatile after this
+  # completed job's first successful result read.
+  jq -Sc .
 }
 
 heartbeat_inventory() {
@@ -133,8 +136,7 @@ run_heartbeat_recovery_case() {
     heartbeat_barrier "$second_root" release "$barrier" || return 1
   done
   heartbeat_wait_record '.status == 3 and .attemptCount == $original.attemptCount + 1
-    and .claimedBy != $original.claimedBy and (.artifactReferences|length) == 1' "$receipt_root/$scenario-winning-record.json" || return 1
-  winner_record="$(cat "$receipt_root/$scenario-winning-record.json")"
+    and .claimedBy != $original.claimedBy and (.artifactReferences|length) == 1' "$receipt_root/$scenario-completion-record.json" || return 1
   before_bytes="$receipt_root/$scenario-winner-before.geojson"
   # Terminal CAS precedes result registration. Wait within the same scenario
   # budget for the normal authenticated content route to become readable.
@@ -146,6 +148,9 @@ run_heartbeat_recovery_case() {
   (( $(wc -c < "$before_bytes") > $(compose_staging_value MaxInlineArtifactBytes) )) || {
     scenario_fail "heartbeat fixture did not exceed the configured inline ceiling"; return 1; }
   digest="$(sha256sum "$before_bytes" | cut -d' ' -f1)"
+  # Capture the full stability baseline after legitimate result registration/read.
+  heartbeat_job_record > "$receipt_root/$scenario-winning-record.json" || return 1
+  winner_record="$(cat "$receipt_root/$scenario-winning-record.json")"
   heartbeat_inventory "$receipt_root/$scenario-inventory-winner-before.json" || return 1
   # The losing process must actually resume and handle stale ownership. No job,
   # claim, timestamp, TTL, or output-store edits make this recovery happen.
@@ -227,6 +232,6 @@ parse = lambda value: datetime.datetime.fromisoformat(value.replace("Z", "+00:00
 assert (parse(retry["updatedAt"]) - parse(original["lastHeartbeatAt"])).total_seconds() > 90
 assert (parse(retry["nextRetryAt"]) - parse(retry["updatedAt"])).total_seconds() >= 30
 assert retry["attemptCount"] == original["attemptCount"]
-assert not retry["artifactReferences"] and retry["claimedBy"] is None
+assert not retry["artifactReferences"] and retry.get("claimedBy") is None
 PY
 }
