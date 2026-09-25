@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import tempfile
+from enum import Enum
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -932,33 +933,64 @@ def validate_flatgeobuf(path: Path, args: argparse.Namespace) -> list[dict]:
 
     observations: list[dict] = []
     metadata_seen: dict[str, Any] = {}
+    geopandas_seen: dict[str, Any] = {}
+    gdal_seen: dict[str, Any] = {}
 
     def pyogrio_check() -> None:
         frame = pyogrio.read_dataframe(path)
         if frame.empty or frame.geometry.isna().any() or frame.crs is None:
             raise ValueError("Pyogrio did not recover non-null FlatGeobuf geometries and CRS")
-        metadata_seen.update({
-            "geometry_type": str(frame.geometry.geom_type.iloc[0]),
-            "feature_count": int(len(frame)),
-            "crs": _normalize_crs(frame.crs),
-            "bounds": [float(value) for value in frame.total_bounds],
-        })
+        metadata_seen.update(_flatgeobuf_frame_metadata(frame))
 
     def geopandas_check() -> None:
         frame = geopandas.read_file(path)
-        if frame.empty or frame.geometry.isna().any():
-            raise ValueError("GeoPandas did not recover FlatGeobuf geometries")
+        if frame.empty or frame.geometry.isna().any() or frame.crs is None:
+            raise ValueError("GeoPandas did not recover FlatGeobuf geometries and CRS")
+        geopandas_seen.update(_flatgeobuf_frame_metadata(frame))
 
     def gdal_check() -> str:
-        _run("ogrinfo", "-al", "-so", str(path))
+        info = _run("ogrinfo", "-json", "-al", "-so", str(path))
+        gdal_seen.update(_gdal_flatgeobuf_metadata(json.loads(info.stdout)))
         return _command_version("GDAL", "gdalinfo", "--version")
 
     _collect_client(
         observations, "flatgeobuf", "feature-read", "Pyogrio", "pyogrio-flatgeobuf", args,
         pyogrio_check, observed_metadata=metadata_seen)
-    _collect_client(observations, "flatgeobuf", "feature-read", "GeoPandas", "geopandas-flatgeobuf", args, geopandas_check)
-    _collect_client(observations, "flatgeobuf", "feature-read", "GDAL", "gdal-flatgeobuf", args, gdal_check)
+    _collect_client(observations, "flatgeobuf", "feature-read", "GeoPandas", "geopandas-flatgeobuf", args,
+                    geopandas_check, observed_metadata=geopandas_seen)
+    _collect_client(observations, "flatgeobuf", "feature-read", "GDAL", "gdal-flatgeobuf", args,
+                    gdal_check, observed_metadata=gdal_seen)
     return observations
+
+
+def _flatgeobuf_frame_metadata(frame) -> dict[str, Any]:
+    """Capture this client's decoded geometry, count, CRS and extent, not fixture values."""
+    types = sorted(set(str(value) for value in frame.geometry.geom_type))
+    return {
+        "geometry_type": types[0] if len(types) == 1 else ",".join(types),
+        "feature_count": int(len(frame)),
+        "crs": _normalize_crs(frame.crs),
+        "bounds": [float(value) for value in frame.total_bounds],
+    }
+
+
+def _gdal_flatgeobuf_metadata(info: dict) -> dict[str, Any]:
+    """Read GDAL's independent ogrinfo JSON projection of the FlatGeobuf layer."""
+    layers = info.get("layers") or []
+    if len(layers) != 1:
+        raise ValueError(f"GDAL reported {len(layers)} FlatGeobuf layers, expected 1")
+    layer = layers[0]
+    fields = layer.get("geometryFields") or []
+    if len(fields) != 1:
+        raise ValueError("GDAL did not report exactly one FlatGeobuf geometry field")
+    field = fields[0]
+    observed = {
+        "geometry_type": field.get("type"),
+        "feature_count": layer.get("featureCount"),
+        "crs": _normalize_crs((field.get("coordinateSystem") or {}).get("projjson")),
+        "bounds": [float(value) for value in field.get("extent") or []],
+    }
+    return {key: value for key, value in observed.items() if value not in (None, [])}
 
 
 def validate_pmtiles(path: Path, args: argparse.Namespace) -> list[dict]:
@@ -995,6 +1027,8 @@ def validate_pmtiles(path: Path, args: argparse.Namespace) -> list[dict]:
 
 def _pmtiles_tile_type(raw) -> str:
     """Maps the PMTiles v3 numeric tile-type enum onto the profile's spelling."""
+    if isinstance(raw, Enum):
+        raw = raw.value
     if isinstance(raw, str):
         return raw.lower()
     return {0: "unknown", 1: "mvt", 2: "png", 3: "jpeg", 4: "webp", 5: "avif"}.get(raw, str(raw))
@@ -1331,6 +1365,8 @@ def validate_javascript(path: Path, args: argparse.Namespace) -> list[dict]:
             started, args, row["client_version"],
         )
         observation["result"] = row["result"]
+        if isinstance(row.get("observed_metadata"), dict):
+            observation["observed_metadata"] = row["observed_metadata"]
         if row["result"] == "fail":
             observation["failure_reason"] = row.get("failure_reason", "JavaScript validator failed")
         observations.append(observation)

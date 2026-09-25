@@ -862,5 +862,77 @@ class GeoParquetConsumerMetadataTests(unittest.TestCase):
                                  by_client[client]["observed_metadata"]["geometry_encoding"])
 
 
+class FlatGeobufConsumerMetadataTests(unittest.TestCase):
+    def _frame(self, rows=6):
+        frame = _FakeFrame(rows=rows, crs="EPSG:4326")
+        frame.geometry.geom_type = ["Point"] * rows
+        return frame
+
+    def _gdal(self):
+        return {"layers": [{"featureCount": 6, "geometryFields": [{
+            "type": "Point", "extent": [-122.4194, 0, 179.5, 86],
+            "coordinateSystem": {"projjson": {"id": {"authority": "EPSG", "code": 4326}}},
+        }]}]}
+
+    def test_each_reader_reports_its_own_metadata_and_changed_values_fail(self):
+        expected = {
+            "geometry_type": "Point", "feature_count": 6, "crs": "EPSG:4326",
+            "bounds": [-122.4194, 0, 179.5, 86],
+        }
+        for client, lane, observed in (
+            ("GeoPandas", "geopandas-flatgeobuf", MODULE._flatgeobuf_frame_metadata(self._frame())),
+            ("GDAL", "gdal-flatgeobuf", MODULE._gdal_flatgeobuf_metadata(self._gdal())),
+        ):
+            with self.subTest(client=client):
+                self.assertEqual(expected, observed)
+                row = MODULE._observation("flatgeobuf", "feature-read", client, lane,
+                                          "2026-09-25T00:00:00Z", args())
+                row["observed_metadata"] = observed
+                assignment = MODULE.GOVERNED_ASSIGNMENTS[("flatgeobuf", "feature-read", client)]
+                self.assertEqual([], MODULE._evaluate_budget(row, assignment))
+                row["observed_metadata"] = dict(observed, feature_count=5)
+                self.assertTrue(MODULE._evaluate_budget(row, assignment))
+
+    def test_missing_gdal_crs_is_not_filled_from_oracle(self):
+        info = self._gdal()
+        info["layers"][0]["geometryFields"][0].pop("coordinateSystem")
+        self.assertNotIn("crs", MODULE._gdal_flatgeobuf_metadata(info))
+        with self.assertRaises(ValueError):
+            MODULE._gdal_flatgeobuf_metadata({"layers": []})
+
+    def test_mixed_geometry_cannot_report_homogeneous_point(self):
+        frame = self._frame()
+        frame.geometry.geom_type[0] = "LineString"
+        self.assertEqual("LineString,Point", MODULE._flatgeobuf_frame_metadata(frame)["geometry_type"])
+
+    def test_pmtiles_enum_numeric_and_unknown_values(self):
+        from enum import Enum
+
+        class TileType(Enum):
+            MVT = 1
+            PNG = 2
+            JPEG = 3
+
+        for raw, expected in ((TileType.MVT, "mvt"), (TileType.PNG, "png"),
+                              (TileType.JPEG, "jpeg"), (1, "mvt"), (4, "webp"),
+                              ("MVT", "mvt"), (88, "88")):
+            with self.subTest(raw=raw):
+                self.assertEqual(expected, MODULE._pmtiles_tile_type(raw))
+
+    def test_javascript_metadata_survives_collection_without_invented_transfer(self):
+        from unittest import mock
+        import subprocess
+
+        payload = [{
+            "surface": "flatgeobuf", "operation": "feature-read", "canonical_client": "flatgeobuf-js",
+            "client_version": "4.4.0", "lane": "node-flatgeobuf", "result": "pass",
+            "observed_metadata": {"feature_count": 5, "crs": "EPSG:3857"},
+        }]
+        with mock.patch.object(MODULE, "_run", return_value=subprocess.CompletedProcess([], 0, json.dumps(payload), "")):
+            rows = MODULE.validate_javascript(Path("artifacts"), args())
+        self.assertEqual(payload[0]["observed_metadata"], rows[0]["observed_metadata"])
+        self.assertNotIn("observed_transfer", rows[0])
+
+
 if __name__ == "__main__":
     unittest.main()
