@@ -1481,6 +1481,58 @@ public sealed class GeocodingEndpointTests
         Assert.Equal(0, payload.RootElement.GetProperty("locations")[0].GetProperty("resultId").GetInt32());
     }
 
+    // #5145: a token this server did not issue must not turn a servable anonymous request
+    // into a 498. arcpy.geocoding.ReverseGeocode makes two calls and writes from the
+    // second, which it signs with the ArcGIS Online session token of the signed-in Pro
+    // seat; answering that 498 made the tool write a row with every address column empty.
+    // The caller is no better credentialed than one presenting nothing, and this endpoint
+    // already answers that caller.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
+    public async Task ReverseGeocode_WithAForeignToken_IsServedAnonymously()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/reverseGeocode?f=json&location=-157.8583,21.3069"
+            + "&token=not-a-token-this-server-ever-issued");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+
+        // A GeoServices error envelope travels as HTTP 200, so the status alone proves
+        // nothing - the body is the assertion.
+        Assert.False(
+            payload.RootElement.TryGetProperty("error", out var error),
+            error.ValueKind == JsonValueKind.Object && error.TryGetProperty("code", out var code)
+                ? $"answered error code {code}"
+                : "answered an error envelope");
+        Assert.True(payload.RootElement.TryGetProperty("address", out _));
+        Assert.True(payload.RootElement.TryGetProperty("location", out _));
+    }
+
+    // The same rule on the candidate lookup, so the behaviour is the endpoint's and not
+    // one handler's.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_WithAForeignToken_IsServedAnonymously()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?f=json&singleLine=1+Main+St"
+            + "&token=not-a-token-this-server-ever-issued");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.False(payload.RootElement.TryGetProperty("error", out _));
+        Assert.True(payload.RootElement.GetProperty("candidates").GetArrayLength() > 0);
+    }
+
     // #2147: SuggestedBatchSize is derived from the ACTIVE provider's MaxBatchSize, not a constant.
     // A provider with a non-default batch size advertises that exact value.
     [IntegrationTest]
