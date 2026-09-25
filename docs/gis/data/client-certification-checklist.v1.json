@@ -832,7 +832,11 @@
       "operation": "conformance",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (revision c9f739e6d): Pro fetches and consumes the conformance declaration when binding an OGC API connection. The server log for the connection window records GET /ogc/features/conformance TWICE, alongside GET /ogc/features (3), /ogc/features/collections (4), /ogc/features/collections/2000 and the single-item reads /items/13 and /items/14 - so this is a document the CLIENT requests, not just one the server publishes. The document returns 21 classes including ogcapi-features-1/1.0/conf/core, /conf/oas30, /conf/html, /conf/geojson, ogcapi-features-2/1.0/conf/crs and ogcapi-features-3/1.0/conf/queryables, and Pro's behaviour matches it: the connection exposed exactly the capability nodes the declaration supports, Features and Map-tiles.",
+          "previous_exclusion": {
+            "state": "not-started"
+          }
         },
         "arcpy": {
           "state": "n/a-no-client",
