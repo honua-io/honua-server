@@ -54,7 +54,9 @@ public sealed class FindRoutesExecuteTests(FindRoutesExecuteTestsFixture fixture
         var findRoutesRequest = fixture.Requests.Single();
         using var content = new FormUrlEncodedContent(new Dictionary<string, string>
         {
-            ["f"] = "json", ["stops"] = Stops, ["travelMode"] = explicitOptions ? "walking" : "",
+            ["f"] = "json",
+            ["stops"] = Stops,
+            ["travelMode"] = explicitOptions ? "walking" : "",
         });
         using var response = await fixture.Client.PostAsync(
             $"/rest/services/{WebAppFixture.TestServiceId}/NAServer/Route/solve", content);
@@ -101,8 +103,11 @@ public sealed class FindRoutesExecuteTests(FindRoutesExecuteTestsFixture fixture
         {
             var parameters = new Dictionary<string, string>
             {
-                ["f"] = "json", ["Stops"] = Stops, ["Travel_Mode"] = "driving",
-                ["Measurement_Units"] = "Minutes", ["Reorder_Stops_to_Find_Optimal_Routes"] = "false",
+                ["f"] = "json",
+                ["Stops"] = Stops,
+                ["Travel_Mode"] = "driving",
+                ["Measurement_Units"] = "Minutes",
+                ["Reorder_Stops_to_Find_Optimal_Routes"] = "false",
             };
             parameters[key] = value;
             using var document = await ExecuteAsync(service, true, parameters);
