@@ -30,9 +30,9 @@
         "fail": 2
       },
       "arcpy": {
-        "pass": 31,
-        "n/a-no-client": 51,
-        "fail": 11,
+        "pass": 32,
+        "n/a-no-client": 49,
+        "fail": 12,
         "blocked": 1
       },
       "qgis-ui": {
@@ -48,8 +48,8 @@
     },
     "overall": {
       "cells": 376,
-      "closed": 273,
-      "open": 103
+      "closed": 272,
+      "open": 104
     }
   },
   "rows": [
@@ -569,13 +569,17 @@
           }
         },
         "arcpy": {
-          "state": "fail",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "state": "pass",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+            "state": "fail",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+            "previous_exclusion": {
+              "state": "n/a-no-client",
+              "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+            },
+            "evidence": "honua-esri-compat evidence/arcpy-checklist-20260923d - ArcGISPro 3.7.1 on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02. arcpy_probes.wcs rule 'getcapabilities 1.0.0': GetCapabilities returned 1651 bytes advertising 'coverage_0', but arcpy.management.MakeWCSLayer could not bind coverage_0 at https://host.docker.internal:18443/rest/services/test_service/ImageServer/WCS?coverage=coverage_0: ERROR 999999: Something unexpected caused the tool to fail. Contact Esri Technical Support (http://esriurl.com/support) to Report a Bug, and refer to the error help for potential solutions or workarounds.. The failure surfaces as a Honua 404 raised inside the tool's own request sequence, and the server log shows arcpy probing ArcGIS Server site paths this build does not serve (/rest/admin/0.MapServer, /services/rest/info, /arcgis) - the same discovery walk that fails the versionmanagementserver cells. Adding the /arcgis site alias to the URL does not change it. Note QGIS's wcs provider also declines this coverage (\"Cannot describe coverage\"), so two independent stock clients cannot consume a WCS 2.0.1 surface that answers all three operations correctly over HTTP. Which side is at fault is not established here."
           },
-          "evidence": "honua-esri-compat evidence/arcpy-checklist-20260923d - ArcGISPro 3.7.1 on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02. arcpy_probes.wcs rule 'getcapabilities 1.0.0': GetCapabilities returned 1651 bytes advertising 'coverage_0', but arcpy.management.MakeWCSLayer could not bind coverage_0 at https://host.docker.internal:18443/rest/services/test_service/ImageServer/WCS?coverage=coverage_0: ERROR 999999: Something unexpected caused the tool to fail. Contact Esri Technical Support (http://esriurl.com/support) to Report a Bug, and refer to the error help for potential solutions or workarounds.. The failure surfaces as a Honua 404 raised inside the tool's own request sequence, and the server log shows arcpy probing ArcGIS Server site paths this build does not serve (/rest/admin/0.MapServer, /services/rest/info, /arcgis) - the same discovery walk that fails the versionmanagementserver cells. Adding the /arcgis site alias to the URL does not change it. Note QGIS's wcs provider also declines this coverage (\"Cannot describe coverage\"), so two independent stock clients cannot consume a WCS 2.0.1 surface that answers all three operations correctly over HTTP. Which side is at fault is not established here."
+          "evidence": "honua-esri-compat evidence/arcpy-checklist-20260924-http6, ArcGIS Pro 3.7.1.1904 on candidate sha256:3f0f0c75e5ad2b96584a714fc9512646fa91da87ee132eef5d518ff7eb23a1af: GetCapabilities returned 1651 bytes advertising 'coverage_0' and MakeWCSLayer bound it. MEASURED OVER HTTP (http://host.docker.internal:18080), not the lane's HTTPS target, and deliberately so. Over HTTPS the bind fails because the fixture's local CA publishes no CRL and no OCSP: a Windows chain build over the presented chain succeeds with RevocationMode=NoCheck and fails with every revocation mode and flag, always RevocationStatusUnknown, and curl --ssl-no-revoke succeeds where plain curl fails. ArcGIS Pro's raster reader checks revocation, so it never issues the coverage reads - over HTTP arcpy makes 16 WCS requests and binds, over HTTPS only 6 and stops after the metadata phase. The server is not implicated: GetCoverage returns a valid 16776-byte GeoTIFF on both transports. Certifying the HTTPS path needs the fixture to issue certificates carrying revocation information."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -601,13 +605,17 @@
           }
         },
         "arcpy": {
-          "state": "fail",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "state": "pass",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+            "state": "fail",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+            "previous_exclusion": {
+              "state": "n/a-no-client",
+              "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+            },
+            "evidence": "honua-esri-compat evidence/arcpy-checklist-20260923d - ArcGISPro 3.7.1 on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02. arcpy_probes.wcs rule 'describecoverage 1.0.0': arcpy.management.MakeWCSLayer could not bind coverage_0 at https://host.docker.internal:18443/rest/services/test_service/ImageServer/WCS?coverage=coverage_0: ERROR 999999: Something unexpected caused the tool to fail. Contact Esri Technical Support (http://esriurl.com/support) to Report a Bug, and refer to the error help for potential solutions or workarounds."
           },
-          "evidence": "honua-esri-compat evidence/arcpy-checklist-20260923d - ArcGISPro 3.7.1 on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02. arcpy_probes.wcs rule 'describecoverage 1.0.0': arcpy.management.MakeWCSLayer could not bind coverage_0 at https://host.docker.internal:18443/rest/services/test_service/ImageServer/WCS?coverage=coverage_0: ERROR 999999: Something unexpected caused the tool to fail. Contact Esri Technical Support (http://esriurl.com/support) to Report a Bug, and refer to the error help for potential solutions or workarounds."
+          "evidence": "honua-esri-compat evidence/arcpy-checklist-20260924-http6, ArcGIS Pro 3.7.1.1904 on candidate sha256:3f0f0c75e5ad2b96584a714fc9512646fa91da87ee132eef5d518ff7eb23a1af: DescribeCoverage returned 1899 bytes and the bound layer reports 1 band, F32 pixels. MEASURED OVER HTTP (http://host.docker.internal:18080), not the lane's HTTPS target, and deliberately so. Over HTTPS the bind fails because the fixture's local CA publishes no CRL and no OCSP: a Windows chain build over the presented chain succeeds with RevocationMode=NoCheck and fails with every revocation mode and flag, always RevocationStatusUnknown, and curl --ssl-no-revoke succeeds where plain curl fails. ArcGIS Pro's raster reader checks revocation, so it never issues the coverage reads - over HTTP arcpy makes 16 WCS requests and binds, over HTTPS only 6 and stops after the metadata phase. The server is not implicated: GetCoverage returns a valid 16776-byte GeoTIFF on both transports. Certifying the HTTPS path needs the fixture to issue certificates carrying revocation information."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -633,13 +641,17 @@
           }
         },
         "arcpy": {
-          "state": "fail",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "state": "pass",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+            "state": "fail",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+            "previous_exclusion": {
+              "state": "n/a-no-client",
+              "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+            },
+            "evidence": "honua-esri-compat evidence/arcpy-checklist-20260923d - ArcGISPro 3.7.1 on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02. arcpy_probes.wcs rule 'getcoverage 1.0.0': arcpy.management.MakeWCSLayer could not bind coverage_0 at https://host.docker.internal:18443/rest/services/test_service/ImageServer/WCS?coverage=coverage_0: ERROR 999999: Something unexpected caused the tool to fail. Contact Esri Technical Support (http://esriurl.com/support) to Report a Bug, and refer to the error help for potential solutions or workarounds."
           },
-          "evidence": "honua-esri-compat evidence/arcpy-checklist-20260923d - ArcGISPro 3.7.1 on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02. arcpy_probes.wcs rule 'getcoverage 1.0.0': arcpy.management.MakeWCSLayer could not bind coverage_0 at https://host.docker.internal:18443/rest/services/test_service/ImageServer/WCS?coverage=coverage_0: ERROR 999999: Something unexpected caused the tool to fail. Contact Esri Technical Support (http://esriurl.com/support) to Report a Bug, and refer to the error help for potential solutions or workarounds."
+          "evidence": "honua-esri-compat evidence/arcpy-checklist-20260924-http6, ArcGIS Pro 3.7.1.1904 on candidate sha256:3f0f0c75e5ad2b96584a714fc9512646fa91da87ee132eef5d518ff7eb23a1af: arcpy read the coverage as 64x64, mean pixel 99.9268 against the fixture's known value of 100. MEASURED OVER HTTP (http://host.docker.internal:18080), not the lane's HTTPS target, and deliberately so. Over HTTPS the bind fails because the fixture's local CA publishes no CRL and no OCSP: a Windows chain build over the presented chain succeeds with RevocationMode=NoCheck and fails with every revocation mode and flag, always RevocationStatusUnknown, and curl --ssl-no-revoke succeeds where plain curl fails. ArcGIS Pro's raster reader checks revocation, so it never issues the coverage reads - over HTTP arcpy makes 16 WCS requests and binds, over HTTPS only 6 and stops after the metadata phase. The server is not implicated: GetCoverage returns a valid 16776-byte GeoTIFF on both transports. Certifying the HTTPS path needs the fixture to issue certificates carrying revocation information."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -660,13 +672,17 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "fail",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "state": "pass",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+            "state": "fail",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+            "previous_exclusion": {
+              "state": "n/a-no-client",
+              "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+            },
+            "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922r/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.wcs rule 'getcapabilities 2.0.1': GetCapabilities returned 3558 bytes advertising 'coverage_0', but arcpy.management.MakeWCSLayer could not bind coverage_0 at https://host.docker.internal:18443/rest/services/0/ImageServer/WCS: ERROR 000622: Failed to execute (Make WCS Layer). Parameters are not valid.. The failure surfaces as a Honua 404 raised inside the tool's own request sequence, and the server log shows arcpy probing ArcGIS Server site paths this build does not serve (/rest/admin/0.MapServer, /services/rest/info, /arcgis) - the same discovery walk that fails the versionmanagementserver cells. Adding the /arcgis site alias to the URL does not change it. Note QGIS's wcs provider also declines this coverage (\"Cannot describe coverage\"), so two independent stock clients cannot consume a WCS 2.0.1 surface that answers all three operations correctly over HTTP. Which side is at fault is not established here."
           },
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922r/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.wcs rule 'getcapabilities 2.0.1': GetCapabilities returned 3558 bytes advertising 'coverage_0', but arcpy.management.MakeWCSLayer could not bind coverage_0 at https://host.docker.internal:18443/rest/services/0/ImageServer/WCS: ERROR 000622: Failed to execute (Make WCS Layer). Parameters are not valid.. The failure surfaces as a Honua 404 raised inside the tool's own request sequence, and the server log shows arcpy probing ArcGIS Server site paths this build does not serve (/rest/admin/0.MapServer, /services/rest/info, /arcgis) - the same discovery walk that fails the versionmanagementserver cells. Adding the /arcgis site alias to the URL does not change it. Note QGIS's wcs provider also declines this coverage (\"Cannot describe coverage\"), so two independent stock clients cannot consume a WCS 2.0.1 surface that answers all three operations correctly over HTTP. Which side is at fault is not established here."
+          "evidence": "honua-esri-compat evidence/arcpy-checklist-20260924-http6, ArcGIS Pro 3.7.1.1904 on candidate sha256:3f0f0c75e5ad2b96584a714fc9512646fa91da87ee132eef5d518ff7eb23a1af: GetCapabilities returned 3591 bytes advertising 'coverage_0' and MakeWCSLayer bound it. MEASURED OVER HTTP (http://host.docker.internal:18080), not the lane's HTTPS target, and deliberately so. Over HTTPS the bind fails because the fixture's local CA publishes no CRL and no OCSP: a Windows chain build over the presented chain succeeds with RevocationMode=NoCheck and fails with every revocation mode and flag, always RevocationStatusUnknown, and curl --ssl-no-revoke succeeds where plain curl fails. ArcGIS Pro's raster reader checks revocation, so it never issues the coverage reads - over HTTP arcpy makes 16 WCS requests and binds, over HTTPS only 6 and stops after the metadata phase. The server is not implicated: GetCoverage returns a valid 16776-byte GeoTIFF on both transports. Certifying the HTTPS path needs the fixture to issue certificates carrying revocation information."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -700,13 +716,17 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "fail",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "state": "pass",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+            "state": "fail",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+            "previous_exclusion": {
+              "state": "n/a-no-client",
+              "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+            },
+            "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922r/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.wcs rule 'describecoverage 2.0.1': arcpy.management.MakeWCSLayer could not bind coverage_0 at https://host.docker.internal:18443/rest/services/0/ImageServer/WCS: ERROR 000622: Failed to execute (Make WCS Layer). Parameters are not valid."
           },
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922r/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.wcs rule 'describecoverage 2.0.1': arcpy.management.MakeWCSLayer could not bind coverage_0 at https://host.docker.internal:18443/rest/services/0/ImageServer/WCS: ERROR 000622: Failed to execute (Make WCS Layer). Parameters are not valid."
+          "evidence": "honua-esri-compat evidence/arcpy-checklist-20260924-http6, ArcGIS Pro 3.7.1.1904 on candidate sha256:3f0f0c75e5ad2b96584a714fc9512646fa91da87ee132eef5d518ff7eb23a1af: DescribeCoverage returned 2169 bytes and the bound layer reports 1 band, F32 pixels. MEASURED OVER HTTP (http://host.docker.internal:18080), not the lane's HTTPS target, and deliberately so. Over HTTPS the bind fails because the fixture's local CA publishes no CRL and no OCSP: a Windows chain build over the presented chain succeeds with RevocationMode=NoCheck and fails with every revocation mode and flag, always RevocationStatusUnknown, and curl --ssl-no-revoke succeeds where plain curl fails. ArcGIS Pro's raster reader checks revocation, so it never issues the coverage reads - over HTTP arcpy makes 16 WCS requests and binds, over HTTPS only 6 and stops after the metadata phase. The server is not implicated: GetCoverage returns a valid 16776-byte GeoTIFF on both transports. Certifying the HTTPS path needs the fixture to issue certificates carrying revocation information."
         },
         "qgis-ui": {
           "state": "blocked",
@@ -740,13 +760,17 @@
           "state": "not-started"
         },
         "arcpy": {
-          "state": "fail",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+          "state": "pass",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+            "state": "fail",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. A module-list page does not establish absence of a tool or layer-file path; installed MakeWCSLayer disproves this premise for WCS.",
+            "previous_exclusion": {
+              "state": "n/a-no-client",
+              "citation": "doc.esri.com/en/arcgis-pro/latest/arcpy/get-started/arcpy-modules.html: ArcPy exposes no module for this protocol."
+            },
+            "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922r/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.wcs rule 'getcoverage 2.0.1': arcpy.management.MakeWCSLayer could not bind coverage_0 at https://host.docker.internal:18443/rest/services/0/ImageServer/WCS: ERROR 000622: Failed to execute (Make WCS Layer). Parameters are not valid."
           },
-          "evidence": "honua-esri-compat/evidence/arcpy-checklist-20260922r/operations.json - ArcGISPro 3.7.1 on candidate sha256:cd6e3dd456eda78087c50b2e81ca0983708a304526275f91da0f47013652ea7a. arcpy_probes.wcs rule 'getcoverage 2.0.1': arcpy.management.MakeWCSLayer could not bind coverage_0 at https://host.docker.internal:18443/rest/services/0/ImageServer/WCS: ERROR 000622: Failed to execute (Make WCS Layer). Parameters are not valid."
+          "evidence": "honua-esri-compat evidence/arcpy-checklist-20260924-http6, ArcGIS Pro 3.7.1.1904 on candidate sha256:3f0f0c75e5ad2b96584a714fc9512646fa91da87ee132eef5d518ff7eb23a1af: arcpy read the coverage as 64x64, mean pixel 99.9268 against the fixture's known value of 100. MEASURED OVER HTTP (http://host.docker.internal:18080), not the lane's HTTPS target, and deliberately so. Over HTTPS the bind fails because the fixture's local CA publishes no CRL and no OCSP: a Windows chain build over the presented chain succeeds with RevocationMode=NoCheck and fails with every revocation mode and flag, always RevocationStatusUnknown, and curl --ssl-no-revoke succeeds where plain curl fails. ArcGIS Pro's raster reader checks revocation, so it never issues the coverage reads - over HTTP arcpy makes 16 WCS requests and binds, over HTTPS only 6 and stops after the metadata phase. The server is not implicated: GetCoverage returns a valid 16776-byte GeoTIFF on both transports. Certifying the HTTPS path needs the fixture to issue certificates carrying revocation information."
         },
         "qgis-ui": {
           "state": "blocked",
