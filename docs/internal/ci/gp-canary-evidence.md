@@ -10,9 +10,11 @@ in the workflow. It reuses the reliability Compose PostGIS/Redis/server services
 and checks the pulled image's source label. The exact same canary input, async
 HTTP execution, result decoding and numerical oracles run against that server.
 This catches response-shape/default-format assumptions that mock tests cannot.
-The ephemeral Development/API-key/loopback HTTP topology disables external output
-staging; it does not prove production bearer authentication, native-worker
-identity or persistent output recovery. Its separate receipt schema records
+The ephemeral Development/API-key/loopback HTTP topology provisions a runner-local
+output directory through the existing store initializer, using the resolved Compose
+contract and checking its digest. This rehearses staged-result decoding without
+certifying storage durability or backups. It does not prove production bearer
+authentication, native-worker identity or persistent output recovery. Its separate receipt schema records
 `qualification: false` and can never enter the scheduled streak. No cloud
 deployment or production data is touched by that rehearsal.
 

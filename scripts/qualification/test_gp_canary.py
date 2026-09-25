@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import gp_canary as canary
+import gp_canary_rehearsal as rehearsal
 import gp_canary_streak as streak
 
 
@@ -146,6 +147,28 @@ class NumericalOracleTests(unittest.TestCase):
             self.assertNotIn("private-secret", str(error.exception))
             self.assertNotIn("private-secret", str(run.call_args.args))
             self.assertEqual("private-secret", run.call_args.kwargs["env"]["GH_TOKEN"])
+
+    def test_rehearsal_rejects_inline_results_and_retains_staged_descriptor(self):
+        with tempfile.TemporaryDirectory() as directory:
+            client = rehearsal.RehearsalClient(Path(directory))
+            for inline in ({"value": output(canary.PROCESSES[0])}, {"href": "data:application/json;base64,e30="}):
+                with self.subTest(inline=inline), patch.object(canary.Client, "request", return_value={"output": inline}):
+                    with self.assertRaisesRegex(ValueError, "referenced staged output"):
+                        client.request("ogc/processes/jobs/job-1/results")
+                    self.assertEqual(0, client.staged_results)
+            staged = {"output": {"href": "/api/geoprocessing/jobs/job-1/artifacts/0/content"}}
+            with patch.object(canary.Client, "request", return_value=staged):
+                self.assertEqual(staged, client.request("ogc/processes/jobs/job-1/results"))
+            self.assertEqual(1, client.staged_results)
+            self.assertEqual(staged, json.loads((Path(directory) / "staged-result-1.json").read_text()))
+
+    def test_rehearsal_rejects_provisioned_store_digest_mismatch(self):
+        import yaml
+        topology = Path(__file__).resolve().parents[2] / "docker/gp-reliability/compose.yml"
+        configuration = yaml.safe_load(topology.read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {"HONUA_GP_OBJECT_ROOT": directory}), patch.object(rehearsal.subprocess, "check_output", side_effect=[json.dumps(configuration).encode(), "wrong-digest\n"]):
+            with self.assertRaisesRegex(ValueError, "digest does not match"):
+                rehearsal.provision_store()
 
 
 class ScheduledStreakTests(unittest.TestCase):
