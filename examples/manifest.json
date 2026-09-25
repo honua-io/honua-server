@@ -14,9 +14,9 @@
     "not-executable": "The inventory item is not an independent runnable example; no green execution claim is made."
   },
   "summary": {
-    "total": 1142,
+    "total": 1143,
     "byStatus": {
-      "not-executable": 1129,
+      "not-executable": 1130,
       "unvalidated": 10,
       "passed": 3
     }
@@ -14541,7 +14541,20 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 11,
+      "line": 16,
+      "language": "json"
+    },
+    {
+      "id": "92faa1acb31bcfec",
+      "kind": "docs-fence",
+      "path": "docs/user/namespaced-layer-publication.md",
+      "validation": {
+        "status": "not-executable",
+        "reason": "Inventory item is supporting source, prose, output, or configuration rather than an independently runnable example.",
+        "check": "inventory-classification"
+      },
+      "fence": 1,
+      "line": 16,
       "language": "json"
     },
     {
