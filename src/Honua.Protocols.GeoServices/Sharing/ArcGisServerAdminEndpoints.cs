@@ -206,6 +206,12 @@ public static class ArcGisServerAdminEndpoints
         return Results.Text(document.ToJsonString(new JsonSerializerOptions { WriteIndented = pretty }), JsonContentType);
     }
 
+    /// <summary>
+    /// What the VersionManagementServer resource advertises, mirrored onto its admin
+    /// extension entry so the two documents cannot disagree.
+    /// </summary>
+    private const string VersionManagementCapabilities = "Create,Delete,Alter,Reconcile,Post";
+
     private static JsonArray BuildExtensions(HashSet<string> protocols, bool branchVersioning, bool versionManagement,
         string? featureCapabilities, string maxRecordCount, bool allowGeometryUpdates)
     {
@@ -222,7 +228,18 @@ public static class ArcGisServerAdminEndpoints
             }));
             if (versionManagement)
             {
-                extensions.Add(Extension("VersionManagementServer", string.Empty, new JsonObject()));
+                // The extension has to state what the VersionManagementServer can do. An
+                // empty capabilities string here says "this extension supports nothing",
+                // and a client deciding whether a feature-service workspace is versioned
+                // reads the ADMIN document rather than the VMS resource - which is why
+                // arcpy.management.CreateVersion still answered "ERROR 000301: The
+                // workspace is of the wrong type" after it began reaching the
+                // VersionManagementServer successfully (honua-server#5036). The value is
+                // the same one the VMS resource itself advertises, so the two agree.
+                extensions.Add(Extension(
+                    "VersionManagementServer",
+                    VersionManagementCapabilities,
+                    new JsonObject()));
             }
         }
 
