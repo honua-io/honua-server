@@ -573,11 +573,7 @@ internal sealed class QueryFormatter : IQueryFormatter
             TimeOnly or TimeSpan => CreateRuntimeFieldInfo(name, "esriFieldTypeString", "sqlTypeNVarchar"),
             Guid => CreateRuntimeFieldInfo(name, "esriFieldTypeGUID", "sqlTypeOther"),
             byte[] => CreateRuntimeFieldInfo(name, "esriFieldTypeBlob", "sqlTypeOther"),
-            string => CreateRuntimeFieldInfo(
-                name,
-                "esriFieldTypeString",
-                "TEXT",
-                GeoServicesFieldConventions.DefaultStringFieldLength),
+            string => CreateRuntimeFieldInfo(name, "esriFieldTypeString", "sqlTypeNVarchar"),
             _ => null
         };
     }
@@ -594,7 +590,9 @@ internal sealed class QueryFormatter : IQueryFormatter
             Type = type,
             SqlType = sqlType,
             Alias = name,
-            Length = length,
+            Length = type == "esriFieldTypeString"
+                ? GeoServicesFieldConventions.ResolveStringFieldLength(length)
+                : length,
             Nullable = true,
             Editable = false
         };

@@ -129,8 +129,11 @@ public sealed class GeoServicesFieldSerializationTests
         queryResponse.Fields!.Single(f => f.Name == "code").Length.Should().Be(32);
     }
 
-    [Fact]
-    public async Task Json_RuntimeStringField_ReportsPositiveLength()
+    [UnitTheory]
+    [InlineData("string")]
+    [InlineData("time")]
+    [InlineData("duration")]
+    public async Task Json_RuntimeStringField_ReportsEsriSqlTypeAndPositiveLength(string kind)
     {
         var (formatter, _) = CreateFormatter();
         var resource = CreateResource(
@@ -143,7 +146,12 @@ public sealed class GeoServicesFieldSerializationTests
             {
                 ["objectid"] = 1L,
                 // Undeclared runtime string attribute -> inferred field metadata.
-                ["runtime_label"] = "hello"
+                ["runtime_label"] = kind switch
+                {
+                    "time" => new TimeOnly(12, 30),
+                    "duration" => TimeSpan.FromMinutes(90),
+                    _ => (object)"hello",
+                }
             }.ToImmutableDictionary());
 
         var (response, _) = await formatter.FormatQueryResultAsync(
@@ -160,6 +168,7 @@ public sealed class GeoServicesFieldSerializationTests
         var queryResponse = response.Should().BeOfType<QueryResponse>().Subject;
         var runtimeField = queryResponse.Fields!.Single(f => f.Name == "runtime_label");
         runtimeField.Type.Should().Be("esriFieldTypeString");
+        runtimeField.SqlType.Should().Be("sqlTypeNVarchar");
         runtimeField.Length.Should().Be(DefaultStringLength);
     }
 

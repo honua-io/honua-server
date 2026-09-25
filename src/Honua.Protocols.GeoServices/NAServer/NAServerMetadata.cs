@@ -670,11 +670,11 @@ internal static class NAServerMetadata
     /// tool advertises.
     /// </summary>
     /// <remarks>
-    /// Parameter names follow Esri's published contract exactly - <c>Stops</c>,
+    /// This bounded synchronous subset uses the published parameter names - <c>Stops</c>,
     /// <c>Measurement_Units</c>, <c>Travel_Mode</c>, <c>Output_Routes</c>,
-    /// <c>Solve_Succeeded</c> - because arcpy.nax matches on them when it resolves the
-    /// tool. Declared synchronous: this projects the NAServer Route solve, which is
-    /// synchronous, so there is no job to poll and advertising an async execution type
+    /// <c>Solve_Succeeded</c>. It supports only Minutes and stops in input order;
+    /// full arcpy.nax binding remains unverified (#5192). This projects the synchronous
+    /// NAServer Route solve, so there is no job to poll and advertising an async execution type
     /// would send the client to submitJob for a task with no job form.
     /// </remarks>
     private static JsonObject BuildFindRoutesTaskInfo()
@@ -682,17 +682,17 @@ internal static class NAServerMetadata
         var parameters = new JsonArray
         {
             Parameter("Stops", "GPFeatureRecordSetLayer", "Stops",
-                "The locations to visit, in order unless reordering is requested. Two or more are required.",
+                "The locations to visit in input order. Two or more are required.",
                 "esriGPParameterDirectionInput", "esriGPParameterTypeRequired", null),
             Parameter("Measurement_Units", "GPString", "Measurement Units",
-                "The units the travel cost is reported in.",
+                "Only Minutes is supported; other units are rejected.",
                 "esriGPParameterDirectionInput", "esriGPParameterTypeOptional", "Minutes"),
             Parameter("Travel_Mode", "GPString", "Travel Mode",
-                "The travel mode to solve with; one of the modes GetTravelModes reports.",
-                "esriGPParameterDirectionInput", "esriGPParameterTypeOptional", "Driving Time"),
-            Parameter("Reorder_Stops_to_Find_Optimal_Route", "GPBoolean",
+                "A mode returned by GetTravelModes; omitted or empty uses the provider default.",
+                "esriGPParameterDirectionInput", "esriGPParameterTypeOptional", null),
+            Parameter("Reorder_Stops_to_Find_Optimal_Routes", "GPBoolean",
                 "Reorder Stops to Find Optimal Route",
-                "Whether the solver may reorder the stops between the first and last.",
+                "Only false is supported: stops are visited in input order; true is rejected.",
                 "esriGPParameterDirectionInput", "esriGPParameterTypeOptional", "false"),
             Parameter("Output_Routes", "GPFeatureRecordSetLayer", "Output Routes",
                 "One feature per solved route, carrying Total_Length and Total_TravelTime.",
@@ -702,11 +702,14 @@ internal static class NAServerMetadata
                 "esriGPParameterDirectionOutput", "esriGPParameterTypeDerived", null),
         };
 
+        parameters[1]!["choiceList"] = new JsonArray("Minutes");
+        parameters[3]!["defaultValue"] = false;
+
         return new JsonObject
         {
             ["name"] = FindRoutesTask,
             ["displayName"] = "Find Routes",
-            ["description"] = "Finds the best route between two or more stops on the network dataset behind this service.",
+            ["description"] = "Routes through stops in input order, reporting travel time in minutes. Other units and stop optimization are unsupported. This synchronous subset does not establish full arcpy.nax compatibility.",
             ["category"] = "network-analysis",
             ["helpUrl"] = "",
             ["executionType"] = "esriExecutionTypeSynchronous",

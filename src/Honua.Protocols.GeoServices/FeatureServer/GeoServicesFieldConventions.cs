@@ -35,13 +35,6 @@ internal static class GeoServicesFieldConventions
         => declaredLength is int length and > 0 ? length : DefaultStringFieldLength;
 
     /// <summary>
-    /// Maps a canonical field type to the Esri field type advertised in FeatureServer,
-    /// MapServer and query-response field metadata. Every GeoServices projection uses this
-    /// one mapping so the advertised types stay consistent across surfaces and with the
-    /// client field-type contract (<c>tests/js/shared/esri-field-types.json</c>). Calendar
-    /// dates advertise <c>esriFieldTypeDateOnly</c>; timestamps keep <c>esriFieldTypeDate</c>.
-    /// </summary>
-    /// <summary>
     /// The Esri <c>sqlType</c> enumeration member for a logical field type.
     /// </summary>
     /// <remarks>
@@ -73,6 +66,13 @@ internal static class GeoServicesFieldConventions
             _ => "sqlTypeOther"
         };
 
+    /// <summary>
+    /// Maps a canonical field type to the Esri field type advertised in FeatureServer,
+    /// MapServer and query-response field metadata. Every GeoServices projection uses this
+    /// one mapping so the advertised types stay consistent across surfaces and with the
+    /// client field-type contract (<c>tests/js/shared/esri-field-types.json</c>). Calendar
+    /// dates advertise <c>esriFieldTypeDateOnly</c>; timestamps keep <c>esriFieldTypeDate</c>.
+    /// </summary>
     internal static string MapFieldType(MetadataV2FieldType type)
         => type switch
         {

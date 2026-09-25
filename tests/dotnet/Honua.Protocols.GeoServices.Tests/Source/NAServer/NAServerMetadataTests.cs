@@ -1,4 +1,3 @@
-using System.Linq;
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
@@ -15,7 +14,7 @@ public sealed class NAServerMetadataTests
     private static readonly string[] EsriFindRoutesParameters =
     [
         "Stops", "Measurement_Units", "Travel_Mode",
-        "Reorder_Stops_to_Find_Optimal_Route", "Output_Routes", "Solve_Succeeded"
+        "Reorder_Stops_to_Find_Optimal_Routes", "Output_Routes", "Solve_Succeeded"
     ];
 
     [Fact]
@@ -82,5 +81,10 @@ public sealed class NAServerMetadataTests
             .Single(p => p!["name"]!.GetValue<string>() == "Stops")!;
         stops["dataType"]!.GetValue<string>().Should().Be("GPFeatureRecordSetLayer");
         stops["parameterType"]!.GetValue<string>().Should().Be("esriGPParameterTypeRequired");
+
+        var units = info["parameters"]!.AsArray().Single(p => p!["name"]!.GetValue<string>() == "Measurement_Units")!;
+        units["choiceList"]!.AsArray().Select(v => v!.GetValue<string>()).Should().Equal("Minutes");
+        var reorder = info["parameters"]!.AsArray().Single(p => p!["name"]!.GetValue<string>() == "Reorder_Stops_to_Find_Optimal_Routes")!;
+        reorder["defaultValue"]!.GetValue<bool>().Should().BeFalse();
     }
 }
