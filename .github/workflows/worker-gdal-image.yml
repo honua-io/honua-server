@@ -53,9 +53,16 @@ on:
       - 'tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj'
       - '.github/actions/setup-dotnet-ci/**'
       - '.github/workflows/worker-gdal-image.yml'
+      - 'scripts/ci/worker_publication.py'
+      - 'scripts/ci/test_worker_publication.py'
   schedule:
     - cron: '45 7 * * 1'
   workflow_dispatch:
+    inputs:
+      publish_nightly:
+        description: Publish the exact gated amd64 worker from canonical trunk (never a release)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -66,8 +73,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  publication-contract:
+    name: Verify worker publication guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install PyYAML==6.0.2
+      - run: python3 -m unittest discover -s scripts/ci -p test_worker_publication.py -v
+
   build-and-scan:
     name: Build, verify, and scan GDAL worker
+    needs: publication-contract
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     outputs:
@@ -301,6 +323,81 @@ jobs:
           exit-code: '1'
           format: table
           vuln-type: os,library
+
+      # Dispatch with publish_nightly=false rehearses export/load/identity without
+      # a registry write. PR and scheduled validation do not retain a large tar.
+      - name: Prepare exact tested worker publication bundle
+        if: github.event_name == 'workflow_dispatch'
+        run: python3 scripts/ci/worker_publication.py prepare
+
+      - name: Retain exact tested worker publication bundle
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v7
+        with:
+          name: worker-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/worker-publication/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 7
+
+  publish-nightly:
+    name: Publish verified nightly GDAL worker
+    needs: [build-and-scan, publish-sarif]
+    if: >-
+      github.event_name == 'workflow_dispatch' && inputs.publish_nightly == true &&
+      github.repository == 'honua-io/honua-server' && github.ref == 'refs/heads/trunk' &&
+      needs.build-and-scan.result == 'success' && needs.publish-sarif.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    env:
+      PUBLISH_NIGHTLY: ${{ inputs.publish_nightly }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: worker-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/worker-publication
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+      - uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Publish the exact tested image without rebuilding
+        id: publish
+        run: python3 scripts/ci/worker_publication.py publish
+      - name: Attest verified nightly worker
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ steps.publish.outputs.subject_name }}
+          subject-digest: ${{ steps.publish.outputs.subject_digest }}
+          push-to-registry: true
+      - name: Verify exact source provenance and finalize receipt
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKER_IMAGE: ${{ steps.publish.outputs.image }}
+        run: |
+          gh attestation verify "oci://$WORKER_IMAGE" --repo honua-io/honua-server \
+            --signer-workflow honua-io/honua-server/.github/workflows/worker-gdal-image.yml \
+            --source-ref refs/heads/trunk --source-digest "$GITHUB_SHA" --format json \
+            > artifacts/worker-publication/provenance-verification.json
+          python3 scripts/ci/worker_publication.py finish
+      - name: Retain publication identity and provenance
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: worker-nightly-publication-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/worker-publication/*.json
+            artifacts/worker-publication/*.trx
+            artifacts/worker-publication/*.sarif
+          if-no-files-found: error
+          retention-days: 30
 
   publish-sarif:
     name: Publish GDAL worker SARIF
