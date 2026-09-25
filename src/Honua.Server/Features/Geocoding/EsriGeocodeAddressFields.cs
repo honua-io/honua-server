@@ -9,6 +9,15 @@ namespace Honua.Server.Features.Geocoding;
 /// Projects a provider result onto the Esri GeocodeServer address fields arcpy maps.
 /// Provider-native keys are kept; missing Esri fields are filled from the structured address.
 /// </summary>
+/// <remarks>
+/// Every documented field is emitted on every candidate, empty when the provider cannot
+/// supply it. A real Esri locator returns the whole set with blanks rather than a subset,
+/// and the tools read the schema from the first candidate: omitting a component entirely
+/// is not the same statement as reporting it unknown. With only eleven of the twenty
+/// present, <c>arcpy.geocoding.GeocodeAddresses</c> fails "ERROR 000010: Geocode addresses
+/// failed" against a locator it has already bound and described as an AddressLocator
+/// (honua-server#5145).
+/// </remarks>
 internal static class EsriGeocodeAddressFields
 {
     internal static IReadOnlyDictionary<string, string?> Apply(
@@ -31,8 +40,32 @@ internal static class EsriGeocodeAddressFields
         Set(attributes, "Neighborhood", structured?.Neighborhood);
         Set(attributes, "Postal", structured?.PostalCode);
         Set(attributes, "CountryCode", structured?.CountryCode);
+        Set(attributes, "PlaceName", structured?.Subaddress);
+
+        // Fill the remainder of the documented set with empty values so the schema is
+        // complete. These are components the configured provider does not report; an
+        // empty string says "unknown", while an absent key says "this locator has no
+        // such field", which is what broke the tools.
+        foreach (var field in DocumentedFields)
+        {
+            if (!attributes.ContainsKey(field))
+            {
+                attributes[field] = string.Empty;
+            }
+        }
+
         return attributes;
     }
+
+    /// <summary>
+    /// The address fields an Esri locator is expected to carry on every candidate.
+    /// </summary>
+    private static readonly string[] DocumentedFields =
+    [
+        "AddNum", "Addr_type", "Address", "Block", "City", "CountryCode", "District",
+        "LongLabel", "Match_addr", "MetroArea", "Neighborhood", "PlaceName", "Postal",
+        "PostalExt", "Region", "Sector", "ShortLabel", "Subregion", "Territory", "Type",
+    ];
 
     private static void Set(Dictionary<string, string?> attributes, string key, string? value)
     {
