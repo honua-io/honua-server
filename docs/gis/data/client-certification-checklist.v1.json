@@ -921,7 +921,11 @@
       "operation": "item",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (revision c9f739e6d): Pro resolved a single OGC API Features item and reported the service's own id, property and geometry exactly. Explore-clicking the middle of the three rendered points opened a Pop-up headed 'Browser Points (1)' / 'Browser Points - pt-alpha' listing id 13, OID 1, name pt-alpha, with a coordinate readout of 122.4194000W 37.7749000N and a counter reading '1 of 1'. The oracle, GET /ogc/features/collections/2000/items/13, returns id 13, type Feature, properties {'name': 'pt-alpha'}, coordinates [-122.4194, 37.7749]. Id, name and both coordinates match to the published precision, and '1 of 1' confirms Pro resolved exactly one feature rather than filtering a set locally.",
+          "previous_exclusion": {
+            "state": "not-started"
+          }
         },
         "arcpy": {
           "state": "n/a-no-client",
