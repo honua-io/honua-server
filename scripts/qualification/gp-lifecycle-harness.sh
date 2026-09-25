@@ -29,6 +29,9 @@ case "${lane}" in
   output-store)
     declared_scenarios=(topology output-store-attestation cleanup)
     ;;
+  heartbeat-recovery)
+    declared_scenarios=(topology stale-lease cleanup)
+    ;;
   output-store-outage)
     declared_scenarios=(topology output-write-failure cleanup)
     ;;
@@ -60,7 +63,7 @@ case "${lane}" in
     declared_scenarios=(assertion-failure follow-up cleanup)
     ;;
   *)
-    echo "HONUA_GP_LANE must be output-store, output-store-outage, output-store-dr, crash-boundaries, lifecycle, resilience, or self-test" >&2
+    echo "HONUA_GP_LANE must be output-store, output-store-outage, heartbeat-recovery, output-store-dr, crash-boundaries, lifecycle, resilience, or self-test" >&2
     exit 2
     ;;
 esac
@@ -1092,18 +1095,8 @@ run_poison_job() {
 }
 
 run_stale_lease() {
-  local scenario=stale-lease job old terminal digest
-  compose stop worker >/dev/null
-  job="$(submit_async gdal.ogr2ogr "${native_payload}")" || { compose start worker >/dev/null; return 1; }
-  old=$(( $(date +%s%3N) - 3600000 ))
-  compose exec -T redis redis-cli ZREM controlplane:jobqueue:pending "${job}" >/dev/null
-  compose exec -T redis redis-cli ZADD controlplane:jobqueue:claimed "${old}" "${job}" >/dev/null
-  compose exec -T redis redis-cli HSET "controlplane:jobqueue:meta:${job}" claimedBy dead-worker claimedAt "${old}" >/dev/null
-  compose start worker >/dev/null
-  terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: stale lease was not recovered" "${job}"; return 1; }
-  digest="$(result_digest "${job}" 2>/dev/null || true)"
-  [[ "$(jq -r .status <<<"${terminal}")" == successful && -n "${digest}" ]] || { write_receipt "${scenario}" fail "FINDING: recovered lease lost output" "${job}"; return 1; }
-  write_receipt "${scenario}" pass "" "${job}" successful "${digest}"
+  source "${repo_root}/scripts/qualification/gp-heartbeat-recovery.sh"
+  run_heartbeat_recovery
 }
 
 run_output_write_failure() {
@@ -1348,7 +1341,9 @@ else
     fill_missing_receipts
   }
   if [[ -z "${preflight_failure}" ]]; then
-    if [[ "${lane}" == output-store-outage ]]; then
+    if [[ "${lane}" == heartbeat-recovery ]]; then
+      run_scenario stale-lease run_stale_lease || failures=$((failures + 1))
+    elif [[ "${lane}" == output-store-outage ]]; then
       run_scenario output-write-failure run_output_write_failure || failures=$((failures + 1))
     elif [[ "${lane}" == output-store || "${lane}" == output-store-dr ]]; then
       run_scenario output-store-attestation run_output_store_attestation || failures=$((failures + 1))
