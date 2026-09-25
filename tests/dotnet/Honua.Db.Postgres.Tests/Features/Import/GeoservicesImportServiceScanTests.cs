@@ -269,10 +269,11 @@ public sealed class GeoservicesImportServiceScanTests
     [InlineData("{\"count\":0}", 0)]
     public async Task ScanSourceAsync_UnavailableCount_IsDistinctFromEmptySource(string countJson, int? expectedCount)
     {
-        var service = CreateService(new GeoservicesScanHandler(
+        var handler = new GeoservicesScanHandler(
             serviceDescription: "Parcel Viewer",
             spatialReferenceJson: """{"wkid":3857}""",
-            countJson: countJson));
+            countJson: countJson);
+        var service = CreateService(handler);
 
         var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
         {
@@ -280,6 +281,7 @@ public sealed class GeoservicesImportServiceScanTests
             TimeoutSeconds = 5
         });
 
+        handler.CountRequestCount.Should().Be(1, "the configured count response must actually be consumed");
         artifact.Resources.Should().ContainSingle().Subject.FeatureCount.Should().Be(expectedCount);
         var countWarnings = artifact.ScanCompleteness.Warnings.Where(static warning =>
             warning.Contains("Feature count was unavailable", StringComparison.Ordinal));
@@ -475,6 +477,7 @@ public sealed class GeoservicesImportServiceScanTests
         }
 
         public int RequestCount { get; private set; }
+        public int CountRequestCount { get; private set; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
@@ -528,7 +531,8 @@ public sealed class GeoservicesImportServiceScanTests
                       }
                     }
                     """,
-                "/arcgis/rest/services/Parcels/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json" => _countJson,
+                _ when request.RequestUri?.AbsolutePath == "/arcgis/rest/services/Parcels/FeatureServer/0/query"
+                    => CountResponse(request),
                 _ => throw new InvalidOperationException($"Unexpected ArcGIS request path: {pathAndQuery}")
             };
 
@@ -538,6 +542,25 @@ public sealed class GeoservicesImportServiceScanTests
             {
                 Content = new StringContent(payload, Encoding.UTF8, "application/json")
             });
+        }
+
+        private string CountResponse(HttpRequestMessage request)
+        {
+            request.Method.Should().Be(HttpMethod.Get);
+            // Query parameter order is not part of the ArcGIS protocol contract.
+            var parameters = request.RequestUri!.Query.TrimStart('?')
+                .Split('&', StringSplitOptions.RemoveEmptyEntries)
+                .Select(static parameter => parameter.Split('=', 2))
+                .ToDictionary(static pair => Uri.UnescapeDataString(pair[0]),
+                    static pair => Uri.UnescapeDataString(pair[1]), StringComparer.Ordinal);
+            parameters.Should().BeEquivalentTo(new Dictionary<string, string>
+            {
+                ["where"] = "1=1",
+                ["f"] = "json",
+                ["returnCountOnly"] = "true"
+            });
+            CountRequestCount++;
+            return _countJson;
         }
     }
 
