@@ -376,7 +376,7 @@ public sealed class LayerReconciliationServiceTests
         await service.ReconcileAsync(request);
 
         var expected = new GeoServicesSqlParser().Parse("flight_date = DATE '2026-01-01' AND UPPER(status) = 'DateOfFlight'");
-        translated.Should().BeEquivalentTo(expected);
+        translated.Should().BeEquivalentTo(expected, options => options.RespectingRuntimeTypes());
         reader.CountQueries.Should().ContainSingle().Which.Where.Should().BeNull();
         reader.CountQueries[0].SqlFilter.Should().NotBeNull();
         reader.SampleQueries.Should().ContainSingle().Which.SqlFilter.Should().BeSameAs(reader.CountQueries[0].SqlFilter);
