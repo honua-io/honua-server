@@ -96,6 +96,7 @@ public sealed partial class LayerPublishingIntegrationTests
         var initialGraph = _fixture.GetCurrentV2GraphSnapshot().Graph;
         await SaveMetadataGraphAsync(initialGraph with
         {
+            Revision = initialGraph.Revision + 1,
             Connections = [.. initialGraph.Connections, new MetadataV2Connection
             {
                 Metadata = connectionMetadata, Type = MetadataV2ConnectionType.Database, Provider = "postgis"
@@ -138,6 +139,7 @@ public sealed partial class LayerPublishingIntegrationTests
         graph = _fixture.GetCurrentV2GraphSnapshot().Graph;
         await SaveMetadataGraphAsync(graph with
         {
+            Revision = graph.Revision + 1,
             Services = graph.Services.Select(candidate => candidate.Metadata.Id == service.Metadata.Id
                 ? candidate with { Metadata = candidate.Metadata with { Tenant = "foreign" } } : candidate).ToArray()
         });
@@ -204,7 +206,7 @@ public sealed partial class LayerPublishingIntegrationTests
             Metadata = new() { Id = _serviceName, Name = _serviceName, Namespace = existingNamespace, Tenant = existingTenant },
             ServiceType = MetadataV2ServiceType.EsriFeatureService
         };
-        await SaveMetadataGraphAsync(graph with { Services = [.. graph.Services, existing] });
+        await SaveMetadataGraphAsync(graph with { Revision = graph.Revision + 1, Services = [.. graph.Services, existing] });
         using var response = await _client.PostAsync($"/api/v1/admin/connections/{_connectionId}/layers",
             JsonContent.Create(NamespaceRequest(requestedNamespace), options: _jsonOptions));
         response.StatusCode.Should().Be(HttpStatusCode.Conflict, await response.Content.ReadAsStringAsync());
@@ -255,7 +257,7 @@ public sealed partial class LayerPublishingIntegrationTests
             Metadata = new() { Id = _connectionId.ToString("D"), Name = "Foreign", Tenant = "foreign", Namespace = "connections" },
             Type = MetadataV2ConnectionType.Database, Provider = "postgis"
         };
-        await SaveMetadataGraphAsync(graph with { Connections = [.. graph.Connections, foreignConnection] });
+        await SaveMetadataGraphAsync(graph with { Revision = graph.Revision + 1, Connections = [.. graph.Connections, foreignConnection] });
         var before = _fixture.GetCurrentV2GraphSnapshot().Graph;
         using var response = await _client.PostAsync($"/api/v1/admin/connections/{_connectionId}/layers",
             JsonContent.Create(NamespaceRequest("maps"), options: _jsonOptions));

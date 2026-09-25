@@ -1,16 +1,21 @@
 ---
-type: guide
-title: "Publish a layer into a metadata namespace"
-description: "Use the supported admin publishing API with tenant-owned metadata grouping."
+type: reference
+title: "Namespaced layer publication wire contract"
+description: "HTTP contract for optional tenant-owned publication namespaces."
 ---
-# Publish a layer into a metadata namespace
+# Namespaced layer publication wire contract
 
-An administrator can publish a retained PostGIS table with an optional `namespace`:
+This reference documents the additive `namespace` field on the supported admin
+publishing API for client implementers and interoperability tests. The wire example
+is not a replacement for supported CLI, SDK, or MCP operator workflows. The new
+field must be projected into those product surfaces before they can expose it.
 
-```http
-POST /api/v1/admin/connections/{connectionId}/layers
-Content-Type: application/json
-
+<!-- wire-reference -->
+```bash
+curl --request POST "https://honua.example/api/v1/admin/connections/{connectionId}/layers" \
+  --header "X-API-Key: ${HONUA_ADMIN_KEY}" \
+  --header "Content-Type: application/json" \
+  --data-binary @- <<'JSON'
 {
   "schema": "public",
   "table": "parcels",
@@ -20,6 +25,7 @@ Content-Type: application/json
   "primaryKey": "id",
   "geometryColumn": "geom"
 }
+JSON
 ```
 
 Use an authenticated administrator credential and the existing operator approval
