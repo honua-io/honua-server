@@ -26,7 +26,7 @@ internal static class StudioDraftOperations
     public const string Validate = "studio.draft.validate";
     public const string PreviewPlan = "studio.draft.preview-plan";
     public const string SaveVersion = "studio.draft.save-version";
-    public const string CreatePublicationRequest = "studio.content.create-publication-request";
+    public const string CreatePublicationRequest = StudioDraftMutationContext.PublicationOperationId;
     public const string ReopenVersion = "studio.content.reopen-version";
     public const string Rollback = "studio.content.rollback";
     public const string PayloadParameter = "payload";
@@ -683,7 +683,7 @@ internal sealed class StudioDraftMutationRuntime(
             },
             StudioDraftOperationJsonContext.Default.StudioPublicationRequestPayload,
             StudioDraftOperationJsonContext.Default.StudioPublicationRequest,
-            GovernedStep(context, BuiltInGuardrailActions.StudioPublicationRequest),
+            PublicationStep(context),
             cancellationToken);
 
     public Task<StudioDraftMutationReceipt<StudioPackageDraft>> ReopenVersionAsync(
@@ -720,6 +720,18 @@ internal sealed class StudioDraftMutationRuntime(
         => string.IsNullOrWhiteSpace(context.ActionDiscriminator)
             ? context with { ActionDiscriminator = action }
             : context;
+
+    // An admin publication must not take the proposal floor. Replace any caller-supplied
+    // proposal action and mark the invocation so policy allows the publication actuator
+    // before that guardrail is resolved (honua-server#5207).
+    private static StudioDraftMutationContext PublicationStep(StudioDraftMutationContext context)
+        => context.PublishImmediately
+            ? context with
+            {
+                ActionDiscriminator = BuiltInGuardrailActions.StudioPublicationRequest,
+                AuthorizationOutcome = StudioDraftMutationContext.AdminDirectPublicationOutcome,
+            }
+            : GovernedStep(context, BuiltInGuardrailActions.StudioPublicationRequest);
 
     private async Task<StudioDraftMutationReceipt<TResult>> InvokeAsync<TPayload, TResult>(
         string operationId,

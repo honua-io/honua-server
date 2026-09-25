@@ -45,8 +45,9 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
         Name = ToolName,
         Title = "Propose Studio publication",
         Description =
-            "Submit an exact saved Studio item/version/contentHash plus route and visibility for human approval. "
-            + "Returns canonical operation and proposal identities; no publication pointer moves before separate-principal approval.",
+            "Submit an exact saved Studio item/version/contentHash plus route and visibility. "
+            + "An admin publishes that version in the same call and receives its share URL. "
+            + "Any other caller receives a proposal; the publication pointer does not move until a separate principal approves it.",
         InputSchema = StudioMcpSchemas.ProposePublicationArgumentSchema,
         OutputSchema = McpToolOutputSchemas.StudioProposePublicationOutputSchema,
         Annotations = McpToolAnnotationSets.Write("Propose Studio publication", destructive: false, idempotent: true)
@@ -121,6 +122,9 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
         }
 
         var actorId = ActorIdFor(authorization, principal);
+        // Admin publication is decided here, before the proposal guardrail is applied.
+        // The approve route forbids this same principal from approving a proposal they opened.
+        var isAdmin = authorization.IsAdmin(principal);
 
         var intent = new StudioPublicationIntent
         {
@@ -148,13 +152,52 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
                 ScopeGoverned = OperatorScopeCatalog.IsScopeGoverned(principal),
                 RecognizedScopes = OperatorScopeCatalog.CollectRecognizedScopes(principal)
                     .OrderBy(static scope => scope, StringComparer.Ordinal).ToArray(),
-                // An agent proposal must wait for a separate principal on every edition; without
+                // A non-admin proposal must wait for a separate principal on every edition; without
                 // this floor a direct-execute edition published first and reported failure after
-                // the published pointer had already moved (#3429).
-                ActionDiscriminator = BuiltInGuardrailActions.StudioPublicationProposal,
+                // the published pointer had already moved (#3429). An admin does not take the floor.
+                ActionDiscriminator = isAdmin ? null : BuiltInGuardrailActions.StudioPublicationProposal,
+                PublishImmediately = isAdmin,
             },
             cancellationToken).ConfigureAwait(false);
         var operation = receipt.Operation;
+        var output = isAdmin
+            ? PublishedOutput(operation, receipt.Value, idempotencyKey)
+            : ProposalOutput(operation, idempotencyKey);
+
+        return McpToolHelpers.SuccessResult(output, StudioMcpJsonContext.Default.McpStudioProposePublicationOutput);
+    }
+
+    private static McpStudioProposePublicationOutput PublishedOutput(
+        OperationHandle operation,
+        StudioPublicationRequest? publication,
+        string? idempotencyKey)
+    {
+        var route = publication?.Intent?.Route;
+        if (operation.Status != OperationHandleStatus.Completed
+            || string.IsNullOrWhiteSpace(operation.AuditId)
+            || publication is not { Status: StudioPublicationRequestStatus.Accepted }
+            || string.IsNullOrWhiteSpace(route))
+        {
+            throw new GeoprocessingPreconditionFailedException(
+                operation.Reason ?? "Studio publication did not complete for the admin caller.");
+        }
+
+        return new McpStudioProposePublicationOutput
+        {
+            Operation = operation,
+            OperationInstanceId = operation.OperationInstanceId,
+            AuditId = operation.AuditId!,
+            CorrelationId = operation.CorrelationId,
+            IdempotencyIdentity = idempotencyKey ?? operation.OperationInstanceId,
+            Status = "Published",
+            HumanConfirmationRequired = false,
+            ShareUrl = StudioPublishedRoutes.BuildActiveUrl(route!),
+            Message = "Saved Studio version was published.",
+        };
+    }
+
+    private static McpStudioProposePublicationOutput ProposalOutput(OperationHandle operation, string? idempotencyKey)
+    {
         if (operation.Status != OperationHandleStatus.RequiresApproval
             || string.IsNullOrWhiteSpace(operation.ProposalId)
             || string.IsNullOrWhiteSpace(operation.AuditId))
@@ -163,20 +206,18 @@ internal sealed class ProposeStudioPublicationTool : StudioDraftToolBase, IMcpTo
                 operation.Reason ?? "Studio publication intent did not enter durable approval.");
         }
 
-        var output = new McpStudioProposePublicationOutput
+        return new McpStudioProposePublicationOutput
         {
             Operation = operation,
             OperationInstanceId = operation.OperationInstanceId,
             ProposalId = operation.ProposalId,
-            ProposalUri = McpResourceUris.ProposalUri(operation.ProposalId),
-            AuditId = operation.AuditId,
+            ProposalUri = McpResourceUris.ProposalUri(operation.ProposalId!),
+            AuditId = operation.AuditId!,
             CorrelationId = operation.CorrelationId,
             IdempotencyIdentity = idempotencyKey ?? operation.OperationInstanceId,
             Status = "AwaitingApproval",
             HumanConfirmationRequired = true,
             Message = "Publication proposal is awaiting approval by a separate authorized principal.",
         };
-
-        return McpToolHelpers.SuccessResult(output, StudioMcpJsonContext.Default.McpStudioProposePublicationOutput);
     }
 }

@@ -575,11 +575,13 @@ internal sealed class McpStudioProposePublicationOutput
     [JsonPropertyName("operationInstanceId")]
     public required string OperationInstanceId { get; init; }
 
+    /// <summary>Proposal id when the call waits for a separate principal. Absent after an admin publish.</summary>
     [JsonPropertyName("proposalId")]
-    public required string ProposalId { get; init; }
+    public string? ProposalId { get; init; }
 
+    /// <summary>Proposal resource URI when <see cref="ProposalId"/> is present.</summary>
     [JsonPropertyName("proposalUri")]
-    public required string ProposalUri { get; init; }
+    public string? ProposalUri { get; init; }
 
     [JsonPropertyName("auditId")]
     public required string AuditId { get; init; }
@@ -595,6 +597,14 @@ internal sealed class McpStudioProposePublicationOutput
 
     [JsonPropertyName("humanConfirmationRequired")]
     public bool HumanConfirmationRequired { get; init; } = true;
+
+    /// <summary>
+    /// Root-relative URL of the Active publication
+    /// (<see cref="StudioPublishedRoutes.BuildActiveUrl"/>). Present only when an admin
+    /// published the saved version in this call.
+    /// </summary>
+    [JsonPropertyName("shareUrl")]
+    public string? ShareUrl { get; init; }
 
     [JsonPropertyName("message")]
     public required string Message { get; init; }

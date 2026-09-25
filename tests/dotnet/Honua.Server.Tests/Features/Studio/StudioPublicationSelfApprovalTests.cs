@@ -34,7 +34,9 @@ namespace Honua.Server.Tests.Features.Studio;
 /// endpoint's separation-of-duties check compared the raw <c>sub</c> claim, so the two never
 /// matched and the proposer's own approval executed the publication. The tokens are
 /// deliberately <b>issuer-bearing</b>: an issuer-less identity collapses both encodings onto
-/// the bare subject and cannot observe the defect.
+/// the bare subject and cannot observe the defect. The propose token omits the admin role
+/// because an admin-role call publishes in the same request; the admin-role token of that
+/// same subject is what attempts approval and must still be forbidden.
 /// </remarks>
 [Collection("Database")]
 [Protocol(TestProtocols.Admin)]
@@ -101,20 +103,22 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
     [Endpoint("GET /api/v1/admin/proposals/{id}")]
     public async Task ApproveProposal_StudioPublicationByItsOwnIssuerBearingProposer_IsForbidden()
     {
-        using var proposer = CreateBearerClient(CreateToken("studio-proposer-alice"));
+        const string subject = "studio-proposer-alice";
+        using var proposer = CreateBearerClient(CreateToken(subject));
+        using var sameAdmin = CreateBearerClient(CreateToken(subject, administrator: true));
 
         var proposalId = await ProposeAsync(proposer);
-        var recorded = await GetProposalAsync(proposer, proposalId);
+        var recorded = await GetProposalAsync(sameAdmin, proposalId);
         recorded.GetProperty("requestedBy").GetString().Should().StartWith(
             "subject:",
             "the Studio propose path records the issuer- and tenant-qualified owner key, not the raw subject");
 
-        using var response = await proposer.PostAsync($"/api/v1/admin/proposals/{proposalId}/approve", null);
+        using var response = await sameAdmin.PostAsync($"/api/v1/admin/proposals/{proposalId}/approve", null);
         var body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden, body);
         body.Should().Contain(SeparationOfDuties);
-        var after = await GetProposalAsync(proposer, proposalId);
+        var after = await GetProposalAsync(sameAdmin, proposalId);
         after.GetProperty("status").GetString().Should().Be(
             "AwaitingApproval",
             "a refused self-approval must not move the publication pointer");
@@ -130,7 +134,7 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
     public async Task ApproveProposal_StudioPublicationByADifferentPrincipal_Succeeds()
     {
         using var proposer = CreateBearerClient(CreateToken("studio-proposer-carol"));
-        using var approver = CreateBearerClient(CreateToken("studio-approver-dave"));
+        using var approver = CreateBearerClient(CreateToken("studio-approver-dave", administrator: true));
 
         var proposalId = await ProposeAsync(proposer);
 
@@ -148,9 +152,11 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
     [Endpoint("POST /mcp tools/call honua_studio_propose_publication")]
     public async Task ApplyApprovedProposal_ApproverIdentitiesNameTheRequester_GatewayRefuses()
     {
-        using var proposer = CreateBearerClient(CreateToken("studio-proposer-erin"));
+        const string subject = "studio-proposer-erin";
+        using var proposer = CreateBearerClient(CreateToken(subject));
+        using var sameAdmin = CreateBearerClient(CreateToken(subject, administrator: true));
         var proposalId = await ProposeAsync(proposer);
-        var requestedBy = (await GetProposalAsync(proposer, proposalId)).GetProperty("requestedBy").GetString()!;
+        var requestedBy = (await GetProposalAsync(sameAdmin, proposalId)).GetProperty("requestedBy").GetString()!;
         var gateway = _fixture.Services.GetRequiredService<IOperationGateway>();
 
         // Every approval entry point reaches the gateway, so it refuses the requester on its own
@@ -165,7 +171,7 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
             });
 
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage($"{SeparationOfDuties}*");
-        (await GetProposalAsync(proposer, proposalId)).GetProperty("status").GetString()
+        (await GetProposalAsync(sameAdmin, proposalId)).GetProperty("status").GetString()
             .Should().Be("AwaitingApproval");
     }
 
@@ -244,21 +250,26 @@ public sealed class StudioPublicationSelfApprovalTests : IAsyncLifetime
         return document.RootElement.Clone();
     }
 
-    private static string CreateToken(string subject)
+    private static string CreateToken(string subject, bool administrator = false)
     {
         var credentials = new SigningCredentials(
             new SymmetricSecurityKey(Encoding.UTF8.GetBytes(SigningKey)), SecurityAlgorithms.HmacSha256);
+        List<Claim> claims =
+        [
+            new Claim("sub", subject),
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new Claim("tid", Tenant),
+            new Claim("scope", OperatorScopeCatalog.Full),
+        ];
+        if (administrator)
+        {
+            claims.Add(new Claim("roles", "admin"));
+        }
+
         var token = new JwtSecurityToken(
             issuer: Issuer,
             audience: Audience,
-            claims:
-            [
-                new Claim("sub", subject),
-                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-                new Claim("tid", Tenant),
-                new Claim("roles", "admin"),
-                new Claim("scope", OperatorScopeCatalog.Full),
-            ],
+            claims: claims,
             expires: DateTime.UtcNow.AddMinutes(30),
             signingCredentials: credentials);
         return new JwtSecurityTokenHandler().WriteToken(token);

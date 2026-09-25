@@ -1150,7 +1150,7 @@ internal static class McpToolOutputSchemas
         """
         {
           "type": "object",
-          "required": ["operation", "operationInstanceId", "proposalId", "proposalUri", "auditId", "correlationId", "idempotencyIdentity", "status", "humanConfirmationRequired", "message"],
+          "required": ["operation", "operationInstanceId", "auditId", "correlationId", "idempotencyIdentity", "status", "humanConfirmationRequired", "message"],
           "properties": {
             "operation": { "type": "object" },
             "operationInstanceId": { "type": "string", "minLength": 1 },
@@ -1159,8 +1159,9 @@ internal static class McpToolOutputSchemas
             "auditId": { "type": "string", "minLength": 1 },
             "correlationId": { "type": "string", "minLength": 1 },
             "idempotencyIdentity": { "type": "string", "minLength": 1 },
-            "status": { "type": "string", "const": "AwaitingApproval" },
-            "humanConfirmationRequired": { "type": "boolean", "const": true },
+            "status": { "type": "string", "minLength": 1 },
+            "humanConfirmationRequired": { "type": "boolean" },
+            "shareUrl": { "type": "string", "minLength": 1 },
             "message": { "type": "string" }
           }
         }

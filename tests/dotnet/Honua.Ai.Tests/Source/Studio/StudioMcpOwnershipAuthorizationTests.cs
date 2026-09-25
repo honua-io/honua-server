@@ -136,6 +136,15 @@ public sealed class StudioMcpOwnershipAuthorizationTests
             call.ResourceOwnerId.Should().Be(Alice);
             call.ResourceId.Should().Be(
                 family == DraftToolFamily.PublicationProposal ? ItemId.ToString("D") : DraftId.ToString("D"));
+            if (family == DraftToolFamily.PublicationProposal)
+            {
+                var output = result.StructuredContent!.Value;
+                var published = callerKind == CallerKind.Admin;
+                output.GetProperty("status").GetString().Should().Be(published ? "Published" : "AwaitingApproval");
+                output.GetProperty("humanConfirmationRequired").GetBoolean().Should().Be(!published);
+                output.TryGetProperty("shareUrl", out _).Should().Be(published);
+                output.TryGetProperty("proposalId", out _).Should().Be(!published);
+            }
         }
         else
         {

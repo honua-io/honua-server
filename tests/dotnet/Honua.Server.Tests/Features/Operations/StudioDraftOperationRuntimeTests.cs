@@ -390,6 +390,49 @@ public sealed class StudioDraftOperationRuntimeTests
         pointers.CurrentVersionId.Should().Be(saved.VersionId);
     }
 
+    [UnitTest]
+    public async Task LicensingDisabled_AdminPublication_ExecutesBeforeTheProposalGuardrail()
+    {
+        var store = new InMemoryStudioPackageStore();
+        var lifecycle = BuildLifecycle(store);
+        var saved = await SaveFirstVersionAsync(lifecycle);
+        var policy = new CanonicalOperationPolicyDecisionPoint(
+            Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Operations.Policy.OperationPolicyOptions()),
+            new Honua.Core.Features.Guardrails.DefaultGuardrailLadder(
+                new Honua.Infrastructure.Licensing.DisabledLicenseService(),
+                Microsoft.Extensions.Options.Options.Create(new Honua.Core.Features.Guardrails.GuardrailLadderOptions())));
+        var bridge = new DurableApprovalBridge();
+        var instances = new VolatileOperationInstanceStore();
+        var runtime = new StudioDraftMutationRuntime(
+            new OperationDispatcher(
+                new OperationCatalog([new ServerOperationDescriptorProvider()], TimeProvider.System),
+                [PublicationExecutor(lifecycle)],
+                policy,
+                TimeProvider.System,
+                approvalBridge: bridge,
+                instanceStore: instances,
+                auditLog: new VolatileOperationAuditLog()),
+            instances);
+        var intent = new StudioPublicationIntent { Route = "/studio/parcels", Visibility = "organization" };
+
+        var published = await runtime.CreatePublicationRequestAsync(
+            saved.ItemId, saved.VersionId, saved.ContentHash, intent, null, "studio-admin",
+            new StudioDraftMutationContext
+            {
+                PrincipalId = "studio-admin",
+                CorrelationId = "corr-admin",
+                ActionDiscriminator = BuiltInGuardrailActions.StudioPublicationProposal,
+                PublishImmediately = true,
+            });
+
+        published.Operation.Status.Should().Be(OperationHandleStatus.Completed);
+        published.Operation.ProposalId.Should().BeNull();
+        published.Value.Should().NotBeNull();
+        published.Value!.Status.Should().Be(StudioPublicationRequestStatus.Accepted);
+        bridge.Request.Should().BeNull("an admin publication must not open an approval proposal");
+        (await store.GetPointersAsync(saved.ItemId))!.PublishedVersionId.Should().Be(saved.VersionId);
+    }
+
     private static string InvalidIntentPayload(StudioContentVersion version) => JsonSerializer.Serialize(
         new StudioPublicationRequestPayload
         {
