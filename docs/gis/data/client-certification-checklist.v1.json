@@ -1712,7 +1712,11 @@
       "operation": "service-info",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (revision c9f739e6d): Pro binds test_service/ImageServer as an IMAGE SERVICE and applies the band statistics the service reports. The contextual ribbon tab reads 'Image Service Layer' rather than a generic raster tab, the layer menu carries the image-service commands 'Zoom To Source Resolution' and 'Use Service Cache', and the Contents legend reads Value 100 at the top of the stretch and 10 at the bottom - exactly the service's own minValues [10] / maxValues [100] from ImageServer?f=json (1 band, pixelType F32, capabilities Catalog,Image,Metadata,Mensuration,Pixels,Statistics). Pro did not merely accept the URL; it built the stretch from the service's reported range.",
+          "previous_exclusion": {
+            "state": "not-started"
+          }
         },
         "arcpy": {
           "state": "pass",
@@ -1788,7 +1792,11 @@
       "operation": "identify",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "fail",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (revision c9f739e6d): ArcGIS Pro CRASHED while identifying the image service layer. The layer was added and zoomed to (1:339,824), both vector layers were hidden so Explore would resolve to the raster, and one Explore click was issued at the map centre. Pro terminated - the ArcGISPro process is gone, ESRIReporter started 08:51:33, and Pro wrote ArcGISPro_13.7.1.1904_0_09_25_2026_08_51_33.dmp (10273219 bytes) to %LOCALAPPDATA%/ESRI/ErrorReports. The report was NOT sent to Esri. NOT attributed to the server on this evidence: identify over REST at (-122.425,37.77), (-122.4194,37.7749) and (-122.40,37.80) each returns value '100', name 'Client Compat Coverage' with HasData/Coordinates/SRID/BandCount, and exportImage over the service extent returns 200 image/png, 1392 bytes, a valid PNG. Two earlier dumps on this machine (2026-09-19 07:55 and 15:08) predate this run, so a client-side fault is plausible. Isolating it needs the dump read, which this run did not do. Recorded fail because the operation did not complete in the client; cause open.",
+          "previous_exclusion": {
+            "state": "not-started"
+          }
         },
         "arcpy": {
           "state": "n/a-no-client",
