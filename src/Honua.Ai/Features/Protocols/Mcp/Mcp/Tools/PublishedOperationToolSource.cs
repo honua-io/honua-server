@@ -18,9 +18,10 @@ namespace Honua.Ai.Protocols.Mcp.Tools;
 /// <c>tools/list</c> and <c>tools/call</c>.
 /// </summary>
 /// <remarks>
-/// By default only the audited Admin projection publishes (#3363): operations named by a registered
-/// <see cref="IAuditedAdminMcpProjection"/> (<c>Mcp:PublishOperations:AdminProjection</c>). The full
-/// catalog publishes only when <c>Mcp:PublishOperations:Enabled</c> is set. Audited
+/// By default the audited Admin projection publishes (#3363), including the closed operator roster:
+/// operations named by a registered <see cref="IAuditedAdminMcpProjection"/>
+/// (<c>Mcp:PublishOperations:AdminProjection</c>). The full catalog publishes only when
+/// <c>Mcp:PublishOperations:Enabled</c> is set. Audited
 /// <see cref="AdminMcpOperationExclusions"/> never publish. In "deterministic mode" (<c>DeterministicOnly</c>) only AI-free
 /// descriptors are published — the audit/inspect toolset. Descriptors already exposed by a
 /// hand-authored tool are skipped so the same operation is not advertised twice.

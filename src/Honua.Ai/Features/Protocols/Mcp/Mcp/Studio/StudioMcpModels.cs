@@ -613,6 +613,18 @@ internal sealed record McpStudioReopenVersionArgument
     [JsonPropertyName("versionId")] public required Guid VersionId { get; init; }
 }
 
+internal sealed record McpStudioGetVersionArgument
+{
+    [JsonPropertyName("itemId")] public required Guid ItemId { get; init; }
+    [JsonPropertyName("versionId")] public required Guid VersionId { get; init; }
+}
+
+internal sealed record McpStudioGetVersionOutput
+{
+    [JsonPropertyName("versionId")] public required Guid VersionId { get; init; }
+    [JsonPropertyName("contentHash")] public required string ContentHash { get; init; }
+}
+
 internal sealed record McpStudioSaveVersionOutput
 {
     [JsonPropertyName("operation")] public required OperationHandle Operation { get; init; }

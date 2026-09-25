@@ -143,6 +143,7 @@ public sealed class CapabilityRegistry : ICapabilityRegistry
             ("honua_studio_validate_draft", "studio_validate_draft", "lifecycle"),
             ("honua_studio_preview_draft", "studio_preview_draft", "lifecycle"),
             ("honua_studio_save_version", "studio_save_version", "lifecycle"),
+            ("honua_studio_get_version", "studio_get_version", "lifecycle"),
             ("honua_studio_reopen_version", "studio_reopen_version", "lifecycle"),
             ("honua_studio_add_layer", "studio_add_layer", "execution"),
             ("honua_studio_remove_layer", "studio_remove_layer", "execution"),

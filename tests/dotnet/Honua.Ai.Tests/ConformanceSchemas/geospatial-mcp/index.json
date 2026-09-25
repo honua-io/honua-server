@@ -410,6 +410,14 @@
       "notes": "Honua extension (#3428): save a generation-checked immutable Studio version through the canonical mutation runtime; owner and policy checks apply."
     },
     {
+      "standardName": "studio_get_version",
+      "referenceToolName": "honua_studio_get_version",
+      "family": "Studio composition and lifecycle (Honua extension)",
+      "schema": "tools/studio_get_version.schema.json",
+      "implementationStatus": "implemented",
+      "notes": "Honua extension: read one saved Studio version. versionId and contentHash are top-level. A missing version is not_found. The read does not advance the draft generation."
+    },
+    {
       "standardName": "studio_reopen_version",
       "referenceToolName": "honua_studio_reopen_version",
       "family": "Studio composition and lifecycle (Honua extension)",

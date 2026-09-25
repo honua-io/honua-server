@@ -426,7 +426,10 @@ public sealed class OperationsToolsetTests
         publishedNames.Should().BeEquivalentTo(
             laneBDescriptors.Select(static descriptor => PublishedOperationTool.ProjectName(descriptor.OperationId)));
         laneBDescriptors.Where(static descriptor => descriptor.Policy.SideEffectClass != OperationSideEffectClass.ReadOnly)
-            .Should().OnlyContain(static descriptor => descriptor.ApprovalModel == OperationApprovalModel.OperatorGate);
+            .Should().OnlyContain(static descriptor =>
+                OperatorJourneyApproval.IsDirectExecute(descriptor.OperationId)
+                    ? descriptor.ApprovalModel == OperationApprovalModel.None
+                    : descriptor.ApprovalModel == OperationApprovalModel.OperatorGate);
     }
 
     [UnitTest]
@@ -1248,7 +1251,10 @@ public sealed class OperationsToolsetTests
         tools.Select(static tool => tool.Name).Should().BeEquivalentTo(
             expected);
         descriptors.Where(static descriptor => descriptor.Policy.SideEffectClass != OperationSideEffectClass.ReadOnly)
-            .Should().OnlyContain(static descriptor => descriptor.ApprovalModel == OperationApprovalModel.OperatorGate);
+            .Should().OnlyContain(static descriptor =>
+                OperatorJourneyApproval.IsDirectExecute(descriptor.OperationId)
+                    ? descriptor.ApprovalModel == OperationApprovalModel.None
+                    : descriptor.ApprovalModel == OperationApprovalModel.OperatorGate);
     }
 
     [UnitTest]

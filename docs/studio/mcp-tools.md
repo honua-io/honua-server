@@ -1,13 +1,16 @@
 ---
 type: guide
 title: "Studio MCP tools"
-description: "The server publishes 19 typed Studio tools through /mcp."
+description: "The server publishes 20 typed Studio tools through /mcp."
 resource: "honua://capability/ai.mcp-discovery"
 ---
 # Studio MCP tools
 
-The server publishes 19 typed Studio tools through `/mcp`.
+The server publishes 20 typed Studio tools through `/mcp`.
 This tool plane is executable independently of the browser Studio preview.
+The `configure` workflow view includes these tools. Select that view from the
+`setup_and_publish` and `dashboard_scaffolding` prompts. The older `setup` view
+does not include `honua_studio_get_version`.
 
 | Tool | Semantics |
 |---|---|
@@ -27,9 +30,10 @@ This tool plane is executable independently of the browser Studio preview.
 | `honua_studio_remove_interaction` | Remove an interaction binding. |
 | `honua_studio_add_control` | Add a map control. |
 | `honua_studio_remove_control` | Remove a map control. |
-| `honua_studio_save_version` | Save the draft as an immutable version; returns `versionId` and `contentHash`. |
+| `honua_studio_save_version` | Save the draft as an immutable version. `versionId` and `contentHash` stay nested under `version`. |
+| `honua_studio_get_version` | Read a saved version by `itemId` and `versionId`. Returns top-level `versionId` and `contentHash`. A missing version is `not_found`. Does not advance the draft generation. |
 | `honua_studio_reopen_version` | Branch a new draft from a saved version. |
-| `honua_studio_propose_publication` | Propose an exact saved version for governed publication. |
+| `honua_studio_propose_publication` | Propose an exact saved version for publication. The configure prompts tell an admin to finish this call in the same session. |
 
 Every mutation that accepts `generation` uses optimistic concurrency. A stale
 generation returns `failed_precondition` with the owner-authorized snapshot's
@@ -39,9 +43,10 @@ resolution; the server never blindly replays a mutation. Dashboard drafts use
 the same composition editor, whole-document validation, and durable lifecycle
 as map/app drafts.
 
-Publication is not a canvas mutation. Save the draft as an immutable version, then pass that
-version's `itemId`, `versionId`, and `contentHash` together with the requested
-`route` and `visibility`. The tool creates a durable canonical proposal and
-returns its proposal, operation, and audit identities. A separate authorized
-principal must approve it; poll the returned `proposalUri` for the final status
-and active URL.
+Publication is not a canvas mutation. Save the draft as an immutable version, then read it
+back with `honua_studio_get_version` when a capture needs the top-level `versionId` and
+`contentHash`. Pass the saved version's `itemId`, `versionId`, and `contentHash` together
+with the requested `route` and `visibility` to `honua_studio_propose_publication`.
+The configure prompts tell an admin to finish that call in the same session and to
+read the share URL from the result. A caller who is not an admin receives a proposal
+and does not get a share URL.

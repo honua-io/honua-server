@@ -91,6 +91,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_resolve_entity",
         "honua_list_capabilities",
         "honua_studio_save_version",
+        "honua_studio_get_version",
         "honua_studio_reopen_version",
         "honua_studio_create_draft",
         "honua_studio_get_draft",
@@ -392,6 +393,7 @@ public sealed partial class McpTaxonomyAlignmentTests
         "honua_resolve_entity",
         "honua_list_capabilities",
         "honua_studio_get_draft",
+        "honua_studio_get_version",
         "honua_studio_validate_draft",
         "honua_studio_preview_draft",
     };
@@ -966,6 +968,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             new ValidateStudioDraftTool(jobService, NullLogger<ValidateStudioDraftTool>.Instance),
             new PreviewStudioDraftTool(jobService, NullLogger<PreviewStudioDraftTool>.Instance),
             new SaveStudioVersionTool(jobService, NullLogger<SaveStudioVersionTool>.Instance),
+            new GetStudioVersionTool(jobService, NullLogger<GetStudioVersionTool>.Instance),
             new ReopenStudioVersionTool(jobService, NullLogger<ReopenStudioVersionTool>.Instance),
             new AddStudioLayerTool(jobService, NullLogger<AddStudioLayerTool>.Instance),
             new RemoveStudioLayerTool(jobService, NullLogger<RemoveStudioLayerTool>.Instance),

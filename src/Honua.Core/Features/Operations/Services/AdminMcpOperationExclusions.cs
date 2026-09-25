@@ -30,7 +30,9 @@ public static class AdminMcpOperationExclusions
         Secret("registerOAuthClient", "admin.oauth-client.register", "honua_admin_oauth_client_register", "Returns a newly issued OAuth client secret."),
         SecretInput("createOidcProvider", "admin.oidc-provider.create", "honua_admin_oidc_provider_create", "Accepts secret-bearing OIDC provider configuration."),
         SecretInput("updateOidcProvider", "admin.oidc-provider.update", "honua_admin_oidc_provider_update", "Accepts secret-bearing OIDC provider configuration."),
-        SecretInput("createConnection", "admin.connections.create", "honua_admin_connections_create", "Accepts a plaintext connection password."),
+        // admin.connections.create is on the closed operator roster. MCP publishes it without the
+        // plaintext password field; callers pass secretReference. Update and draft test still accept
+        // a password and stay excluded.
         SecretInput("updateConnection", "admin.connections.update", "honua_admin_connections_update", "Accepts a plaintext connection password."),
         SecretInput("testDraftConnection", "admin.connections.test-draft", "honua_admin_connections_test_draft", "Accepts a plaintext connection password."),
         Session("getAdminAuthSession", "admin.auth-session.get", "honua_admin_auth_session_get", "Reads browser-session-bound authentication state."),

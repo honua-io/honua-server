@@ -70,7 +70,9 @@ internal static class AdminConnectImportOperationCatalog
             Description = operation.TryGetProperty("description", out var description) ? description.GetString()! : definition.Title,
             Category = "admin",
             ExecutionKind = OperationExecutionKind.Synchronous,
-            ApprovalModel = definition.SideEffect == OperationSideEffectClass.ReadOnly ? OperationApprovalModel.None : OperationApprovalModel.OperatorGate,
+            ApprovalModel = OperatorJourneyApproval.ForMutation(
+                definition.OperationId,
+                definition.SideEffect != OperationSideEffectClass.ReadOnly),
             Policy = new OperationPolicyMetadata
             {
                 BlastRadiusClass = OperationBlastRadiusClass.ResourceScope,

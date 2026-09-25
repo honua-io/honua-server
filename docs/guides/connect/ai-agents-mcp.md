@@ -145,11 +145,19 @@ Discover the published views with `honua_list_capabilities`; each entry carries 
 
 Select a view three ways, highest precedence first:
 
-1. **Per request** — `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"view":"setup"}}` (or `params._meta["honua.io/workflow-view"]`).
-2. **Per session** — send `_meta: {"honua.io/workflow-view": "setup"}` in `initialize.params`; the negotiated name binds to the issued `Mcp-Session-Id` and applies to every later `tools/list` on that session.
+1. **Per request** — `{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{"view":"configure"}}` (or `params._meta["honua.io/workflow-view"]`).
+2. **Per session** — send `_meta: {"honua.io/workflow-view": "configure"}` in `initialize.params`; the negotiated name binds to the issued `Mcp-Session-Id` and applies to every later `tools/list` on that session.
 3. **Per server profile** — set `Mcp:WorkflowViews:DefaultView`. The default is the server-authored `default` view, capped at 12 meta/workflow tools.
 
-The shipped view is `setup`: the bounded terminal path of readiness → connect/import → publish service and layer → verify access → canonical style and render → bounded geoprocessing → Studio map/dashboard composition and lifecycle → publication submit and status. It is budget-bounded (at most 48 descriptors, 128 KiB of aggregate canonical descriptor JSON, 16 KiB per descriptor), so the whole view arrives in one page with no `nextCursor`. Its current revision includes draft read, edit, preview, immutable version save, and saved-version reopen; destructive delete and rollback operations remain outside it.
+The curated prompts select `configure` or `analyze`, not `setup`. Each view is budget-bounded (at most 48 descriptors, 128 KiB of aggregate canonical descriptor JSON, 16 KiB per descriptor), so the whole view arrives in one page with no `nextCursor`.
+
+| View | What an admin selects it for |
+|---|---|
+| `configure` | The closed admin roster (server status, API-key reads, connection create and test, import from URL, layer publish, access policy), inline ingest, service publish, layer reads, style and render, and the Studio composition, save, get-version, and publication tools. |
+| `operate` | Health, findings, events, alerts, platform-release status, deploy operations, and `honua_propose_finding`. |
+| `analyze` | Grounding, geocoding, layer reads, and the plan / validate / execute / job tools. A published-layer buffer is process `analytics.buffer-aggregate` (`layerId`). `geometry.buffer` accepts one WKB and does not read a published layer. |
+| `setup` | The older lifecycle-only path. It stays available and still keeps `honua_studio_propose_publication` out of its compose stage. New prompts do not select it. |
+| `default` | The 12-tool discovery surface. It does not contain the admin roster. |
 
 A view is **discovery, not authority**:
 
@@ -253,7 +261,7 @@ A second, independent axis *does* change the advertised roster: several tools an
 | Surface | Config / composition gate | Default (Postgres server profile) | When absent |
 |---|---|---|---|
 | Server-push `GET /mcp` SSE stream | `Mcp:ServerInitiatedStreamEnabled=true` | Off — `GET /mcp` → `405`, clients poll `honua://jobs/{jobId}` | Off by default; see the profile table above |
-| Published-operation tools (operations toolset projected as `tools/call`) | Audited Admin projection: `Mcp:PublishOperations:AdminProjection` (default `true`). Full operations catalog: `Mcp:PublishOperations:Enabled=true` | The audited Admin projection is advertised as `honua_admin_*` in the authenticated `full` catalog and in `honua_list_capabilities`, not in the bounded `default` view; the full catalog is off. The audited one-time-secret, secret-input and browser-session Admin operations are never published, under either switch; this includes connection create, update and draft test, which accept connection credentials and stay on the REST API and CLI | Omitted when both switches are off or the operations toolset is not composed |
+| Published-operation tools (operations toolset projected as `tools/call`) | Audited Admin projection: `Mcp:PublishOperations:AdminProjection` (default `true`). Full operations catalog: `Mcp:PublishOperations:Enabled=true` | The audited projection, including the closed operator roster in `docs/gis/data/operator-journey-mcp-roster.v1.json`, is advertised as `honua_admin_*`. Those roster tools are on the `configure` view. The `default` view does not include them, and the full catalog stays off. Connection create publishes with `secretReference` and `secretType` and does not accept a password. Connection update, draft connection test, one-time secret issuance, and browser-session operations stay off MCP | Omitted when both switches are off or the operations toolset is not composed |
 | Promotion resources (`honua://published-services/…`, `honua://deployments/…`, map/app packages, promotion index) | Canonical publishing + deployment persistence composed | Advertised (Postgres persistence is wired) | Omitted in compositions without canonical promotion stores |
 | Analysis report resource (`honua://jobs/{jobId}/report`) | `Reporting:Enabled=true` | Advertised | Omitted when reporting is disabled |
 | Geocode tools (`honua_geocode_address`, `honua_geocode_addresses`) | A geocode provider is composed (the server profile wires the Nominatim provider by default) | Advertised | Omitted when no geocode provider is composed |
