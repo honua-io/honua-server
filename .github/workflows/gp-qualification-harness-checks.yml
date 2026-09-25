@@ -59,8 +59,8 @@ jobs:
         ports:
           - 5000:5000
     env:
-      HONUA_SERVER_IMAGE: ghcr.io/honua-io/honua-server@sha256:a7cc1e01742cfb01e312c106e2576f78d175c89fb83d1b752afaf34e55195ed6
-      HONUA_GP_SOURCE_SHA: 8df5b4012bb5786740dfba2d63a8d13152380b5e
+      HONUA_SERVER_IMAGE: ghcr.io/honua-io/honua-server@sha256:14b597d78aa6889d3adb2b0e5e2fdbfd4617da4eb11c12079b9655ec7f709b55
+      HONUA_GP_SOURCE_SHA: fe1636ca0a3cbd3ec3994f5faafa3490672694e7
       HONUA_GP_LANE: ${{ inputs.native_rehearsal_lane || 'output-store-outage' }}
       HONUA_GP_RECEIPT_DIR: ${{ github.workspace }}/artifacts/gp-store-rehearsal
       HONUA_GP_SCENARIO_TIMEOUT_SECONDS: '900'
