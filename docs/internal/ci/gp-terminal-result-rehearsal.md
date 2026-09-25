@@ -24,7 +24,10 @@ OGC results read then synthesizes and persists the package through
 `GeoprocessingJobArtifactService.GetOrSynthesizeResultPackageAsync`. Its ID must
 match the terminal job/version and contain exactly one completed artifact. Its
 canonical same-job content route, checksum and size must match the committed
-staged descriptor; the OGC href must bind that same artifact and serving origin. Repeated reads
+staged descriptor. This advertised OGC operation supports only value transmission:
+its direct output dictionary must contain exactly outputFeatureLayer with the
+expected media type and the same parsed GeoJSON as the independently checked
+committed bytes. Reference/wrapped/unknown result envelopes fail. Repeated reads
 after 65 seconds must preserve the full persisted package and public descriptor.
 The entire terminal job record is compared throughout that window; attempt,
 version, progress, warnings and spec cannot silently change. Exactly one output
@@ -33,7 +36,7 @@ are retained as nonhidden GeoJSON files, compared byte-for-byte, hashed and
 checked against independent expected IDs and coordinates. The download uses
 the validated recovered package URI, and its bytes must match package metadata.
 
-Raw fence, killed/replacement container inspect records, untouched-service
+Exact submitted payload, raw fence, killed/replacement container inspect records, untouched-service
 identities, full terminal/package documents, descriptors, inventories and worker
 logs accompany the receipt. Caller topology restoration happens after the
 proof. A restoration failure fails the scenario and taints later live scenarios;

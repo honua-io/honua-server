@@ -49,11 +49,15 @@ terminal_assert_package() {
 }
 
 terminal_assert_public_result() {
-  jq -e --slurpfile package "$2" --arg origin "$peer_url" '
-    (.outputs|to_entries) as $outputs | $package[0].artifacts[0] as $artifact |
-    ($outputs|length) == 1 and $outputs[0].value.id == $artifact.artifactId
-    and $outputs[0].value.href == ($origin + $artifact.uri)
-    and $outputs[0].value.type == $artifact.contentType' "$1" >/dev/null
+  # Advertised native OGC processes support value transmission only. The wire
+  # document is the output dictionary itself, not an {outputs: ...} envelope.
+  # Bind its actual value to the independently checked committed bytes; staged
+  # reference retrieval below uses the recovered canonical package's URI.
+  jq -e --slurpfile package "$2" --slurpfile committed "$3" '
+    keys == ["outputFeatureLayer"]
+    and (.outputFeatureLayer|keys) == ["mediaType", "value"]
+    and .outputFeatureLayer.mediaType == $package[0].artifacts[0].contentType
+    and .outputFeatureLayer.value == $committed[0]' "$1" >/dev/null
 }
 
 terminal_job_record() {
@@ -121,8 +125,8 @@ run_terminal_result_recovery() {
   terminal_package_record > "$package_first" || return 1
   terminal_assert_package "$package_first" || {
     scenario_fail "ordinary result read did not persist a result package"; return 1; }
-  terminal_assert_public_result "$descriptor_first" "$package_first" || {
-    scenario_fail "OGC result did not link the recovered package artifact"; return 1; }
+  terminal_assert_public_result "$descriptor_first" "$package_first" "$before_bytes" || {
+    scenario_fail "OGC value result did not match the committed package artifact"; return 1; }
   # The validated package route is exactly relative, same job/index, with no
   # network authority, query, fragment or provider URL accepted by the validator.
   artifact_uri="$(jq -r '.artifacts[0].uri' "$package_first")" || return 1

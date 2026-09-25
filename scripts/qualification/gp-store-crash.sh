@@ -53,6 +53,9 @@ run_store_crash_case() {
   local -x HONUA_GP_WORKER_REDIS=terminal-proxy:6379
   compose --profile crash-boundaries up -d --wait terminal-proxy >/dev/null || return 1
   compose up -d --force-recreate worker >/dev/null || return 1
+  if [[ "$target" == terminal-committed-registration-pending && "$disruption" == worker ]]; then
+    printf '%s\n' "$native_payload" > "$receipt_root/$scenario-request.json" || return 1
+  fi
   job="$(submit_async gdal.ogr2ogr "${native_payload}")" || return 1
   jq -n --arg job "$job" '{submitted_job:$job}' > "$scenario_evidence_file" || return 1
   wait_barrier "$job" claimed || { scenario_fail "worker did not reach claimed fence"; return 1; }

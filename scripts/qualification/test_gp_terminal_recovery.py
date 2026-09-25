@@ -114,25 +114,28 @@ if [[ "$EXPECTED" == pass ]]; then [[ "$result" == 0 ]]; else [[ "$result" != 0 
                 self.run_shell(script, TERMINAL=json.dumps(terminal), PACKAGE=json.dumps(candidate),
                                EXPECTED="pass" if expected else "fail")
 
-    def test_public_result_binds_recovered_artifact_and_same_origin(self):
+    def test_public_value_result_matches_committed_geojson_without_other_envelopes(self):
         _, package = self.package_fixture()
-        artifact = package["artifacts"][0]
-        output = {"id": artifact["artifactId"], "href": "http://fixture" + artifact["uri"],
-                  "type": artifact["contentType"]}
-        for mutation, expected in (({}, True), ({"id": "other:artifact:1"}, False),
-                                   ({"href": "http://evil.example" + artifact["uri"]}, False),
-                                   ({"href": "http://fixture/api/geoprocessing/jobs/other/artifacts/0/content"}, False),
-                                   ({"type": "text/html"}, False)):
-            with self.subTest(mutation=mutation):
+        committed = {"type": "FeatureCollection", "features": [{"type": "Feature",
+                     "properties": {"id": 1}, "geometry": {"type": "Point", "coordinates": [1, 2]}}]}
+        output = {"value": committed, "mediaType": package["artifacts"][0]["contentType"]}
+        variants = [({"outputFeatureLayer": output}, True),
+                    ({"outputs": {"outputFeatureLayer": output}}, False),
+                    ({"outputFeatureLayer": {"href": "http://fixture/output", "type": "application/geo+json"}}, False),
+                    ({"outputFeatureLayer": {**output, "mediaType": "text/html"}}, False),
+                    ({"outputFeatureLayer": {**output, "value": {"type": "FeatureCollection", "features": []}}}, False),
+                    ({"outputFeatureLayer": {**output, "unexpected": True}}, False),
+                    ({"outputFeatureLayer": output, "other": output}, False)]
+        for result, expected in variants:
+            with self.subTest(result=result):
                 script = functions(RECOVERY, "terminal_assert_public_result") + r'''
-peer_url=http://fixture
 printf '%s' "$PACKAGE" > package.json; printf '%s' "$RESULT" > result.json
-result=0; terminal_assert_public_result result.json package.json || result=$?
+printf '%s' "$COMMITTED" > committed.geojson
+result=0; terminal_assert_public_result result.json package.json committed.geojson || result=$?
 if [[ "$EXPECTED" == pass ]]; then [[ "$result" == 0 ]]; else [[ "$result" != 0 ]]; fi
 '''
-                self.run_shell(script, PACKAGE=json.dumps(package),
-                               RESULT=json.dumps({"outputs": {"outputFeatureLayer": {**output, **mutation}}}),
-                               EXPECTED="pass" if expected else "fail")
+                self.run_shell(script, PACKAGE=json.dumps(package), RESULT=json.dumps(result),
+                               COMMITTED=json.dumps(committed), EXPECTED="pass" if expected else "fail")
 
 
 if __name__ == "__main__":
