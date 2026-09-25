@@ -1095,10 +1095,13 @@ internal sealed class GeocodingHandler(
             availableCapabilities.Add("Suggest");
         }
 
-        if (capabilities.SupportsBatch)
-        {
-            availableCapabilities.Add("BatchGeocode");
-        }
+        // Batch is deliberately NOT a capability token. Esri's GeocodeServer capabilities
+        // enumeration is Geocode, ReverseGeocode and Suggest; batch support is declared
+        // through locatorProperties (SuggestedBatchSize and MaxBatchSize), which this
+        // locator now carries. "BatchGeocode" was an invented member of an enumeration a
+        // client parses, and an unrecognised token in that list is a plausible reason for
+        // one to bind the locator and then decline to batch against it - which is the
+        // shape of honua-server#5145.
 
         return string.Join(',', availableCapabilities);
     }
