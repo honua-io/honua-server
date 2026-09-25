@@ -32,6 +32,7 @@ public sealed partial class LayerPublishingIntegrationTests
             {
                 builder.UseSetting("MultiTenancy:DefaultTenantId", "");
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
+                builder.UseSetting("HONUA_ADMIN_PASSWORD", WebAppFixture.SharedAdminPassword);
             });
         try
         {
@@ -131,7 +132,11 @@ public sealed partial class LayerPublishingIntegrationTests
 
         using var query = await _client.GetAsync(
             $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&where=1%3D1&outFields=*");
-        query.StatusCode.Should().Be(HttpStatusCode.OK, await query.Content.ReadAsStringAsync());
+        var queryBody = await query.Content.ReadAsStringAsync();
+        query.StatusCode.Should().Be(HttpStatusCode.OK, queryBody);
+        using var queryDocument = JsonDocument.Parse(queryBody);
+        queryDocument.RootElement.TryGetProperty("error", out _).Should().BeFalse(queryBody);
+        queryDocument.RootElement.GetProperty("features").GetArrayLength().Should().Be(1);
 
         await AssertNamespaceAdminOperationsAsync(HttpStatusCode.OK);
 
@@ -144,7 +149,10 @@ public sealed partial class LayerPublishingIntegrationTests
                 ? candidate with { Metadata = candidate.Metadata with { Tenant = "foreign" } } : candidate).ToArray()
         });
         using var foreign = await _client.GetAsync($"/rest/services/{_serviceName}/FeatureServer/{_layerId}?f=json");
-        foreign.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        await AssertNamespaceGeoServicesNotFoundAsync(foreign);
+        using var foreignQuery = await _client.GetAsync(
+            $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&where=1%3D1&outFields=*");
+        await AssertNamespaceGeoServicesNotFoundAsync(foreignQuery);
         var graphBeforeDenials = _fixture.GetCurrentV2GraphSnapshot().Graph;
         var sqlBeforeDenials = await ReadNamespaceLayerStateAsync();
         await AssertNamespaceAdminOperationsAsync(HttpStatusCode.NotFound);
@@ -289,6 +297,18 @@ public sealed partial class LayerPublishingIntegrationTests
         extent.StatusCode.Should().Be(expected, await extent.Content.ReadAsStringAsync());
         using var snapshot = await _client.PostAsync($"{route}/{_layerId}/features/refresh", null);
         snapshot.StatusCode.Should().Be(expected, await snapshot.Content.ReadAsStringAsync());
+    }
+
+    private static async Task AssertNamespaceGeoServicesNotFoundAsync(HttpResponseMessage response)
+    {
+        var body = await response.Content.ReadAsStringAsync();
+        // StandardErrorResponseFormatter preserves the GeoServices HTTP200/error-code contract.
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+        using var document = JsonDocument.Parse(body);
+        document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404, body);
+        document.RootElement.TryGetProperty("id", out _).Should().BeFalse(body);
+        document.RootElement.TryGetProperty("fields", out _).Should().BeFalse(body);
+        document.RootElement.TryGetProperty("features", out _).Should().BeFalse(body);
     }
 
     private async Task<string> ReadNamespaceLayerStateAsync()
