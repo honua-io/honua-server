@@ -137,7 +137,9 @@ def _evaluate_budget(observation: dict, assignment: "GovernedAssignment") -> lis
                     f"metadata '{key}' observed {observed[key]!r}, expected {expected!r}"
                 )
 
-    if "range-efficiency" in assignment.facets:
+    # Derived-output attribution also requires measured transfer within the
+    # existing profile, without adding a governed range-efficiency facet.
+    if "range-efficiency" in assignment.facets or has_derived_binding(observation):
         transfer = observation.get("observed_transfer")
         if not isinstance(transfer, dict) or not transfer:
             reasons.append(

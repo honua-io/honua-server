@@ -132,6 +132,11 @@ class CanonicalArtifactEvidenceTests(unittest.TestCase):
                 normalized = MODULE._normalize_observations([changed], args())[0]
                 self.assertNotEqual("pass", normalized["result"])
                 self.assertFalse(normalized["budget_results"]["met"])
+        unmeasured = row()
+        del unmeasured["observed_transfer"]
+        normalized = MODULE._normalize_observations([unmeasured], args())[0]
+        self.assertNotEqual("pass", normalized["result"])
+        self.assertFalse(normalized["budget_results"]["met"])
         changed = row()
         changed["operation"], changed["canonical_client"] = "multidimensional-subset", "xarray"
         self.assertNotEqual("honua", MODULE._normalize_observations([changed], args())[0]["artifact_producer"])
