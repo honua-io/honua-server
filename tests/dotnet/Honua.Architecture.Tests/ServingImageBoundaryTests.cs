@@ -482,6 +482,7 @@ public sealed class ServingImageBoundaryTests
         workflow.Should().Contain("exit-code: '1'");
         workflow.Should().Contain("actions/upload-artifact");
         workflow.Should().Contain("github.event.pull_request.head.repo.fork == false");
+        workflow.Should().Contain("no-cache-filters: native-tools");
 
         var pullRequestPaths = workflow
             .Split('\n')
@@ -503,7 +504,9 @@ public sealed class ServingImageBoundaryTests
             "tests/dotnet/Honua.Worker.Gdal.Tests/GdalCli.cs",
             "tests/dotnet/Honua.Worker.Gdal.Tests/Honua.Worker.Gdal.Tests.csproj",
             ".github/actions/setup-dotnet-ci/**",
-            ".github/workflows/worker-gdal-image.yml");
+            ".github/workflows/worker-gdal-image.yml",
+            "scripts/ci/worker_publication.py",
+            "scripts/ci/test_worker_publication.py");
     }
 
     [ArchitectureTest]
