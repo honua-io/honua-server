@@ -339,6 +339,22 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
 
     private async Task AssertHydrantsReadBackAsync(string schema, string table)
     {
+        await using var scope = _host.Web.Services.CreateAsyncScope();
+        var sourceClient = scope.ServiceProvider.GetRequiredService<ArcGisRestClient>();
+        using var sourceMetadata = await sourceClient.GetLayerMetadataAsync(
+            FieldOpsFeatureServer.ServiceUrl, 0, 0, 30, null, CancellationToken.None);
+        var sourceFields = sourceMetadata.RootElement.GetProperty("fields").EnumerateArray()
+            .ToDictionary(static field => field.GetProperty("name").GetString()!, static field => field);
+        sourceFields["NAME"].GetProperty("nullable").GetBoolean().Should().BeFalse(
+            "the published SDK must preserve the source's explicit false metadata");
+        sourceFields["PRESSURE_PSI"].TryGetProperty("nullable", out _).Should().BeFalse(
+            "an omitted source flag must remain absent in raw metadata");
+        var sourceLayer = await sourceClient.GetLayerInfoAsync(
+            FieldOpsFeatureServer.ServiceUrl, 0, 30, 0, CancellationToken.None);
+        sourceLayer.Fields.Single(static field => field.Name == "NAME").Nullable.Should().BeFalse();
+        sourceLayer.Fields.Single(static field => field.Name == "PRESSURE_PSI").Nullable.Should().BeTrue(
+            "typed import metadata defaults an omitted nullable flag to permissive");
+
         await using var connection = await _host.Web.Postgres.GetConnectionAsync(schema);
 
         await using (var fieldMetadata = connection.CreateCommand())
@@ -361,9 +377,9 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
 
             nullability.Should().BeEquivalentTo(new Dictionary<string, string>
             {
-                ["name"] = "NO",
+                ["name"] = "YES",
                 ["pressure_psi"] = "YES"
-            }, "explicit false stays required while an omitted nullable flag permits null source values");
+            }, "import tables retain the established permissive storage policy even when source metadata declares a field required");
         }
 
         await using (var geometryColumn = connection.CreateCommand())
