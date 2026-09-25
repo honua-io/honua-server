@@ -890,7 +890,11 @@
       "operation": "items",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (revision c9f739e6d): Pro fetched an OGC API Features collection's items and drew them. Right-clicking collection 'Browser Points(2000)' under the connection's Features node offers 'Add To Current Map' and 'Add To New' - so Pro DOES have a native route to add a collection as a map layer, CONTRADICTING the 2026-09-17 UI-SERVICE-OGCFEATURES note that it offers none. Add To Current Map raised an 'Add OGC API Layer(s)' dialog with max-features and spatial-extent options; the defaults added a layer 'Browser Points' drawing three points at 1:31,699. The oracle, GET /ogc/features/collections/2000/items?limit=10, returns numberMatched 3 with ids 13/14/15 named pt-alpha (-122.4194,37.7749), pt-beta (-122.418,37.776) and pt-gamma (-122.421,37.7735). The rendered arrangement matches: top-right is the highest-latitude easternmost (pt-beta), bottom-left the lowest-latitude westernmost (pt-gamma), pt-alpha between - positionally faithful, not merely the right count.",
+          "previous_exclusion": {
+            "state": "not-started"
+          }
         },
         "arcpy": {
           "state": "n/a-no-client",
