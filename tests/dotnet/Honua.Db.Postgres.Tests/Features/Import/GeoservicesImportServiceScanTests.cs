@@ -160,7 +160,7 @@ public sealed class GeoservicesImportServiceScanTests
     public async Task ScanSourceAsync_WithExpiredTokenError_ReportsExpiredTokenPostureWithoutSecretValues()
     {
         const string accessToken = "expired-arcgis-token";
-        var service = CreateService(new ArcGisErrorHandler(498, "Invalid token."));
+        var service = CreateService(new ArcGisErrorHandler(498, $"Invalid token: {accessToken}."));
 
         var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
         {
@@ -226,6 +226,41 @@ public sealed class GeoservicesImportServiceScanTests
         resource.HasAttachments.Should().BeNull();
         resource.Compatibility.Warnings.Should().NotContain(warning => warning.Contains("Attachments", StringComparison.Ordinal));
         artifact.ExternalDependencies.Should().NotContain(dependency => dependency.Kind == "attachments");
+    }
+
+    [Fact]
+    public async Task ScanSourceAsync_PublishedSdkMetadata_PreservesUnknownAndExplicitFieldNullability()
+    {
+        var service = CreateService(new GeoservicesScanHandler(
+            serviceDescription: "Parcel Viewer",
+            spatialReferenceJson: JsonSerializer.Serialize(new { wkt = SpatialReference.WebMercator.Wkt }),
+            fieldsJson: """
+                [{"name":"OMITTED","type":"esriFieldTypeString"},
+                 {"name":"REQUIRED","type":"esriFieldTypeString","nullable":false},
+                 {"name":"OPTIONAL","type":"esriFieldTypeString","nullable":true},
+                 {"name":"NULL","type":"esriFieldTypeString","nullable":null}]
+                """));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5
+        });
+
+        var resource = artifact.Resources.Should().ContainSingle().Subject;
+        resource.Fields.ToDictionary(static field => field.Name, static field => field.Nullable)
+            .Should().BeEquivalentTo(new Dictionary<string, bool?>
+            {
+                ["OMITTED"] = null,
+                ["REQUIRED"] = false,
+                ["OPTIONAL"] = true,
+                ["NULL"] = null
+            });
+        resource.HasAttachments.Should().BeNull();
+        resource.FeatureCount.Should().Be(42);
+        var spatialReference = resource.SpatialReferences.Should().ContainSingle().Subject;
+        spatialReference.SourceValue.Should().Be(SpatialReference.WebMercator.Wkt);
+        artifact.Source.Version.Should().Be("11.2");
     }
 
     [Fact]

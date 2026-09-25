@@ -341,6 +341,31 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
     {
         await using var connection = await _host.Web.Postgres.GetConnectionAsync(schema);
 
+        await using (var fieldMetadata = connection.CreateCommand())
+        {
+            fieldMetadata.CommandText = """
+                SELECT lower(column_name), is_nullable
+                FROM information_schema.columns
+                WHERE table_schema = @schema AND table_name = @table
+                  AND lower(column_name) IN ('name', 'pressure_psi')
+                ORDER BY lower(column_name)
+                """;
+            fieldMetadata.Parameters.AddWithValue("schema", schema);
+            fieldMetadata.Parameters.AddWithValue("table", table);
+            var nullability = new Dictionary<string, string>();
+            await using var reader = await fieldMetadata.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                nullability.Add(reader.GetString(0), reader.GetString(1));
+            }
+
+            nullability.Should().BeEquivalentTo(new Dictionary<string, string>
+            {
+                ["name"] = "NO",
+                ["pressure_psi"] = "YES"
+            }, "explicit false stays required while an omitted nullable flag permits null source values");
+        }
+
         await using (var geometryColumn = connection.CreateCommand())
         {
             geometryColumn.CommandText =
@@ -577,16 +602,21 @@ public sealed class MigrationAdminSdkLifecycleTests : IClassFixture<MigrationAdm
         private static JsonArray HydrantFields() => new(
             Field("OBJECTID", "esriFieldTypeOID", nullable: false),
             Field("NAME", "esriFieldTypeString", nullable: false, length: 16),
-            Field("PRESSURE_PSI", "esriFieldTypeDouble", nullable: true));
+            // Omitted nullable must retain the importer's permissive default through the published SDK.
+            Field("PRESSURE_PSI", "esriFieldTypeDouble", nullable: null));
 
         private static JsonArray InspectionFields() => new(
             Field("OBJECTID", "esriFieldTypeOID", nullable: false),
             Field("HYDRANT_ID", "esriFieldTypeInteger", nullable: false),
             Field("RESULT", "esriFieldTypeString", nullable: false, length: 8));
 
-        private static JsonObject Field(string name, string type, bool nullable, int? length = null)
+        private static JsonObject Field(string name, string type, bool? nullable, int? length = null)
         {
-            var field = new JsonObject { ["name"] = name, ["alias"] = name, ["type"] = type, ["nullable"] = nullable };
+            var field = new JsonObject { ["name"] = name, ["alias"] = name, ["type"] = type };
+            if (nullable.HasValue)
+            {
+                field["nullable"] = nullable.Value;
+            }
             if (length is not null)
             {
                 field["length"] = length;

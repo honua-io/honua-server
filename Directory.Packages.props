@@ -51,8 +51,8 @@
          a customer installs (#4600 acceptance criterion 7). -->
     <PackageVersion Include="Honua.Sdk.Admin" Version="1.7.0" />
     <!-- Published .NET GeoServices SDK: the protocol client for ArcGIS source reads in the import path
-         (#4599). 1.8.0 is the minimum version that addresses arbitrary source roots and bounds source bodies. -->
-    <PackageVersion Include="Honua.Sdk.GeoServices" Version="1.8.0" />
+         (#4599). 1.9.0 adds lossless source metadata reads and nullable/WKT fidelity. -->
+    <PackageVersion Include="Honua.Sdk.GeoServices" Version="1.9.0" />
     <PackageVersion Include="Mapsui" Version="5.0.2" />
     <!-- Transitive of NBomber.Contracts (tests) and Microsoft.AspNetCore.SignalR.StackExchangeRedis (server
          admin realtime backplane, #2554); pinned directly to clear GHSA-hv8m-jj95-wg3x (NU1903). -->
