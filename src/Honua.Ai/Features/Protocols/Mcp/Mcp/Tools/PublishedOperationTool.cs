@@ -357,6 +357,16 @@ internal sealed class PublishedOperationTool : IMcpTool
 
     private Dictionary<string, string?> ReadParameters(JsonElement? arguments)
     {
+        // The operation descriptor can accept plaintext credentials for other transports.
+        // MCP advertises references only, so reject hidden secret fields before dispatch
+        // rather than letting a manually constructed tools/call bypass that contract.
+        if (arguments is { ValueKind: JsonValueKind.Object } supplied
+            && supplied.EnumerateObject().Any(property => IsSecretValueInput(property.Name)))
+        {
+            throw new GeoprocessingValidationException(
+                "Inline credentials are not accepted by published MCP tools; use a secretReference.");
+        }
+
         var parameters = new Dictionary<string, string?>(StringComparer.Ordinal);
         foreach (var parameter in _descriptor.InputSchema)
         {

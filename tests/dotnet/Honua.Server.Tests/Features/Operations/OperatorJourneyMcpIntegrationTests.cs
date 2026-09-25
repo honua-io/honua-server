@@ -59,12 +59,14 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
                     .AddHttpMessageHandler(() => new StaticGeoJsonHandler());
             });
         var previousSecret = Environment.GetEnvironmentVariable(SecretVariable);
+        var suffix = Guid.NewGuid().ToString("N")[..8];
+        var connectionName = $"roster{suffix}";
+        var serviceName = $"roster{suffix}";
         await fixture.InitializeAsync();
         try
         {
             Environment.SetEnvironmentVariable(SecretVariable, fixture.Postgres.ConnectionString);
             using var admin = fixture.CreateAdminClient();
-            var suffix = Guid.NewGuid().ToString("N")[..8];
             var deniedName = $"denied{suffix}";
 
             using var createdKey = await admin.PostAsJsonAsync(
@@ -93,7 +95,24 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
             (await ConnectionNamesAsync(admin)).Should().NotContain(deniedName);
 
             var builder = new NpgsqlConnectionStringBuilder(fixture.Postgres.ConnectionString);
-            var connectionName = $"roster{suffix}";
+            var inlineName = $"inline{suffix}";
+            var inlineSecret = await CallAsync(admin, "honua_admin_connections_create", new
+            {
+                name = inlineName,
+                host = builder.Host,
+                port = builder.Port,
+                databaseName = builder.Database,
+                username = builder.Username,
+                password = "inline-value-must-not-be-echoed",
+                secretReference = $"env:{SecretVariable}",
+                secretType = "env",
+                sslRequired = false,
+                sslMode = "Disable",
+            });
+            DeniedCode(inlineSecret).Should().Be("invalid_argument", inlineSecret.GetRawText());
+            inlineSecret.GetRawText().Should().NotContain("inline-value-must-not-be-echoed");
+            (await ConnectionNamesAsync(admin)).Should().NotContain(inlineName);
+
             var created = await CallOkAsync(admin, "honua_admin_connections_create", new
             {
                 name = connectionName,
@@ -138,7 +157,6 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
                 ? physical.GetString()
                 : tableName;
 
-            var serviceName = $"roster{suffix}";
             var published = await CallOkAsync(admin, "honua_admin_layer_publish", new
             {
                 connectionId,
@@ -165,7 +183,26 @@ public sealed class OperatorJourneyMcpIntegrationTests(RedisFixture redis)
         finally
         {
             Environment.SetEnvironmentVariable(SecretVariable, previousSecret);
-            await fixture.DisposeAsync();
+            try
+            {
+                // Publishing also writes the global compatibility catalog, outside the
+                // fixture schema. Remove this journey's service before the next seed
+                // deletes connections, otherwise its connection FK blocks initialization.
+                await fixture.Postgres.ApplyGlobalSeedSqlAsync(
+                    """
+                    DELETE FROM honua.services WHERE service_name = @serviceName;
+                    DELETE FROM honua.data_connections WHERE name = @connectionName;
+                    """,
+                    command =>
+                    {
+                        command.Parameters.AddWithValue("serviceName", serviceName);
+                        command.Parameters.AddWithValue("connectionName", connectionName);
+                    });
+            }
+            finally
+            {
+                await fixture.DisposeAsync();
+            }
         }
     }
 
