@@ -148,19 +148,19 @@ class NumericalOracleTests(unittest.TestCase):
             self.assertNotIn("private-secret", str(run.call_args.args))
             self.assertEqual("private-secret", run.call_args.kwargs["env"]["GH_TOKEN"])
 
-    def test_rehearsal_rejects_inline_results_and_retains_staged_descriptor(self):
+    def test_rehearsal_retains_wire_results_before_shared_validation(self):
         with tempfile.TemporaryDirectory() as directory:
             client = rehearsal.RehearsalClient(Path(directory))
-            for inline in ({"value": output(canary.PROCESSES[0])}, {"href": "data:application/json;base64,e30="}):
-                with self.subTest(inline=inline), patch.object(canary.Client, "request", return_value={"output": inline}):
-                    with self.assertRaisesRegex(ValueError, "referenced staged output"):
-                        client.request("ogc/processes/jobs/job-1/results")
-                    self.assertEqual(0, client.staged_results)
-            staged = {"output": {"href": "/api/geoprocessing/jobs/job-1/artifacts/0/content"}}
-            with patch.object(canary.Client, "request", return_value=staged):
-                self.assertEqual(staged, client.request("ogc/processes/jobs/job-1/results"))
-            self.assertEqual(1, client.staged_results)
-            self.assertEqual(staged, json.loads((Path(directory) / "staged-result-1.json").read_text()))
+            valid = {"output": {"value": output(canary.PROCESSES[0])}}
+            malformed = {"unexpected": "not a process output"}
+            for index, result in enumerate((valid, malformed), 1):
+                with patch.object(canary.Client, "request", return_value=result):
+                    self.assertEqual(result, client.request("ogc/processes/jobs/job-1/results"))
+                self.assertEqual(result, json.loads((Path(directory) / f"result-document-{index}.json").read_text()))
+            self.assertEqual(2, client.result_documents)
+            self.assertEqual(output(canary.PROCESSES[0]), canary.resolve_output(client, valid))
+            with self.assertRaises(ValueError):
+                canary.resolve_output(client, malformed)
 
     def test_rehearsal_rejects_provisioned_store_digest_mismatch(self):
         import yaml

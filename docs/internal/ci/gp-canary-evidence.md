@@ -12,9 +12,12 @@ HTTP execution, result decoding and numerical oracles run against that server.
 This catches response-shape/default-format assumptions that mock tests cannot.
 The ephemeral Development/API-key/loopback HTTP topology provisions a runner-local
 output directory through the existing store initializer, using the resolved Compose
-contract and checking its digest. This rehearses staged-result decoding without
-certifying storage durability or backups. It does not prove production bearer
-authentication, native-worker identity or persistent output recovery. Its separate receipt schema records
+contract and checking its digest. The managed buffer/dissolve executors publish
+inline artifacts; their OGC value-transmission results remain inline even with
+staging enabled. The rehearsal retains both raw result documents and decoded
+output checksums. It does not prove native staged-reference retrieval, storage
+durability/backups, production bearer authentication, native-worker identity or
+persistent output recovery; those remain open under #3809. Its separate receipt schema records
 `qualification: false` and can never enter the scheduled streak. No cloud
 deployment or production data is touched by that rehearsal.
 

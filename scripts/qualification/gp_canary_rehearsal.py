@@ -25,17 +25,16 @@ class RehearsalClient(Client):
         super().__init__("http://127.0.0.1:18080", "unused")
         self.opener = urllib.request.build_opener(NoRedirect, RehearsalApiKey)
         self.folder = folder
-        self.staged_results = 0
+        self.result_documents = 0
 
     def request(self, path, body=None, expected=200):
         result = super().request(path, body, expected)
         if path.endswith("/results"):
-            outputs = list(result.values())
-            if (len(outputs) != 1 or not isinstance(outputs[0], dict)
-                    or not outputs[0].get("href") or outputs[0]["href"].startswith("data:")):
-                raise ValueError("rehearsal must exercise referenced staged output, not inline data")
-            self.staged_results += 1
-            write_json(self.folder / f"staged-result-{self.staged_results}.json", result)
+            # OGC value transmission materializes these managed geometry results,
+            # even when the host has an attested output store. Retain the wire
+            # document before the shared decoder/oracle validates its contents.
+            self.result_documents += 1
+            write_json(self.folder / f"result-document-{self.result_documents}.json", result)
         return result
 
 
@@ -77,7 +76,7 @@ def main():
         for process in PROCESSES:
             run_operation(client, process, folder, receipt)
         receipt["identity_after"] = client.identity(pin)
-        receipt["staged_result_count"] = client.staged_results
+        receipt["result_document_count"] = client.result_documents
         if not all(operation["outcome"] == "pass" for operation in receipt["operations"]):
             raise ValueError("published-image API-shape/numerical rehearsal failed")
         receipt["outcome"] = "pass"
