@@ -300,9 +300,9 @@ internal sealed partial class FeatureQueryBuilder
     /// <remarks>
     /// Uses PostGIS <c>ST_HexagonGrid</c> / <c>ST_SquareGrid</c> against the
     /// extent of the filtered features so the grid only spans the data envelope.
-    /// The cell-side join uses <c>ST_Intersects</c> on the centroid for points
-    /// (the common density use case) which keeps the join cardinality at exactly
-    /// one row per source feature regardless of geometry type.
+    /// Each feature centroid belongs to one intersecting cell, with grid indices
+    /// breaking ties on shared edges and vertices. Distinct source features keep
+    /// their own contributions even when their centroids coincide.
     /// </remarks>
     public CoreParameterizedQuery BuildDensityQuery(
         int layerId,
@@ -344,6 +344,7 @@ internal sealed partial class FeatureQueryBuilder
             // Geographic layers keep the degree centroid in `filtered` so the
             // azimuthal centre is that extent, then project into `src`.
             sql.Append(geographic ? "WITH filtered AS (SELECT " : "WITH src AS (SELECT ");
+            sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.ObjectIdColumn} AS input_id, ");
             sql.Append(geographic ? pointGeometry + " AS pt_geo" : pointGeometry + " AS pt");
             if (weightExpression != null)
             {
@@ -366,7 +367,7 @@ internal sealed partial class FeatureQueryBuilder
             {
                 var forward = BuildAeqdPipelineSql(query, query.SpatialReferenceSrid!.Value, "filtered", "pt_geo", inverse: false);
                 var inverse = BuildAeqdPipelineSql(query, query.SpatialReferenceSrid!.Value, "filtered", "pt_geo", inverse: true);
-                sql.Append(" src AS (SELECT ST_TransformPipeline(pt_geo, ");
+                sql.Append(" src AS (SELECT input_id, ST_TransformPipeline(pt_geo, ");
                 sql.Append(forward);
                 sql.Append(") AS pt");
                 if (weightExpression != null)
@@ -394,7 +395,18 @@ internal sealed partial class FeatureQueryBuilder
 
             // Cells CTE — generate the grid only over the data envelope.
             sql.Append(CultureInfo.InvariantCulture,
-                $" cells AS (SELECT (g).geom AS cell FROM bounds, LATERAL {gridFunction}({cellSizeParam}, bounds.extent::geometry) g)");
+                $" cells AS (SELECT (g).geom AS cell, (g).i, (g).j FROM bounds, LATERAL {gridFunction}({cellSizeParam}, bounds.extent::geometry) g),");
+
+            // Intersections include both sides of an edge (and every cell at a
+            // vertex). Assign each input row once, using stable grid coordinates
+            // rather than deduplicating centroids or their weights.
+            sql.Append(" assigned AS (SELECT DISTINCT ON (s.input_id) s.input_id, c.cell");
+            if (weightExpression != null)
+            {
+                sql.Append(", s.weight");
+            }
+            sql.Append(" FROM cells c JOIN src s ON ST_Intersects(c.cell, s.pt)");
+            sql.Append(" ORDER BY s.input_id, c.i, c.j)");
 
             // Outer query — count or weighted sum per cell, emit GeoJSON in WGS 84.
             // _inputCount carries the actual src CTE row count (capped at
@@ -406,10 +418,10 @@ internal sealed partial class FeatureQueryBuilder
             sql.Append(", count(*)::bigint AS \"featureCount\"");
             if (weightExpression != null)
             {
-                sql.Append(", COALESCE(SUM(s.weight), 0)::double precision AS \"weight\"");
+                sql.Append(", COALESCE(SUM(c.weight), 0)::double precision AS \"weight\"");
             }
             sql.Append(CultureInfo.InvariantCulture, $", ST_AsGeoJSON({cellGeometrySql}) AS \"cellGeometry\"");
-            sql.Append(" FROM cells c JOIN src s ON ST_Intersects(c.cell, s.pt)");
+            sql.Append(" FROM assigned c");
             sql.Append(" GROUP BY c.cell");
 
             // ORDER BY count desc, then LIMIT max+1 so the handler detects overflow.

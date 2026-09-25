@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using Honua.Core.Features.Admin.Domain;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 
 namespace Honua.Db.Postgres.Features.Admin;
@@ -24,11 +25,11 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 "The managed feature store is not configured for editable publication.");
         }
 
-        await using var managed = await _managedConnectionProvider.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var managed = await _managedConnectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var source = new NpgsqlConnection(connectionString);
         await source.OpenAsync(cancellationToken).ConfigureAwait(false);
-        if (managed is not NpgsqlConnection target ||
-            !string.Equals(source.Host, target.Host, StringComparison.OrdinalIgnoreCase) ||
+        var target = managed.Connection;
+        if (!string.Equals(source.Host, target.Host, StringComparison.OrdinalIgnoreCase) ||
             source.Port != target.Port || !string.Equals(source.Database, target.Database, StringComparison.Ordinal))
         {
             throw new LayerPublishingException(LayerPublishingErrorKind.Validation,

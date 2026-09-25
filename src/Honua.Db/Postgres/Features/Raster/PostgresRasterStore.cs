@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Buffers.Binary;
 using System.Collections.Frozen;
 using System.Data.Common;
 using System.Globalization;
@@ -2453,15 +2454,24 @@ internal sealed class PostgresRasterStore : IRasterStore
                 var contentTypeOrd = tileReader.GetOrdinal("content_type");
                 var tileData = (byte[])tileReader[tileDataOrd];
                 var contentType = tileReader.GetString(contentTypeOrd);
-                PostgresRasterLog.TileGenerated(_logger, layerId, rasterId, level, row, col, tileData.Length);
-                return new RasterResult
+                // Old cache rows can contain source-sized images despite advertising 256x256.
+                // The importer writes PNG; regenerate any legacy crop or mismatched format.
+                if (format == RasterFormat.PNG && contentType == "image/png"
+                    && tileData.Length >= 24
+                    && BinaryPrimitives.ReadUInt64BigEndian(tileData.AsSpan(0, 8)) == 0x89504E470D0A1A0AUL
+                    && BinaryPrimitives.ReadInt32BigEndian(tileData.AsSpan(16, 4)) == 256
+                    && BinaryPrimitives.ReadInt32BigEndian(tileData.AsSpan(20, 4)) == 256)
                 {
-                    Data = tileData,
-                    ContentType = contentType,
-                    Width = 256,
-                    Height = 256,
-                    Srid = 3857
-                };
+                    PostgresRasterLog.TileGenerated(_logger, layerId, rasterId, level, row, col, tileData.Length);
+                    return new RasterResult
+                    {
+                        Data = tileData,
+                        ContentType = contentType,
+                        Width = 256,
+                        Height = 256,
+                        Srid = 3857
+                    };
+                }
             }
         }
 
@@ -2528,7 +2538,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             dynCommand.CommandText = $"""
                 {tileBoundsCte}
                 SELECT ST_AsGDALRaster(
-                    {overviewResampleExpr},
+                    {RasterGridFrameSql.FrameAlignedRaster(overviewResampleExpr, "tile_ref.rast")},
                     '{effectiveTileFormat}'{tileCreationOptions}
                 ) AS data
                 FROM {_rasterOverviewsTable}, tile_bounds tb, tile_ref
@@ -2551,7 +2561,7 @@ internal sealed class PostgresRasterStore : IRasterStore
             dynCommand.CommandText = $"""
                 {tileBoundsCte}
                 SELECT ST_AsGDALRaster(
-                    {sourceResampleExpr},
+                    {RasterGridFrameSql.FrameAlignedRaster(sourceResampleExpr, "tile_ref.rast")},
                     '{effectiveTileFormat}'{tileCreationOptions}
                 ) AS data
                 FROM {_rasterDataTable}, tile_bounds tb, tile_ref
@@ -2664,7 +2674,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 FROM source
                 WHERE rast IS NOT NULL
             )
-            SELECT ST_AsGDALRaster({mosaicTileExpr}, '{effectiveTileFormat}'{tileCreationOptions}) AS data
+            SELECT ST_AsGDALRaster({RasterGridFrameSql.FrameAlignedRaster(mosaicTileExpr, "(SELECT rast FROM tile_ref)")}, '{effectiveTileFormat}'{tileCreationOptions}) AS data
             FROM merged
             WHERE rast IS NOT NULL
             """;
@@ -2731,7 +2741,7 @@ internal sealed class PostgresRasterStore : IRasterStore
         dynCommand.CommandText = $"""
             WITH {BuildTileWindowCte(window)}
             SELECT ST_AsGDALRaster(
-                {resampleExpr},
+                {RasterGridFrameSql.FrameAlignedRaster(resampleExpr, "tile_ref.rast")},
                 '{effectiveTileFormat}'{tileCreationOptions}
             ) AS data
             FROM (
@@ -2822,7 +2832,7 @@ internal sealed class PostgresRasterStore : IRasterStore
                 FROM source
                 WHERE rast IS NOT NULL
             )
-            SELECT ST_AsGDALRaster({mosaicTileExpr}, '{effectiveTileFormat}'{tileCreationOptions}) AS data
+            SELECT ST_AsGDALRaster({RasterGridFrameSql.FrameAlignedRaster(mosaicTileExpr, "(SELECT rast FROM tile_ref)")}, '{effectiveTileFormat}'{tileCreationOptions}) AS data
             FROM merged
             WHERE rast IS NOT NULL
             """;

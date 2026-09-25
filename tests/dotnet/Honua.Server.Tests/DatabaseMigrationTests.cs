@@ -4,7 +4,10 @@
 using System.Reflection;
 using DbUp;
 using FluentAssertions;
+using Honua.Core.Configuration;
+using Honua.Core.Features.Infrastructure.Migrations;
 using Honua.Db.Postgres.Features.Infrastructure.Migrations;
+using Microsoft.Extensions.Configuration;
 using Honua.Server.Startup;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
@@ -422,6 +425,122 @@ public sealed class DatabaseMigrationTests : IAsyncLifetime
             (await reader.ReadAsync()).Should().BeTrue();
             reader.GetString(0).Should().Be("transient-custom-id");
             (await reader.ReadAsync()).Should().BeFalse();
+        }
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.TestInfrastructure)]
+    public async Task CanonicalRunner_OnPopulatedInitialSchema_PreservesCoreRowsAndBackfillsOnUpgradeAndRestart()
+    {
+        var assembly = typeof(Program).Assembly;
+        // Match the canonical runner: unqualified shipped DDL belongs in public even
+        // when the fixture connection has a different default search path.
+        var migrationConnectionString = new Npgsql.NpgsqlConnectionStringBuilder(_connectionString)
+        {
+            SearchPath = "public"
+        }.ConnectionString;
+        // Install an actual shipped baseline and journal it as an existing deployment. All
+        // subsequent scripts from both roots must execute over rows, not an empty schema.
+        var baseline = DeployChanges.To
+            .PostgresqlDatabase(migrationConnectionString)
+            .JournalToPostgresqlTable("public", "schema_versions")
+            .WithScriptsEmbeddedInAssembly(assembly, name =>
+                name.EndsWith(".001_CreateHonuaSchema.sql", StringComparison.Ordinal))
+            .WithVariable("HonuaSchema", "\"honua\"")
+            .WithTransaction()
+            .Build()
+            .PerformUpgrade();
+        baseline.Successful.Should().BeTrue($"baseline must be installed: {baseline.Error}");
+        baseline.Scripts.Should().ContainSingle();
+
+        await using var connection = new Npgsql.NpgsqlConnection(migrationConnectionString);
+        await connection.OpenAsync();
+        await using (var seed = connection.CreateCommand())
+        {
+            seed.CommandText = """
+                INSERT INTO honua.services (service_name, description, srid, supported_formats, capabilities)
+                VALUES ('upgrade_receipt', 'Customer service: café', 4326, ARRAY['JSON', 'GeoJSON'], ARRAY['Query']);
+                INSERT INTO honua.layers (layer_id, layer_name, description, table_schema, table_name,
+                    geometry_type, srid, storage_options, min_scale, max_scale, default_visibility, enabled)
+                VALUES (4413, 'Customer points', 'Keep metadata', 'public', 'features', 'Point', 4326,
+                    '{"owner":"customer","nested":{"keep":true}}', 12.5, 1000.25, false, true);
+                INSERT INTO honua.service_layers (service_name, layer_id, layer_order)
+                VALUES ('upgrade_receipt', 4413, 7);
+                INSERT INTO honua.layer_fields (layer_id, field_name, field_type, field_order,
+                    max_length, nullable, default_value, description, domain, hidden)
+                VALUES (4413, 'name', 'text', 1, 128, false, 'unknown', 'Customer field',
+                    '{"type":"codedValue","codedValues":[{"name":"Café","code":"A"}]}', true);
+                INSERT INTO public.features (objectid, layer_id, geometry, attributes)
+                VALUES (441301, 4413, ST_GeomFromEWKT('SRID=4326;POINT Z(-157.8 21.3 42.25)'),
+                        '{"name":"Café","count":9007199254740991,"active":true,"optional":null}'),
+                       (441302, 4413, NULL, '{"name":"No geometry","count":-19,"active":false}');
+                """;
+            await seed.ExecuteNonQueryAsync();
+        }
+
+        // Capture every original column, including defaults, timestamps, arrays and EWKB.
+        // storage_srid is the one intentional initial-schema backfill (migration 021).
+        var tables = new[] { "honua.services", "honua.layers", "honua.service_layers", "honua.layer_fields", "public.features" };
+        var snapshots = new List<(string Sql, string Json)>();
+        foreach (var table in tables)
+        {
+            await using var columns = connection.CreateCommand();
+            columns.CommandText = """
+                SELECT string_agg(quote_ident(attname), ', ' ORDER BY attnum)
+                FROM pg_attribute WHERE attrelid = @table::regclass
+                    AND attnum > 0 AND NOT attisdropped AND attname <> 'storage_srid';
+                """;
+            columns.Parameters.AddWithValue("table", table);
+            var projection = (string)(await columns.ExecuteScalarAsync())!;
+            var sql = $"SELECT jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text)::text FROM (SELECT {projection} FROM {table}) t";
+            await using var snapshot = new Npgsql.NpgsqlCommand(sql, connection);
+            snapshots.Add((sql, (string)(await snapshot.ExecuteScalarAsync())!));
+        }
+
+        snapshots.Should().Contain(snapshot => snapshot.Json.Contains("Caf\u00e9", StringComparison.Ordinal),
+            "the receipt must exercise non-ASCII customer text");
+
+        var guard = new PostgresCoreSchemaGuard(ServerCoreSchemaMigrations.Manifest);
+        var planner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest);
+        var plan = await planner.PlanMigrationsAsync(_connectionString, assembly);
+        plan.Successful.Should().BeTrue($"populated baseline must plan successfully: {plan.Error}");
+        plan.JournalIsNonEmpty.Should().BeTrue();
+        plan.PendingScripts.Should().NotBeEmpty();
+        // Use the normal exact-plan approval rather than disabling migration safety for the test.
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [MigrationSafetyOptions.ApproveContractMigrationsKey] =
+                MigrationSafetyClassifier.ComputeContractApprovalNonce(plan.ContractScriptNames)
+        }).Build();
+        var runner = new PostgresDatabaseMigrationRunner(guard, ServerCoreSchemaMigrations.Manifest,
+            configuration: configuration);
+
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var upgrade = await runner.RunMigrationsAsync(_connectionString, assembly);
+            upgrade.Successful.Should().BeTrue($"populated upgrade/restart {attempt} failed: {upgrade.ErrorMessage}");
+            if (attempt == 0)
+            {
+                upgrade.AppliedScripts.Should().BeEquivalentTo(plan.PendingScripts,
+                    "every discovered pending script from both migration roots must actually execute");
+            }
+            else
+            {
+                upgrade.AppliedScripts.Should().BeEmpty("restart must use the journal without replaying scripts");
+            }
+
+            foreach (var (sql, expected) in snapshots)
+            {
+                await using var snapshot = new Npgsql.NpgsqlCommand(sql, connection);
+                (await snapshot.ExecuteScalarAsync()).Should().Be(expected,
+                    $"all original customer values must survive upgrade/restart {attempt}: {sql}");
+            }
+
+            await using var backfill = new Npgsql.NpgsqlCommand(
+                "SELECT storage_srid FROM honua.layers WHERE layer_id = 4413", connection);
+            (await backfill.ExecuteScalarAsync()).Should().Be(4326,
+                "migration 021 backfills the storage CRS without changing customer metadata");
+            await guard.VerifyAsync(_connectionString);
         }
     }
 

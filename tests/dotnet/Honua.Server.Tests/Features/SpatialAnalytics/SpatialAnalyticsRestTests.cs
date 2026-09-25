@@ -1017,11 +1017,10 @@ public sealed class SpatialAnalyticsRestTests : IAsyncLifetime
         // Layer 0 has 5 seeded features (tests/seed/server.yaml); objectid 3 has a NULL
         // geometry and is excluded by the density query's "geometry IS NOT NULL" filter,
         // leaving 4 points: (-122.5,37.5) (-122.7,37.7) (-121.9,37.3) (-122.3,37.8).
-        // Projected to Web Mercator (EPSG:3857) and binned into a 20km ST_SquareGrid
-        // anchored at the fixed (0,0) origin PostGIS grid functions always use, each
-        // point falls in column/row (-682,225) (-683,226) (-679,224) (-681,227) — four
-        // distinct cells, each thousands of meters from its cell boundary (no
-        // floating-point edge risk), so exactly 4 cells of featureCount=1 are expected.
+        // The geographic query now uses an azimuthal plane centered on this
+        // extent. The last point lies on its x=0 grid boundary: it must belong
+        // to one cell, not both neighbors. The four points occupy distinct
+        // 20km cells, so the exact four-cell, one-feature-per-cell oracle remains.
         var payload = JsonSerializer.Serialize(new
         {
             mode = "square",

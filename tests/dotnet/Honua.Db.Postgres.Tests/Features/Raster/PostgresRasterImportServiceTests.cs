@@ -176,12 +176,29 @@ public sealed class PostgresRasterImportServiceTests(PostgresFixture fixture)
             await InsertLayerAsync(schemaName);
 
             var service = CreateService(schemaName);
-            var result = await service.ImportAsync(CreateRequest(filePath, srid: 4326, tileZoomLevels: [0]));
+            var result = await service.ImportAsync(CreateRequest(filePath, srid: 4326, tileZoomLevels: [0, 1]));
 
             result.Success.Should().BeTrue();
             result.RasterId.Should().NotBeNull();
             result.TilesGenerated.Should().BeGreaterThan(0);
             (await CountTilesAsync(schemaName, result.RasterId!.Value)).Should().BeGreaterThan(0);
+
+            await using var connection = await fixture.GetConnectionAsync(schemaName);
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT zoom_level, ST_Width(ST_FromGDALRaster(tile_data)), ST_Height(ST_FromGDALRaster(tile_data))
+                FROM raster_tiles WHERE raster_data_id = @id;
+                """;
+            command.Parameters.AddWithValue("id", result.RasterId!.Value);
+            await using var reader = await command.ExecuteReaderAsync();
+            var zooms = new HashSet<int>();
+            while (await reader.ReadAsync())
+            {
+                zooms.Add(reader.GetInt32(0));
+                reader.GetInt32(1).Should().Be(256, "cached PNG bytes must span the complete tile grid");
+                reader.GetInt32(2).Should().Be(256);
+            }
+            zooms.Should().BeEquivalentTo(new[] { 0, 1 });
         }
         finally
         {

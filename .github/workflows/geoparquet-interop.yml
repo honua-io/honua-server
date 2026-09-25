@@ -32,7 +32,11 @@ on:
       - 'tests/dotnet/Honua.Protocols.OData.Tests/Source/ODataParquetFormatTests.cs'
       - 'tests/dotnet/Honua.Server.Tests/Import/GeoParquetImportTests.cs'
       - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/GeoParquetSdkInteropConformanceTests.cs'
-      - 'src/Honua.Hosting/Features/Services/GeoParquetFeatureWriter.cs'
+      - 'src/Honua.Hosting/Features/Services/GeoParquet*.cs'
+      - 'src/Honua.Core/Configuration/GeoParquetLimits.cs'
+      - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/GeoParquetQueryFormatterTests.cs'
+      - 'tests/dotnet/Honua.Protocols.GeoServices.Tests/Source/FeatureServer/Services/QueryFormatterTests.cs'
+      - 'tests/dotnet/Honua.Server.Tests/GeoParquetBudgetEndpointTests.cs'
   workflow_dispatch:
 
 permissions:
@@ -94,6 +98,21 @@ jobs:
             --configuration Release --filter 'FullyQualifiedName~GeoParquetSdkInteropConformanceTests' \
             --logger 'trx;LogFileName=geoparquet-schema.trx' --results-directory tests/TestResults
 
+      - name: Verify bounded writer and memory receipt
+        if: ${{ !cancelled() }}
+        run: |
+          dotnet test tests/dotnet/Honua.Protocols.GeoServices.Tests/Honua.Protocols.GeoServices.Tests.csproj \
+            --configuration Release --no-build --no-restore \
+            --filter 'FullyQualifiedName~FormatAsGeoParquet_MultipleRowGroups|FullyQualifiedName~FormatAsGeoParquet_WideSingleRow|FullyQualifiedName~FormatAsGeoParquet_InputBudget|FullyQualifiedName~FormatAsGeoParquet_FooterExceedsOutputBudget|FullyQualifiedName~FormatAsGeoParquet_ByteBound|FullyQualifiedName~FormatAsGeoParquet_WideGeometryPage|FullyQualifiedName~FormatQueryResultAsync_Parquet_UsesConfiguredByteBudget' \
+            --logger 'trx;LogFileName=geoparquet-writer.trx' --results-directory tests/TestResults
+
+      - name: Verify protocol budget refusal and subsequent encoding
+        if: ${{ !cancelled() }}
+        run: |
+          dotnet test tests/dotnet/Honua.Server.Tests/Honua.Server.Tests.csproj \
+            --configuration Release --no-build --no-restore --filter 'FullyQualifiedName~GeoParquetBudgetEndpointTests' \
+            --logger 'trx;LogFileName=geoparquet-budget.trx' --results-directory tests/TestResults
+
       - name: Verify live HTTP with GeoPandas and pyarrow
         if: ${{ !cancelled() }}
         working-directory: tests/python
@@ -110,16 +129,23 @@ jobs:
           python - <<'PYTHON'
           import json
           import os
+          import re
           import xml.etree.ElementTree as ET
           from pathlib import Path
 
           counts = {}
-          for name, expected in {"odata": 3, "import": 8, "schema": 10}.items():
+          memory = None
+          for name, expected in {"odata": 3, "import": 9, "schema": 10, "writer": 8, "budget": 4}.items():
               report = Path(f"tests/TestResults/geoparquet-{name}.trx")
               rows = list(ET.parse(report).getroot().iter("{http://microsoft.com/schemas/VisualStudio/TeamTest/2010}UnitTestResult"))
               counts[name] = dict(tests=len(rows), passed=sum(row.get("outcome") == "Passed" for row in rows), expected=expected)
-          passing = all(row["tests"] >= row["expected"] and row["passed"] == row["tests"] for row in counts.values())
-          receipt = json.dumps(dict(commit=os.environ["PRODUCER_COMMIT"], suites=counts, passing=passing), indent=2)
+              if name == "writer":
+                  match = re.search(r"GeoParquet memory receipt: ([^\r\n]+)", "\n".join("".join(row.itertext()) for row in rows))
+                  if match:
+                      memory = {key.strip(): int(value.strip()) for key, value in
+                                (part.split("=", 1) for part in match.group(1).split(";"))}
+          passing = memory is not None and all(row["tests"] >= row["expected"] and row["passed"] == row["tests"] for row in counts.values())
+          receipt = json.dumps(dict(commit=os.environ["PRODUCER_COMMIT"], suites=counts, memory=memory, passing=passing), indent=2)
           Path("tests/TestResults/geoparquet-dotnet.json").write_text(receipt + "\n")
           print(receipt)
           if not passing:

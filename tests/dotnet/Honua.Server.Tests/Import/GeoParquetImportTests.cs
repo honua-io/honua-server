@@ -1,16 +1,22 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Collections.Immutable;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Configuration;
+using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Infrastructure.Services;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
 using Honua.TestKit.Extensions;
 using NetTopologySuite.Geometries;
+using NetTopologySuite.IO;
 
 namespace Honua.Server.Tests.Import;
 
@@ -50,6 +56,56 @@ public sealed class GeoParquetImportTests : IAsyncLifetime
         finally
         {
             await _fixture.DisposeAsync();
+        }
+    }
+
+    [IntegrationTest]
+    [Endpoint("POST /api/v1/admin/import/upload")]
+    [Endpoint("POST /api/v1/admin/connections/{connectionId}/layers")]
+    [Endpoint("GET /rest/services/{serviceId}/FeatureServer/{layerId}/query")]
+    public async Task Upload_WithBoundedQueryWriterOutput_PreservesRowsAcrossRowGroupBoundaries()
+    {
+        const int rowCount = 10000;
+        var resource = new MetadataV2Resource
+        {
+            Metadata = new MetadataV2ObjectMetadata { Id = "query-export", Name = "query_export" },
+            SchemaFields =
+            [
+                new MetadataV2Field { Name = "objectid", Type = MetadataV2FieldType.BigInteger, Nullable = false },
+                new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String },
+                new MetadataV2Field { Name = "geometry", Type = MetadataV2FieldType.Geometry, SemanticRoles = ["geometry.primary"] }
+            ],
+            Spatial = new MetadataV2ResourceSpatial
+            {
+                SpatialReference = MetadataV2SpatialReference.Wgs84,
+                GeometryType = MetadataV2GeometryType.Point,
+                PrimaryGeometryField = "geometry"
+            }
+        };
+        var writer = new WKBWriter();
+        var features = Enumerable.Range(1, rowCount).Select(id => Feature.Create(id,
+            writer.Write(new Point(-120 + id * 0.001, 35 + id * 0.0001)),
+            ImmutableDictionary<string, object?>.Empty.Add("name", $"export-{id}"))).ToImmutableArray();
+        var (payload, _) = GeoParquetFeatureWriter.FormatAsGeoParquet(
+            QueryResult<Feature>.Create(rowCount, features), resource, "objectid", true, 4326,
+            false, false, new GeometryLimits());
+        using var content = CreateUploadContent(payload, "query-export.parquet", "geoparquet_query_roundtrip");
+        using var response = await _client.PostAsync("/api/v1/admin/import/upload", content);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var responseJson = await response.Content.ReadAsStringAsync();
+        using var result = JsonDocument.Parse(responseJson);
+        result.RootElement.GetProperty("success").GetBoolean().Should().BeTrue(responseJson);
+
+        var rows = await ReadImportedRowsAsync(responseJson, rowCount, "id IN (1,1024,1025,9999,10000)");
+        rows.Select(row => row.ObjectId).Should().BeEquivalentTo(new long?[] { 1, 1024, 1025, 9999, 10000 });
+        foreach (var row in rows)
+        {
+            var id = row.ObjectId!.Value;
+            row.Name.Should().Be($"export-{id}");
+            var point = row.Geometry.Should().BeOfType<Point>().Subject;
+            point.X.Should().BeApproximately(-120 + id * 0.001, 1e-9);
+            point.Y.Should().BeApproximately(35 + id * 0.0001, 1e-9);
+            point.SRID.Should().Be(4326);
         }
     }
 

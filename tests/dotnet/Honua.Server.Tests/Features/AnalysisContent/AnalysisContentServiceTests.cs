@@ -35,13 +35,54 @@ namespace Honua.Server.Tests.Features.AnalysisContent;
 [Protocol(TestProtocols.Admin)]
 public sealed class AnalysisContentServiceTests
 {
-    [UnitTest]
-    public void AnalysisContentApiJsonContext_NestedRasterDescriptor_RoundTrips()
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AnalysisContentJsonContexts_OmittedRasterSources_PreserveEmptyDefault(bool persistenceContext)
+    {
+        var document = JsonNode.Parse(JsonSerializer.Serialize(
+            CreateReferenceRasterPackage(), AnalysisContentApiJsonContext.Default.AnalysisPackageContent))!;
+        Assert.True(document["plan"]!["steps"]![0]!.AsObject().Remove("rasterSources"));
+
+        var context = persistenceContext
+            ? Honua.Core.Features.AnalysisContent.AnalysisContentJsonContext.Default.AnalysisPackageContent
+            : AnalysisContentApiJsonContext.Default.AnalysisPackageContent;
+        var package = JsonSerializer.Deserialize(document.ToJsonString(), context)!;
+
+        Assert.Empty(Assert.Single(package.Plan.Steps).RasterSources);
+        Assert.Empty(RasterSourcePlanValidator.Validate(package.Plan).Errors);
+    }
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AnalysisContentJsonContexts_ExplicitNullRasterSources_RemainInvalid(bool persistenceContext)
+    {
+        var document = JsonNode.Parse(JsonSerializer.Serialize(
+            CreateReferenceRasterPackage(), AnalysisContentApiJsonContext.Default.AnalysisPackageContent))!;
+        document["plan"]!["steps"]![0]!["rasterSources"] = null;
+
+        var context = persistenceContext
+            ? Honua.Core.Features.AnalysisContent.AnalysisContentJsonContext.Default.AnalysisPackageContent
+            : AnalysisContentApiJsonContext.Default.AnalysisPackageContent;
+        var package = JsonSerializer.Deserialize(document.ToJsonString(), context)!;
+
+        Assert.Null(Assert.Single(package.Plan.Steps).RasterSources);
+        Assert.Contains(RasterSourcePlanValidator.Validate(package.Plan).Errors,
+            error => error.Code == RasterSourceValidationCodes.InvalidField && error.Field == "rasterSources");
+    }
+
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AnalysisContentJsonContexts_NestedRasterDescriptor_RoundTrips(bool persistenceContext)
     {
         var package = CreateReferenceRasterPackage();
-
-        var json = JsonSerializer.Serialize(package, AnalysisContentApiJsonContext.Default.AnalysisPackageContent);
-        var roundTrip = JsonSerializer.Deserialize(json, AnalysisContentApiJsonContext.Default.AnalysisPackageContent);
+        var context = persistenceContext
+            ? Honua.Core.Features.AnalysisContent.AnalysisContentJsonContext.Default.AnalysisPackageContent
+            : AnalysisContentApiJsonContext.Default.AnalysisPackageContent;
+        var json = JsonSerializer.Serialize(package, context);
+        var roundTrip = JsonSerializer.Deserialize(json, context);
 
         var descriptor = Assert.Single(Assert.Single(roundTrip!.Plan.Steps).RasterSources).Value;
         Assert.IsType<ObjectStoreCogRasterSourceDescriptor>(descriptor);

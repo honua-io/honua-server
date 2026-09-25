@@ -797,6 +797,19 @@ internal sealed class PostgresRasterImportService : IRasterImportService
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
 
+            var envelope = zoom == 0
+                ? "ST_TileEnvelope(0, 0, 0)"
+                : "ST_TileEnvelope(@zoom, t.x, t.y)";
+            var grid = $"""
+                ST_MakeEmptyRaster(256, 256,
+                    ST_XMin({envelope}), ST_YMax({envelope}),
+                    (ST_XMax({envelope}) - ST_XMin({envelope})) / 256.0,
+                    -((ST_YMax({envelope}) - ST_YMin({envelope})) / 256.0),
+                    0.0, 0.0, 3857)
+                """;
+            var framedRaster = RasterGridFrameSql.FrameAlignedRaster(
+                $"ST_Resample(ST_Transform(r.raster, 3857), {grid})", grid);
+
             if (zoom == 0)
             {
                 // Zoom 0 has exactly one tile (0,0) covering the entire world.
@@ -809,17 +822,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                     INSERT INTO {_rasterTilesTable} (raster_data_id, zoom_level, tile_x, tile_y, tile_data, content_type)
                     SELECT @rasterId, 0, 0, 0,
                         ST_AsGDALRaster(
-                            ST_Resample(
-                                ST_Transform(r.raster, 3857),
-                                ST_MakeEmptyRaster(
-                                    256, 256,
-                                    ST_XMin(ST_TileEnvelope(0, 0, 0)),
-                                    ST_YMax(ST_TileEnvelope(0, 0, 0)),
-                                    (ST_XMax(ST_TileEnvelope(0, 0, 0)) - ST_XMin(ST_TileEnvelope(0, 0, 0))) / 256.0,
-                                    -((ST_YMax(ST_TileEnvelope(0, 0, 0)) - ST_YMin(ST_TileEnvelope(0, 0, 0))) / 256.0),
-                                    0.0, 0.0, 3857
-                                )
-                            ),
+                            {framedRaster},
                             'PNG'
                         ),
                         'image/png'
@@ -843,17 +846,7 @@ internal sealed class PostgresRasterImportService : IRasterImportService
                     INSERT INTO {_rasterTilesTable} (raster_data_id, zoom_level, tile_x, tile_y, tile_data, content_type)
                     SELECT @rasterId, @zoom, t.x, t.y,
                         ST_AsGDALRaster(
-                            ST_Resample(
-                                ST_Transform(r.raster, 3857),
-                                ST_MakeEmptyRaster(
-                                    256, 256,
-                                    ST_XMin(ST_TileEnvelope(@zoom, t.x, t.y)),
-                                    ST_YMax(ST_TileEnvelope(@zoom, t.x, t.y)),
-                                    (ST_XMax(ST_TileEnvelope(@zoom, t.x, t.y)) - ST_XMin(ST_TileEnvelope(@zoom, t.x, t.y))) / 256.0,
-                                    -((ST_YMax(ST_TileEnvelope(@zoom, t.x, t.y)) - ST_YMin(ST_TileEnvelope(@zoom, t.x, t.y))) / 256.0),
-                                    0.0, 0.0, 3857
-                                )
-                            ),
+                            {framedRaster},
                             'PNG'
                         ),
                         'image/png'

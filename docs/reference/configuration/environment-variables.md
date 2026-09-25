@@ -129,6 +129,10 @@ After a successful upload, `<LicensePath>.uploaded` takes precedence at startup.
 | `LayerPublishing__MaterializationTimeoutSeconds` | `300` | PostgreSQL budget, in seconds (1–3600), for the canonical snapshot copy made when a layer is published or its snapshot is refreshed, such as automatic publication after a large import. It is a wall-clock and command budget for that copy only; ordinary query timeouts are unchanged and caller cancellation still applies. Expiry rolls the publication back, keeps the imported table, and reports the import as needing review. Out-of-range values fail at startup. |
 | `Migration__AllowedServiceHostSuffixes__N` | — (unset) | Optional remote GIS migration/import source allowlist. Each entry matches the exact host or its subdomains. Unset permits any otherwise-safe public host; an explicitly empty array rejects all hosts. |
 | `Limits__MaxUploadSizeBytes` | `104857600` (100 MiB) | General upload ceiling. |
+| `Limits__GeoParquet__MaxRowsPerBatch` | `1024` | Maximum rows per Arrow batch and Parquet row group. |
+| `Limits__GeoParquet__MaxEstimatedBatchBytes` | `8388608` (8 MiB) | Byte admission estimate per batch; an individual row must fit. |
+| `Limits__GeoParquet__MaxEstimatedInputBytes` | `134217728` (128 MiB) | Byte admission estimate for a materialized GeoParquet query result. |
+| `Limits__GeoParquet__MaxResponseBytes` | `67108864` (64 MiB) | Encoded GeoParquet payload and buffer capacity ceiling, including footer. |
 | `Limits__Query__MaxRecordCount` | `10000` | Max features per query response. |
 | `Limits__Query__DefaultRecordCount` | `1000` | Default page size when the client does not specify one. |
 | `Limits__Query__MaxOffset` | `1000000` | Max pagination offset. |
@@ -286,3 +290,40 @@ size, and oversized bodies get HTTP 413.
 - [PostGIS configuration](data-sources/postgis.md) — connection strings, extensions, managed-Postgres notes.
 - [OpenAPI and the API explorer](../openapi-and-explorer.md) — `/docs` and the runtime spec endpoints.
 
+
+### GeoParquet query memory budgets
+
+GeoServices `f=parquet` and OData `$format=parquet` share the configured
+`Limits:GeoParquet` budgets. A response that cannot fit is rejected with the shared
+protocol-specific 413 error contract. Reduce the requested page or selected fields,
+or omit geometry. The existing query authorization, ordering and paging are applied
+before encoding; the writer retains that order and never spatially sorts results.
+
+Each Arrow batch is admitted by both row count and an estimated byte total, then
+written as its own Parquet row group and disposed. The estimate counts six bytes per
+input WKB byte or string character, two per binary-attribute byte, and fixed row,
+attribute and output-column bookkeeping. The input budget is checked before native
+encoding or geometry decoding. A second pass accounts for the discovered schema's
+column buffers. Geometry-type discovery retains only the type names across batches;
+it decodes geometries again during bounded encoding so metadata includes the last
+batch's dimensionality without retaining every encoded geometry.
+
+These are admission and encoding bounds, **not streaming query execution or a process
+RSS ceiling**. The provider has already materialized the query result. The returned
+`byte[]` coexists with the bounded output buffer during `ToArray()`, so these two
+buffers can consume up to twice `MaxResponseBytes`; buffer growth can temporarily
+retain an old allocation awaiting collection. Managed geometry objects, Arrow/native
+codec allocations, runtime overhead and concurrent requests add to that memory.
+The estimates intentionally reject wide or geometry-heavy pages independently of
+row count, but do not claim an exact bound on those allocations. Size container
+memory and request concurrency using measurements of the deployed workload.
+
+The formatter regression `FormatAsGeoParquet_WideGeometryPage_RecordsMemoryAndBoundsRowGroups`
+records a 10,000-row, 512-character/32-vertex workload's managed allocation totals,
+process peak working set and payload bytes in the existing .NET test output. Process
+peak includes the test host and any preceding tests, so it is an observation rather
+than an isolated per-request RSS claim. The existing mandatory GeoParquet consumer
+lane independently reads full 10,000-row responses with PyArrow and GeoPandas and
+checks footer row-group bounds, IDs, values, nulls, CRS and bbox covering. Required
+consumer executions retain the existing no-skip receipt policy. Import byte guards
+and accepted multi-row-group imports are unchanged.
