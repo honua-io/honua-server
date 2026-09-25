@@ -29,7 +29,10 @@ public sealed class LayerPublicationNamespaceTests
             NullLogger<PostgreSqlLayerPublishingService>.Instance);
         var publish = () => service.PublishLayerAsync("unused", new LayerPublishRequest
         {
-            Schema = "public", Table = "points", LayerName = "Points", Namespace = publicationNamespace
+            Schema = "public",
+            Table = "points",
+            LayerName = "Points",
+            Namespace = publicationNamespace
         });
 
         (await publish.Should().ThrowAsync<LayerPublishingException>()).Which.ErrorKind
@@ -99,7 +102,9 @@ public sealed class LayerPublicationNamespaceTests
     {
         MetadataV2ObjectMetadata Metadata(string id) => new()
         {
-            Id = id, Name = id, Namespace = scopedNode == id ? "maps" : null,
+            Id = id,
+            Name = id,
+            Namespace = scopedNode == id ? "maps" : null,
             Tenant = scopedNode == id ? "owner" : null
         };
         var graph = new MetadataV2Graph
@@ -135,8 +140,12 @@ public sealed class LayerPublicationNamespaceTests
     {
         var existing = new MetadataV2ObjectMetadata
         {
-            Id = "dependency", Name = "Original", Namespace = publicationNamespace, Tenant = tenant,
-            Title = "Retained title", Attribution = "Retained credit"
+            Id = "dependency",
+            Name = "Original",
+            Namespace = publicationNamespace,
+            Tenant = tenant,
+            Title = "Retained title",
+            Attribution = "Retained credit"
         };
         var created = new MetadataV2ObjectMetadata { Id = "dependency", Name = "Replacement" };
         PostgreSqlLayerPublishingService.PreserveDependencyMetadata(existing, created, new("maps", "owner"))

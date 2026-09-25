@@ -64,8 +64,13 @@ public sealed partial class LayerPublishingIntegrationTests
         await CreatePostGisTableAsync(_fixture.Postgres.ConnectionString, _nonCanonicalIdTableName);
         var request = new PublishLayerRequest
         {
-            Schema = _schema, Table = _nonCanonicalIdTableName, LayerName = "Second namespace layer",
-            ServiceName = _serviceName, Namespace = "maps", PrimaryKey = "id", GeometryColumn = "geom"
+            Schema = _schema,
+            Table = _nonCanonicalIdTableName,
+            LayerName = "Second namespace layer",
+            ServiceName = _serviceName,
+            Namespace = "maps",
+            PrimaryKey = "id",
+            GeometryColumn = "geom"
         };
         var second = await PublishLayerAsync(request);
         second.LayerId.Should().NotBe(first.LayerId);
@@ -91,8 +96,12 @@ public sealed partial class LayerPublishingIntegrationTests
     {
         var connectionMetadata = new MetadataV2ObjectMetadata
         {
-            Id = _connectionId.ToString("D"), Name = "Preserved connection", Title = "Existing connection",
-            Tenant = "public", Namespace = "shared-connections", Attribution = "Retained credit"
+            Id = _connectionId.ToString("D"),
+            Name = "Preserved connection",
+            Title = "Existing connection",
+            Tenant = "public",
+            Namespace = "shared-connections",
+            Attribution = "Retained credit"
         };
         var initialGraph = _fixture.GetCurrentV2GraphSnapshot().Graph;
         await SaveMetadataGraphAsync(initialGraph with
@@ -149,10 +158,10 @@ public sealed partial class LayerPublishingIntegrationTests
                 ? candidate with { Metadata = candidate.Metadata with { Tenant = "foreign" } } : candidate).ToArray()
         });
         using var foreign = await _client.GetAsync($"/rest/services/{_serviceName}/FeatureServer/{_layerId}?f=json");
-        await AssertNamespaceGeoServicesNotFoundAsync(foreign);
+        await AssertNamespaceGeoServicesForbiddenAsync(foreign);
         using var foreignQuery = await _client.GetAsync(
             $"/rest/services/{_serviceName}/FeatureServer/{_layerId}/query?f=json&where=1%3D1&outFields=*");
-        await AssertNamespaceGeoServicesNotFoundAsync(foreignQuery);
+        await AssertNamespaceGeoServicesForbiddenAsync(foreignQuery);
         var graphBeforeDenials = _fixture.GetCurrentV2GraphSnapshot().Graph;
         var sqlBeforeDenials = await ReadNamespaceLayerStateAsync();
         await AssertNamespaceAdminOperationsAsync(HttpStatusCode.NotFound);
@@ -263,7 +272,8 @@ public sealed partial class LayerPublishingIntegrationTests
         var foreignConnection = new MetadataV2Connection
         {
             Metadata = new() { Id = _connectionId.ToString("D"), Name = "Foreign", Tenant = "foreign", Namespace = "connections" },
-            Type = MetadataV2ConnectionType.Database, Provider = "postgis"
+            Type = MetadataV2ConnectionType.Database,
+            Provider = "postgis"
         };
         await SaveMetadataGraphAsync(graph with { Revision = graph.Revision + 1, Connections = [.. graph.Connections, foreignConnection] });
         var before = _fixture.GetCurrentV2GraphSnapshot().Graph;
@@ -276,9 +286,16 @@ public sealed partial class LayerPublishingIntegrationTests
 
     private PublishLayerRequest NamespaceRequest(string? publicationNamespace) => new()
     {
-        Schema = _schema, Table = _tableName, LayerName = "Namespace fixture", ServiceName = _serviceName,
-        Namespace = publicationNamespace, GeometryColumn = "geom", GeometryType = "Point", Srid = 4326,
-        PrimaryKey = "id", Fields = _idNamePopulationFields
+        Schema = _schema,
+        Table = _tableName,
+        LayerName = "Namespace fixture",
+        ServiceName = _serviceName,
+        Namespace = publicationNamespace,
+        GeometryColumn = "geom",
+        GeometryType = "Point",
+        Srid = 4326,
+        PrimaryKey = "id",
+        Fields = _idNamePopulationFields
     };
 
     private async Task AssertNamespaceAdminOperationsAsync(HttpStatusCode expected)
@@ -299,13 +316,13 @@ public sealed partial class LayerPublishingIntegrationTests
         snapshot.StatusCode.Should().Be(expected, await snapshot.Content.ReadAsStringAsync());
     }
 
-    private static async Task AssertNamespaceGeoServicesNotFoundAsync(HttpResponseMessage response)
+    private static async Task AssertNamespaceGeoServicesForbiddenAsync(HttpResponseMessage response)
     {
         var body = await response.Content.ReadAsStringAsync();
         // StandardErrorResponseFormatter preserves the GeoServices HTTP200/error-code contract.
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         using var document = JsonDocument.Parse(body);
-        document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(404, body);
+        document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(403, body);
         document.RootElement.TryGetProperty("id", out _).Should().BeFalse(body);
         document.RootElement.TryGetProperty("fields", out _).Should().BeFalse(body);
         document.RootElement.TryGetProperty("features", out _).Should().BeFalse(body);
