@@ -67,8 +67,13 @@ internal sealed partial class FeatureQueryBuilder
                 geometryStorageType, DatabaseSchema.GeometryColumn, query.SpatialReferenceSrid);
             var geographic = IsGeographicLayer(query.SpatialReferenceSrid);
             var metersGeometry = geographic
-                ? $"ST_TransformPipeline(geom, {BuildAeqdPipelineSql(query, query.SpatialReferenceSrid!.Value, "filtered", "geom", inverse: false)})"
+                ? "geom_m"
                 : EnsureMeters(geometryOperand, query.SpatialReferenceSrid);
+            // Batch joins must not reorder the cluster's input. Both PostGIS
+            // algorithms operate over the full partition, including later rows.
+            var clusterWindow = geographic
+                ? "OVER (ORDER BY source_ordinal ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING)"
+                : "OVER ()";
 
             string clusterExpression;
             if (clusterQuery.Algorithm == ClusterAlgorithm.DbScan)
@@ -82,14 +87,14 @@ internal sealed partial class FeatureQueryBuilder
                 parameters.Add(clusterQuery.MinPoints ?? 1);
 
                 clusterExpression = FormattableString.Invariant(
-                    $"ST_ClusterDBSCAN({metersGeometry}, eps => {epsParam}, minpoints => {minPointsParam}) OVER ()");
+                    $"ST_ClusterDBSCAN({metersGeometry}, eps => {epsParam}, minpoints => {minPointsParam}) {clusterWindow}");
             }
             else
             {
                 var kParam = $"${paramIndex++}";
                 parameters.Add(clusterQuery.K ?? 1);
                 clusterExpression = FormattableString.Invariant(
-                    $"ST_ClusterKMeans({metersGeometry}, {kParam}) OVER ()");
+                    $"ST_ClusterKMeans({metersGeometry}, {kParam}) {clusterWindow}");
             }
 
             // Store the decoded, storage-aware geometry under the alias `geom` so the
@@ -112,10 +117,12 @@ internal sealed partial class FeatureQueryBuilder
                 sql.Append("WITH filtered AS (SELECT ");
                 AppendClusterSourceColumns(sql, attributesSource, geometryOperand, trailingComma: false);
                 AppendClusterSourceFrom(sql, query, geometryStorageType, ref paramIndex, parameters, maxInputParam);
+                AppendGeographicClusterProjectionCtes(sql,
+                    BuildAeqdPipelineSql(query, query.SpatialReferenceSrid!.Value, "filtered", "geom", inverse: false));
                 sql.Append(", src AS (SELECT ");
                 sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.ObjectIdColumn}, ");
                 sql.Append(CultureInfo.InvariantCulture, $"{DatabaseSchema.AttributesColumn}, geom, ");
-                sql.Append(CultureInfo.InvariantCulture, $"{clusterExpression} AS cluster_id FROM filtered)");
+                sql.Append(CultureInfo.InvariantCulture, $"{clusterExpression} AS cluster_id FROM projected)");
             }
             else
             {
