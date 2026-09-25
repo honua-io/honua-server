@@ -92,7 +92,7 @@ jobs:
         run: python3 -m unittest discover -s scripts/conformance/cng -p 'test_*.py' -v
 
       - name: Run canonical JavaScript metadata observation tests
-        run: node --test scripts/conformance/cng/test-artifact-metadata.mjs
+        run: node --test scripts/conformance/cng/test-artifact-metadata.mjs scripts/conformance/cng/test-http-range-observer.mjs
 
   cng:
     name: CNG Conformance

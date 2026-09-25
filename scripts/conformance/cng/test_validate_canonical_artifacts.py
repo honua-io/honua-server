@@ -77,6 +77,7 @@ def args() -> Namespace:
         fixture_revision="fixture-v1",
         evidence_uri="https://example.test/evidence",
         evidence_digest="sha256:" + "c" * 64,
+        base_url="http://localhost:8094",
     )
 
 
@@ -932,6 +933,26 @@ class FlatGeobufConsumerMetadataTests(unittest.TestCase):
             rows = MODULE.validate_javascript(Path("artifacts"), args())
         self.assertEqual(payload[0]["observed_metadata"], rows[0]["observed_metadata"])
         self.assertNotIn("observed_transfer", rows[0])
+
+    def test_javascript_whole_object_response_survives_collection_and_fails_unchanged_budget(self):
+        from unittest import mock
+        import subprocess
+
+        payload = [{
+            "surface": "pmtiles", "operation": "browser-archive-read", "canonical_client": "PMTiles-browser-viewer",
+            "client_version": "4.5.0", "lane": "node-pmtiles", "result": "pass",
+            "observed_metadata": dict(MODULE.FORMAT_BUDGET_PROFILES["pmtiles-range"]["expected_metadata"]),
+            "observed_transfer": {"requests": 1, "range_requests": 1, "full_object_downloads": 1, "transferred_bytes": 1107},
+            "serving_source": {"provider_environment": "localstack", "publication_api_proven": False},
+            "http_responses": [{"status": 206, "bytes": 1107, "content_range": "bytes 0-1106/1107"}],
+        }]
+        with mock.patch.object(MODULE, "_run", return_value=subprocess.CompletedProcess([], 0, json.dumps(payload), "")):
+            rows = MODULE.validate_javascript(Path("artifacts"), args())
+        for key in ("observed_transfer", "serving_source", "http_responses"):
+            self.assertEqual(payload[0][key], rows[0][key])
+        normalized = MODULE._normalize_observations(rows, args())
+        self.assertEqual("skip", normalized[0]["result"])
+        self.assertFalse(normalized[0]["budget_results"]["met"])
 
 
 if __name__ == "__main__":

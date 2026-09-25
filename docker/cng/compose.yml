@@ -24,12 +24,25 @@ services:
       - ConnectionStrings__DefaultConnection=Server=postgres;Port=5432;Database=honua_cng;User Id=postgres;Password=cng_password;
       - ConnectionStrings__honua=Server=postgres;Port=5432;Database=honua_cng;User Id=postgres;Password=cng_password;
       - ConnectionStrings__Redis=redis:6379
+      # Real supported PMTiles proxy path through the configured S3 backend.
+      # These credentials belong only to the ephemeral LocalStack fixture.
+      - FileStorage__Provider=AwsS3
+      - FileStorage__AwsS3__BucketName=honua-cng-fixtures
+      - FileStorage__AwsS3__Region=us-east-1
+      - FileStorage__AwsS3__ServiceUrl=http://localstack:4566
+      - FileStorage__AwsS3__ForcePathStyle=true
+      - FileStorage__AwsS3__AccessKeyId=test
+      - FileStorage__AwsS3__SecretAccessKey=test
+      - FileStorage__AwsS3__EnableServerSideEncryption=false
+      - FileStorage__PMTilesPublish__KeyPrefix=pmtiles
       - Security__ConnectionEncryption__MasterKey=test-master-key-that-is-at-least-32-characters-long-for-security
       - Security__ConnectionEncryption__Salt=dGVzdC1zYWx0LWZvci1lbmNyeXB0aW9uLXRlc3RpbmctcHVycG9zZXM=
     depends_on:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      localstack:
         condition: service_healthy
     networks:
       - cng-network
@@ -67,6 +80,22 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
+  localstack:
+    image: localstack/localstack:3.6.0
+    environment:
+      SERVICES: s3
+      DEFAULT_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    networks:
+      - cng-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:4566/_localstack/health | grep -Eq '\"s3\"[[:space:]]*:[[:space:]]*\"(available|running)\"'"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
 
 networks:
   cng-network:

@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 
-import { open } from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { deserialize } from "flatgeobuf/lib/mjs/geojson.js";
-import { PMTiles } from "pmtiles";
+import { FetchSource, PMTiles } from "pmtiles";
 import { flatGeobufMetadata, pmtilesMetadata } from "./artifact-metadata.mjs";
+import { observeRangeFetch, validateServingSource } from "./http-range-observer.mjs";
 
 const require = createRequire(import.meta.url);
 
@@ -20,28 +20,6 @@ function packageVersion(name) {
     }
   }
   throw new Error(`could not locate package.json for ${name}`);
-}
-
-class LocalFileSource {
-  constructor(path) {
-    this.path = path;
-  }
-
-  getKey() {
-    return this.path;
-  }
-
-  async getBytes(offset, length) {
-    const handle = await open(this.path, "r");
-    try {
-      const buffer = Buffer.alloc(length);
-      const { bytesRead } = await handle.read(buffer, 0, length, offset);
-      const data = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + bytesRead);
-      return { data };
-    } finally {
-      await handle.close();
-    }
-  }
 }
 
 async function validateFlatGeobuf(path) {
@@ -64,26 +42,40 @@ async function validateFlatGeobuf(path) {
 }
 
 async function validatePmtiles(path) {
-  const archive = new PMTiles(new LocalFileSource(path));
-  const header = await archive.getHeader();
-  const metadata = await archive.getMetadata();
-  if (header.specVersion !== 3) throw new Error(`PMTiles specVersion=${header.specVersion}, expected 3`);
-  if (metadata === null || typeof metadata !== "object") throw new Error("PMTiles metadata is not an object");
-  // The Honua writer fixture deterministically includes z=0/x=0/y=0. Header
-  // and metadata reads do not traverse the tile directory, so require an
-  // actual browser-client tile lookup before certifying archive compatibility.
-  const tile = await archive.getZxy(0, 0, 0);
-  if (!tile?.data || tile.data.byteLength < 1) {
-    throw new Error("PMTiles browser client returned no data for fixture tile z=0/x=0/y=0");
+  const content = readFileSync(path);
+  const servingSource = JSON.parse(readFileSync(join(dirname(path), "pmtiles-serving-source.json"), "utf8"));
+  validateServingSource(content, servingSource, process.argv[3]);
+  const originalFetch = globalThis.fetch;
+  const observer = observeRangeFetch(originalFetch.bind(globalThis), servingSource.url, content);
+  const evidence = { serving_source: servingSource, observed_transfer: observer.transfer, http_responses: observer.responses };
+  globalThis.fetch = observer.fetch;
+  try {
+    const archive = new PMTiles(new FetchSource(servingSource.url));
+    const header = await archive.getHeader();
+    const metadata = await archive.getMetadata();
+    if (header.specVersion !== 3) throw new Error(`PMTiles specVersion=${header.specVersion}, expected 3`);
+    if (metadata === null || typeof metadata !== "object") throw new Error("PMTiles metadata is not an object");
+    // The Honua writer fixture includes z=0/x=0/y=0. Require an actual client
+    // tile lookup, retaining the canonical client's normal header prefetch.
+    const tile = await archive.getZxy(0, 0, 0);
+    if (!tile?.data || tile.data.byteLength < 1) {
+      throw new Error("PMTiles browser client returned no data for fixture tile z=0/x=0/y=0");
+    }
+    return {
+      surface: "pmtiles",
+      operation: "browser-archive-read",
+      canonical_client: "PMTiles-browser-viewer",
+      client_version: packageVersion("pmtiles"),
+      lane: "node-pmtiles",
+      observed_metadata: pmtilesMetadata(header),
+      ...evidence,
+    };
+  } catch (error) {
+    error.evidence = evidence;
+    throw error;
+  } finally {
+    globalThis.fetch = originalFetch;
   }
-  return {
-    surface: "pmtiles",
-    operation: "browser-archive-read",
-    canonical_client: "PMTiles-browser-viewer",
-    client_version: packageVersion("pmtiles"),
-    lane: "node-pmtiles",
-    observed_metadata: pmtilesMetadata(header),
-  };
 }
 
 const artifacts = resolve(process.argv[2]);
@@ -96,6 +88,7 @@ async function observe(check, identity) {
       ...identity,
       result: "fail",
       failure_reason: `${error?.name ?? "Error"}: ${error?.message ?? String(error)}`,
+      ...error.evidence,
     };
   }
 }
