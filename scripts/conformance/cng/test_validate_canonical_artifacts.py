@@ -107,6 +107,35 @@ class CanonicalArtifactEvidenceTests(unittest.TestCase):
         self.assertEqual("third-party-fixture", normalized[0]["artifact_producer"])
         self.assertIsNone(normalized[0]["evidence_receipt"])
 
+    def test_verified_derived_zarr_still_requires_original_metadata_and_transfer_budgets(self):
+        def row():
+            result = MODULE._observation("zarr", "array-read", "zarr", "zarr", "2026-08-21T00:00:00Z", args())
+            result["observed_metadata"] = dict(MODULE.FORMAT_BUDGET_PROFILES["zarr"]["expected_metadata"])
+            result["observed_transfer"] = {"requests": 12, "range_requests": 0,
+                                           "full_object_downloads": 12, "transferred_bytes": 4096}
+            result["derived_output_binding"] = {
+                "source_sha": args().source_sha, "image_digest": args().image_digest,
+                "receipt_sha256": "d" * 64, "worker_image": "localhost:5000/cng-zarr-worker@sha256:" + "e" * 64,
+                "qualification": False, "job_id": "job42", "coverage_id": 7,
+                "registration_id": 8, "root_path": "derived-zarr/42-1/canonical.zarr"}
+            return result
+
+        passed = MODULE._normalize_observations([row()], args())[0]
+        self.assertEqual("pass", passed["result"])
+        self.assertEqual("honua", passed["artifact_producer"])
+        for section, key, value in [("observed_metadata", "chunks", [4, 8, 16]),
+                                    ("observed_metadata", "zarr_format", 3),
+                                    ("observed_transfer", "full_object_downloads", 17)]:
+            changed = row()
+            changed[section][key] = value
+            with self.subTest(key=key):
+                normalized = MODULE._normalize_observations([changed], args())[0]
+                self.assertNotEqual("pass", normalized["result"])
+                self.assertFalse(normalized["budget_results"]["met"])
+        changed = row()
+        changed["operation"], changed["canonical_client"] = "multidimensional-subset", "xarray"
+        self.assertNotEqual("honua", MODULE._normalize_observations([changed], args())[0]["artifact_producer"])
+
     def test_honua_transcoded_cog_passes_with_a_real_evidence_digest(self):
         """#4398: `honua.cog.tif` is produced by CogMetadataExtractor +
         CogTiffTileEncoder, so the COG cells are Honua evidence and — once every

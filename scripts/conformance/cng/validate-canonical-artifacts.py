@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, NamedTuple
 from pmtiles_http import HttpRangeSource, load_source
+from derived_zarr import has_derived_binding, observe_array
 
 CLIENTS = {
     "GeoPandas": "1.1.4",
@@ -607,7 +608,7 @@ def _command_version(client: str, *command: str, expected_version: str | None = 
 
 def _mark_unbound(observations: list[dict]) -> list[dict]:
     for observation in observations:
-        if observation["result"] == "pass":
+        if observation["result"] == "pass" and not has_derived_binding(observation):
             observation["result"] = "skip"
             observation["skip_reason"] = UNBOUND_CONSUMER_GAP
     return observations
@@ -629,6 +630,8 @@ def _apply_producer_attribution(observation: dict) -> None:
     )
     producer = ARTIFACT_PRODUCER_OVERRIDES.get(
         identity, ARTIFACT_PRODUCERS.get(observation["surface"], "third-party-fixture"))
+    if has_derived_binding(observation):
+        producer = "honua"
     observation["artifact_producer"] = producer
     observation["honua_in_loop"] = producer == "honua"
     if not observation["honua_in_loop"] and observation["result"] == "pass":
@@ -1319,9 +1322,20 @@ def validate_zarr(path: Path, args: argparse.Namespace) -> list[dict]:
         ("store-read", "fsspec", "fsspec-zarr", fsspec_check),
         ("distributed-array-compute", "Dask", "dask-zarr", dask_check),
     ):
-        _collect_client(
-            observations, "zarr", operation, client, lane, args, check, unbound=True,
-            observed_metadata=metadata_seen if client == "zarr" else None)
+        if client == "zarr" and (path.parent / "derived-zarr-receipt.json").exists():
+            derived_metadata, derived_transfer, derived_evidence = {}, {}, {}
+            def read_derived():
+                return observe_array(path.parent, args.source_sha, args.image_digest,
+                                     derived_metadata, derived_transfer, derived_evidence)
+            _collect_client(observations, "zarr", operation, client, lane, args, read_derived)
+            # Retain observations even if a value/axis oracle or transport fails.
+            observations[-1].update(derived_evidence)
+            observations[-1]["observed_metadata"] = derived_metadata
+            observations[-1]["observed_transfer"] = derived_transfer
+        else:
+            _collect_client(
+                observations, "zarr", operation, client, lane, args, check, unbound=True,
+                observed_metadata=metadata_seen if client == "zarr" else None)
     return observations
 
 

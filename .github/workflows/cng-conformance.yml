@@ -24,6 +24,11 @@ on:
       - '.github/workflows/cng-candidate.yml'
   workflow_dispatch:
     inputs:
+      derived_zarr_rehearsal:
+        description: Engineering only; build a matching local worker and inspect its actual derived Zarr output
+        required: false
+        default: false
+        type: boolean
       server_image:
         description: Exact digest-addressed candidate image; omit only for a diagnostic local build
         required: false
@@ -39,6 +44,10 @@ on:
 
   workflow_call:
     inputs:
+      derived_zarr_rehearsal:
+        required: false
+        default: false
+        type: boolean
       harness_ref:
         required: true
         type: string
@@ -130,8 +139,45 @@ jobs:
           echo "HONUA_CNG_SOURCE_ROOT=$GITHUB_WORKSPACE/candidate-source" >> "$GITHUB_ENV"
           echo "CNG_GENERATOR_SOURCE_SHA=$actual" >> "$GITHUB_ENV"
 
+      - name: Require a published candidate for the derived-output rehearsal
+        if: inputs.derived_zarr_rehearsal
+        env:
+          SERVER_IMAGE: ${{ inputs.server_image }}
+        run: test -n "$SERVER_IMAGE"
+
+      - name: Start runner-local worker registry
+        if: inputs.derived_zarr_rehearsal
+        run: docker run --detach --name cng-zarr-registry -p 127.0.0.1:5000:5000 registry:3
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
+        with:
+          driver-opts: ${{ inputs.derived_zarr_rehearsal && 'network=host' || '' }}
+
+      - name: Authenticate read access to worker cache and base images
+        if: inputs.derived_zarr_rehearsal
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build unchanged matching worker into runner-local registry
+        if: inputs.derived_zarr_rehearsal
+        id: zarr_worker
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: candidate-source
+          file: candidate-source/docker/worker-gdal/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: localhost:5000/cng-zarr-worker:engineering
+          build-args: |
+            HONUA_GIT_SHA=${{ inputs.source_sha }}
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-worker-gdal-amd64
 
       - name: Set up .NET
         uses: ./.github/actions/setup-dotnet-ci
@@ -210,6 +256,8 @@ jobs:
           SERVER_IMAGE: ${{ inputs.server_image }}
           SOURCE_SHA: ${{ inputs.source_sha }}
           CUT_AT: ${{ inputs.candidate_cut_at }}
+          HONUA_CNG_DERIVED_ZARR: ${{ inputs.derived_zarr_rehearsal || false }}
+          HONUA_CNG_WORKER_IMAGE: ${{ inputs.derived_zarr_rehearsal && format('localhost:5000/cng-zarr-worker@{0}', steps.zarr_worker.outputs.digest) || '' }}
           HONUA_CNG_SKIP_BUILD: ${{ inputs.server_image != '' }}
           HONUA_CNG_CLEANUP: 'false'
           # Official OSGeo ubuntu-full image includes the Arrow/Parquet driver
@@ -221,7 +269,9 @@ jobs:
         run: |
           set -uo pipefail
           harness_sha="$(git rev-parse HEAD)"
-          trap 'docker compose -f docker/cng/compose.yml down --remove-orphans --volumes >/dev/null 2>&1 || true' EXIT
+          compose_args=(-f docker/cng/compose.yml)
+          if [[ "$HONUA_CNG_DERIVED_ZARR" == "true" ]]; then compose_args+=(-f docker/cng/derived-zarr.yml); fi
+          trap 'docker compose "${compose_args[@]}" --profile derived-zarr down --remove-orphans --volumes >/dev/null 2>&1 || true' EXIT
           if [[ -n "$SERVER_IMAGE" ]]; then
             if [[ ! "$SERVER_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]]; then
               echo "server_image must be digest-addressed" >&2
@@ -234,6 +284,21 @@ jobs:
               exit 1
             fi
             docker tag "$SERVER_IMAGE" honua-server:latest
+          fi
+          if [[ "$HONUA_CNG_DERIVED_ZARR" == "true" ]]; then
+            docker pull "$HONUA_CNG_WORKER_IMAGE" || exit 1
+            worker_revision="$(docker image inspect "$HONUA_CNG_WORKER_IMAGE" --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}')"
+            test "$worker_revision" = "$SOURCE_SHA" || exit 1
+            export CNG_WORKER_REVISION="$worker_revision" CNG_SERVER_REVISION="$revision"
+            mkdir -p cng-results/artifacts
+            python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          receipt = {"source_sha": os.environ["SOURCE_SHA"], "server_image": os.environ["SERVER_IMAGE"],
+                     "server_revision": os.environ["CNG_SERVER_REVISION"], "worker_image": os.environ["HONUA_CNG_WORKER_IMAGE"],
+                     "worker_revision": os.environ["CNG_WORKER_REVISION"], "qualification": False}
+          Path("cng-results/artifacts/derived-zarr-identity.json").write_text(json.dumps(receipt, indent=2))
+          PY
           fi
           cng_exit=0
           bash ./scripts/conformance/cng/run-cng-conformance.sh || cng_exit=$?
@@ -264,7 +329,7 @@ jobs:
             --evidence-uri "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             --base-url "http://localhost:8094" || client_exit=$?
 
-          docker compose -f docker/cng/compose.yml logs --no-color honua-server \
+          docker compose "${compose_args[@]}" logs --no-color honua-server \
             > cng-results/honua-server.log 2>&1 || true
 
           if [[ "$cng_exit" -ne 0 || "$client_exit" -ne 0 ]]; then exit_code=1; else exit_code=0; fi
