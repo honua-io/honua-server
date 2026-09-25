@@ -13,8 +13,8 @@ namespace Honua.Core.Features.Migration.Services;
 /// Dedicated import targets are probed in full so a predicate cannot conceal extra rows.
 /// </summary>
 /// <param name="metadata">Published target metadata.</param>
-/// <param name="filters">Canonical filter parser and compiler.</param>
-public sealed class ReconciliationQueryBuilder(IMetadataV2GraphProvider metadata, IFilterExpressionService filters)
+/// <param name="filters">Canonical filter parser and compiler, required only for shared-target filter mirrors.</param>
+public sealed class ReconciliationQueryBuilder(IMetadataV2GraphProvider metadata, IFilterExpressionService? filters = null)
 {
     /// <summary>Builds the common predicate for count, extent, and sample probes.</summary>
     public async Task<FeatureQuery> BuildAsync(LayerReconciliationLayerInput layer, CancellationToken cancellationToken = default)
@@ -22,6 +22,11 @@ public sealed class ReconciliationQueryBuilder(IMetadataV2GraphProvider metadata
         if (layer.TargetContainsOnlyImportedFeatures || string.IsNullOrWhiteSpace(layer.FilterMirror))
         {
             return default;
+        }
+
+        if (filters is null)
+        {
+            throw new InvalidOperationException("Reconciliation filter translation is unavailable.");
         }
 
         var snapshot = await metadata.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
