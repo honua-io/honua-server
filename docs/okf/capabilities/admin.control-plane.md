@@ -18,7 +18,7 @@ General administrative CRUD surfaces (connections, metadata, services, users, ro
 | Edition | Community |
 | Surface maturity | 1 experimental, 375 implemented, 2 preview |
 | Registry entries | 378 |
-| Proving tests | 1302 |
+| Proving tests | 1304 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 

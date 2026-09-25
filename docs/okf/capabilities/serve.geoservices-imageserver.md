@@ -18,7 +18,7 @@ Serve raster imagery and coverage metadata through the Esri GeoServices ImageSer
 | Edition | Community |
 | Surface maturity | 143 preview |
 | Registry entries | 143 |
-| Proving tests | 425 |
+| Proving tests | 426 |
 
 The facts above come from the server's capability registry and capability matrix, which are generated from the server's own route catalog and test evidence rather than from prose.
 
