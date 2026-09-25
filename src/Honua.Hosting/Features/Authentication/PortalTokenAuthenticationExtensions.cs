@@ -4,6 +4,8 @@
 using Honua.Core.Features.Authorization;
 using Honua.Core.Features.Authorization.Abstractions;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
@@ -91,12 +93,43 @@ public static class PortalTokenAuthenticationExtensions
     /// entered the request. This preserves the Esri 498 response while ensuring repeated
     /// invalid credentials consume the configured source-IP rate-limit bucket.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// An endpoint that allows anonymous access is served anonymously instead of refused.
+    /// A caller who presents a token this server cannot validate is no better credentialed
+    /// than one who presents none, and the endpoint already answers the latter - so
+    /// refusing the former turns a servable request into an error while publishing nothing
+    /// extra. The principal is NOT hydrated, so the request proceeds as anonymous and any
+    /// per-principal filtering downstream sees the most restrictive caller.
+    /// </para>
+    /// <para>
+    /// This is a measured client-compatibility fix, not a preference.
+    /// <c>arcpy.geocoding.ReverseGeocode</c> makes two calls: one anonymous, which Honua
+    /// answered with the full address, and a second adding <c>forStorage=true</c> signed
+    /// with the ArcGIS Online session token of the signed-in ArcGIS Pro seat. Honua is not
+    /// that portal, so the token is foreign, and answering it 498 made the tool write an
+    /// output row with every address column empty - it writes from the second response.
+    /// Captured at the wire through a logging proxy (honua-server#5145).
+    /// </para>
+    /// <para>
+    /// The trade-off is deliberate and bounded: a caller whose OWN Honua token has expired
+    /// now gets anonymous content from an anonymous endpoint rather than a 498 telling it
+    /// to re-authenticate. Endpoints that require authentication are untouched and still
+    /// answer 498/499, which is where Esri's credential-prompt flow actually matters.
+    /// </para>
+    /// </remarks>
     public static IApplicationBuilder UsePortalTokenAuthenticationRejection(this IApplicationBuilder app)
     {
         ArgumentNullException.ThrowIfNull(app);
         return app.Use(async (context, next) =>
         {
             if (!context.Items.TryGetValue(AuthenticationFailureKey, out var failure) || failure is not true)
+            {
+                await next().ConfigureAwait(false);
+                return;
+            }
+
+            if (context.GetEndpoint()?.Metadata.GetMetadata<IAllowAnonymous>() is not null)
             {
                 await next().ConfigureAwait(false);
                 return;
