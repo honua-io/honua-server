@@ -156,9 +156,10 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
             Log.ProbeFailed(_logger, layer.SourceLayerId, "extent", ex);
         }
 
+        var comparisonBaseline = SelectExtentBaseline(layer, options).Baseline;
         if (targetExtent is { } observed &&
             layer.PlannedTargetSrid == observed.SpatialReference &&
-            layer.SourceExtent?.SpatialReferenceId is > 0 and var sourceSrid &&
+            comparisonBaseline?.SpatialReferenceId is > 0 and var sourceSrid &&
             sourceSrid != observed.SpatialReference)
         {
             try
@@ -600,23 +601,9 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
             options,
             readerFailure,
             comparisonExtent);
-        if (layer.SourceExtent is { } advertised)
-        {
-            probe = probe with
-            {
-                Source = new ExtentBox
-                {
-                    MinX = advertised.MinX,
-                    MinY = advertised.MinY,
-                    MaxX = advertised.MaxX,
-                    MaxY = advertised.MaxY,
-                    Srid = advertised.SpatialReferenceId ?? 4326
-                }
-            };
-        }
-
         probe = probe with
         {
+            Source = ToExtentBox(layer.SourceExtent),
             QueriedSource = ToExtentBox(layer.QueriedSourceExtent),
             AdvertisedExtentStale = stale
         };
