@@ -1268,7 +1268,7 @@ internal sealed class StreamingQueryFormatter
                     objectIdWritten = true;
                 }
 
-                WriteJsonValue(writer, fieldName, kvp.Value, cancellationToken, temporalFieldTypes);
+                WriteJsonValue(writer, fieldName, kvp.Value, cancellationToken, stringifyComplexValues: true, temporalFieldTypes: temporalFieldTypes);
             }
         }
 
@@ -1393,7 +1393,7 @@ internal sealed class StreamingQueryFormatter
         writer.WriteStartObject("properties");
         foreach (var kvp in featureBase.Properties)
         {
-            WriteJsonValue(writer, kvp.Key, kvp.Value, cancellationToken);
+            WriteJsonValue(writer, kvp.Key, kvp.Value, cancellationToken, stringifyComplexValues: false);
         }
 
         writer.WriteEndObject();
@@ -1411,8 +1411,8 @@ internal sealed class StreamingQueryFormatter
     }
 
     /// <summary>
-    /// Writes a JSON value with proper type handling for the Esri GeoServices f=json
-    /// response. When <paramref name="temporalFieldTypes"/> contains <paramref name="propertyName"/>
+    /// Writes a JSON attribute, stringifying complex values only for Esri f=json;
+    /// GeoJSON keeps typed arrays and objects. When <paramref name="temporalFieldTypes"/> contains <paramref name="propertyName"/>
     /// the declared type determines the wire representation: <c>esriFieldTypeDate</c>
     /// uses epoch milliseconds and <c>esriFieldTypeDateOnly</c> uses ISO calendar dates.
     /// </summary>
@@ -1421,6 +1421,7 @@ internal sealed class StreamingQueryFormatter
         string propertyName,
         object? value,
         CancellationToken cancellationToken,
+        bool stringifyComplexValues,
         IReadOnlyDictionary<string, MetadataV2FieldType>? temporalFieldTypes = null)
     {
         // Use schema semantics even when the CLR representation changed in a cache.
@@ -1471,14 +1472,14 @@ internal sealed class StreamingQueryFormatter
                 writer.WriteString(propertyName, dateOnly.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
                 break;
             // GeoServices has no array or object field type, so a column whose values are
-            // neither is published as esriFieldTypeString and the value has to agree. The
+            // complex is published as esriFieldTypeString and the value has to agree. The
             // default arm below writes complex values as raw JSON, which emits an array
             // for a field the same response declares a string. ArcGIS Pro stops reading
             // the feature array at the first such row: a cursor over a layer whose first
             // nine rows are strings and whose tenth is an array returns nine rows, and one
             // whose first row is an array returns none - silently, with no error. See
             // GeoServicesAttributeProjection and honua-server#5171.
-            case JsonElement { ValueKind: JsonValueKind.Array or JsonValueKind.Object } element:
+            case JsonElement { ValueKind: JsonValueKind.Array or JsonValueKind.Object } element when stringifyComplexValues:
                 writer.WriteString(propertyName, element.GetRawText());
                 break;
             default:

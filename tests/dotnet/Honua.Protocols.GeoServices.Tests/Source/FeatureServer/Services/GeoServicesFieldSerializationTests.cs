@@ -457,10 +457,13 @@ public sealed class GeoServicesFieldSerializationTests
     }
 
     [UnitTheory]
-    [InlineData("buffered")]
-    [InlineData("streaming")]
-    [InlineData("top-features")]
-    public async Task Json_ArrayValue_IsAStringOnEveryQueryPath(string path)
+    [InlineData("buffered", "[1,2]")]
+    [InlineData("streaming", "[1,2]")]
+    [InlineData("top-features", "[1,2]")]
+    [InlineData("buffered", "{\"key\":\"value\"}")]
+    [InlineData("streaming", "{\"key\":\"value\"}")]
+    [InlineData("top-features", "{\"key\":\"value\"}")]
+    public async Task Json_ComplexValue_IsAStringOnEveryQueryPath(string path, string rawJson)
     {
         // The buffered path was fixed first and the streaming path was not, which hid the
         // defect: a probe issuing a plain query saw a string, while ArcGIS Pro - which
@@ -470,7 +473,7 @@ public sealed class GeoServicesFieldSerializationTests
             new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
             new MetadataV2Field { Name = "tags", Type = MetadataV2FieldType.String });
 
-        using var value = JsonDocument.Parse("[\"red\",\"blue\"]");
+        using var value = JsonDocument.Parse(rawJson);
         var feature = Feature.Create(1, null, new Dictionary<string, object?>
         {
             ["objectid"] = 1L,
@@ -502,7 +505,44 @@ public sealed class GeoServicesFieldSerializationTests
         attributes.GetProperty("tags").ValueKind.Should().Be(JsonValueKind.String,
             "an esriFieldTypeString value must be a JSON string on every query path; "
             + "ArcGIS Pro stops reading the feature array at the first row that is not (#5171)");
-        attributes.GetProperty("tags").GetString().Should().Be("[\"red\",\"blue\"]");
+        attributes.GetProperty("tags").GetString().Should().Be(rawJson);
+    }
+
+    [UnitTheory]
+    [InlineData("buffered", "[1,2]", JsonValueKind.Array)]
+    [InlineData("streaming", "[1,2]", JsonValueKind.Array)]
+    [InlineData("buffered", "{\"key\":\"value\"}", JsonValueKind.Object)]
+    [InlineData("streaming", "{\"key\":\"value\"}", JsonValueKind.Object)]
+    public async Task GeoJson_ComplexValue_PreservesItsJsonType(string path, string rawJson, JsonValueKind expectedKind)
+    {
+        var resource = CreateResource(
+            new MetadataV2Field { Name = FieldNames.ObjectId, Type = MetadataV2FieldType.Integer, Nullable = false },
+            new MetadataV2Field { Name = "tags", Type = MetadataV2FieldType.Json });
+        using var value = JsonDocument.Parse(rawJson);
+        var feature = Feature.Create(1, null, new Dictionary<string, object?>
+        {
+            ["objectid"] = 1L,
+            ["tags"] = value.RootElement.Clone()
+        }.ToImmutableDictionary());
+
+        string json;
+        if (path == "streaming")
+        {
+            json = await StreamGeoJsonAsync(
+                new StreamingQueryFormatter(Options.Create(new LimitsOptions())), feature, resource);
+        }
+        else
+        {
+            var (formatter, _) = CreateFormatter();
+            var (response, _) = await formatter.FormatQueryResultAsync(
+                QueryResult<Feature>.Create(1, [feature]), resource, "geojson", false, null, false, false, null, null);
+            json = JsonSerializer.Serialize(response, FeatureServerJsonContext.Default.GeoJsonFeatureSet);
+        }
+
+        using var document = JsonDocument.Parse(json);
+        var property = document.RootElement.GetProperty("features")[0].GetProperty("properties").GetProperty("tags");
+        property.ValueKind.Should().Be(expectedKind, "GeoJSON accepts arrays and objects; the Esri string-field restriction must not leak into it");
+        property.GetRawText().Should().Be(rawJson);
     }
 
     // ----- Bug 4: the query response must describe a field as the layer resource does (#5197) -----
