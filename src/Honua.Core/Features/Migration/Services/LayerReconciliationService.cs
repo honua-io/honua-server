@@ -39,6 +39,7 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
     private static bool AreCoordinatesEqual(double a, double b) => Math.Abs(a - b) <= CoordinateEqualityEpsilon;
 
     private readonly IFeatureReader _featureReader;
+    private readonly ReconciliationQueryBuilder? _queryBuilder;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<LayerReconciliationService> _logger;
 
@@ -48,12 +49,15 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
     /// <param name="featureReader">Target catalog feature reader.</param>
     /// <param name="timeProvider">Time provider used to stamp the artifact.</param>
     /// <param name="logger">Logger.</param>
+    /// <param name="queryBuilder">Canonical query compiler, required for shared-target filter mirrors.</param>
     public LayerReconciliationService(
         IFeatureReader featureReader,
         TimeProvider timeProvider,
-        ILogger<LayerReconciliationService> logger)
+        ILogger<LayerReconciliationService> logger,
+        ReconciliationQueryBuilder? queryBuilder = null)
     {
         _featureReader = featureReader ?? throw new ArgumentNullException(nameof(featureReader));
+        _queryBuilder = queryBuilder;
         _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -126,13 +130,15 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         FeatureExtent? comparisonExtent = null;
         QueryResult<Feature>? sample = null;
         string? readerFailure = null;
+        // Compile once against one target metadata snapshot; all probes use this predicate.
+        var queryTask = BuildCountQueryAsync(layer, cancellationToken);
 
         try
         {
             // Count and extent probes are cheap aggregates; pull them up-front so we can fall back
             // to skipped probes when the target catalog itself errors out.
             targetCount = await _featureReader
-                .CountAsync(targetLayerId, BuildCountQuery(layer), cancellationToken)
+                .CountAsync(targetLayerId, await queryTask.ConfigureAwait(false), cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -146,7 +152,7 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
             if (layer.SourceHasGeometry)
             {
                 targetExtent = await _featureReader
-                    .GetExtentAsync(targetLayerId, BuildCountQuery(layer), cancellationToken)
+                    .GetExtentAsync(targetLayerId, await queryTask.ConfigureAwait(false), cancellationToken)
                     .ConfigureAwait(false);
             }
         }
@@ -168,7 +174,7 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
                 // its extent. Transforming an already aggregated bbox would inflate bounds.
                 comparisonExtent = await _featureReader.GetExtentAsync(
                     targetLayerId,
-                    BuildCountQuery(layer) with { OutputSrid = sourceSrid },
+                    (await queryTask.ConfigureAwait(false)) with { OutputSrid = sourceSrid },
                     cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -181,7 +187,10 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         try
         {
             sample = await _featureReader
-                .QueryAsync(targetLayerId, BuildSampleQuery(layer, options), cancellationToken)
+                .QueryAsync(targetLayerId, (await queryTask.ConfigureAwait(false)) with
+                {
+                    Limit = Math.Clamp(options.SampleSize, MinSampleSize, MaxSampleSize)
+                }, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -231,26 +240,21 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         };
     }
 
-    private static FeatureQuery BuildCountQuery(LayerReconciliationLayerInput layer)
+    private async Task<FeatureQuery> BuildCountQueryAsync(LayerReconciliationLayerInput layer, CancellationToken cancellationToken)
     {
-        // Filter mirror keeps the count "apples to apples" when the apply step only imported a
-        // subset of source features into a shared target. A dedicated import target is already
-        // scoped to the selected population: re-running the source predicate against it could
-        // hide extra rows or reference source identifiers that were remapped on insert.
-        var where = layer.TargetContainsOnlyImportedFeatures || string.IsNullOrWhiteSpace(layer.FilterMirror)
-            ? null
-            : ReconciliationFilterRewriter.Rewrite(layer.FilterMirror, layer.FilterFieldMappings);
-        return where is null ? default : new FeatureQuery { Where = where };
-    }
-
-    private static FeatureQuery BuildSampleQuery(LayerReconciliationLayerInput layer, LayerReconciliationOptions options)
-    {
-        var sampleSize = Math.Clamp(options.SampleSize, MinSampleSize, MaxSampleSize);
-        return new FeatureQuery
+        // A dedicated import target already contains the selected population. Applying the
+        // source predicate again could conceal extra rows or use source-only field names.
+        if (layer.TargetContainsOnlyImportedFeatures || string.IsNullOrWhiteSpace(layer.FilterMirror))
         {
-            Where = BuildCountQuery(layer).Where,
-            Limit = sampleSize
-        };
+            return default;
+        }
+
+        if (_queryBuilder is null)
+        {
+            throw new InvalidOperationException("Reconciliation filter translation is unavailable.");
+        }
+
+        return await _queryBuilder.BuildAsync(layer, cancellationToken).ConfigureAwait(false);
     }
 
     private static MigrationReconciliationCountProbe BuildCountProbe(

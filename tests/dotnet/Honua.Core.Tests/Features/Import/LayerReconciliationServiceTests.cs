@@ -4,10 +4,15 @@
 using System.Collections.Immutable;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Metadata.Abstractions;
+using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Migration.Domain;
 using Honua.Core.Features.Migration.Services;
 using Honua.Core.Features.Shared.Models;
+using Honua.Core.Queries.Filters;
+using Honua.Core.Queries.Filters.GeoServicesSql;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 
 namespace Honua.Core.Tests.Features.Import;
 
@@ -341,7 +346,7 @@ public sealed class LayerReconciliationServiceTests
     [Fact]
     public async Task Reconcile_SharedTarget_RewritesFilterFieldsAndPreservesLiterals()
     {
-        const string sourceFilter = "DateOfFlight = DATE 'DateOfFlight' AND STATUS = 'open'";
+        const string sourceFilter = "\"DateOfFlight\" = DATE '2026-01-01' AND UPPER(STATUS) = 'DateOfFlight'";
         var reader = new StubFeatureReader
         {
             Count = 100,
@@ -359,16 +364,22 @@ public sealed class LayerReconciliationServiceTests
                     FilterFieldMappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                     {
                         ["DateOfFlight"] = "flight_date",
-                        ["STATUS"] = "status"
+                        ["STATUS"] = "status",
+                        ["UPPER"] = "must_not_replace_function"
                     }
                 }
             ]
         };
 
-        await NewService(reader).ReconcileAsync(request);
+        FilterExpression? translated = null;
+        var service = NewFilteredService(reader, expression => translated = expression);
+        await service.ReconcileAsync(request);
 
-        reader.CountQueries.Should().ContainSingle().Which.Where
-            .Should().Be("flight_date = DATE 'DateOfFlight' AND status = 'open'");
+        var expected = new GeoServicesSqlParser().Parse("flight_date = DATE '2026-01-01' AND UPPER(status) = 'DateOfFlight'");
+        translated.Should().BeEquivalentTo(expected);
+        reader.CountQueries.Should().ContainSingle().Which.Where.Should().BeNull();
+        reader.CountQueries[0].SqlFilter.Should().NotBeNull();
+        reader.SampleQueries.Should().ContainSingle().Which.SqlFilter.Should().BeSameAs(reader.CountQueries[0].SqlFilter);
     }
 
     [Fact]
@@ -384,11 +395,49 @@ public sealed class LayerReconciliationServiceTests
         var request = BuildRequest(100, BoundingBox.Create(0, 0, 10, 10, 4326), ["OBJECTID", "NAME"]);
         request = request with { Layers = [request.Layers[0] with { FilterMirror = sourceFilter }] };
 
-        var result = await NewService(reader).ReconcileAsync(request);
+        var result = await NewFilteredService(reader).ReconcileAsync(request);
 
         result.Layers[0].Count.Classification.Should().Be("pass");
-        reader.CountQueries.Should().ContainSingle().Which.Where.Should().Be(sourceFilter);
-        reader.SampleQueries.Should().ContainSingle().Which.Where.Should().Be(sourceFilter);
+        reader.CountQueries.Should().ContainSingle().Which.SqlFilter.Should().NotBeNull();
+        reader.CountQueries[0].Where.Should().BeNull();
+        reader.SampleQueries.Should().ContainSingle().Which.SqlFilter.Should().BeSameAs(reader.CountQueries[0].SqlFilter);
+    }
+
+    [Fact]
+    public async Task Reconcile_SharedFilterWithoutCompiler_FailsWithoutReadingUnfilteredRows()
+    {
+        var reader = new StubFeatureReader();
+        var request = BuildRequest(1, BoundingBox.Create(0, 0, 1, 1, 4326), ["NAME"]);
+        request = request with { Layers = [request.Layers[0] with { FilterMirror = "STATUS = 'open'" }] };
+
+        var result = await NewService(reader).ReconcileAsync(request);
+
+        result.Layers[0].Count.Classification.Should().Be("fail");
+        reader.CountQueries.Should().BeEmpty();
+        reader.SampleQueries.Should().BeEmpty();
+    }
+
+    private static LayerReconciliationService NewFilteredService(StubFeatureReader reader, Action<FilterExpression>? translated = null)
+    {
+        var resource = new MetadataV2Resource { Metadata = new() { Id = "target" } };
+        var snapshot = new MetadataV2GraphSnapshot(new MetadataV2Graph
+        {
+            Resources = [resource],
+            StorageBindings = [new() { Metadata = new() { Id = "binding" }, ResourceId = "target", StorageLayerId = 1 }]
+        }, "test", DateTimeOffset.UtcNow);
+        var graph = new Mock<IMetadataV2GraphProvider>();
+        graph.Setup(provider => provider.GetCurrentAsync(It.IsAny<CancellationToken>())).ReturnsAsync(snapshot);
+        var filters = new Mock<IFilterExpressionService>();
+        filters.Setup(service => service.Parse(FilterLanguage.ArcGisSql, It.IsAny<string>()))
+            .Returns((FilterLanguage _, string filter) => FilterParseResult.Success(new GeoServicesSqlParser().Parse(filter)));
+        filters.Setup(service => service.Translate(It.IsAny<FilterExpression>(), resource))
+            .Returns((FilterExpression expression, MetadataV2Resource _) =>
+            {
+                translated?.Invoke(expression);
+                return FilterTranslationResult.Success(expression, new SqlFragment("status = @p0", ["open"]));
+            });
+        return new LayerReconciliationService(reader, TimeProvider.System, NullLogger<LayerReconciliationService>.Instance,
+            new ReconciliationQueryBuilder(graph.Object, filters.Object));
     }
 
     private static LayerReconciliationRequest BuildRequest(

@@ -715,6 +715,7 @@ internal static class ServiceCollectionExtensions
         // published layer through IFeatureReader, so it is scoped to align with the scoped feature
         // store. TimeProvider is guarded here in case no host-level registration ran first.
         services.TryAddSingleton(TimeProvider.System);
+        services.TryAddScoped<ReconciliationQueryBuilder>();
         services.TryAddScoped<ILayerReconciliationService, LayerReconciliationService>();
 
         // Register Core-level services via their own extensions
