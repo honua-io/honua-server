@@ -91,6 +91,9 @@ jobs:
         # need none of the geospatial client toolchain the lane installs.
         run: python3 -m unittest discover -s scripts/conformance/cng -p 'test_*.py' -v
 
+      - name: Run canonical JavaScript metadata observation tests
+        run: node --test scripts/conformance/cng/test-artifact-metadata.mjs
+
   cng:
     name: CNG Conformance
     runs-on: ubuntu-24.04

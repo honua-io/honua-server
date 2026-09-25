@@ -337,7 +337,9 @@ result_digest "$job"
             fake_bin.mkdir()
             fake_gh = fake_bin / "gh"
             fake_gh.write_text(
-                "#!/bin/sh\nprintf '%s\\n' '[{\"databaseId\":1,\"conclusion\":\"success\",\"createdAt\":\"2026-09-02T00:00:00Z\",\"headSha\":\"a\",\"url\":\"u1\"},{\"databaseId\":2,\"conclusion\":\"success\",\"createdAt\":\"2026-09-01T00:00:00Z\",\"headSha\":\"b\",\"url\":\"u2\"}]'\n",
+                "#!/bin/sh\ncase \"$2\" in *workflows*) echo '{\"workflow_runs\":[]}' ;; "
+                "*) echo '{\"id\":9876,\"run_attempt\":1,\"event\":\"schedule\","
+                "\"created_at\":\"2026-09-25T00:18:00Z\"}' ;; esac\n",
                 encoding="utf-8",
             )
             fake_gh.chmod(0o755)
@@ -360,15 +362,13 @@ result_digest "$job"
             )
             self.assertEqual(0, completed.returncode, completed.stderr)
             result = json.loads(streak.read_text(encoding="utf-8"))
-            self.assertEqual(3, result["observed_runs"])
+            self.assertEqual(1, result["observed_runs"])
             self.assertEqual(0, result["consecutive_green"])
             self.assertFalse(result["ready"])
-            self.assertEqual("failure", result["runs"][0]["conclusion"])
-            self.assertTrue(result["runs"][0]["missing_receipt"])
-            self.assertEqual(
-                "https://github.com/honua-io/honua-server/actions/runs/9876",
-                result["runs"][0]["url"],
-            )
+            self.assertEqual("fail", result["runs"][0]["outcome"])
+            self.assertIn("receipt.json", result["runs"][0]["finding"])
+            self.assertEqual(9876, result["runs"][0]["run_id"])
+
 
 
 class OutputStoreArtifactOracleTests(unittest.TestCase):

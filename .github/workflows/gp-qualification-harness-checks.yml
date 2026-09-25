@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'scripts/qualification/gp-*.sh'
+      - 'scripts/qualification/gp_canary*.py'
       - 'scripts/qualification/test_gp*.py'
       - 'scripts/qualification/verify-gp-store-artifact.py'
       - '.github/workflows/gp-qualification-harness-checks.yml'
@@ -23,6 +24,10 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install PyYAML==6.0.2 Shapely==2.1.2
       - name: Check harness syntax and failure isolation
         run: |
           bash -n scripts/qualification/gp-lifecycle-harness.sh
