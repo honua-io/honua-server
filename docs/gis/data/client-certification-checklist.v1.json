@@ -1572,11 +1572,14 @@
         },
         "arcpy": {
           "state": "blocked",
-          "citation": "honua-esri-compat evidence/arcpy-checklist-20260922z/operations.json, ArcGIS Pro 3.7.1.1904 on candidate sha256:cd6e3dd4: arcpy.management.CreateReplica answers ERROR 000824 'The tool is not licensed' under the headless propy seat, so the operation was never issued and neither support nor absence was measured. Deliberately not read as a client gap: a headless arcpy probe reports ProductInfo ArcView on this machine while the interactive seat is a signed-in named user, and that reading has already misled this programme once. Settling this cell needs the interactive seat, not another headless run.",
           "previous_exclusion": {
-            "state": "blocked",
-            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. CreateReplica's input contract does not establish absence of every native offline path. CreateReplicaFromServer targets a different GeoDataServer protocol and cannot settle FeatureServer replica/sync."
-          }
+            "citation": "honua-esri-compat evidence/arcpy-checklist-20260922z/operations.json, ArcGIS Pro 3.7.1.1904 on candidate sha256:cd6e3dd4: arcpy.management.CreateReplica answers ERROR 000824 'The tool is not licensed' under the headless propy seat, so the operation was never issued and neither support nor absence was measured. Deliberately not read as a client gap: a headless arcpy probe reports ProductInfo ArcView on this machine while the interactive seat is a signed-in named user, and that reading has already misled this programme once. Settling this cell needs the interactive seat, not another headless run.",
+            "previous_exclusion": {
+              "state": "blocked",
+              "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. CreateReplica's input contract does not establish absence of every native offline path. CreateReplicaFromServer targets a different GeoDataServer protocol and cannot settle FeatureServer replica/sync."
+            }
+          },
+          "evidence": "honua-esri-compat evidence/arcpy-checklist-20260924-tls4, ArcGIS Pro 3.7.1.1904: CreateReplica requires a Standard or Advanced licence and this seat cannot reach one. Measured rather than assumed, because a headless arcpy probe reporting ArcView has misled this programme before: arcpy.ProductInfo() returns 'ArcView', and arcpy.SetProduct('ArcInfo') returns 'AlreadyInitialized' EVEN AS THE FIRST CALL AFTER IMPORT - importing arcpy fixes the licence, so the level cannot be raised from inside the process. CheckExtension reports NotLicensed for Foundation. This is therefore not exercisable in the headless arcpy lane at all and belongs to pro-ui, where the interactive seat is a signed-in named user. Not a server defect: no request for a replica reaches the candidate."
         },
         "qgis-ui": {
           "state": "n/a-no-client",
