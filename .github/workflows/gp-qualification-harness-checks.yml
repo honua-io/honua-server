@@ -11,9 +11,16 @@ on:
   workflow_dispatch:
     inputs:
       native_store_rehearsal:
-        description: Build a matching worker and rehearse one real staged-store outage (not release qualification)
+        description: Build a matching worker and run the selected native engineering rehearsal
         type: boolean
         default: false
+      native_rehearsal_lane:
+        description: Bounded native workload (never release qualification)
+        type: choice
+        default: output-store-outage
+        options:
+          - output-store-outage
+          - heartbeat-recovery
 
 permissions:
   contents: read
@@ -32,6 +39,7 @@ jobs:
         run: |
           bash -n scripts/qualification/gp-lifecycle-harness.sh
           bash -n scripts/qualification/gp-store-crash.sh
+          bash -n scripts/qualification/gp-heartbeat-recovery.sh
           python3 -m unittest discover -s scripts/qualification -p 'test_gp*.py' -v
 
   native-store-rehearsal:
@@ -51,7 +59,7 @@ jobs:
     env:
       HONUA_SERVER_IMAGE: ghcr.io/honua-io/honua-server@sha256:14b597d78aa6889d3adb2b0e5e2fdbfd4617da4eb11c12079b9655ec7f709b55
       HONUA_GP_SOURCE_SHA: fe1636ca0a3cbd3ec3994f5faafa3490672694e7
-      HONUA_GP_LANE: output-store-outage
+      HONUA_GP_LANE: ${{ inputs.native_rehearsal_lane || 'output-store-outage' }}
       HONUA_GP_RECEIPT_DIR: ${{ github.workspace }}/artifacts/gp-store-rehearsal
       HONUA_GP_SCENARIO_TIMEOUT_SECONDS: '900'
     steps:
@@ -111,13 +119,15 @@ jobs:
           root.mkdir(parents=True, exist_ok=True)
           summary_path = root / 'summary.json'
           summary = json.loads(summary_path.read_text()) if summary_path.exists() else None
-          passed = bool(summary and summary['lane'] == 'output-store-outage'
+          lane = os.environ['HONUA_GP_LANE']
+          scenario = {'output-store-outage': 'output-write-failure', 'heartbeat-recovery': 'stale-lease'}[lane]
+          passed = bool(summary and summary['lane'] == lane
                         and summary['declared_scenario_count'] == summary['receipt_count'] == 3
                         and summary['failed'] == 0 and summary['missing_scenarios'] == []
                         and summary['duplicate_receipts'] == []
-                        and {s['scenario'] for s in summary['scenarios']} == {'topology', 'output-write-failure', 'cleanup'}
+                        and {s['scenario'] for s in summary['scenarios']} == {'topology', scenario, 'cleanup'}
                         and all(s['outcome'] == 'pass' for s in summary['scenarios']))
-          receipt = {'schema': 'honua.gp-store-rehearsal.v1', 'qualification': False,
+          receipt = {'schema': 'honua.gp-store-rehearsal.v1', 'qualification': False, 'lane': lane,
                      'outcome': 'pass' if passed else 'fail', 'harness_sha': os.environ['GITHUB_SHA'],
                      'source_sha': os.environ['HONUA_GP_SOURCE_SHA'],
                      'server_image': os.environ['HONUA_SERVER_IMAGE'],
