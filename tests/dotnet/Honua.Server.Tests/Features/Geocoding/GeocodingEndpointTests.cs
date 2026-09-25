@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Linq;
 using System.Net;
 using System.Text.Json;
 using Honua.Geocoding.Features.Geocoding;
@@ -1278,6 +1279,101 @@ public sealed class GeocodingEndpointTests
         var values = categories.EnumerateArray().Select(static c => c.GetString()).ToArray();
         Assert.Contains("POI", values);
         Assert.Contains("Address", values);
+    }
+
+    // #5145: candidateFields carries the OUTPUT schema, not just address components. The
+    // geocoding tools build their result feature class from this list, so Shape, Status and
+    // Score must be declared and marked required - GeocodeAddresses has no output to
+    // construct without them, which is how a locator arcpy has already bound and described
+    // as an AddressLocator still fails "ERROR 000010". Shapes match the live ArcGIS World
+    // Geocoding Service document, which also omits `length` on the non-string types.
+    [IntegrationTest]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
+    public async Task GeocodeServerMetadata_CandidateFields_DeclareRequiredOutputSchema()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var fields = payload.RootElement.GetProperty("candidateFields").EnumerateArray().ToArray();
+
+        JsonElement Field(string name) =>
+            fields.Single(f => f.GetProperty("name").GetString() == name);
+
+        var shape = Field("Shape");
+        Assert.Equal("esriFieldTypeGeometry", shape.GetProperty("type").GetString());
+        Assert.True(shape.GetProperty("required").GetBoolean());
+        Assert.False(shape.TryGetProperty("length", out _));
+
+        var score = Field("Score");
+        Assert.Equal("esriFieldTypeDouble", score.GetProperty("type").GetString());
+        Assert.True(score.GetProperty("required").GetBoolean());
+        Assert.False(score.TryGetProperty("length", out _));
+
+        var status = Field("Status");
+        Assert.Equal("esriFieldTypeString", status.GetProperty("type").GetString());
+        Assert.True(status.GetProperty("required").GetBoolean());
+        Assert.Equal(1, status.GetProperty("length").GetInt32());
+
+        Assert.Equal(20, Field("Loc_name").GetProperty("length").GetInt32());
+        Assert.True(Field("Match_addr").GetProperty("required").GetBoolean());
+
+        // Every field carries the flag; a missing one is not the same statement as false.
+        Assert.All(fields, f => Assert.True(f.TryGetProperty("required", out _)));
+    }
+
+    // #5145: the locator document and the candidates must agree. Declaring Status and Score
+    // in candidateFields while findAddressCandidates omits them leaves the tools writing a
+    // column they were promised and never receive - the same class of defect as a query
+    // response disagreeing with its layer resource (#5197).
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/findAddressCandidates")]
+    public async Task FindAddressCandidates_CarryOutputSchemaAttributes()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/findAddressCandidates?f=json&singleLine=1+Main+St");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var candidate = payload.RootElement.GetProperty("candidates").EnumerateArray().First();
+        var attributes = candidate.GetProperty("attributes");
+
+        // A returned candidate is by definition a match; "U" is reserved for the batch
+        // path's no-match slots, which carry no location.
+        Assert.Equal("M", attributes.GetProperty("Status").GetString());
+        Assert.False(string.IsNullOrWhiteSpace(attributes.GetProperty("Loc_name").GetString()));
+
+        // Numeric, matching the esriFieldTypeDouble candidateFields declares: a locator
+        // that declares a double and answers a quoted string disagrees with itself.
+        var scoreAttribute = attributes.GetProperty("Score");
+        Assert.Equal(JsonValueKind.Number, scoreAttribute.ValueKind);
+        Assert.Equal(candidate.GetProperty("score").GetDouble(), scoreAttribute.GetDouble());
+
+        // Everything the locator document declares must be answerable from the candidate.
+        using var metadata = JsonDocument.Parse(
+            await (await client.GetAsync("/rest/services/World/GeocodeServer?f=json")).Content.ReadAsStringAsync());
+        foreach (var field in metadata.RootElement.GetProperty("candidateFields").EnumerateArray())
+        {
+            var name = field.GetProperty("name").GetString()!;
+            if (name is "Shape")
+            {
+                // Carried as the candidate's location rather than an attribute.
+                Assert.True(candidate.TryGetProperty("location", out _));
+                continue;
+            }
+
+            Assert.True(
+                attributes.TryGetProperty(name, out _),
+                $"candidateFields declares '{name}' but no candidate attribute carries it.");
+        }
     }
 
     // #2147: SuggestedBatchSize is derived from the ACTIVE provider's MaxBatchSize, not a constant.
