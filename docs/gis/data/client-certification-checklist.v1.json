@@ -133,7 +133,11 @@
       "operation": "GetLegendGraphic",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (revision c9f739e6d): Pro consumed the service's GetLegendGraphic. The WMS endpoint is /ogc/services/{service}/wms (also /rest/services/{service}/MapServer/WMS) - NOT the routes this programme first guessed, which is why an earlier reading wrongly concluded WMS was unserved on this candidate. Pro's New WMS Server connection accepted it, creating 'browser_compat on host.docker.internal_18443.wms'; Add To Current Map produced a layer whose contextual tab reads 'WMS Layer' and which renders server-drawn imagery. Expanding it lists the service's own sublayers - Browser Polygons, Browser Lines, Browser Points - matching GetCapabilities exactly. The decisive evidence: the server log records GetLegendGraphic requests issued BY PRO (3 occurrences across casings) alongside GetMap and GetCapabilities. Independently GetLegendGraphic for LAYER='Browser Points' returns 200 image/png, 1184 bytes, a valid PNG, and the capabilities carries a LegendURL per layer. Stated precisely: the swatch IMAGE sits one expand level below the sublayer rows and was not opened; the claim rests on the sublayer enumeration plus the requests Pro actually issued.",
+          "previous_exclusion": {
+            "state": "not-started"
+          }
         },
         "arcpy": {
           "state": "n/a-no-client",
