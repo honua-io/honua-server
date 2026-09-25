@@ -1059,7 +1059,25 @@ internal sealed class GeocodingHandler(
         if (capabilities.SupportsBatch && capabilities.MaxBatchSize > 0)
         {
             properties["SuggestedBatchSize"] = capabilities.MaxBatchSize.ToString(CultureInfo.InvariantCulture);
+
+            // MaxBatchSize as well as SuggestedBatchSize. GeocodeAddresses is a BATCH
+            // operation and reads the ceiling, not just the hint, before it will build a
+            // batch at all: with SuggestedBatchSize alone the tool read the locator
+            // document - GET /rest/info then GET /rest/services/{name}/GeocodeServer,
+            // both 200 - and then failed "ERROR 000010: Geocode addresses failed"
+            // without ever calling geocodeAddresses. Refs honua-server#5145.
+            properties["MaxBatchSize"] = capabilities.MaxBatchSize.ToString(CultureInfo.InvariantCulture);
         }
+
+        // Output-table construction hints. The geocoding tools read these to decide which
+        // columns to create on their result, and a locator that answers nothing for them
+        // leaves the tool with no schema to build. False is the honest answer for the
+        // three Honua does not produce; X/Y are written because every candidate carries a
+        // location.
+        properties["WriteXYCoordFields"] = "true";
+        properties["WriteStandardizedAddressField"] = "false";
+        properties["WriteReferenceIDField"] = "false";
+        properties["WritePercentAlongField"] = "false";
 
         return properties;
     }
