@@ -200,7 +200,7 @@ else [[ "$result" != 0 ]] || exit 73; fi
 set -uo pipefail
 job=job-1; scenario=output-write-failure; receipt_root="$PWD"; object_root="$PWD/store"
 scenario_evidence_file="$PWD/evidence.json"; outage_started=timestamp
-before_fixture_record='{"attemptCount":1}'; write_failure_record=null
+before_record='{"attemptCount":1}'; write_failure_record=null
 mkdir "$object_root"; echo '{}' > "$scenario_evidence_file"
 fixture_record='{"status":0,"attemptCount":1,"nextRetryAt":"future","artifactReferences":[],"currentPhase":"Requeued: failure"}'
 case "$MUTATION" in
