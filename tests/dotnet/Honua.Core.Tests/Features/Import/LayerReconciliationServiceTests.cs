@@ -466,6 +466,48 @@ public sealed class LayerReconciliationServiceTests
     }
 
     [Theory]
+    [InlineData(4326, 0, "warn")]
+    [InlineData(3857, 0, "warn")]
+    [InlineData(null, 0, "pass")]
+    [InlineData(4326, 5000, "fail")]
+    public async Task Reconcile_QueriedExtentCrs_UsesSelectedBaselineForTargetObservation(
+        int? advertisedSrid, double offset, string expected)
+    {
+        var queried = BoundingBox.Create(361431.356, 3736037.969, 483556.921, 3783589.624, 26911);
+        var reader = new StubFeatureReader
+        {
+            Count = 26,
+            Extent = FeatureExtent.Create(-118.5013, 33.7591, -117.1778, 34.1842, 4326),
+            ComparisonExtent = FeatureExtent.Create(
+                queried.MinX + offset, queried.MinY, queried.MaxX + offset, queried.MaxY, 26911),
+            Sample = BuildSample(("OBJECTID", "NAME"), validGeometry: true, rows: 26)
+        };
+        var request = BuildRequest(26, queried, ["OBJECTID", "NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    SourceExtent = advertisedSrid is { } srid ? BoundingBox.Create(0, 0, 10, 10, srid) : null,
+                    QueriedSourceExtent = queried,
+                    PlannedTargetSrid = 4326
+                }
+            ]
+        };
+
+        var extent = (await NewService(reader).ReconcileAsync(request)).Layers[0].Extent;
+
+        extent.Classification.Should().Be(expected);
+        (extent.Source?.Srid).Should().Be(advertisedSrid);
+        extent.QueriedSource!.Value.Srid.Should().Be(26911);
+        extent.ComparisonTarget!.Value.Srid.Should().Be(26911);
+        extent.AdvertisedExtentStale.Should().Be(advertisedSrid.HasValue);
+        reader.ExtentQueries.Should().HaveCount(2);
+        reader.ExtentQueries[1]!.Value.OutputSrid.Should().Be(26911);
+    }
+
+    [Theory]
     [InlineData(null, null)]
     [InlineData(4326, null)]
     [InlineData(4326, 3857)]
