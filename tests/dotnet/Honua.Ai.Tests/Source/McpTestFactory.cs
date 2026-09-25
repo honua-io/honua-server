@@ -202,11 +202,20 @@ internal static class McpTestFactory
                     OperationId = "studio.content.create-publication-request",
                     CorrelationId = context.CorrelationId ?? "corr-studio-publication",
                     AuditId = "audit-studio-publication",
-                    ProposalId = "proposal-studio-publication",
-                    Status = OperationHandleStatus.RequiresApproval,
+                    ProposalId = context.PublishImmediately ? null : "proposal-studio-publication",
+                    Status = context.PublishImmediately ? OperationHandleStatus.Completed : OperationHandleStatus.RequiresApproval,
                     CreatedAt = now,
                     UpdatedAt = now,
                 },
+                Value = context.PublishImmediately ? new StudioPublicationRequest
+                {
+                    RequestId = Guid.NewGuid(),
+                    ItemId = itemId,
+                    VersionId = versionId,
+                    Status = StudioPublicationRequestStatus.Accepted,
+                    Intent = intent,
+                    CreatedAt = now,
+                } : null,
             });
         }
 
