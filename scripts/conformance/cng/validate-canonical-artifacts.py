@@ -13,6 +13,7 @@ from enum import Enum
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, NamedTuple
+from pmtiles_http import HttpRangeSource, load_source
 
 CLIENTS = {
     "GeoPandas": "1.1.4",
@@ -994,23 +995,31 @@ def _gdal_flatgeobuf_metadata(info: dict) -> dict[str, Any]:
 
 
 def validate_pmtiles(path: Path, args: argparse.Namespace) -> list[dict]:
-    from pmtiles.reader import MmapSource, Reader, all_tiles
+    from pmtiles.reader import Reader, all_tiles
 
     started = _now()
-    with path.open("rb") as stream:
-        source = MmapSource(stream)
+    content, serving_source = load_source(path, args.base_url)
+    source = HttpRangeSource(content, serving_source["url"])
+    observation = _observation("pmtiles", "archive-read", "pmtiles", "python-pmtiles", started, args)
+    observation["serving_source"] = serving_source
+    observation["observed_transfer"] = source.transfer
+    observation["http_responses"] = source.responses
+    try:
         reader = Reader(source)
         header = reader.header()
         metadata = reader.metadata()
         tiles = list(all_tiles(source))
         first = tiles[0] if tiles else None
-    if header.get("version") != 3:
-        raise ValueError(f"PMTiles reader reported version={header.get('version')!r}, expected 3")
-    if not isinstance(metadata, dict):
-        raise ValueError("PMTiles metadata is not an object")
-    if first is None or not first[1]:
-        raise ValueError("PMTiles reader found no non-empty tiles")
-    observation = _observation("pmtiles", "archive-read", "pmtiles", "python-pmtiles", started, args)
+        if header.get("version") != 3:
+            raise ValueError(f"PMTiles reader reported version={header.get('version')!r}, expected 3")
+        if not isinstance(metadata, dict):
+            raise ValueError("PMTiles metadata is not an object")
+        if first is None or not first[1]:
+            raise ValueError("PMTiles reader found no non-empty tiles")
+    except Exception as error:
+        observation["result"] = "fail"
+        observation["failure_reason"] = f"{type(error).__name__}: {error}"
+        return [observation]
     # #4398: the declared pmtiles budget oracle, read back from the archive Honua wrote.
     observation["observed_metadata"] = {
         "spec_version": str(header.get("version")),
@@ -1357,7 +1366,7 @@ def validate_stac(base_url: str, args: argparse.Namespace) -> list[dict]:
 def validate_javascript(path: Path, args: argparse.Namespace) -> list[dict]:
     script = Path(__file__).with_name("validate-js-artifacts.mjs")
     started = _now()
-    payload = json.loads(_run("node", str(script), str(path)).stdout)
+    payload = json.loads(_run("node", str(script), str(path), args.base_url).stdout)
     observations = []
     for row in payload:
         observation = _observation(
@@ -1367,6 +1376,9 @@ def validate_javascript(path: Path, args: argparse.Namespace) -> list[dict]:
         observation["result"] = row["result"]
         if isinstance(row.get("observed_metadata"), dict):
             observation["observed_metadata"] = row["observed_metadata"]
+        for key in ("observed_transfer", "serving_source", "http_responses"):
+            if key in row:
+                observation[key] = row[key]
         if row["result"] == "fail":
             observation["failure_reason"] = row.get("failure_reason", "JavaScript validator failed")
         observations.append(observation)

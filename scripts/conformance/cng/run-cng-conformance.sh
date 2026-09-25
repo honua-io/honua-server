@@ -55,6 +55,8 @@ TILES_VALIDATOR_VERSION="0.6.1"
 GEOPARQUET_STATUS=2
 FLATGEOBUF_STATUS=2
 PMTILES_STATUS=2
+PMTILES_HTTP_STATUS=2
+PMTILES_HTTP_DETAIL="not run"
 TILES_STATUS=2
 CONSUMER_STATUS=2
 GEOPARQUET_DETAIL="not run"
@@ -170,11 +172,13 @@ bring_up_stack() {
         $COMPOSE_CMD -f "$CNG_COMPOSE_FILE" build honua-server
     fi
 
-    echo -e "${YELLOW}Starting PostgreSQL + Redis...${NC}"
+    echo -e "${YELLOW}Starting PostgreSQL + Redis + ephemeral S3 fixture...${NC}"
     $COMPOSE_CMD -f "$CNG_COMPOSE_FILE" down --remove-orphans --volumes 2>/dev/null || true
-    $COMPOSE_CMD -f "$CNG_COMPOSE_FILE" up -d postgres redis
+    $COMPOSE_CMD -f "$CNG_COMPOSE_FILE" up -d postgres redis localstack
     wait_for_health postgres 120 || return 1
     wait_for_health redis 60 || return 1
+    wait_for_health localstack 120 || return 1
+    $COMPOSE_CMD -f "$CNG_COMPOSE_FILE" exec -T localstack awslocal s3api create-bucket --bucket honua-cng-fixtures || return 1
 
     # Start honua once to run migrations, then seed the CNG service additively.
     echo -e "${YELLOW}Starting Honua Server (migrations)...${NC}"
@@ -198,6 +202,23 @@ bring_up_stack() {
 }
 
 # --- Validators -----------------------------------------------------------
+
+seed_pmtiles_serving() {
+    # Provision the exact writer output as a published object. This proves the
+    # supported serving route/provider path, not the admin publication workflow.
+    local container digest
+    container=$($COMPOSE_CMD -f "$CNG_COMPOSE_FILE" ps -q localstack) || return 1
+    digest=$(sha256sum "$ARTIFACTS_DIR/honua.pmtiles" | cut -d' ' -f1) || return 1
+    docker cp "$ARTIFACTS_DIR/honua.pmtiles" "$container":/tmp/cng-honua.pmtiles || return 1
+    $COMPOSE_CMD -f "$CNG_COMPOSE_FILE" exec -T localstack awslocal s3api put-object \
+        --bucket honua-cng-fixtures --key pmtiles/cng/honua.pmtiles --body /tmp/cng-honua.pmtiles \
+        --content-type application/vnd.pmtiles --metadata "operation=publish,cng-sha256=$digest" >/dev/null || return 1
+    $COMPOSE_CMD -f "$CNG_COMPOSE_FILE" exec -T localstack awslocal s3api head-object \
+        --bucket honua-cng-fixtures --key pmtiles/cng/honua.pmtiles \
+        > "$RESULTS_DIR/pmtiles-s3-object.json" || return 1
+    python3 scripts/conformance/cng/pmtiles_http.py --artifact "$ARTIFACTS_DIR/honua.pmtiles" \
+        --object-metadata "$RESULTS_DIR/pmtiles-s3-object.json" --base-url "$BASE_URL"
+}
 
 validate_geoparquet() {
     echo -e "\n${BLUE}[GeoParquet] FeatureServer f=parquet -> gpq validate${NC}"
@@ -374,6 +395,13 @@ if ! bring_up_stack; then
 else
     validate_geoparquet
     validate_flatgeobuf
+    if seed_pmtiles_serving; then
+        PMTILES_HTTP_STATUS=0
+        PMTILES_HTTP_DETAIL="exact archive provisioned through LocalStack S3 and resolved by Honua HEAD; canonical client range/whole-object budgets graded separately"
+    else
+        PMTILES_HTTP_STATUS=1
+        PMTILES_HTTP_DETAIL="supported S3-backed route setup or exact archive identity check failed"
+    fi
 fi
 
 validate_pmtiles
@@ -404,6 +432,7 @@ cat > "$SUMMARY_FILE" << EOF
 | Format | Source | Validator | Result | Detail |
 |---|---|---|---|---|
 | GeoParquet 1.1.0 | FeatureServer \`f=parquet\` | \`gpq validate\` | $(status_label $GEOPARQUET_STATUS) | $GEOPARQUET_DETAIL |
+| PMTiles serving setup | Honua S3-backed route (LocalStack) | object identity + HEAD | $(status_label $PMTILES_HTTP_STATUS) | $PMTILES_HTTP_DETAIL |
 | FlatGeobuf | FeatureServer \`f=fgb\` | \`ogrinfo -al -so\` | $(status_label $FLATGEOBUF_STATUS) | $FLATGEOBUF_DETAIL |
 | PMTiles v3 | \`PMTilesWriter\` | \`pmtiles verify\` | $(status_label $PMTILES_STATUS) | $PMTILES_DETAIL |
 | 3D Tiles 1.1 | \`TilesetDocumentWriter\` + \`GeometryTileBuilder\` | \`3d-tiles-validator\` + \`gltf_validator\` | $(status_label $TILES_STATUS) | $TILES_DETAIL |
@@ -433,7 +462,7 @@ cat "$SUMMARY_FILE"
 # Fail the lane if any hard-gated format did not pass. A "not run" outcome is
 # also a failure: supported formats cannot be certified by skipped validators.
 OVERALL=0
-for s in $GEOPARQUET_STATUS $FLATGEOBUF_STATUS $PMTILES_STATUS $TILES_STATUS $CONSUMER_STATUS; do
+for s in $GEOPARQUET_STATUS $FLATGEOBUF_STATUS $PMTILES_STATUS $PMTILES_HTTP_STATUS $TILES_STATUS $CONSUMER_STATUS; do
     if [[ "$s" != "0" ]]; then
         OVERALL=1
     fi
