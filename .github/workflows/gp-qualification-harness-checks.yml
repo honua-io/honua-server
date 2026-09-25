@@ -1,0 +1,24 @@
+name: GP Qualification Harness Checks
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/qualification/gp-*.sh'
+      - 'scripts/qualification/test_gp*.py'
+      - 'scripts/qualification/verify-gp-store-artifact.py'
+      - '.github/workflows/gp-qualification-harness-checks.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  harness-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check harness syntax and failure isolation
+        run: |
+          bash -n scripts/qualification/gp-lifecycle-harness.sh
+          python3 -m unittest discover -s scripts/qualification -p 'test_gp*.py' -v

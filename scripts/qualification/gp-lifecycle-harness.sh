@@ -81,6 +81,7 @@ scenario_evidence_file=""
 scenario_finding=""
 scenario_cleanup_failure=""
 preflight_failure=""
+runtime_taint=""
 failures=0
 finished=0
 observed_candidate_file="${receipt_root}/.observed-candidate.json"
@@ -914,16 +915,35 @@ run_retry() {
 }
 
 run_timeout_live() {
-  local mode="$1" job record terminal state retry_code result_code failed_terminal_count
+  local job="" state="" result=0 cleanup_result=0
+  # The case changes exported settings only in its function scope. On every
+  # return (including an assertion failure), recreate the topology using the
+  # caller's original values before another scenario can run.
+  run_timeout_case "$@" || result=$?
+  compose up -d --force-recreate server server-peer worker >/dev/null || cleanup_result=$?
+  if (( cleanup_result == 0 )); then
+    wait_ready && wait_peer_ready || cleanup_result=$?
+  fi
+  if (( cleanup_result != 0 )); then
+    scenario_cleanup_failure="timeout qualification topology restoration failed"
+    runtime_taint="${scenario_cleanup_failure}"
+    scenario_finding="${scenario_finding:+${scenario_finding}; }${scenario_cleanup_failure}"
+    return 1
+  fi
+  (( result == 0 )) || return "$result"
+  write_receipt "$scenario_name" pass "" "$job" "$state"
+}
+
+run_timeout_case() {
+  local mode="$1" record terminal retry_code result_code failed_terminal_count
   local request_at signal_file object_count_before object_count_after process_ready child_pid worker_container child_alive signal_deadline
   local behavior="native production executor"
-  export HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification
-  export HONUA_GP_TIMEOUT_SECONDS=2
+  local -x HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification
+  local -x HONUA_GP_TIMEOUT_SECONDS=2
+  local -x HONUA_GP_QUALIFICATION_EXECUTOR_MODE=""
   if [[ "$mode" == ignore-cancellation ]]; then
     export HONUA_GP_QUALIFICATION_EXECUTOR_MODE=ignore-cancellation
     behavior="native production executor ignores operator cancellation; timeout remains authoritative"
-  else
-    unset HONUA_GP_QUALIFICATION_EXECUTOR_MODE
   fi
   compose up -d --force-recreate server server-peer worker >/dev/null || {
     scenario_fail "timeout qualification topology could not be recreated"
@@ -1020,12 +1040,6 @@ run_timeout_live() {
     --argjson before "$object_count_before" --argjson after "$object_count_after" \
     --argjson child_alive "$child_alive" --argjson failed_terminal_count "$failed_terminal_count" \
     '{request_at:$request_at,claim_at:$record.claimedAt,worker_id:$record.claimedBy,process:$process,artifact_references:($record.artifactReferences // []),timeout_source:"supported workload policy batch.timeout_seconds",cancellation_source:(if $behavior|startswith("native production executor ignores") then "OGC DELETE via peer" else null end),signal_observed_at:($signal.observedAt // null),child_process:{pid:($process.childProcessId // null),exit_observed:($child_alive|not)},terminal_history:$transitions,terminal_failure_count:$failed_terminal_count,attempt_count:($record.attemptCount // null),queue_membership:{pending_score:(if $pending=="" then null else $pending end),claimed_score:(if $claimed=="" then null else $claimed end)},retry_race_http:$retry_code,result_visibility:{after_terminal:$result_code},object_inventory:{before:$before,after_retention_cleanup:$after}}')"
-  unset HONUA_GP_QUALIFICATION_EXECUTOR_MODE
-  unset HONUA_GP_QUALIFICATION_BARRIER_ROOT
-  export HONUA_GP_TIMEOUT_SECONDS=3600
-  compose up -d --force-recreate server server-peer worker >/dev/null || return 1
-  wait_ready || return 1
-  write_receipt "$scenario_name" pass "" "$job" "$state"
 }
 
 run_timeout_cooperative() {
@@ -1245,6 +1259,10 @@ run_scenario() {
   local name="$1" function="$2" result=0 outcome finding
   shift 2
   scenario_state_reset "${name}"
+  if [[ -n "${runtime_taint}" && "${name}" != cleanup ]]; then
+    write_receipt "${name}" fail "not executed: ${runtime_taint}"
+    return 1
+  fi
   "${function}" "$@" || result=$?
   outcome=pass; finding=""
   if (( result != 0 )); then
