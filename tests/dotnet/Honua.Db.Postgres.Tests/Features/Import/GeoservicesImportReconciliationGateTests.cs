@@ -161,6 +161,104 @@ public sealed class GeoservicesImportReconciliationGateTests(PostgresFixture fix
         }
     }
 
+    [Fact]
+    public async Task ImportLayerAsync_GeometryCensus_UsesStoredTargetIdsAndFilteredExtent()
+    {
+        var schemaName = await fixture.CreateIsolatedSchemaAsync("GeometryCensus");
+        var reconciliation = new CapturingReconciliationService();
+        var source = new GeometryCensusFeatureServerHandler();
+        var service = CreateService(source, publishedLayerId: 104, reconciliation);
+        try
+        {
+            var result = await service.ImportLayerAsync(
+                BuildRequest("geometry_census", schemaName) with { WhereClause = GeometryCensusFeatureServerHandler.Filter });
+
+            result.FeatureCount.Should().Be(4, result.ErrorMessage);
+            var layer = reconciliation.Requests.Should().ContainSingle().Subject.Layers.Should().ContainSingle().Subject;
+            layer.SourceGeometry.Should().NotBeNull();
+            layer.SourceFeatureCount.Should().Be(4);
+            layer.TargetContainsOnlyImportedFeatures.Should().BeTrue();
+            source.ExtentFilterObserved.Should().BeTrue();
+            layer.QueriedSourceExtent.Should().Be(BoundingBox.Create(-157.2, 21.4, -157.2, 21.4, 4326));
+
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = $"SELECT objectid, name, geom IS NULL FROM \"{schemaName}\".geometry_census ORDER BY objectid";
+            await using var reader = await command.ExecuteReaderAsync();
+            var stored = new Dictionary<string, (long Id, bool IsNull)>(StringComparer.Ordinal);
+            while (await reader.ReadAsync())
+            {
+                stored.Add(reader.GetString(1), (reader.GetInt64(0), reader.GetBoolean(2)));
+            }
+
+            stored.Should().HaveCount(4);
+            stored["explicit-null"].IsNull.Should().BeTrue();
+            stored["omitted"].IsNull.Should().BeTrue();
+            stored["unconverted"].IsNull.Should().BeTrue();
+            stored["present"].IsNull.Should().BeFalse();
+            layer.SourceGeometry!.AbsentTargetFeatureIds.Should().BeEquivalentTo(
+                new[] { stored["explicit-null"].Id, stored["omitted"].Id });
+            layer.SourceGeometry.UnconvertedTargetFeatureIds.Should().BeEquivalentTo(
+                new[] { stored["unconverted"].Id });
+            stored.Values.Select(row => row.Id).Should().NotIntersectWith(new long[] { 8536, 10590, 11252, 11323 });
+        }
+        finally
+        {
+            await fixture.DropSchemaAsync(schemaName);
+        }
+    }
+
+    private sealed class GeometryCensusFeatureServerHandler : HttpMessageHandler
+    {
+        public const string Filter = "OBJECTID > 8000";
+        public bool ExtentFilterObserved { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var uri = request.RequestUri!;
+            string body;
+            if (!uri.AbsolutePath.EndsWith("/query", StringComparison.Ordinal))
+            {
+                body = """
+                    {"id":0,"name":"Inspections","geometryType":"esriGeometryPoint","maxRecordCount":10,
+                     "hasAttachments":false,
+                     "extent":{"xmin":-158,"ymin":21,"xmax":-157,"ymax":22,"spatialReference":{"wkid":4326}},
+                     "fields":[{"name":"OBJECTID","type":"esriFieldTypeOID","nullable":false},
+                               {"name":"Name","type":"esriFieldTypeString","nullable":true}]}
+                    """;
+            }
+            else if (uri.Query.Contains("returnExtentOnly=true", StringComparison.Ordinal))
+            {
+                ExtentFilterObserved = uri.Query.Contains("where=" + Uri.EscapeDataString(Filter), StringComparison.Ordinal);
+                body = """{"extent":{"xmin":-157.2,"ymin":21.4,"xmax":-157.2,"ymax":21.4,"spatialReference":{"wkid":4326}}}""";
+            }
+            else if (uri.Query.Contains("returnCountOnly=true", StringComparison.Ordinal))
+            {
+                body = """{"count":4}""";
+            }
+            else if (uri.Query.Contains("resultOffset=0", StringComparison.Ordinal))
+            {
+                body = """
+                    {"features":[
+                        {"attributes":{"OBJECTID":8536,"Name":"explicit-null"},"geometry":null},
+                        {"attributes":{"OBJECTID":10590,"Name":"omitted"}},
+                        {"attributes":{"OBJECTID":11252,"Name":"unconverted"},"geometry":{}},
+                        {"attributes":{"OBJECTID":11323,"Name":"present"},"geometry":{"x":-157.2,"y":21.4}}
+                    ],"exceededTransferLimit":false}
+                    """;
+            }
+            else
+            {
+                body = """{"features":[],"exceededTransferLimit":false}""";
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            });
+        }
+    }
+
     private sealed class CapturingReconciliationService : ILayerReconciliationService
     {
         public List<LayerReconciliationRequest> Requests { get; } = [];

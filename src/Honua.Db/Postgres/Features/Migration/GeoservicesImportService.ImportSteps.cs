@@ -137,6 +137,8 @@ internal sealed partial class GeoservicesImportService
             var batchNumber = 0;
             var hasMore = true;
             var objectIdMap = new Dictionary<long, long>();
+            var absentGeometryTargetIds = new HashSet<long>();
+            var unconvertedGeometryTargetIds = new HashSet<long>();
             var seenSourceObjectIds = new HashSet<long>();
             var sourceObjectIds = layerInfo.SupportsPagination == false
                 ? await _restClient.QueryObjectIdsAsync(
@@ -261,6 +263,16 @@ internal sealed partial class GeoservicesImportService
                 foreach (var entry in batchInsert.ObjectIdMap)
                 {
                     objectIdMap[entry.Key] = entry.Value;
+                }
+
+                if (batchInsert.AbsentGeometryTargetIds is { Count: > 0 })
+                {
+                    absentGeometryTargetIds.UnionWith(batchInsert.AbsentGeometryTargetIds);
+                }
+
+                if (batchInsert.UnconvertedGeometryTargetIds is { Count: > 0 })
+                {
+                    unconvertedGeometryTargetIds.UnionWith(batchInsert.UnconvertedGeometryTargetIds);
                 }
 
                 if (batchInsert.Failed > 0)
@@ -424,12 +436,21 @@ internal sealed partial class GeoservicesImportService
                         FeatureCount = sourceCountBeforeTransfer is { } filteredCount ? (int)filteredCount : null
                     };
 
+                var queriedSourceExtent = string.IsNullOrEmpty(layerInfo.GeometryType)
+                    ? null
+                    : await TryQuerySourceExtentAsync(request, cancellationToken).ConfigureAwait(false);
                 reconciliation = await _layerPublicationService.RunReconciliationGateAsync(
                     request,
                     jobId,
                     reconciliationSource,
                     publishedLayer,
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken,
+                    new SourceGeometryCensus
+                    {
+                        AbsentTargetFeatureIds = absentGeometryTargetIds,
+                        UnconvertedTargetFeatureIds = unconvertedGeometryTargetIds
+                    },
+                    queriedSourceExtent).ConfigureAwait(false);
             }
 
             stopwatch.Stop();
@@ -799,6 +820,28 @@ internal sealed partial class GeoservicesImportService
     /// Counts the source records matching the import filter, or <c>null</c> when the source cannot
     /// answer. Cancellation propagates; any other failure only leaves the source snapshot unverified.
     /// </summary>
+    private async Task<BoundingBox?> TryQuerySourceExtentAsync(
+        GeoservicesImportRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _restClient.QueryFeatureExtentAsync(
+                request.ServiceUrl,
+                request.LayerId,
+                request.WhereClause,
+                request.RequestTimeoutSeconds,
+                request.MaxRetries,
+                cancellationToken,
+                request.Credentials).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsUnreadableSourceFailure(ex, cancellationToken))
+        {
+            Log.SourceExtentUnavailable(_logger, request.TableName, ex);
+            return null;
+        }
+    }
+
     private async Task<long?> TryCountSourceFeaturesAsync(
         GeoservicesImportRequest request,
         CancellationToken cancellationToken)

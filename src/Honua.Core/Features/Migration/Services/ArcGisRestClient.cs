@@ -11,6 +11,7 @@ using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
 using Honua.Core.Features.Import.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
+using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Infrastructure.Internal;
 using Honua.Core.Features.Infrastructure.Resilience;
 using Honua.Core.Features.Infrastructure.Validation;
@@ -279,6 +280,63 @@ internal sealed partial class ArcGisRestClient
             credentials,
             (client, serviceId, ct) => client.QueryCountAsync(serviceId, layerId, query, ct),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Queries the extent of the source features matching <paramref name="whereClause"/>.
+    /// This is the data extent, not the extent advertised on the layer metadata, so a stale
+    /// service extent can be told apart from the features that were transferred (#4826).
+    /// </summary>
+    public async Task<BoundingBox?> QueryFeatureExtentAsync(
+        string serviceUrl,
+        int layerId,
+        string? whereClause,
+        int timeoutSeconds,
+        int maxRetries,
+        CancellationToken cancellationToken,
+        GeoservicesCredentialDescriptor? credentials = null)
+    {
+        var normalizedUrl = NormalizeServiceUrl(serviceUrl);
+        var query = new FeatureServerQueryParams
+        {
+            Where = string.IsNullOrWhiteSpace(whereClause) ? "1=1" : whereClause,
+            ReturnExtentOnly = true
+        };
+
+        var extent = await ExecuteSourceRequestAsync(
+            normalizedUrl,
+            $"{normalizedUrl}/{layerId}/query",
+            timeoutSeconds,
+            maxRetries,
+            credentials,
+            (client, serviceId, ct) => client.QueryExtentAsync(serviceId, layerId, query, ct),
+            cancellationToken).ConfigureAwait(false);
+
+        if (extent is null)
+        {
+            return null;
+        }
+
+        // LatestWkid is a non-nullable int, so a response that only sends wkid leaves it at 0.
+        // Prefer a positive latest wkid, then the advertised wkid. An all-zero envelope with no
+        // SRID is an empty answer, not a real extent at the origin.
+        var srid = 0;
+        if (extent.SpatialReference is { } spatial)
+        {
+            srid = spatial.LatestWkid > 0 ? spatial.LatestWkid : spatial.Wkid;
+        }
+
+        if (srid <= 0 && extent.Xmin == 0d && extent.Ymin == 0d && extent.Xmax == 0d && extent.Ymax == 0d)
+        {
+            return null;
+        }
+
+        return BoundingBox.Create(
+            extent.Xmin,
+            extent.Ymin,
+            extent.Xmax,
+            extent.Ymax,
+            srid > 0 ? srid : null);
     }
 
     /// <summary>

@@ -43,6 +43,8 @@ internal sealed partial class GeoservicesImportService
         var hasGeometry = !string.IsNullOrEmpty(layerInfo.GeometryType);
         var sourceObjectIdField = layerInfo.Fields.FirstOrDefault(f => f.IsObjectId)?.Name;
         var objectIdMap = new Dictionary<long, long>(features.Length);
+        var absentGeometryTargetIds = new HashSet<long>();
+        var unconvertedGeometryTargetIds = new HashSet<long>();
 
         var columnNames = string.Join(", ", fields.Select(f => $"\"{f.Name.SanitizeFieldName()}\""));
         if (hasGeometry)
@@ -104,7 +106,11 @@ internal sealed partial class GeoservicesImportService
                     cmd.Parameters[$"p{i}"].Value = value ?? DBNull.Value;
                 }
 
-                // Update geometry parameter value
+                // Update geometry parameter value. A present source geometry that cannot be
+                // converted is still inserted as NULL so one bad shape does not drop the row,
+                // and the target id is recorded as transfer loss rather than an inherited null.
+                var sourceGeometryAbsent = false;
+                var sourceGeometryUnconverted = false;
                 if (hasGeometry && feature.Geometry.HasValue)
                 {
                     if (HasHigherDimensionCoordinates(feature.Geometry.Value))
@@ -115,6 +121,7 @@ internal sealed partial class GeoservicesImportService
                     var wkt = ConvertEsriGeometryToWkt(feature.Geometry.Value, layerInfo.HasZ, layerInfo.HasM);
                     if (wkt is null)
                     {
+                        sourceGeometryUnconverted = true;
                         Log.GeometryConversionFailed(_logger, tableName);
                     }
 
@@ -122,18 +129,30 @@ internal sealed partial class GeoservicesImportService
                 }
                 else if (hasGeometry)
                 {
+                    sourceGeometryAbsent = true;
                     cmd.Parameters["geom"].Value = DBNull.Value;
                 }
 
                 var rawInsertedId = await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
                 inserted++;
 
-                if (sourceObjectIdField is not null
-                    && TryReadSourceObjectId(feature, sourceObjectIdField, out var sourceOid)
-                    && rawInsertedId is not null
-                    && rawInsertedId is not DBNull)
+                if (rawInsertedId is not null && rawInsertedId is not DBNull)
                 {
-                    objectIdMap[sourceOid] = Convert.ToInt64(rawInsertedId, System.Globalization.CultureInfo.InvariantCulture);
+                    var targetFeatureId = Convert.ToInt64(rawInsertedId, CultureInfo.InvariantCulture);
+                    if (sourceGeometryAbsent)
+                    {
+                        absentGeometryTargetIds.Add(targetFeatureId);
+                    }
+                    else if (sourceGeometryUnconverted)
+                    {
+                        unconvertedGeometryTargetIds.Add(targetFeatureId);
+                    }
+
+                    if (sourceObjectIdField is not null
+                        && TryReadSourceObjectId(feature, sourceObjectIdField, out var sourceOid))
+                    {
+                        objectIdMap[sourceOid] = targetFeatureId;
+                    }
                 }
             }
             // Intentionally broad: per-feature insert failure; roll back to the savepoint so the
@@ -167,7 +186,13 @@ internal sealed partial class GeoservicesImportService
             Log.HigherDimensionGeometryDetected(_logger, higherDimensionCount, tableName);
         }
 
-        return new InsertFeaturesResult(inserted, failed, objectIdMap, firstFailureReason);
+        return new InsertFeaturesResult(
+            inserted,
+            failed,
+            objectIdMap,
+            firstFailureReason,
+            absentGeometryTargetIds,
+            unconvertedGeometryTargetIds);
     }
 
     private static bool TryReadSourceObjectId(
@@ -227,7 +252,9 @@ internal sealed partial class GeoservicesImportService
         int Inserted,
         int Failed,
         Dictionary<long, long> ObjectIdMap,
-        string? FirstFailureReason = null);
+        string? FirstFailureReason = null,
+        HashSet<long>? AbsentGeometryTargetIds = null,
+        HashSet<long>? UnconvertedGeometryTargetIds = null);
 
     private static string BuildGeometryInsertExpression(string? geometryType, int targetSrid)
     {

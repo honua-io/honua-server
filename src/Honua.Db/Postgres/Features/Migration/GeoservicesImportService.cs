@@ -455,6 +455,10 @@ internal sealed partial class GeoservicesImportService : IGeoservicesImportServi
             "Import lease on table {TableName} could not be released explicitly; it ends with the connection")]
         public static partial void TargetLeaseReleaseFailed(ILogger logger, string tableName, Exception exception);
 
+        [LoggerMessage(7848, LogLevel.Warning,
+            "Queried source extent was unavailable for {TableName}; reconciliation keeps the advertised extent")]
+        public static partial void SourceExtentUnavailable(ILogger logger, string tableName, Exception exception);
+
         [LoggerMessage(7847, LogLevel.Warning,
             "Rollback of failed import into table {TableName} did not complete; the originating failure is reported and the server discards the transaction with the session")]
         public static partial void ImportRollbackFailed(ILogger logger, string tableName, Exception exception);

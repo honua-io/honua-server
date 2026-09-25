@@ -56,7 +56,9 @@ internal sealed partial class GeoservicesLayerPublicationService
         string jobId,
         GeoservicesLayerInfo layerInfo,
         PublishedLayerSummary publishedLayer,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        SourceGeometryCensus? sourceGeometry = null,
+        BoundingBox? queriedSourceExtent = null)
     {
         if (_reconciliationService is null)
         {
@@ -65,7 +67,13 @@ internal sealed partial class GeoservicesLayerPublicationService
 
         try
         {
-            var reconciliationRequest = BuildReconciliationRequest(request, jobId, layerInfo, publishedLayer);
+            var reconciliationRequest = BuildReconciliationRequest(
+                request,
+                jobId,
+                layerInfo,
+                publishedLayer,
+                sourceGeometry,
+                queriedSourceExtent);
             var artifact = await _reconciliationService
                 .ReconcileAsync(reconciliationRequest, cancellationToken)
                 .ConfigureAwait(false);
@@ -125,7 +133,9 @@ internal sealed partial class GeoservicesLayerPublicationService
         GeoservicesImportRequest request,
         string jobId,
         GeoservicesLayerInfo layerInfo,
-        PublishedLayerSummary publishedLayer)
+        PublishedLayerSummary publishedLayer,
+        SourceGeometryCensus? sourceGeometry,
+        BoundingBox? queriedSourceExtent)
     {
         var sourceFieldNames = layerInfo.Fields
             .Where(static field => !field.IsObjectId && !GeoservicesImportService.IsGeometryField(field))
@@ -156,7 +166,9 @@ internal sealed partial class GeoservicesLayerPublicationService
             // the caller supplies the source count under the import filter. The where-clause is kept
             // as provenance; it is not re-run against the target (#4826).
             TargetContainsOnlyImportedFeatures = true,
-            FilterMirror = string.IsNullOrWhiteSpace(request.WhereClause) ? null : request.WhereClause
+            FilterMirror = string.IsNullOrWhiteSpace(request.WhereClause) ? null : request.WhereClause,
+            SourceGeometry = sourceGeometry,
+            QueriedSourceExtent = queriedSourceExtent
         };
 
         return new LayerReconciliationRequest
