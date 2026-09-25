@@ -118,6 +118,8 @@ jobs:
           file: docker/worker-gdal/Dockerfile
           platforms: linux/amd64
           load: true
+          # Refresh runtime security upgrades while retaining PDAL and managed build caches.
+          no-cache-filters: native-tools
           tags: honua-worker-gdal:boundary
           build-args: |
             HONUA_GIT_SHA=${{ github.sha }}

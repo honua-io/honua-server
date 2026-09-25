@@ -136,6 +136,9 @@ class WorkerPublicationTests(unittest.TestCase):
         self.assertEqual("write", publish["permissions"]["id-token"])
         steps = jobs["build-and-scan"]["steps"]
         names = [step.get("name") for step in steps]
+        build = steps[names.index("Build isolated native worker")]["with"]
+        self.assertEqual("native-tools", build["no-cache-filters"])
+        self.assertNotIn("no-cache", build)
         export = names.index("Prepare exact tested worker publication bundle")
         for name in ("Verify native tools and smoke the real worker entrypoint",
                      "Prove the container handoff cases ran, not skipped", "Prove the PDAL cases ran, not skipped",

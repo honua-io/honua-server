@@ -6,6 +6,10 @@ An explicit dispatch defaults `publish_nightly` to false. That dispatch also
 rehearses export/load of the gated image and retains its bundle for seven days,
 without publishing an image.
 
+The build refreshes the `native-tools` stage so its existing Ubuntu security
+upgrade step cannot reuse stale package layers. PDAL compilation and managed
+build caches remain enabled; the blocking vulnerability policy is unchanged.
+
 After review, an operator can select `publish_nightly=true` on canonical `trunk`.
 Publication requires the image/boundary/actual container handoff, real PDAL,
 native public API, existing blocking Trivy policy and SARIF jobs to succeed.
