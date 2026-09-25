@@ -6,6 +6,7 @@ on:
       - 'scripts/qualification/gp-canary*.sh'
       - 'scripts/qualification/test_gp_canary.py'
       - '.github/workflows/gp-buffer-canary.yml'
+      - 'docker/gp-reliability/canary-rehearsal.yml'
   schedule:
     - cron: '17 */6 * * *'
   workflow_dispatch:
@@ -13,7 +14,7 @@ permissions:
   contents: read
   actions: read
 concurrency:
-  group: gp-geometry-buffer-canary
+  group: gp-geometry-buffer-canary-${{ github.event.pull_request.number || 'scheduled' }}
   cancel-in-progress: false
 jobs:
   harness-checks:
@@ -27,6 +28,45 @@ jobs:
       - run: python3 -m pip install PyYAML==6.0.2 Shapely==2.1.2
       - name: Verify numerical mutations and scheduled receipt continuity
         run: python3 -m unittest discover -s scripts/qualification -p 'test_gp_canary.py' -v
+  published-image-rehearsal:
+    if: github.event_name == 'pull_request'
+    needs: harness-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HONUA_SERVER_IMAGE: ghcr.io/honua-io/honua-server@sha256:14b597d78aa6889d3adb2b0e5e2fdbfd4617da4eb11c12079b9655ec7f709b55
+      # Compose requires this placeholder even though no worker service starts.
+      HONUA_WORKER_IMAGE: ghcr.io/honua-io/honua-server@sha256:14b597d78aa6889d3adb2b0e5e2fdbfd4617da4eb11c12079b9655ec7f709b55
+      HONUA_REHEARSAL_DIGEST: sha256:14b597d78aa6889d3adb2b0e5e2fdbfd4617da4eb11c12079b9655ec7f709b55
+      HONUA_REHEARSAL_SOURCE_SHA: fe1636ca0a3cbd3ec3994f5faafa3490672694e7
+      COMPOSE_FILE: docker/gp-reliability/compose.yml:docker/gp-reliability/canary-rehearsal.yml
+      COMPOSE_PROJECT_NAME: gp-canary-rehearsal
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python3 -m pip install Shapely==2.1.2
+      - name: Start bounded published-image rehearsal topology
+        run: |
+          docker pull "$HONUA_SERVER_IMAGE"
+          test "$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$HONUA_SERVER_IMAGE")" = "$HONUA_REHEARSAL_SOURCE_SHA"
+          docker compose up -d --wait --wait-timeout 240 postgres redis server
+      - name: Exercise real async API shape and both numerical oracles
+        run: python3 scripts/qualification/gp_canary_rehearsal.py
+      - name: Retain rehearsal diagnostics and dispose topology
+        if: always()
+        run: |
+          mkdir -p artifacts/gp-canary-rehearsal
+          docker compose logs --no-color > artifacts/gp-canary-rehearsal/topology.log
+          docker compose down --volumes --remove-orphans
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: gp-canary-rehearsal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/gp-canary-rehearsal/
+          if-no-files-found: error
+          retention-days: 30
   geometry-buffer:
     if: github.event_name != 'pull_request'
     needs: harness-checks
@@ -36,6 +76,7 @@ jobs:
       HONUA_GP_CANARY_URL: ${{ vars.GP_CANARY_URL }}
       HONUA_GP_CANARY_TOKEN: ${{ secrets.GP_CANARY_TOKEN }}
       HONUA_GP_CANARY_RELEASE_REF: ${{ vars.GP_CANARY_RELEASE_REF }}
+      HONUA_GP_CANARY_RELEASE_TOKEN: ${{ secrets.RELEASE_BUNDLE_TOKEN }}
       HONUA_GP_CANARY_MANIFEST: ${{ github.workspace }}/artifacts/gp-canary/platform-manifest.yaml
       HONUA_GP_CANARY_RECEIPT: ${{ github.workspace }}/artifacts/gp-canary/receipt.json
       GH_TOKEN: ${{ github.token }}
@@ -45,14 +86,6 @@ jobs:
         with:
           python-version: '3.12'
       - run: python3 -m pip install PyYAML==6.0.2 Shapely==2.1.2
-      - name: Fetch the frozen release manifest
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts/gp-canary
-          [[ "$HONUA_GP_CANARY_RELEASE_REF" =~ ^[0-9a-f]{40}$ ]]
-          curl --fail --silent --show-error --proto '=https' --max-time 30 \
-            "https://raw.githubusercontent.com/honua-io/honua-release/${HONUA_GP_CANARY_RELEASE_REF}/platform-manifest.yaml" \
-            -o "$HONUA_GP_CANARY_MANIFEST"
       - name: Execute both numerical canaries and retain failures
         if: always()
         run: scripts/qualification/gp-canary.sh

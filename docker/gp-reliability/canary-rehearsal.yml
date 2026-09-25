@@ -1,0 +1,6 @@
+# Overrides only for an ephemeral API-shape rehearsal, never qualification.
+services:
+  server:
+    environment:
+      HONUA_IMAGE_DIGEST: ${HONUA_REHEARSAL_DIGEST:?set the pulled rehearsal image digest}
+      Geoprocessing__OutputStaging__Enabled: "false"

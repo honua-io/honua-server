@@ -43,6 +43,20 @@ def gh_json(*arguments):
     return json.loads(subprocess.run(["gh", *arguments], capture_output=True, check=True).stdout)
 
 
+def fetch_manifest(release_ref, path):
+    token = os.environ.get("HONUA_GP_CANARY_RELEASE_TOKEN")
+    if not token:
+        raise ValueError("RELEASE_BUNDLE_TOKEN with honua-release contents:read access is missing")
+    result = subprocess.run(
+        ["gh", "api", "--method", "GET", "repos/honua-io/honua-release/contents/platform-manifest.yaml",
+         "-H", "Accept: application/vnd.github.raw+json", "-f", f"ref={release_ref}"],
+        env={**os.environ, "GH_TOKEN": token}, capture_output=True, timeout=30, check=False)
+    if result.returncode:
+        raise ValueError("RELEASE_BUNDLE_TOKEN could not read the frozen private release manifest")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(result.stdout)
+
+
 def scheduled_slot(created):
     created = timestamp(created)
     slot = created.replace(hour=(created.hour // 6) * 6, minute=17, second=0, microsecond=0)
@@ -133,8 +147,11 @@ class Client:
         self.opener = urllib.request.build_opener(NoRedirect)
 
     def request(self, path, body=None, expected=200):
-        url = urllib.parse.urljoin(self.endpoint + "/", path.lstrip("/"))
-        if urllib.parse.urlsplit(url).netloc != urllib.parse.urlsplit(self.endpoint).netloc:
+        if path.startswith("//"):
+            raise ValueError("cross-origin artifact reference is not permitted")
+        url = urllib.parse.urljoin(self.endpoint + "/", path)
+        target, origin = urllib.parse.urlsplit(url), urllib.parse.urlsplit(self.endpoint)
+        if (target.scheme, target.netloc) != (origin.scheme, origin.netloc):
             raise ValueError("cross-origin artifact reference is not permitted")
         headers = {"Authorization": "Bearer " + self.token, "Accept": "application/json"}
         if body is not None:
@@ -229,7 +246,9 @@ def main():
         spec = importlib.util.spec_from_file_location("binding", Path(__file__).with_name("gp-candidate-binding.py"))
         binding = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(binding)
-        candidate = binding.candidate(Path(os.environ["HONUA_GP_CANARY_MANIFEST"]))
+        manifest_path = Path(os.environ["HONUA_GP_CANARY_MANIFEST"])
+        fetch_manifest(release_ref, manifest_path)
+        candidate = binding.candidate(manifest_path)
         candidate.update(release_ref=release_ref, harness_sha=os.environ.get("GITHUB_SHA", ""))
         candidate["oracle_sha256"] = sha(Path(__file__).read_bytes())
         if not re.fullmatch(r"[a-f0-9]{40}", candidate["harness_sha"]):

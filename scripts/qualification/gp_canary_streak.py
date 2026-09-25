@@ -29,6 +29,8 @@ def validate_receipt(folder, run, expected):
     for key in ("id", "run_attempt", "event", "created_at", "head_sha", "html_url"):
         if github[key] != run[key]:
             raise ValueError("receipt does not match authoritative GitHub run metadata")
+    if receipt["candidate"].get("harness_sha") != run["head_sha"]:
+        raise ValueError("candidate harness SHA does not match the authoritative run")
     slot = scheduled_slot(run["created_at"])
     if receipt.get("scheduled_slot") != slot:
         raise ValueError("scheduled slot mismatch")

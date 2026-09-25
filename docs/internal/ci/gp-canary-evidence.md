@@ -14,8 +14,13 @@ The operator configures these repository values before the first interval:
 | `GP_CANARY_URL` variable | Credential-free HTTPS base URL of the candidate deployment. |
 | `GP_CANARY_TOKEN` secret | Bearer token authorized to read the capability manifest and execute/read the two GP jobs. |
 | `GP_CANARY_RELEASE_REF` variable | Full 40-character commit in `honua-io/honua-release` containing the frozen `platform-manifest.yaml`. Mutable branch names are rejected. |
+| `RELEASE_BUNDLE_TOKEN` secret | Existing cross-repository release workflow credential, with `contents:read` access to private `honua-io/honua-release`. No write permission is needed by this canary. |
 
-The workflow downloads that exact manifest and retains it. It resolves the
+The harness downloads that exact manifest through the authenticated GitHub
+contents API and retains it. The repository-scoped `GITHUB_TOKEN` cannot read
+the private release repository; missing/inaccessible release credentials produce
+an explicit failure receipt. The separate `GITHUB_TOKEN` still reads this
+repository's scheduled runs and artifacts. The harness resolves the
 server source SHA and image digest using the existing GP candidate-binding
 validator. Before and after executing the jobs, it reads
 `/api/v1/capabilities/manifest` and requires `server.deploymentRevisionSource`

@@ -121,8 +121,29 @@ class NumericalOracleTests(unittest.TestCase):
     def test_cross_origin_artifact_is_rejected(self):
         client = canary.Client("https://candidate.example", "secret")
         for href in ("https://evil.example/output", "//evil.example/output", "http://candidate.example/output"):
-            with self.subTest(href=href), self.assertRaises(ValueError):
-                canary.resolve_output(client, {"result": {"href": href}})
+            with self.subTest(href=href), patch.object(client.opener, "open") as opener:
+                with self.assertRaises(ValueError):
+                    canary.resolve_output(client, {"result": {"href": href}})
+                opener.assert_not_called()
+
+    def test_absolute_artifact_path_does_not_duplicate_endpoint_prefix(self):
+        client = canary.Client("https://candidate.example/honua", "secret")
+        with patch.object(client.opener, "open") as opener:
+            opener.return_value.__enter__.return_value.status = 200
+            opener.return_value.__enter__.return_value.read.return_value = b'{}'
+            client.request("/honua/artifact")
+            self.assertEqual("https://candidate.example/honua/artifact", opener.call_args.args[0].full_url)
+
+    def test_private_manifest_access_is_explicit_and_value_free(self):
+        with patch.dict(os.environ, {}, clear=True), self.assertRaisesRegex(ValueError, "RELEASE_BUNDLE_TOKEN"):
+            canary.fetch_manifest("a" * 40, Path("unused"))
+        with patch.dict(os.environ, {"HONUA_GP_CANARY_RELEASE_TOKEN": "private-secret"}), patch.object(canary.subprocess, "run") as run:
+            run.return_value.returncode = 1
+            with self.assertRaisesRegex(ValueError, "could not read") as error:
+                canary.fetch_manifest("a" * 40, Path("unused"))
+            self.assertNotIn("private-secret", str(error.exception))
+            self.assertNotIn("private-secret", str(run.call_args.args))
+            self.assertEqual("private-secret", run.call_args.kwargs["env"]["GH_TOKEN"])
 
 
 class ScheduledStreakTests(unittest.TestCase):
@@ -203,7 +224,7 @@ class ScheduledStreakTests(unittest.TestCase):
         self.assertFalse(self.build()["ready"])
 
     def test_candidate_or_oracle_change_breaks_streak(self):
-        for field in ("server_digest", "source_sha", "manifest_sha256", "release_ref", "oracle_sha256"):
+        for field in ("server_digest", "source_sha", "manifest_sha256", "release_ref", "oracle_sha256", "harness_sha"):
             with self.subTest(field=field):
                 path = self.root / "99" / "receipt.json"
                 original = path.read_bytes()
