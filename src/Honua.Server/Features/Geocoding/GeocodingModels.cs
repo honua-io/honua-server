@@ -263,7 +263,7 @@ internal sealed record GeocodeCandidateResponse
 internal sealed record ReverseGeocodeResponse
 {
     [JsonPropertyName("address")]
-    public required IReadOnlyDictionary<string, string?> Address { get; init; }
+    public required IReadOnlyDictionary<string, GeocodeAttributeValue> Address { get; init; }
 
     [JsonPropertyName("location")]
     public required GeocodePoint Location { get; init; }

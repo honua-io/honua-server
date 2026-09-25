@@ -395,9 +395,17 @@ internal sealed class GeocodingHandler(
                 return CreateUnsupportedOutSrResult(context, outSrid);
             }
 
-            var address = new Dictionary<string, string?>(
-                EsriGeocodeAddressFields.Apply(match.Address, match.AddressType, match.StructuredAddress, match.Attributes),
-                StringComparer.Ordinal);
+            // InputX/InputY are the coordinates the caller asked about, in the spatial
+            // reference they supplied; X/Y are where the match landed, in outSR.
+            var address = EsriGeocodeAddressFields.ApplyReverseMatch(
+                match.Address,
+                match.AddressType,
+                match.StructuredAddress,
+                match.Attributes,
+                matchPoint.Value.X,
+                matchPoint.Value.Y,
+                x,
+                y);
 
             var response = new ReverseGeocodeResponse
             {
