@@ -4687,7 +4687,8 @@
         "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.AnonymousRequests_AreRejectedWithoutAdminAuthorization",
         "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.GetRegistry_ForEmptyWorkspace_ReturnsEmptyEndpointList",
         "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.GetRegistry_ForUnknownWorkspace_ReturnsNotFound",
-        "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.GetRegistry_ReturnsEndpointsWithAutoDefaultAndOptInAggregates"
+        "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.GetRegistry_ReturnsEndpointsWithAutoDefaultAndOptInAggregates",
+        "Honua.Server.Tests.Features.Console.ProjectedCatalogDiscoveryEndpointsTests.HostedProjection_RespectsMappingAdminAuthorizationAndCanonicalDirectory"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
@@ -4703,7 +4704,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.AnonymousRequests_AreRejectedWithoutAdminAuthorization",
         "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.GetEndpoint_ForUnknownEndpoint_ReturnsNotFound",
-        "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.GetEndpoint_ReturnsDetailWithMirroredItems"
+        "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.GetEndpoint_ReturnsDetailWithMirroredItems",
+        "Honua.Server.Tests.Features.Console.ProjectedCatalogDiscoveryEndpointsTests.HostedProjection_RespectsMappingAdminAuthorizationAndCanonicalDirectory"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
@@ -4719,7 +4721,8 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.AnonymousRequests_AreRejectedWithoutAdminAuthorization",
         "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.GetItem_ForUnknownItem_ReturnsNotFound",
-        "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.GetItem_ReturnsFieldGroups"
+        "Honua.Server.Tests.Features.Console.CatalogDiscoveryEndpointsTests.GetItem_ReturnsFieldGroups",
+        "Honua.Server.Tests.Features.Console.ProjectedCatalogDiscoveryEndpointsTests.HostedProjection_RespectsMappingAdminAuthorizationAndCanonicalDirectory"
       ],
       "proof_ledger_surface": "console-content-rbac",
       "maturity": "implemented",
