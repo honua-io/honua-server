@@ -698,16 +698,18 @@ internal static class GeoservicesCatalogEndpoints
     private static string SoapContentTypeFor(XNamespace soap)
         => soap == Soap12EnvelopeNamespace ? Soap12ContentType : Soap11ContentType;
 
-    private static async Task<ServiceDirectoryProjection> BuildServiceDirectoryProjectionAsync(
+    internal static async Task<ServiceDirectoryProjection> BuildServiceDirectoryProjectionAsync(
         HttpContext context,
         IMetadataV2GraphProvider graphProvider,
         IRasterStore rasterStore,
         ILicenseStatusProvider licenseStatusProvider,
-        ILogger logger)
+        ILogger logger,
+        MetadataV2GraphSnapshot? scopedSnapshot = null,
+        bool featureMapOnly = false)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
-        var snapshot = await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
+        var snapshot = scopedSnapshot ?? await graphProvider.GetCurrentAsync(cancellationToken).ConfigureAwait(false);
         var entries = new List<ServiceDirectoryEntry>();
         var deniedDecisions = new List<AccessDecision>();
         var imageServerServices = new List<ImageServerProbeCandidate>();
@@ -725,6 +727,11 @@ internal static class GeoservicesCatalogEndpoints
             }
 
             var directoryTypes = MapEsriDirectoryTypes(service);
+            if (featureMapOnly)
+            {
+                directoryTypes = directoryTypes.Where(static type =>
+                    type is FeatureServerProtocolName or MapServerProtocolName).ToList();
+            }
             if (directoryTypes.Count == 0)
             {
                 continue;
@@ -833,7 +840,7 @@ internal static class GeoservicesCatalogEndpoints
             entries.Sort(ServiceDirectoryEntryComparer);
         }
 
-        if (await AppendSceneServerEntriesAsync(
+        if (!featureMapOnly && await AppendSceneServerEntriesAsync(
                 context,
                 entries,
                 licenseStatusProvider,
@@ -1200,7 +1207,7 @@ internal static class GeoservicesCatalogEndpoints
             || string.Equals(mediaType, "application/soap+xml", StringComparison.OrdinalIgnoreCase);
     }
 
-    private sealed record ServiceDirectoryProjection(
+    internal sealed record ServiceDirectoryProjection(
         IReadOnlyList<ServiceDirectoryEntry> Entries,
         IResult? AccessError,
         int? AccessStatusCode,
