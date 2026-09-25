@@ -86,6 +86,13 @@ internal static class NAServerMetadata
                || taskName.Equals(GetToolInfoTask, StringComparison.OrdinalIgnoreCase)
                || taskName.Equals(FindRoutesTask, StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>
+    /// Whether the name is one of Esri's ready-to-use routing tools, which are addressed
+    /// against the NAServer URL as though they were analysis layers.
+    /// </summary>
+    public static bool IsRoutingWebTool(string? name)
+        => name is not null && name.Equals(FindRoutesTask, StringComparison.OrdinalIgnoreCase);
+
     public static bool IsKnownLayer(string? layerName)
         => layerName is not null && Layers.Any(l => l.Name.Equals(layerName, StringComparison.OrdinalIgnoreCase));
 
