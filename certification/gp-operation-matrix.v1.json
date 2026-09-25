@@ -546,7 +546,7 @@
           "path": "tests/dotnet/Honua.Server.Tests/Features/SpatialAnalytics/SpatialAnalyticsRestTests.cs",
           "test": "QueryDensity_SquareGrid_ReturnsExactCellCountForSeededPoints",
           "assertion": "Real layer execution returns exact cells/counts for seeded points.",
-          "bodyDigest": "sha256:2c78f6fb636123c01f247f251c172927fc260a8975a8294d7e68520d52e95aec"
+          "bodyDigest": "sha256:dc6e85a9dd6a28106aef3b83ca078682f1087494910c1b42467b94c1a371dca1"
         }
       ]
     },
