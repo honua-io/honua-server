@@ -1167,6 +1167,16 @@ internal static class McpToolOutputSchemas
         }
         """);
 
+    /// <summary>
+    /// Top-level read of a saved Studio version (<c>honua_studio_get_version</c>).
+    /// Save keeps these fields nested under <c>version</c>.
+    /// </summary>
+    public static readonly JsonElement StudioGetVersionOutputSchema = Parse("""
+        {"type":"object","required":["versionId","contentHash"],"additionalProperties":false,"properties":{
+          "versionId":{"type":"string","format":"uuid"},
+          "contentHash":{"type":"string","minLength":1}}}
+        """);
+
     public static readonly JsonElement StudioVersionMutationOutputSchema = Parse("""
         {"type":"object","required":["operation"],"properties":{
           "operation":{"type":"object","required":["operationId","operationInstanceId","status"],"properties":{

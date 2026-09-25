@@ -4,11 +4,9 @@
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using FluentAssertions;
-using Honua.Core.Features.Capabilities;
 using Honua.Core.Features.Operations.Services;
 using Honua.Geoprocessing;
 using Honua.Ai.Protocols.Mcp.Prompts;
-using Honua.Ai.Protocols.Mcp.Tools;
 using Honua.Ai.Protocols.Mcp.Views;
 using Honua.TestKit.Attributes;
 using Honua.TestKit.Constants;
@@ -138,52 +136,74 @@ public sealed class McpPromptCatalogTests
     }
 
     [UnitTest]
-    public void SetupAndPublish_NamesExactlyTheSetupViewToolsAndNoExcludedAdminOperation()
+    public void Prompts_NameOnlyToolsOnTheViewTheySelect_AndDoNotAskForASecondOperator()
     {
-        // honua-server#3363: the setup-and-publish prompt must describe the tools the
-        // server actually serves for the terminal path. Every tool it names is a
-        // capability-registry tool selected by the server-authored setup view, every
-        // exact setup-view member is named, and it points at the published Admin
-        // family without naming any audited secret/session exclusion.
-        var text = McpPromptCatalog.Get("setup_and_publish", new Dictionary<string, string>
+        var cases = new (string Prompt, string View, string? ConfigureOnly, Dictionary<string, string> Arguments)[]
         {
-            ["source"] = "parcels.gpkg",
-        }).Messages[0].Content.Text ?? string.Empty;
+            ("setup_and_publish", McpWorkflowViewCatalog.ConfigureViewName, null, new() { ["source"] = "parcels.geojson" }),
+            ("dashboard_scaffolding", McpWorkflowViewCatalog.ConfigureViewName, null, new() { ["topic"] = "outages" }),
+            ("site_selection_analysis", McpWorkflowViewCatalog.AnalyzeViewName, null, new()
+            {
+                ["objective"] = "a fire station",
+                ["studyArea"] = "downtown",
+            }),
+            ("hazard_assessment", McpWorkflowViewCatalog.AnalyzeViewName, null, new()
+            {
+                ["hazard"] = "flood",
+                ["exposureLayer"] = "parcels",
+            }),
+            ("permit_review", McpWorkflowViewCatalog.AnalyzeViewName, "honua_publish_service", new()
+            {
+                ["parcel"] = "100",
+                ["permitType"] = "ADU",
+            }),
+        };
 
-        var named = Regex.Matches(text, "honua_[a-z0-9_]+")
-            .Select(match => match.Value)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        named.Should().Contain(PublishedOperationTool.AdminNamePrefix,
-            "the prompt must point the agent at the published Admin operation family");
-
-        var registryToolNames = new CapabilityRegistry().All
-            .Where(descriptor => descriptor.McpToolName is not null)
-            .Select(descriptor => descriptor.McpToolName!)
-            .ToHashSet(StringComparer.Ordinal);
-        foreach (var name in named.Where(name => name != PublishedOperationTool.AdminNamePrefix))
+        foreach (var (prompt, view, configureOnly, arguments) in cases)
         {
-            registryToolNames.Should().Contain(name, $"'{name}' must be a registered /mcp tool");
-            McpWorkflowViewCatalog.Setup.FindStageIndex(name).Should().BeGreaterThanOrEqualTo(0,
-                $"'{name}' must be a member of the server-authored setup view");
+            var text = McpPromptCatalog.Get(prompt, arguments).Messages[0].Content.Text ?? string.Empty;
+            text.Should().Contain($"view \"{view}\"", $"'{prompt}' must tell the client which view to select");
+            text.Should().NotContain("second operator").And.NotContain("second person")
+                .And.NotContain("another operator").And.NotContain("separate operator")
+                .And.NotContain("hand that step");
+
+            var named = Regex.Matches(text, "honua_[a-z0-9_]+")
+                .Select(match => match.Value)
+                .Distinct(StringComparer.Ordinal);
+            foreach (var name in named)
+            {
+                if (configureOnly is not null && string.Equals(name, configureOnly, StringComparison.Ordinal))
+                {
+                    McpWorkflowViewCatalog.Configure.FindStageIndex(name).Should().BeGreaterThanOrEqualTo(0,
+                        $"'{prompt}' may name '{name}' only because it switches to configure");
+                    text.Should().Contain("view \"configure\"");
+                    continue;
+                }
+
+                McpWorkflowViewCatalog.Find(view)!.FindStageIndex(name).Should().BeGreaterThanOrEqualTo(0,
+                    $"'{prompt}' names '{name}', which must be a member of view '{view}'");
+            }
+
+            if (string.Equals(view, McpWorkflowViewCatalog.AnalyzeViewName, StringComparison.Ordinal))
+            {
+                text.Should().Contain("analytics.buffer-aggregate").And.Contain("layerId");
+                text.Should().Contain("geometry.buffer").And.Contain("WKB");
+                text.Should().Contain("engine");
+                text.Should().Contain("honua://catalog/processes");
+            }
         }
 
-        var setupMembers = McpWorkflowViewCatalog.Setup.Stages
-            .SelectMany(stage => stage.Rules)
-            .Where(rule => rule.Kind == McpWorkflowViewRuleKind.ExactName)
-            .Select(rule => rule.Value);
-        named.Should().Contain(setupMembers, "the prompt must cover the whole terminal setup path");
-
+        var setup = McpPromptCatalog.Get("setup_and_publish", new Dictionary<string, string>
+        {
+            ["source"] = "parcels.geojson",
+        }).Messages[0].Content.Text ?? string.Empty;
         foreach (var exclusion in AdminMcpOperationExclusions.All)
         {
-            text.Should().NotContain(exclusion.ToolName, "audited exclusions are never published over MCP");
+            setup.Should().NotContain(exclusion.ToolName, "audited exclusions are never named by the prompt");
         }
 
-        text.Should().Contain("view \"setup\"").And.Contain("view \"full\"");
-        text.Should().Contain("creates no proposal",
-            "protected Admin tools are refused over MCP before any proposal exists");
-        text.Should().NotContain("honua://jobs/{jobId}", "honua_ingest_dataset is synchronous and returns no job");
-        text.Should().NotContain("{source}");
+        setup.Should().NotContain("{source}");
+        setup.Should().Contain("view \"configure\"").And.NotContain("view \"setup\"");
     }
 
     [UnitTest]

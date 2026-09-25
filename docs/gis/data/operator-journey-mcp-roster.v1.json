@@ -1,0 +1,109 @@
+{
+  "schemaVersion": "1.0.0",
+  "tools": [
+    {
+      "toolName": "honua_admin_server_status",
+      "operationId": "admin.server.status",
+      "mode": "read",
+      "inputFields": []
+    },
+    {
+      "toolName": "honua_admin_api_key_list",
+      "operationId": "admin.api-key.list",
+      "mode": "read",
+      "inputFields": []
+    },
+    {
+      "toolName": "honua_admin_api_key_effective_permissions",
+      "operationId": "admin.api-key.effective-permissions",
+      "mode": "read",
+      "inputFields": ["id"]
+    },
+    {
+      "toolName": "honua_admin_connections_create",
+      "operationId": "admin.connections.create",
+      "mode": "execute",
+      "inputFields": [
+        "databaseName",
+        "description",
+        "host",
+        "name",
+        "port",
+        "secretReference",
+        "secretType",
+        "sslMode",
+        "sslRequired",
+        "username"
+      ]
+    },
+    {
+      "toolName": "honua_admin_connections_test",
+      "operationId": "admin.connections.test",
+      "mode": "read",
+      "inputFields": ["dryRun", "id"]
+    },
+    {
+      "toolName": "honua_admin_import_upload_url",
+      "operationId": "admin.import.upload-url",
+      "mode": "execute",
+      "inputFields": [
+        "fileName",
+        "forceBackground",
+        "overwriteExisting",
+        "sourceSrid",
+        "sourceUrl",
+        "tableName",
+        "targetSchema",
+        "targetSrid",
+        "trackProgress"
+      ]
+    },
+    {
+      "toolName": "honua_admin_layer_publish",
+      "operationId": "admin.layer.publish",
+      "mode": "execute",
+      "inputFields": [
+        "attributeRules",
+        "attribution",
+        "capabilities",
+        "connectionId",
+        "createEditableCopy",
+        "description",
+        "dryRun",
+        "enabled",
+        "fieldDomains",
+        "fields",
+        "geometryColumn",
+        "geometryType",
+        "globalIdField",
+        "hasM",
+        "hasZ",
+        "layerName",
+        "license",
+        "licenseUrl",
+        "primaryKey",
+        "publisher",
+        "schema",
+        "serviceName",
+        "sourceUrl",
+        "srid",
+        "storageMode",
+        "subtypes",
+        "supportsAttachments",
+        "table"
+      ]
+    },
+    {
+      "toolName": "honua_admin_services_access_policy_set",
+      "operationId": "admin.services.access-policy.set",
+      "mode": "execute",
+      "inputFields": [
+        "allowAnonymous",
+        "allowAnonymousWrite",
+        "allowedRoles",
+        "allowedWriteRoles",
+        "serviceName"
+      ]
+    }
+  ]
+}

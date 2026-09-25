@@ -54,7 +54,7 @@
     "evidenceRefs"
   ],
   "exclusions": {
-    "digest": "550bbf8a6ea74ed995d48832ec6e1348e2ac3429b9a2444105b03c4c2f632523",
+    "digest": "62eb9da003bacee33a5972b31527e5a7c964a8f60308414a33ce6087eb4efae2",
     "operations": [
       {
         "OpenApiOperationId": "createAdminApiKey",
@@ -104,13 +104,6 @@
         "ToolName": "honua_admin_oidc_provider_update",
         "ReasonCode": "secret-input",
         "Explanation": "Accepts secret-bearing OIDC provider configuration."
-      },
-      {
-        "OpenApiOperationId": "createConnection",
-        "OperationId": "admin.connections.create",
-        "ToolName": "honua_admin_connections_create",
-        "ReasonCode": "secret-input",
-        "Explanation": "Accepts a plaintext connection password."
       },
       {
         "OpenApiOperationId": "updateConnection",
@@ -839,8 +832,8 @@
         "updatedAt"
       ],
       "readOnly": false,
-      "destructive": true,
-      "idempotent": false
+      "destructive": false,
+      "idempotent": true
     },
     {
       "operationId": "admin.layer.set-enabled",
@@ -2180,8 +2173,8 @@
         "updatedAt"
       ],
       "readOnly": false,
-      "destructive": true,
-      "idempotent": false
+      "destructive": false,
+      "idempotent": true
     },
     {
       "operationId": "admin.services.layer-metadata.set",

@@ -205,6 +205,7 @@ public sealed partial class McpTaxonomyAlignmentTests
             // (see KnownGapStandardTools above). Recorded here so coverage stays
             // honest until the standard formalizes a composition/lifecycle profile.
             "honua_studio_save_version",
+            "honua_studio_get_version",
             "honua_studio_reopen_version",
             "honua_studio_create_draft",
             "honua_studio_get_draft",

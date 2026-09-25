@@ -124,7 +124,7 @@ internal static class AdminApiOperationCatalog
             Description = operation.TryGetProperty("description", out var description) ? description.GetString()! : definition.Title,
             Category = "admin",
             ExecutionKind = OperationExecutionKind.Synchronous,
-            ApprovalModel = definition.Destructive ? OperationApprovalModel.OperatorGate : OperationApprovalModel.None,
+            ApprovalModel = OperatorJourneyApproval.ForMutation(definition.OperationId, definition.Destructive),
             Policy = new OperationPolicyMetadata
             {
                 BlastRadiusClass = definition.Path.StartsWith("/services", StringComparison.Ordinal) ? OperationBlastRadiusClass.ServiceScope : OperationBlastRadiusClass.ResourceScope,

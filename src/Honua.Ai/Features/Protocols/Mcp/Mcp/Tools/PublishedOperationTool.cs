@@ -4,6 +4,7 @@
 using System.Buffers;
 using System.Security.Claims;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Honua.Core.Features.Authorization.Domain;
 using Honua.Core.Features.Licensing.Abstractions;
 using Honua.Core.Features.Infrastructure.Abstractions;
@@ -44,6 +45,13 @@ internal sealed class PublishedOperationTool : IMcpTool
 
     /// <summary>Prefix for MCP tool names projected from <c>admin.*</c> operation ids.</summary>
     public const string AdminNamePrefix = "honua_admin_";
+
+    // Matches the full-catalog publication guard: a published tool accepts secret references,
+    // never a plaintext password, token, or api key. secretReference and secretType stay.
+    private static readonly Regex SecretValueInputName = new(
+        "password|passphrase|secret|credential|token|api[-_]?key|private[-_]?key",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled,
+        TimeSpan.FromSeconds(1));
 
     private readonly OperationDescriptor _descriptor;
     private readonly string _catalogVersion;
@@ -349,6 +357,16 @@ internal sealed class PublishedOperationTool : IMcpTool
 
     private Dictionary<string, string?> ReadParameters(JsonElement? arguments)
     {
+        // The operation descriptor can accept plaintext credentials for other transports.
+        // MCP advertises references only, so reject hidden secret fields before dispatch
+        // rather than letting a manually constructed tools/call bypass that contract.
+        if (arguments is { ValueKind: JsonValueKind.Object } supplied
+            && supplied.EnumerateObject().Any(property => IsSecretValueInput(property.Name)))
+        {
+            throw new GeoprocessingValidationException(
+                "Inline credentials are not accepted by published MCP tools; use a secretReference.");
+        }
+
         var parameters = new Dictionary<string, string?>(StringComparer.Ordinal);
         foreach (var parameter in _descriptor.InputSchema)
         {
@@ -409,6 +427,11 @@ internal sealed class PublishedOperationTool : IMcpTool
             writer.WriteStartObject("properties");
             foreach (var parameter in parameters)
             {
+                if (IsSecretValueInput(parameter.Name))
+                {
+                    continue;
+                }
+
                 writer.WriteStartObject(parameter.Name);
                 WriteSchema(writer, parameter.Schema);
                 if (!string.IsNullOrWhiteSpace(parameter.Title))
@@ -429,7 +452,7 @@ internal sealed class PublishedOperationTool : IMcpTool
             writer.WriteEndObject();
 
             writer.WriteStartArray("required");
-            foreach (var parameter in parameters.Where(parameter => parameter.Required))
+            foreach (var parameter in parameters.Where(parameter => parameter.Required && !IsSecretValueInput(parameter.Name)))
             {
                 writer.WriteStringValue(parameter.Name);
             }
@@ -441,6 +464,11 @@ internal sealed class PublishedOperationTool : IMcpTool
         using var document = JsonDocument.Parse(buffer.WrittenMemory);
         return document.RootElement.Clone();
     }
+
+    private static bool IsSecretValueInput(string name) =>
+        SecretValueInputName.IsMatch(name)
+        && !name.EndsWith("Reference", StringComparison.Ordinal)
+        && !name.EndsWith("Type", StringComparison.Ordinal);
 
     private static void WriteSchema(Utf8JsonWriter writer, Honua.Core.Features.WorkflowPackages.Domain.WorkflowSchemaDefinition schema)
     {

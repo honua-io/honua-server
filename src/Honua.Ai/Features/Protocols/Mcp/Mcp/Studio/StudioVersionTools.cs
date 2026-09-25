@@ -134,3 +134,66 @@ internal sealed class ReopenStudioVersionTool(IGeoprocessingJobService jobServic
             StudioMcpJsonContext.Default.McpStudioDraftMutationOutput);
     }
 }
+
+/// <summary>
+/// Reads one saved Studio version. Returns top-level <c>versionId</c> and <c>contentHash</c>
+/// and does not advance the draft generation.
+/// </summary>
+internal sealed class GetStudioVersionTool(IGeoprocessingJobService jobService, ILogger<GetStudioVersionTool> logger)
+    : StudioVersionToolBase(jobService, logger), IMcpTool
+{
+    public const string ToolName = "honua_studio_get_version";
+    public string Name => ToolName;
+    public string WorkflowFamily => McpTelemetry.WorkflowFamily.Lifecycle;
+
+    public McpToolDescriptor Describe() => new()
+    {
+        Name = Name,
+        Title = "Get Studio version",
+        Description = "Read one saved Studio version by itemId and versionId. Returns versionId and contentHash "
+            + "at the top level. Missing versions are not_found. Does not advance the draft generation.",
+        InputSchema = StudioMcpSchemas.GetVersionArgumentSchema,
+        OutputSchema = McpToolOutputSchemas.StudioGetVersionOutputSchema,
+        Annotations = McpToolAnnotationSets.ReadOnly("Get Studio version"),
+    };
+
+    public async Task<McpToolsCallResult> InvokeAsync(HttpContext httpContext, JsonElement? arguments, CancellationToken cancellationToken)
+    {
+        McpLog.ToolInvoked(Logger, Name, WorkflowFamily);
+        var principal = await EnsureAuthorizedAsync(httpContext, OperatorOperation.Read,
+            StudioAuthorizationOperation.ReadContentItem, cancellationToken).ConfigureAwait(false);
+        var argument = McpToolHelpers.ParseArguments(arguments, StudioMcpJsonContext.Default.McpStudioGetVersionArgument);
+        if (argument.ItemId == Guid.Empty || argument.VersionId == Guid.Empty)
+        {
+            throw new GeoprocessingValidationException("itemId and versionId are required.");
+        }
+
+        var lifecycle = RequireLifecycleService(httpContext);
+        var authorization = RequireAuthorizationService(httpContext);
+        var version = await lifecycle.GetVersionAsync(argument.ItemId, argument.VersionId, cancellationToken).ConfigureAwait(false);
+        if (version is null)
+        {
+            await EnsureStudioAuthorizedAsync(
+                httpContext,
+                authorization,
+                principal,
+                StudioAuthorizationOperation.ReadContentItem,
+                resourceOwnerId: null,
+                resourceTenantId: RequestTenantId(httpContext),
+                resourceId: argument.ItemId.ToString("D"),
+                resourceType: "studio-content-item",
+                operatorOperation: OperatorOperation.Read,
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            throw new GeoprocessingNotFoundException("Studio content version was not found.");
+        }
+
+        await EnsureStudioAuthorizedAsync(httpContext, authorization, principal, StudioAuthorizationOperation.ReadContentItem,
+            version.OwnerId, version.TenantId, argument.ItemId.ToString("D"), "studio-content-item", OperatorOperation.Read,
+            cancellationToken).ConfigureAwait(false);
+        return McpToolHelpers.SuccessResult(new McpStudioGetVersionOutput
+        {
+            VersionId = version.VersionId,
+            ContentHash = version.ContentHash,
+        }, StudioMcpJsonContext.Default.McpStudioGetVersionOutput);
+    }
+}

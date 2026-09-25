@@ -15,7 +15,8 @@ namespace Honua.Ai.Protocols.Mcp;
 /// <see cref="AdminProjection"/> (default <see langword="true"/>) publishes the audited Admin
 /// projection — the operations named by every registered
 /// <see cref="Honua.Core.Features.Operations.Abstractions.IAuditedAdminMcpProjection"/>, which are
-/// the committed <c>docs/gis/data/admin-mcp-projection-manifest.json</c> rows — as
+/// the committed <c>docs/gis/data/admin-mcp-projection-manifest.json</c> rows plus the closed
+/// operator roster (<c>docs/gis/data/operator-journey-mcp-roster.v1.json</c>) — as
 /// <c>honua_admin_*</c> tools.
 /// </description></item>
 /// <item><description>
@@ -27,7 +28,7 @@ namespace Honua.Ai.Protocols.Mcp;
 /// <see cref="Honua.Core.Features.Operations.Services.AdminMcpOperationExclusions"/> never publish,
 /// descriptors already exposed by a hand-authored tool are skipped, and every call is governed by
 /// the operation policy decision point. Published tools appear in the authenticated <c>full</c>
-/// catalog export, never in the bounded default workflow view.
+/// catalog export and on the <c>configure</c> workflow view, never in the bounded <c>default</c> view.
 /// </remarks>
 public sealed class McpPublishedOperationOptions
 {
