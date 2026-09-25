@@ -64,6 +64,36 @@ def bind_registration(before: list, after: list, coverage: dict, job: dict) -> d
     return registration
 
 
+def partition_listing(listing: dict, root: str) -> tuple[dict, list]:
+    """Retain bounded S3 directory markers separately from actual Zarr objects."""
+    safe_key(root)
+    entries = listing.get("Contents", [])
+    if listing.get("IsTruncated") or not entries or len(entries) > MAX_OBJECTS:
+        raise ValueError("Derived object listing is empty, truncated or oversized")
+    objects, markers, seen = {}, [], set()
+    for entry in entries:
+        key, size = entry["Key"], entry["Size"]
+        if key in seen or type(size) is not int or size < 0:
+            raise ValueError("Duplicate object key or invalid listed size")
+        seen.add(key)
+        if key.endswith("/"):
+            path = safe_key(key[:-1])
+            if size != 0 or not (path == root or path.startswith(root + "/")):
+                raise ValueError("Invalid or foreign derived-store directory marker")
+            markers.append({"key": key, "size": size})
+            continue
+        safe_key(key)
+        if not key.startswith(root + "/"):
+            raise ValueError("Listed object escapes the derived prefix")
+        relative = safe_key(key[len(root) + 1:])
+        objects[relative] = entry
+    if not objects or any(entry["Size"] > MAX_OBJECT_BYTES for entry in objects.values()):
+        raise ValueError("Derived output has no data objects or an oversized object")
+    if sum(entry["Size"] for entry in objects.values()) > MAX_TOTAL_BYTES:
+        raise ValueError("Listed derived store exceeds the rehearsal bound")
+    return objects, markers
+
+
 def validate_receipt(receipt: dict, artifacts: Path, source_sha: str, image_digest: str) -> dict:
     if receipt.get("schema") != SCHEMA or receipt.get("outcome") != "bound":
         raise ValueError("No successfully bound derived-output rehearsal receipt")
@@ -106,11 +136,16 @@ def validate_receipt(receipt: dict, artifacts: Path, source_sha: str, image_dige
     if begin < 0 or end < begin or command not in logs[begin:end] or logs.count("Job execution started:") != 1:
         raise ValueError("Isolated worker execution does not bind the exact job and derived prefix")
     objects = receipt["objects"]
+    listed, markers = partition_listing(receipt["object_listing"], registration["rootPath"])
+    if set(listed) != set(objects) or markers != receipt["directory_markers"]:
+        raise ValueError("Archived keys or directory markers differ from the original listing")
     if not objects or len(objects) > MAX_OBJECTS:
         raise ValueError("Derived-output object count is outside the bounded rehearsal")
     total = 0
     for key, expected in objects.items():
         safe_key(key)
+        if listed[key]["Size"] != expected["size"]:
+            raise ValueError("Archived size differs from the original listing")
         data = (artifacts / "honua-derived.zarr" / key).read_bytes()
         if len(data) != expected["size"] or hashlib.sha256(data).hexdigest() != expected["sha256"]:
             raise ValueError("Archived derived object identity does not match the receipt")
@@ -222,7 +257,9 @@ def observe_array(artifacts: Path, source_sha: str, image_digest: str,
     }
     reader = ObservedStoreReader(receipt, artifacts)
     try:
-        group = zarr.open_group(store=reader.zarr_store(), mode="r", use_consolidated=False)
+        # Retain the canonical default: use observed consolidated metadata when
+        # present, otherwise fall back. Every actual request is still counted.
+        group = zarr.open_group(store=reader.zarr_store(), mode="r")
         array = group["temperature"]
         shape, chunks = list(array.shape), list(array.chunks)
         chunk_count = 1

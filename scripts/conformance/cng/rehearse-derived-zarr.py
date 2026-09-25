@@ -13,8 +13,8 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
-from derived_zarr import (MAX_OBJECT_BYTES, MAX_OBJECTS, MAX_TOTAL_BYTES, SCHEMA,
-                          bind_registration, safe_key, validate_receipt)
+from derived_zarr import (MAX_OBJECT_BYTES, MAX_TOTAL_BYTES, SCHEMA,
+                          bind_registration, partition_listing, safe_key, validate_receipt)
 
 COMPOSE = ["docker", "compose", "-f", "docker/cng/compose.yml", "-f", "docker/cng/derived-zarr.yml"]
 BUCKET = "honua-cng-fixtures"
@@ -113,16 +113,11 @@ def main():
         receipt["store_url"] = f"http://127.0.0.1:4595/{BUCKET}/{root}"
         listing = json.loads(command(*COMPOSE, "exec", "-T", "localstack", "awslocal", "s3api", "list-objects-v2",
                                      "--bucket", BUCKET, "--prefix", root + "/"))
-        objects = listing.get("Contents", [])
-        if listing.get("IsTruncated") or not objects or len(objects) > MAX_OBJECTS:
-            raise ValueError("Derived object listing is empty, truncated or oversized")
+        receipt["object_listing"] = listing
+        objects, receipt["directory_markers"] = partition_listing(listing, root)
         receipt["objects"] = {}
         total = 0
-        for entry in objects:
-            key = safe_key(entry["Key"])
-            if not key.startswith(root + "/"):
-                raise ValueError("Listed object escapes the derived prefix")
-            relative = safe_key(key[len(root) + 1:])
+        for relative, entry in objects.items():
             with urllib.request.urlopen(receipt["store_url"] + "/" + relative, timeout=30) as response:
                 data = response.read(MAX_OBJECT_BYTES + 1)
                 if response.status != 200 or response.geturl() != receipt["store_url"] + "/" + relative:

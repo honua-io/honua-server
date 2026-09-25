@@ -5,8 +5,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from derived_zarr import (ObservedStoreReader, SCHEMA, bind_registration,
-                          has_derived_binding, safe_key, validate_receipt)
+from derived_zarr import (MAX_OBJECTS, ObservedStoreReader, SCHEMA, bind_registration,
+                          has_derived_binding, partition_listing, safe_key, validate_receipt)
 
 
 class Response:
@@ -57,6 +57,8 @@ class DerivedZarrTests(unittest.TestCase):
                         "started_at": "2026-09-25T00:00:00Z", "completed_at": "2026-09-25T00:01:00Z",
                         "input_sha256": hashlib.sha256(b"original netcdf bytes").hexdigest(),
                         "worker_log_sha256": hashlib.sha256(logs.encode()).hexdigest(),
+                        "object_listing": {"Contents": [{"Key": self.root + "/chunk", "Size": 8}]},
+                        "directory_markers": [],
                         "store_url": "http://127.0.0.1:4595/honua-cng-fixtures/" + self.root,
                         "objects": {"chunk": {"size": 8, "sha256": hashlib.sha256(b"01234567").hexdigest()}}}
 
@@ -70,6 +72,35 @@ class DerivedZarrTests(unittest.TestCase):
         for before, after in [([self.registration], [self.registration]), ([], [self.registration] * 2), ([], [])]:
             with self.subTest(before=before, after=after), self.assertRaises(ValueError):
                 bind_registration(before, after, self.coverage, self.job)
+
+    def test_only_zero_byte_safe_directory_markers_are_separate_from_data(self):
+        listing = {"Contents": [{"Key": self.root + "/", "Size": 0},
+                                 {"Key": self.root + "/temperature/", "Size": 0},
+                                 {"Key": self.root + "/chunk", "Size": 8}]}
+        objects, markers = partition_listing(listing, self.root)
+        self.assertEqual(["chunk"], list(objects))
+        self.assertEqual([{"key": self.root + "/", "size": 0},
+                          {"key": self.root + "/temperature/", "size": 0}], markers)
+        self.receipt.update(object_listing=listing, directory_markers=markers)
+        self.validate()
+        self.receipt["directory_markers"] = []
+        with self.assertRaises(ValueError):
+            self.validate()
+
+    def test_invalid_directory_markers_and_listing_disagreement_fail(self):
+        for key, size in [(self.root + "/", 1), (self.root + "//", 0),
+                          (self.root + "/../escape/", 0), ("foreign/", 0)]:
+            listing = {"Contents": [{"Key": key, "Size": size},
+                                     {"Key": self.root + "/chunk", "Size": 8}]}
+            with self.subTest(key=key, size=size), self.assertRaises(ValueError):
+                partition_listing(listing, self.root)
+        self.receipt["object_listing"]["Contents"][0]["Size"] = 7
+        with self.assertRaises(ValueError):
+            self.validate()
+        for listing in [{"IsTruncated": True, "Contents": [{"Key": self.root + "/chunk", "Size": 8}]},
+                        {"Contents": [{"Key": self.root + "/", "Size": 0}] * (MAX_OBJECTS + 1)}]:
+            with self.assertRaises(ValueError):
+                partition_listing(listing, self.root)
 
     def test_foreign_coverage_or_failed_job_cannot_bind(self):
         for job in [dict(self.job, status="failed"), dict(self.job, coverage={"id": 99})]:
