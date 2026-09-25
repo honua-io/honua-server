@@ -1174,7 +1174,11 @@
       "operation": "item-search",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (revision c9f739e6d): Pro ran a STAC item search through its own Explore STAC pane. Collection '2000' was ticked in Search Collections - the pane then reported '1 of 8 selected', independently confirming the catalogue's eight collections - and View Results was invoked. The Results tab lists item cards headed 'ID: 13' and 'ID: 14' with a third below the fold, and the footer reads 'Page 1 : 0 of 3 selected'. The independent oracle, GET /stac/search?collections=2000&limit=10, returns matched 3 with ids '13','14','15', each carrying a 'geojson' asset. The result count matches and both visible ids match. Stated precisely: id 15 was NOT visually confirmed in the client - only the count of 3 and the two ids on screen were.",
+          "previous_exclusion": {
+            "state": "not-started"
+          }
         },
         "arcpy": {
           "state": "pass",
