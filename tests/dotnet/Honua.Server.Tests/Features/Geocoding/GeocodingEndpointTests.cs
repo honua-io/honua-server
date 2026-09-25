@@ -1413,6 +1413,74 @@ public sealed class GeocodingEndpointTests
         Assert.False(address.TryGetProperty("Loc_name", out _));
     }
 
+    // #5145: the geocoding tools join batch results back to input rows on the id the
+    // CALLER stamped, not on position. ArcGIS Pro 3.7.1 submits attributes.OBJECTID; with
+    // a positional resultId answered instead, GeocodeAddresses reported "0 Matched (0.00%)
+    // / 0 Unmatched (0.00%)" over a 200 that carried a location, and wrote an empty output.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
+    public async Task BatchGeocode_EchoesTheSubmittedObjectIdAsResultId()
+    {
+        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
+            SupportsSuggest: true,
+            SupportsBatch: true,
+            SupportsStructuredInput: false,
+            SupportsBiasing: true)), grantEnterpriseForBatch: true);
+        using var client = factory.CreateClient();
+
+        var addresses = """{"records":[{"attributes":{"OBJECTID":41,"SingleLine":"1600 Pennsylvania Ave NW"}},{"attributes":{"OBJECTID":97,"SingleLine":"350 Fifth Avenue, New York"}}]}""";
+        using var content = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("addresses", addresses),
+            new KeyValuePair<string, string>("f", "json"),
+        });
+
+        using var response = await client.PostAsync(
+            "/rest/services/World/GeocodeServer/geocodeAddresses", content);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var locations = payload.RootElement.GetProperty("locations").EnumerateArray().ToArray();
+
+        Assert.Equal(2, locations.Length);
+        Assert.Equal(41, locations[0].GetProperty("resultId").GetInt32());
+        Assert.Equal(97, locations[1].GetProperty("resultId").GetInt32());
+
+        // The ResultID attribute has to be the same number, so a client reading either
+        // one joins a location back to the same submitted record.
+        Assert.Equal(41, locations[0].GetProperty("attributes").GetProperty("ResultID").GetInt32());
+        Assert.Equal(97, locations[1].GetProperty("attributes").GetProperty("ResultID").GetInt32());
+    }
+
+    // A record with no id of its own still correlates, by position.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("POST /rest/services/{locatorName}/GeocodeServer/geocodeAddresses")]
+    public async Task BatchGeocode_WithoutASubmittedId_FallsBackToThePositionalIndex()
+    {
+        using var factory = CreateFactory(new FakeGeocodeProvider(new CoreGeocodeProviderCapabilities(
+            SupportsSuggest: true,
+            SupportsBatch: true,
+            SupportsStructuredInput: false,
+            SupportsBiasing: true)), grantEnterpriseForBatch: true);
+        using var client = factory.CreateClient();
+
+        var addresses = """{"records":[{"attributes":{"SingleLine":"1600 Pennsylvania Ave NW"}}]}""";
+        using var content = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("addresses", addresses),
+            new KeyValuePair<string, string>("f", "json"),
+        });
+
+        using var response = await client.PostAsync(
+            "/rest/services/World/GeocodeServer/geocodeAddresses", content);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(0, payload.RootElement.GetProperty("locations")[0].GetProperty("resultId").GetInt32());
+    }
+
     // #2147: SuggestedBatchSize is derived from the ACTIVE provider's MaxBatchSize, not a constant.
     // A provider with a non-default batch size advertises that exact value.
     [IntegrationTest]
