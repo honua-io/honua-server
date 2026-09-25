@@ -170,6 +170,8 @@ Operations: `findAddressCandidates`, `reverseGeocode`, `suggest`, `geocodeAddres
 
 Route solves are available over GET and POST; ServiceArea, ClosestFacility, ODCostMatrix, and LocationAllocation solves are POST-only. All five live under `/rest/services/{serviceId}/NAServer` and read query-string or form parameters; see the parity matrix for per-solver limitations.
 
+The synchronous `FindRoutes` subset is available at both `GPServer/FindRoutes/execute` and `NAServer/FindRoutes/execute` over GET and POST, with task metadata at the corresponding `FindRoutes` URL. It visits stops in input order and reports travel time in minutes. `Measurement_Units` supports only `Minutes`; `Reorder_Stops_to_Find_Optimal_Routes` supports only `false`. Other units, reordering, unknown options and conflicting aliases return errors before solving. An omitted `Travel_Mode` uses the provider default; supplied modes and barriers must be supported by that provider. This subset does not establish full `arcpy.nax` ready-to-use routing compatibility (tracked in #5192).
+
 ## SceneServer (I3S)
 
 `GET /scenes/{sceneId}/SceneServer` and `.../SceneServer/layers/{layerId}` serve Esri I3S scene layers only when experimental capability `serve.i3s-scene` is enabled. The default is 404; an enabled route without the Enterprise entitlement returns 402. See [3D Tiles and scenes](3d-tiles-and-scenes.md).

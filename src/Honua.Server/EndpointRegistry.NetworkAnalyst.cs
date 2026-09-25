@@ -12,6 +12,9 @@ public static partial class EndpointRegistry
         // NAServer minimal mobile routing compatibility (#366)
         new("GET", "/rest/services/{serviceId}/NAServer/Route/solve"),
         new("POST", "/rest/services/{serviceId}/NAServer/Route/solve"),
+        // Bounded synchronous ready-to-use tool alias (#5192).
+        new("GET", "/rest/services/{serviceId}/NAServer/FindRoutes/execute"),
+        new("POST", "/rest/services/{serviceId}/NAServer/FindRoutes/execute"),
         new("POST", "/rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea"),
         new("POST", "/rest/services/{serviceId}/NAServer/ClosestFacility/solveClosestFacility"),
         new("POST", "/rest/services/{serviceId}/NAServer/ODCostMatrix/solveODCostMatrix"),

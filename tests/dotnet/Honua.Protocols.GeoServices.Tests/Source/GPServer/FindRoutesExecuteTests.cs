@@ -118,6 +118,45 @@ public sealed class FindRoutesExecuteTests(FindRoutesExecuteTestsFixture fixture
         fixture.Requests.Should().BeEmpty("unsupported inputs must never reach the provider");
     }
 
+    [IntegrationTest]
+    [Operation(Operations.ProcessExecution)]
+    [Endpoint("GET /rest/services/{serviceId}/NAServer/FindRoutes/execute")]
+    [Endpoint("POST /rest/services/{serviceId}/NAServer/FindRoutes/execute")]
+    public async Task Execute_PublishedDefaults_WorkOnBothAnonymousNaServerMethods()
+    {
+        using var metadataResponse = await fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/NAServer/FindRoutes?f=json");
+        metadataResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var metadata = JsonDocument.Parse(await metadataResponse.Content.ReadAsStringAsync());
+        var parameters = new Dictionary<string, string> { ["f"] = "json", ["Stops"] = Stops };
+        foreach (var parameter in metadata.RootElement.GetProperty("parameters").EnumerateArray())
+        {
+            var defaultValue = parameter.GetProperty("defaultValue");
+            if (parameter.GetProperty("direction").GetString() == "esriGPParameterDirectionInput" &&
+                defaultValue.ValueKind != JsonValueKind.Null)
+            {
+                parameters[parameter.GetProperty("name").GetString()!] = defaultValue.ValueKind == JsonValueKind.String
+                    ? defaultValue.GetString()!
+                    : defaultValue.GetRawText();
+            }
+        }
+
+        fixture.Requests.Clear();
+        using var content = new FormUrlEncodedContent(parameters);
+        using var get = await fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/NAServer/FindRoutes/execute?" + await content.ReadAsStringAsync());
+        using var post = await fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/NAServer/FindRoutes/execute", content);
+        get.StatusCode.Should().Be(HttpStatusCode.OK);
+        post.StatusCode.Should().Be(HttpStatusCode.OK);
+        var getBody = await get.Content.ReadAsStringAsync();
+        (await post.Content.ReadAsStringAsync()).Should().Be(getBody);
+        using var document = JsonDocument.Parse(getBody);
+        document.RootElement.GetProperty("results")[1].GetProperty("value").GetBoolean().Should().BeTrue();
+        fixture.Requests.Should().HaveCount(2);
+        fixture.Requests.Should().OnlyContain(request => request.TravelMode == null);
+    }
+
     private async Task<JsonDocument> ExecuteAsync(string service, bool post, Dictionary<string, string> parameters)
     {
         var url = $"/rest/services/{WebAppFixture.TestServiceId}/{service}/FindRoutes/execute";
