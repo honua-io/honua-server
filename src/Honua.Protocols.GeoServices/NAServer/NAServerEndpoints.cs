@@ -180,6 +180,21 @@ internal static class NAServerEndpoints
         }
 
         var layerName = context.Request.RouteValues["layerName"]?.ToString() ?? string.Empty;
+
+        // Esri's ready-to-use routing tools are addressed against the NAServer URL, not
+        // the utility GPServer: arcpy.nax composes "{naServerUrl}/FindRoutes" and refuses
+        // the stand-alone binding when it 404s, with "Portal ... is not configured with
+        // the 'Route' web tool". Publishing the task on the GPServer alone was not
+        // enough - measured, the client never asks there for it (#5192). Same document
+        // either way, so the two spellings cannot disagree.
+        if (NAServerMetadata.IsRoutingWebTool(layerName))
+        {
+            return Results.Text(
+                NAServerMetadata.Serialize(
+                    NAServerMetadata.BuildUtilityTaskInfo(layerName), IsPrettyJson(context, parameters)),
+                JsonContentType);
+        }
+
         var capabilities = await routing.GetCapabilitiesAsync(ct).ConfigureAwait(false);
         var dataset = await ResolveDatasetAsync(datasets, configuration, ct).ConfigureAwait(false);
         var document = NAServerMetadata.BuildLayerResource(layerName, capabilities, dataset, configuration);
