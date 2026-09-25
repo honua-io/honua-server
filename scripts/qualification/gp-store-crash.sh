@@ -97,6 +97,11 @@ run_store_crash_case() {
     jq -e '.status == 2 or .status == "running"' <<<"$before_record" >/dev/null || {
       scenario_fail "worker escaped the pre-terminal crash fence"; return 1; }
   fi
+  if [[ "$target" == terminal-committed-registration-pending && "$disruption" == worker ]]; then
+    source "$repo_root/scripts/qualification/gp-terminal-recovery.sh"
+    run_terminal_result_recovery
+    return $?
+  fi
   if [[ "$disruption" == worker ]]; then
     record_disruption worker "$target" SIGKILL
     compose kill -s SIGKILL worker >/dev/null || return 1

@@ -21,6 +21,7 @@ on:
         options:
           - output-store-outage
           - heartbeat-recovery
+          - terminal-result-recovery
 
 permissions:
   contents: read
@@ -40,6 +41,7 @@ jobs:
           bash -n scripts/qualification/gp-lifecycle-harness.sh
           bash -n scripts/qualification/gp-store-crash.sh
           bash -n scripts/qualification/gp-heartbeat-recovery.sh
+          bash -n scripts/qualification/gp-terminal-recovery.sh
           python3 -m unittest discover -s scripts/qualification -p 'test_gp*.py' -v
 
   native-store-rehearsal:
@@ -57,8 +59,8 @@ jobs:
         ports:
           - 5000:5000
     env:
-      HONUA_SERVER_IMAGE: ghcr.io/honua-io/honua-server@sha256:14b597d78aa6889d3adb2b0e5e2fdbfd4617da4eb11c12079b9655ec7f709b55
-      HONUA_GP_SOURCE_SHA: fe1636ca0a3cbd3ec3994f5faafa3490672694e7
+      HONUA_SERVER_IMAGE: ghcr.io/honua-io/honua-server@sha256:a7cc1e01742cfb01e312c106e2576f78d175c89fb83d1b752afaf34e55195ed6
+      HONUA_GP_SOURCE_SHA: 8df5b4012bb5786740dfba2d63a8d13152380b5e
       HONUA_GP_LANE: ${{ inputs.native_rehearsal_lane || 'output-store-outage' }}
       HONUA_GP_RECEIPT_DIR: ${{ github.workspace }}/artifacts/gp-store-rehearsal
       HONUA_GP_SCENARIO_TIMEOUT_SECONDS: '900'
@@ -103,7 +105,7 @@ jobs:
             github_actor=${{ github.actor }}
             github_token=${{ github.token }}
           cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-worker-gdal-amd64
-      - name: Execute actual staged-store outage and recovery
+      - name: Execute selected native recovery rehearsal
         env:
           HONUA_WORKER_IMAGE: localhost:5000/gp-rehearsal-worker@${{ steps.worker.outputs.digest }}
         run: scripts/qualification/gp-lifecycle-harness.sh
@@ -120,7 +122,8 @@ jobs:
           summary_path = root / 'summary.json'
           summary = json.loads(summary_path.read_text()) if summary_path.exists() else None
           lane = os.environ['HONUA_GP_LANE']
-          scenario = {'output-store-outage': 'output-write-failure', 'heartbeat-recovery': 'stale-lease'}[lane]
+          scenario = {'output-store-outage': 'output-write-failure', 'heartbeat-recovery': 'stale-lease',
+                      'terminal-result-recovery': 'terminal-result-recovery'}[lane]
           passed = bool(summary and summary['lane'] == lane
                         and summary['declared_scenario_count'] == summary['receipt_count'] == 3
                         and summary['failed'] == 0 and summary['missing_scenarios'] == []
