@@ -140,7 +140,7 @@ run_store_crash_case() {
   terminal="$(wait_terminal "$job")" || { scenario_fail "job did not converge after the crash"; return 1; }
   state="$(jq -r .status <<<"$terminal")"
   [[ "$state" == successful ]] || { scenario_fail "crash recovery did not produce a successful job"; return 1; }
-  content="$receipt_root/.$scenario.geojson"
+  content="$receipt_root/$scenario-output.geojson"
   auth_curl "$peer_url/api/geoprocessing/jobs/$job/artifacts/0/content" > "$content" || return 1
   python3 "${repo_root}/scripts/qualification/verify-gp-store-artifact.py" "$content" || return 1
   after_sha="$(sha256sum "$content" | cut -d' ' -f1)"
@@ -163,12 +163,12 @@ run_store_crash_case() {
   [[ "$package_after" == 1 ]] || { scenario_fail "normal read did not recover result-package registration"; return 1; }
   jq -n --argjson fence "$ready" --argjson before "$before_record" --argjson after "$after_record" \
     --arg before_inventory "$before_inventory" --arg after_inventory "$after_inventory" \
-    --arg before_sha "$before_sha" --arg after_sha "$after_sha" \
+    --arg before_sha "$before_sha" --arg after_sha "$after_sha" --arg output_file "${content##*/}" \
     --arg target "$target" --arg disruption "$disruption" --argjson outage "$outage_evidence" \
     --argjson write_failure "$write_failure_record" \
     --argjson package_before "$package_before" --argjson package_after "$package_after" \
     --slurpfile descriptor "$receipt_root/.$scenario.descriptor.json" \
-    '{boundary:$target,disruption:$disruption,store_unavailable:$outage,write_failure_retry:$write_failure,fence:$fence,job_before:$before,job_after:$after,inventory_before:$before_inventory,inventory_after:$after_inventory,sha256_before:$before_sha,sha256_after:$after_sha,result_package_before:$package_before,result_package_after:$package_after,descriptor:$descriptor[0]}' > "$scenario_evidence_file" || return 1
+    '{boundary:$target,disruption:$disruption,store_unavailable:$outage,write_failure_retry:$write_failure,output_file:$output_file,fence:$fence,job_before:$before,job_after:$after,inventory_before:$before_inventory,inventory_after:$after_inventory,sha256_before:$before_sha,sha256_after:$after_sha,result_package_before:$package_before,result_package_after:$package_after,descriptor:$descriptor[0]}' > "$scenario_evidence_file" || return 1
   record_attempt "$(jq -r .attemptCount <<<"$after_record")"
   jq -n --arg sha "$after_sha" --argjson bytes "$(wc -c < "$content")" \
     '{sha256:$sha,bytes:$bytes}' > "$scenario_state_file" || return 1

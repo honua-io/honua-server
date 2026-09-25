@@ -134,5 +134,6 @@ jobs:
           path: |
             artifacts/gp-store-rehearsal/*.json
             artifacts/gp-store-rehearsal/*.log
+            artifacts/gp-store-rehearsal/*.geojson
           if-no-files-found: error
           retention-days: 30

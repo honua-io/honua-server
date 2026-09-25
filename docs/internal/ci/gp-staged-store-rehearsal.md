@@ -11,7 +11,8 @@ insufficient. Only then does the harness restore the store and topology.
 
 Natural recovery must execute a newer attempt and expose exactly one staged
 artifact above the inline ceiling. Its 500-feature geometry/attribute oracle and
-checksum are retained alongside the reached fence, outage HTTP statuses, failed
+checksum are retained alongside the exact downloaded `<scenario>-output.geojson`
+bytes (named in the receipt), reached fence, outage HTTP statuses, failed
 retry record, inventories, final job state and descriptor. Existing after-write
 crash cells retain their original pre/post byte-equality assertion. Stopping
 Redis alone cannot pass this output-write-failure cell.
