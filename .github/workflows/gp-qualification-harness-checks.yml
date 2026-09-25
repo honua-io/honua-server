@@ -8,6 +8,11 @@ on:
       - 'scripts/qualification/verify-gp-store-artifact.py'
       - '.github/workflows/gp-qualification-harness-checks.yml'
   workflow_dispatch:
+    inputs:
+      native_store_rehearsal:
+        description: Build a matching worker and rehearse one real staged-store outage (not release qualification)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -21,4 +26,108 @@ jobs:
       - name: Check harness syntax and failure isolation
         run: |
           bash -n scripts/qualification/gp-lifecycle-harness.sh
+          bash -n scripts/qualification/gp-store-crash.sh
           python3 -m unittest discover -s scripts/qualification -p 'test_gp*.py' -v
+
+  native-store-rehearsal:
+    if: github.event_name == 'workflow_dispatch' && inputs.native_store_rehearsal
+    needs: harness-checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: read
+      attestations: read
+    services:
+      registry:
+        image: registry:3
+        ports:
+          - 5000:5000
+    env:
+      HONUA_SERVER_IMAGE: ghcr.io/honua-io/honua-server@sha256:14b597d78aa6889d3adb2b0e5e2fdbfd4617da4eb11c12079b9655ec7f709b55
+      HONUA_GP_SOURCE_SHA: fe1636ca0a3cbd3ec3994f5faafa3490672694e7
+      HONUA_GP_LANE: output-store-outage
+      HONUA_GP_RECEIPT_DIR: ${{ github.workspace }}/artifacts/gp-store-rehearsal
+      HONUA_GP_SCENARIO_TIMEOUT_SECONDS: '900'
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check out matching unmodified production worker source
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HONUA_GP_SOURCE_SHA }}
+          path: rehearsal-worker
+      - name: Verify retained server provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$HONUA_GP_RECEIPT_DIR"
+          gh attestation verify "oci://$HONUA_SERVER_IMAGE" --repo honua-io/honua-server \
+            --signer-workflow honua-io/honua-server/.github/workflows/nightly-container-build.yml \
+            --source-ref refs/heads/trunk --source-digest "$HONUA_GP_SOURCE_SHA" \
+            --format json > "$HONUA_GP_RECEIPT_DIR/image-attestation.json"
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5 # v4
+        with:
+          driver-opts: network=host
+      # Reuse the release DR producer's runner-local registry pattern. This
+      # creates a real RepoDigest without publishing a candidate worker image.
+      - name: Build canonical worker into runner-local registry
+        id: worker
+        uses: docker/build-push-action@f9f3042f7e2789586610d6e8b85c8f03e5195baf # v7
+        with:
+          context: rehearsal-worker
+          file: rehearsal-worker/docker/worker-gdal/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: localhost:5000/gp-rehearsal-worker:engineering
+          build-args: |
+            HONUA_GIT_SHA=${{ env.HONUA_GP_SOURCE_SHA }}
+          secrets: |
+            github_actor=${{ github.actor }}
+            github_token=${{ github.token }}
+          cache-from: type=registry,ref=ghcr.io/honua-io/honua-server/buildcache:honua-worker-gdal-amd64
+      - name: Execute actual staged-store outage and recovery
+        env:
+          HONUA_WORKER_IMAGE: localhost:5000/gp-rehearsal-worker@${{ steps.worker.outputs.digest }}
+        run: scripts/qualification/gp-lifecycle-harness.sh
+      - name: Retain explicit engineering-rehearsal boundary
+        if: always()
+        env:
+          WORKER_DIGEST: ${{ steps.worker.outputs.digest }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          root = Path(os.environ['HONUA_GP_RECEIPT_DIR'])
+          root.mkdir(parents=True, exist_ok=True)
+          summary_path = root / 'summary.json'
+          summary = json.loads(summary_path.read_text()) if summary_path.exists() else None
+          passed = bool(summary and summary['lane'] == 'output-store-outage'
+                        and summary['declared_scenario_count'] == summary['receipt_count'] == 3
+                        and summary['failed'] == 0 and summary['missing_scenarios'] == []
+                        and summary['duplicate_receipts'] == []
+                        and {s['scenario'] for s in summary['scenarios']} == {'topology', 'output-write-failure', 'cleanup'}
+                        and all(s['outcome'] == 'pass' for s in summary['scenarios']))
+          receipt = {'schema': 'honua.gp-store-rehearsal.v1', 'qualification': False,
+                     'outcome': 'pass' if passed else 'fail', 'harness_sha': os.environ['GITHUB_SHA'],
+                     'source_sha': os.environ['HONUA_GP_SOURCE_SHA'],
+                     'server_image': os.environ['HONUA_SERVER_IMAGE'],
+                     'worker_image': 'localhost:5000/gp-rehearsal-worker@' + os.environ['WORKER_DIGEST'],
+                     'summary_sha256': hashlib.sha256(summary_path.read_bytes()).hexdigest() if summary else None,
+                     'finding': None if passed else 'The three actual rehearsal receipts did not all pass.'}
+          (root / 'rehearsal.json').write_text(json.dumps(receipt, indent=2) + '\n')
+          raise SystemExit(0 if passed else 1)
+          PY
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: gp-store-rehearsal-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/gp-store-rehearsal/*.json
+            artifacts/gp-store-rehearsal/*.log
+          if-no-files-found: error
+          retention-days: 30

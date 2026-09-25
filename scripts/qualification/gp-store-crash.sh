@@ -1,11 +1,56 @@
 #!/usr/bin/env bash
 # Sourced by gp-lifecycle-harness.sh; every assertion uses the published images.
 run_store_crash_boundary() {
-  local target="$1" disruption="$2" job barrier state terminal before_record after_record
-  local before_inventory after_inventory before_sha after_sha content ready outage_root
-  local scenario="crash-${target}-${disruption}" package_before package_after
-  export HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification
-  export HONUA_GP_WORKER_REDIS=terminal-proxy:6379
+  local target="$1" disruption="$2" result=0 cleanup_result=0 barrier
+  local job="" state="" after_sha="" outage_root="" store_hidden=0
+  local scenario="${scenario_name:-crash-${target}-${disruption}}"
+  run_store_crash_case "$target" "$disruption" || result=$?
+  # A failed assertion can leave a live worker behind a fence or the actual
+  # store hidden. Restore those resources before restoring caller topology.
+  if (( store_hidden != 0 )); then
+    restore_crash_output_store || cleanup_result=$?
+  fi
+  if [[ -n "$job" ]]; then
+    for barrier in claimed native-process-started output-bytes-written-unpublished artifact-reference-published-terminal-cas-pending terminal-committed-registration-pending; do
+      release_barrier "$job" "$barrier" || cleanup_result=$?
+    done
+  fi
+  compose up -d --force-recreate server server-peer worker >/dev/null || cleanup_result=$?
+  if (( cleanup_result == 0 )); then
+    wait_ready && wait_peer_ready || cleanup_result=$?
+  fi
+  if (( cleanup_result != 0 )); then
+    scenario_cleanup_failure="staged-store qualification topology restoration failed"
+    runtime_taint="$scenario_cleanup_failure"
+    scenario_finding="${scenario_finding:+${scenario_finding}; }${scenario_cleanup_failure}"
+    return 1
+  fi
+  (( result == 0 )) || return "$result"
+  write_receipt "$scenario" pass "" "$job" "$state" "$after_sha"
+}
+
+restore_crash_output_store() {
+  # Either move can have failed after moving the other entry. Restore each
+  # present entry independently and retain the directory on any failure.
+  compose exec -T --user 0 worker sh -ec '
+    root=/var/lib/honua/gp-outputs
+    for entry in .honua-gp-store.json gp; do
+      if [ -e "$root/.qualification-outage-$1/$entry" ]; then
+        [ ! -e "$root/$entry" ] || exit 1
+        mv "$root/.qualification-outage-$1/$entry" "$root/"
+      fi
+    done
+  ' restore-store "$job" || return 1
+  rmdir "$outage_root" || return 1
+  store_hidden=0
+}
+
+run_store_crash_case() {
+  local target="$1" disruption="$2" barrier terminal before_record after_record
+  local before_inventory after_inventory before_sha content ready
+  local package_before package_after outage_evidence='null'
+  local -x HONUA_GP_QUALIFICATION_BARRIER_ROOT=/var/run/honua/qualification
+  local -x HONUA_GP_WORKER_REDIS=terminal-proxy:6379
   compose --profile crash-boundaries up -d --wait terminal-proxy >/dev/null || return 1
   compose up -d --force-recreate worker >/dev/null || return 1
   job="$(submit_async gdal.ogr2ogr "${native_payload}")" || return 1
@@ -54,6 +99,7 @@ run_store_crash_boundary() {
     outage_root="$object_root/.qualification-outage-$job"
     mkdir "$outage_root" || return 1
     local mounted_root=/var/lib/honua/gp-outputs outage_failed=0
+    store_hidden=1
     compose exec -T --user 0 worker mv "$mounted_root/.honua-gp-store.json" "$mounted_root/gp" \
       "$mounted_root/.qualification-outage-$job/" || return 1
     local readiness
@@ -63,19 +109,21 @@ run_store_crash_boundary() {
     local code
     code="$(curl --silent -H "X-API-Key: $api_key" -o /dev/null -w '%{http_code}' "$peer_url/api/geoprocessing/jobs/$job/artifacts/0/content")"
     [[ "$code" != 200 ]] || outage_failed=1
+    outage_evidence="$(jq -cn --arg readiness "$readiness" --arg content "$code" \
+      '{readiness_http:$readiness,content_http:$content}')" || outage_failed=1
     jq -n --arg job "$job" --arg readiness "$readiness" --arg content "$code" \
       --argjson fence "$ready" --argjson before "$before_record" \
       '{submitted_job:$job,fence:$fence,job_before:$before,store_unavailable:{readiness_http:$readiness,content_http:$content}}' \
       > "$scenario_evidence_file" || outage_failed=1
-    compose exec -T --user 0 worker mv "$mounted_root/.qualification-outage-$job/.honua-gp-store.json" \
-      "$mounted_root/.qualification-outage-$job/gp" "$mounted_root/" || return 1
-    rmdir "$outage_root"
+    restore_crash_output_store || return 1
     [[ "$outage_failed" == 0 ]] || { scenario_fail "unavailable output store did not fail closed"; return 1; }
   fi
   for barrier in claimed native-process-started output-bytes-written-unpublished artifact-reference-published-terminal-cas-pending terminal-committed-registration-pending; do
     release_barrier "$job" "$barrier"
   done
-  unset HONUA_GP_QUALIFICATION_BARRIER_ROOT HONUA_GP_WORKER_REDIS
+  # Resume without qualification fences/proxy for natural recovery. These local
+  # exports never alter the caller's original environment.
+  HONUA_GP_QUALIFICATION_BARRIER_ROOT="" HONUA_GP_WORKER_REDIS=redis:6379
   compose restart server server-peer redis postgres >/dev/null || return 1
   wait_ready && wait_peer_ready || return 1
   compose up -d --force-recreate worker >/dev/null || return 1
@@ -98,11 +146,12 @@ run_store_crash_boundary() {
   jq -n --argjson fence "$ready" --argjson before "$before_record" --argjson after "$after_record" \
     --arg before_inventory "$before_inventory" --arg after_inventory "$after_inventory" \
     --arg before_sha "$before_sha" --arg after_sha "$after_sha" \
+    --arg target "$target" --arg disruption "$disruption" --argjson outage "$outage_evidence" \
     --argjson package_before "$package_before" --argjson package_after "$package_after" \
     --slurpfile descriptor "$receipt_root/.$scenario.descriptor.json" \
-    '{fence:$fence,job_before:$before,job_after:$after,inventory_before:$before_inventory,inventory_after:$after_inventory,sha256_before:$before_sha,sha256_after:$after_sha,result_package_before:$package_before,result_package_after:$package_after,descriptor:$descriptor[0]}' > "$scenario_evidence_file" || return 1
+    '{boundary:$target,disruption:$disruption,store_unavailable:$outage,fence:$fence,job_before:$before,job_after:$after,inventory_before:$before_inventory,inventory_after:$after_inventory,sha256_before:$before_sha,sha256_after:$after_sha,result_package_before:$package_before,result_package_after:$package_after,descriptor:$descriptor[0]}' > "$scenario_evidence_file" || return 1
   record_attempt "$(jq -r .attemptCount <<<"$after_record")"
   jq -n --arg sha "$after_sha" --argjson bytes "$(wc -c < "$content")" \
     '{sha256:$sha,bytes:$bytes}' > "$scenario_state_file" || return 1
-  write_receipt "$scenario" pass "" "$job" "$state" "$after_sha"
+
 }

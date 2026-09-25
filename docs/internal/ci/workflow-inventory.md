@@ -29,7 +29,7 @@
 **Branch protection requires `PR Gate` and `Review Gate` together**: unprivileged
 verification plus trusted exact-head admission. `CI Gate` remains train-only and
 is deliberately not a per-PR required context. Nothing else in this inventory is
-a required context — the merge train selects on `mergeable`, not on
+a required context â€” the merge train selects on `mergeable`, not on
 `mergeStateStatus`, so a red advisory check does not by itself block landing.
 PR-time CodeQL security analysis comes from `codeql.yml`'s own
 `pull_request` lane: code-scanning **default setup is `not-configured`** for this
@@ -43,9 +43,9 @@ analysis.
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
-| `pr-gate.yml` | PR Gate | `pull_request` (base `trunk`), `workflow_dispatch` | Required verification context (#2865). Admission tier first: a ~3-second sweep asserting every tracked **text** blob decodes as UTF-8 (`validate-tracked-file-encoding.py`, #3321) -- binary fixtures are excluded by git's own text/binary classification rather than an extension denylist, except that auto-detected binaries are still screened for a UTF-16/UTF-32 byte-order mark, since NUL-dense Unicode text would otherwise pass as binary. A `.gitattributes` declaration remains the escape hatch. Then one service-free, Testcontainers-free ubuntu-latest runner: affected-scope warnings-as-errors build, affected-document `dotnet format --verify-no-changes`, `Tier=Fast` smoke, architecture enforcement, and service-free MCP registry/taxonomy drift checks. Deliberately un-path-filtered. In review-first enforce mode, attempt 1 stops before the expensive steps and the trusted reviewer releases attempt 2 exactly once. Shares its steps with `ci.yml`'s `Merge Queue Gate` via `.github/actions/lean-gate`. The Testcontainers-backed Server governance/drift assertions run intact in `ci.yml`'s trunk-only trailing job instead. A documentation-only diff exits inside the jobs rather than through a filter; see [Docs-only exit](#docs-only-exit-pr-gate). `PR Gate / CI Router Validation` runs `scripts/ci/validate-ci-router.sh` and `scripts/ci/validate-single-merge-authority.sh` — the same two scripts `ci.yml`'s trunk-only `CI Router Validation` job runs — whenever `scripts/ci/pr-touches-ci-surface.sh` finds a changed path under `.github/` or `scripts/ci/`; every other PR skips it and it is in `required.needs` alongside `pr-gate` and `format` (#3213, #4540/#4653: a CI-surface PR landed green here and only turned trunk red on the next landing's trailing matrix). |
+| `pr-gate.yml` | PR Gate | `pull_request` (base `trunk`), `workflow_dispatch` | Required verification context (#2865). Admission tier first: a ~3-second sweep asserting every tracked **text** blob decodes as UTF-8 (`validate-tracked-file-encoding.py`, #3321) -- binary fixtures are excluded by git's own text/binary classification rather than an extension denylist, except that auto-detected binaries are still screened for a UTF-16/UTF-32 byte-order mark, since NUL-dense Unicode text would otherwise pass as binary. A `.gitattributes` declaration remains the escape hatch. Then one service-free, Testcontainers-free ubuntu-latest runner: affected-scope warnings-as-errors build, affected-document `dotnet format --verify-no-changes`, `Tier=Fast` smoke, architecture enforcement, and service-free MCP registry/taxonomy drift checks. Deliberately un-path-filtered. In review-first enforce mode, attempt 1 stops before the expensive steps and the trusted reviewer releases attempt 2 exactly once. Shares its steps with `ci.yml`'s `Merge Queue Gate` via `.github/actions/lean-gate`. The Testcontainers-backed Server governance/drift assertions run intact in `ci.yml`'s trunk-only trailing job instead. A documentation-only diff exits inside the jobs rather than through a filter; see [Docs-only exit](#docs-only-exit-pr-gate). `PR Gate / CI Router Validation` runs `scripts/ci/validate-ci-router.sh` and `scripts/ci/validate-single-merge-authority.sh` â€” the same two scripts `ci.yml`'s trunk-only `CI Router Validation` job runs â€” whenever `scripts/ci/pr-touches-ci-surface.sh` finds a changed path under `.github/` or `scripts/ci/`; every other PR skips it and it is in `required.needs` alongside `pr-gate` and `format` (#3213, #4540/#4653: a CI-surface PR landed green here and only turned trunk red on the next landing's trailing matrix). |
 | `review-gate.yml` | Review Gate Attestation | `pull_request_target`, `issue_comment`, trusted `repository_dispatch`, `workflow_run` [PR Gate, Review Event Bridge] | Required admission context. Publishes `Review Gate` on the exact current head only when Codex has exact-head evidence and no unresolved Codex threads. Serializes every event by resolved PR number, pins the exact trusted workflow-policy SHA, and is the only authority allowed to release expensive verification. In observe mode it retains an immutable decision receipt; merge-train selection and pre-land independently re-attest source evidence. |
-| `claude-review.yml` | Claude Review | completed `PR Gate` `workflow_run`, `issue_comment` containing `@claude review` | Second attesting reviewer for the required `Review Gate` context (#3213, #3314; rebuilt on a trusted trigger by #3341), so a PR can still land while Codex is rate-limited. Trusted default-branch lane: **never** triggered by `pull_request`, read-only `GITHUB_TOKEN`, and it posts comments and inline threads only — never a review verdict. `scripts/ci/review-gate-evidence.js` accepts `claude` evidence alongside Codex. Inert until an auth secret exists. See [gate-model.md → Attesting reviewers](gate-model.md#attesting-reviewers). |
+| `claude-review.yml` | Claude Review | completed `PR Gate` `workflow_run`, `issue_comment` containing `@claude review` | Second attesting reviewer for the required `Review Gate` context (#3213, #3314; rebuilt on a trusted trigger by #3341), so a PR can still land while Codex is rate-limited. Trusted default-branch lane: **never** triggered by `pull_request`, read-only `GITHUB_TOKEN`, and it posts comments and inline threads only â€” never a review verdict. `scripts/ci/review-gate-evidence.js` accepts `claude` evidence alongside Codex. Inert until an auth secret exists. See [gate-model.md â†’ Attesting reviewers](gate-model.md#attesting-reviewers). |
 | `review-event-bridge.yml` | Review Event Bridge | `pull_request_review`, `pull_request_review_comment` | Best-effort latency hint only. GitHub runs these event workflows from the PR merge branch, so the bridge is credential-free/no-checkout and is never trusted for invalidation or landing. |
 
 ### Docs-only exit (`PR Gate`)
@@ -108,8 +108,8 @@ job records `docs_only=true` as a step output and the summary line
 |---|---|---|---|
 | Fleet serialized per-PR lander | External service | **Routine merge authority.** Immediately before merge, requires an open, non-draft, MERGEABLE PR based on `trunk`, no hold/escalation label, exact-head successful `PR Gate` + `Review Gate`, and zero unresolved review threads. A deterministic trailing trunk CI failure pauses routine landings except fix-forward branches. |
 | `merge-train.yml` | Merge Train | `schedule` (`*/15`, dry-run), `workflow_dispatch` | Manual/release-candidate batch authority (ADR-0055), not the routine landing path. Requires exact-head `PR Gate` + `Review Gate` at selection and again immediately before the compare-and-swap land. Automatic triggers are dry-run-only; landing needs an explicit `train_apply=true` dispatch. `scripts/ci/validate-single-merge-authority.sh` proves no second repository workflow can merge. |
-| `merge-train-rerun-recovery.yml` | Merge Train Rerun Recovery | `workflow_run` [CI] | Resumes the active immutable batch when a failed batch CI is rerun green. Uses its **own** per-source-run concurrency group (sharing the train's group made GitHub evict queued recoveries — 12 of 15 consecutive runs were `cancelled`); exclusion against a live train is re-established by an explicit idle wait plus the durable Merge Train State issue. See `docs/internal/contributor/merge-coordination-runbook.md`. |
-| `ci.yml` | CI | `schedule` (09:00 UTC), `merge_group`, `workflow_dispatch` | No `pull_request` trigger. Its `CI Gate` context is produced only by the train's `train/batch/*` dispatch, so it never appears on a PR head SHA (#2865). Core build, test, architecture gate, CI-router validation, JS typecheck, and Postgres compatibility. Per ADR-0037 the `targeted-shards` job runs `scripts/ci/honua-server-targeted-tests.sh` and emits a JSON `matrix_include` drawn from `.github/ci-shards.json`; `server-tests` consumes it via `strategy.matrix.include: fromJson(...)`, so unselected shards never instantiate a runner. The full shard matrix runs on scheduled/manual full integration runs and PRs labeled `ci/full`. Separately from that shadow, `server-tests` shards can opportunistically materialize their own run-scoped exact-head binary payload on attempt 1 (one designated writer per project publishes; siblings do a single fail-open lookup and never wait) when `HONUA_SERVER_TEST_PREBUILD_CONSUME=true`; absent/false is off and rollback is one variable update — contract in `docs/internal/ci/server-test-binary-artifacts.md`. `scripts/ci/run-server-test-shard.sh` composes each shard filter as `(matrix.filter)&Tier!=Slow&Tier!=Fast`, emits heartbeat/tail diagnostics, writes `.timing.json`, and enforces the inner `test_timeout_minutes` cap before the job-level `timeout_minutes` cancels the runner. The `merge_group` event runs only the lean `Merge Queue Gate` (the queue itself is disabled, ruleset 17808547). `pr-template-check` and `pr-readiness` short-circuit to success on every non-`pull_request` event, so today they are no-op roll-ups into `CI Gate`. |
+| `merge-train-rerun-recovery.yml` | Merge Train Rerun Recovery | `workflow_run` [CI] | Resumes the active immutable batch when a failed batch CI is rerun green. Uses its **own** per-source-run concurrency group (sharing the train's group made GitHub evict queued recoveries â€” 12 of 15 consecutive runs were `cancelled`); exclusion against a live train is re-established by an explicit idle wait plus the durable Merge Train State issue. See `docs/internal/contributor/merge-coordination-runbook.md`. |
+| `ci.yml` | CI | `schedule` (09:00 UTC), `merge_group`, `workflow_dispatch` | No `pull_request` trigger. Its `CI Gate` context is produced only by the train's `train/batch/*` dispatch, so it never appears on a PR head SHA (#2865). Core build, test, architecture gate, CI-router validation, JS typecheck, and Postgres compatibility. Per ADR-0037 the `targeted-shards` job runs `scripts/ci/honua-server-targeted-tests.sh` and emits a JSON `matrix_include` drawn from `.github/ci-shards.json`; `server-tests` consumes it via `strategy.matrix.include: fromJson(...)`, so unselected shards never instantiate a runner. The full shard matrix runs on scheduled/manual full integration runs and PRs labeled `ci/full`. Separately from that shadow, `server-tests` shards can opportunistically materialize their own run-scoped exact-head binary payload on attempt 1 (one designated writer per project publishes; siblings do a single fail-open lookup and never wait) when `HONUA_SERVER_TEST_PREBUILD_CONSUME=true`; absent/false is off and rollback is one variable update â€” contract in `docs/internal/ci/server-test-binary-artifacts.md`. `scripts/ci/run-server-test-shard.sh` composes each shard filter as `(matrix.filter)&Tier!=Slow&Tier!=Fast`, emits heartbeat/tail diagnostics, writes `.timing.json`, and enforces the inner `test_timeout_minutes` cap before the job-level `timeout_minutes` cancels the runner. The `merge_group` event runs only the lean `Merge Queue Gate` (the queue itself is disabled, ruleset 17808547). `pr-template-check` and `pr-readiness` short-circuit to success on every non-`pull_request` event, so today they are no-op roll-ups into `CI Gate`. |
 
 ## PR-triggered (advisory, not required)
 
@@ -126,7 +126,7 @@ job records `docs_only=true` as a step output and the summary line
 | `worker-gdal-image.yml` | GDAL Worker Image | `pull_request` (base `trunk`, path-filtered), weekly `schedule`, `workflow_dispatch` | Builds the GDAL worker image, smokes the entrypoint, and enforces Trivy vulnerability policy for the exact head; publishes SARIF. Re-proved on the nightly security and release/deploy lanes. |
 | `geoarrow-interop-fixture.yml` | GeoArrow Interop Fixture | `pull_request`, `workflow_dispatch` | Produces the GeoArrow 0.2 interop fixture. |
 | `geoparquet-interop.yml` | GeoParquet Interop Evidence | path-filtered `pull_request`, `workflow_dispatch` | Builds the exact source head and requires 3 OData, 8 import, 10 schema and 5 independent-reader cells. Retains TRX/JUnit and JSON execution receipts; skipped or missing cells fail. Pre-cut source evidence, not exact-candidate certification (#4396). |
-| `docs-link-gate.yml` | Docs Link Gate | `pull_request` (base `trunk`, path-filtered to `docs/**` and the checker), `workflow_dispatch` | Stdlib-Python `scripts/ci/check-doc-links.py`: relative links AND `#fragment` anchors across `docs/**/*.md` (GitHub slug algorithm, ported from `geospatial-mcp`'s `tools/check_links.py`), plus `scripts/ci/code-referenced-anchors.v1.json` — the absolute phase-A `https://honua.io/docs/<slug>/` URLs product code and shipped config hand to an operator or an agent at runtime (`remediationRef`, SCIM `documentationUri`, Prometheus `runbook_url`). Warns when a URL survives only via a `.gitbook.yaml` redirect; errors on a `docs.honua.io` URL (that host is dark until 2026.2) and on a phase-A URL that lacks the trailing slash or is not listed in the manifest; treats a `pendingPr` entry as warn-until-present so an anchor introduced by an open PR is enforced only once it lands. Pre-existing rot is carried in `scripts/ci/doc-link-rot-allowlist.v1.json` with a stale-entry ratchet. Not folded into `PR Gate` (which must stay unfiltered) or `ci.yml` (no `pull_request` trigger). |
+| `docs-link-gate.yml` | Docs Link Gate | `pull_request` (base `trunk`, path-filtered to `docs/**` and the checker), `workflow_dispatch` | Stdlib-Python `scripts/ci/check-doc-links.py`: relative links AND `#fragment` anchors across `docs/**/*.md` (GitHub slug algorithm, ported from `geospatial-mcp`'s `tools/check_links.py`), plus `scripts/ci/code-referenced-anchors.v1.json` â€” the absolute phase-A `https://honua.io/docs/<slug>/` URLs product code and shipped config hand to an operator or an agent at runtime (`remediationRef`, SCIM `documentationUri`, Prometheus `runbook_url`). Warns when a URL survives only via a `.gitbook.yaml` redirect; errors on a `docs.honua.io` URL (that host is dark until 2026.2) and on a phase-A URL that lacks the trailing slash or is not listed in the manifest; treats a `pendingPr` entry as warn-until-present so an anchor introduced by an open PR is enforced only once it lands. Pre-existing rot is carried in `scripts/ci/doc-link-rot-allowlist.v1.json` with a stale-entry ratchet. Not folded into `PR Gate` (which must stay unfiltered) or `ci.yml` (no `pull_request` trigger). |
 | `availability-evidence-contract.yml` | Availability evidence contract | `pull_request` (comparison-checker paths), `workflow_dispatch` | Regression tests for the exact two-replica/four-cell evidence checker; retains JUnit results. Synthetic checker fixtures do not certify an immutable candidate or provide a distributed SLI source. |
 | `normalize-derived-artifacts.yml` | Derived Artifact Normalization | `pull_request` | Untrusted producer: may execute PR code but can only read the repo/packages and upload a bounded data artifact (#3219). |
 | `release-bundle-tooling.yml` | Release Bundle Tooling | `pull_request`, `push` (trunk), `workflow_dispatch` | Verifies the deterministic, locally-runnable core of the release-bundle orchestrator (manifest generator, evidence collector, dispatch helper, suite registry). |
@@ -180,14 +180,14 @@ it is re-run on every head and is never reusable.
 
 The two findings above are the same fact seen from opposite ends. A
 graph-derived *router* cannot narrow this trigger, because `src/**` genuinely is
-in the serving closure — and that is also why 60% of serving-impacted heads
+in the serving closure â€” and that is also why 60% of serving-impacted heads
 rebuild an input set already built on the same pull request: the trigger is
 keyed on managed source, which changes on essentially every review-fix push and
 invalidates all three variants at once. Routing accuracy was never the lever;
 *placement* is.
 
 `serving-image-boundary.yml` therefore now fires only on inputs that DEFINE the
-image — the three production AOT Dockerfiles, `docker/cloud/azure-functions/**`,
+image â€” the three production AOT Dockerfiles, `docker/cloud/azure-functions/**`,
 `.dockerignore`, the in-image restore helper, the boundary verifier and its
 fixture harness, and the workflow itself. Managed source keeps its evidence, on
 lanes that already existed or were extended here:
@@ -196,9 +196,9 @@ lanes that already existed or were extended here:
 |---|---|---|
 | Native-AOT compile (`src/**`, `eng/**`, build props, solution) | `ci.yml` `aot-build` | pre-merge, on the batch that lands |
 | Boundary detector correctness (all clean and injected-rootfs fixtures) | `pr-gate.yml` | every push on every pull request |
-| Final rootfs — generic AOT, Lambda AOT | `nightly-container-build.yml` | daily, on the exact digest, before its manifest publishes |
-| Final rootfs — Azure Functions AOT | `nightly-container-build.yml` `verify-functions-aot` (added with this change) | daily, verification only; publishes nothing |
-| Final rootfs — every published variant | `deploy.yml`, `deploy-platform-images.yml`, `release-bundle.yml` | on the exact digest, before promotion |
+| Final rootfs â€” generic AOT, Lambda AOT | `nightly-container-build.yml` | daily, on the exact digest, before its manifest publishes |
+| Final rootfs â€” Azure Functions AOT | `nightly-container-build.yml` `verify-functions-aot` (added with this change) | daily, verification only; publishes nothing |
+| Final rootfs â€” every published variant | `deploy.yml`, `deploy-platform-images.yml`, `release-bundle.yml` | on the exact digest, before promotion |
 
 Two of those rows only became true as part of this change.
 
@@ -220,7 +220,7 @@ only lane that BUILT that variant post-merge was `deploy-platform-images.yml`
 runs without it would have widened that variant's detection window from a push
 to a week. #3204's warning that deleting the PR triggers would trade cost for
 delayed defects is honoured by keeping compile risk pre-merge, detector risk
-per-push, and rootfs risk nightly — not by removing a class of evidence.
+per-push, and rootfs risk nightly â€” not by removing a class of evidence.
 
 Expected effect: the workflow fires only on pull requests that touch an
 image-defining file. The baseline sample does not break its 40 serving-impacted
@@ -233,7 +233,7 @@ per-push builds this change removes. Promoting that candidate router as written
 would undo the narrowing, so its promotion criteria need restating before any
 enforcement decision.
 
-Exact-input build reuse (follow-on #3) is still worth doing — it is what would
+Exact-input build reuse (follow-on #3) is still worth doing â€” it is what would
 recover the remaining repeat-push cost on the GDAL worker lane, whose Trivy
 verdict depends on the vulnerability database at scan time and is never
 reusable. The observation receipt already carries per-image content digests over
@@ -262,15 +262,15 @@ Boundary runs occurred in the same span, so the directly supported result is at
 least **46 avoided workflow invocations** (95.8% of the positive
 counterfactual), not a runner-minute or billed-cost saving.
 
-| Signal | Serving baseline (2026-08-13–17) | Serving after #3512 | Observed change | GDAL current baseline for #3553 |
+| Signal | Serving baseline (2026-08-13â€“17) | Serving after #3512 | Observed change | GDAL current baseline for #3553 |
 |---|---:|---:|---:|---:|
-| Observed span | 3.40 days | 2.371 days | — | 2.371 days |
-| Runs | 100 | 2 | — | 60 |
+| Observed span | 3.40 days | 2.371 days | â€” | 2.371 days |
+| Runs | 100 | 2 | â€” | 60 |
 | Runs/day | 29.4 | 0.8 | **-97.1%** | 25.3 |
-| Successful runs | 19 | 2 | — | 50 |
-| Cancelled runs | 80 | 0 | — | 9 |
-| Successful workflow elapsed minutes | 2667 | 101.8 | — | 803.9 |
-| Successful workflow elapsed minutes/day | 785 | 42.9 | — | 339.1 |
+| Successful runs | 19 | 2 | â€” | 50 |
+| Cancelled runs | 80 | 0 | â€” | 9 |
+| Successful workflow elapsed minutes | 2667 | 101.8 | â€” | 803.9 |
+| Successful workflow elapsed minutes/day | 785 | 42.9 | â€” | 339.1 |
 
 The elapsed-minute rows describe workflow critical-path time only. They are not
 runner consumption or cost: after #3512 the three build variants run in parallel,
@@ -293,13 +293,13 @@ which is why both the run count and exact observed span are recorded.
 |---|---|---|---|
 | `pr-gate-impact-observe.yml` | PR Gate Impact Observation | `workflow_run` [PR Gate], `workflow_dispatch` | Trusted default-branch, read-only classification of the exact gate-time diff. Retains bounded docs-only/full receipts and validates PR Gate build metadata plus exact payload artifact identity without downloading or executing the payload. |
 | `native-image-impact-observe.yml` | Native Image Impact Observation | `workflow_run` [PR Gate], `workflow_dispatch` | Read-only comparison of graph-derived image inputs with legacy path triggers. The Serving/GDAL image workflows stay authoritative in observe mode. |
-| `server-test-prebuild-observe.yml` | Server Test Prebuild Observation | `workflow_run` [Review Gate Attestation] (`branches-ignore: trunk`), `workflow_dispatch` | Trusted default-branch read-only shadow producer for #3226. Only `pull_request_target` Review Gate runs are usable, and those are the only ones whose run record carries a PR head branch — hence the `branches-ignore` filter, which drops the `issue_comment`/bridge runs that used to materialise as skipped runs. |
+| `server-test-prebuild-observe.yml` | Server Test Prebuild Observation | `workflow_run` [Review Gate Attestation] (`branches-ignore: trunk`), `workflow_dispatch` | Trusted default-branch read-only shadow producer for #3226. Only `pull_request_target` Review Gate runs are usable, and those are the only ones whose run record carries a PR head branch â€” hence the `branches-ignore` filter, which drops the `issue_comment`/bridge runs that used to materialise as skipped runs. |
 | `server-test-prebuild-parity.yml` | Server Test Prebuild Parity Observation | `workflow_run` [PR Gate], `workflow_dispatch` | Read-only post-verification shadow: does one already-ready exact prebuild produce the same bounded proof results as an independent restore/build? Publishes no status. |
 | `server-test-prebuild-evidence-ledger.yml` | Server Test Prebuild Evidence Ledger | daily `schedule`, `workflow_dispatch` | Audits retained prebuild parity receipts. |
 | `review-first-evidence-ledger.yml` | Review-first Evidence Ledger | daily `schedule`, `workflow_dispatch` | Read-only audit of retained Review Gate observation receipts; replays the production dispatch helper, deduplicates exact heads, separates policy cohorts, and reports promotion readiness. Cannot change mode, status, labels, runs, train state, or merge state. |
 | `impact-routing-evidence-ledger.yml` | Impact Routing Evidence Ledger | daily `schedule`, `workflow_dispatch` | Read-only audit of attempt-bound PR Gate and native-image impact receipts; reconciles native decisions with successful exact-head Serving/GDAL image outcomes. |
 | `normalize-derived-artifacts-consumer.yml` | Derived Artifact Normalization Consumer | `workflow_run` [Derived Artifact Normalization] | Default-branch validator for the untrusted producer's artifact. Observe mode deliberately holds no `contents: write` and no write secret. |
-| `stranded-merge-detector.yml` | Stranded Merge Detector | weekly `schedule`, `workflow_dispatch`, `workflow_call` | Read-only sweep for payload that never reached the default branch (#3248, #3316). Merged PRs whose merge commit is not an ancestor are adjudicated by **content** (patch identity, then blob equality, then presence of the PR's added lines) and split into `stranded` / `edits-missing` / `superseded` / `landed` / `indeterminate`; open PRs whose base has already landed or been deleted are reported as `needs-retarget` with the `gh pr edit` remedy. Files or updates a single tracking issue only on actionable findings. Reusable via `workflow_call` (`default-branch`, `limit`, `open-limit`, `tooling-ref`); **no external consumer yet** — honua-sdk-js runs its own `scripts/stranded-merge-detector.mjs`, so those inputs are exercised only from this repo. JSON output is `schemaVersion: 2`. |
+| `stranded-merge-detector.yml` | Stranded Merge Detector | weekly `schedule`, `workflow_dispatch`, `workflow_call` | Read-only sweep for payload that never reached the default branch (#3248, #3316). Merged PRs whose merge commit is not an ancestor are adjudicated by **content** (patch identity, then blob equality, then presence of the PR's added lines) and split into `stranded` / `edits-missing` / `superseded` / `landed` / `indeterminate`; open PRs whose base has already landed or been deleted are reported as `needs-retarget` with the `gh pr edit` remedy. Files or updates a single tracking issue only on actionable findings. Reusable via `workflow_call` (`default-branch`, `limit`, `open-limit`, `tooling-ref`); **no external consumer yet** â€” honua-sdk-js runs its own `scripts/stranded-merge-detector.mjs`, so those inputs are exercised only from this repo. JSON output is `schemaVersion: 2`. |
 
 ## Nightly and scheduled test lanes
 
@@ -308,15 +308,15 @@ which is why both the run count and exact observed span are recorded.
 | `docs-quickstart-nightly.yml` | Docs Quickstart Validation | daily `schedule` (10:30 UTC), `workflow_dispatch` | Advisory, non-required execution of the primary documented Docker Compose quickstart. Validation failures fail the workflow as an early-warning signal, and bounded validation evidence is uploaded for 14 days. |
 | `validated-examples-nightly.yml` | Validated examples (advisory) | daily `schedule` (10:37 UTC), `workflow_dispatch` | Executes the STAC operations, mobile/offline, and local geoprocessing shipped examples against isolated, locally built candidate stacks. Verifies the checked-in example inventory first and retains per-scenario logs for 14 days. Advisory in wave 1; the manifest records scheduled coverage without claiming an unobserved pass. |
 | `gp-buffer-canary.yml` | GP geometry.buffer Canary | six-hour `schedule` (`:17`), `workflow_dispatch` | Executes synchronous `geometry.buffer`, retains an output-digest receipt, and records the latest seven scheduled conclusions in a machine-readable burn-in streak receipt. |
-| `gp-qualification-harness-checks.yml` | GP Qualification Harness Checks | path-filtered `pull_request`, `workflow_dispatch` | Checks Bash syntax and Python harness regressions, including timeout failure isolation. Mock-only harness verification; does not qualify a deployment. |
+| `gp-qualification-harness-checks.yml` | GP Qualification Harness Checks | path-filtered `pull_request`, `workflow_dispatch` | Checks Bash syntax and Python failure-isolation regressions. An explicit dispatch can build the matching canonical worker into a runner-local registry and rehearse one actual staged-store outage; its receipt is qualification:false and does not qualify a release. |
 | `gp-resilience-qualification.yml` | GP Resilience Qualification | `workflow_dispatch` | Exact-digest poison, crash/output, lease, backlog, TTL, retry, quota/isolation, output-cap, and sustained-concurrency qualification with finding-preserving receipts. |
 | `gp-release-evidence.yml` | GP Release Evidence | `workflow_dispatch` | Verifies matching executed lifecycle/resilience run heads and receipt identities, then publishes a content-hashed immutable release asset containing both summaries and every scenario receipt. |
 | `flaky-detection.yml` | Flaky Test Detection | daily `schedule` (05:00 UTC), `workflow_dispatch` | Bounded, **incremental** flake hunt (ADR-0037). Each run takes a rotating window of `.github/ci-shards.json` shards (default 6), re-runs each shard's own filter under its own inner budget via `scripts/ci/run-server-test-shard.sh` (default 2 iterations), and reports per-shard flake candidates through `scripts/ci/summarize-flaky-detection.py`. The whole shard set is covered every `ceil(shards / shard_count)` days. Reports only; it never gates. |
-| `nightly-slow-tier.yml` | Nightly Slow Tier (Emulator) | daily `schedule` (04:00 UTC), `workflow_dispatch` | `--filter "Tier=Slow&Category=Emulator"` across `Honua.Server.Tests`, `Honua.Db.Postgres.Tests`, `Honua.Core.Tests` — `[EmulatorTest]` only. LocalStack + Azurite come from `EmulatorFixture` (Testcontainers); Postgres from a service container. Asserts `HONUA_TEST_DB_URL` before dispatch. |
+| `nightly-slow-tier.yml` | Nightly Slow Tier (Emulator) | daily `schedule` (04:00 UTC), `workflow_dispatch` | `--filter "Tier=Slow&Category=Emulator"` across `Honua.Server.Tests`, `Honua.Db.Postgres.Tests`, `Honua.Core.Tests` â€” `[EmulatorTest]` only. LocalStack + Azurite come from `EmulatorFixture` (Testcontainers); Postgres from a service container. Asserts `HONUA_TEST_DB_URL` before dispatch. |
 | `load-soak-nightly.yml` | Load/Soak Nightly | daily `schedule` (03:00 UTC), `workflow_dispatch` | Scheduled load/soak tests. |
 | `capacity-soak-candidate.yml` | capacity-soak-candidate | `workflow_dispatch`, `workflow_call` | Produces the attested, candidate-bound capacity/SLO receipt the release train requires (honua-io/honua-release#235). Runs the frozen lock's `soak` profile on the local-docker substrate against an exact `candidate_sha`, measures the locked signals, attests the receipt and publishes it at a commit-pinned raw URL. See docs/ops/capacity-soak-receipt.md. |
 | `security-nightly.yml` | Security Nightly | daily `schedule` (02:00 UTC), `workflow_dispatch` | Consolidated NuGet vulnerability scan, Trivy filesystem scan, and container security scan (Hadolint, Trivy, structure tests, runtime constraints). |
-| `nightly-container-build.yml` | Nightly Container Build | daily `schedule` (06:00 UTC), `workflow_dispatch` | Scheduled container build. Publishes the generic AOT, Lambda AOT, and JIT images, boundary-verifying each AOT digest before its manifest. `verify-functions-aot` additionally builds and boundary-verifies the Azure Functions AOT rootfs and publishes nothing — it is the daily source-driven proof for the one production variant `deploy-platform-images.yml` alone publishes (#3204). |
+| `nightly-container-build.yml` | Nightly Container Build | daily `schedule` (06:00 UTC), `workflow_dispatch` | Scheduled container build. Publishes the generic AOT, Lambda AOT, and JIT images, boundary-verifying each AOT digest before its manifest. `verify-functions-aot` additionally builds and boundary-verifies the Azure Functions AOT rootfs and publishes nothing â€” it is the daily source-driven proof for the one production variant `deploy-platform-images.yml` alone publishes (#3204). |
 | `nightly-migration-evidence.yml` | Nightly Migration Evidence Pack | daily `schedule` (07:15 UTC), `workflow_dispatch` | Drives the fixture-based GeoServer migration apply path end-to-end (#1015) and uploads the deterministic evidence pack. |
 | `protocol-harness-certification.yml` | Protocol Harness Certification | daily `schedule` (10:41 UTC), `workflow_dispatch` | Executes the exact governed server integration-test roster outside PR CI. Separately checks out the producer contract and candidate source, binds a SHA-labeled immutable image identity, rejects incomplete TRX, and emits digest-bound operation receipts with exact `test_ids` for nightly/release aggregation. |
 | `provider-http-smoke.yml` | Provider HTTP-Stack Smoke | daily `schedule` (06:30 UTC), `workflow_dispatch` | Interface-level smoke that boots a real host per secondary provider (DuckDB in-process; MySQL and SQL Server via Testcontainers) over FeatureServer/OGC API Features/OData/tiles, plus the gated Oracle real-database lane (#2947). |
@@ -326,12 +326,12 @@ which is why both the run count and exact observed span are recorded.
 | `cross-server-consume-nightly.yml` | Cross-Server Consume Nightly | daily `schedule` (07:00 UTC), `workflow_dispatch` | Honua-as-client WMS/WFS/WMTS reads against reference GeoServer and MapServer containers; best-effort commits the refreshed gap report. |
 | `client-interop-nightly.yml` | Real-Client Interop Matrix | daily `schedule` (07:00 UTC), `workflow_dispatch` | `docker/client-compat` matrix (`gdal`, `pyqgis`, `openlayers`, `cesium`, `arcgis-stub`); diffs per-lane `.cert.json` envelopes against `tests/baselines/client-compat/` and fails strict mode on any baseline regression. Promote to PR-blocking only after 30 consecutive nightly passes (#806). |
 | `multidim-raster-fixture.yml` | Real Multidimensional Raster Fixture | daily `schedule` (08:15 UTC), `workflow_dispatch` | Composes the pinned LocalStack/S3 object store, real NetCDF seed, native GDAL worker, and server; verifies production metadata scan, derived Zarr objects, and distinct selected-time ImageServer PNG slices. Uploads the verifier log and failure-only composition logs as nightly evidence. |
-| `client-compat-smoke-nightly.yml` | Generic Client Compatibility Smoke | daily `schedule` (07:15 UTC), `workflow_dispatch` | Full CERT-\* matrix (18 cases × 4 protocol lanes) with per-protocol `.cert.json` envelopes, `overall-summary.json`, transcripts, and `pack/`. |
+| `client-compat-smoke-nightly.yml` | Generic Client Compatibility Smoke | daily `schedule` (07:15 UTC), `workflow_dispatch` | Full CERT-\* matrix (18 cases Ã— 4 protocol lanes) with per-protocol `.cert.json` envelopes, `overall-summary.json`, transcripts, and `pack/`. |
 | `pyqgis-client-compat-nightly.yml` | PyQGIS Client Compatibility Certification | daily `schedule` (07:30 UTC), `workflow_dispatch` | PyQGIS desktop compatibility using real QGIS providers against `client-compat-v1.sql`. |
 | `gdal-driver-e2e.yml` | GDAL Driver End-to-End | daily `schedule` (07:45 UTC), `workflow_dispatch` | `ogrinfo` + `ogr2ogr` against honua-server via GDAL's `OAPIF:` stand-in driver (ADR-0034). |
 | `routing-nightly.yml` | Routing Nightly (pgRouting) | weekly `schedule` (Sun 05:00 UTC), `workflow_dispatch` | `Category=Routing` with `HONUA_ROUTING_TEST=1`; `PgRoutingFixture` manages its own `pgrouting/pgrouting` Testcontainers image. |
 | `warehouse-nightly.yml` | Warehouse Providers Nightly (Creds-Gated) | weekly `schedule` (Sun 06:00 UTC), `workflow_dispatch` | Matrix over Snowflake/Redshift/Databricks/SqlServer test projects using optional repository secrets; a missing secret reads as "not configured", not "absent from CI". |
-| `sdk-server-compatibility.yml` | SDK Server Compatibility | weekly `schedule` (Mon 08:35 UTC), `workflow_dispatch` | Manifest-driven last-3-servers × last-3-SDK-sets matrix from `docs/developer/sdk-compatibility-versions.json`; runs SDK sources from an isolated `$RUNNER_TEMP` copy and publishes `sdk-compatibility-matrix-<run-id>`. |
+| `sdk-server-compatibility.yml` | SDK Server Compatibility | weekly `schedule` (Mon 08:35 UTC), `workflow_dispatch` | Manifest-driven last-3-servers Ã— last-3-SDK-sets matrix from `docs/developer/sdk-compatibility-versions.json`; runs SDK sources from an isolated `$RUNNER_TEMP` copy and publishes `sdk-compatibility-matrix-<run-id>`. |
 | `codeql.yml` | CodeQL | path-filtered `pull_request` (base `trunk`), weekly `schedule` (Mon 00:00 UTC), `workflow_dispatch` | Two lanes in one workflow, and the **only** CodeQL security analysis this repository has. On `pull_request` it uses C# `build-mode: none` extraction with the default high-precision suite to stay on the PR critical path; on the weekly schedule it performs a full instrumented build with `security-extended` to catch lower-confidence findings and dependency churn. |
 | `geoservices-import-fidelity-external.yml` | GeoServices Import Fidelity (External) | `workflow_dispatch` | External parity against live Esri services; deliberately on-demand because upstream data drifts. Enforces the correctness regression gate and the perf-parity latency gate (#1249). |
 
@@ -373,14 +373,14 @@ which is why both the run count and exact observed span are recorded.
 | `release-migration-performance.yml` | Release Migration Performance Evidence | `release`, daily `schedule`, `workflow_dispatch` | Runs the migration performance harness against the fixture-driven baseline (#1033) and uploads the website-linkable evidence artifact. |
 | `geobench-release-trigger.yml` | Trigger Geobench Release Benchmarks | `release`, `workflow_dispatch` | `repository_dispatch` to the geobench repo on every published release. |
 | `cloud-post-apply-validation.yml` | Cloud Post-Apply Validation | `workflow_call`, `workflow_dispatch` | Post-deploy validation. Pass `base_url` for a deployed environment, or `local_target: true` to boot a real Honua.Server + PostGIS on the runner. Ends in a counts tripwire so an all-skipped `Category=Cloud` run fails instead of reporting green (#4414). |
-| `cloud-post-apply-validation-nightly.yml` | Cloud Post-Apply Validation (nightly) | daily `schedule` (03:00 UTC), `workflow_dispatch` | The caller for `cloud-post-apply-validation.yml` (#4414). Nightly it validates the post-apply contract — including the staged-import row count — against a local target; dispatch with `base_url` to validate a deployed environment. Free; no cloud account. |
+| `cloud-post-apply-validation-nightly.yml` | Cloud Post-Apply Validation (nightly) | daily `schedule` (03:00 UTC), `workflow_dispatch` | The caller for `cloud-post-apply-validation.yml` (#4414). Nightly it validates the post-apply contract â€” including the staged-import row count â€” against a local target; dispatch with `base_url` to validate a deployed environment. Free; no cloud account. |
 | `notify-evidence.yml` | Notify honua-evidence | `push` (trunk) | `repository_dispatch` (`producer-updated`) to `honua-io/honua-evidence` when the capability-matrix/keys snapshots or CITE status change, so aggregation does not wait for its daily fallback. |
 
 ## Maintenance, reusable, and manual benchmarks
 
 | Workflow file | Name | Triggers | Notes |
 |---|---|---|---|
-| `generated-files-on-trunk.yml` | Regenerate Generated Files on Trunk | `push` (trunk) | Regenerates the six repository-state projections, validates authored inputs against them, then — never writing trunk directly — commits any diff as `github-actions[bot]` on a fixed automation branch and opens or refreshes a PR from it into trunk, landing through the ordinary PR Gate + Review Gate + per-PR lander path. No diff means no commit or PR activity. See [inventory and dry run](generated-files-on-trunk.md). |
+| `generated-files-on-trunk.yml` | Regenerate Generated Files on Trunk | `push` (trunk) | Regenerates the six repository-state projections, validates authored inputs against them, then â€” never writing trunk directly â€” commits any diff as `github-actions[bot]` on a fixed automation branch and opens or refreshes a PR from it into trunk, landing through the ordinary PR Gate + Review Gate + per-PR lander path. No diff means no commit or PR activity. See [inventory and dry run](generated-files-on-trunk.md). |
 | `trunk-sanity.yml` | Trunk Sanity | `push` (trunk), `workflow_dispatch` | Cheap post-merge restore/build only; heavy CI does not run on merge-to-trunk pushes. |
 | `label-sync.yml` | Capability Label Sync | `push` (trunk), `workflow_dispatch` | Creates/updates `cap/<category>` labels from the canonical category list; never deletes or renames (#2896). |
 | `reusable-sdk-pr-gate.yml` | SDK PR Gate | `workflow_call` | Reusable gate consumed by `honua-sdk-js`, `honua-sdk-dotnet`, and `honua-sdk-python`. |
@@ -400,7 +400,7 @@ which is why both the run count and exact observed span are recorded.
 ## Historical change log
 
 The sections below record why earlier workflow changes were made. They are
-history, not a description of the current tree — the tables above are.
+history, not a description of the current tree â€” the tables above are.
 
 ### Changes Made in This Audit (Ticket #485)
 
@@ -420,11 +420,11 @@ Additionally, `cite-conformance.yml` (already schedule-only) had dead PR comment
 
 #### CodeQL moved off PR path
 
-`codeql.yml` no longer triggers on `pull_request` or merge-to-trunk push. It runs on a weekly schedule. This avoids adding a slow, non-deterministic security scan to routine PR or merge cycles. **(Superseded: a path-filtered `pull_request` lane using `build-mode: none` was later reinstated and is now the repository's only PR-time CodeQL security analysis — see the table above.)**
+`codeql.yml` no longer triggers on `pull_request` or merge-to-trunk push. It runs on a weekly schedule. This avoids adding a slow, non-deterministic security scan to routine PR or merge cycles. **(Superseded: a path-filtered `pull_request` lane using `build-mode: none` was later reinstated and is now the repository's only PR-time CodeQL security analysis â€” see the table above.)**
 
 #### PR template and validation redesigned
 
-The PR template now includes explicit sections for gate impact, docs/contract impact, release/deploy impact, and breaking changes. The `pr-template-check` job at the top of `ci.yml` validates these sections directly and replaced the previous standalone `pr-validation.yml` workflow. (It no longer gates the downstream graph — `pr-readiness` was decoupled from it — and since `ci.yml` lost its `pull_request` trigger both jobs short-circuit to success on every event that still reaches them.)
+The PR template now includes explicit sections for gate impact, docs/contract impact, release/deploy impact, and breaking changes. The `pr-template-check` job at the top of `ci.yml` validates these sections directly and replaced the previous standalone `pr-validation.yml` workflow. (It no longer gates the downstream graph â€” `pr-readiness` was decoupled from it â€” and since `ci.yml` lost its `pull_request` trigger both jobs short-circuit to success on every event that still reaches them.)
 
 #### Issue templates redesigned
 
@@ -438,11 +438,11 @@ All issue forms now require acceptance criteria, affected repos, gate-tier impac
 
 Five composite actions were added to `.github/actions/` for shared CI setup and evidence handling:
 
-- `setup-dotnet-ci` — .NET SDK, NuGet cache *(active)*
-- `setup-node-ci` — Node.js setup, npm cache *(future: SDK workflows)*
-- `setup-python-ci` — Python setup, pip cache *(future: conformance/script workflows)*
-- `upload-ci-evidence` — artifact upload with standard naming and tier-based retention *(active)*
-- `run-conformance-stack` — Docker bootstrap/teardown for CITE workflows *(future: conformance workflows)*
+- `setup-dotnet-ci` â€” .NET SDK, NuGet cache *(active)*
+- `setup-node-ci` â€” Node.js setup, npm cache *(future: SDK workflows)*
+- `setup-python-ci` â€” Python setup, pip cache *(future: conformance/script workflows)*
+- `upload-ci-evidence` â€” artifact upload with standard naming and tier-based retention *(active)*
+- `run-conformance-stack` â€” Docker bootstrap/teardown for CITE workflows *(future: conformance workflows)*
 
 ### Changes Made in Workflow Refactor (2026-04-25)
 

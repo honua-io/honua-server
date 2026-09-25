@@ -29,6 +29,9 @@ case "${lane}" in
   output-store)
     declared_scenarios=(topology output-store-attestation cleanup)
     ;;
+  output-store-outage)
+    declared_scenarios=(topology output-write-failure cleanup)
+    ;;
   crash-boundaries)
     declared_scenarios=(topology)
     for boundary in output-bytes-written-unpublished artifact-reference-published-terminal-cas-pending terminal-committed-registration-pending; do
@@ -57,7 +60,7 @@ case "${lane}" in
     declared_scenarios=(assertion-failure follow-up cleanup)
     ;;
   *)
-    echo "HONUA_GP_LANE must be output-store, output-store-dr, crash-boundaries, lifecycle, resilience, or self-test" >&2
+    echo "HONUA_GP_LANE must be output-store, output-store-outage, output-store-dr, crash-boundaries, lifecycle, resilience, or self-test" >&2
     exit 2
     ;;
 esac
@@ -489,13 +492,13 @@ cancel_barrier_job() {
 }
 
 # honua-server#4401: the digest below proves the results document is non-empty and stable,
-# not that it is CORRECT — a numerically wrong buffer had the same sha shape as a right one.
+# not that it is CORRECT â€” a numerically wrong buffer had the same sha shape as a right one.
 # verify_buffer_semantics adds the missing half: it decodes the produced GeoJSON and checks
 # the properties a buffer of the harness's fixed input point must have.
 #
 # The input is a Point at (-122.4194, 37.7749) buffered by 500 (see $payload). The checks are
-# deliberately unit-agnostic — the harness runs against digest-pinned images whose CRS handling
-# is what is under test — so they assert shape rather than an absolute radius:
+# deliberately unit-agnostic â€” the harness runs against digest-pinned images whose CRS handling
+# is what is under test â€” so they assert shape rather than an absolute radius:
 #   * the output geometry is a Polygon, i.e. the operation transformed the input rather than
 #     echoing it back;
 #   * its ring is closed and has enough vertices to be a real buffer, not a degenerate box;
@@ -574,7 +577,7 @@ result_digest() {
 
   # #4401: a sha over a non-empty document passed for a numerically wrong output. The
   # semantic oracle below only describes the fixed geometry.buffer payload, so it applies
-  # to jobs that actually submitted geometry.buffer — read back from the recorded process,
+  # to jobs that actually submitted geometry.buffer â€” read back from the recorded process,
   # not guessed from the scenario name.
   process="$(job_process_of "$1")"
   if [[ "${HONUA_GP_VERIFY_BUFFER_SEMANTICS:-1}" == "1" && "${process}" == "geometry.buffer" ]]; then
@@ -793,8 +796,8 @@ run_output_store_attestation() {
     write_receipt "${scenario}" fail "FINDING: staged output checksum changed across replacement" "${job}" "${state}"; return 1; }
   # Staged artifact links are built from the requesting host's own base URL, so
   # the same durable descriptor renders a different origin on the peer. Normalize
-  # the origin away and compare everything else — ids, kinds, titles, content
-  # types and the artifact route path — exactly.
+  # the origin away and compare everything else â€” ids, kinds, titles, content
+  # types and the artifact route path â€” exactly.
   [[ "$(normalized_descriptor "${descriptor_before}" "${base_url}")" \
      == "$(normalized_descriptor "${descriptor_after}" "${peer_url}")" ]] || {
     write_receipt "${scenario}" fail "FINDING: staged output descriptor changed across replacement" "${job}" "${state}"; return 1; }
@@ -1104,21 +1107,10 @@ run_stale_lease() {
 }
 
 run_output_write_failure() {
-  local scenario=output-write-failure job terminal state digest
-  job="$(submit_async gdal.ogr2ogr "${native_payload}")" || return 1
-  wait_running "${job}" || { write_receipt "${scenario}" fail "job never ran" "${job}"; return 1; }
-  compose pause worker >/dev/null
-  if result_digest "${job}" >/dev/null 2>&1; then
-    compose unpause worker >/dev/null
-    write_receipt "${scenario}" fail "FINDING: output was published before the outage barrier" "${job}" running
-    return 1
-  fi
-  compose stop redis >/dev/null; compose unpause worker >/dev/null; sleep 2; compose start redis >/dev/null
-  terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: output-store outage lost terminal state" "${job}"; return 1; }
-  state="$(jq -r .status <<<"${terminal}")"; digest="$(result_digest "${job}" 2>/dev/null || true)"
-  if [[ "${state}" == successful && -n "${digest}" ]]; then write_receipt "${scenario}" pass "recovered after output-store outage" "${job}" "${state}" "${digest}"; return; fi
-  [[ "${state}" == failed && -z "${digest}" ]] || { write_receipt "${scenario}" fail "FINDING: partial/orphaned output after store outage" "${job}" "${state}" "${digest}"; return 1; }
-  write_receipt "${scenario}" pass "bounded failure without exposed output" "${job}" "${state}"
+  # Reuse the native staged-byte fence and actual store outage. Stopping Redis
+  # cannot establish output-store durability, even if a job later succeeds.
+  source "${repo_root}/scripts/qualification/gp-store-crash.sh"
+  run_store_crash_boundary output-bytes-written-unpublished store
 }
 
 run_backlog() {
@@ -1356,7 +1348,9 @@ else
     fill_missing_receipts
   }
   if [[ -z "${preflight_failure}" ]]; then
-    if [[ "${lane}" == output-store || "${lane}" == output-store-dr ]]; then
+    if [[ "${lane}" == output-store-outage ]]; then
+      run_scenario output-write-failure run_output_write_failure || failures=$((failures + 1))
+    elif [[ "${lane}" == output-store || "${lane}" == output-store-dr ]]; then
       run_scenario output-store-attestation run_output_store_attestation || failures=$((failures + 1))
       if [[ "${lane}" == output-store-dr ]]; then
         run_scenario output-store-dr run_output_store_attestation output-store-dr || failures=$((failures + 1))
