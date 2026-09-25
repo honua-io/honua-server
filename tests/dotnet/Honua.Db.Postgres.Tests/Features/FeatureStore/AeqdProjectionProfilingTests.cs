@@ -48,6 +48,29 @@ public sealed class AeqdProjectionProfilingTests(PostgresFixture fixture, ITestO
                 MaxClusters = 100000
             });
             await ExplainAsync("current generated cluster query", query.Sql, [1, .. query.WhereParameters]);
+            var candidateSource = $"""
+                WITH filtered AS MATERIALIZED (
+                    SELECT objectid, attributes, geometry AS geom FROM {schema}.features
+                    WHERE layer_id = 1 AND geometry IS NOT NULL LIMIT 100001
+                ), {AeqdPointBatchCandidateTests.CandidateCtes}
+                """;
+            await ExplainAsync("candidate point-batched cluster query", candidateSource + """
+                , src AS (
+                    SELECT objectid, attributes, geom,
+                        ST_ClusterDBSCAN(geom_m, eps => 1000, minpoints => 5)
+                            OVER (ORDER BY source_ordinal) AS cluster_id FROM projected
+                )
+                SELECT objectid AS "objectId", cluster_id::bigint AS "clusterId", attributes,
+                    ST_AsGeoJSON(ST_Transform(geom, 4326)) AS geometry
+                FROM src ORDER BY cluster_id NULLS LAST, "objectId"
+                """);
+            await using var connection = await fixture.DataSource.OpenConnectionAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = candidateSource + " SELECT MAX(cardinality(source_ordinals)), SUM(cardinality(source_ordinals))::bigint FROM point_batches";
+            await using var reader = await command.ExecuteReaderAsync();
+            (await reader.ReadAsync()).Should().BeTrue();
+            reader.GetInt32(0).Should().Be(256);
+            reader.GetInt64(1).Should().Be(100000);
         }
         finally
         {
