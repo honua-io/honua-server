@@ -6,6 +6,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { deserialize } from "flatgeobuf/lib/mjs/geojson.js";
 import { PMTiles } from "pmtiles";
+import { flatGeobufMetadata, pmtilesMetadata } from "./artifact-metadata.mjs";
 
 const require = createRequire(import.meta.url);
 
@@ -45,18 +46,20 @@ class LocalFileSource {
 
 async function validateFlatGeobuf(path) {
   const bytes = new Uint8Array(readFileSync(path));
-  let count = 0;
-  for await (const feature of deserialize(bytes)) {
+  const features = [];
+  let header;
+  for await (const feature of deserialize(bytes, undefined, value => { header = value; })) {
     if (!feature?.geometry) throw new Error("flatgeobuf-js returned a feature without geometry");
-    count += 1;
+    features.push(feature);
   }
-  if (count < 1) throw new Error("flatgeobuf-js returned zero features");
+  if (features.length < 1) throw new Error("flatgeobuf-js returned zero features");
   return {
     surface: "flatgeobuf",
     operation: "feature-read",
     canonical_client: "flatgeobuf-js",
     client_version: packageVersion("flatgeobuf"),
     lane: "node-flatgeobuf",
+    observed_metadata: flatGeobufMetadata(features, header),
   };
 }
 
@@ -79,6 +82,7 @@ async function validatePmtiles(path) {
     canonical_client: "PMTiles-browser-viewer",
     client_version: packageVersion("pmtiles"),
     lane: "node-pmtiles",
+    observed_metadata: pmtilesMetadata(header),
   };
 }
 
