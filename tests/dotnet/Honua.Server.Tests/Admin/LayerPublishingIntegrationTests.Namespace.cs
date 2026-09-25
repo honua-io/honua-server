@@ -158,7 +158,10 @@ public sealed partial class LayerPublishingIntegrationTests
     public async Task PublishNamespace_OmittedOrNullPreservesUnscopedPublication(bool omit)
     {
         var request = JsonSerializer.SerializeToNode(NamespaceRequest(null), _jsonOptions)!.AsObject();
-        if (omit) request.Remove("namespace");
+        if (omit)
+        {
+            request.Remove("namespace");
+        }
         using var response = await _client.PostAsync($"/api/v1/admin/connections/{_connectionId}/layers", JsonContent.Create(request));
         var body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.Created, body);

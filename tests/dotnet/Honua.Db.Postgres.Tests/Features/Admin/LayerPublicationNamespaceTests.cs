@@ -21,7 +21,7 @@ public sealed class LayerPublicationNamespaceTests
     [InlineData("māp")]
     [InlineData("maps\n")]
     [InlineData("maps")]
-    public async Task InvalidNamespace_IsRejectedBeforeDiscoveryOrGraphWrites(string publicationNamespace)
+    public async Task InvalidNamespaceOrMissingTenant_IsRejectedBeforeDiscoveryOrGraphWrites(string publicationNamespace)
     {
         var discovery = new Mock<ITableDiscoveryService>(MockBehavior.Strict);
         var store = new Mock<IMetadataV2GraphStore>(MockBehavior.Strict);
