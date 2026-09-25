@@ -1106,7 +1106,11 @@
       "operation": "catalog-landing",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (revision c9f739e6d): Pro has a native STAC surface and reads Honua's catalog root through it. Command Search offers Explore STAC, Add/Edit/New STAC Connection, STAC Connection and STAC Connection File. New STAC Connection was given https://host.docker.internal:18443/stac; Pro accepted it, created a STACs container in the Catalog pane holding 'Honua STAC.astac', and opening that launched the Explore STAC pane headed 'Honua STAC.astac : https://host.docker.int...' with Parameters and Results tabs and a populated collection search. The service's landing document reports id 'honua-stac-catalog', title 'Honua STAC Catalog', type Catalog, stac_version 1.0.0, 14 conformsTo classes and 17 links.",
+          "previous_exclusion": {
+            "state": "not-started"
+          }
         },
         "arcpy": {
           "state": "pass",
@@ -1136,7 +1140,11 @@
       "operation": "collections",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (revision c9f739e6d): Pro enumerated the catalog's collections and the list matches the service id for id. The Explore STAC pane's Search Collections list shows, in order: 0, 10, 11, 12, 2000, 2001, 2002, 3000. An independent GET of /stac/collections returns ['0','10','11','12','2000','2001','2002','3000'] - eight collections, identical ids in identical order. Compared id by id rather than by count, so a client listing a different eight would not pass.",
+          "previous_exclusion": {
+            "state": "not-started"
+          }
         },
         "arcpy": {
           "state": "pass",
