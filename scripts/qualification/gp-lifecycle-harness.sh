@@ -29,6 +29,9 @@ case "${lane}" in
   output-store)
     declared_scenarios=(topology output-store-attestation cleanup)
     ;;
+  output-store-outage)
+    declared_scenarios=(topology output-write-failure cleanup)
+    ;;
   crash-boundaries)
     declared_scenarios=(topology)
     for boundary in output-bytes-written-unpublished artifact-reference-published-terminal-cas-pending terminal-committed-registration-pending; do
@@ -57,7 +60,7 @@ case "${lane}" in
     declared_scenarios=(assertion-failure follow-up cleanup)
     ;;
   *)
-    echo "HONUA_GP_LANE must be output-store, output-store-dr, crash-boundaries, lifecycle, resilience, or self-test" >&2
+    echo "HONUA_GP_LANE must be output-store, output-store-outage, output-store-dr, crash-boundaries, lifecycle, resilience, or self-test" >&2
     exit 2
     ;;
 esac
@@ -1104,21 +1107,10 @@ run_stale_lease() {
 }
 
 run_output_write_failure() {
-  local scenario=output-write-failure job terminal state digest
-  job="$(submit_async gdal.ogr2ogr "${native_payload}")" || return 1
-  wait_running "${job}" || { write_receipt "${scenario}" fail "job never ran" "${job}"; return 1; }
-  compose pause worker >/dev/null
-  if result_digest "${job}" >/dev/null 2>&1; then
-    compose unpause worker >/dev/null
-    write_receipt "${scenario}" fail "FINDING: output was published before the outage barrier" "${job}" running
-    return 1
-  fi
-  compose stop redis >/dev/null; compose unpause worker >/dev/null; sleep 2; compose start redis >/dev/null
-  terminal="$(wait_terminal "${job}")" || { write_receipt "${scenario}" fail "FINDING: output-store outage lost terminal state" "${job}"; return 1; }
-  state="$(jq -r .status <<<"${terminal}")"; digest="$(result_digest "${job}" 2>/dev/null || true)"
-  if [[ "${state}" == successful && -n "${digest}" ]]; then write_receipt "${scenario}" pass "recovered after output-store outage" "${job}" "${state}" "${digest}"; return; fi
-  [[ "${state}" == failed && -z "${digest}" ]] || { write_receipt "${scenario}" fail "FINDING: partial/orphaned output after store outage" "${job}" "${state}" "${digest}"; return 1; }
-  write_receipt "${scenario}" pass "bounded failure without exposed output" "${job}" "${state}"
+  # Release native execution into an actual unavailable staged store. Stopping Redis
+  # cannot establish output-store durability, even if a job later succeeds.
+  source "${repo_root}/scripts/qualification/gp-store-crash.sh"
+  run_store_crash_boundary native-process-started store
 }
 
 run_backlog() {
@@ -1356,7 +1348,9 @@ else
     fill_missing_receipts
   }
   if [[ -z "${preflight_failure}" ]]; then
-    if [[ "${lane}" == output-store || "${lane}" == output-store-dr ]]; then
+    if [[ "${lane}" == output-store-outage ]]; then
+      run_scenario output-write-failure run_output_write_failure || failures=$((failures + 1))
+    elif [[ "${lane}" == output-store || "${lane}" == output-store-dr ]]; then
       run_scenario output-store-attestation run_output_store_attestation || failures=$((failures + 1))
       if [[ "${lane}" == output-store-dr ]]; then
         run_scenario output-store-dr run_output_store_attestation output-store-dr || failures=$((failures + 1))
