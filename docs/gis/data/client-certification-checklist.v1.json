@@ -30,9 +30,9 @@
         "fail": 2
       },
       "arcpy": {
-        "pass": 32,
+        "pass": 38,
         "n/a-no-client": 49,
-        "fail": 12,
+        "fail": 6,
         "blocked": 1
       },
       "qgis-ui": {
@@ -48,8 +48,8 @@
     },
     "overall": {
       "cells": 376,
-      "closed": 272,
-      "open": 104
+      "closed": 278,
+      "open": 98
     }
   },
   "rows": [
@@ -1415,11 +1415,15 @@
           "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904, UI-FEAT-CREATE, UI-FEAT-EDIT, UI-FEAT-DELETE: Create Features digitised objectid 2044 (POST /FeatureServer/applyEdits 200, independent query returned the point at -122.3854312, 37.7664971), the Attributes pane changed value 60->61 and back (each state re-read from the service), and table Delete + Save Edits removed 2044 (independent count back to 12)"
         },
         "arcpy": {
-          "state": "fail",
-          "evidence": "honua-esri-compat evidence/arcpy-checklist-20260923d, ArcGIS Pro 3.7.1.1904 on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02: the applyEdits round-trip against test_service/FeatureServer/0 inserts nothing - before=10 added=[] final=10, with insertRow raising SystemError '... returned NULL without setting an exception'. Root cause measured by per-field bisection: the layer declares 'tags' and 'numbers' as esriFieldTypeString and returns JSON arrays in them ([\"red\",\"blue\"], [0,1,2]). An arcpy cursor selecting either field yields zero rows with no error, so the probe builds its insert template from an empty result set. Every other field returns all 10 rows. The server itself accepts the edit over REST with a token (count 10 -> 11 -> 10), so this is the field-type contract, not the write path. Server defect, tracked as honua-server#5171. The prior pass predates the field being populated this way and is preserved below.",
+          "state": "pass",
+          "evidence": "honua-esri-compat evidence/arcpy-checklist-20260924-tls3, ArcGIS Pro 3.7.1.1904 on candidate sha256:9e0e335738da0b1c7a0321bbf305820d3e791f916349d5b928d2c1865ec9e4eb (deploymentRevision 947b2bb2b9142631815616667cf3cc2879b55156): the applyEdits round trip against test_service/FeatureServer/0 inserts and cleans up. The previous fail was a server defect, now fixed. GeoServices has no boolean type, so the fixture's 'active' column is published as esriFieldTypeSmallInteger and an arcpy.da cursor reads a true value from it as -1, the Esri convention; measured on Pro 3.7.1.1904 the cursor returns -1 and 0, never 1. Writing -1 back was refused with \"Field 'active' must be a boolean.\" while a hand-written 0 or 1 succeeded, so a client reading a row and writing it back failed. Found by bisecting the insert field by field: 'name' alone inserted, every other field inserted, 'active' did not. The server now accepts -1 and coerces an accepted numeric boolean to a real boolean before storage, so the JSONB stays typed for OGC API Features and STAC reading the same column. Verified over REST on the rebuilt candidate: active=-1 returns success and reads back as 1.",
           "previous_exclusion": {
-            "state": "pass",
-            "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260919-f-edit/certification/20260919T162438Z-desktop-arcgis-featureserver.cert.json - FS-OP-APPLY-EDITS (and ADD/UPDATE/DELETE-FEATURES, FS-OP-APPEND), ArcGIS Pro/arcpy 3.7.1.1904: da.InsertCursor over the token-bearing layer URL committed one feature (new objectid observed from a fresh ArcPy process), da.UpdateCursor.deleteRow removed it and the count returned to 10; Append added and cleanup restored the fixture; run verdict pass"
+            "state": "fail",
+            "evidence": "honua-esri-compat evidence/arcpy-checklist-20260923d, ArcGIS Pro 3.7.1.1904 on candidate sha256:2bd6d9fa692adf90e946503e4f62b2283970fc22f5422385cd58175dc8743b02: the applyEdits round-trip against test_service/FeatureServer/0 inserts nothing - before=10 added=[] final=10, with insertRow raising SystemError '... returned NULL without setting an exception'. Root cause measured by per-field bisection: the layer declares 'tags' and 'numbers' as esriFieldTypeString and returns JSON arrays in them ([\"red\",\"blue\"], [0,1,2]). An arcpy cursor selecting either field yields zero rows with no error, so the probe builds its insert template from an empty result set. Every other field returns all 10 rows. The server itself accepts the edit over REST with a token (count 10 -> 11 -> 10), so this is the field-type contract, not the write path. Server defect, tracked as honua-server#5171. The prior pass predates the field being populated this way and is preserved below.",
+            "previous_exclusion": {
+              "state": "pass",
+              "evidence": "honua-esri-compat/evidence/arcpy-client-compat-20260919-f-edit/certification/20260919T162438Z-desktop-arcgis-featureserver.cert.json - FS-OP-APPLY-EDITS (and ADD/UPDATE/DELETE-FEATURES, FS-OP-APPEND), ArcGIS Pro/arcpy 3.7.1.1904: da.InsertCursor over the token-bearing layer URL committed one feature (new objectid observed from a fresh ArcPy process), da.UpdateCursor.deleteRow removed it and the count returned to 10; Append added and cleanup restored the fixture; run verdict pass"
+            }
           }
         },
         "qgis-ui": {
