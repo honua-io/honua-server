@@ -190,7 +190,10 @@ public sealed record MigrationReconciliationGeometryProbe
     /// <summary>Number of sampled features whose geometry was present and well-formed.</summary>
     public int Valid { get; init; }
 
-    /// <summary>Valid / Sampled, or <c>1</c> when nothing was sampled.</summary>
+    /// <summary>
+    /// Valid / Sampled when no source census is available. With a census, inherited absent
+    /// source geometries are excluded from both terms. Returns <c>1</c> when the denominator is zero.
+    /// </summary>
     public double Ratio { get; init; }
 
     /// <summary>

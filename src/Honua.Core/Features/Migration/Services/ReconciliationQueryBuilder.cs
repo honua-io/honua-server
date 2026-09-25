@@ -69,7 +69,9 @@ public sealed class ReconciliationQueryBuilder(IMetadataV2GraphProvider metadata
             SpatialPredicate spatial => spatial with { Left = Map(spatial.Left), Right = Map(spatial.Right) },
             SpatialDistancePredicate distance => distance with
             {
-                Left = Map(distance.Left), Right = Map(distance.Right), Distance = Map(distance.Distance)
+                Left = Map(distance.Left),
+                Right = Map(distance.Right),
+                Distance = Map(distance.Distance)
             },
             TemporalPredicate temporal => temporal with { Left = Map(temporal.Left), Right = Map(temporal.Right) },
             ArrayPredicate array => array with { Left = Map(array.Left), Right = Map(array.Right) },

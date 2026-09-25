@@ -94,21 +94,28 @@ public sealed class ReconciliationFilterIntegrationTests(PostgresFixture fixture
             NullLogger<LayerReconciliationService>.Instance, queries);
         var layer = new LayerReconciliationLayerInput
         {
-            SourceLayerId = "source-flights", SourceLayerName = "Flights", TargetHonuaLayerId = 17,
-            SourceFeatureCount = 2, SourceExtent = BoundingBox.Create(1, 1, 2, 2, 4326),
+            SourceLayerId = "source-flights",
+            SourceLayerName = "Flights",
+            TargetHonuaLayerId = 17,
+            SourceFeatureCount = 2,
+            SourceExtent = BoundingBox.Create(1, 1, 2, 2, 4326),
             SourceFieldNames = ["objectid", "flight_date", "status"],
             FilterMirror = $"{dateField} >= DATE '2026-01-02' AND UPPER(\"StatusText\") = 'DATEOFFLIGHT'",
             FilterFieldMappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
-                ["dateofflight"] = "flight_date", ["StatusText"] = "status",
-                ["UPPER"] = "not_a_function", ["DATE"] = "not_a_keyword"
+                ["dateofflight"] = "flight_date",
+                ["StatusText"] = "status",
+                ["UPPER"] = "not_a_function",
+                ["DATE"] = "not_a_keyword"
             },
             TargetContainsOnlyImportedFeatures = dedicatedTarget
         };
 
         var artifact = await service.ReconcileAsync(new LayerReconciliationRequest
         {
-            RunId = "filter-proof", SourceKind = "arcgis-geoservices-rest", Layers = [layer]
+            RunId = "filter-proof",
+            SourceKind = "arcgis-geoservices-rest",
+            Layers = [layer]
         });
 
         var report = artifact.Layers.Should().ContainSingle().Subject;

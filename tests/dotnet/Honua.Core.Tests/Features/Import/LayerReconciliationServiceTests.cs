@@ -425,7 +425,8 @@ public sealed class LayerReconciliationServiceTests
     {
         var reader = new StubFeatureReader
         {
-            Count = 1, Extent = FeatureExtent.Create(0, 0, 1, 1, 4326),
+            Count = 1,
+            Extent = FeatureExtent.Create(0, 0, 1, 1, 4326),
             Sample = BuildSample(("OBJECTID", "NAME"), validGeometry: true, rows: 1)
         };
         var request = BuildRequest(1, BoundingBox.Create(0, 0, 1, 1, 4326), ["OBJECTID", "NAME"]);
