@@ -13,6 +13,7 @@ namespace Honua.Server.Features.Geocoding;
 [JsonSerializable(typeof(GeocodeAddressesResponse))]
 [JsonSerializable(typeof(GeocodeCandidateResponse[]))]
 [JsonSerializable(typeof(GeocodeSuggestionResponse[]))]
+[JsonSerializable(typeof(Dictionary<string, GeocodeAttributeValue>))]
 [JsonSerializable(typeof(Dictionary<string, string?>))]
 [JsonSerializable(typeof(Dictionary<string, string>))]
 internal sealed partial class GeocodingJsonContext : JsonSerializerContext

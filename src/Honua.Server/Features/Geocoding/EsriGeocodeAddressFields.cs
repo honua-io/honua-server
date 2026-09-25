@@ -20,6 +20,51 @@ namespace Honua.Server.Features.Geocoding;
 /// </remarks>
 internal static class EsriGeocodeAddressFields
 {
+    /// <summary>
+    /// Projects a candidate, stamping the output-schema fields the geocoding tools read
+    /// off the result rather than compute.
+    /// </summary>
+    /// <remarks>
+    /// <c>Loc_name</c>, <c>Status</c> and <c>Score</c> belong to a CANDIDATE, not to a
+    /// reverse-geocode address: the live World locator returns all three from
+    /// findAddressCandidates and none of them from reverseGeocode, so only this overload
+    /// adds them. <c>Status</c> is derived rather than asserted - the batch path knows
+    /// whether a record produced a location, and findAddressCandidates only ever returns
+    /// candidates it matched, so "U" is reached exactly by a no-match slot.
+    /// </remarks>
+    internal static IReadOnlyDictionary<string, GeocodeAttributeValue> ApplyCandidate(
+        string? matchedAddress,
+        string? addressType,
+        StructuredAddress? structured,
+        IReadOnlyDictionary<string, string?> providerAttributes,
+        double score,
+        string? locatorName,
+        bool isMatch)
+    {
+        var components = Apply(matchedAddress, addressType, structured, providerAttributes);
+        var attributes = new Dictionary<string, GeocodeAttributeValue>(components.Count + 4, StringComparer.Ordinal);
+        foreach (var pair in components)
+        {
+            attributes[pair.Key] = GeocodeAttributeValue.FromText(pair.Value);
+        }
+
+        attributes["Loc_name"] = GeocodeAttributeValue.FromText(
+            string.IsNullOrWhiteSpace(locatorName) ? "Honua" : locatorName);
+        attributes["Status"] = GeocodeAttributeValue.FromText(isMatch ? "M" : "U");
+
+        // Numeric, because candidateFields declares Score as esriFieldTypeDouble and the
+        // tools create a typed column from that. The live World locator agrees.
+        attributes["Score"] = GeocodeAttributeValue.FromNumber(score);
+
+        // Declared in candidateFields, so it has to be answerable on every candidate.
+        if (!attributes.TryGetValue("Provider", out var provider) || string.IsNullOrWhiteSpace(provider.Text))
+        {
+            attributes["Provider"] = GeocodeAttributeValue.FromText(locatorName ?? string.Empty);
+        }
+
+        return attributes;
+    }
+
     internal static IReadOnlyDictionary<string, string?> Apply(
         string? matchedAddress,
         string? addressType,
