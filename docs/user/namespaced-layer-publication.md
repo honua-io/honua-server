@@ -5,17 +5,15 @@ description: "HTTP contract for optional tenant-owned publication namespaces."
 ---
 # Namespaced layer publication wire contract
 
-This reference documents the additive `namespace` field on the supported admin
-publishing API for client implementers and interoperability tests. The wire example
-is not a replacement for supported CLI, SDK, or MCP operator workflows. The new
-field must be projected into those product surfaces before they can expose it.
+This reference documents the additive `namespace` request field for client
+implementers and interoperability tests. The endpoint is
+`POST /api/v1/admin/connections/{connectionId}/layers`; its request schema is
+`PublishLayerRequest` in the [admin OpenAPI contract](../developer/api-specs/admin-api.json).
+The JSON body below is a contract example, not an operator command. The new field
+must be projected into CLI, SDK, and MCP product surfaces before they can expose it.
 
 <!-- wire-reference -->
-```bash
-curl --request POST "https://honua.example/api/v1/admin/connections/{connectionId}/layers" \
-  --header "X-API-Key: ${HONUA_ADMIN_KEY}" \
-  --header "Content-Type: application/json" \
-  --data-binary @- <<'JSON'
+```json
 {
   "schema": "public",
   "table": "parcels",
@@ -25,7 +23,6 @@ curl --request POST "https://honua.example/api/v1/admin/connections/{connectionI
   "primaryKey": "id",
   "geometryColumn": "geom"
 }
-JSON
 ```
 
 Use an authenticated administrator credential and the existing operator approval
