@@ -213,7 +213,7 @@ esac
 compose() {
   if [[ "$1" == logs ]]; then
     echo 'Job execution failed: job-1'
-    echo 'Geoprocessing:OutputStaging persistence attestation is missing or mismatched'
+    [[ "$MUTATION" == wrong-exception ]] || echo 'GeoprocessingOutputStoreUnavailableException: fixture message'
     [[ "$MUTATION" == generic ]] || echo 'FileSystemGeoprocessingOutputObjectStore.WriteAsync'
     return 0
   fi
@@ -234,7 +234,7 @@ else
 fi
 '''
         for mutation in ("none", "earlier-attempt", "published", "terminal", "no-retry",
-                         "restored", "generic"):
+                         "restored", "generic", "wrong-exception"):
             with self.subTest(mutation=mutation):
                 self.run_shell(script, MUTATION=mutation)
 

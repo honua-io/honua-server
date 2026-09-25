@@ -196,19 +196,19 @@ observe_store_write_retry() {
       and .nextRetryAt != null and (.artifactReferences | length) == 0
       and (.currentPhase | startswith("Requeued:"))' <<<"$record" >/dev/null; then
       write_failure_record="$record"
+      jq --argjson retry "$record" '. + {write_failure_retry:$retry}' "$scenario_evidence_file" \
+        > "$scenario_evidence_file.tmp" && mv "$scenario_evidence_file.tmp" "$scenario_evidence_file" || return 1
+      record_attempt "$(jq -r .attemptCount <<<"$record")"
+      record_transition queued
       compose logs --no-color --since "$outage_started" worker > "$failure_log" || return 1
       # A generic retry is not evidence of a failed store write. Retain and
       # require the actual publisher/store call stack and the affected job.
       grep -Fq "Job execution failed: $job" "$failure_log" &&
         grep -Fq 'FileSystemGeoprocessingOutputObjectStore.WriteAsync' "$failure_log" &&
-        grep -Fq 'Geoprocessing:OutputStaging persistence attestation' "$failure_log" || {
+        grep -Fq 'GeoprocessingOutputStoreUnavailableException' "$failure_log" || {
           scenario_fail "retry lacked actual staged-store WriteAsync failure evidence"; return 1; }
       [[ ! -e "$object_root/.honua-gp-store.json" && "$(object_file_count "$job")" == 0 ]] || {
         scenario_fail "write-failure observation did not keep the store unavailable"; return 1; }
-      jq --argjson retry "$record" '. + {write_failure_retry:$retry}' "$scenario_evidence_file" \
-        > "$scenario_evidence_file.tmp" && mv "$scenario_evidence_file.tmp" "$scenario_evidence_file" || return 1
-      record_attempt "$(jq -r .attemptCount <<<"$record")"
-      record_transition queued
       return 0
     fi
     sleep 0.2
