@@ -447,7 +447,7 @@ public sealed class GeoServicesFieldSerializationTests
         attributes.GetProperty("tags").GetString().Should().Be(rawJson);
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("buffered")]
     [InlineData("streaming")]
     [InlineData("top-features")]
@@ -498,7 +498,7 @@ public sealed class GeoServicesFieldSerializationTests
 
     // ----- Bug 4: the query response must describe a field as the layer resource does (#5197) -----
 
-    [Fact]
+    [UnitTest]
     public async Task Json_QueryFieldBlock_AgreesWithTheLayerResource()
     {
         // These two descriptions of the same field disagreed: the layer resource reported

@@ -5,6 +5,7 @@ using System.Linq;
 using FluentAssertions;
 using Honua.Protocols.GeoServices.NAServer;
 using Honua.Routing.Features.Routing.Domain;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.NAServer;
 
@@ -58,7 +59,7 @@ public sealed class NAServerMetadataTests
         limits["maximumDemandPoints"]!.GetValue<int>().Should().Be(11);
     }
 
-    [Fact]
+    [UnitTest]
     public void FindRoutes_IsResolvedByName_AndAdvertisesEsriParameterNames()
     {
         // arcpy.nax does not call NAServer/Route/solve. It resolves Esri's ready-to-use
