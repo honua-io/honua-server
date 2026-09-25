@@ -258,7 +258,9 @@ internal sealed class GeocodingHandler(
                             LatestWkid = outSrid
                         }
                     },
-                    Attributes = ProjectAttributes(EsriAddressAttributes(candidate), outFields)
+                    Attributes = ProjectAttributes(
+                        EsriAddressAttributes(candidate, result.ProviderName, isMatch: true),
+                        outFields)
                 });
             }
 
@@ -704,7 +706,9 @@ internal sealed class GeocodingHandler(
                     Address = candidate.Address,
                     Score = candidate.Score,
                     Location = location,
-                    Attributes = ProjectAttributes(EsriAddressAttributes(candidate), outFields)
+                    Attributes = ProjectAttributes(
+                        EsriAddressAttributes(candidate, result.ProviderName, isMatch),
+                        outFields)
                 });
             }
 
@@ -1067,17 +1071,33 @@ internal sealed class GeocodingHandler(
             // both 200 - and then failed "ERROR 000010: Geocode addresses failed"
             // without ever calling geocodeAddresses. Refs honua-server#5145.
             properties["MaxBatchSize"] = capabilities.MaxBatchSize.ToString(CultureInfo.InvariantCulture);
+
+            // The batch path honors outFields (HandleBatchGeocodeAsync parses and projects
+            // them), so this is a true claim, and the geocoding tools read it before asking
+            // for anything beyond the default output schema.
+            properties["supportsBatchOutFields"] = "TRUE";
         }
+
+        // LocatorVersion is the document-format generation this locator emits. The geocoding
+        // tools branch on it, and a locator that answers nothing is treated as pre-10.0.
+        properties["LocatorVersion"] = "11.0";
+
+        // Score thresholds. These are applied by the CLIENT when it decides whether a
+        // candidate is a match (Status M) or a tie (T); a locator that declares neither
+        // leaves that decision undefined. The values are Esri's defaults, which is what
+        // every caller already assumes.
+        properties["MinimumCandidateScore"] = "70";
+        properties["MinimumMatchScore"] = "75";
 
         // Output-table construction hints. The geocoding tools read these to decide which
         // columns to create on their result, and a locator that answers nothing for them
         // leaves the tool with no schema to build. False is the honest answer for the
         // three Honua does not produce; X/Y are written because every candidate carries a
         // location.
-        properties["WriteXYCoordFields"] = "true";
-        properties["WriteStandardizedAddressField"] = "false";
-        properties["WriteReferenceIDField"] = "false";
-        properties["WritePercentAlongField"] = "false";
+        properties["WriteXYCoordFields"] = "TRUE";
+        properties["WriteStandardizedAddressField"] = "FALSE";
+        properties["WriteReferenceIDField"] = "FALSE";
+        properties["WritePercentAlongField"] = "FALSE";
 
         return properties;
     }
@@ -1338,19 +1358,24 @@ internal sealed class GeocodingHandler(
         return positionalIndex;
     }
 
-    private static IReadOnlyDictionary<string, string?> EsriAddressAttributes(
-        Honua.Geocoding.Features.Geocoding.Domain.GeocodeCandidate candidate)
-        => EsriGeocodeAddressFields.Apply(
+    private static IReadOnlyDictionary<string, GeocodeAttributeValue> EsriAddressAttributes(
+        Honua.Geocoding.Features.Geocoding.Domain.GeocodeCandidate candidate,
+        string? locatorName,
+        bool isMatch)
+        => EsriGeocodeAddressFields.ApplyCandidate(
             candidate.Address,
             candidate.AddressType,
             candidate.StructuredAddress,
-            candidate.Attributes);
+            candidate.Attributes,
+            candidate.Score,
+            locatorName,
+            isMatch);
 
     // Projects a provider attribute bag down to the requested outFields, matching
     // field names case-insensitively and preserving the original key casing.
     // A null selection returns the attributes unchanged.
-    private static IReadOnlyDictionary<string, string?> ProjectAttributes(
-        IReadOnlyDictionary<string, string?> attributes,
+    private static IReadOnlyDictionary<string, GeocodeAttributeValue> ProjectAttributes(
+        IReadOnlyDictionary<string, GeocodeAttributeValue> attributes,
         string[]? fields)
     {
         if (fields is null || fields.Length == 0)
@@ -1359,7 +1384,7 @@ internal sealed class GeocodingHandler(
         }
 
         var requested = new HashSet<string>(fields, StringComparer.OrdinalIgnoreCase);
-        var projected = new Dictionary<string, string?>(StringComparer.Ordinal);
+        var projected = new Dictionary<string, GeocodeAttributeValue>(StringComparer.Ordinal);
         foreach (var pair in attributes.Where(pair => requested.Contains(pair.Key)))
         {
             projected[pair.Key] = pair.Value;
