@@ -1,6 +1,6 @@
 # Cloud-Native-Geospatial (CNG) Conformance — Status
 
-Last reviewed: 2026-09-12
+Last reviewed: 2026-09-25 (derived-store rehearsal scope)
 Owner: Honua Server platform
 
 This page records how honua's **produced** cloud-native-geospatial artifacts are
@@ -102,7 +102,8 @@ itself rather than only in this page:
 | `honua.cog.tif` | `artifact-gen` driving `CogMetadataExtractor` + `CogTiffTileEncoder` | `true` |
 | Zarr subset in `honua-consumer-evidence.json` | `artifact-gen` driving `ZarrSubsetReader` | `true` |
 | `canonical.webmercator.cog.tif` | `rio_cogeo.cog_translate` | **input, not evidence** |
-| `canonical.zarr` (store cells) | `xarray.to_zarr` | **`false`** |
+| `canonical.zarr` (shared-input store cells) | `xarray.to_zarr` | **`false`** |
+| `honua-derived.zarr` (opt-in `zarr/array-read` and `fsspec/store-read` only) | source-matched worker conversion with verified registration/output receipt | `true`, engineering only |
 | `canonical.nc` | `xarray.to_netcdf` | **`false`** |
 
 The `false` rows are Python validating Python's own output. The validator refuses
@@ -111,8 +112,38 @@ them a `pass` **structurally** (`ARTIFACT_PRODUCERS` /
 change to a validator body can turn them green and no consumer of
 `protocol-certification-fragment.json` can mistake them for Honua evidence.
 Attribution is recorded per **cell** (`surface/operation/client`), not per surface,
-because the Zarr surface is mixed: its store-read cells are third-party while its
-`subset-transcode` cell is Honua's.
+because the Zarr surface is mixed: shared-input cells stay third-party, the
+`subset-transcode` cell exercises Honua's reader, and only the specifically bound
+executions below can attribute worker-derived output to Honua.
+
+### Optional worker-derived Zarr engineering rehearsal
+
+`cng-conformance.yml` accepts `derived_zarr_rehearsal=true` only with an exact
+published server image input. Supported registration/refresh/status endpoints
+bind an unchanged NetCDF input to an isolated, source-matched worker job and its
+server-materialized Zarr registration. The receipt retains the runner-local
+worker identity, source/job/registration binding and hashes of the actual output.
+
+The `zarr / array-read / zarr` client reads the derived array. The separate
+`zarr / store-read / fsspec` client uses pinned `HTTPFileSystem.cat_file` to read
+12 explicit objects: consolidated metadata, eight chunks intersecting the existing
+`[1:3, 2:6, 4:12]` slice, and the three coordinate objects. Every response body must
+match the archived worker output. All 128 values in those chunks are compared with
+the fixed formula and original input, and all coordinate values are compared with
+the original axes. This is explicit object-store reading, not store listing,
+full-array computation or CRS qualification.
+
+Each client receives fresh measured HTTP counters and must meet the unchanged
+metadata and transfer budgets. Missing output binding, incomplete execution,
+incorrect bytes/values or exceeded budgets cannot earn a pass. Other Zarr/HDF
+shared-input clients receive no derived-output credit, and the 24-row denominator
+is unchanged. Run-specific observations, rather than these instructions, establish
+whether an execution passed.
+
+Both derived rows retain nested `derived_output_binding.qualification=false`.
+The frozen `cng-candidate.yml` wrapper leaves this opt-in disabled. A runner-local
+worker and emulator replay is not published-worker, real-cloud or frozen-candidate
+qualification; no generic downstream enforcement of the nested flag is claimed.
 
 **How COG and Zarr became Honua cells.** The direction is inverted rather than the
 cells removed. `rio_cogeo` and `xarray` still write the fixtures, but they are now
