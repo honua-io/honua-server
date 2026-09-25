@@ -1500,7 +1500,11 @@
       "operation": "statistics",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (image revision c9f739e6db1eb07610274619fe1f1720492bb8af): Pro computed field statistics over the Honua layer and every value agrees with the service's own outStatistics. Driven through Pro's UI - attribute table, right-click the 'count' column, Explore Statistics - Pro reports Min 1, Max 10, Mean 5.5, Median 5.5, Std. Dev. 3.02765, Sum 55, Range 9, Count 10 (100%), Unique 10, Outliers 0, Nulls 0 (0%), type Long, with '10 of 10 used to calculate statistics'. The independent oracle - a REST query with outStatistics for count/min/max/avg/sum on the same field - returns count 10, min 1, max 10, avg 5.5, sum 55. Min, max, mean, sum and count match exactly and Range 9 is max minus min. Nothing was selected, so the statistics are the layer's own population rather than a selection.",
+          "previous_exclusion": {
+            "state": "not-started"
+          }
         },
         "arcpy": {
           "previous_pass": {
@@ -1546,7 +1550,11 @@
       "operation": "domains",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (image revision c9f739e6db1eb07610274619fe1f1720492bb8af): Pro applies the service's coded-value domain in the attribute table. test_service/FeatureServer/0 declares 'status' with domain StatusDomain (active->Active, inactive->Inactive, pending->Pending) and the service transports the raw CODES - an independent query returns 'active','inactive','active','inactive' for objectids 1-4. Pro's table shows 'Active','Inactive','Active','Inactive' for those same rows, so it read the domain from the service and substituted the description. Decisive because the displayed strings differ from the transported ones: a client ignoring the domain would render lowercase codes. Same view agrees elsewhere - count 1,2,3,4 and ratio 1.25,2.5,3.75,5 match row for row, '<Null>' renders for the null description rather than an empty string or 0, and the footer reads '0 of 10 selected' against an oracle count of 10.",
+          "previous_exclusion": {
+            "state": "not-started"
+          }
         },
         "arcpy": {
           "state": "pass",
