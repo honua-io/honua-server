@@ -181,6 +181,197 @@ public sealed class LayerReconciliationServiceTests
     }
 
     [Fact]
+    public async Task Reconcile_InheritedNullGeometry_IsNotTransferLoss()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 2,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildGeometrySample((1, false), (2, true))
+        };
+        var request = BuildRequest(2, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    SourceGeometry = new SourceGeometryCensus
+                    {
+                        AbsentTargetFeatureIds = new HashSet<long> { 1 }
+                    }
+                }
+            ]
+        };
+
+        var result = await NewService(reader).ReconcileAsync(request);
+
+        var geometry = result.Layers[0].Geometry;
+        geometry.Classification.Should().Be("pass");
+        geometry.InheritedSourceDefects.Should().Be(1);
+        geometry.MigrationLosses.Should().Be(0);
+        geometry.Reason.Should().Contain("inherited a null source geometry");
+    }
+
+    [Fact]
+    public async Task Reconcile_UnconvertedSourceGeometry_IsTransferLoss()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 2,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildGeometrySample((1, false), (2, true))
+        };
+        var request = BuildRequest(2, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    SourceGeometry = new SourceGeometryCensus
+                    {
+                        UnconvertedTargetFeatureIds = new HashSet<long> { 1 }
+                    }
+                }
+            ]
+        };
+
+        var result = await NewService(reader).ReconcileAsync(request);
+
+        var geometry = result.Layers[0].Geometry;
+        geometry.Classification.Should().Be("fail");
+        geometry.MigrationLosses.Should().Be(1);
+        geometry.InheritedSourceDefects.Should().Be(0);
+        geometry.Reason.Should().Contain("lost in transfer");
+        result.Classification.Should().Be("fail");
+    }
+
+    [Fact]
+    public async Task Reconcile_NewlyNullTargetGeometry_IsTransferLossBesideInheritedNulls()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 3,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildGeometrySample((1, false), (2, false), (3, true))
+        };
+        var request = BuildRequest(3, BoundingBox.Create(0, 0, 10, 10, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    SourceGeometry = new SourceGeometryCensus
+                    {
+                        AbsentTargetFeatureIds = new HashSet<long> { 1 }
+                    }
+                }
+            ]
+        };
+
+        var geometry = (await NewService(reader).ReconcileAsync(request)).Layers[0].Geometry;
+
+        geometry.Classification.Should().Be("fail");
+        geometry.InheritedSourceDefects.Should().Be(1);
+        geometry.MigrationLosses.Should().Be(1);
+        geometry.Reason.Should().Contain("lost in transfer").And.Contain("inherited");
+    }
+
+    [Fact]
+    public async Task Reconcile_StaleAdvertisedExtent_ComparesTargetWithQueriedExtent()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 2,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildGeometrySample((1, true), (2, true))
+        };
+        var request = BuildRequest(2, BoundingBox.Create(-100, -100, -90, -90, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    QueriedSourceExtent = BoundingBox.Create(0, 0, 10, 10, 4326)
+                }
+            ]
+        };
+
+        var extent = (await NewService(reader).ReconcileAsync(request)).Layers[0].Extent;
+
+        extent.AdvertisedExtentStale.Should().BeTrue();
+        extent.Classification.Should().Be("warn");
+        extent.QueriedSource!.Value.MinX.Should().Be(0);
+        extent.Source!.Value.MinX.Should().Be(-100);
+        extent.Reason.Should().Contain("queried");
+        extent.MaxDimensionDelta.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task Reconcile_StaleAdvertisedExtent_StillFailsWhenTargetMissesQueriedExtent()
+    {
+        var reader = new StubFeatureReader
+        {
+            Count = 2,
+            Extent = FeatureExtent.Create(50, 50, 60, 60, 4326),
+            Sample = BuildGeometrySample((1, true), (2, true))
+        };
+        var request = BuildRequest(2, BoundingBox.Create(-100, -100, -90, -90, 4326), ["NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    QueriedSourceExtent = BoundingBox.Create(0, 0, 10, 10, 4326)
+                }
+            ]
+        };
+
+        var extent = (await NewService(reader).ReconcileAsync(request)).Layers[0].Extent;
+
+        extent.AdvertisedExtentStale.Should().BeTrue();
+        extent.Classification.Should().Be("fail");
+        extent.Reason.Should().Contain("queried extent");
+    }
+
+    [Fact]
+    public async Task Reconcile_SharedTarget_RewritesFilterFieldsAndPreservesLiterals()
+    {
+        const string sourceFilter = "DateOfFlight = DATE 'DateOfFlight' AND STATUS = 'open'";
+        var reader = new StubFeatureReader
+        {
+            Count = 100,
+            Extent = FeatureExtent.Create(0, 0, 10, 10, 4326),
+            Sample = BuildSample(("OBJECTID", "NAME"), validGeometry: true, rows: 5)
+        };
+        var request = BuildRequest(100, BoundingBox.Create(0, 0, 10, 10, 4326), ["OBJECTID", "NAME"]);
+        request = request with
+        {
+            Layers =
+            [
+                request.Layers[0] with
+                {
+                    FilterMirror = sourceFilter,
+                    FilterFieldMappings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["DateOfFlight"] = "flight_date",
+                        ["STATUS"] = "status"
+                    }
+                }
+            ]
+        };
+
+        await NewService(reader).ReconcileAsync(request);
+
+        reader.CountQueries.Should().ContainSingle().Which.Where
+            .Should().Be("flight_date = DATE 'DateOfFlight' AND status = 'open'");
+    }
+
+    [Fact]
     public async Task Reconcile_SharedTargetWithFilterMirror_KeepsMirroredPredicateAndTolerance()
     {
         const string sourceFilter = "STATUS = 'open'";
@@ -227,6 +418,15 @@ public sealed class LayerReconciliationServiceTests
         bool validGeometry,
         int rows)
         => BuildSampleInternal([fieldsTwo.Item1, fieldsTwo.Item2], validGeometry, rows);
+
+    private static QueryResult<Feature> BuildGeometrySample(params (long Id, bool Valid)[] rows)
+    {
+        var attributes = ImmutableDictionary<string, object?>.Empty.Add("NAME", "x");
+        var items = rows
+            .Select(row => Feature.Create(row.Id, row.Valid ? [1, 1, 0, 0, 0] : null, attributes))
+            .ToImmutableArray();
+        return QueryResult<Feature>.Create(rows.Length, items);
+    }
 
     private static QueryResult<Feature> BuildSampleInternal(string[] fields, bool validGeometry, int rows)
     {

@@ -107,6 +107,43 @@ public sealed record LayerReconciliationLayerInput
     /// difference from <see cref="SourceFeatureCount"/> fails the count probe.
     /// </summary>
     public bool TargetContainsOnlyImportedFeatures { get; init; }
+
+    /// <summary>
+    /// Per-feature source geometry census keyed by the target feature id the reader returns.
+    /// Null keeps the target-only validity ratio. When present, a null target geometry is an
+    /// inherited source defect when the source geometry was absent, and transfer loss when the
+    /// source geometry was present (#4826).
+    /// </summary>
+    public SourceGeometryCensus? SourceGeometry { get; init; }
+
+    /// <summary>
+    /// Extent queried from the source features themselves (<c>returnExtentOnly</c>), independent
+    /// of <see cref="SourceExtent"/>. A disagreement beyond tolerance marks the advertised extent
+    /// stale and compares the target with this queried extent.
+    /// </summary>
+    public BoundingBox? QueriedSourceExtent { get; init; }
+
+    /// <summary>
+    /// Source field name to published target field name. Applied to <see cref="FilterMirror"/>
+    /// before a shared target executes it. Identifiers inside quotes are not rewritten.
+    /// Ignored for a dedicated import target.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? FilterFieldMappings { get; init; }
+}
+
+/// <summary>
+/// Source geometry dispositions recorded at insert, keyed by the target feature id.
+/// </summary>
+public sealed record SourceGeometryCensus
+{
+    /// <summary>Target ids whose source feature had no geometry.</summary>
+    public IReadOnlySet<long> AbsentTargetFeatureIds { get; init; } = new HashSet<long>();
+
+    /// <summary>
+    /// Target ids whose source geometry was present but could not be stored. A null or
+    /// malformed target geometry for one of these ids is transfer loss, not an inherited defect.
+    /// </summary>
+    public IReadOnlySet<long> UnconvertedTargetFeatureIds { get; init; } = new HashSet<long>();
 }
 
 /// <summary>

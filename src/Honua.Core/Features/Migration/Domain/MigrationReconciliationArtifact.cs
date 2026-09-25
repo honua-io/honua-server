@@ -193,6 +193,19 @@ public sealed record MigrationReconciliationGeometryProbe
     /// <summary>Valid / Sampled, or <c>1</c> when nothing was sampled.</summary>
     public double Ratio { get; init; }
 
+    /// <summary>
+    /// Sampled features whose source geometry was absent and whose target geometry is also
+    /// absent. These are inherited source defects, not transfer loss (#4826). Zero when the
+    /// importer did not supply a geometry census.
+    /// </summary>
+    public int InheritedSourceDefects { get; init; }
+
+    /// <summary>
+    /// Source geometries that were present and did not survive on the target, including rows
+    /// whose conversion stored null. Zero when the importer did not supply a geometry census.
+    /// </summary>
+    public int MigrationLosses { get; init; }
+
     /// <summary>Pass / warn / fail / skipped.</summary>
     public required string Classification { get; init; }
 
@@ -233,6 +246,18 @@ public sealed record MigrationReconciliationExtentProbe
 {
     /// <summary>Source-side extent snapshot at apply time. <c>null</c> when none was advertised.</summary>
     public ExtentBox? Source { get; init; }
+
+    /// <summary>
+    /// Extent queried from the source features, when the importer requested one. Distinct from
+    /// <see cref="Source"/>, which is the extent the source service advertised.
+    /// </summary>
+    public ExtentBox? QueriedSource { get; init; }
+
+    /// <summary>
+    /// True when the advertised source extent disagrees with <see cref="QueriedSource"/> beyond
+    /// the configured tolerance. The target comparison then uses the queried extent.
+    /// </summary>
+    public bool AdvertisedExtentStale { get; init; }
 
     /// <summary>Target-side extent returned by Honua post-apply.</summary>
     public ExtentBox? Target { get; init; }

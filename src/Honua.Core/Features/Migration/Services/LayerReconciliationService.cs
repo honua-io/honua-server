@@ -191,7 +191,7 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
 
         var count = BuildCountProbe(layer, options, targetCount, readerFailure);
         var geometry = layer.SourceHasGeometry
-            ? BuildGeometryProbe(sample, options, readerFailure)
+            ? BuildGeometryProbe(layer, sample, options, readerFailure)
             : new MigrationReconciliationGeometryProbe
             {
                 Sampled = 0,
@@ -238,7 +238,7 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         // hide extra rows or reference source identifiers that were remapped on insert.
         var where = layer.TargetContainsOnlyImportedFeatures || string.IsNullOrWhiteSpace(layer.FilterMirror)
             ? null
-            : layer.FilterMirror;
+            : ReconciliationFilterRewriter.Rewrite(layer.FilterMirror, layer.FilterFieldMappings);
         return where is null ? default : new FeatureQuery { Where = where };
     }
 
@@ -352,6 +352,7 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
     }
 
     private static MigrationReconciliationGeometryProbe BuildGeometryProbe(
+        LayerReconciliationLayerInput layer,
         QueryResult<Feature>? sample,
         LayerReconciliationOptions options,
         string? readerFailure)
@@ -369,6 +370,11 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
         }
 
         var features = sample.Value.Items;
+        if (layer.SourceGeometry is { } census)
+        {
+            return BuildCensusGeometryProbe(census, features);
+        }
+
         if (features.Length == 0)
         {
             // No features to inspect — treat as pass (the count probe already records the empty
@@ -400,6 +406,93 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
             Sampled = features.Length,
             Valid = valid,
             Ratio = ratio,
+            Classification = classification,
+            Reason = reason
+        };
+    }
+
+    /// <summary>
+    /// Identity-mapped geometry probe. A known transfer loss fails the probe even when it is
+    /// one row: the validity-ratio bands only apply when the importer did not record which
+    /// source geometries were absent.
+    /// </summary>
+    private static MigrationReconciliationGeometryProbe BuildCensusGeometryProbe(
+        SourceGeometryCensus census,
+        IReadOnlyList<Feature> features)
+    {
+        var inherited = 0;
+        var sampledPresent = 0;
+        var sampledPresentValid = 0;
+        var sampledLosses = 0;
+        var wellFormedIds = new HashSet<long>();
+        var valid = 0;
+        foreach (var feature in features)
+        {
+            var wellFormed = IsGeometryWellFormed(feature.Geometry);
+            if (wellFormed)
+            {
+                valid++;
+                wellFormedIds.Add(feature.Id);
+            }
+
+            if (census.AbsentTargetFeatureIds.Contains(feature.Id))
+            {
+                if (!wellFormed)
+                {
+                    inherited++;
+                }
+
+                continue;
+            }
+
+            sampledPresent++;
+            if (wellFormed)
+            {
+                sampledPresentValid++;
+                continue;
+            }
+
+            if (!census.UnconvertedTargetFeatureIds.Contains(feature.Id))
+            {
+                sampledLosses++;
+            }
+        }
+
+        var unconvertedLosses = 0;
+        foreach (var targetId in census.UnconvertedTargetFeatureIds)
+        {
+            if (!wellFormedIds.Contains(targetId))
+            {
+                unconvertedLosses++;
+            }
+        }
+
+        var migrationLosses = unconvertedLosses + sampledLosses;
+        var ratio = sampledPresent == 0
+            ? 1d
+            : (double)sampledPresentValid / sampledPresent;
+        var classification = migrationLosses == 0
+            ? MigrationReconciliationClassifications.Pass
+            : MigrationReconciliationClassifications.Fail;
+        string? reason = null;
+        if (migrationLosses > 0)
+        {
+            reason = inherited > 0
+                ? $"{migrationLosses} source geometries were lost in transfer ({inherited} inherited null source geometries were not counted as loss)."
+                : $"{migrationLosses} source geometries were lost in transfer.";
+        }
+        else if (inherited > 0)
+        {
+            reason = $"{inherited} sampled features inherited a null source geometry; none were lost in transfer.";
+        }
+
+        return new MigrationReconciliationGeometryProbe
+        {
+            Sampled = features.Count,
+            Valid = valid,
+            Ratio = ratio,
+            InheritedSourceDefects = inherited,
+            MigrationLosses = migrationLosses,
             Classification = classification,
             Reason = reason
         };
@@ -494,6 +587,122 @@ public sealed partial class LayerReconciliationService : ILayerReconciliationSer
     }
 
     private static MigrationReconciliationExtentProbe BuildExtentProbe(
+        LayerReconciliationLayerInput layer,
+        FeatureExtent? targetExtent,
+        LayerReconciliationOptions options,
+        string? readerFailure,
+        FeatureExtent? comparisonExtent)
+    {
+        var (baseline, stale, staleReason) = SelectExtentBaseline(layer, options);
+        var probe = BuildExtentProbeCore(
+            layer with { SourceExtent = baseline },
+            targetExtent,
+            options,
+            readerFailure,
+            comparisonExtent);
+        if (layer.SourceExtent is { } advertised)
+        {
+            probe = probe with
+            {
+                Source = new ExtentBox
+                {
+                    MinX = advertised.MinX,
+                    MinY = advertised.MinY,
+                    MaxX = advertised.MaxX,
+                    MaxY = advertised.MaxY,
+                    Srid = advertised.SpatialReferenceId ?? 4326
+                }
+            };
+        }
+
+        probe = probe with
+        {
+            QueriedSource = ToExtentBox(layer.QueriedSourceExtent),
+            AdvertisedExtentStale = stale
+        };
+        if (!stale || staleReason is null)
+        {
+            return probe;
+        }
+
+        return probe with
+        {
+            Classification = probe.Classification == MigrationReconciliationClassifications.Pass
+                ? MigrationReconciliationClassifications.Warn
+                : probe.Classification,
+            Reason = probe.Reason is null ? staleReason : staleReason + " " + probe.Reason
+        };
+    }
+
+    private static (BoundingBox? Baseline, bool Stale, string? Reason) SelectExtentBaseline(
+        LayerReconciliationLayerInput layer,
+        LayerReconciliationOptions options)
+    {
+        if (layer.SourceExtent is not { } advertised || layer.QueriedSourceExtent is not { } queried)
+        {
+            return (layer.QueriedSourceExtent ?? layer.SourceExtent, false, null);
+        }
+
+        var advertisedBox = ToExtentBox(advertised)!.Value;
+        var queriedBox = ToExtentBox(queried)!.Value;
+        if (advertisedBox.Srid != queriedBox.Srid)
+        {
+            return (
+                layer.QueriedSourceExtent,
+                true,
+                "Queried source extent CRS does not match the advertised source extent; the target is compared with the queried extent.");
+        }
+
+        var disagreement = MeasureExtentDisagreement(advertisedBox, queriedBox);
+        if (disagreement > options.ExtentTolerance)
+        {
+            return (
+                layer.QueriedSourceExtent,
+                true,
+                $"Advertised source extent differs from the queried source extent by up to {FormatRatio(disagreement)} of the advertised dimension; the target is compared with the queried extent.");
+        }
+
+        return (layer.SourceExtent, false, null);
+    }
+
+    private static ExtentBox? ToExtentBox(BoundingBox? box)
+        => box is { } value
+            ? new ExtentBox
+            {
+                MinX = value.MinX,
+                MinY = value.MinY,
+                MaxX = value.MaxX,
+                MaxY = value.MaxY,
+                Srid = value.SpatialReferenceId ?? 4326
+            }
+            : null;
+
+    /// <summary>
+    /// Relative disagreement between two extents in the same CRS. Degenerate extents that
+    /// are not exactly equal return <see cref="double.PositiveInfinity"/>.
+    /// </summary>
+    private static double MeasureExtentDisagreement(ExtentBox left, ExtentBox right)
+    {
+        var width = Math.Abs(left.MaxX - left.MinX);
+        var height = Math.Abs(left.MaxY - left.MinY);
+        if (IsEffectivelyZero(width) && IsEffectivelyZero(height))
+        {
+            var matches =
+                AreCoordinatesEqual(left.MinX, right.MinX) &&
+                AreCoordinatesEqual(left.MinY, right.MinY) &&
+                AreCoordinatesEqual(left.MaxX, right.MaxX) &&
+                AreCoordinatesEqual(left.MaxY, right.MaxY);
+            return matches ? 0d : double.PositiveInfinity;
+        }
+
+        var widthDenom = IsEffectivelyZero(width) ? height : width;
+        var heightDenom = IsEffectivelyZero(height) ? width : height;
+        var dx = Math.Max(Math.Abs(right.MinX - left.MinX), Math.Abs(right.MaxX - left.MaxX));
+        var dy = Math.Max(Math.Abs(right.MinY - left.MinY), Math.Abs(right.MaxY - left.MaxY));
+        return Math.Max(dx / widthDenom, dy / heightDenom);
+    }
+
+    private static MigrationReconciliationExtentProbe BuildExtentProbeCore(
         LayerReconciliationLayerInput layer,
         FeatureExtent? targetExtent,
         LayerReconciliationOptions options,
