@@ -26,10 +26,13 @@ export function flatGeobufMetadata(features, header) {
   const types = [...new Set(features.map(feature => feature.geometry.type))].sort();
   const crs = header?.crs;
   const code = crs?.code_string || crs?.code;
+  // FlatGeobuf specifies null org = EPSG, while code 0 remains unknown:
+  // https://github.com/flatgeobuf/flatgeobuf/blob/64ca86375654912d21b86a18bb5a560ca0aaf388/src/fbs/header.fbs#L54-L60
+  const authority = crs?.org ?? "EPSG";
   return {
     geometry_type: types.join(","),
     feature_count: features.length,
-    ...(crs?.org && code ? { crs: `${crs.org}:${code}` } : {}),
+    ...(authority && code ? { crs: `${authority}:${code}` } : {}),
     bounds,
   };
 }

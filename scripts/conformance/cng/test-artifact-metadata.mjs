@@ -11,6 +11,19 @@ test("FlatGeobuf observations come from decoded values, including changed count 
   assert.equal(flatGeobufMetadata(features, {}).crs, undefined);
 });
 
+test("FlatGeobuf null authority follows the schema only with an observed CRS code", () => {
+  const features = [{ geometry: { type: "Point", coordinates: [1, 2] } }];
+  const observed = crs => flatGeobufMetadata(features, { crs }).crs;
+  assert.equal(observed({ org: null, code: 3857 }), "EPSG:3857");
+  assert.equal(observed({ code: 4326 }), "EPSG:4326");
+  assert.equal(observed({ org: null, code_string: "custom" }), "EPSG:custom");
+  assert.equal(observed({ org: "OGC", code_string: "CRS84" }), "OGC:CRS84");
+  assert.equal(observed({ org: "", code: 4326 }), undefined);
+  assert.equal(observed({ org: null, code: 0 }), undefined);
+  assert.equal(observed({ org: "EPSG" }), undefined);
+  assert.equal(observed(null), undefined);
+});
+
 test("mixed geometry and empty/nonfinite data cannot masquerade as the point fixture", () => {
   const features = [
     { geometry: { type: "Point", coordinates: [1, 2] } },
