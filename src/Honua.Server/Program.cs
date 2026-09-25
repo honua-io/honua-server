@@ -871,12 +871,14 @@ builder.Services.AddScoped<Honua.Core.Features.Console.Abstractions.IConsoleDepe
 builder.Services.AddSingleton<Honua.Core.Features.Console.Abstractions.IConsoleOpenDataStore>(sp =>
     new Honua.Server.Features.Console.Services.InMemoryConsoleOpenDataStore(
         sp.GetService<TimeProvider>() ?? TimeProvider.System));
-// Console catalog discovery-endpoints registry read model (#1279). The discovery
-// dialects a server publishes are a server-wide config/metadata concern; this
-// config-backed read model materialises them into the Console projection. A
-// durable/metadata-v2-backed source can replace this registration later.
-builder.Services.AddSingleton<Honua.Server.Features.Console.Services.ICatalogDiscoveryRegistryStore>(
-    _ => new Honua.Server.Features.Console.Services.ConfigCatalogDiscoveryRegistryStore());
+// Discovery is a scoped projection: an explicit workspace mapping never replaces caller authorization.
+builder.Services.AddOptions<Honua.Server.Features.Console.Services.CatalogDiscoveryOptions>()
+    .BindConfiguration(Honua.Server.Features.Console.Services.CatalogDiscoveryOptions.SectionName)
+    .ValidateOnStart();
+builder.Services.AddSingleton<Microsoft.Extensions.Options.IValidateOptions<Honua.Server.Features.Console.Services.CatalogDiscoveryOptions>,
+    Honua.Server.Features.Console.Services.CatalogDiscoveryOptionsValidator>();
+builder.Services.AddScoped<Honua.Server.Features.Console.Services.ICatalogDiscoveryRegistryStore,
+    Honua.Server.Features.Console.Services.ProjectedCatalogDiscoveryRegistryStore>();
 
 // Content publication registry for Studio-generated maps/dashboards/reports/apps (#1183).
 // In-memory store is the default; Postgres registration (AddPostgreSqlServices) overrides
