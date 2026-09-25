@@ -70,7 +70,7 @@ public sealed class FeatureQueryBuilderClusterProjectionIntegrationTests(Postgre
                 )
                 """);
             FeatureQueryBuilder.AppendGeographicClusterProjectionCtes(sql, PipelineSql);
-            sql.Append($"""
+            sql.Append(CultureInfo.InvariantCulture, $"""
                 , original AS MATERIALIZED (
                     SELECT objectid, source_ordinal, ST_TransformPipeline(geom, {PipelineSql}) AS geom_m
                     FROM numbered ORDER BY source_ordinal
@@ -121,7 +121,7 @@ public sealed class FeatureQueryBuilderClusterProjectionIntegrationTests(Postgre
             )
             """);
         FeatureQueryBuilder.AppendGeographicClusterProjectionCtes(sql, PipelineSql);
-        sql.Append($"""
+        sql.Append(CultureInfo.InvariantCulture, $"""
             SELECT p.objectid, ST_AsEWKB(p.geom_m) IS NOT DISTINCT FROM
                 ST_AsEWKB(ST_TransformPipeline(f.geom, {PipelineSql}))
             FROM projected p FULL JOIN filtered f USING (objectid) ORDER BY p.objectid

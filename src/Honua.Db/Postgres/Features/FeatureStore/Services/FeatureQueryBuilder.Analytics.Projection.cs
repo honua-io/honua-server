@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Globalization;
 using System.Text;
 
 namespace Honua.Db.Postgres.Features.FeatureStore.Services;
@@ -19,7 +20,7 @@ internal sealed partial class FeatureQueryBuilder
         // for every extracted member. Coincident points retain distinct ordinals.
         // Pipeline transforms ignore input SRIDs; stamping 0 only on the collected
         // copy permits batching while retaining the original geometry for output.
-        sql.Append($"""
+        sql.Append(CultureInfo.InvariantCulture, $"""
             , numbered AS MATERIALIZED (
                 SELECT *, row_number() OVER () AS source_ordinal FROM filtered
             ), point_batches AS MATERIALIZED (
