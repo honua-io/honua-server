@@ -8,6 +8,11 @@ description: "Explicit workspace mappings for authorized published service disco
 The Console discovery registry can project published FeatureServer and MapServer
 entries from the canonical GeoServices directory. Configure each workspace explicitly:
 
+Use the supported [namespaced layer publication API](namespaced-layer-publication.md)
+to publish retained PostGIS tables into the mapped tenant and namespace. The server
+derives tenant ownership from the trusted request context; a workspace mapping does
+not authorize publication or create metadata on its own.
+
 ```json
 {
   "Console": {

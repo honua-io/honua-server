@@ -133,6 +133,14 @@ public sealed class PublishLayerRequest
     public string? ServiceName { get; init; }
 
     /// <summary>
+    /// Optional case-preserving metadata namespace (1-128 ASCII letters, digits, '.', '_' or '-').
+    /// Tenant ownership comes from the authenticated request context, never this payload.
+    /// Omitted or null preserves legacy unscoped publication. Existing services cannot be retagged.
+    /// </summary>
+    [StringLength(128, MinimumLength = 1)]
+    public string? Namespace { get; init; }
+
+    /// <summary>
     /// Whether to enable the layer after publishing.
     /// </summary>
     public bool Enabled { get; init; } = true;

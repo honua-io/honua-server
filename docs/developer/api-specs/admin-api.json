@@ -23178,6 +23178,14 @@
             "maxLength": 64,
             "description": "Target service name (defaults to default)"
           },
+          "namespace": {
+            "type": "string",
+            "nullable": true,
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9._-]+$",
+            "description": "Optional case-preserving metadata grouping namespace. Tenant ownership is derived only from the trusted request context; the payload cannot select a tenant. Omitted or null preserves legacy unscoped publication. Existing services must have the same namespace and tenant; mismatches and adoption of shared services return 409. A namespaced request without a resolved tenant returns 400. Namespace grouping does not grant authorization or change the canonical service route."
+          },
           "enabled": {
             "type": "boolean",
             "description": "Enable layer after publish",

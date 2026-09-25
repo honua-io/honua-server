@@ -29,6 +29,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
+        await ValidateTenantAccessAsync(null, new HashSet<int> { layerId }, cancellationToken).ConfigureAwait(false);
+
         var metadata = await ResolveMaterializeRefreshMetadataByIdAsync(
                 connectionString,
                 layerId,
@@ -74,6 +76,9 @@ internal sealed partial class PostgreSqlLayerPublishingService
             return [];
         }
 
+        await ValidateTenantAccessAsync(null, layerMetadata.Select(metadata => metadata.LayerId).ToHashSet(), cancellationToken)
+            .ConfigureAwait(false);
+
         var results = new List<MaterializedFeatureRefreshResult>(layerMetadata.Count);
         foreach (var metadata in layerMetadata)
         {
@@ -93,6 +98,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
         MaterializeRefreshMetadata metadata,
         CancellationToken cancellationToken)
     {
+        await ValidateTenantAccessAsync(null, new HashSet<int> { metadata.LayerId }, cancellationToken).ConfigureAwait(false);
         // Re-introspect the live source table so the rebuilt snapshot picks up any source
         // schema changes and so the projected attributes match what the layer published.
         var tableInfo = await ResolveTableInfoAsync(
@@ -133,6 +139,7 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 cancellationToken)
             .ConfigureAwait(false);
 
+        await ValidateTenantAccessAsync(null, new HashSet<int> { metadata.LayerId }, cancellationToken).ConfigureAwait(false);
         await transaction.CommitSafelyAsync(cancellationToken).ConfigureAwait(false);
 
         Log.LayerSnapshotRefreshed(_logger, metadata.LayerId, materializedCount);
