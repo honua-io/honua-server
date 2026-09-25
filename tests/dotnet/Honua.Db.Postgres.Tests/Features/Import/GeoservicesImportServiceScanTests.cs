@@ -263,6 +263,36 @@ public sealed class GeoservicesImportServiceScanTests
         artifact.Source.Version.Should().Be("11.2");
     }
 
+    [Theory]
+    [InlineData("{}", null)]
+    [InlineData("{\"count\":null}", null)]
+    [InlineData("{\"count\":0}", 0)]
+    public async Task ScanSourceAsync_UnavailableCount_IsDistinctFromEmptySource(string countJson, int? expectedCount)
+    {
+        var service = CreateService(new GeoservicesScanHandler(
+            serviceDescription: "Parcel Viewer",
+            spatialReferenceJson: """{"wkid":3857}""",
+            countJson: countJson));
+
+        var artifact = await service.ScanSourceAsync(new GeoservicesDiscoveryRequest
+        {
+            ServiceUrl = "https://example.com/arcgis/rest/services/Parcels/FeatureServer",
+            TimeoutSeconds = 5
+        });
+
+        artifact.Resources.Should().ContainSingle().Subject.FeatureCount.Should().Be(expectedCount);
+        var countWarnings = artifact.ScanCompleteness.Warnings.Where(static warning =>
+            warning.Contains("Feature count was unavailable", StringComparison.Ordinal));
+        if (expectedCount.HasValue)
+        {
+            countWarnings.Should().BeEmpty();
+        }
+        else
+        {
+            countWarnings.Should().ContainSingle();
+        }
+    }
+
     [Fact]
     public async Task ScanSourceAsync_ProjectedWkt_UsesProjectedLengthUnit()
     {
@@ -426,18 +456,21 @@ public sealed class GeoservicesImportServiceScanTests
         private readonly string? _expectedToken;
         private readonly JsonElement _spatialReference;
         private readonly string? _fieldsJson;
+        private readonly string _countJson;
 
         public GeoservicesScanHandler(
             string serviceDescription,
             string spatialReferenceJson,
             string? rendererUrl = null,
             string? expectedToken = null,
-            string? fieldsJson = null)
+            string? fieldsJson = null,
+            string countJson = "{\"count\":42}")
         {
             _serviceDescription = serviceDescription;
             _rendererUrl = rendererUrl;
             _expectedToken = expectedToken;
             _fieldsJson = fieldsJson;
+            _countJson = countJson;
             _spatialReference = JsonDocument.Parse(spatialReferenceJson).RootElement.Clone();
         }
 
@@ -495,7 +528,7 @@ public sealed class GeoservicesImportServiceScanTests
                       }
                     }
                     """,
-                "/arcgis/rest/services/Parcels/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json" => """{"count":42}""",
+                "/arcgis/rest/services/Parcels/FeatureServer/0/query?where=1%3D1&returnCountOnly=true&f=json" => _countJson,
                 _ => throw new InvalidOperationException($"Unexpected ArcGIS request path: {pathAndQuery}")
             };
 
