@@ -616,7 +616,7 @@ internal sealed class GeocodingHandler(
         // under the "addresses" parameter, e.g. addresses={"records":[{"attributes":{...}}]}.
         // Accept that as the primary name and fall back to "records" for direct callers.
         var recordsJson = GetValue(values, "addresses") ?? GetValue(values, "records");
-        if (!TryParseRecords(recordsJson, out var queries, out var parseError))
+        if (!TryParseRecords(recordsJson, out var queries, out var submittedIds, out var parseError))
         {
             GeocodingLog.BatchRecordsParseFailed(_logger, parseError ?? "Unknown parse error");
             return StandardErrorHelpers.CreateBadRequest(context, parseError ?? "Invalid records parameter.");
@@ -684,7 +684,7 @@ internal sealed class GeocodingHandler(
             for (var index = 0; index < candidates.Count; index++)
             {
                 var candidate = candidates[index];
-                var resultId = ResolveResultId(candidate, index);
+                var resultId = ResolveResultId(candidate, index, submittedIds);
 
                 var isMatch = !double.IsNaN(candidate.X) && !double.IsNaN(candidate.Y);
                 GeocodePoint? location = null;
@@ -715,7 +715,7 @@ internal sealed class GeocodingHandler(
                     Score = candidate.Score,
                     Location = location,
                     Attributes = ProjectAttributes(
-                        EsriAddressAttributes(candidate, result.ProviderName, isMatch),
+                        WithResultId(EsriAddressAttributes(candidate, result.ProviderName, isMatch), resultId),
                         outFields)
                 });
             }
@@ -743,9 +743,14 @@ internal sealed class GeocodingHandler(
         }
     }
 
-    private static bool TryParseRecords(string? recordsJson, out List<string>? queries, out string? error)
+    private static bool TryParseRecords(
+        string? recordsJson,
+        out List<string>? queries,
+        out List<int?>? submittedIds,
+        out string? error)
     {
         queries = null;
+        submittedIds = null;
         error = null;
 
         if (string.IsNullOrWhiteSpace(recordsJson))
@@ -775,16 +780,19 @@ internal sealed class GeocodingHandler(
             }
 
             queries = new List<string>(recordsArray.GetArrayLength());
+            submittedIds = new List<int?>(recordsArray.GetArrayLength());
             List<int>? invalidIndices = null;
             var index = 0;
             // Not a simple .Select(): the loop branches into two different accumulators
             // (queries vs. invalidIndices) keyed by the positional index, so a LINQ map
             // wouldn't preserve the dual-output/index-tracking behavior cleanly.
-            foreach (var address in (recordsArray.EnumerateArray()).Select(record => ExtractAddressFromRecord(record)))
+            foreach (var record in recordsArray.EnumerateArray())
             {
+                var address = ExtractAddressFromRecord(record);
                 if (!string.IsNullOrWhiteSpace(address))
                 {
                     queries.Add(address);
+                    submittedIds.Add(ExtractResultIdFromRecord(record));
                 }
                 else
                 {
@@ -798,6 +806,7 @@ internal sealed class GeocodingHandler(
             if (invalidIndices is { Count: > 0 })
             {
                 queries = null;
+                submittedIds = null;
                 error = invalidIndices.Count == 1
                     ? $"Record at index {invalidIndices[0]} does not contain a valid address."
                     : $"Records at indices {string.Join(", ", invalidIndices)} do not contain valid addresses.";
@@ -818,6 +827,51 @@ internal sealed class GeocodingHandler(
             return false;
         }
     }
+
+    /// <summary>
+    /// Reads the id a caller stamped on a batch record, which the response has to echo.
+    /// </summary>
+    /// <remarks>
+    /// The geocoding tools join results back to input rows on this id, not on position:
+    /// ArcGIS Pro 3.7.1 submits <c>attributes.OBJECTID</c> and, when the response answers
+    /// a positional <c>resultId</c> instead, the join matches nothing and GeocodeAddresses
+    /// reports "0 Matched (0.00%) / 0 Unmatched (0.00%)" over a 200 that carried a
+    /// location (honua-server#5145). Null means the record carried no id, and the caller
+    /// falls back to the positional index.
+    /// </remarks>
+    private static int? ExtractResultIdFromRecord(JsonElement record)
+    {
+        if (record.ValueKind != JsonValueKind.Object ||
+            !record.TryGetProperty("attributes", out var attributes) ||
+            attributes.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        foreach (var name in ResultIdPropertyNames)
+        {
+            if (!attributes.TryGetProperty(name, out var value))
+            {
+                continue;
+            }
+
+            if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number))
+            {
+                return number;
+            }
+
+            if (value.ValueKind == JsonValueKind.String &&
+                int.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>The names ArcGIS clients stamp a batch record's correlation id under.</summary>
+    private static readonly string[] ResultIdPropertyNames = ["OBJECTID", "ObjectID", "objectid", "ResultID", "resultID", "resultId"];
 
     private static string? ExtractAddressFromRecord(JsonElement record)
     {
@@ -1354,8 +1408,39 @@ internal sealed class GeocodingHandler(
     // Providers stamp the originating input index into the candidate's ResultID attribute; this
     // value is authoritative. When it is missing or unparseable we fall back to the candidate's
     // positional index, which is also the input index because batch results are 1:1 and ordered.
-    private static int ResolveResultId(Honua.Geocoding.Features.Geocoding.Domain.GeocodeCandidate candidate, int positionalIndex)
+    // The ResultID attribute and the resultId member have to be the same number: a client
+    // reading either one must join a location back to the same submitted record.
+    private static Dictionary<string, GeocodeAttributeValue> WithResultId(
+        IReadOnlyDictionary<string, GeocodeAttributeValue> attributes,
+        int resultId)
     {
+        var stamped = new Dictionary<string, GeocodeAttributeValue>(attributes, StringComparer.Ordinal)
+        {
+            [Honua.Geocoding.Features.Geocoding.Domain.GeocodeCandidate.ResultIdAttribute] =
+                GeocodeAttributeValue.FromNumber(resultId)
+        };
+
+        return stamped;
+    }
+
+    private static int ResolveResultId(
+        Honua.Geocoding.Features.Geocoding.Domain.GeocodeCandidate candidate,
+        int positionalIndex,
+        List<int?>? submittedIds)
+    {
+        // The id the CALLER stamped on the record wins. The coordinator's own ResultID is
+        // its positional correlation, which is only the same number by coincidence: Pro
+        // submits OBJECTID 1 for the first record, and answering 0 there is what made
+        // GeocodeAddresses report "0 Matched / 0 Unmatched" over a 200 that carried a
+        // location (honua-server#5145).
+        if (submittedIds is not null &&
+            positionalIndex >= 0 &&
+            positionalIndex < submittedIds.Count &&
+            submittedIds[positionalIndex] is { } submitted)
+        {
+            return submitted;
+        }
+
         if (candidate.Attributes.TryGetValue(Honua.Geocoding.Features.Geocoding.Domain.GeocodeCandidate.ResultIdAttribute, out var raw) &&
             !string.IsNullOrWhiteSpace(raw) &&
             int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
