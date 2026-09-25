@@ -801,7 +801,11 @@
       "operation": "landing-page",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (revision c9f739e6d): Pro has a native OGC API Server connection and read Honua's landing document through it. Command Search offers New OGC API Server / New OGC API Server Connection / OGC API Server Connection File. The Add OGC API Server Connection dialog was given https://host.docker.internal:18443/ogc/features and accepted it, creating a Servers entry named 'Honua OGC API Features on host.docker.internal_18443.ogc'. The name is DERIVED FROM THE SERVICE - the landing document's own title is 'Honua OGC API Features' - so Pro fetched and parsed the landing page rather than echoing the URL it was given. Expanding the connection revealed two capability nodes, Features and Map-tiles, consistent with the 21 conformance classes the service advertises.",
+          "previous_exclusion": {
+            "state": "not-started"
+          }
         },
         "arcpy": {
           "state": "n/a-no-client",
@@ -855,7 +859,11 @@
       "operation": "collections",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (revision c9f739e6d): Pro enumerated the feature collections with their titles and ids. Under Features the Catalog lists 'Browser Lines(2001)', 'Browser Points(2000)', 'Browser Polygons(2002)', 'Portal Public Points(3000)', 'Test Layer(0)' and 'WFS-T Delete Scratch(12)', with more below the fold. An independent GET of /ogc/features/collections returns eight collections with id -> title pairs 2000 Browser Points, 2001 Browser Lines, 2002 Browser Polygons, 3000 Portal Public Points, 0 Test Layer, 10 WFS-T Insert Scratch, 11 WFS-T Update Scratch, 12 WFS-T Delete Scratch. Every id and title visible in the client matches the service exactly. Stated precisely: six of the eight were on screen; ids 10 and 11 sat below the fold and are NOT claimed as visually confirmed.",
+          "previous_exclusion": {
+            "state": "not-started"
+          }
         },
         "arcpy": {
           "state": "n/a-no-client",
