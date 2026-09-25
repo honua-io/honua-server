@@ -151,6 +151,14 @@ internal sealed record GeocodeServerInfoResponse
     // provider-supplied address type. Filtering runs on the shared geocode interface against the
     // category data providers return, so the advertised set is the canonical address/place
     // families Honua's providers classify candidates into.
+    // Intersections are not resolved by any configured provider, so the intersection
+    // candidate schema is empty rather than absent. An empty array states "this locator
+    // returns no intersection candidates"; omitting the member says nothing at all, and
+    // the geocoding tools read the member to decide whether to offer intersection
+    // matching. Same distinction that mattered for candidateFields (#5145).
+    [JsonPropertyName("intersectionCandidateFields")]
+    public GeocodeAddressField[] IntersectionCandidateFields { get; init; } = [];
+
     [JsonPropertyName("categories")]
     public string[] Categories { get; init; } = GeocodeSupportedCategories.All;
 
