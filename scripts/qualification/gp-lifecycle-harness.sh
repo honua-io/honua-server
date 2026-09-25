@@ -32,6 +32,9 @@ case "${lane}" in
   heartbeat-recovery)
     declared_scenarios=(topology stale-lease cleanup)
     ;;
+  terminal-result-recovery)
+    declared_scenarios=(topology terminal-result-recovery cleanup)
+    ;;
   output-store-outage)
     declared_scenarios=(topology output-write-failure cleanup)
     ;;
@@ -63,7 +66,7 @@ case "${lane}" in
     declared_scenarios=(assertion-failure follow-up cleanup)
     ;;
   *)
-    echo "HONUA_GP_LANE must be output-store, output-store-outage, heartbeat-recovery, output-store-dr, crash-boundaries, lifecycle, resilience, or self-test" >&2
+    echo "HONUA_GP_LANE must be output-store, output-store-outage, heartbeat-recovery, terminal-result-recovery, output-store-dr, crash-boundaries, lifecycle, resilience, or self-test" >&2
     exit 2
     ;;
 esac
@@ -1343,6 +1346,9 @@ else
   if [[ -z "${preflight_failure}" ]]; then
     if [[ "${lane}" == heartbeat-recovery ]]; then
       run_scenario stale-lease run_stale_lease || failures=$((failures + 1))
+    elif [[ "${lane}" == terminal-result-recovery ]]; then
+      source "${repo_root}/scripts/qualification/gp-store-crash.sh"
+      run_scenario terminal-result-recovery run_store_crash_boundary terminal-committed-registration-pending worker || failures=$((failures + 1))
     elif [[ "${lane}" == output-store-outage ]]; then
       run_scenario output-write-failure run_output_write_failure || failures=$((failures + 1))
     elif [[ "${lane}" == output-store || "${lane}" == output-store-dr ]]; then
