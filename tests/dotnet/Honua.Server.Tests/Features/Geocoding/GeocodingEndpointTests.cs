@@ -1376,6 +1376,43 @@ public sealed class GeocodingEndpointTests
         }
     }
 
+    // #5145: ReverseGeocode builds an output feature from the address object, and the live
+    // World locator carries the coordinates there - X/Y for the match, InputX/InputY for the
+    // point asked about, all four as JSON numbers. Ours carried none, which is the shape of
+    // the "ERROR 999999" that fails the reverseGeocode cell.
+    [IntegrationTest]
+    [Operation(Operations.Query)]
+    [Endpoint("GET /rest/services/{locatorName}/GeocodeServer/reverseGeocode")]
+    public async Task ReverseGeocode_AddressCarriesTheMatchAndInputCoordinates()
+    {
+        using var factory = CreateDefaultFactory();
+        using var client = factory.CreateClient();
+
+        using var response = await client.GetAsync(
+            "/rest/services/World/GeocodeServer/reverseGeocode?f=json&location=-157.8583,21.3069&outSR=4326");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var address = payload.RootElement.GetProperty("address");
+        var location = payload.RootElement.GetProperty("location");
+
+        foreach (var name in new[] { "X", "Y", "InputX", "InputY" })
+        {
+            Assert.Equal(JsonValueKind.Number, address.GetProperty(name).ValueKind);
+        }
+
+        Assert.Equal(location.GetProperty("x").GetDouble(), address.GetProperty("X").GetDouble());
+        Assert.Equal(location.GetProperty("y").GetDouble(), address.GetProperty("Y").GetDouble());
+        Assert.Equal(-157.8583, address.GetProperty("InputX").GetDouble(), 4);
+        Assert.Equal(21.3069, address.GetProperty("InputY").GetDouble(), 4);
+
+        // The output-schema trio belongs to a candidate, not to a reverse match: the live
+        // locator returns none of them here.
+        Assert.False(address.TryGetProperty("Status", out _));
+        Assert.False(address.TryGetProperty("Score", out _));
+        Assert.False(address.TryGetProperty("Loc_name", out _));
+    }
+
     // #2147: SuggestedBatchSize is derived from the ACTIVE provider's MaxBatchSize, not a constant.
     // A provider with a non-default batch size advertises that exact value.
     [IntegrationTest]

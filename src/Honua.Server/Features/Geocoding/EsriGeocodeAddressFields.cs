@@ -65,6 +65,41 @@ internal static class EsriGeocodeAddressFields
         return attributes;
     }
 
+    /// <summary>
+    /// Projects a reverse-geocode match, adding the geometry members the live World
+    /// locator carries on its address object.
+    /// </summary>
+    /// <remarks>
+    /// <c>X</c>/<c>Y</c> are the matched location and <c>InputX</c>/<c>InputY</c> the
+    /// point that was asked about; all four are JSON numbers there. ReverseGeocode builds
+    /// an output feature from the address object, and ours carried no coordinates at all -
+    /// the shape of the "ERROR 999999" that fails the reverseGeocode cell
+    /// (honua-server#5145).
+    /// </remarks>
+    internal static IReadOnlyDictionary<string, GeocodeAttributeValue> ApplyReverseMatch(
+        string? matchedAddress,
+        string? addressType,
+        StructuredAddress? structured,
+        IReadOnlyDictionary<string, string?> providerAttributes,
+        double matchedX,
+        double matchedY,
+        double inputX,
+        double inputY)
+    {
+        var components = Apply(matchedAddress, addressType, structured, providerAttributes);
+        var address = new Dictionary<string, GeocodeAttributeValue>(components.Count + 4, StringComparer.Ordinal);
+        foreach (var pair in components)
+        {
+            address[pair.Key] = GeocodeAttributeValue.FromText(pair.Value);
+        }
+
+        address["X"] = GeocodeAttributeValue.FromNumber(matchedX);
+        address["Y"] = GeocodeAttributeValue.FromNumber(matchedY);
+        address["InputX"] = GeocodeAttributeValue.FromNumber(inputX);
+        address["InputY"] = GeocodeAttributeValue.FromNumber(inputY);
+        return address;
+    }
+
     internal static IReadOnlyDictionary<string, string?> Apply(
         string? matchedAddress,
         string? addressType,
