@@ -4,6 +4,8 @@ import copy
 import json
 import math
 import os
+import shutil
+import subprocess
 import tempfile
 import unittest
 from datetime import timedelta
@@ -202,6 +204,29 @@ class ScheduledStreakTests(unittest.TestCase):
         result = self.build()
         self.assertFalse(result["ready"])
         self.assertEqual(0, result["consecutive_green"])
+
+    def test_current_interval_must_be_downloaded_not_taken_from_local_files(self):
+        for missing_upload in (False, True):
+            with self.subTest(missing_upload=missing_upload):
+                downloaded = []
+                def download(arguments, **kwargs):
+                    run_id = arguments[3]
+                    downloaded.append(run_id)
+                    if missing_upload and run_id == "100":
+                        raise subprocess.CalledProcessError(1, arguments)
+                    destination = Path(arguments[-1])
+                    shutil.copytree(self.root / run_id, destination)
+                output_path = self.root / "downloaded-bundle" / "streak.json"
+                environment = {"GITHUB_REPOSITORY": "honua-io/honua-server", "GITHUB_RUN_ID": "100",
+                               "GITHUB_EVENT_NAME": "schedule", "HONUA_GP_CANARY_RECEIPT": str(self.root / "100" / "receipt.json"),
+                               "HONUA_GP_CANARY_STREAK_RECEIPT": str(output_path)}
+                with patch.dict(os.environ, environment), patch.object(streak, "gh_json", side_effect=[self.runs[0], {"workflow_runs": self.runs}]), patch.object(streak.subprocess, "run", side_effect=download):
+                    self.assertEqual(0, streak.main())
+                result = json.loads(output_path.read_text())
+                self.assertEqual(not missing_upload, result["ready"])
+                self.assertEqual("100", downloaded[0])
+                if missing_upload:
+                    self.assertEqual(0, result["consecutive_green"])
 
     def test_missing_slot_cannot_be_replaced_by_an_older_green(self):
         self.runs[3]["created_at"] = "2026-09-20T00:18:00Z"

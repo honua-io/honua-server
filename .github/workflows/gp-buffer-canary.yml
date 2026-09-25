@@ -89,6 +89,14 @@ jobs:
       - name: Execute both numerical canaries and retain failures
         if: always()
         run: scripts/qualification/gp-canary.sh
+      - name: Retain the interval before evaluating readiness
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gp-buffer-canary-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/gp-canary/
+          if-no-files-found: error
+          retention-days: 90
       - name: Verify seven actual scheduled intervals and retain their evidence
         if: always()
         env:
@@ -99,14 +107,6 @@ jobs:
         run: |
           tar -czf artifacts/gp-canary-bundle.tar.gz -C artifacts/gp-canary .
           sha256sum artifacts/gp-canary-bundle.tar.gz > artifacts/gp-canary-bundle.tar.gz.sha256
-      - name: Retain machine-readable canary receipts and immutable bundle
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: gp-buffer-canary-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/gp-canary/
-          if-no-files-found: error
-          retention-days: 90
       - name: Retain content-addressed evidence archive
         if: always()
         uses: actions/upload-artifact@v7

@@ -138,8 +138,6 @@ def main():
         history = gh_json("api", f"repos/{repository}/actions/workflows/gp-buffer-canary.yml/runs?event=schedule&per_page=100")["workflow_runs"]
         with tempfile.TemporaryDirectory(prefix="gp-canary-history-") as temporary:
             def load(run):
-                if str(run["id"]) == run_id:
-                    return Path(os.environ.get("HONUA_GP_CANARY_RECEIPT", "artifacts/gp-canary/receipt.json")).parent
                 folder = Path(temporary) / str(run["id"])
                 subprocess.run(["gh", "run", "download", str(run["id"]), "--repo", repository,
                                 "--name", f"gp-buffer-canary-{run['id']}-1", "--dir", str(folder)],

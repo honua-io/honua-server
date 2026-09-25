@@ -5,6 +5,17 @@
 retry is not a production burn-in interval or whole-catalog GP qualification.
 Issues #3809 and #3857 remain open until their live evidence requirements hold.
 
+PRs also run `published-image-rehearsal` against the digest-pinned server image
+in the workflow. It reuses the reliability Compose PostGIS/Redis/server services
+and checks the pulled image's source label. The exact same canary input, async
+HTTP execution, result decoding and numerical oracles run against that server.
+This catches response-shape/default-format assumptions that mock tests cannot.
+The ephemeral Development/API-key/loopback HTTP topology disables external output
+staging; it does not prove production bearer authentication, native-worker
+identity or persistent output recovery. Its separate receipt schema records
+`qualification: false` and can never enter the scheduled streak. No cloud
+deployment or production data is touched by that rehearsal.
+
 ## Frozen deployment configuration
 
 The operator configures these repository values before the first interval:
@@ -73,9 +84,13 @@ fixture version and numerical-oracle source hash. Each harness commit is retaine
 an unrelated trunk commit alone does not restart the streak. Changing the
 candidate, fixture or oracle does. Manual runs always report `ready: false`.
 
-Each Actions artifact is named with run ID and attempt, retained for 90 days,
-and includes the current receipt plus the seven-slot streak report. Passing
+Each interval artifact is named with run ID and attempt and retained for 90 days.
+The current interval is uploaded before streak evaluation, then downloaded and
+verified through the same path as historical evidence. An absent current upload
+cannot establish readiness. Passing
 historical intervals are copied into `intervals/<run-id>/` with their receipts
 and all input/output files. A separate immutable `.tar.gz` and SHA-256 file retain
-the complete bundle. This provides the reviewable proof; publishing a release
+the complete bundle, including the seven-slot streak report. Readiness is only
+published in this separate bundle after interval verification. This provides the
+reviewable proof; publishing a release
 asset and signing/aggregating release evidence remain release-operator work.
