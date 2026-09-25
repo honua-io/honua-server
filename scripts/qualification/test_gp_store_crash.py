@@ -37,7 +37,7 @@ SH
 result=0
 run_output_write_failure || result=$?
 [[ "$result" == 19 ]] || exit 71
-[[ "$(cat invoked)" == 'output-bytes-written-unpublished store' ]] || exit 72
+[[ "$(cat invoked)" == 'native-process-started store' ]] || exit 72
 '''
         self.run_shell(script)
 
@@ -170,6 +170,73 @@ fi
         for restoration in ("yes", "no"):
             with self.subTest(restoration=restoration):
                 self.run_shell(script, RESTORE_FAILS=restoration)
+
+    def test_outage_requires_successful_http_transport_and_real_denial(self):
+        script = functions(CRASH, "observe_store_outage_http") + r'''
+set -uo pipefail
+peer_url=http://fixture; api_key=fixture; job=job-1
+curl() {
+  if [[ "$*" == *healthz/ready ]]; then echo "$READY"; return 0; fi
+  echo "$CONTENT"
+  [[ "$TRANSPORT" == ok ]]
+}
+result=0
+observe_store_outage_http > observations.json || result=$?
+jq -e --arg content "$CONTENT" '.content_http == $content' observations.json || exit 71
+if [[ "$EXPECTED" == pass ]]; then [[ "$result" == 0 ]] || exit 72
+else [[ "$result" != 0 ]] || exit 73; fi
+'''
+        for ready, content, transport, expected in (
+                ("503", "503", "ok", "pass"), ("503", "404", "ok", "pass"),
+                ("200", "503", "ok", "fail"), ("503", "000", "fail", "fail"),
+                ("503", "200", "ok", "fail"), ("503", "206", "ok", "fail"),
+                ("503", "302", "ok", "fail"), ("503", "503", "fail", "fail")):
+            with self.subTest(ready=ready, content=content, transport=transport):
+                self.run_shell(script, READY=ready, CONTENT=content, TRANSPORT=transport,
+                               EXPECTED=expected)
+
+    def test_write_failure_requires_real_store_stack_and_empty_retry(self):
+        script = functions(CRASH, "observe_store_write_retry") + r'''
+set -uo pipefail
+job=job-1; scenario=output-write-failure; receipt_root="$PWD"; object_root="$PWD/store"
+scenario_evidence_file="$PWD/evidence.json"; outage_started=timestamp
+before_fixture_record='{"attemptCount":1}'; write_failure_record=null
+mkdir "$object_root"; echo '{}' > "$scenario_evidence_file"
+fixture_record='{"status":0,"attemptCount":1,"nextRetryAt":"future","artifactReferences":[],"currentPhase":"Requeued: failure"}'
+case "$MUTATION" in
+  earlier-attempt) fixture_record="$(jq '.attemptCount=0' <<< "$fixture_record")";;
+  published) fixture_record="$(jq '.artifactReferences=["unexpected"]' <<< "$fixture_record")";;
+  terminal) fixture_record="$(jq '.status=3' <<< "$fixture_record")";;
+  no-retry) fixture_record="$(jq '.nextRetryAt=null' <<< "$fixture_record")";;
+  restored) touch "$object_root/.honua-gp-store.json";;
+esac
+compose() {
+  if [[ "$1" == logs ]]; then
+    echo 'Job execution failed: job-1'
+    echo 'Geoprocessing:OutputStaging persistence attestation is missing or mismatched'
+    [[ "$MUTATION" == generic ]] || echo 'FileSystemGeoprocessingOutputObjectStore.WriteAsync'
+    return 0
+  fi
+  echo "$fixture_record"
+}
+object_file_count() { echo 0; }
+record_attempt() { echo "$1" > attempt; }
+record_transition() { echo "$1" > transition; }
+scenario_fail() { echo "$1" > finding; return 1; }
+sleep() { SECONDS="$deadline"; }
+result=0
+observe_store_write_retry || result=$?
+if [[ "$MUTATION" == none ]]; then
+  [[ "$result" == 0 && "$(cat attempt)" == 1 && "$(cat transition)" == queued ]] || exit 71
+  jq -e '.write_failure_retry.attemptCount == 1' "$scenario_evidence_file" || exit 72
+else
+  [[ "$result" != 0 && -e finding ]] || exit 73
+fi
+'''
+        for mutation in ("none", "earlier-attempt", "published", "terminal", "no-retry",
+                         "restored", "generic"):
+            with self.subTest(mutation=mutation):
+                self.run_shell(script, MUTATION=mutation)
 
 
 if __name__ == "__main__":
