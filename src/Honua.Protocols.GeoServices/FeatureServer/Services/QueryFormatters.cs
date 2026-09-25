@@ -1268,7 +1268,7 @@ internal sealed class StreamingQueryFormatter
                     objectIdWritten = true;
                 }
 
-                WriteJsonValue(writer, fieldName, kvp.Value, cancellationToken, stringifyComplexValues: true, temporalFieldTypes: temporalFieldTypes);
+                WriteJsonValue(writer, fieldName, kvp.Value, stringifyComplexValues: true, temporalFieldTypes, cancellationToken);
             }
         }
 
@@ -1393,7 +1393,7 @@ internal sealed class StreamingQueryFormatter
         writer.WriteStartObject("properties");
         foreach (var kvp in featureBase.Properties)
         {
-            WriteJsonValue(writer, kvp.Key, kvp.Value, cancellationToken, stringifyComplexValues: false);
+            WriteJsonValue(writer, kvp.Key, kvp.Value, stringifyComplexValues: false, temporalFieldTypes: null, cancellationToken);
         }
 
         writer.WriteEndObject();
@@ -1420,9 +1420,9 @@ internal sealed class StreamingQueryFormatter
         Utf8JsonWriter writer,
         string propertyName,
         object? value,
-        CancellationToken cancellationToken,
         bool stringifyComplexValues,
-        IReadOnlyDictionary<string, MetadataV2FieldType>? temporalFieldTypes = null)
+        IReadOnlyDictionary<string, MetadataV2FieldType>? temporalFieldTypes,
+        CancellationToken cancellationToken)
     {
         // Use schema semantics even when the CLR representation changed in a cache.
         if (value is not null
