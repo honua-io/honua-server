@@ -115,7 +115,7 @@ public sealed class ReconciliationFilterIntegrationTests(PostgresFixture fixture
         report.Count.TargetCount.Should().Be(dedicatedTarget ? 4 : 2);
         report.Count.Classification.Should().Be(dedicatedTarget ? "fail" : "pass");
         report.Extent.Target!.Value.MinX.Should().Be(1);
-        report.Extent.Target.Value.MaxX.Should().Be(dedicatedTarget ? 60 : 2);
+        report.Extent.Target!.Value.MaxX.Should().Be(dedicatedTarget ? 60 : 2);
         report.Geometry.Sampled.Should().Be(dedicatedTarget ? 4 : 2);
         report.Classification.Should().Be(dedicatedTarget ? "fail" : "pass");
 
