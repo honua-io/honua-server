@@ -101,6 +101,11 @@ services:
       # cog and 3d-tiles cells fail on a 404 that looks like a missing feature.
       # Matches HONUA_ADMIN_PASSWORD on the honua service above.
       HONUA_ADMIN_PASSWORD: ClientCompatAdmin123!
+      HONUA_BASE_URL: http://honua:5000
+      # Certification probes the advertised identity. Override this when that
+      # identity is not the in-network host. publish-scene.py refuses to skip
+      # when this URL does not serve the tileset (#5218).
+      HONUA_CLIENT_COMPAT_PUBLIC_BASE_URL: ${HONUA_CLIENT_COMPAT_PUBLIC_BASE_URL:-http://honua:5000}
     # The real server must own schema creation and its migration journal.
     # Seeding first creates migration-owned tables without journal entries,
     # which correctly makes startup/readiness reject the fixture (#4731/#4735).
