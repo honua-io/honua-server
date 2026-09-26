@@ -1654,8 +1654,12 @@
       "operation": "service-info",
       "lanes": {
         "pro-ui": {
-          "state": "pass",
-          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+          "state": "fail",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (image revision c9f739e6db1eb07610274619fe1f1720492bb8af): Driven through an ArcGIS Server site connection, which the project did not previously have: Insert > Connections > Server > New ArcGIS Server against https://host.docker.internal:18443/arcgis, anonymous, then Catalog > Servers > browser_compat (tooltip 'Type: Map Service', path .../browser_compat/MapServer) > Add To Current Map. Pro read the service and instantiated the correct layer type - the contextual ribbon tab reads 'Map Image Layer' and the Contents node is mappingTOCItem_MapImageLayer_browser_compat - BUT IT ENUMERATED ONE SUBLAYER OF THREE. Read from the UIA tree rather than from pixels, the only child is mappingTOCItem_ServiceSubLayer_Browser Points; Browser Lines and Browser Polygons are absent, while the WMS layer on the same service in the same map shows all three. SERVER DEFECT, isolated by bodies not status codes: GET /rest/services/browser_compat/MapServer/layers?f=json returns 7171 bytes listing layers 2000/2001/2002, while POST to the same resource returns 245 bytes carrying a GeoServices error envelope {\"error\":{\"code\":405,\"message\":\"Method Not Allowed\"}} under HTTP 200, for every placement of f=json tried. ArcGIS Pro POSTs: the server request log for the add shows POST /MapServer/layers once, then POST /MapServer/2000 five times and never 2001 or 2002. The route is registered MapGet-only at MapServerEndpoints.cs:275, as is its twin allLayersAndTables at :263, while every other readable MapServer operation in that file already carries a MapPost companion - queryDomains carries one with a comment citing honua-server#1825 for this same class of bug. The service metadata itself is sound: root ?f=json, /layers over GET, /legend and each of /2000 /2001 /2002 all describe three well-formed Feature Layers. Receipts 83,84,85,86,87,90.",
+          "previous_exclusion": {
+            "state": "pass",
+            "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+          }
         },
         "arcpy": {
           "state": "pass",
@@ -1678,7 +1682,11 @@
       "lanes": {
         "pro-ui": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (image revision c9f739e6db1eb07610274619fe1f1720492bb8af): Driven through an ArcGIS Server site connection, which the project did not previously have: Insert > Connections > Server > New ArcGIS Server against https://host.docker.internal:18443/arcgis, anonymous, then Catalog > Servers > browser_compat (tooltip 'Type: Map Service', path .../browser_compat/MapServer) > Add To Current Map. With the WMS layer and the FeatureServer feature layer both unchecked, so the Map Image Layer is the only visible layer, Pro drew the MapServer render on the canvas and the server log records POST /rest/services/browser_compat/MapServer/export -> 200 under user agent 'ArcGIS Pro 3.7.1 (00000000000) - ArcGISPro'. Checked positionally against an independent oracle rather than trusted: an Explore click on the drawn point at 122.4179954W 37.7760594N resolved objectid 14, and FeatureServer/2000/query?where=objectid=14 returns pt-beta at (-122.418, 37.776), so the drawn pixel is where the feature actually is. Export is also sound server-side when exercised directly: the default render and layers=show:2000,2001,2002 are byte-identical (8625 B, sha256 3f216d88eec55a18...) and each single-layer selection differs, so it honours the layer list and draws all seven features when asked. Caveat, deliberately not charged to this cell: Pro can only request the one sublayer it enumerated, so its on-canvas render is points only - that defect is recorded once, against mapserver.service-info. Receipts 87,89,90.",
+          "previous_exclusion": {
+            "state": "pass",
+            "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+          }
         },
         "arcpy": {
           "state": "pass",
@@ -1701,7 +1709,11 @@
       "lanes": {
         "pro-ui": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904, UI-SERVICE-MAP: Explore pop-up on the MapServer layer returned UI Points (1) name ui-point-07, objectid 10, category A, value 60, matching the service; Pro issued POST MapServer/identify 200"
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (image revision c9f739e6db1eb07610274619fe1f1720492bb8af): Driven through an ArcGIS Server site connection, which the project did not previously have: Insert > Connections > Server > New ArcGIS Server against https://host.docker.internal:18443/arcgis, anonymous, then Catalog > Servers > browser_compat (tooltip 'Type: Map Service', path .../browser_compat/MapServer) > Add To Current Map. Map tab > Explore, then a click on a rendered point of the Map Image Layer with the FeatureServer feature layer unchecked, so the hit can only come from the map service. The pop-up, titled 'Browser Points - Browser Points', returned objectid 14, name pt-beta, and the server log records POST /rest/services/browser_compat/MapServer/identify -> 200. Verified against an independent oracle rather than against Pro's own view: FeatureServer/2000/query?where=objectid=14&outFields=*&returnGeometry=true returns objectid 14, name pt-beta, geometry (-122.418, 37.776), and Pro's status bar read 122.4179954W 37.7760594N at the click - attribute and position both agree. Receipt 92.",
+          "previous_exclusion": {
+            "state": "pass",
+            "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904, UI-SERVICE-MAP: Explore pop-up on the MapServer layer returned UI Points (1) name ui-point-07, objectid 10, category A, value 60, matching the service; Pro issued POST MapServer/identify 200"
+          }
         },
         "arcpy": {
           "state": "n/a-no-client",
@@ -1729,7 +1741,11 @@
       "lanes": {
         "pro-ui": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904, UI-SERVICE-MAP: the Map Image Layer's sublayer UI Points resolved the server legend entry 'Default' (POST MapServer/legend 200) alongside the export render"
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (image revision c9f739e6db1eb07610274619fe1f1720492bb8af): Driven through an ArcGIS Server site connection, which the project did not previously have: Insert > Connections > Server > New ArcGIS Server against https://host.docker.internal:18443/arcgis, anonymous, then Catalog > Servers > browser_compat (tooltip 'Type: Map Service', path .../browser_compat/MapServer) > Add To Current Map. Expanding the Map Image Layer's sublayer in Contents resolved a server legend entry - swatch plus the label 'Default' under Browser Points - and the server log records POST /rest/services/browser_compat/MapServer/legend -> 200 for that expansion. Matches the service: /MapServer/legend?f=json returns one 'Default' entry per layer, contentType image/png, 20x20, and the point layer's 540-byte swatch is the blue circle Pro drew. Unlike /layers, the legend resource is correct on BOTH verbs - GET and POST return identical 1565-byte bodies. Pro sees only one layer's legend because it enumerated only one sublayer; that defect is recorded against mapserver.service-info rather than double-counted here. Receipt 91.",
+          "previous_exclusion": {
+            "state": "pass",
+            "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904, UI-SERVICE-MAP: the Map Image Layer's sublayer UI Points resolved the server legend entry 'Default' (POST MapServer/legend 200) alongside the export render"
+          }
         },
         "arcpy": {
           "state": "n/a-no-client",
@@ -2284,7 +2300,11 @@
       "operation": "project",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (image revision c9f739e6db1eb07610274619fe1f1720492bb8af): ABSENCE MEASURED IN THE UI, not inferred. Insert > Connections lists Database, New Multifile Feature Connection, Server, Cloud Store, STAC Connection, New BIM Cloud Connection, Statistical Data Collection and Add Locator; its Server submenu offers exactly Add Server, New ArcGIS Server, New OGC API Server, New WCS Server, New WFS Server, New WMS Server and New WMTS Server - there is no Geometry Server connection type. Command Search for 'geometry service' returns only geoprocessing tools (Generate Derived Airspace Geometry, Calculate Geometry Attributes, Measure Angle, New Geometry Attributes, Bearing Distance To Line, ...) plus 'Get help on', i.e. local-engine geometry, nothing that addresses a GeometryServer URL. ArcGIS Pro 3.7.1 therefore exposes no consumption surface for this operation. Measured separately from - and agreeing with - the arcpy finding, which enumerated 3511 names across 12 arcpy namespaces and found none either. The endpoint is NOT missing server-side: /arcgis/rest/services/Utilities/Geometry/GeometryServer answers with buffer, simplify, project, intersect, union, clip, difference, areasAndLengths, lengths, distance, relation, densify, convexHull, generalize, labelPoints, cut and trimExtend, and project returns wkid 3857 output. There is simply no ArcGIS Pro UI that can call it. Receipts 75,78,80.",
+          "previous_exclusion": {
+            "state": "not-started"
+          }
         },
         "arcpy": {
           "state": "n/a-no-client",
@@ -2320,7 +2340,11 @@
       "operation": "buffer",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (image revision c9f739e6db1eb07610274619fe1f1720492bb8af): ABSENCE MEASURED IN THE UI, not inferred. Insert > Connections lists Database, New Multifile Feature Connection, Server, Cloud Store, STAC Connection, New BIM Cloud Connection, Statistical Data Collection and Add Locator; its Server submenu offers exactly Add Server, New ArcGIS Server, New OGC API Server, New WCS Server, New WFS Server, New WMS Server and New WMTS Server - there is no Geometry Server connection type. Command Search for 'geometry service' returns only geoprocessing tools (Generate Derived Airspace Geometry, Calculate Geometry Attributes, Measure Angle, New Geometry Attributes, Bearing Distance To Line, ...) plus 'Get help on', i.e. local-engine geometry, nothing that addresses a GeometryServer URL. ArcGIS Pro 3.7.1 therefore exposes no consumption surface for this operation. Measured separately from - and agreeing with - the arcpy finding, which enumerated 3511 names across 12 arcpy namespaces and found none either. The endpoint is NOT missing server-side: /arcgis/rest/services/Utilities/Geometry/GeometryServer answers with buffer, simplify, project, intersect, union, clip, difference, areasAndLengths, lengths, distance, relation, densify, convexHull, generalize, labelPoints, cut and trimExtend, and project returns wkid 3857 output. There is simply no ArcGIS Pro UI that can call it. Receipts 75,78,80.",
+          "previous_exclusion": {
+            "state": "not-started"
+          }
         },
         "arcpy": {
           "state": "n/a-no-client",
@@ -2356,7 +2380,11 @@
       "operation": "areasAndLengths",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (image revision c9f739e6db1eb07610274619fe1f1720492bb8af): ABSENCE MEASURED IN THE UI, not inferred. Insert > Connections lists Database, New Multifile Feature Connection, Server, Cloud Store, STAC Connection, New BIM Cloud Connection, Statistical Data Collection and Add Locator; its Server submenu offers exactly Add Server, New ArcGIS Server, New OGC API Server, New WCS Server, New WFS Server, New WMS Server and New WMTS Server - there is no Geometry Server connection type. Command Search for 'geometry service' returns only geoprocessing tools (Generate Derived Airspace Geometry, Calculate Geometry Attributes, Measure Angle, New Geometry Attributes, Bearing Distance To Line, ...) plus 'Get help on', i.e. local-engine geometry, nothing that addresses a GeometryServer URL. ArcGIS Pro 3.7.1 therefore exposes no consumption surface for this operation. Measured separately from - and agreeing with - the arcpy finding, which enumerated 3511 names across 12 arcpy namespaces and found none either. The endpoint is NOT missing server-side: /arcgis/rest/services/Utilities/Geometry/GeometryServer answers with buffer, simplify, project, intersect, union, clip, difference, areasAndLengths, lengths, distance, relation, densify, convexHull, generalize, labelPoints, cut and trimExtend, and project returns wkid 3857 output. There is simply no ArcGIS Pro UI that can call it. Receipts 75,78,80.",
+          "previous_exclusion": {
+            "state": "not-started"
+          }
         },
         "arcpy": {
           "state": "n/a-no-client",
@@ -2392,7 +2420,11 @@
       "operation": "relation",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (image revision c9f739e6db1eb07610274619fe1f1720492bb8af): ABSENCE MEASURED IN THE UI, not inferred. Insert > Connections lists Database, New Multifile Feature Connection, Server, Cloud Store, STAC Connection, New BIM Cloud Connection, Statistical Data Collection and Add Locator; its Server submenu offers exactly Add Server, New ArcGIS Server, New OGC API Server, New WCS Server, New WFS Server, New WMS Server and New WMTS Server - there is no Geometry Server connection type. Command Search for 'geometry service' returns only geoprocessing tools (Generate Derived Airspace Geometry, Calculate Geometry Attributes, Measure Angle, New Geometry Attributes, Bearing Distance To Line, ...) plus 'Get help on', i.e. local-engine geometry, nothing that addresses a GeometryServer URL. ArcGIS Pro 3.7.1 therefore exposes no consumption surface for this operation. Measured separately from - and agreeing with - the arcpy finding, which enumerated 3511 names across 12 arcpy namespaces and found none either. The endpoint is NOT missing server-side: /arcgis/rest/services/Utilities/Geometry/GeometryServer answers with buffer, simplify, project, intersect, union, clip, difference, areasAndLengths, lengths, distance, relation, densify, convexHull, generalize, labelPoints, cut and trimExtend, and project returns wkid 3857 output. There is simply no ArcGIS Pro UI that can call it. Receipts 75,78,80.",
+          "previous_exclusion": {
+            "state": "not-started"
+          }
         },
         "arcpy": {
           "state": "n/a-no-client",
