@@ -15,6 +15,9 @@ spec.loader.exec_module(checklist)
 
 class ExclusionReviewTests(unittest.TestCase):
     def test_check_rejects_stale_json_and_markdown_projections(self):
+        # Compares against the COMMITTED artifacts, so it needs the full build,
+        # measured results included - unlike the tests below, which exercise the
+        # MATRIX logic and must not move when a lane is re-run.
         rows = checklist.build_rows()
         summary = checklist.summarise(rows)
         json_text = checklist.DATA_PATH.read_text(encoding="utf-8")
@@ -36,7 +39,7 @@ class ExclusionReviewTests(unittest.TestCase):
                                     checklist.check_projections(json_text, rows, summary)))
 
     def test_reopening_preserves_operations_passes_and_original_claims(self):
-        rows = checklist.build_rows()
+        rows = checklist.build_rows(apply_results=False)
         self.assertEqual(94, len(rows))
         self.assertEqual([], checklist.validate(rows))
         cells = [cell for row in rows for cell in row["lanes"].values()]
@@ -57,7 +60,7 @@ class ExclusionReviewTests(unittest.TestCase):
             self.assertTrue(cell["previous_exclusion"]["citation"])
 
     def test_only_receipted_operations_resolve_exclusions(self):
-        rows = checklist.build_rows()
+        rows = checklist.build_rows(apply_results=False)
         resolved = {(row["protocol"], row["version"], row["operation"], lane)
                     for row in rows for lane, cell in row["lanes"].items()
                     if "previous_review" in cell}
@@ -75,7 +78,7 @@ class ExclusionReviewTests(unittest.TestCase):
         self.assertEqual(53, sum(row["lanes"]["qgis-ui"]["state"] == "pass" for row in rows))
 
     def test_properties_hang_does_not_close_unperformed_gui_operations(self):
-        rows = checklist.build_rows()
+        rows = checklist.build_rows(apply_results=False)
         for protocol, operation in (("imageserver", "identify"), ("elevation", "point-query"),
                                     ("tilejson", "descriptor")):
             row = next(row for row in rows if row["protocol"] == protocol and row["operation"] == operation)
@@ -83,13 +86,13 @@ class ExclusionReviewTests(unittest.TestCase):
             self.assertNotIn("previous_review", row["lanes"]["qgis-ui"])
 
     def test_old_exclusion_cannot_be_restored_as_closed(self):
-        rows = copy.deepcopy(checklist.build_rows())
+        rows = copy.deepcopy(checklist.build_rows(apply_results=False))
         cell = next(row["lanes"]["arcpy"] for row in rows if row["protocol"] == "wcs")
         cell.update(cell["previous_exclusion"])
         self.assertTrue(any("disputed exclusion" in error for error in checklist.validate(rows)))
 
     def test_numeric_sampling_does_not_certify_imageserver_identify(self):
-        rows = checklist.build_rows()
+        rows = checklist.build_rows(apply_results=False)
         elevation = next(row for row in rows if row["protocol"] == "elevation")
         identify = next(row for row in rows if row["protocol"] == "imageserver"
                         and row["operation"] == "identify")
@@ -98,7 +101,7 @@ class ExclusionReviewTests(unittest.TestCase):
         self.assertEqual("blocked", elevation["lanes"]["qgis-ui"]["state"])
 
     def test_native_arcpy_replay_keeps_invalid_pass_and_native_failure_history(self):
-        rows = checklist.build_rows()
+        rows = checklist.build_rows(apply_results=False)
         cell = next(row["lanes"]["arcpy"] for row in rows
                     if row["protocol"] == "featureserver" and row["operation"] == "statistics")
         self.assertEqual("pass", cell["state"])
@@ -112,7 +115,7 @@ class ExclusionReviewTests(unittest.TestCase):
         self.assertTrue(any("local calculation" in error for error in checklist.validate(rows)))
 
     def test_native_ogr_statistics_reopens_only_exact_qgis_operations(self):
-        rows = checklist.build_rows()
+        rows = checklist.build_rows(apply_results=False)
         statistics = next(row for row in rows if row["protocol"] == "featureserver" and row["operation"] == "statistics")
         self.assertEqual("blocked", statistics["lanes"]["qgis-ui"]["state"])
         sdk = statistics["lanes"]["pyqgis"]
@@ -129,14 +132,14 @@ class ExclusionReviewTests(unittest.TestCase):
                 self.assertEqual("n/a-no-client", row["lanes"][lane]["state"])
 
     def test_repaired_replay_cannot_erase_earlier_failure(self):
-        rows = checklist.build_rows()
+        rows = checklist.build_rows(apply_results=False)
         cell = next(row["lanes"]["pyqgis"] for row in rows
                     if row["protocol"] == "featureserver" and row["operation"] == "statistics")
         del cell["previous_failure"]
         self.assertTrue(any("retain its failure receipt" in error for error in checklist.validate(rows)))
 
     def test_configured_native_reads_keep_gui_operations_open(self):
-        rows = checklist.build_rows()
+        rows = checklist.build_rows(apply_results=False)
         property_value = next(row for row in rows if row["operation"] == "GetPropertyValue")
         stored_queries = next(row for row in rows if row["operation"] == "ListStoredQueries")
         self.assertEqual("pass", property_value["lanes"]["pyqgis"]["state"])
@@ -154,7 +157,7 @@ class ExclusionReviewTests(unittest.TestCase):
                 self.assertIn("WebMercator default", row["lanes"]["pyqgis"]["evidence"])
 
     def test_alternative_network_tools_reopen_review_without_native_credit(self):
-        rows = checklist.build_rows()
+        rows = checklist.build_rows(apply_results=False)
         for row in rows:
             if row["protocol"] == "naserver":
                 cell = row["lanes"]["arcpy"]
@@ -166,7 +169,7 @@ class ExclusionReviewTests(unittest.TestCase):
                 self.assertTrue(any("native operation entrypoint" in error for error in checklist.validate(rows)))
 
     def test_collection_maps_overview_does_not_close_other_client_lanes(self):
-        row = next(row for row in checklist.build_rows() if row["protocol"] == "ogc-api-maps")
+        row = next(row for row in checklist.build_rows(apply_results=False) if row["protocol"] == "ogc-api-maps")
         self.assertEqual("pass", row["lanes"]["pyqgis"]["state"])
         for lane in ("pro-ui", "arcpy", "qgis-ui"):
             self.assertEqual("blocked", row["lanes"][lane]["state"])

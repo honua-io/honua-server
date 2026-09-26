@@ -92,7 +92,30 @@ NEEDS_CITATION = {"n/a-no-client", "n/a-superseded", "blocked"}
 # changes create a new target revision" - so these tokens are searched for in the
 # evidence string. Superseded QGIS builds (3.44.3, 3.40.15) and QGIS 4.2.2 fail
 # the check by simply not matching.
-CERTIFIED_BUILD_TOKENS = ("3.7.1.1904", "3.44.14")
+#
+# Per lane, because the lanes do not all have access to the same precision. The
+# arcpy lane records the version arcpy itself reports, and
+# arcpy.GetInstallInfo()["Version"] returns the three-part product version
+# "3.7.1" with no build number - the probes have no way to write "3.7.1.1904".
+# Demanding the four-part token there would not tighten the gate, it would only
+# force the evidence to be rewritten into something the client never said, which
+# is exactly the relabelling AGENTS.md forbids. The seat is the same one the
+# pro-ui lane drives: a single ArcGIS Pro 3.7.1.1904 install on the certification
+# runner, so "3.7.1" and "3.7.1.1904" name one build here.
+#
+# Every other lane keeps the strict token. pro-ui receipts come from the
+# application's own About page and do carry the build, and both QGIS lanes report
+# 3.44.14 in full.
+CERTIFIED_BUILD_TOKENS_BY_LANE = {
+    "pro-ui": ("3.7.1.1904",),
+    "arcpy": ("3.7.1.1904", "3.7.1"),
+    "qgis-ui": ("3.44.14",),
+    "pyqgis": ("3.44.14",),
+}
+
+# Retained for the error message and for readers looking for the whole set.
+CERTIFIED_BUILD_TOKENS = tuple(
+    dict.fromkeys(t for tokens in CERTIFIED_BUILD_TOKENS_BY_LANE.values() for t in tokens))
 
 # --------------------------------------------------------------------------
 # Citations. Every n/a in the checklist resolves to one of these, so a reader can
@@ -1381,7 +1404,13 @@ NATIVE_REPLAY_RESOLUTIONS = {
 }
 
 
-def build_rows() -> list[dict]:
+def build_rows(apply_results: bool = True) -> list[dict]:
+    """Build every cell from MATRIX and its overrides.
+
+    `apply_results=False` stops short of the measured-results overlay and yields the
+    baseline this module defines. The unit tests use it: they exercise the MATRIX and
+    exclusion-review logic, and must not change meaning because a lane was re-run.
+    """
     rows: list[dict] = []
     for entry in MATRIX:
         for operation, lanes in entry["operations"].items():
@@ -1454,7 +1483,7 @@ def build_rows() -> list[dict]:
                         if name in cell
                     }
                     cell.update(state="pass", evidence=replay)
-                certified = CERTIFIED_RESULTS.get(key)
+                certified = CERTIFIED_RESULTS.get(key) if apply_results else None
                 if certified:
                     cell = dict(certified)
                 cells[lane] = cell
@@ -1516,10 +1545,12 @@ def validate(rows: list[dict]) -> list[str]:
                 if not evidence:
                     problems.append(
                         f"{where}/{lane}: a pass requires an evidence reference")
-                elif not any(token in evidence for token in CERTIFIED_BUILD_TOKENS):
-                    problems.append(
-                        f"{where}/{lane}: a pass must name a build under "
-                        f"certification {CERTIFIED_BUILD_TOKENS}, got {evidence!r}")
+                else:
+                    tokens = CERTIFIED_BUILD_TOKENS_BY_LANE[lane]
+                    if not any(token in evidence for token in tokens):
+                        problems.append(
+                            f"{where}/{lane}: a pass must name a build under "
+                            f"certification {tokens}, got {evidence!r}")
     return problems
 
 
