@@ -269,6 +269,15 @@ internal static partial class MapServerEndpoints
             .WithTags("MapServer")
             .CacheOutput("LayerMetadata");
 
+        endpoints.MapPost("/rest/services/{serviceId}/MapServer/allLayersAndTables",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleAllLayersAndTables(context))
+            .WithDisplayName("Get All Layers and Tables (POST)")
+            .WithName("MapServerAllLayersAndTablesPost")
+            .WithSummary("Get metadata for all layers and tables")
+            .WithDescription("Returns the full metadata for every layer and table in the service in a single document")
+            .WithTags("MapServer")
+            .AllowAnonymous();
+
         // The ArcGIS Maps SDK for JavaScript and the .NET Runtime SDK hydrate
         // sublayers via /MapServer/layers (the canonical Esri spelling of the
         // allLayersAndTables resource). Return the identical document (#1454).
@@ -280,6 +289,24 @@ internal static partial class MapServerEndpoints
             .WithDescription("Returns the full metadata for every layer and table in the service in a single document")
             .WithTags("MapServer")
             .CacheOutput("LayerMetadata");
+
+        // ArcGIS Pro POSTs this resource. Registered GET-only, it answered Pro with a
+        // 405 "Method Not Allowed" GeoServices envelope, Pro fell back to the root
+        // document, and a three-layer map service came into the map as a Map Image
+        // Layer carrying ONE sublayer - measured on ArcGIS Pro 3.7.1.1904 against
+        // browser_compat, where Browser Lines and Browser Polygons were silently
+        // absent while the same service over WMS showed all three. Same reasoning as
+        // the queryDomains POST companion above (honua-server#1825): Esri services
+        // accept both verbs on their read resources, and the handler is read-only, so
+        // the companion shares it and takes no CacheOutput.
+        endpoints.MapPost("/rest/services/{serviceId}/MapServer/layers",
+                static (HttpContext context, CancellationToken cancellationToken) => HandleAllLayersAndTables(context))
+            .WithDisplayName("Get All Layers and Tables (layers resource, POST)")
+            .WithName("MapServerLayersPost")
+            .WithSummary("Get metadata for all layers and tables")
+            .WithDescription("Returns the full metadata for every layer and table in the service in a single document")
+            .WithTags("MapServer")
+            .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/{serviceId}/MapServer/queryDomains",
                 static (HttpContext context, CancellationToken cancellationToken) => HandleQueryDomains(context))
