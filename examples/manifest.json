@@ -12383,7 +12383,7 @@
         "check": "inventory-classification"
       },
       "fence": 4,
-      "line": 223,
+      "line": 227,
       "language": "powershell"
     },
     {
@@ -12396,7 +12396,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 229,
+      "line": 233,
       "language": "powershell"
     },
     {
