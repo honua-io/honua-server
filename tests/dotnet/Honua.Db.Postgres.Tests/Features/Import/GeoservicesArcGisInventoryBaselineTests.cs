@@ -504,13 +504,16 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
 
         public FixtureHttpHandler(IReadOnlyDictionary<string, string> responses)
         {
-            _responses = responses;
+            _responses = responses.ToDictionary(
+                static response => NormalizeQueryOrder(response.Key),
+                static response => response.Value,
+                StringComparer.Ordinal);
         }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var pathAndQuery = request.RequestUri?.PathAndQuery ?? string.Empty;
-            if (!_responses.TryGetValue(pathAndQuery, out var body))
+            if (!_responses.TryGetValue(NormalizeQueryOrder(pathAndQuery), out var body))
             {
                 throw new InvalidOperationException(
                     $"Fixture has no response for {pathAndQuery}. Add it to the fixture JSON or correct the request path.");
@@ -522,6 +525,16 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json")
             });
+        }
+
+        private static string NormalizeQueryOrder(string pathAndQuery)
+        {
+            // The SDK may reorder parameters without changing the request. Keep the path,
+            // parameter names, values and duplicates exact so malformed requests still fail.
+            var parts = pathAndQuery.Split('?', 2);
+            return parts.Length == 1
+                ? pathAndQuery
+                : $"{parts[0]}?{string.Join('&', parts[1].Split('&').Order(StringComparer.Ordinal))}";
         }
     }
 }
