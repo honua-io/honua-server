@@ -284,6 +284,8 @@ handoff, then verify the registered backend through the server control plane.
 
 Application rollback and database restore are different operations. Consult
 [Upgrade and rollback](../deploy/upgrade-and-rollback.md) before reverting an
-image across schema changes. EKS, Azure, hosted models and broad autonomous
-remediation are outside this scenario; customer alerting and offline sync remain
-Preview.
+image across schema changes. Local Docker and AWS ECS-small are the placements
+this procedure covers. EKS, Azure, hosted-model operation, warehouse, raster
+and 3D performance, and broad autonomous remediation are outside it. Customer
+alerting and offline sync remain Preview and are not required to follow these
+deployment and readiness steps.

@@ -326,6 +326,9 @@ graduated autonomy. That does not make every operational concern autonomous:
   cross-environment promotion always retain explicit human governance.
 - The bounded built-in history is operational memory, not a TSDB. Use the
   optional OTLP/LGTM integration for long retention and deep correlation.
+- Pool saturation, slow queries, tile-cache seeding, warehouse, raster and 3D
+  performance, hosted-model operation, EKS and Azure are not prerequisites for
+  the bounded protected-update scenario.
 
 ## Related docs
 
