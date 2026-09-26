@@ -36,6 +36,43 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
     };
 
     [Theory]
+    [InlineData("where=1%3D1&returnCountOnly=true&f=json")]
+    [InlineData("f=json&where=1%3D1&returnCountOnly=true")]
+    [InlineData("returnCountOnly=true&f=json&where=1%3D1")]
+    public async Task FixtureHttpHandler_CountQueryParameterOrder_ReturnsConfiguredResponse(string query)
+    {
+        var fixture = LoadFixture("FeatureServer-Supported");
+        using var client = new HttpClient(new FixtureHttpHandler(fixture.Responses));
+
+        using var response = await client.GetAsync($"{fixture.ServiceUrl}/0/query?{query}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("count").GetInt32().Should().Be(42);
+    }
+
+    [Theory]
+    [InlineData("0/query?f=json&returnCountOnly=true")]
+    [InlineData("0/query?f=json&where=1%3D0&returnCountOnly=true")]
+    [InlineData("0/query?f=json&where=1%3D1&returnCountOnly=false")]
+    [InlineData("0/query?f=json&where=1%3D1&returnCountOnly=true&resultOffset=1")]
+    [InlineData("0/query?f=json&where=1%3D1&returnCountOnly=true&returnCountOnly=true")]
+    [InlineData("99/query?f=json&where=1%3D1&returnCountOnly=true")]
+    public async Task FixtureHttpHandler_DifferentCountRequest_RejectsUnconfiguredResponse(string pathAndQuery)
+    {
+        var fixture = LoadFixture("FeatureServer-Supported");
+        using var client = new HttpClient(new FixtureHttpHandler(fixture.Responses));
+
+        var act = async () =>
+        {
+            using var response = await client.GetAsync($"{fixture.ServiceUrl}/{pathAndQuery}");
+        };
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Fixture has no response for *");
+    }
+
+    [Theory]
     [InlineData("FeatureServer-Supported")]
     [InlineData("MapServer-MixedRenderers")]
     [InlineData("FeatureServer-AuthRequired")]
