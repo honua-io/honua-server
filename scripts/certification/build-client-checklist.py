@@ -33,6 +33,34 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_PATH = REPO_ROOT / "docs" / "gis" / "data" / "client-certification-checklist.v1.json"
 DOC_PATH = REPO_ROOT / "docs" / "gis" / "CLIENT_CERTIFICATION_CHECKLIST.md"
 
+# Lane results measured after a cell's MATRIX entry was written.
+#
+# MATRIX is the baseline: what each cell was believed to be when the operation was first
+# enumerated. Running a lane then produces a verdict, and until now those verdicts were
+# written straight into the generated JSON, which `--check` rejects as stale - so 123 of
+# them accumulated on a branch that could never land. They live here instead, in a data
+# file the certification promotion scripts own and this generator merges last, so a
+# measured result survives regeneration and CI stays green.
+#
+# Each entry is a whole cell, keyed by (protocol, version, operation, lane), and replaces
+# the MATRIX-derived cell outright. Keeping the prior verdict is the writer's job: the
+# promotion scripts carry it in `previous_exclusion`, which is why re-measuring a stale
+# pass does not erase the run it superseded.
+RESULTS_PATH = REPO_ROOT / "docs" / "gis" / "data" / "client-certification-results.v1.json"
+
+
+def _load_certified_results() -> dict:
+    if not RESULTS_PATH.is_file():
+        return {}
+    document = json.loads(RESULTS_PATH.read_text(encoding="utf-8"))
+    return {
+        (r["protocol"], r["version"], r["operation"], r["lane"]): r["cell"]
+        for r in document["results"]
+    }
+
+
+CERTIFIED_RESULTS = _load_certified_results()
+
 # The prose in DOC_PATH is hand-authored; only the region between these markers
 # is generated, so the tables cannot drift from the data while the argument
 # around them stays editable.
@@ -1426,6 +1454,9 @@ def build_rows() -> list[dict]:
                         if name in cell
                     }
                     cell.update(state="pass", evidence=replay)
+                certified = CERTIFIED_RESULTS.get(key)
+                if certified:
+                    cell = dict(certified)
                 cells[lane] = cell
             rows.append({
                 "protocol": entry["protocol"],
