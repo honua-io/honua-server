@@ -1598,10 +1598,55 @@ def summarise(rows: list[dict]) -> dict:
     return {"per_lane": totals, "overall": overall}
 
 
+def committed_regressions(rows: list[dict]) -> list[str]:
+    """Cells that are closed in the committed JSON but would not be closed by `rows`.
+
+    This file is a build output, but lane results are in practice written straight into
+    it by the certification promotion scripts and only later folded back into MATRIX and
+    the RESOLVED_EXCLUSION_EVIDENCE overlays here. While a result is in that gap, a plain
+    regeneration silently reopens it: measured 2026-09-26, the committed file held 303
+    closed cells and this generator produced 183, so a regenerate-and-commit would have
+    destroyed 120 cells of evidence without a diff anyone would read.
+
+    Refusing to write is the conservative direction. Recovering the lost evidence means
+    re-driving licensed desktop clients by hand; re-running the generator after folding
+    the results back in costs seconds.
+    """
+    if not DATA_PATH.is_file():
+        return []
+    try:
+        committed = json.loads(DATA_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    generated = {
+        (row["protocol"], row.get("version"), row["operation"], lane): cell["state"]
+        for row in rows for lane, cell in row["lanes"].items()
+    }
+    regressions = []
+    for row in committed.get("rows", []):
+        for lane, cell in row.get("lanes", {}).items():
+            was = cell.get("state")
+            if was not in CLOSED_STATES:
+                continue
+            key = (row.get("protocol"), row.get("version"), row.get("operation"), lane)
+            now = generated.get(key)
+            if now is None:
+                regressions.append(f"{key[0]}.{key[2]} @ {key[1]} [{lane}] "
+                                   f"closed as {was} but the row no longer exists")
+            elif now not in CLOSED_STATES:
+                regressions.append(f"{key[0]}.{key[2]} @ {key[1]} [{lane}] "
+                                   f"{was} -> {now}")
+    return regressions
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true",
                         help="validate rows and committed JSON/Markdown projections without writing")
+    parser.add_argument("--allow-regressions", action="store_true",
+                        help="write even when that would reopen cells the committed file "
+                             "records as closed (use only when the reopening is intended)")
     args = parser.parse_args()
 
     rows = build_rows()
@@ -1636,6 +1681,19 @@ def main() -> int:
                 print(f"FAIL {problem}")
             return 1
     else:
+        regressions = committed_regressions(rows)
+        if regressions and not args.allow_regressions:
+            print(f"REFUSING TO WRITE: {len(regressions)} cell(s) the committed file "
+                  f"records as closed would be reopened.")
+            for regression in regressions[:20]:
+                print(f"  - {regression}")
+            if len(regressions) > 20:
+                print(f"  ... and {len(regressions) - 20} more")
+            print()
+            print("These are lane results written into the JSON that have not been "
+                  "folded back into MATRIX / RESOLVED_EXCLUSION_EVIDENCE here. Fold "
+                  "them in, or pass --allow-regressions if the reopening is intended.")
+            return 1
         DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
         DATA_PATH.write_text(json_text, encoding="utf-8", newline="\n")
         print(f"wrote {DATA_PATH.relative_to(REPO_ROOT)}")
