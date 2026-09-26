@@ -8,9 +8,10 @@ resource: "honua://capability/ai.mcp-discovery"
 
 The server publishes 20 typed Studio tools through `/mcp`.
 This tool plane is executable independently of the browser Studio preview.
-The `configure` workflow view includes these tools. Select that view from the
-`setup_and_publish` and `dashboard_scaffolding` prompts. The older `setup` view
-does not include `honua_studio_get_version`.
+The `configure` and `setup` workflow views both include these tools. The
+`setup_and_publish` and `dashboard_scaffolding` prompts select `configure`
+because that view also carries the closed admin roster. `setup` (`setup.v3`)
+is the bounded terminal path and is what stamps `_meta["honua.studio"].view`.
 
 | Tool | Semantics |
 |---|---|

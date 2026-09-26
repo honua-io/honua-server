@@ -4,9 +4,10 @@
 namespace Honua.Ai.Protocols.Mcp.Views;
 
 /// <summary>
-/// The server-authored workflow-view catalog (honua-server#3428). <c>setup</c> remains the
-/// older lifecycle view. <c>configure</c>, <c>operate</c>, and <c>analyze</c> are the 2026.1
-/// views the curated prompts select.
+/// The server-authored workflow-view catalog (honua-server#3428). <c>setup</c> is the
+/// bounded terminal path, including Studio 2D composition and lifecycle.
+/// <c>configure</c>, <c>operate</c>, and <c>analyze</c> are the 2026.1 views the curated
+/// prompts select.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -101,7 +102,7 @@ internal static class McpWorkflowViewCatalog
             + "layer, verify access, apply canonical style and render, run bounded geoprocessing, compose and save "
             + "Studio maps/dashboards, then submit a publication and poll its status. Select this view to receive "
             + "only the descriptors that path needs; the full paginated catalog is an explicit escape hatch.",
-        Revision = "setup.v2",
+        Revision = "setup.v3",
         Stages =
         [
             new McpWorkflowViewStageDefinition
@@ -193,7 +194,19 @@ internal static class McpWorkflowViewCatalog
                     McpWorkflowViewMemberRule.Exact("honua_studio_update_draft"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_preview_draft"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_save_version"),
+                    McpWorkflowViewMemberRule.Exact("honua_studio_get_version"),
                     McpWorkflowViewMemberRule.Exact("honua_studio_reopen_version"),
+                    McpWorkflowViewMemberRule.Exact("honua_studio_add_layer"),
+                    McpWorkflowViewMemberRule.Exact("honua_studio_remove_layer"),
+                    McpWorkflowViewMemberRule.Exact("honua_studio_set_layer_style"),
+                    McpWorkflowViewMemberRule.Exact("honua_studio_set_layer_visibility"),
+                    McpWorkflowViewMemberRule.Exact("honua_studio_set_view"),
+                    McpWorkflowViewMemberRule.Exact("honua_studio_add_widget"),
+                    McpWorkflowViewMemberRule.Exact("honua_studio_remove_widget"),
+                    McpWorkflowViewMemberRule.Exact("honua_studio_bind_interaction"),
+                    McpWorkflowViewMemberRule.Exact("honua_studio_remove_interaction"),
+                    McpWorkflowViewMemberRule.Exact("honua_studio_add_control"),
+                    McpWorkflowViewMemberRule.Exact("honua_studio_remove_control"),
                 ],
 
                 // Publication submit belongs to the publication stage below even
