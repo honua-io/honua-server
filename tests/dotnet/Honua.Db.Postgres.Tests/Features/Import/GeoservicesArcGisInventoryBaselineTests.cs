@@ -36,6 +36,43 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
     };
 
     [Theory]
+    [InlineData("where=1%3D1&returnCountOnly=true&f=json")]
+    [InlineData("f=json&where=1%3D1&returnCountOnly=true")]
+    [InlineData("returnCountOnly=true&f=json&where=1%3D1")]
+    public async Task FixtureHttpHandler_CountQueryParameterOrder_ReturnsConfiguredResponse(string query)
+    {
+        var fixture = LoadFixture("FeatureServer-Supported");
+        using var client = new HttpClient(new FixtureHttpHandler(fixture.Responses));
+
+        using var response = await client.GetAsync($"{fixture.ServiceUrl}/0/query?{query}");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        document.RootElement.GetProperty("count").GetInt32().Should().Be(42);
+    }
+
+    [Theory]
+    [InlineData("0/query?f=json&returnCountOnly=true")]
+    [InlineData("0/query?f=json&where=1%3D0&returnCountOnly=true")]
+    [InlineData("0/query?f=json&where=1%3D1&returnCountOnly=false")]
+    [InlineData("0/query?f=json&where=1%3D1&returnCountOnly=true&resultOffset=1")]
+    [InlineData("0/query?f=json&where=1%3D1&returnCountOnly=true&returnCountOnly=true")]
+    [InlineData("99/query?f=json&where=1%3D1&returnCountOnly=true")]
+    public async Task FixtureHttpHandler_DifferentCountRequest_RejectsUnconfiguredResponse(string pathAndQuery)
+    {
+        var fixture = LoadFixture("FeatureServer-Supported");
+        using var client = new HttpClient(new FixtureHttpHandler(fixture.Responses));
+
+        var act = async () =>
+        {
+            using var response = await client.GetAsync($"{fixture.ServiceUrl}/{pathAndQuery}");
+        };
+
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("Fixture has no response for *");
+    }
+
+    [Theory]
     [InlineData("FeatureServer-Supported")]
     [InlineData("MapServer-MixedRenderers")]
     [InlineData("FeatureServer-AuthRequired")]
@@ -463,17 +500,20 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
 
     private sealed class FixtureHttpHandler : HttpMessageHandler
     {
-        private readonly IReadOnlyDictionary<string, string> _responses;
+        private readonly Dictionary<string, string> _responses;
 
         public FixtureHttpHandler(IReadOnlyDictionary<string, string> responses)
         {
-            _responses = responses;
+            _responses = responses.ToDictionary(
+                static response => NormalizeQueryOrder(response.Key),
+                static response => response.Value,
+                StringComparer.Ordinal);
         }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             var pathAndQuery = request.RequestUri?.PathAndQuery ?? string.Empty;
-            if (!_responses.TryGetValue(pathAndQuery, out var body))
+            if (!_responses.TryGetValue(NormalizeQueryOrder(pathAndQuery), out var body))
             {
                 throw new InvalidOperationException(
                     $"Fixture has no response for {pathAndQuery}. Add it to the fixture JSON or correct the request path.");
@@ -485,6 +525,16 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
             {
                 Content = new StringContent(body, Encoding.UTF8, "application/json")
             });
+        }
+
+        private static string NormalizeQueryOrder(string pathAndQuery)
+        {
+            // The SDK may reorder parameters without changing the request. Keep the path,
+            // parameter names, values and duplicates exact so malformed requests still fail.
+            var parts = pathAndQuery.Split('?', 2);
+            return parts.Length == 1
+                ? pathAndQuery
+                : $"{parts[0]}?{string.Join('&', parts[1].Split('&').Order(StringComparer.Ordinal))}";
         }
     }
 }
