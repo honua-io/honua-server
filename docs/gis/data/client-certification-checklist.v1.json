@@ -164,7 +164,11 @@
       "operation": "styles",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (image revision c9f739e6db1eb07610274619fe1f1720492bb8af): ABSENCE MEASURED ACROSS EVERY SURFACE PRO HAS, not inferred. The server does advertise the mechanism - browser_compat's WMS capabilities carry a <Style><Name>default</Name><Title>Default style</Title></Style> on each of its three layers - and QGIS passes this cell by surfacing that exact row, so the comparison is fair. In ArcGIS Pro 3.7.1 it is not surfaced anywhere: (1) the WMS SUBLAYER's own Layer Properties dialog has a single property page, Metadata; (2) the parent WMS layer's dialog has General, Metadata, Source, Elevation, Display, Cache, Time, Layers and Custom Parameters, and its Layers page shows only the sublayer tree - selecting 'Select the sublayers to include' to enable the tree and expanding 'Browser Points' produced NO child row, confirmed through UIA rather than pixels: the tree still held exactly four TreeItems, one composite plus three sublayers, with the node expanded; (3) the Source page reports only Data Type 'WMS Service', the server URL and Version 1.3.0. NOTE, and this corrects an untested aside elsewhere in the matrix: the arcpy cell for this operation says 'Pro surfaces it in the layer properties dialog only', citing the arcpy.mp CIMWMSLayer reference. That was an inference from documentation, not a measurement, and it is not borne out - the dialog carries no style selection. The arcpy cell's own verdict (n/a-no-client) is unaffected and is left alone. Receipts 108, 110, 111, 112.",
+          "previous_exclusion": {
+            "state": "not-started"
+          }
         },
         "arcpy": {
           "state": "n/a-no-client",
@@ -191,7 +195,11 @@
       "operation": "time-dimension",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "pass",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (image revision c9f739e6db1eb07610274619fe1f1720492bb8af): driven against the time-enabled fixture, since browser_compat advertises no dimension at all - surveyed first, and of the three services only test_service carries one. A WMS server connection was made to /ogc/services/test_service/wms and the service added to the map. Pro consumed the dimension: the map gained a time slider, a contextual 'Time' ribbon tab appeared, and that tab's Full Extent reads Start '1/1/2024 12:00:00 PM' and End '1/10/2024 12:00:00 PM'. That is exactly the advertised extent - the capabilities document declares <Dimension name=\"time\" ...> with 2024-01-01T12:00:00Z/2024-01-10T12:00:00Z - so the values Pro shows came from the server rather than from a default, which is what makes this decisive. The Time tab also exposes Current Time start/span/end, Step Interval, Snapping and Playback against the layer. Agrees with the qgis-ui and pyqgis passes on the same fixture, and with the arcpy pass, which established that the server honours TIME by returning different renderings at the extent's first and last instants. Receipt 115.",
+          "previous_exclusion": {
+            "state": "not-started"
+          }
         },
         "arcpy": {
           "state": "pass",
