@@ -81,6 +81,7 @@
         "layerName",
         "license",
         "licenseUrl",
+        "namespace",
         "primaryKey",
         "publisher",
         "schema",
