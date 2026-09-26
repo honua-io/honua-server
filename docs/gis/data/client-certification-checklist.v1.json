@@ -23,17 +23,17 @@
   "summary": {
     "per_lane": {
       "pro-ui": {
-        "pass": 20,
-        "not-started": 52,
-        "n/a-no-client": 4,
+        "pass": 33,
+        "n/a-no-client": 12,
         "blocked": 16,
-        "fail": 2
+        "not-started": 29,
+        "fail": 4
       },
       "arcpy": {
-        "pass": 38,
+        "pass": 42,
         "n/a-no-client": 49,
-        "fail": 6,
-        "blocked": 1
+        "blocked": 1,
+        "fail": 2
       },
       "qgis-ui": {
         "pass": 40,
@@ -48,8 +48,8 @@
     },
     "overall": {
       "cells": 376,
-      "closed": 278,
-      "open": 98
+      "closed": 303,
+      "open": 73
     }
   },
   "rows": [
