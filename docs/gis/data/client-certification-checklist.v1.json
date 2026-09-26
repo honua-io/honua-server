@@ -357,7 +357,11 @@
       "lanes": {
         "pro-ui": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (image revision c9f739e6db1eb07610274619fe1f1720492bb8af): re-measured on the current candidate; the prior pass was bound to native-pro-matrix-20260917-a. A WFS server connection was created from scratch (the project had none) and Pro enumerated the service's feature types in Catalog > Servers > WFS on host.docker.internal_18443.wfs: browser_lines, browser_points, browser_polygons, portal_public_points, read from the UIA tree. Pro strips the namespace prefix the capabilities document advertises (honua:browser_polygons -> browser_polygons), matching the unprefixed-typename behaviour already recorded for arcpy. The server request log for the whole sequence, filtered to user agent 'ArcGIS Pro 3.7.1 (00000000000) - ArcGISPro', contains exactly: wfs.getcapabilities x3, wfs.describefeaturetype x1, wfs.getfeature x3, all HTTP 200, plus one GET /wfs/rest/info -> 404, which is Pro probing for an ArcGIS sibling resource that does not live under /wfs and is not a defect. Receipts 99, 100.",
+          "previous_exclusion": {
+            "state": "pass",
+            "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+          }
         },
         "arcpy": {
           "state": "pass",
@@ -380,7 +384,11 @@
       "lanes": {
         "pro-ui": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904, UI-SERVICE-WFS: the WFS layer added through Add WFS Layer(s) carries the typed schema DescribeFeatureType declares (GmlID, objectid, name, category, value, Shape Point) over 5 successful WFS requests, and its rows match the REST oracle"
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (image revision c9f739e6db1eb07610274619fe1f1720492bb8af): re-measured on the current candidate; the prior pass was bound to native-pro-matrix-20260917-a. Pro issued exactly one wfs.describefeaturetype (200) while adding browser_polygons, and the schema it built from that response is visible in the attribute table: columns objectid and name, geometry typed Polygon, alongside Pro's own OID/GmlID and the derived Shape_Length/Shape_Area. Decisive that the schema came from the server rather than from a guess: the column NAMES and TYPES match the service - an independent FeatureServer/2002 query returns the same objectid and name fields - and the tooltip on the Catalog node reads 'Name: browser_polygons, Type: WFS Layer'. Receipts 101, 104.",
+          "previous_exclusion": {
+            "state": "pass",
+            "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904, UI-SERVICE-WFS: the WFS layer added through Add WFS Layer(s) carries the typed schema DescribeFeatureType declares (GmlID, objectid, name, category, value, Shape Point) over 5 successful WFS requests, and its rows match the REST oracle"
+          }
         },
         "arcpy": {
           "state": "pass",
@@ -403,7 +411,11 @@
       "lanes": {
         "pro-ui": {
           "state": "pass",
-          "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (image revision c9f739e6db1eb07610274619fe1f1720492bb8af): re-measured on the current candidate; the prior pass was bound to native-pro-matrix-20260917-a. Pro added the feature type as a feature layer (mappingTOCItem_FeatureLayer_Browser Polygons, contextual ribbon tab 'Feature Layer'), drew both polygons, and its attribute table reads '0 of 2 selected' with rows GmlID browser_polygons.18 / objectid 18 / name poly-alpha and browser_polygons.19 / objectid 19 / name poly-beta. Verified against an independent oracle rather than against Pro: FeatureServer/2002/query?where=objectid in (18,19) returns exactly objectid 18 poly-alpha and 19 poly-beta, and the polygons land where the same service's WMS, WMTS and MapServer renders put them. Three wfs.getfeature requests, all 200. OBSERVED, NOT CHARGED AS A DEFECT: Pro's derived Shape_Area is NEGATIVE (-0.0001 and -0.00006). Honua's WFS emits exterior rings counter-clockwise in lon/lat - correct for the OGC right-hand rule - while its own FeatureServer emits them clockwise, which is Esri's convention, and Pro applies Esri's signed-area convention to the GML ring. GML 3.2 does not mandate ring orientation, and no control against an Esri-served WFS was run, so this is recorded as an unresolved difference rather than a server fault. The axis order is right and was checked: srsName is urn:ogc:def:crs:EPSG::4326 and the posList is lat,lon, which the URN form requires, and Pro placed the geometry correctly. Receipts 102, 103, 104.",
+          "previous_exclusion": {
+            "state": "pass",
+            "evidence": "honua-esri-compat/evidence/native-pro-matrix-20260917-a/results.json - ArcGIS Pro 3.7.1.1904"
+          }
         },
         "arcpy": {
           "state": "pass",
@@ -425,7 +437,11 @@
       "operation": "GetPropertyValue",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (image revision c9f739e6db1eb07610274619fe1f1720492bb8af): ABSENCE MEASURED, not inferred. Pro's only WFS configuration surface is the Add WFS Layer(s) dialog, and its complete control inventory was enumerated through UIA: Connection mode, Set the maximum features returned, Set page size, Use Spatial Extent with an extent picker, and under Advanced - Swap x/y coordinates, Swap x/y filter request, Set HTTP Method, Geometry Type. There is no value-reference or property selector anywhere in it, and Command Search for 'stored query' returns only SQL and geoprocessing query tools (Make Query Table, Make Query Layer, Select By Attributes, ...), nothing WFS. Decisively, The server request log for the whole sequence, filtered to user agent 'ArcGIS Pro 3.7.1 (00000000000) - ArcGISPro', contains exactly: wfs.getcapabilities x3, wfs.describefeaturetype x1, wfs.getfeature x3, all HTTP 200, plus one GET /wfs/rest/info -> 404, which is Pro probing for an ArcGIS sibling resource that does not live under /wfs and is not a defect. - Pro never issued a GetPropertyValue at any point. The server supports it: GET /wfs?request=GetPropertyValue&typeNames=browser_polygons&valueReference=name returns 200 with a wfs:ValueCollection, numberMatched 2, members poly-alpha and poly-beta, and GetPropertyValue is advertised in the capabilities OperationsMetadata. This is a client gap. Receipts 105, 106.",
+          "previous_exclusion": {
+            "state": "not-started"
+          }
         },
         "arcpy": {
           "state": "pass",
@@ -549,7 +565,11 @@
       "operation": "ListStoredQueries",
       "lanes": {
         "pro-ui": {
-          "state": "not-started"
+          "state": "n/a-no-client",
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (image revision c9f739e6db1eb07610274619fe1f1720492bb8af): ABSENCE MEASURED, not inferred, by the same enumeration as wfs.GetPropertyValue: the Add WFS Layer(s) dialog exposes no stored-query picker in any section including Advanced, Command Search for 'stored query' surfaces only SQL and geoprocessing query tools, and The server request log for the whole sequence, filtered to user agent 'ArcGIS Pro 3.7.1 (00000000000) - ArcGISPro', contains exactly: wfs.getcapabilities x3, wfs.describefeaturetype x1, wfs.getfeature x3, all HTTP 200, plus one GET /wfs/rest/info -> 404, which is Pro probing for an ArcGIS sibling resource that does not live under /wfs and is not a defect. - no ListStoredQueries was ever issued. The server supports it: request=ListStoredQueries returns 200 advertising the mandatory urn:ogc:def:query:OGC-WFS::GetFeatureById, DescribeStoredQueries returns its parameterised definition, and both operations appear in the capabilities OperationsMetadata alongside CreateStoredQuery and DropStoredQuery. This is a client gap. Receipts 105, 106.",
+          "previous_exclusion": {
+            "state": "not-started"
+          }
         },
         "arcpy": {
           "state": "n/a-no-client",
