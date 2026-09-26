@@ -23,10 +23,10 @@
   "summary": {
     "per_lane": {
       "pro-ui": {
-        "pass": 33,
+        "pass": 36,
         "n/a-no-client": 12,
-        "blocked": 16,
         "not-started": 29,
+        "blocked": 13,
         "fail": 4
       },
       "arcpy": {
@@ -48,8 +48,8 @@
     },
     "overall": {
       "cells": 376,
-      "closed": 303,
-      "open": 73
+      "closed": 306,
+      "open": 70
     }
   },
   "rows": [
@@ -617,12 +617,16 @@
       "operation": "GetCapabilities",
       "lanes": {
         "pro-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. Default negotiation of 2.0.1 does not exclude explicitly selecting WCS 1.0.0.",
+          "state": "pass",
           "previous_exclusion": {
-            "state": "n/a-superseded",
-            "citation": "enterprise.arcgis.com WCS services: a client built for WCS 1.0.0, 1.1.0, 1.1.1, 1.1.2 or 2.0.1 can consume the service; Pro exposes a Version selector and negotiates the highest, so it uses 2.0.1 here."
-          }
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. Default negotiation of 2.0.1 does not exclude explicitly selecting WCS 1.0.0.",
+            "previous_exclusion": {
+              "state": "n/a-superseded",
+              "citation": "enterprise.arcgis.com WCS services: a client built for WCS 1.0.0, 1.1.0, 1.1.1, 1.1.2 or 2.0.1 can consume the service; Pro exposes a Version selector and negotiates the highest, so it uses 2.0.1 here."
+            }
+          },
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (image revision c9f739e6db1eb07610274619fe1f1720492bb8af): UNBLOCKED by doing the thing the exclusion audit asked for - Pro's Add WCS Server Connection dialog exposes a Version combo (Default version, 2.0.1, 1.1.2, 1.1.1, 1.1.0, 1.0.0), and 1.0.0 was selected explicitly rather than left to default negotiation. The connection was created against https://host.docker.internal:18443/ogc/services/browser_compat/wcs with no credential and Pro parsed the response: the Catalog node reads 'Honua WCS 1.0.0 on host.docker.internal_18443.wcs' and expands to the service 'Honua WCS 1.0.0'. The negotiated version is pinned without reading the query string, which the server log redacts: the 1.0.0 document carries <wcs:label>Honua WCS 1.0.0</wcs:label> while the 2.0.1 document carries <ows:Title>Honua WCS 2.0.1</ows:Title> and no wcs:label at all. Pro named the connection 'Honua WCS 1.0.0 on host.docker.internal_18443.wcs', a string only the 1.0.0 document supplies. Server request log, filtered to user agent 'ArcGIS Pro 3.7.1 (00000000000) - ArcGISPro': wcs.getcapabilities 200, wcs.describecoverage 200 x3, wcs.getcoverage 200 x5, all against /ogc/services/browser_compat/wcs, with the handler logging 'WCS GetCoverage returned 382 bytes for coverage coverage_2000 as image/tiff' and then 3033 bytes as the view resolved. Receipts 116, 118."
         },
         "arcpy": {
           "state": "pass",
@@ -653,12 +657,16 @@
       "operation": "DescribeCoverage",
       "lanes": {
         "pro-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. Default negotiation of 2.0.1 does not exclude explicitly selecting WCS 1.0.0.",
+          "state": "pass",
           "previous_exclusion": {
-            "state": "n/a-superseded",
-            "citation": "enterprise.arcgis.com WCS services: a client built for WCS 1.0.0, 1.1.0, 1.1.1, 1.1.2 or 2.0.1 can consume the service; Pro exposes a Version selector and negotiates the highest, so it uses 2.0.1 here."
-          }
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. Default negotiation of 2.0.1 does not exclude explicitly selecting WCS 1.0.0.",
+            "previous_exclusion": {
+              "state": "n/a-superseded",
+              "citation": "enterprise.arcgis.com WCS services: a client built for WCS 1.0.0, 1.1.0, 1.1.1, 1.1.2 or 2.0.1 can consume the service; Pro exposes a Version selector and negotiates the highest, so it uses 2.0.1 here."
+            }
+          },
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (image revision c9f739e6db1eb07610274619fe1f1720492bb8af): UNBLOCKED alongside GetCapabilities on the explicitly-selected 1.0.0 connection. Expanding the service enumerated one coverage, shown as 'Browser Points' with the Catalog tooltip 'Name: coverage_2000, Type: WCS Coverage' - both strings are in the 1.0.0 capabilities document, which carries <wcs:name>coverage_2000</wcs:name> and <wcs:label>Browser Points</wcs:label>. Pro issued wcs.describecoverage three times, each 200, under its own user agent. The negotiated version is pinned without reading the query string, which the server log redacts: the 1.0.0 document carries <wcs:label>Honua WCS 1.0.0</wcs:label> while the 2.0.1 document carries <ows:Title>Honua WCS 2.0.1</ows:Title> and no wcs:label at all. Pro named the connection 'Honua WCS 1.0.0 on host.docker.internal_18443.wcs', a string only the 1.0.0 document supplies. Receipts 118, 119, 121."
         },
         "arcpy": {
           "state": "pass",
@@ -689,12 +697,16 @@
       "operation": "GetCoverage",
       "lanes": {
         "pro-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. Default negotiation of 2.0.1 does not exclude explicitly selecting WCS 1.0.0.",
+          "state": "pass",
           "previous_exclusion": {
-            "state": "n/a-superseded",
-            "citation": "enterprise.arcgis.com WCS services: a client built for WCS 1.0.0, 1.1.0, 1.1.1, 1.1.2 or 2.0.1 can consume the service; Pro exposes a Version selector and negotiates the highest, so it uses 2.0.1 here."
-          }
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. Default negotiation of 2.0.1 does not exclude explicitly selecting WCS 1.0.0.",
+            "previous_exclusion": {
+              "state": "n/a-superseded",
+              "citation": "enterprise.arcgis.com WCS services: a client built for WCS 1.0.0, 1.1.0, 1.1.1, 1.1.2 or 2.0.1 can consume the service; Pro exposes a Version selector and negotiates the highest, so it uses 2.0.1 here."
+            }
+          },
+          "evidence": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a (image revision c9f739e6db1eb07610274619fe1f1720492bb8af): UNBLOCKED - Add To Current Map on coverage_2000 produced a raster. Contents holds mappingTOCItem_RasterLayer_Browser Points with a mappingTOCItem_heading_Value and a ColorRampLegendClass reading Value 255..0, read from the UIA tree rather than from pixels, the contextual ribbon tab switches to 'Raster Layer | Data', and the coverage draws on the canvas. The server served it as a real raster, not an error page: 'WCS GetCoverage returned 382 bytes for coverage coverage_2000 as image/tiff', then 3033 bytes at the resolved view, across five wcs.getcoverage 200s under Pro's user agent. The negotiated version is pinned without reading the query string, which the server log redacts: the 1.0.0 document carries <wcs:label>Honua WCS 1.0.0</wcs:label> while the 2.0.1 document carries <ows:Title>Honua WCS 2.0.1</ows:Title> and no wcs:label at all. Pro named the connection 'Honua WCS 1.0.0 on host.docker.internal_18443.wcs', a string only the 1.0.0 document supplies. Receipts 121, 122."
         },
         "arcpy": {
           "state": "pass",
