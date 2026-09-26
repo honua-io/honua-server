@@ -500,7 +500,7 @@ public sealed class GeoservicesArcGisInventoryBaselineTests
 
     private sealed class FixtureHttpHandler : HttpMessageHandler
     {
-        private readonly IReadOnlyDictionary<string, string> _responses;
+        private readonly Dictionary<string, string> _responses;
 
         public FixtureHttpHandler(IReadOnlyDictionary<string, string> responses)
         {
