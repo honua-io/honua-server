@@ -90,7 +90,7 @@ server-authored setup view:
 ```
 
 Retain its revision, membership and descriptor digests, descriptor count,
-byte size and paging state. The source view is `setup.v2`; a discovered
+byte size and paging state. The source view is `setup.v3`; a discovered
 descriptor does not prove its downstream operation works. Record the
 candidate's actual profile/catalog counts instead of copying historical
 counts. Discover the explicit analysis and Esri GP profile surfaces when
@@ -164,18 +164,22 @@ evidence. Carry the verified artifact into the Studio composition.
 
 ## 6. Author, validate, save and reopen
 
-Confirm that the candidate advertises `setup.v2` and its canonical create,
-read, update, validate, preview, save and reopen descriptors. Older candidates
-may expose only part of this sequence; record the missing tools and stop that
-qualification cell instead of inventing a client-side catalog.
+Confirm that the candidate advertises `setup.v3` and its canonical create,
+read, update, validate, preview, composition, save, get-version and reopen
+descriptors. Older candidates may expose only part of this sequence; record
+the missing tools and stop that qualification cell instead of inventing a
+client-side catalog.
 
 Create a map draft with the published layer or verified GP result in its
-composition envelope. Use `honua_studio_update_draft` with the returned schema
-to edit layers, style references, view, widgets and controls. Pass the latest
-`generation` on every mutation. A stale generation requires a fresh read and
-reviewed retry. `honua_studio_validate_draft` and preview are read-only.
-Granular composition tools remain available through the explicit paginated
-`full` catalog escape hatch; retain its digests separately if you use it.
+composition envelope. Edit it with the setup-view composition tools
+(`honua_studio_add_layer`, `honua_studio_set_layer_style`,
+`honua_studio_set_layer_visibility`, `honua_studio_set_view`,
+`honua_studio_add_widget`, `honua_studio_add_control`,
+`honua_studio_bind_interaction`) or with `honua_studio_update_draft`. Pass the
+latest `generation` on every mutation. A stale generation requires a fresh
+read and reviewed retry. `honua_studio_validate_draft` and preview are
+read-only. Read the saved version with `honua_studio_get_version` when a
+capture needs the top-level `versionId` and `contentHash`.
 
 Call `honua_studio_save_version` with `draftId`, `generation` and an optional
 `changeNote`. A completed operation returns `version`, including `itemId`,
