@@ -5,6 +5,11 @@ is working STAC/Records discovery and item search, with governed live client
 compatibility evidence. Restored HTTP responses alone do not complete that
 promise's deployment-binding and Python staging acceptance.
 
+2026-09-26: the live HTTP 500 is gone. Collection 90810 items and search return
+200 with the four seed scene ids, but they still omit `eo:cloud_cover` and
+`view:sun_azimuth`. Trunk already serves those fields. The serving image
+predates that projection fix. See the addendum at the bottom.
+
 ## Server delivery retained
 
 [PR #4808](https://github.com/honua-io/honua-server/pull/4808) merged as
@@ -112,3 +117,46 @@ remote staging receipt with `local_stack=false` and the same digest chain.
 Keep the original RC2 failures linked from the issue. This remainder is an
 operator/deployment dependency, not a criterion released because a candidate
 does not exist.
+
+## 2026-09-26 addendum
+
+The collection 90810 regression on this tree passes. `DemoStacSeedMigratedDatabaseTests`
+was run in Release against `0d07b78e0` (then fast-forwarded to trunk
+`b817f60d8`, whose only newer commit does not touch STAC or the seed): 1 passed,
+0 failed. The test requires the four Maui Reef Watch scenes, including
+`eo:cloud_cover` and `view:sun_azimuth`, on both items and search.
+
+A public probe of `https://demo.honua.io` at 2026-09-26 22:45Z:
+
+| Request | HTTP | Ids | Extension properties |
+| --- | --- | --- | --- |
+| `GET /stac/collections/90810/items?limit=25` | 200 | 9081001–9081004 | absent |
+| `POST /stac/search` for collection 90810 | 200 | 9081001–9081004 | absent |
+| `GET /stac/collections/90810/queryables` | 200 | — | `eo:cloud_cover`, `view:sun_azimuth`, and `proj:epsg` are declared |
+
+Item properties that are present: `datetime`, `name`, `observed_at`, `platform`,
+`quality_score`. The three names that contain a colon are the ones missing.
+That is the storage-mapped reader behavior from before
+[`08d6eb55f`](https://github.com/honua-io/honua-server/commit/08d6eb55f)
+(#3489). That commit projects a declared jsonb key such as `eo:cloud_cover`
+when the binding sets `attributesColumn`, instead of dropping it for failing
+the SQL-identifier check. The live alias `honua-demo-demo-honua:live` is still
+image `sha256:d97baf44b17ba5b9537320281f721252ed12f1fb43bee001011d720f3ae7d622`,
+source `f89770015` (2026-08-19). `08d6eb55f` is not an ancestor of that commit.
+Reseeding alone does not change what that image projects.
+
+[Scheduled canary 36255299672](https://github.com/honua-io/honua-demo-infra/actions/runs/36255299672)
+succeeded. It checks HTTP status, not these extension properties, and its
+managed receipt steps stay on `workflow_dispatch`.
+[Python staging run 36259357898](https://github.com/honua-io/honua-sdk-python/actions/runs/36259357898)
+still fails closed: the binding `expiresAt` is `2026-08-16T04:15:11.694Z`, and
+the binding names image `sha256:4fb503be4eace130ed218c8f940382e824ab43016aa5aa4edcfbf4b2f81ed2c9`,
+which is not the image that is serving.
+
+No database write, image rollout, receipt configuration, or staging-variable
+change was made. The operator apply recorded on
+[honua-demo-infra#79](https://github.com/honua-io/honua-demo-infra/pull/79)
+remains the path for migrations and the receipt role. Closing #3384 still
+requires a serving image that contains `08d6eb55f`, a live items/search
+response that includes the two extension fields, the governed receipt, and a
+green remote Python staging run against that same image.
