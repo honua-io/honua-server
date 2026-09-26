@@ -8,7 +8,7 @@
   "matrixSource": "docs/gis/data/client-certification-matrix.v1.json",
   "proseContract": "docs/gis/CLIENT_CERTIFICATION_FIXTURE_CONTRACT.md",
   "evidenceSchema": "docs/gis/CROSS_CLIENT_CERTIFICATION_EVIDENCE.md",
-  "fixtureRevision": "sha256:cb28aeb46423d45948cd869c22bb674502760414c3ffd52b86e8821daaa2e925",
+  "fixtureRevision": "sha256:e9354b5d54abdb904684bee0f836ef3cd47b983ce27b7c3b243aea850e2ee252",
   "serverConfigRevision": "sha256:d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a",
   "authPolicyRevision": "sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9",
   "digestAlgorithms": {
@@ -89,7 +89,7 @@
     {
       "path": "docker/client-compat/seed/publish-scene.py",
       "role": "fixture",
-      "sha256": "sha256:2a7283060de2b42bc2f7ff72451a6784a7245c21eacf7a4fec9a0578b7d0a720",
+      "sha256": "sha256:db172214d03330089e40e6c905213fe032e26fdaacde64957398245b9027685a",
       "purpose": "Publishes the deterministic scene derivatives used by client certification."
     },
     {

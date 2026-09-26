@@ -66,3 +66,25 @@ public sealed class RouteTagOutputCachePolicyTests
         context.Tags.Should().Contain(["service:testservice", "layer:1", "collection:roads", "scene:alpha"]);
     }
 }
+
+/// <summary>
+/// Scene tileset and asset caches must not split on the request host (#5218).
+/// </summary>
+[Protocol(TestProtocols.TestQuality)]
+public sealed class IgnoreRequestHostOutputCachePolicyTests
+{
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task CacheRequestAsync_ClearsHostVariance()
+    {
+        var policy = new IgnoreRequestHostOutputCachePolicy();
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Host = new HostString("host.docker.internal", 18443);
+        var context = new OutputCacheContext { HttpContext = httpContext };
+        context.CacheVaryByRules.VaryByHost = true;
+
+        await policy.CacheRequestAsync(context, CancellationToken.None);
+
+        context.CacheVaryByRules.VaryByHost.Should().BeFalse();
+    }
+}

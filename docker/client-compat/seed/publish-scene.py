@@ -65,11 +65,26 @@ def main() -> int:
               "3d-tiles and i3s certification cells will report 404.")
         return 1
 
+    public_base = os.environ.get("HONUA_CLIENT_COMPAT_PUBLIC_BASE_URL", "").rstrip("/")
     tileset_url = _tileset_url(base_url)
     existing, _ = _status(tileset_url)
-    if existing == 200:
+    # The advertised host is a different cache key on servers that still vary
+    # by Host. Do not POST /scenes/generate again when the internal probe is
+    # already 200: the scene id is registered and a second publish is rejected.
+    if existing == 200 and (not public_base or public_base == base_url):
         print(f"  Scene: tileset already live at {tileset_url}")
         return 0
+    if existing == 200:
+        public_status, _ = _status(_tileset_url(public_base))
+        if public_status == 200:
+            print(f"  Scene: tileset already live at {tileset_url}")
+            return 0
+        print(
+            "  Scene: internal tileset is live but the advertised host returned "
+            f"{public_status}. Not regenerating a registered scene.",
+            file=sys.stderr,
+        )
+        return 1
 
     payload = json.dumps({
         "layerId": SOURCE_LAYER_ID,
