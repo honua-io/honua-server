@@ -65,9 +65,15 @@ def main() -> int:
               "3d-tiles and i3s certification cells will report 404.")
         return 1
 
+    public_base = os.environ.get("HONUA_CLIENT_COMPAT_PUBLIC_BASE_URL", "").rstrip("/")
     tileset_url = _tileset_url(base_url)
     existing, _ = _status(tileset_url)
-    if existing == 200:
+    public_status = 200
+    if public_base and public_base != base_url:
+        public_status, _ = _status(_tileset_url(public_base))
+    # An internal 200 is not enough. The advertised TLS host can still be
+    # serving a cached 404 for the same scene id (#5218).
+    if existing == 200 and public_status == 200:
         print(f"  Scene: tileset already live at {tileset_url}")
         return 0
 
