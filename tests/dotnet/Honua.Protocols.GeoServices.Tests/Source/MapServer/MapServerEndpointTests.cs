@@ -851,6 +851,55 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
         layersContent.Should().Be(allContent);
     }
 
+    // ArcGIS Pro POSTs this resource. While it was registered GET-only it answered Pro
+    // with a 405 "Method Not Allowed" GeoServices envelope, Pro fell back to the root
+    // document, and a three-layer map service arrived in the map as a Map Image Layer
+    // carrying ONE sublayer - measured on ArcGIS Pro 3.7.1.1904 against browser_compat,
+    // where two of three sublayers were silently absent. Assert the POST document is
+    // byte-identical to the GET one: a POST that merely answers 200 with an empty
+    // {"layers":[]} would reproduce the same silent truncation.
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/layers")]
+    public async Task MapServer_Layers_Post_ReturnsSameDocumentAsGet()
+    {
+        using var payload = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
+        var postResponse = await Fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/layers",
+            payload);
+        var postContent = await postResponse.Content.ReadAsStringAsync();
+        postResponse.StatusCode.Should().Be(HttpStatusCode.OK, postContent);
+
+        var postResult = JsonSerializer.Deserialize(postContent, MapServerJsonContext.Default.AllLayersAndTablesResponse);
+        postResult.Should().NotBeNull();
+        postResult!.Layers.Should().NotBeNullOrEmpty();
+
+        var getResponse = await Fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/layers?f=json");
+        var getContent = await getResponse.Content.ReadAsStringAsync();
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK, getContent);
+        postContent.Should().Be(getContent);
+    }
+
+    [IntegrationTest]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/allLayersAndTables")]
+    public async Task MapServer_AllLayersAndTables_Post_ReturnsSameDocumentAsGet()
+    {
+        using var payload = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
+        var postResponse = await Fixture.Client.PostAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/allLayersAndTables",
+            payload);
+        var postContent = await postResponse.Content.ReadAsStringAsync();
+        postResponse.StatusCode.Should().Be(HttpStatusCode.OK, postContent);
+
+        var getResponse = await Fixture.Client.GetAsync(
+            $"/rest/services/{WebAppFixture.TestServiceId}/MapServer/allLayersAndTables?f=json");
+        var getContent = await getResponse.Content.ReadAsStringAsync();
+        getResponse.StatusCode.Should().Be(HttpStatusCode.OK, getContent);
+        postContent.Should().Be(getContent);
+    }
+
     [IntegrationTest]
     [Operation(Operations.QueryDomains)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/queryDomains")]
