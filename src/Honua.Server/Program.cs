@@ -397,19 +397,33 @@ if (connectedRedis is not null &&
 {
     // The operation-secret protector is intentionally backed by the same Redis authority
     // as the proposal/instance stores so every replay node shares a rotation-capable key ring.
-    var keyRepository = new RedisDataProtectionKeyRepository(connectedRedis);
-    keyRepository.EnsureAllElementsAreProtected();
+    // Native AOT cannot run EncryptedXml, which is what certificate key protection uses, so
+    // that host keeps the ring in process memory. The certificate is still required.
+    var nativeAot = !System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported;
+    RedisDataProtectionKeyRepository? keyRepository = null;
+    if (!nativeAot)
+    {
+        keyRepository = new RedisDataProtectionKeyRepository(connectedRedis);
+        keyRepository.EnsureAllElementsAreProtected();
+    }
+
     var keyRing = builder.Services.AddDataProtection()
-        .SetApplicationName("Honua.Server")
-        .AddKeyManagementOptions(options =>
+        .SetApplicationName("Honua.Server");
+    if (keyRepository is not null)
+    {
+        keyRing.AddKeyManagementOptions(options =>
             options.XmlRepository = keyRepository);
+    }
 
     // A key ring persisted beside the ciphertext it unlocks is not a boundary on its own. The
     // certificate is mandatory so a Redis reader or snapshot cannot carry both halves. Lambda
     // cannot mount the file, so a Secrets Manager bundle is written to a private temp file first.
     await StartupConfigurationHelpers.EnsureKeyRingCertificateMaterializedAsync(builder.Configuration);
     var keyRingCertificate = OperationSecretKeyRingProtection.Resolve(builder.Configuration);
-    keyRing.ProtectKeysWithCertificate(keyRingCertificate);
+    if (!nativeAot)
+    {
+        keyRing.ProtectKeysWithCertificate(keyRingCertificate);
+    }
 }
 
 // The ONE sanctioned way an unattested durable job substrate may stop this process
