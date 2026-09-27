@@ -39,7 +39,15 @@ internal static class GeocodingEndpoints
             .WithName("FindAddressCandidates")
             .WithSummary("Forward geocode an address")
             .WithDescription("Find address candidates from freeform address text")
-            .WithTags("GeocodeServer");
+            .WithTags("GeocodeServer")
+            // #5145: the POST companion is AllowAnonymous and this GET is reachable
+            // anonymously too (no authorization requirement, no fallback policy). The
+            // marker has to be explicit because UsePortalTokenAuthenticationRejection
+            // reads IAllowAnonymous to decide that a foreign token may be served
+            // anonymously instead of answering 498 - arcpy signs its second
+            // reverseGeocode/findAddressCandidates GET with the Pro seat's ArcGIS
+            // Online token, which this server never issued.
+            .AllowAnonymous();
 
         endpoints.MapPost("/rest/services/{locatorName}/GeocodeServer/findAddressCandidates", HandleFindAddressCandidates)
             .WithDisplayName("Find Address Candidates (POST)")
@@ -54,7 +62,9 @@ internal static class GeocodingEndpoints
             .WithName("ReverseGeocode")
             .WithSummary("Reverse geocode coordinates")
             .WithDescription("Resolve coordinates to the nearest known address")
-            .WithTags("GeocodeServer");
+            .WithTags("GeocodeServer")
+            // #5145: explicit for the same reason as findAddressCandidates above.
+            .AllowAnonymous();
 
         endpoints.MapPost("/rest/services/{locatorName}/GeocodeServer/reverseGeocode", HandleReverseGeocode)
             .WithDisplayName("Reverse Geocode (POST)")
@@ -113,7 +123,9 @@ internal static class GeocodingEndpoints
                 handler.HandleFindAddressCandidatesAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
             .WithDisplayName("Find Address Candidates (Alias)")
             .WithName("FindAddressCandidatesAlias")
-            .WithTags("GeocodeServer");
+            .WithTags("GeocodeServer")
+            // #5145: explicit for the same reason as findAddressCandidates above.
+            .AllowAnonymous();
 
         endpoints.MapPost("/rest/services/GeocodeServer/findAddressCandidates", static (HttpContext context, GeocodingHandler handler) =>
                 handler.HandleFindAddressCandidatesAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
@@ -126,7 +138,9 @@ internal static class GeocodingEndpoints
                 handler.HandleReverseGeocodeAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
             .WithDisplayName("Reverse Geocode (Alias)")
             .WithName("ReverseGeocodeAlias")
-            .WithTags("GeocodeServer");
+            .WithTags("GeocodeServer")
+            // #5145: explicit for the same reason as findAddressCandidates above.
+            .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/GeocodeServer/suggest", static (HttpContext context, GeocodingHandler handler) =>
                 handler.HandleSuggestAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
