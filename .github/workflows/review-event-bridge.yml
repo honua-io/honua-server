@@ -22,7 +22,26 @@ jobs:
     timeout-minutes: 15
     concurrency:
       group: review-event-bridge-pr-${{ github.event.pull_request.number }}
-      cancel-in-progress: true
+      # Serialize rather than cancel. Superseding is already decided by the shed
+      # step below, which compares the event's subject commit against the PR's
+      # current head -- that is a content test, and it writes a step summary
+      # saying which subject it shed and why. `cancel-in-progress: true` raced
+      # that: a reviewer bot firing several events in one second killed the
+      # earlier runs before they reached the step, leaving step-less runs whose
+      # only trace is a red mark with no summary and no annotation. Those reds
+      # were indistinguishable from a real failure on the pull request page and
+      # cost a manual re-run to clear.
+      #
+      # Cancelling was also redundant with the shed test, never a substitute for
+      # it: a cancelled run still concludes non-success, so review-gate.yml's
+      # job-level `if` already treated it exactly as a shed -- but by accident,
+      # and with no record of the reason. Serializing keeps that downstream
+      # contract identical and makes every non-success deliberate and explained.
+      #
+      # The cost is bounded: this bridge is inert and read-only, each run is a
+      # couple of API calls, and the gate job in review-gate.yml already chose
+      # the same trade-off for the same reason.
+      cancel-in-progress: false
     steps:
       - name: Shed superseded review event
         id: stale

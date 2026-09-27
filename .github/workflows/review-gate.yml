@@ -43,7 +43,14 @@ jobs:
       # workflow_run payloads may omit pull_requests, so repository + branch is
       # the stable subject fallback for those completions.
       group: review-resolve-pr-${{ github.event.pull_request.number || github.event.issue.number || github.event.client_payload.pr || (github.event_name == 'workflow_run' && github.event.workflow_run.pull_requests[0].number) || format('{0}:{1}', github.event.workflow_run.head_repository.full_name, github.event.workflow_run.head_branch) || github.run_id }}
-      cancel-in-progress: true
+      # Serialize rather than cancel, for the same reason as the gate job below
+      # and the bridge in review-event-bridge.yml. This job's own "Shed
+      # superseded review event" step decides supersession on content, and says
+      # so in its summary; cancelling raced it and left step-less red runs that
+      # explain nothing. Serializing also matches the group's stated intent --
+      # keeping all heads for one PR on one queue -- without discarding the
+      # record of which head was shed.
+      cancel-in-progress: false
     permissions:
       contents: read
       pull-requests: read
