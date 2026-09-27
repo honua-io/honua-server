@@ -76,6 +76,46 @@ public sealed class PostgresStorageMappedFeatureReaderVersionIntegrationTests(Po
     }
 
     [Fact]
+    public async Task GetAsync_ExistingFeature_UsesSingleReadLease()
+    {
+        var provider = new FixtureConnectionProvider(fixture.ConnectionString);
+        var reader = CreateReader(connectionProvider: provider);
+
+        var feature = await reader.GetAsync(1, 1);
+
+        feature.Should().NotBeNull();
+        var actual = feature!.Value;
+        actual.Id.Should().Be(1);
+        Convert.ToInt64(actual.Attributes["count"], CultureInfo.InvariantCulture).Should().Be(1);
+        provider.OpenCount.Should().Be(1, "an item lookup does not need a total-count query");
+    }
+
+    [Fact]
+    public async Task GetAsync_MissingFeature_ReturnsNullWithSingleReadLease()
+    {
+        var provider = new FixtureConnectionProvider(fixture.ConnectionString);
+        var reader = CreateReader(connectionProvider: provider);
+
+        (await reader.GetAsync(1, 999)).Should().BeNull();
+
+        provider.OpenCount.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task GetAsync_PreservesPermanentFilterRowSecurityAndFieldMasks()
+    {
+        var reader = CreateReader(secured: true);
+        await fixture.ExecuteAsync($"UPDATE {_schema}.features SET attributes = attributes || '{{\"count\":100}}'::jsonb WHERE layer_id = 1 AND objectid = 2;");
+
+        var visible = await reader.GetAsync(1, 1);
+
+        visible.Should().NotBeNull();
+        visible!.Value.Attributes.Should().NotContainKey("secret");
+        (await reader.GetAsync(1, 2)).Should().BeNull("the permanent filter excludes this row");
+        (await reader.GetAsync(1, 3)).Should().BeNull("row-level security excludes the other tenant");
+    }
+
+    [Fact]
     public async Task Query_OverlaysUpdateInsertDeleteWithoutChangingDefaultOrOtherLayers()
     {
         var reader = CreateReader();
@@ -306,7 +346,8 @@ public sealed class PostgresStorageMappedFeatureReaderVersionIntegrationTests(Po
 
     private PostgresStorageMappedFeatureReader CreateReader(bool secured = false, bool externalTable = false,
         DataConnection? connection = null, string? managedFeatureSchema = null, bool sourceBacked = true,
-        bool unqualifiedMapping = false, string? connectionString = null)
+        bool unqualifiedMapping = false, string? connectionString = null,
+        IAdoNetDatabaseConnectionProvider? connectionProvider = null)
     {
         var resource = new MetadataV2Resource
         {
@@ -335,7 +376,7 @@ public sealed class PostgresStorageMappedFeatureReaderVersionIntegrationTests(Po
         masks.ResolveAsync(resource, Arg.Any<CancellationToken>()).Returns(["secret"]);
         var pool = new DefaultObjectPoolProvider().Create(
             new Honua.Core.Features.Infrastructure.ServiceRegistration.DictionaryPooledObjectPolicy());
-        return new PostgresStorageMappedFeatureReader(new FixtureConnectionProvider(connectionString ?? fixture.ConnectionString),
+        return new PostgresStorageMappedFeatureReader(connectionProvider ?? new FixtureConnectionProvider(connectionString ?? fixture.ConnectionString),
             pool, resource,
             new FeatureStorageMapping(externalTable ? "external_features" : "features",
                 SchemaName: unqualifiedMapping ? null : _schema,
@@ -352,11 +393,14 @@ public sealed class PostgresStorageMappedFeatureReaderVersionIntegrationTests(Po
 
     private sealed class FixtureConnectionProvider(string connectionString) : IAdoNetDatabaseConnectionProvider
     {
+        public int OpenCount { get; private set; }
+
         public string GetConnectionString() => connectionString;
         public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
         {
             var connection = new NpgsqlConnection(connectionString);
             await connection.OpenAsync(cancellationToken);
+            OpenCount++;
             return connection;
         }
         public async Task<(DbConnection Connection, DbTransaction Transaction)> OpenTransactionAsync(

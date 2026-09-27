@@ -106,7 +106,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             Limit = 1
         };
 
-        var result = await QueryAsync(layerId, query, cancellationToken).ConfigureAwait(false);
+        var result = await QueryPageAsync(layerId, query, cancellationToken).ConfigureAwait(false);
         return result.Items.Length == 0 ? null : result.Items[0];
     }
 
