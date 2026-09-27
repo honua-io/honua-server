@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Security.Cryptography.X509Certificates;
+using System.Text.Json;
 
 namespace Honua.Server.Features.Operations;
 
@@ -21,6 +22,96 @@ internal static class OperationSecretKeyRingProtection
 {
     internal const string CertificatePathKey = "Operations:SecretChannel:KeyRingCertificatePath";
     internal const string CertificatePasswordKey = "Operations:SecretChannel:KeyRingCertificatePassword";
+
+    /// <summary>
+    /// PKCS#12 material for hosts that cannot mount a file. The value is either standard base64
+    /// or a JSON object <c>{"pkcs12":"&lt;base64&gt;","password":"..."}</c>. An
+    /// <c>aws:secretsmanager:</c> reference is resolved before this runs.
+    /// </summary>
+    internal const string CertificateMaterialKey = "Operations:SecretChannel:KeyRingCertificatePkcs12";
+
+    /// <summary>PKCS#12 bytes written for <see cref="Resolve"/>, plus a password carried inside the bundle.</summary>
+    /// <param name="Path">Filesystem path of the written certificate.</param>
+    /// <param name="Password">Password from a JSON bundle, or <see langword="null"/> when the bundle had none.</param>
+    internal readonly record struct MaterializedKeyRing(string Path, string? Password);
+
+    /// <summary>
+    /// Writes PKCS#12 material to a private file under the temp directory.
+    /// </summary>
+    /// <param name="material">Base64 PKCS#12, or a JSON bundle containing <c>pkcs12</c> and an optional <c>password</c>.</param>
+    /// <returns>The written path and any password embedded in the bundle.</returns>
+    public static MaterializedKeyRing WritePkcs12Material(string material)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(material);
+        string? password = null;
+        byte[] bytes;
+        var trimmed = material.Trim();
+        try
+        {
+            if (trimmed.StartsWith('{'))
+            {
+                using var document = JsonDocument.Parse(trimmed);
+                if (!document.RootElement.TryGetProperty("pkcs12", out var pkcs12) ||
+                    pkcs12.ValueKind != JsonValueKind.String ||
+                    string.IsNullOrWhiteSpace(pkcs12.GetString()))
+                {
+                    throw new InvalidOperationException(
+                        $"'{CertificateMaterialKey}' JSON must contain a pkcs12 string.");
+                }
+
+                bytes = Convert.FromBase64String(pkcs12.GetString()!);
+                if (document.RootElement.TryGetProperty("password", out var passwordElement) &&
+                    passwordElement.ValueKind == JsonValueKind.String)
+                {
+                    password = passwordElement.GetString();
+                }
+            }
+            else
+            {
+                bytes = Convert.FromBase64String(trimmed);
+            }
+        }
+        catch (Exception exception) when (exception is FormatException or JsonException)
+        {
+            throw new InvalidOperationException(
+                $"'{CertificateMaterialKey}' is not a PKCS#12 bundle.",
+                exception);
+        }
+
+        if (bytes.Length == 0)
+        {
+            throw new InvalidOperationException($"'{CertificateMaterialKey}' did not contain a certificate.");
+        }
+
+        // A private key lands on disk here, so the file is created privately and
+        // uniquely rather than written and then tightened. WriteAllBytes to a fixed
+        // /tmp name created the file under the process umask and only chmod'd it to
+        // 0600 afterwards, which on a shared host leaves a window where another local
+        // user can read it, lets one pre-create the path as a symlink, and lets two
+        // Honua processes overwrite each other's certificate. UnixCreateMode applies
+        // 0600 at open(2) time and CreateNew (O_EXCL) refuses an existing path.
+        var path = Path.Combine(
+            Path.GetTempPath(),
+            $"honua-operation-keyring-{Guid.NewGuid():N}.pfx");
+        var options = new FileStreamOptions
+        {
+            Mode = FileMode.CreateNew,
+            Access = FileAccess.Write,
+            Share = FileShare.None,
+        };
+
+        if (!OperatingSystem.IsWindows())
+        {
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        }
+
+        using (var stream = new FileStream(path, options))
+        {
+            stream.Write(bytes);
+        }
+
+        return new MaterializedKeyRing(path, password);
+    }
 
     /// <summary>Loads the configured key-ring certificate.</summary>
     /// <param name="configuration">The server configuration.</param>

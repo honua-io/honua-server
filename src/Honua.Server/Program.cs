@@ -405,7 +405,9 @@ if (connectedRedis is not null &&
             options.XmlRepository = keyRepository);
 
     // A key ring persisted beside the ciphertext it unlocks is not a boundary on its own. The
-    // certificate is mandatory so a Redis reader or snapshot cannot carry both halves.
+    // certificate is mandatory so a Redis reader or snapshot cannot carry both halves. Lambda
+    // cannot mount the file, so a Secrets Manager bundle is written to a private temp file first.
+    await StartupConfigurationHelpers.EnsureKeyRingCertificateMaterializedAsync(builder.Configuration);
     var keyRingCertificate = OperationSecretKeyRingProtection.Resolve(builder.Configuration);
     keyRing.ProtectKeysWithCertificate(keyRingCertificate);
 }
