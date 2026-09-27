@@ -52,7 +52,7 @@ public sealed class FeatureAttributeJsonReaderTests(ITestOutputHelper output)
         var currentBytes = Measure(readCurrent);
 
         output.WriteLine($"Allocated bytes per 11-field row, including immutable copy: previous={previousBytes}, current={currentBytes}");
-        currentBytes.Should().BeLessThan(previousBytes * 0.7,
+        currentBytes.Should().BeLessThan(previousBytes * 7 / 10,
             "scalar attributes should avoid the temporary dictionary and per-value JSON documents");
     }
 
