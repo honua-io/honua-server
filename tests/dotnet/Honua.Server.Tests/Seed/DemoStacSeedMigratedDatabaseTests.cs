@@ -51,10 +51,10 @@ public sealed class DemoStacSeedMigratedDatabaseTests
     /// <summary>The Maui Reef Watch scenes the seed inserts under layer 90810.</summary>
     private static readonly ExpectedScene[] _reefWatchScenes =
     [
-        new("9081001", -156.4730, 20.8910, "S2-MAUI-Reef-01", "2026-03-01T20:30:00Z", 96, 5.2, 142.0, "sentinel-2a"),
-        new("9081002", -156.3120, 20.7460, "S2-MAUI-Reef-02", "2026-03-04T20:30:00Z", 93, 8.9, 144.7, "sentinel-2b"),
-        new("9081003", -156.6650, 20.9540, "S2-MAUI-Reef-03", "2026-03-07T20:30:00Z", 90, 12.4, 147.1, "sentinel-2a"),
-        new("9081004", -156.4470, 20.6320, "S2-MAUI-Reef-04", "2026-03-10T20:30:00Z", 87, 16.8, 150.5, "sentinel-2b"),
+        new("9081001", -156.4730, 20.8910, "S2-MAUI-Reef-01", "2026-03-01T20:30:00Z", 96, 5.2, 142.0, "sentinel-2a", 4326),
+        new("9081002", -156.3120, 20.7460, "S2-MAUI-Reef-02", "2026-03-04T20:30:00Z", 93, 8.9, 144.7, "sentinel-2b", 4326),
+        new("9081003", -156.6650, 20.9540, "S2-MAUI-Reef-03", "2026-03-07T20:30:00Z", 90, 12.4, 147.1, "sentinel-2a", 4326),
+        new("9081004", -156.4470, 20.6320, "S2-MAUI-Reef-04", "2026-03-10T20:30:00Z", 87, 16.8, 150.5, "sentinel-2b", 4326),
     ];
 
     [IntegrationTest]
@@ -254,6 +254,10 @@ public sealed class DemoStacSeedMigratedDatabaseTests
             properties.GetProperty("quality_score").GetInt32().Should().Be(scene.QualityScore);
             properties.GetProperty("eo:cloud_cover").GetDouble().Should().BeApproximately(scene.CloudCover, 1e-9);
             properties.GetProperty("view:sun_azimuth").GetDouble().Should().BeApproximately(scene.SunAzimuth, 1e-9);
+            // #3384 closes on all three declared colon-key extension fields, so the
+            // regression has to assert proj:epsg too - the seed declares and inserts
+            // it, and asserting only two let it go missing with the gate still green.
+            properties.GetProperty("proj:epsg").GetInt32().Should().Be(scene.Epsg, $"{scene.Id} proj:epsg");
             properties.GetProperty("platform").GetString().Should().Be(scene.Platform);
         }
     }
@@ -334,5 +338,6 @@ public sealed class DemoStacSeedMigratedDatabaseTests
         int QualityScore,
         double CloudCover,
         double SunAzimuth,
-        string Platform);
+        string Platform,
+        int Epsg);
 }
