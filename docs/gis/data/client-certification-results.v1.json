@@ -4171,6 +4171,67 @@
         "state": "blocked",
         "citation": "honua-esri-compat evidence/native-pro-ops-20260926-a: re-cited on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43). The previous citation named honua-server#5021, which is CLOSED. The present blocker is the fixture: honua.relationships holds 0 rows, the service reports relationships: [] and queryRelatedRecords answers a 404 error envelope. No feature service on the candidate declares a relationship class. NOT driven in the UI, for the same reason as featureserver.attachments. Unblocking needs a seeded relationship class between two layers."
       }
+    },
+    {
+      "protocol": "gpserver",
+      "version": "GeoServices REST",
+      "operation": "service-info",
+      "lane": "pro-ui",
+      "cell": {
+        "state": "pass",
+        "evidence": "honua-esri-compat evidence/native-pro-ops-20260926-b, ArcGIS Pro 3.7.1.1904 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43). Driven through an ArcGIS Server connection created in the UI against https://host.docker.internal:18443/arcgis WITH a stored credential. The committed anonymous .ags cannot reach this lane: GPServer/submitJob answers 499 'Authentication is required for this operation.' The authenticated connection also surfaces services the anonymous one does not (cert_auth_raster, cert_auth_vector, portal_org, portal_private). Pro enumerates the GPServer under the connection and lists its task inventory, resolving Honua's hex-suffixed task names (Honua_67656F6D657472792E627566666572 and the rest) to friendly tool names - Aggregate, Append, Area, Aspect, Attribute Filter, Attribute Join, Buffer and on through the catalogue. The service and its tasks are readable and browsable natively (receipt 03)."
+      }
+    },
+    {
+      "protocol": "gpserver",
+      "version": "GeoServices REST",
+      "operation": "task-info",
+      "lane": "pro-ui",
+      "cell": {
+        "state": "pass",
+        "evidence": "honua-esri-compat evidence/native-pro-ops-20260926-b, ArcGIS Pro 3.7.1.1904 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43). Driven through an ArcGIS Server connection created in the UI against https://host.docker.internal:18443/arcgis WITH a stored credential. The committed anonymous .ags cannot reach this lane: GPServer/submitJob answers 499 'Authentication is required for this operation.' The authenticated connection also surfaces services the anonymous one does not (cert_auth_raster, cert_auth_vector, portal_org, portal_private). Opening the Buffer task puts it in the Geoprocessing pane as a tool form built from the server's task metadata, with the Parameters and Environments tabs and a Run button. Pro maps every declared parameter to a labelled control: the GPString 'wkb' renders as Input Geometry, GPLong 'srid' as Spatial Reference, GPDouble 'distance' as Buffer Distance and GPBoolean 'geodesic' as a Geodesic checkbox, with the three required ones marked by an asterisk that clears as each is filled (receipts 03, 04, 05)."
+      }
+    },
+    {
+      "protocol": "gpserver",
+      "version": "GeoServices REST",
+      "operation": "submitJob",
+      "lane": "pro-ui",
+      "cell": {
+        "state": "pass",
+        "evidence": "honua-esri-compat evidence/native-pro-ops-20260926-b, ArcGIS Pro 3.7.1.1904 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43). Driven through an ArcGIS Server connection created in the UI against https://host.docker.internal:18443/arcgis WITH a stored credential. The committed anonymous .ags cannot reach this lane: GPServer/submitJob answers 499 'Authentication is required for this operation.' The authenticated connection also surfaces services the anonymous one does not (cert_auth_raster, cert_auth_vector, portal_org, portal_private). Run was pressed with Input Geometry AQEAAAB7FK5H4ZpewMP1KFyP4kJA, Spatial Reference 4326, Buffer Distance 100 and Geodesic false. Pro submits over SOAP (POST /services/test_service/GPServer, text/xml) and the server accepts the submission: 'Created execution job gp-d328976f9e034275813c19c96f0d2d61 (Geoprocessing) with status Queued', 'Job enqueued', 'Job submitted: JobId=gp-d328976f..., PlanId=gpserver-test_service-geometry-buffer-...'. The job subsequently ran to 'Job execution completed: Status=Succeeded'. Submission from the native client works; only the poll that follows it does not, which is recorded separately against gpserver.job-status (receipt 06)."
+      }
+    },
+    {
+      "protocol": "gpserver",
+      "version": "GeoServices REST",
+      "operation": "job-status",
+      "lane": "pro-ui",
+      "cell": {
+        "state": "fail",
+        "issue": "https://github.com/honua-io/honua-server/issues/5257",
+        "evidence": "honua-esri-compat evidence/native-pro-ops-20260926-b, ArcGIS Pro 3.7.1.1904 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43). Driven through an ArcGIS Server connection created in the UI against https://host.docker.internal:18443/arcgis WITH a stored credential. The committed anonymous .ags cannot reach this lane: GPServer/submitJob answers 499 'Authentication is required for this operation.' The authenticated connection also surfaces services the anonymous one does not (cert_auth_raster, cert_auth_vector, portal_org, portal_private). Pro reports 'Buffer failed.' one second after Run, with exactly one message: 'Queued'. The job it is reporting on SUCCEEDED - the server log for that job id ends 'Job execution completed: gp-d328976f9e034275813c19c96f0d2d61, Status=Succeeded'. The failure is Pro's status poll being refused: 'GPServer request failed: Operation=GetJobStatus, Error=GetJobStatus does not accept the GetProgressMsg argument.' answered HTTP 400. Reduced to a minimal SOAP pair on one job id: GetJobStatus carrying JobID alone answers HTTP 200 with Result esriJobSucceeded, and the same call with JobID plus GetProgressMsg - which is what Pro sends - answers HTTP 400 with a soap:Client fault 'The GP operation failed.'. Cause located at GPServerSoapExecution.cs:69, where GetJobStatus is validated with ValidateChildren(operation, \"JobID\") and any further argument is fatal (receipts 06, 07)."
+      }
+    },
+    {
+      "protocol": "gpserver",
+      "version": "GeoServices REST",
+      "operation": "results",
+      "lane": "pro-ui",
+      "cell": {
+        "state": "blocked",
+        "citation": "honua-esri-compat evidence/native-pro-ops-20260926-b, ArcGIS Pro 3.7.1.1904 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43): NOT measured, and blocked by https://github.com/honua-io/honua-server/issues/5257. Pro never reaches result retrieval because its status poll is refused first, so it abandons the job and reports failure while the job is still running. The outputFeatureLayer row in Pro's own parameter summary is empty for this reason. The result itself exists and is retrievable - the same job's REST results node returns outputFeatureLayer with one esriGeometryPolygon feature - so this cell is waiting on the client being able to get that far, not on the server being able to produce it. Re-measure once #5257 is fixed."
+      }
+    },
+    {
+      "protocol": "gpserver",
+      "version": "GeoServices REST",
+      "operation": "cancel",
+      "lane": "pro-ui",
+      "cell": {
+        "state": "blocked",
+        "citation": "honua-esri-compat evidence/native-pro-ops-20260926-b, ArcGIS Pro 3.7.1.1904 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43): NOT measured. Two reasons, both about the fixture rather than the client. Every task on this GPServer completes in about a second - the measured Buffer job ran 09:35:50 to 09:35:51 - so there is no window in which a human or a driver can press Cancel, and a cancel that races a completed job would not certify anything. Beyond that, Pro's job polling is refused outright by https://github.com/honua-io/honua-server/issues/5257, so it cannot hold a job in a cancellable state at all. Certifying this cell needs a deliberately long-running GP task in the fixture, and #5257 fixed first."
+      }
     }
   ]
 }

@@ -191,12 +191,12 @@ lane × protocol pair appears with no checklist row.
 
 | Lane | Client build | Closed | Open | Breakdown |
 |---|---|---|---|---|
-| `pro-ui` | ArcGIS Pro 3.7.1.1904 | 60/94 | 34 | blocked 4, fail 1, n/a-no-client 23, not-started 29, pass 37 |
+| `pro-ui` | ArcGIS Pro 3.7.1.1904 | 63/94 | 31 | blocked 6, fail 2, n/a-no-client 23, not-started 23, pass 40 |
 | `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 89/94 | 5 | blocked 4, fail 1, n/a-no-client 47, pass 42 |
 | `qgis-ui` | QGIS 3.44.14 LTR | 71/94 | 23 | blocked 23, n/a-no-client 31, pass 40 |
 | `pyqgis` | QGIS 3.44.14 LTR | 94/94 | 0 | n/a-no-client 29, pass 65 |
 
-**314 of 376 cells closed; 62 open.**
+**317 of 376 cells closed; 59 open.**
 
 ### Cells
 
@@ -334,12 +334,12 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| service-info | not-started | pass | n/a-no-client | n/a-no-client |
-| task-info | not-started | pass | n/a-no-client | n/a-no-client |
-| submitJob | not-started | pass | n/a-no-client | n/a-no-client |
-| job-status | not-started | pass | n/a-no-client | n/a-no-client |
-| results | not-started | pass | n/a-no-client | n/a-no-client |
-| cancel | not-started | pass | n/a-no-client | n/a-no-client |
+| service-info | pass | pass | n/a-no-client | n/a-no-client |
+| task-info | pass | pass | n/a-no-client | n/a-no-client |
+| submitJob | pass | pass | n/a-no-client | n/a-no-client |
+| job-status | fail | pass | n/a-no-client | n/a-no-client |
+| results | blocked | pass | n/a-no-client | n/a-no-client |
+| cancel | blocked | pass | n/a-no-client | n/a-no-client |
 
 #### geocodeserver GeoServices REST
 
