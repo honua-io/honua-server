@@ -239,6 +239,45 @@ public sealed class ConfigurationValidationServiceTests
         throw new InvalidOperationException("Could not locate repository root from test output directory.");
     }
 
+    // The PKCS#12 material holds the private key that decrypts the data-protection key
+    // ring. Before this rule existed a literal bundle in appsettings*.json passed
+    // startup validation silently, while the password for that same certificate was
+    // rejected - so the key itself could reach source control and the password could not.
+    [Theory]
+    [InlineData("MIIKnQIBAzCCClcGCSqGSIb3DQEHAaCCCkgEggpEMIIKQDCCBK")]
+    [InlineData("{\"pkcs12\":\"MIIKnQIBAzCCClcGCSqGSIb3DQEHAaCCCkgEggpEMIIKQDCCBK\"}")]
+    public void ValidateConfiguration_NonDevelopment_WithLiteralKeyRingMaterial_ReturnsError(string literal)
+    {
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["Operations:SecretChannel:KeyRingCertificatePkcs12"] = literal
+        });
+
+        var errors = ConfigurationValidationService.ValidateConfiguration(
+            configuration, NullLogger.Instance, isDevelopment: false);
+
+        errors.Should().Contain(error =>
+            error.Contains("Operations:SecretChannel:KeyRingCertificatePkcs12", StringComparison.Ordinal) &&
+            error.Contains("secret reference", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Theory]
+    [InlineData("aws:secretsmanager:honua/operations/keyring")]
+    [InlineData("env:HONUA_OPERATION_KEYRING_PKCS12")]
+    public void ValidateConfiguration_NonDevelopment_WithKeyRingMaterialReference_IsPermitted(string reference)
+    {
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["Operations:SecretChannel:KeyRingCertificatePkcs12"] = reference
+        });
+
+        var errors = ConfigurationValidationService.ValidateConfiguration(
+            configuration, NullLogger.Instance, isDevelopment: false);
+
+        errors.Should().NotContain(error =>
+            error.Contains("Operations:SecretChannel:KeyRingCertificatePkcs12", StringComparison.Ordinal));
+    }
+
     private static IConfiguration BuildConfiguration(IDictionary<string, string?>? overrides = null)
     {
         var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
