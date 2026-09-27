@@ -301,19 +301,7 @@
       "lane": "arcpy",
       "cell": {
         "state": "blocked",
-        "previous_exclusion": {
-          "state": "blocked",
-          "previous_exclusion": {
-            "citation": "honua-esri-compat evidence/arcpy-checklist-20260922z/operations.json, ArcGIS Pro 3.7.1.1904 on candidate sha256:cd6e3dd4: arcpy.management.CreateReplica answers ERROR 000824 'The tool is not licensed' under the headless propy seat, so the operation was never issued and neither support nor absence was measured. Deliberately not read as a client gap: a headless arcpy probe reports ProductInfo ArcView on this machine while the interactive seat is a signed-in named user, and that reading has already misled this programme once. Settling this cell needs the interactive seat, not another headless run.",
-            "previous_exclusion": {
-              "state": "blocked",
-              "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. CreateReplica's input contract does not establish absence of every native offline path. CreateReplicaFromServer targets a different GeoDataServer protocol and cannot settle FeatureServer replica/sync."
-            }
-          },
-          "evidence": "honua-esri-compat evidence/arcpy-checklist-20260924-tls4, ArcGIS Pro 3.7.1.1904: CreateReplica requires a Standard or Advanced licence and this seat cannot reach one. Measured rather than assumed, because a headless arcpy probe reporting ArcView has misled this programme before: arcpy.ProductInfo() returns 'ArcView', and arcpy.SetProduct('ArcInfo') returns 'AlreadyInitialized' EVEN AS THE FIRST CALL AFTER IMPORT - importing arcpy fixes the licence, so the level cannot be raised from inside the process. CheckExtension reports NotLicensed for Foundation. This is therefore not exercisable in the headless arcpy lane at all and belongs to pro-ui, where the interactive seat is a signed-in named user. Not a server defect: no request for a replica reaches the candidate."
-        },
-        "reasonCode": "client-licence-ceiling",
-        "citation": "honua-esri-compat scratch measurement 2026-09-25, ArcGIS Pro 3.7.1.1904: the seat's ArcGIS Pro entitlement is desktopBasicN - ArcGIS Pro BASIC - and this tool requires Standard or Advanced. Measured today: arcpy.management.CreateReplica and arcpy.management.ReconcileVersions both answer 'ERROR 000824: The tool is not licensed'. The entitlement was read from the issuing portal rather than inferred from the process, which settles the question the previous citation left open. It asked for the interactive seat on the grounds that a headless arcpy reporting ProductInfo ArcView had misled this programme before. That distrust was warranted but the answer does not live in the process: ARCPRO_AUTH_TYPE is STANDARD (Named User), so the entitlement belongs to the signed-in user and an interactive run reads the same one. Signed in to https://www.arcgis.com as an org_admin of a Personal Use subscription with maxUsers 1, the user's licensed items carry desktopBasicN, 3DAnalystN, geostatAnalystN, imageAnalystN, networkAnalystN and spatialAnalystN, and NO desktopStdN or desktopAdvN. The org holds no unassigned higher seat either - portals/{id}/purchases is empty - so there is nothing to reassign. This is an entitlement ceiling, not a configuration fault and not a client gap: closing it needs an ArcGIS Pro Standard or Advanced licence, which is a purchase. Consistent with the seat editing feature services successfully elsewhere in this lane - editing does not require Standard, these two tools do."
+        "citation": "honua-esri-compat scratch measurement 2026-09-26 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43): the seat's entitlement is desktopBasicN - ArcGIS Pro BASIC - and this tool requires Standard or Advanced. Confirmed twice and independently: the entitlement read from the issuing portal, and arcpy.GetInstallInfo()['LicenseLevel'] == 'Basic' from the running client. Measured directly, arcpy.management.ReconcileVersions and arcpy.management.CreateReplica both answer 'ERROR 000824: The tool is not licensed'. This is a client seat ceiling, not a Honua defect, and no server change can clear it. Recorded as a PERMANENT block by decision on honua-server#5259: the matrix is certified at Basic and says so in its headline, rather than leaving these cells drifting as silently open work. Closing them needs a Standard or Advanced seat. CreateReplica is the tool this cell needs and it is the one measured at 000824."
       }
     },
     {
@@ -3019,7 +3007,7 @@
       "lane": "arcpy",
       "cell": {
         "state": "blocked",
-        "citation": "honua-esri-compat scratch measurement 2026-09-26 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43): re-measured and reproduced - arcpy.management.ReconcileVersions answers 'ERROR 000824: The tool is not licensed', signed in to the portal and with the workspace accepted. This is the seat's licence ceiling, not a Honua defect, and no server change can clear it: the entitlement is desktopBasicN (ArcGIS Pro Basic) and this tool requires Standard or Advanced. Confirmed twice and independently - the portal entitlement reading, and arcpy.GetInstallInfo()['LicenseLevel'] == 'Basic' from the running client. Moved off `fail` and onto `blocked` to match its sibling featureserver.replica-sync [arcpy], which carries the identical ceiling: a fail asserts a client-visible defect against a filed issue, and honua-server#5036 is about CreateVersion rejecting the workspace, which is a different finding. The cell stays open and stays in the denominator; certifying it needs a Standard or Advanced seat."
+        "citation": "honua-esri-compat scratch measurement 2026-09-26 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43): the seat's entitlement is desktopBasicN - ArcGIS Pro BASIC - and this tool requires Standard or Advanced. Confirmed twice and independently: the entitlement read from the issuing portal, and arcpy.GetInstallInfo()['LicenseLevel'] == 'Basic' from the running client. Measured directly, arcpy.management.ReconcileVersions and arcpy.management.CreateReplica both answer 'ERROR 000824: The tool is not licensed'. This is a client seat ceiling, not a Honua defect, and no server change can clear it. Recorded as a PERMANENT block by decision on honua-server#5259: the matrix is certified at Basic and says so in its headline, rather than leaving these cells drifting as silently open work. Closing them needs a Standard or Advanced seat. ReconcileVersions is the tool this cell needs and it is the one measured at 000824."
       }
     },
     {
@@ -4271,6 +4259,76 @@
       "cell": {
         "state": "blocked",
         "citation": "honua-esri-compat evidence/native-pro-ops-20260926-b, ArcGIS Pro 3.7.1.1904 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43): NOT drivable, blocked by https://github.com/honua-io/honua-server/issues/5258. The service is not the problem - it works. /rest/services/World/GeocodeServer advertises capabilities Geocode,ReverseGeocode,Suggest with a singleLineAddressField, an addressFields array and locatorProperties.LocatorName World. What blocks the lane is discoverability: GeocodeServer appears in NEITHER catalog. The REST catalog lists 14 services and the authenticated SOAP GetServiceDescriptionsEx - the one that populates Pro's service tree - returns 31 services, with no entry of type GeocodeServer in either; the string does not occur anywhere under src/Honua.Protocols.GeoServices/Catalog/. Measured in the UI: the site connection shows no locator, and Catalog > Locators > Add Locator with the service URL typed into the Select Existing Locator name box answers 'Network Error - Cannot access https://host.docker.internal:18443/arcgis/rest/services/World/GeocodeServer'. Pro issued NO request doing so - the server logged zero requests during the attempt, in a window where a control request appeared immediately - so it is a client-side refusal and there is no URL workaround. Catalog registration is the only route. Server side verified before filing: geocodeAddresses with one SingleLine record returns locations=1 with resultId 1 and the resolved address."
+      }
+    },
+    {
+      "protocol": "naserver",
+      "version": "GeoServices REST",
+      "operation": "route-solve",
+      "lane": "arcpy",
+      "cell": {
+        "state": "blocked",
+        "citation": "honua-esri-compat scratch measurement 2026-09-26 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43), arcpy 3.7.1 build 1901 / ArcGIS Pro 3.7.1.1904, licence Basic. NOT licence blocked - that was the standing assumption and measuring it disproved it. CheckExtension('Network') reports Available and CheckOutExtension('Network') succeeds on this Basic seat, and NO ERROR 000824 appears anywhere in the run, although the genuinely Standard/Advanced tools on this same machine do produce it (ReconcileVersions, CreateReplica). The real blocker is https://github.com/honua-io/honua-server/issues/5262: sharing/rest/portals/self returns only id, isPortal, name, portalName and user - helperServices is ABSENT - so arcpy has no federated routing service to resolve, and every Network Analyst tool refuses the NAServer with 'ERROR 030189: You must be signed in to <url>/' WHILE SIGNED IN (SignInToPortal succeeded and GetActivePortalURL returns the host). Measured across four URL spellings - root NAServer, the /arcgis alias, the alias with ?token=, and .../NAServer/Route - and both MakeRouteAnalysisLayer and MakeServiceAreaAnalysisLayer: all eight give 030189. The service itself answers: NAServer advertises routeLayers ['Route'] and serviceAreaLayers ['ServiceArea'], Route/solve returns one route with directions over both GET and POST, and ServiceArea/solveServiceArea returns one polygon over POST. For this cell specifically: MakeRouteAnalysisLayer is the client entry point and it never reaches the service."
+      }
+    },
+    {
+      "protocol": "naserver",
+      "version": "GeoServices REST",
+      "operation": "service-area",
+      "lane": "arcpy",
+      "cell": {
+        "state": "blocked",
+        "citation": "honua-esri-compat scratch measurement 2026-09-26 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43), arcpy 3.7.1 build 1901 / ArcGIS Pro 3.7.1.1904, licence Basic. NOT licence blocked - that was the standing assumption and measuring it disproved it. CheckExtension('Network') reports Available and CheckOutExtension('Network') succeeds on this Basic seat, and NO ERROR 000824 appears anywhere in the run, although the genuinely Standard/Advanced tools on this same machine do produce it (ReconcileVersions, CreateReplica). The real blocker is https://github.com/honua-io/honua-server/issues/5262: sharing/rest/portals/self returns only id, isPortal, name, portalName and user - helperServices is ABSENT - so arcpy has no federated routing service to resolve, and every Network Analyst tool refuses the NAServer with 'ERROR 030189: You must be signed in to <url>/' WHILE SIGNED IN (SignInToPortal succeeded and GetActivePortalURL returns the host). Measured across four URL spellings - root NAServer, the /arcgis alias, the alias with ?token=, and .../NAServer/Route - and both MakeRouteAnalysisLayer and MakeServiceAreaAnalysisLayer: all eight give 030189. The service itself answers: NAServer advertises routeLayers ['Route'] and serviceAreaLayers ['ServiceArea'], Route/solve returns one route with directions over both GET and POST, and ServiceArea/solveServiceArea returns one polygon over POST. For this cell specifically: MakeServiceAreaAnalysisLayer is the client entry point and it never reaches the service. Recorded alongside, and filed as honua-server#5263: solveServiceArea is POST-only and its GET form answers a 405 envelope, while the sibling Route/solve accepts both verbs."
+      }
+    },
+    {
+      "protocol": "naserver",
+      "version": "GeoServices REST",
+      "operation": "route-solve",
+      "lane": "pro-ui",
+      "cell": {
+        "state": "blocked",
+        "citation": "honua-esri-compat scratch measurement 2026-09-26 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43), arcpy 3.7.1 build 1901 / ArcGIS Pro 3.7.1.1904, licence Basic. NOT licence blocked - that was the standing assumption and measuring it disproved it. CheckExtension('Network') reports Available and CheckOutExtension('Network') succeeds on this Basic seat, and NO ERROR 000824 appears anywhere in the run, although the genuinely Standard/Advanced tools on this same machine do produce it (ReconcileVersions, CreateReplica). The real blocker is https://github.com/honua-io/honua-server/issues/5262: sharing/rest/portals/self returns only id, isPortal, name, portalName and user - helperServices is ABSENT - so arcpy has no federated routing service to resolve, and every Network Analyst tool refuses the NAServer with 'ERROR 030189: You must be signed in to <url>/' WHILE SIGNED IN (SignInToPortal succeeded and GetActivePortalURL returns the host). Measured across four URL spellings - root NAServer, the /arcgis alias, the alias with ?token=, and .../NAServer/Route - and both MakeRouteAnalysisLayer and MakeServiceAreaAnalysisLayer: all eight give 030189. The service itself answers: NAServer advertises routeLayers ['Route'] and serviceAreaLayers ['ServiceArea'], Route/solve returns one route with directions over both GET and POST, and ServiceArea/solveServiceArea returns one polygon over POST. For this cell specifically: MakeRouteAnalysisLayer is the client entry point and it never reaches the service."
+      }
+    },
+    {
+      "protocol": "naserver",
+      "version": "GeoServices REST",
+      "operation": "service-area",
+      "lane": "pro-ui",
+      "cell": {
+        "state": "blocked",
+        "citation": "honua-esri-compat scratch measurement 2026-09-26 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43), arcpy 3.7.1 build 1901 / ArcGIS Pro 3.7.1.1904, licence Basic. NOT licence blocked - that was the standing assumption and measuring it disproved it. CheckExtension('Network') reports Available and CheckOutExtension('Network') succeeds on this Basic seat, and NO ERROR 000824 appears anywhere in the run, although the genuinely Standard/Advanced tools on this same machine do produce it (ReconcileVersions, CreateReplica). The real blocker is https://github.com/honua-io/honua-server/issues/5262: sharing/rest/portals/self returns only id, isPortal, name, portalName and user - helperServices is ABSENT - so arcpy has no federated routing service to resolve, and every Network Analyst tool refuses the NAServer with 'ERROR 030189: You must be signed in to <url>/' WHILE SIGNED IN (SignInToPortal succeeded and GetActivePortalURL returns the host). Measured across four URL spellings - root NAServer, the /arcgis alias, the alias with ?token=, and .../NAServer/Route - and both MakeRouteAnalysisLayer and MakeServiceAreaAnalysisLayer: all eight give 030189. The service itself answers: NAServer advertises routeLayers ['Route'] and serviceAreaLayers ['ServiceArea'], Route/solve returns one route with directions over both GET and POST, and ServiceArea/solveServiceArea returns one polygon over POST. For this cell specifically: MakeServiceAreaAnalysisLayer is the client entry point and it never reaches the service. Recorded alongside, and filed as honua-server#5263: solveServiceArea is POST-only and its GET form answers a 405 envelope, while the sibling Route/solve accepts both verbs."
+      }
+    },
+    {
+      "protocol": "featureserver",
+      "version": "GeoServices REST",
+      "operation": "replica-sync",
+      "lane": "pro-ui",
+      "cell": {
+        "state": "blocked",
+        "citation": "honua-esri-compat scratch measurement 2026-09-26 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43): the seat's entitlement is desktopBasicN - ArcGIS Pro BASIC - and this tool requires Standard or Advanced. Confirmed twice and independently: the entitlement read from the issuing portal, and arcpy.GetInstallInfo()['LicenseLevel'] == 'Basic' from the running client. Measured directly, arcpy.management.ReconcileVersions and arcpy.management.CreateReplica both answer 'ERROR 000824: The tool is not licensed'. This is a client seat ceiling, not a Honua defect, and no server change can clear it. Recorded as a PERMANENT block by decision on honua-server#5259: the matrix is certified at Basic and says so in its headline, rather than leaving these cells drifting as silently open work. Closing them needs a Standard or Advanced seat. CreateReplica is the tool this cell needs and it is the one measured at 000824. Not driven in the Pro UI: the entitlement is a property of the seat, which arcpy and the Pro UI share, so the arcpy measurement is the evidence for both. Stated as an inference rather than a UI receipt."
+      }
+    },
+    {
+      "protocol": "versionmanagementserver",
+      "version": "GeoServices REST",
+      "operation": "reconcile-post",
+      "lane": "pro-ui",
+      "cell": {
+        "state": "blocked",
+        "citation": "honua-esri-compat scratch measurement 2026-09-26 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43): the seat's entitlement is desktopBasicN - ArcGIS Pro BASIC - and this tool requires Standard or Advanced. Confirmed twice and independently: the entitlement read from the issuing portal, and arcpy.GetInstallInfo()['LicenseLevel'] == 'Basic' from the running client. Measured directly, arcpy.management.ReconcileVersions and arcpy.management.CreateReplica both answer 'ERROR 000824: The tool is not licensed'. This is a client seat ceiling, not a Honua defect, and no server change can clear it. Recorded as a PERMANENT block by decision on honua-server#5259: the matrix is certified at Basic and says so in its headline, rather than leaving these cells drifting as silently open work. Closing them needs a Standard or Advanced seat. ReconcileVersions is the tool this cell needs and it is the one measured at 000824. Not driven in the Pro UI: the entitlement is a property of the seat, which arcpy and the Pro UI share, so the arcpy measurement is the evidence for both. Stated as an inference rather than a UI receipt."
+      }
+    },
+    {
+      "protocol": "versionmanagementserver",
+      "version": "GeoServices REST",
+      "operation": "create-version",
+      "lane": "pro-ui",
+      "cell": {
+        "state": "blocked",
+        "citation": "NOT driven on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43). Recorded as blocked rather than not-started because the cause is already established in the sibling lane: honua-server#5036. CreateVersion is NOT licence gated here - measured at Basic it answers 'ERROR 000301: The workspace is of the wrong type', not 000824 - so this cell is waiting on the same workspace rejection the arcpy lane reproduces, with arcpy accepting the feature-service workspace factory but reading its release as -1,-1,-1 and Describe(layer).isBranchVersioned as False while the layer's REST JSON declares isDataBranchVersioned true. Offered as attribution to a filed cause, not as a UI receipt: drive this cell once #5036 is fixed."
       }
     }
   ]

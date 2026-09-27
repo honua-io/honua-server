@@ -191,7 +191,7 @@ lane × protocol pair appears with no checklist row.
 
 | Lane | Client build | Closed | Open | Breakdown |
 |---|---|---|---|---|
-| `pro-ui` | ArcGIS Pro 3.7.1.1904 | 63/94 | 31 | blocked 10, fail 2, n/a-no-client 23, not-started 19, pass 40 |
+| `pro-ui` | ArcGIS Pro 3.7.1.1904 | 63/94 | 31 | blocked 15, fail 2, n/a-no-client 23, not-started 14, pass 40 |
 | `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 89/94 | 5 | blocked 4, fail 1, n/a-no-client 47, pass 42 |
 | `qgis-ui` | QGIS 3.44.14 LTR | 71/94 | 23 | blocked 23, n/a-no-client 31, pass 40 |
 | `pyqgis` | QGIS 3.44.14 LTR | 94/94 | 0 | n/a-no-client 29, pass 65 |
@@ -303,7 +303,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 | relatedRecords | blocked | n/a-no-client | n/a-no-client | n/a-no-client |
 | statistics | pass | pass | blocked | pass |
 | domains | pass | pass | pass | pass |
-| replica-sync | not-started | blocked | n/a-no-client | n/a-no-client |
+| replica-sync | blocked | blocked | n/a-no-client | n/a-no-client |
 
 #### mapserver GeoServices REST
 
@@ -363,15 +363,15 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| route-solve | not-started | blocked | n/a-no-client | n/a-no-client |
-| service-area | not-started | blocked | n/a-no-client | n/a-no-client |
+| route-solve | blocked | blocked | n/a-no-client | n/a-no-client |
+| service-area | blocked | blocked | n/a-no-client | n/a-no-client |
 
 #### versionmanagementserver GeoServices REST
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| create-version | not-started | fail | n/a-no-client | n/a-no-client |
-| reconcile-post | not-started | blocked | n/a-no-client | n/a-no-client |
+| create-version | blocked | fail | n/a-no-client | n/a-no-client |
+| reconcile-post | blocked | blocked | n/a-no-client | n/a-no-client |
 
 #### geoservices-soap GeoServices SOAP
 
