@@ -193,10 +193,10 @@ lane × protocol pair appears with no checklist row.
 |---|---|---|---|---|
 | `pro-ui` | ArcGIS Pro 3.7.1.1904 | 63/94 | 31 | blocked 15, fail 2, n/a-no-client 23, not-started 14, pass 40 |
 | `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 89/94 | 5 | blocked 4, fail 1, n/a-no-client 47, pass 42 |
-| `qgis-ui` | QGIS 3.44.14 LTR | 71/94 | 23 | blocked 23, n/a-no-client 31, pass 40 |
+| `qgis-ui` | QGIS 3.44.14 LTR | 81/94 | 13 | blocked 13, n/a-no-client 31, pass 50 |
 | `pyqgis` | QGIS 3.44.14 LTR | 94/94 | 0 | n/a-no-client 29, pass 65 |
 
-**317 of 376 cells closed; 59 open.**
+**327 of 376 cells closed; 49 open.**
 
 ### Cells
 
@@ -241,17 +241,17 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| GetCapabilities | pass | pass | blocked | pass |
-| DescribeCoverage | pass | pass | blocked | pass |
-| GetCoverage | pass | pass | blocked | pass |
+| GetCapabilities | pass | pass | pass | pass |
+| DescribeCoverage | pass | pass | pass | pass |
+| GetCoverage | pass | pass | pass | pass |
 
 #### wcs 2.0.1
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| GetCapabilities | not-started | pass | blocked | pass |
-| DescribeCoverage | not-started | pass | blocked | n/a-no-client |
-| GetCoverage | not-started | pass | blocked | n/a-no-client |
+| GetCapabilities | not-started | pass | pass | pass |
+| DescribeCoverage | not-started | pass | pass | n/a-no-client |
+| GetCoverage | not-started | pass | pass | n/a-no-client |
 
 #### ogc-api-features 1.0
 
@@ -280,7 +280,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 | catalog-landing | pass | pass | pass | pass |
 | collections | pass | pass | pass | pass |
 | item-search | pass | pass | pass | pass |
-| asset-download | not-started | pass | blocked | pass |
+| asset-download | not-started | pass | pass | pass |
 
 #### sensorthings 1.1
 
@@ -426,7 +426,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| archive-read | not-started | n/a-no-client | blocked | pass |
+| archive-read | not-started | n/a-no-client | pass | pass |
 
 #### tilejson 3.0.0
 
@@ -438,7 +438,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| range-read | not-started | pass | blocked | pass |
+| range-read | not-started | pass | pass | pass |
 
 #### i3s-sceneserver 1.x
 
@@ -450,7 +450,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| tileset | not-started | n/a-no-client | blocked | pass |
+| tileset | not-started | n/a-no-client | pass | pass |
 
 #### elevation Esri
 
