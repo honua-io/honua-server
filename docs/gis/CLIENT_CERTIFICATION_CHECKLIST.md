@@ -191,12 +191,12 @@ lane × protocol pair appears with no checklist row.
 
 | Lane | Client build | Closed | Open | Breakdown |
 |---|---|---|---|---|
-| `pro-ui` | ArcGIS Pro 3.7.1.1904 | 48/94 | 46 | blocked 13, fail 4, n/a-no-client 12, not-started 29, pass 36 |
+| `pro-ui` | ArcGIS Pro 3.7.1.1904 | 59/94 | 35 | blocked 2, fail 4, n/a-no-client 23, not-started 29, pass 36 |
 | `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 89/94 | 5 | blocked 3, fail 2, n/a-no-client 47, pass 42 |
 | `qgis-ui` | QGIS 3.44.14 LTR | 71/94 | 23 | blocked 23, n/a-no-client 31, pass 40 |
 | `pyqgis` | QGIS 3.44.14 LTR | 94/94 | 0 | n/a-no-client 29, pass 65 |
 
-**302 of 376 cells closed; 74 open.**
+**313 of 376 cells closed; 63 open.**
 
 ### Cells
 
@@ -286,9 +286,9 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| entity-sets | blocked | n/a-no-client | pass | pass |
-| expand | blocked | n/a-no-client | blocked | pass |
-| filter-paging | blocked | n/a-no-client | blocked | pass |
+| entity-sets | n/a-no-client | n/a-no-client | pass | pass |
+| expand | n/a-no-client | n/a-no-client | blocked | pass |
+| filter-paging | n/a-no-client | n/a-no-client | blocked | pass |
 
 #### featureserver GeoServices REST
 
@@ -383,44 +383,44 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| metadata | blocked | n/a-no-client | n/a-no-client | n/a-no-client |
-| entity-query | blocked | n/a-no-client | n/a-no-client | n/a-no-client |
+| metadata | n/a-no-client | n/a-no-client | n/a-no-client | n/a-no-client |
+| entity-query | n/a-no-client | n/a-no-client | n/a-no-client | n/a-no-client |
 
 #### ogc-api-maps 1.0
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| map | blocked | n/a-no-client | n/a-no-client | pass |
+| map | n/a-no-client | n/a-no-client | n/a-no-client | pass |
 
 #### ogc-api-coverages 1.0
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| coverage | blocked | n/a-no-client | n/a-no-client | pass |
+| coverage | n/a-no-client | n/a-no-client | n/a-no-client | pass |
 
 #### ogc-api-records 1.0
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| records | blocked | n/a-no-client | pass | pass |
+| records | n/a-no-client | n/a-no-client | pass | pass |
 
 #### ogc-api-processes 1.0
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| processes-execute | blocked | n/a-no-client | n/a-no-client | n/a-no-client |
+| processes-execute | n/a-no-client | n/a-no-client | n/a-no-client | n/a-no-client |
 
 #### ogc-api-styles 1.0
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| styles | blocked | n/a-no-client | n/a-no-client | pass |
+| styles | n/a-no-client | n/a-no-client | n/a-no-client | pass |
 
 #### ogc-api-edr 1.0
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| edr-query | blocked | n/a-no-client | n/a-no-client | n/a-no-client |
+| edr-query | n/a-no-client | n/a-no-client | n/a-no-client | n/a-no-client |
 
 #### pmtiles 3
 

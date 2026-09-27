@@ -24,9 +24,9 @@
     "per_lane": {
       "pro-ui": {
         "pass": 36,
-        "n/a-no-client": 12,
+        "n/a-no-client": 23,
         "not-started": 29,
-        "blocked": 13,
+        "blocked": 2,
         "fail": 4
       },
       "arcpy": {
@@ -47,8 +47,8 @@
     },
     "overall": {
       "cells": 376,
-      "closed": 302,
-      "open": 74
+      "closed": 313,
+      "open": 63
     }
   },
   "rows": [
@@ -1328,11 +1328,15 @@
       "operation": "entity-sets",
       "lanes": {
         "pro-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. An OGC API menu's supported standards do not establish absence of SensorThings through every native layer, representation or extension path.",
+          "state": "n/a-no-client",
+          "citation": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a: the challenge was that an OGC API menu's supported standards do not establish absence of SensorThings through every native layer, representation or extension path. Answered across all of them. Pro's complete add-by-connection surface was enumerated: Insert > Connections lists Database, New Multifile Feature Connection, Server, Cloud Store, STAC Connection, New BIM Cloud Connection, Statistical Data Collection and Add Locator; its Server submenu lists exactly Add Server, New ArcGIS Server, New OGC API Server, New WCS Server, New WFS Server, New WMS Server and New WMTS Server. There is no SensorThings connection type. Command Search for 'sensorthings' returns ZERO results - no dropdown at all, a stronger absence than 'odata', which at least drew fuzzy matches. The server is not in question: Capabilities__Experimental__serve.sensorthings__Enabled=true is set on this candidate and the surface is served. Receipts 78, 80, 131.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "No SensorThings client ships in ArcGIS Pro; its OGC API support is limited to Features and Tiles per the Add OGC API services page."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. An OGC API menu's supported standards do not establish absence of SensorThings through every native layer, representation or extension path.",
+            "previous_exclusion": {
+              "state": "n/a-no-client",
+              "citation": "No SensorThings client ships in ArcGIS Pro; its OGC API support is limited to Features and Tiles per the Add OGC API services page."
+            }
           }
         },
         "arcpy": {
@@ -1360,11 +1364,15 @@
       "operation": "expand",
       "lanes": {
         "pro-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. An OGC API menu's supported standards do not establish absence of SensorThings through every native layer, representation or extension path.",
+          "state": "n/a-no-client",
+          "citation": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a: the challenge was that an OGC API menu's supported standards do not establish absence of SensorThings through every native layer, representation or extension path. Answered across all of them. Pro's complete add-by-connection surface was enumerated: Insert > Connections lists Database, New Multifile Feature Connection, Server, Cloud Store, STAC Connection, New BIM Cloud Connection, Statistical Data Collection and Add Locator; its Server submenu lists exactly Add Server, New ArcGIS Server, New OGC API Server, New WCS Server, New WFS Server, New WMS Server and New WMTS Server. There is no SensorThings connection type. Command Search for 'sensorthings' returns ZERO results - no dropdown at all, a stronger absence than 'odata', which at least drew fuzzy matches. The server is not in question: Capabilities__Experimental__serve.sensorthings__Enabled=true is set on this candidate and the surface is served. Receipts 78, 80, 131.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "No SensorThings client ships in ArcGIS Pro; its OGC API support is limited to Features and Tiles per the Add OGC API services page."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. An OGC API menu's supported standards do not establish absence of SensorThings through every native layer, representation or extension path.",
+            "previous_exclusion": {
+              "state": "n/a-no-client",
+              "citation": "No SensorThings client ships in ArcGIS Pro; its OGC API support is limited to Features and Tiles per the Add OGC API services page."
+            }
           }
         },
         "arcpy": {
@@ -1392,11 +1400,15 @@
       "operation": "filter-paging",
       "lanes": {
         "pro-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. An OGC API menu's supported standards do not establish absence of SensorThings through every native layer, representation or extension path.",
+          "state": "n/a-no-client",
+          "citation": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a: the challenge was that an OGC API menu's supported standards do not establish absence of SensorThings through every native layer, representation or extension path. Answered across all of them. Pro's complete add-by-connection surface was enumerated: Insert > Connections lists Database, New Multifile Feature Connection, Server, Cloud Store, STAC Connection, New BIM Cloud Connection, Statistical Data Collection and Add Locator; its Server submenu lists exactly Add Server, New ArcGIS Server, New OGC API Server, New WCS Server, New WFS Server, New WMS Server and New WMTS Server. There is no SensorThings connection type. Command Search for 'sensorthings' returns ZERO results - no dropdown at all, a stronger absence than 'odata', which at least drew fuzzy matches. The server is not in question: Capabilities__Experimental__serve.sensorthings__Enabled=true is set on this candidate and the surface is served. Receipts 78, 80, 131.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "No SensorThings client ships in ArcGIS Pro; its OGC API support is limited to Features and Tiles per the Add OGC API services page."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. An OGC API menu's supported standards do not establish absence of SensorThings through every native layer, representation or extension path.",
+            "previous_exclusion": {
+              "state": "n/a-no-client",
+              "citation": "No SensorThings client ships in ArcGIS Pro; its OGC API support is limited to Features and Tiles per the Add OGC API services page."
+            }
           }
         },
         "arcpy": {
@@ -2723,11 +2735,15 @@
       "operation": "metadata",
       "lanes": {
         "pro-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. An OGC classic service list cannot establish absence of OData support.",
+          "state": "n/a-no-client",
+          "citation": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a: the challenge was that an OGC classic service list cannot establish absence of OData support, and that a module-list page does not establish absence of a tool or layer-file path. Answered by enumerating the surfaces themselves. Pro's complete add-by-connection surface was enumerated: Insert > Connections lists Database, New Multifile Feature Connection, Server, Cloud Store, STAC Connection, New BIM Cloud Connection, Statistical Data Collection and Add Locator; its Server submenu lists exactly Add Server, New ArcGIS Server, New OGC API Server, New WCS Server, New WFS Server, New WMS Server and New WMTS Server. There is no OData connection type. Command Search, which indexes commands, geoprocessing tools AND help, returns nothing OData-related for the term 'odata' - every hit is a coincidental fuzzy match on unrelated commands: Open Data Model Design, Create Oriented Imagery Dataset, Generate OIS Obstacle Data, Generate OIS Profile Data, Update Oriented Imagery Dataset Properties, Analyze Datasets, Stereo Table, Data Model, Repair Nautical Data. No tool, no layer type, no connection. The server is not in question: Honua serves OData v4 and the odata cells pass on other lanes. Receipts 78, 80, 130.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/ogc-services.html: Pro consumes WMS, WMTS, WCS and WFS only among OGC classic services."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. An OGC classic service list cannot establish absence of OData support.",
+            "previous_exclusion": {
+              "state": "n/a-no-client",
+              "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/ogc-services.html: Pro consumes WMS, WMTS, WCS and WFS only among OGC classic services."
+            }
           }
         },
         "arcpy": {
@@ -2764,11 +2780,15 @@
       "operation": "entity-query",
       "lanes": {
         "pro-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. An OGC classic service list cannot establish absence of OData support.",
+          "state": "n/a-no-client",
+          "citation": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a: the challenge was that an OGC classic service list cannot establish absence of OData support, and that a module-list page does not establish absence of a tool or layer-file path. Answered by enumerating the surfaces themselves. Pro's complete add-by-connection surface was enumerated: Insert > Connections lists Database, New Multifile Feature Connection, Server, Cloud Store, STAC Connection, New BIM Cloud Connection, Statistical Data Collection and Add Locator; its Server submenu lists exactly Add Server, New ArcGIS Server, New OGC API Server, New WCS Server, New WFS Server, New WMS Server and New WMTS Server. There is no OData connection type. Command Search, which indexes commands, geoprocessing tools AND help, returns nothing OData-related for the term 'odata' - every hit is a coincidental fuzzy match on unrelated commands: Open Data Model Design, Create Oriented Imagery Dataset, Generate OIS Obstacle Data, Generate OIS Profile Data, Update Oriented Imagery Dataset Properties, Analyze Datasets, Stereo Table, Data Model, Repair Nautical Data. No tool, no layer type, no connection. The server is not in question: Honua serves OData v4 and the odata cells pass on other lanes. Receipts 78, 80, 130.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/ogc-services.html: Pro consumes WMS, WMTS, WCS and WFS only among OGC classic services."
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-audit-2026-09-20.md: exclusion evidence review pending. An OGC classic service list cannot establish absence of OData support.",
+            "previous_exclusion": {
+              "state": "n/a-no-client",
+              "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/ogc-services.html: Pro consumes WMS, WMTS, WCS and WFS only among OGC classic services."
+            }
           }
         },
         "arcpy": {
@@ -2805,11 +2825,15 @@
       "operation": "map",
       "lanes": {
         "pro-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The native OGC API connection menu supports Features/Tiles; alternative native representations, saved layers and licensed extensions need operation-specific review before excluding other APIs.",
+          "state": "n/a-no-client",
+          "citation": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a: the challenge was that the native OGC API connection menu supports Features/Tiles and that alternative native representations, saved layers and licensed extensions need operation-specific review before excluding other APIs. Answered by measuring what the connection actually binds. The Add OGC API Server Connection dialog carries no standard selector at all - only Server URL, Version, Custom request parameters and Authentication - and its own examples are both Features (.../OGCFeatureServer and geoserver/ows). Pointed at Honua, the resulting Catalog connection expands to exactly ONE child node, 'Features', holding the feature collections 2001, 2000, 2002 and 3000. Read from the UIA tree, not from pixels: there is no Tiles, Maps, Coverages, Records, Processes, Styles or EDR node under it. So Pro binds OGC API - Features and nothing else. OGC API - Maps is not reachable through any connection, and Command Search surfaces no tool or layer type for it either. The server is not in question: Honua serves the surface at /ogc/maps. Receipts 80, 132, 133.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The native OGC API connection menu supports Features/Tiles; alternative native representations, saved layers and licensed extensions need operation-specific review before excluding other APIs.",
+            "previous_exclusion": {
+              "state": "n/a-no-client",
+              "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
+            }
           }
         },
         "arcpy": {
@@ -2850,11 +2874,15 @@
       "operation": "coverage",
       "lanes": {
         "pro-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The native OGC API connection menu supports Features/Tiles; alternative native representations, saved layers and licensed extensions need operation-specific review before excluding other APIs.",
+          "state": "n/a-no-client",
+          "citation": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a: the challenge was that the native OGC API connection menu supports Features/Tiles and that alternative native representations, saved layers and licensed extensions need operation-specific review before excluding other APIs. Answered by measuring what the connection actually binds. The Add OGC API Server Connection dialog carries no standard selector at all - only Server URL, Version, Custom request parameters and Authentication - and its own examples are both Features (.../OGCFeatureServer and geoserver/ows). Pointed at Honua, the resulting Catalog connection expands to exactly ONE child node, 'Features', holding the feature collections 2001, 2000, 2002 and 3000. Read from the UIA tree, not from pixels: there is no Tiles, Maps, Coverages, Records, Processes, Styles or EDR node under it. So Pro binds OGC API - Features and nothing else. OGC API - Coverages is not reachable through any connection, and Command Search surfaces no tool or layer type for it either. The server is not in question: Honua serves the surface at /ogc/coverages. Receipts 80, 132, 133.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The native OGC API connection menu supports Features/Tiles; alternative native representations, saved layers and licensed extensions need operation-specific review before excluding other APIs.",
+            "previous_exclusion": {
+              "state": "n/a-no-client",
+              "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
+            }
           }
         },
         "arcpy": {
@@ -2892,11 +2920,15 @@
       "operation": "records",
       "lanes": {
         "pro-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The native OGC API connection menu supports Features/Tiles; alternative native representations, saved layers and licensed extensions need operation-specific review before excluding other APIs.",
+          "state": "n/a-no-client",
+          "citation": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a: the challenge was that the native OGC API connection menu supports Features/Tiles and that alternative native representations, saved layers and licensed extensions need operation-specific review before excluding other APIs. Answered by measuring what the connection actually binds. The Add OGC API Server Connection dialog carries no standard selector at all - only Server URL, Version, Custom request parameters and Authentication - and its own examples are both Features (.../OGCFeatureServer and geoserver/ows). Pointed at Honua, the resulting Catalog connection expands to exactly ONE child node, 'Features', holding the feature collections 2001, 2000, 2002 and 3000. Read from the UIA tree, not from pixels: there is no Tiles, Maps, Coverages, Records, Processes, Styles or EDR node under it. So Pro binds OGC API - Features and nothing else. OGC API - Records is not reachable through any connection, and Command Search surfaces no tool or layer type for it either. The server is not in question: Honua serves the surface at /ogc/records. Receipts 80, 132, 133.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The native OGC API connection menu supports Features/Tiles; alternative native representations, saved layers and licensed extensions need operation-specific review before excluding other APIs.",
+            "previous_exclusion": {
+              "state": "n/a-no-client",
+              "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
+            }
           }
         },
         "arcpy": {
@@ -2937,11 +2969,15 @@
       "operation": "processes-execute",
       "lanes": {
         "pro-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The native OGC API connection menu supports Features/Tiles; alternative native representations, saved layers and licensed extensions need operation-specific review before excluding other APIs.",
+          "state": "n/a-no-client",
+          "citation": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a: the challenge was that the native OGC API connection menu supports Features/Tiles and that alternative native representations, saved layers and licensed extensions need operation-specific review before excluding other APIs. Answered by measuring what the connection actually binds. The Add OGC API Server Connection dialog carries no standard selector at all - only Server URL, Version, Custom request parameters and Authentication - and its own examples are both Features (.../OGCFeatureServer and geoserver/ows). Pointed at Honua, the resulting Catalog connection expands to exactly ONE child node, 'Features', holding the feature collections 2001, 2000, 2002 and 3000. Read from the UIA tree, not from pixels: there is no Tiles, Maps, Coverages, Records, Processes, Styles or EDR node under it. So Pro binds OGC API - Features and nothing else. OGC API - Processes is not reachable through any connection, and Command Search surfaces no tool or layer type for it either. The server is not in question: Honua serves the surface at /ogc/processes. Receipts 80, 132, 133.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The native OGC API connection menu supports Features/Tiles; alternative native representations, saved layers and licensed extensions need operation-specific review before excluding other APIs.",
+            "previous_exclusion": {
+              "state": "n/a-no-client",
+              "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
+            }
           }
         },
         "arcpy": {
@@ -2979,11 +3015,15 @@
       "operation": "styles",
       "lanes": {
         "pro-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The native OGC API connection menu supports Features/Tiles; alternative native representations, saved layers and licensed extensions need operation-specific review before excluding other APIs.",
+          "state": "n/a-no-client",
+          "citation": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a: the challenge was that the native OGC API connection menu supports Features/Tiles and that alternative native representations, saved layers and licensed extensions need operation-specific review before excluding other APIs. Answered by measuring what the connection actually binds. The Add OGC API Server Connection dialog carries no standard selector at all - only Server URL, Version, Custom request parameters and Authentication - and its own examples are both Features (.../OGCFeatureServer and geoserver/ows). Pointed at Honua, the resulting Catalog connection expands to exactly ONE child node, 'Features', holding the feature collections 2001, 2000, 2002 and 3000. Read from the UIA tree, not from pixels: there is no Tiles, Maps, Coverages, Records, Processes, Styles or EDR node under it. So Pro binds OGC API - Features and nothing else. OGC API - Styles is not reachable through any connection, and Command Search surfaces no tool or layer type for it either. The server is not in question: Honua serves the surface at /ogc/styles. Receipts 80, 132, 133.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The native OGC API connection menu supports Features/Tiles; alternative native representations, saved layers and licensed extensions need operation-specific review before excluding other APIs.",
+            "previous_exclusion": {
+              "state": "n/a-no-client",
+              "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
+            }
           }
         },
         "arcpy": {
@@ -3011,11 +3051,15 @@
       "operation": "edr-query",
       "lanes": {
         "pro-ui": {
-          "state": "blocked",
-          "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The native OGC API connection menu supports Features/Tiles; alternative native representations, saved layers and licensed extensions need operation-specific review before excluding other APIs.",
+          "state": "n/a-no-client",
+          "citation": "honua-esri-compat evidence/native-pro-ops-20260925-a, ArcGIS Pro 3.7.1.1904 on candidate sha256:8d6ebe858aa0fecad27c6a763314c67afcd201301c61d1c80e866c76df2a198a: the challenge was that the native OGC API connection menu supports Features/Tiles and that alternative native representations, saved layers and licensed extensions need operation-specific review before excluding other APIs. Answered by measuring what the connection actually binds. The Add OGC API Server Connection dialog carries no standard selector at all - only Server URL, Version, Custom request parameters and Authentication - and its own examples are both Features (.../OGCFeatureServer and geoserver/ows). Pointed at Honua, the resulting Catalog connection expands to exactly ONE child node, 'Features', holding the feature collections 2001, 2000, 2002 and 3000. Read from the UIA tree, not from pixels: there is no Tiles, Maps, Coverages, Records, Processes, Styles or EDR node under it. So Pro binds OGC API - Features and nothing else. OGC API - EDR is not reachable through any connection, and Command Search surfaces no tool or layer type for it either. The server is not in question: Honua serves the surface at /ogc/edr. Receipts 80, 132, 133.",
           "previous_exclusion": {
-            "state": "n/a-no-client",
-            "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
+            "state": "blocked",
+            "citation": "docs/gis/client-exclusion-followup-2026-09-20.md: exclusion evidence review pending. The native OGC API connection menu supports Features/Tiles; alternative native representations, saved layers and licensed extensions need operation-specific review before excluding other APIs.",
+            "previous_exclusion": {
+              "state": "n/a-no-client",
+              "citation": "doc.esri.com/en/arcgis-pro/latest/help/data/services/add-ogc-api-services.html: \"Currently, only the OGC API Features and OGC API Tiles (map tiles) standards are supported in ArcGIS Pro.\""
+            }
           }
         },
         "arcpy": {
