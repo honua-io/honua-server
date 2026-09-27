@@ -21,18 +21,21 @@ internal sealed class CompletedBroadcastTracker(TimeSpan retention, TimeProvider
 
     internal bool IsCompleted(string eventId)
     {
-        if (!_completed.TryGetValue(eventId, out var expiresAt))
+        while (_completed.TryGetValue(eventId, out var expiresAt))
         {
-            return false;
+            if (expiresAt > _timeProvider.GetUtcNow())
+            {
+                return true;
+            }
+
+            // Remove only the expired version; a concurrent completion may have renewed it.
+            // If removal loses that race, recheck the new deadline before allowing a broadcast.
+            if (_completed.TryRemove(new KeyValuePair<string, DateTimeOffset>(eventId, expiresAt)))
+            {
+                return false;
+            }
         }
 
-        if (expiresAt > _timeProvider.GetUtcNow())
-        {
-            return true;
-        }
-
-        // Remove only the expired version; a concurrent completion may have renewed it.
-        _completed.TryRemove(new KeyValuePair<string, DateTimeOffset>(eventId, expiresAt));
         return false;
     }
 

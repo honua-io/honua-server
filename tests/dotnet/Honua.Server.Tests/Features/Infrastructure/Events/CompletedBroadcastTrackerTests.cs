@@ -55,6 +55,26 @@ public sealed class CompletedBroadcastTrackerTests
 
     [UnitTest]
     [Operation(Operations.TestInfrastructure)]
+    public void IsCompleted_ExpiredEntryRenewedDuringLookup_PreservesDeduplication()
+    {
+        var clock = new ManualTimeProvider();
+        var tracker = new CompletedBroadcastTracker(TimeSpan.FromHours(24), clock);
+        tracker.MarkCompleted("event");
+        clock.Advance(TimeSpan.FromHours(24));
+
+        // Renew after IsCompleted reads the old deadline but before its conditional removal.
+        clock.BeforeRead = () =>
+        {
+            clock.BeforeRead = null;
+            tracker.MarkCompleted("event");
+        };
+
+        Assert.True(tracker.IsCompleted("event"));
+        Assert.Equal(1, tracker.Count);
+    }
+
+    [UnitTest]
+    [Operation(Operations.TestInfrastructure)]
     public void MarkCompleted_ExistingId_RenewsRetention()
     {
         var clock = new ManualTimeProvider();
@@ -76,7 +96,13 @@ public sealed class CompletedBroadcastTrackerTests
     {
         private DateTimeOffset _now = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
-        public override DateTimeOffset GetUtcNow() => _now;
+        internal Action? BeforeRead { get; set; }
+
+        public override DateTimeOffset GetUtcNow()
+        {
+            BeforeRead?.Invoke();
+            return _now;
+        }
 
         internal void Advance(TimeSpan elapsed) => _now += elapsed;
     }
