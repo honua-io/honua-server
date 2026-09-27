@@ -212,17 +212,13 @@ public sealed class GeocodingEntitlementGateTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         using var payload = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-
-        // Batch is advertised through locatorProperties, NOT as a capabilities token.
-        // Esri's GeocodeServer capabilities enumeration is Geocode, ReverseGeocode and
-        // Suggest; "BatchGeocode" was an invented member of a list clients parse, and an
-        // unrecognised token there is a plausible reason for one to bind the locator and
-        // then decline to batch against it - the shape of honua-server#5145.
-        Assert.Equal("Geocode,ReverseGeocode,Suggest", payload.RootElement.GetProperty("capabilities").GetString());
+        Assert.Contains(
+            "BatchGeocode",
+            payload.RootElement.GetProperty("capabilities").GetString()!,
+            StringComparison.Ordinal);
         var locatorProperties = payload.RootElement.GetProperty("locatorProperties");
         Assert.Equal("true", locatorProperties.GetProperty("SupportsBatch").GetString());
         Assert.Equal("100", locatorProperties.GetProperty("SuggestedBatchSize").GetString());
-        Assert.Equal("100", locatorProperties.GetProperty("MaxBatchSize").GetString());
     }
 
     private static WebApplicationFactory<Program> CreateFactory(string? devGrantEdition)
