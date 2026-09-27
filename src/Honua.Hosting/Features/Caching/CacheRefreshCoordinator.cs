@@ -52,11 +52,11 @@ internal sealed partial class CacheRefreshCoordinator : BackgroundService, ICach
         _logger = logger;
 
         // Bounded channel prevents unbounded memory growth if refresh callbacks are slow.
-        // DropWrite rejects new items when full (instead of DropOldest which silently drops
-        // items whose keys would leak in _pendingKeys). The TryWrite failure branch cleans up.
+        // Wait mode makes the nonblocking TryWrite reject a full queue. DropWrite reports
+        // success while discarding the item, which would strand its pending-key claim.
         _channel = Channel.CreateBounded<CacheRefreshItem>(new BoundedChannelOptions(1000)
         {
-            FullMode = BoundedChannelFullMode.DropWrite,
+            FullMode = BoundedChannelFullMode.Wait,
             SingleReader = false,
             SingleWriter = false
         });
@@ -126,7 +126,7 @@ internal sealed partial class CacheRefreshCoordinator : BackgroundService, ICach
             return false;
         }
 
-        // Try to write to channel; with DropWrite, this returns false when the channel is full
+        // TryWrite never waits; a full channel rejects the item and releases its claim.
         if (!_channel.Writer.TryWrite(new CacheRefreshItem(key, refreshCallback)))
         {
             _pendingKeys.TryRemove(key, out _);

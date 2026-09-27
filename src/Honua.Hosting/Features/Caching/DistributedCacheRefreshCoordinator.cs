@@ -89,10 +89,11 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
             Log.FallbackModeEnabled(_logger);
         }
 
-        // Bounded channel prevents unbounded memory growth if refresh callbacks are slow.
+        // Wait mode makes the nonblocking TryWrite reject a full queue so its caller
+        // releases the claim. DropWrite reports success for silently discarded items.
         _channel = Channel.CreateBounded<CacheRefreshItem>(new BoundedChannelOptions(1000)
         {
-            FullMode = BoundedChannelFullMode.DropWrite,
+            FullMode = BoundedChannelFullMode.Wait,
             SingleReader = false,
             SingleWriter = false
         });
@@ -219,7 +220,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
             return false;
         }
 
-        // Try to write to channel; with DropWrite, this returns false when the channel is full
+        // TryWrite never waits; a full channel rejects the item and releases its claim.
         if (!_channel.Writer.TryWrite(new CacheRefreshItem(key, refreshCallback)))
         {
             EnqueueAndTrackFireAndForget(ReleaseRefreshClaimAsync(key).AsTask());
