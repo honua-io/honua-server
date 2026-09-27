@@ -3,6 +3,7 @@
 
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Text.Json;
 using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Server.Features.Operations;
@@ -65,6 +66,49 @@ public sealed class OperationSecretKeyRingProtectionTests
         {
             File.Delete(path);
         }
+    }
+
+    [UnitTest]
+    public void WritePkcs12Material_FromJsonBundle_ResolvesWithEmbeddedPassword()
+    {
+        using var source = CreateCertificate();
+        const string password = "bundle-password";
+        var bundle = JsonSerializer.Serialize(new Dictionary<string, string>
+        {
+            ["pkcs12"] = Convert.ToBase64String(source.Export(X509ContentType.Pkcs12, password)),
+            ["password"] = password,
+        });
+
+        var written = OperationSecretKeyRingProtection.WritePkcs12Material(bundle);
+        try
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    [OperationSecretKeyRingProtection.CertificatePathKey] = written.Path,
+                    [OperationSecretKeyRingProtection.CertificatePasswordKey] = written.Password,
+                })
+                .Build();
+
+            using var resolved = OperationSecretKeyRingProtection.Resolve(configuration);
+            resolved.HasPrivateKey.Should().BeTrue();
+        }
+        finally
+        {
+            File.Delete(written.Path);
+        }
+    }
+
+    [UnitTest]
+    public void WritePkcs12Material_WithGarbage_DoesNotEchoTheMaterial()
+    {
+        const string material = "not-a-certificate";
+
+        var action = () => OperationSecretKeyRingProtection.WritePkcs12Material(material);
+
+        action.Should().Throw<InvalidOperationException>()
+            .WithMessage($"*{OperationSecretKeyRingProtection.CertificateMaterialKey}*")
+            .Where(exception => !exception.Message.Contains(material, StringComparison.Ordinal));
     }
 
     [UnitTest]
