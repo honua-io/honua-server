@@ -112,6 +112,31 @@ public sealed class OperationSecretKeyRingProtectionTests
     }
 
     [UnitTest]
+    public void WritePkcs12Material_CreatesUniquePrivateFiles()
+    {
+        using var source = CreateCertificate();
+        var material = Convert.ToBase64String(source.Export(X509ContentType.Pkcs12));
+        var first = OperationSecretKeyRingProtection.WritePkcs12Material(material);
+        var second = OperationSecretKeyRingProtection.WritePkcs12Material(material);
+        try
+        {
+            first.Path.Should().NotBe(second.Path);
+            if (!OperatingSystem.IsWindows())
+            {
+                File.GetUnixFileMode(first.Path)
+                    .Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite);
+                File.GetUnixFileMode(second.Path)
+                    .Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+        }
+        finally
+        {
+            File.Delete(first.Path);
+            File.Delete(second.Path);
+        }
+    }
+
+    [UnitTest]
     public void IsProtectedElement_RequiresEncryptedSecretDescriptor()
     {
         var protectedKey = new XElement(

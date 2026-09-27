@@ -83,11 +83,22 @@ internal static class OperationSecretKeyRingProtection
             throw new InvalidOperationException($"'{CertificateMaterialKey}' did not contain a certificate.");
         }
 
-        var path = Path.Combine(Path.GetTempPath(), "honua-operation-keyring.pfx");
-        File.WriteAllBytes(path, bytes);
+        var path = Path.Join(Path.GetTempPath(), $"honua-operation-keyring-{Guid.NewGuid():N}.pfx");
+        var options = new FileStreamOptions
+        {
+            Mode = FileMode.CreateNew,
+            Access = FileAccess.Write,
+            Share = FileShare.None,
+            Options = FileOptions.SequentialScan,
+        };
         if (!OperatingSystem.IsWindows())
         {
-            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+        }
+
+        using (var stream = new FileStream(path, options))
+        {
+            stream.Write(bytes);
         }
 
         return new MaterializedKeyRing(path, password);

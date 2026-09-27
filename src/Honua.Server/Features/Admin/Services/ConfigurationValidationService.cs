@@ -713,6 +713,7 @@ internal static class ConfigurationValidationService
             ["FileStorage:AwsS3:AccessKeyId"] = _envOnlyPrefixes,
             ["FileStorage:AwsS3:SecretAccessKey"] = _envOnlyPrefixes,
             ["FileStorage:AzureBlob:ConnectionString"] = _envOnlyPrefixes,
+            ["Operations:SecretChannel:KeyRingCertificatePkcs12"] = _connectionSecretPrefixes,
             ["Operations:SecretChannel:KeyRingCertificatePassword"] = _envOnlyPrefixes,
             ["Monitoring:IntelligentAlerting:NotificationChannels:Email:Password"] = _envOnlyPrefixes,
             ["Monitoring:IntelligentAlerting:NotificationChannels:Slack:WebhookUrl"] = _envOnlyPrefixes,

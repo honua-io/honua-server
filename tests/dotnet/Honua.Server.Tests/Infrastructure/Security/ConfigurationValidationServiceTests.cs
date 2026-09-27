@@ -161,6 +161,7 @@ public sealed class ConfigurationValidationServiceTests
     [InlineData("Security:ConnectionEncryption:Salt", "aG9udWEtY29tcG9zZS1kZXYtc2FsdC0yMDI2")]
     [InlineData("ConnectionStrings:DefaultConnection", "Host=postgres;Database=honua;Username=honua;Password=studio_receipt_password")]
     [InlineData("ConnectionStrings:honua", "Host=postgres;Database=honua;Username=honua;Password=studio_receipt_password")]
+    [InlineData("Operations:SecretChannel:KeyRingCertificatePkcs12", "StudioReceiptKeyRing")]
     [InlineData("Operations:SecretChannel:KeyRingCertificatePassword", "StudioReceiptKeyRing")]
     [InlineData("Oidc:TokenValidation:SymmetricSigningKey", "studio-dashboard-receipt-signing-key-2026-1")]
     public void ValidateConfiguration_NonDevelopment_WithShippedSecretLiteral_ReturnsError(string path, string literal)
