@@ -68,6 +68,23 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
 
     public Task DisposeAsync() => _fixture.DropSchemaAsync(_schema);
 
+    [Fact]
+    public async Task QueryPageAsync_NativeDecimalPublishedAsDouble_PreservesDeclaredPrecision()
+    {
+        await _fixture.ExecuteAsync($"""
+            ALTER TABLE {_schema}.cities ADD COLUMN reading numeric;
+            UPDATE {_schema}.cities SET reading = 0.99999999999999999999 WHERE objectid = 1;
+            UPDATE {_schema}.cities SET reading = 2 WHERE objectid = 2;
+            """);
+        var reader = CreateReader(includeDecimalField: true);
+        var result = await reader.QueryPageAsync(1, new FeatureQuery
+        {
+            SqlFilter = new SqlFragment("NULLIF(\"attributes\" ->> 'reading', '')::double precision = @p0", [1])
+        });
+
+        result.Items.Select(feature => feature.Id).Should().Equal(1);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -313,7 +330,8 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
 
     private PostgresStorageMappedFeatureReader CreateReader(
         string? attributesColumn = null,
-        bool includeNamespacedField = false)
+        bool includeNamespacedField = false,
+        bool includeDecimalField = false)
     {
         var schemaFields = new List<MetadataV2Field>
         {
@@ -325,6 +343,10 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
         if (includeNamespacedField)
         {
             schemaFields.Add(new MetadataV2Field { Name = "eo:cloud_cover", Type = MetadataV2FieldType.Double });
+        }
+        if (includeDecimalField)
+        {
+            schemaFields.Add(new MetadataV2Field { Name = "reading", Type = MetadataV2FieldType.Double });
         }
 
         var resource = new MetadataV2Resource

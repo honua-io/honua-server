@@ -37,7 +37,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
             .Invoke(reader, [new FeatureQuery { SqlFilter = filter }, false])!.ToString()!;
 
-        sql.Should().Contain("WHERE (\"measurement\" >= $");
+        sql.Should().Contain("WHERE ((\"measurement\")::");
         sql.Should().NotContain("NULLIF");
     }
 

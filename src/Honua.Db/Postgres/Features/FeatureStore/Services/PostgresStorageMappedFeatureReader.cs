@@ -985,8 +985,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         if (usePhysicalNumericColumns && resolveFieldType is not null)
         {
             // Canonical JSONB filters cast text to the declared numeric type. A mapped
-            // physical column already has that type: a text round trip here prevents
-            // ordinary source indexes from satisfying selective predicates. Match the
+            // physical column needs no text round trip, which prevents ordinary source
+            // indexes from satisfying selective predicates. Retain the numeric cast:
+            // native numeric/decimal fields are also published as Double, and their
+            // declared floating-point semantics must survive. PostgreSQL eliminates
+            // identity casts on columns already having the target type. Match the
             // complete canonical cast, leaving text operations and intentional casts
             // to a different type unchanged. JSONB mappings still need their coercion.
             sql = NumericAttributeCastRegex().Replace(sql, match =>
@@ -1001,7 +1004,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                     _ => null
                 };
                 return string.Equals(match.Groups["cast"].Value, expectedCast, StringComparison.OrdinalIgnoreCase)
-                    ? resolveColumnExpression(fieldName)
+                    ? $"({resolveColumnExpression(fieldName)})::{expectedCast}"
                     : match.Value;
             });
         }
