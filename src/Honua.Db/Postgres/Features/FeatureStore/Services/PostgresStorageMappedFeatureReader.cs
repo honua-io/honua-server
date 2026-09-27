@@ -5,7 +5,6 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Runtime.CompilerServices;
 using System.Text;
-using System.Text.Json;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -1417,18 +1416,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         try
         {
-            var deserialized = string.IsNullOrWhiteSpace(attributesJson)
-                ? new Dictionary<string, object?>()
-                : JsonSerializer.Deserialize(
-                    attributesJson,
-                    FeatureAttributesJsonContext.Default.DictionaryStringObject) ?? new Dictionary<string, object?>();
-
-            foreach (var entry in deserialized)
-            {
-                attributesDictionary[entry.Key] = entry.Value is JsonElement element
-                    ? JsonElementConverter.ConvertToScalar(element)
-                    : entry.Value;
-            }
+            FeatureAttributeJsonReader.ReadInto(attributesJson, attributesDictionary);
 
             attributesDictionary[FieldNames.ObjectId] = id;
             if (reader.FieldCount > 3)
