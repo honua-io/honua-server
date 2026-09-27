@@ -92,30 +92,74 @@ internal sealed record GeocodeServerInfoResponse
     public GeocodeAddressField SingleLineAddressField { get; init; } = new()
     {
         Name = "SingleLine",
-        Alias = "Single Line Input"
+        Alias = "Single Line Input",
+
+        // 300, as the live World locator declares. The tools size the input column they
+        // map "SingleLine SingleLine VISIBLE NONE" onto from this.
+        Length = 300
     };
 
     [JsonPropertyName("addressFields")]
     public GeocodeAddressField[] AddressFields { get; init; } =
     [
-        new GeocodeAddressField { Name = "Address", Alias = "Address" },
-        new GeocodeAddressField { Name = "City", Alias = "City" },
-        new GeocodeAddressField { Name = "Region", Alias = "Region" },
-        new GeocodeAddressField { Name = "Postal", Alias = "Postal" },
-        new GeocodeAddressField { Name = "CountryCode", Alias = "Country Code" }
+        // Widths match the live World locator's addressFields.
+        new GeocodeAddressField { Name = "Address", Alias = "Address", Length = 150 },
+        new GeocodeAddressField { Name = "City", Alias = "City", Length = 100 },
+        new GeocodeAddressField { Name = "Region", Alias = "Region", Length = 100 },
+        new GeocodeAddressField { Name = "Postal", Alias = "Postal", Length = 20 },
+        new GeocodeAddressField { Name = "CountryCode", Alias = "Country Code", Length = 100 }
     ];
 
     [JsonPropertyName("capabilities")]
     public required string Capabilities { get; init; }
 
     // Output fields present on every candidate's attribute bag. ArcGIS clients
-    // introspect candidateFields to discover the result schema; Honua advertises
-    // only the fields it consistently emits rather than a full Esri locator schema.
+    // introspect candidateFields to discover the result schema, and
+    // arcpy.geocoding.GeocodeAddresses builds its output table from it - so declaring a
+    // subset is not a conservative choice, it is a wrong one. With only Match_addr and
+    // Provider declared while findAddressCandidates returned twenty-nine attributes, the
+    // tool failed "ERROR 000010: Geocode addresses failed" against a locator it had
+    // already bound and described as an AddressLocator, because it could not map a
+    // result schema it had been told nothing about - Addr_type in particular, which the
+    // geocoding tools always map. Refs honua-server#5145.
+    //
+    // Every documented field is declared, matching what EsriGeocodeAddressFields emits
+    // on every candidate. The two must agree: this is the same defect as the query
+    // response and the layer resource disagreeing about a field (#5197).
     [JsonPropertyName("candidateFields")]
     public GeocodeAddressField[] CandidateFields { get; init; } =
     [
-        new GeocodeAddressField { Name = "Match_addr", Alias = "Match Address" },
-        new GeocodeAddressField { Name = "Provider", Alias = "Provider" }
+        // The first four are the OUTPUT schema, not address components, and their absence
+        // is why arcpy.geocoding.GeocodeAddresses failed: the tool builds its result
+        // feature class from candidateFields, and without a geometry, a Status and a
+        // Score marked required it has no output to construct. Verified against the live
+        // ArcGIS World Geocoding Service document, which declares all four this way and
+        // carries `required` on every field. Refs honua-server#5145.
+        new GeocodeAddressField { Name = "Loc_name", Alias = "Loc_name", Length = 20 },
+        new GeocodeAddressField { Name = "Shape", Alias = "Shape", Type = "esriFieldTypeGeometry", Length = null, Required = true },
+        new GeocodeAddressField { Name = "Status", Alias = "Status", Length = 1, Required = true },
+        new GeocodeAddressField { Name = "Score", Alias = "Score", Type = "esriFieldTypeDouble", Length = null, Required = true },
+        new GeocodeAddressField { Name = "Match_addr", Alias = "Match Address", Length = 500, Required = true },
+        new GeocodeAddressField { Name = "LongLabel", Alias = "Long Label", Length = 500 },
+        new GeocodeAddressField { Name = "ShortLabel", Alias = "Short Label", Length = 500 },
+        new GeocodeAddressField { Name = "Addr_type", Alias = "Address Type", Length = 20 },
+        new GeocodeAddressField { Name = "Type", Alias = "Type", Length = 50 },
+        new GeocodeAddressField { Name = "PlaceName", Alias = "Place Name", Length = 200 },
+        new GeocodeAddressField { Name = "AddNum", Alias = "Address Number", Length = 50 },
+        new GeocodeAddressField { Name = "Address", Alias = "Address", Length = 150 },
+        new GeocodeAddressField { Name = "Block", Alias = "Block", Length = 120 },
+        new GeocodeAddressField { Name = "Sector", Alias = "Sector", Length = 120 },
+        new GeocodeAddressField { Name = "Neighborhood", Alias = "Neighborhood", Length = 120 },
+        new GeocodeAddressField { Name = "District", Alias = "District", Length = 120 },
+        new GeocodeAddressField { Name = "City", Alias = "City", Length = 120 },
+        new GeocodeAddressField { Name = "MetroArea", Alias = "Metro Area", Length = 120 },
+        new GeocodeAddressField { Name = "Subregion", Alias = "Subregion", Length = 120 },
+        new GeocodeAddressField { Name = "Region", Alias = "Region", Length = 120 },
+        new GeocodeAddressField { Name = "Territory", Alias = "Territory", Length = 120 },
+        new GeocodeAddressField { Name = "Postal", Alias = "Postal", Length = 20 },
+        new GeocodeAddressField { Name = "PostalExt", Alias = "Postal Extension", Length = 10 },
+        new GeocodeAddressField { Name = "CountryCode", Alias = "Country Code", Length = 100 },
+        new GeocodeAddressField { Name = "Provider", Alias = "Provider", Length = 120 }
     ];
 
     // The category tokens findAddressCandidates/suggest accept to narrow results by the
@@ -149,8 +193,26 @@ internal sealed record GeocodeAddressField
     [JsonPropertyName("type")]
     public string Type { get; init; } = "esriFieldTypeString";
 
+    /// <summary>
+    /// Maximum width of the column the geocoding tools create for this field.
+    /// </summary>
+    /// <remarks>
+    /// Omitted entirely for the non-string types, which is what a real locator document
+    /// does: <c>Shape</c> and <c>Score</c> carry no length there.
+    /// </remarks>
     [JsonPropertyName("length")]
-    public int Length { get; init; } = 255;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public int? Length { get; init; } = 255;
+
+    /// <summary>
+    /// Whether the geocoding tools must create this column on their output.
+    /// </summary>
+    /// <remarks>
+    /// Carried by every field of a real locator document. `Shape`, `Status` and `Score`
+    /// are required there; everything else is optional.
+    /// </remarks>
+    [JsonPropertyName("required")]
+    public bool Required { get; init; }
 }
 
 internal sealed record GeocodeSpatialReference
@@ -195,13 +257,13 @@ internal sealed record GeocodeCandidateResponse
     public required double Score { get; init; }
 
     [JsonPropertyName("attributes")]
-    public required IReadOnlyDictionary<string, string?> Attributes { get; init; }
+    public required IReadOnlyDictionary<string, GeocodeAttributeValue> Attributes { get; init; }
 }
 
 internal sealed record ReverseGeocodeResponse
 {
     [JsonPropertyName("address")]
-    public required IReadOnlyDictionary<string, string?> Address { get; init; }
+    public required IReadOnlyDictionary<string, GeocodeAttributeValue> Address { get; init; }
 
     [JsonPropertyName("location")]
     public required GeocodePoint Location { get; init; }
@@ -255,5 +317,5 @@ internal sealed record GeocodeAddressLocation
     public required double Score { get; init; }
 
     [JsonPropertyName("attributes")]
-    public required IReadOnlyDictionary<string, string?> Attributes { get; init; }
+    public required IReadOnlyDictionary<string, GeocodeAttributeValue> Attributes { get; init; }
 }
