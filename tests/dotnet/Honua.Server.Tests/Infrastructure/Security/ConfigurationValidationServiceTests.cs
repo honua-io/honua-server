@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Server.Features.Admin.Services;
 using Honua.TestKit.Attributes;
@@ -241,43 +242,81 @@ public sealed class ConfigurationValidationServiceTests
     }
 
     // The PKCS#12 material holds the private key that decrypts the data-protection key
-    // ring. Before this rule existed a literal bundle in appsettings*.json passed
-    // startup validation silently, while the password for that same certificate was
-    // rejected - so the key itself could reach source control and the password could not.
+    // ring. Before this rule existed a literal bundle in appsettings*.json passed startup
+    // validation silently, while the password for that same certificate was rejected - so
+    // the key itself could reach source control and the password could not.
+    //
+    // The value has to arrive through a JSON file: IsExternalConfigurationValue treats
+    // anything a non-file provider supplies as already external, so an environment
+    // variable or an in-memory value is legitimately exempt. appsettings*.json is the
+    // case the rule exists for.
     [UnitTheory]
     [InlineData("MIIKnQIBAzCCClcGCSqGSIb3DQEHAaCCCkgEggpEMIIKQDCCBK")]
     [InlineData("{\"pkcs12\":\"MIIKnQIBAzCCClcGCSqGSIb3DQEHAaCCCkgEggpEMIIKQDCCBK\"}")]
-    public void ValidateConfiguration_NonDevelopment_WithLiteralKeyRingMaterial_ReturnsError(string literal)
+    public void ValidateConfiguration_NonDevelopment_WithLiteralKeyRingMaterialInAFile_ReturnsError(string literal)
     {
-        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        var file = WriteKeyRingMaterialJson(literal);
+        try
         {
-            ["Operations:SecretChannel:KeyRingCertificatePkcs12"] = literal
-        });
+            var errors = ConfigurationValidationService.ValidateConfiguration(
+                BuildConfigurationFromJsonFile(file), NullLogger.Instance, isDevelopment: false);
 
-        var errors = ConfigurationValidationService.ValidateConfiguration(
-            configuration, NullLogger.Instance, isDevelopment: false);
-
-        errors.Should().Contain(error =>
-            error.Contains("Operations:SecretChannel:KeyRingCertificatePkcs12", StringComparison.Ordinal) &&
-            error.Contains("secret reference", StringComparison.OrdinalIgnoreCase));
+            errors.Should().Contain(error =>
+                error.Contains("Operations:SecretChannel:KeyRingCertificatePkcs12", StringComparison.Ordinal) &&
+                error.Contains("secret reference", StringComparison.OrdinalIgnoreCase));
+        }
+        finally
+        {
+            File.Delete(file);
+        }
     }
 
+    // The same file, carrying a reference instead of the bundle, is what the Lambda
+    // deployment actually ships - so it must not be an error.
     [UnitTheory]
     [InlineData("aws:secretsmanager:honua/operations/keyring")]
     [InlineData("env:HONUA_OPERATION_KEYRING_PKCS12")]
-    public void ValidateConfiguration_NonDevelopment_WithKeyRingMaterialReference_IsPermitted(string reference)
+    public void ValidateConfiguration_NonDevelopment_WithKeyRingMaterialReferenceInAFile_IsPermitted(string reference)
     {
-        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        var file = WriteKeyRingMaterialJson(reference);
+        try
         {
-            ["Operations:SecretChannel:KeyRingCertificatePkcs12"] = reference
-        });
+            var errors = ConfigurationValidationService.ValidateConfiguration(
+                BuildConfigurationFromJsonFile(file), NullLogger.Instance, isDevelopment: false);
 
-        var errors = ConfigurationValidationService.ValidateConfiguration(
-            configuration, NullLogger.Instance, isDevelopment: false);
-
-        errors.Should().NotContain(error =>
-            error.Contains("Operations:SecretChannel:KeyRingCertificatePkcs12", StringComparison.Ordinal));
+            errors.Should().NotContain(error =>
+                error.Contains("Operations:SecretChannel:KeyRingCertificatePkcs12", StringComparison.Ordinal));
+        }
+        finally
+        {
+            File.Delete(file);
+        }
     }
+
+    private static string WriteKeyRingMaterialJson(string material)
+    {
+        var file = Path.Combine(
+            Path.GetTempPath(), $"honua-keyring-validation-{Guid.NewGuid():N}.json");
+        File.WriteAllText(file, JsonSerializer.Serialize(new
+        {
+            Operations = new { SecretChannel = new { KeyRingCertificatePkcs12 = material } }
+        }));
+        return file;
+    }
+
+    // Mirrors BuildConfiguration's baseline so unrelated rules stay quiet, but layers the
+    // key under test on top through a real file provider.
+    private static IConfiguration BuildConfigurationFromJsonFile(string filePath)
+        => new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=honua;Username=honua;Password=Sh1pp3d-Nowhere",
+                ["HONUA_ADMIN_PASSWORD"] = "StrongAdminPassword123!",
+                ["Security:ConnectionEncryption:MasterKey"] = "unit-test-master-key-not-a-shipped-literal-0001",
+                ["HostValidation:Enabled"] = "true"
+            })
+            .AddJsonFile(filePath, optional: false)
+            .Build();
 
     private static IConfiguration BuildConfiguration(IDictionary<string, string?>? overrides = null)
     {
