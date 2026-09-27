@@ -964,7 +964,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         converted = RewriteAttributeTextAccessExpressions(
             converted,
             fieldName => ResolveColumnExpression(fieldName, sql),
-            TryResolveFieldType);
+            TryResolveFieldType,
+            usePhysicalNumericColumns: string.IsNullOrWhiteSpace(_mapping.AttributesColumn));
 
         return QuotedIdentifierRegex().Replace(
             converted,
@@ -978,8 +979,34 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     internal static string RewriteAttributeTextAccessExpressions(
         string sql,
         Func<string, string> resolveColumnExpression,
-        Func<string, MetadataV2FieldType?>? resolveFieldType = null)
-        => AttributeTextAccessRegex().Replace(
+        Func<string, MetadataV2FieldType?>? resolveFieldType = null,
+        bool usePhysicalNumericColumns = false)
+    {
+        if (usePhysicalNumericColumns && resolveFieldType is not null)
+        {
+            // Canonical JSONB filters cast text to the declared numeric type. A mapped
+            // physical column already has that type: a text round trip here prevents
+            // ordinary source indexes from satisfying selective predicates. Match the
+            // complete canonical cast, leaving text operations and intentional casts
+            // to a different type unchanged. JSONB mappings still need their coercion.
+            sql = NumericAttributeCastRegex().Replace(sql, match =>
+            {
+                var fieldName = match.Groups["field"].Value.Replace("''", "'", StringComparison.Ordinal);
+                var expectedCast = resolveFieldType(fieldName) switch
+                {
+                    MetadataV2FieldType.Integer => "integer",
+                    MetadataV2FieldType.BigInteger => "bigint",
+                    MetadataV2FieldType.Float => "real",
+                    MetadataV2FieldType.Double => "double precision",
+                    _ => null
+                };
+                return string.Equals(match.Groups["cast"].Value, expectedCast, StringComparison.OrdinalIgnoreCase)
+                    ? resolveColumnExpression(fieldName)
+                    : match.Value;
+            });
+        }
+
+        return AttributeTextAccessRegex().Replace(
             sql,
             match =>
             {
@@ -1002,6 +1029,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
                 return $"NULLIF({column}, '')";
             });
+    }
 
     // String-like fields whose empty-string values must survive filter translation as a
     // non-NULL value. Null (unresolved) field type keeps the legacy NULLIF behavior so the
@@ -1943,6 +1971,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         @"(?:""attributes""|attributes)\s*->>\s*'(?<field>(?:''|[^'])+)'",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex AttributeTextAccessRegex();
+
+    [GeneratedRegex(
+        @"\bNULLIF\(\s*(?:""attributes""|attributes)\s*->>\s*'(?<field>(?:''|[^'])+)'\s*,\s*''\s*\)\s*::\s*(?<cast>integer|bigint|real|double precision)(?![\w\[])",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex NumericAttributeCastRegex();
 
     [GeneratedRegex(
         @"""(?<identifier>(?:[^""]|"""")+)""",

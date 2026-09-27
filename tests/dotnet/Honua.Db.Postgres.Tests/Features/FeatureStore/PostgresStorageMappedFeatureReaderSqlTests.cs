@@ -10,6 +10,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Queries.Filters;
 using Microsoft.Extensions.ObjectPool;
 using NSubstitute;
 
@@ -17,6 +18,73 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
 public sealed class PostgresStorageMappedFeatureReaderSqlTests
 {
+    [Theory]
+    [InlineData(MetadataV2FieldType.Integer)]
+    [InlineData(MetadataV2FieldType.BigInteger)]
+    [InlineData(MetadataV2FieldType.Float)]
+    [InlineData(MetadataV2FieldType.Double)]
+    public void BuildFeatureSelect_CanonicalNumericFilter_UsesTypedPhysicalColumn(MetadataV2FieldType type)
+    {
+        var resource = CreateResource() with
+        {
+            SchemaFields = [new MetadataV2Field { Name = "measurement", Type = type }]
+        };
+        var filter = new PostgresSqlFilterTranslator(useJsonAttributes: true).Translate(
+            new BinaryExpression(new PropertyReference("measurement"), BinaryOperator.GreaterThanOrEqual,
+                new Literal(25, LiteralType.Number)), resource);
+        var reader = CreateReader(resource);
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(reader, [new FeatureQuery { SqlFilter = filter }, false])!.ToString()!;
+
+        sql.Should().Contain("WHERE (\"measurement\" >= $");
+        sql.Should().NotContain("NULLIF");
+    }
+
+    [Theory]
+    [InlineData(MetadataV2FieldType.Integer)]
+    [InlineData(MetadataV2FieldType.BigInteger)]
+    [InlineData(MetadataV2FieldType.Float)]
+    [InlineData(MetadataV2FieldType.Double)]
+    public void BuildFeatureSelect_CanonicalNumericFilter_JsonbRetainsNumericConversion(MetadataV2FieldType type)
+    {
+        var resource = CreateResource() with
+        {
+            SchemaFields = [new MetadataV2Field { Name = "measurement", Type = type }]
+        };
+        var filter = new PostgresSqlFilterTranslator(useJsonAttributes: true).Translate(
+            new BinaryExpression(new PropertyReference("measurement"), BinaryOperator.GreaterThanOrEqual,
+                new Literal(25, LiteralType.Number)), resource);
+        var reader = CreateReader(resource, attributesColumn: "attributes");
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(reader, [new FeatureQuery { SqlFilter = filter }, false])!.ToString()!;
+
+        sql.Should().Contain("NULLIF").And.Contain("->>");
+        sql.Should().NotContain("WHERE (\"measurement\" >=");
+    }
+
+    [Theory]
+    [InlineData(MetadataV2FieldType.Double, "integer")]
+    [InlineData(MetadataV2FieldType.Integer, "double precision")]
+    [InlineData(MetadataV2FieldType.String, "integer")]
+    public void BuildFeatureSelect_NumericFilterWithDifferentDeclaredType_RetainsExplicitCast(
+        MetadataV2FieldType type, string cast)
+    {
+        var resource = CreateResource() with
+        {
+            SchemaFields = [new MetadataV2Field { Name = "measurement", Type = type }]
+        };
+        var filter = new SqlFragment($"NULLIF(\"attributes\" ->> 'measurement', '')::{cast} >= @p0", [25]);
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(CreateReader(resource), [new FeatureQuery { SqlFilter = filter }, false])!.ToString()!;
+
+        sql.Should().Contain("NULLIF").And.Contain($"::{cast} >= $");
+    }
+
+
+
     [Fact]
     public void BuildFeatureSelect_TextSearch_UsesMappedColumns()
     {
