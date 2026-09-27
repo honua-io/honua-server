@@ -4232,6 +4232,46 @@
         "state": "blocked",
         "citation": "honua-esri-compat evidence/native-pro-ops-20260926-b, ArcGIS Pro 3.7.1.1904 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43): NOT measured. Two reasons, both about the fixture rather than the client. Every task on this GPServer completes in about a second - the measured Buffer job ran 09:35:50 to 09:35:51 - so there is no window in which a human or a driver can press Cancel, and a cancel that races a completed job would not certify anything. Beyond that, Pro's job polling is refused outright by https://github.com/honua-io/honua-server/issues/5257, so it cannot hold a job in a cancellable state at all. Certifying this cell needs a deliberately long-running GP task in the fixture, and #5257 fixed first."
       }
+    },
+    {
+      "protocol": "geocodeserver",
+      "version": "GeoServices REST",
+      "operation": "findAddressCandidates",
+      "lane": "pro-ui",
+      "cell": {
+        "state": "blocked",
+        "citation": "honua-esri-compat evidence/native-pro-ops-20260926-b, ArcGIS Pro 3.7.1.1904 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43): NOT drivable, blocked by https://github.com/honua-io/honua-server/issues/5258. The service is not the problem - it works. /rest/services/World/GeocodeServer advertises capabilities Geocode,ReverseGeocode,Suggest with a singleLineAddressField, an addressFields array and locatorProperties.LocatorName World. What blocks the lane is discoverability: GeocodeServer appears in NEITHER catalog. The REST catalog lists 14 services and the authenticated SOAP GetServiceDescriptionsEx - the one that populates Pro's service tree - returns 31 services, with no entry of type GeocodeServer in either; the string does not occur anywhere under src/Honua.Protocols.GeoServices/Catalog/. Measured in the UI: the site connection shows no locator, and Catalog > Locators > Add Locator with the service URL typed into the Select Existing Locator name box answers 'Network Error - Cannot access https://host.docker.internal:18443/arcgis/rest/services/World/GeocodeServer'. Pro issued NO request doing so - the server logged zero requests during the attempt, in a window where a control request appeared immediately - so it is a client-side refusal and there is no URL workaround. Catalog registration is the only route. Server side verified before filing: findAddressCandidates?SingleLine=San Francisco City Hall returns candidates=1, 'San Francisco City Hall, 1, Dr. Carlton B. Goodlett Place, Civic Center, San Francisco, California, 94102, United States'."
+      }
+    },
+    {
+      "protocol": "geocodeserver",
+      "version": "GeoServices REST",
+      "operation": "suggest",
+      "lane": "pro-ui",
+      "cell": {
+        "state": "blocked",
+        "citation": "honua-esri-compat evidence/native-pro-ops-20260926-b, ArcGIS Pro 3.7.1.1904 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43): NOT drivable, blocked by https://github.com/honua-io/honua-server/issues/5258. The service is not the problem - it works. /rest/services/World/GeocodeServer advertises capabilities Geocode,ReverseGeocode,Suggest with a singleLineAddressField, an addressFields array and locatorProperties.LocatorName World. What blocks the lane is discoverability: GeocodeServer appears in NEITHER catalog. The REST catalog lists 14 services and the authenticated SOAP GetServiceDescriptionsEx - the one that populates Pro's service tree - returns 31 services, with no entry of type GeocodeServer in either; the string does not occur anywhere under src/Honua.Protocols.GeoServices/Catalog/. Measured in the UI: the site connection shows no locator, and Catalog > Locators > Add Locator with the service URL typed into the Select Existing Locator name box answers 'Network Error - Cannot access https://host.docker.internal:18443/arcgis/rest/services/World/GeocodeServer'. Pro issued NO request doing so - the server logged zero requests during the attempt, in a window where a control request appeared immediately - so it is a client-side refusal and there is no URL workaround. Catalog registration is the only route. Server side verified before filing: suggest?text=San Franc returns suggestions=3."
+      }
+    },
+    {
+      "protocol": "geocodeserver",
+      "version": "GeoServices REST",
+      "operation": "reverseGeocode",
+      "lane": "pro-ui",
+      "cell": {
+        "state": "blocked",
+        "citation": "honua-esri-compat evidence/native-pro-ops-20260926-b, ArcGIS Pro 3.7.1.1904 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43): NOT drivable, blocked by https://github.com/honua-io/honua-server/issues/5258. The service is not the problem - it works. /rest/services/World/GeocodeServer advertises capabilities Geocode,ReverseGeocode,Suggest with a singleLineAddressField, an addressFields array and locatorProperties.LocatorName World. What blocks the lane is discoverability: GeocodeServer appears in NEITHER catalog. The REST catalog lists 14 services and the authenticated SOAP GetServiceDescriptionsEx - the one that populates Pro's service tree - returns 31 services, with no entry of type GeocodeServer in either; the string does not occur anywhere under src/Honua.Protocols.GeoServices/Catalog/. Measured in the UI: the site connection shows no locator, and Catalog > Locators > Add Locator with the service URL typed into the Select Existing Locator name box answers 'Network Error - Cannot access https://host.docker.internal:18443/arcgis/rest/services/World/GeocodeServer'. Pro issued NO request doing so - the server logged zero requests during the attempt, in a window where a control request appeared immediately - so it is a client-side refusal and there is no URL workaround. Catalog registration is the only route. Server side verified before filing: reverseGeocode?location=-122.4194,37.7749 returns address=1 with Provider nominatim and osm_id 10555180060."
+      }
+    },
+    {
+      "protocol": "geocodeserver",
+      "version": "GeoServices REST",
+      "operation": "geocodeAddresses",
+      "lane": "pro-ui",
+      "cell": {
+        "state": "blocked",
+        "citation": "honua-esri-compat evidence/native-pro-ops-20260926-b, ArcGIS Pro 3.7.1.1904 on candidate honua-server:trunk-jit-cert-20260926a (sha256:2fafec9ec17eef897d58ec17784923be23f6762d21ad599ad9039f278f172142, revision a0c02db2258157c26a4c8245b4026160fefd2e43): NOT drivable, blocked by https://github.com/honua-io/honua-server/issues/5258. The service is not the problem - it works. /rest/services/World/GeocodeServer advertises capabilities Geocode,ReverseGeocode,Suggest with a singleLineAddressField, an addressFields array and locatorProperties.LocatorName World. What blocks the lane is discoverability: GeocodeServer appears in NEITHER catalog. The REST catalog lists 14 services and the authenticated SOAP GetServiceDescriptionsEx - the one that populates Pro's service tree - returns 31 services, with no entry of type GeocodeServer in either; the string does not occur anywhere under src/Honua.Protocols.GeoServices/Catalog/. Measured in the UI: the site connection shows no locator, and Catalog > Locators > Add Locator with the service URL typed into the Select Existing Locator name box answers 'Network Error - Cannot access https://host.docker.internal:18443/arcgis/rest/services/World/GeocodeServer'. Pro issued NO request doing so - the server logged zero requests during the attempt, in a window where a control request appeared immediately - so it is a client-side refusal and there is no URL workaround. Catalog registration is the only route. Server side verified before filing: geocodeAddresses with one SingleLine record returns locations=1 with resultId 1 and the resolved address."
+      }
     }
   ]
 }
