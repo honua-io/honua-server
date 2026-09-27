@@ -4,6 +4,7 @@
 using System.Data;
 using Honua.Core.Exceptions;
 using System.Data.Common;
+using System.Reflection;
 using FluentAssertions;
 using Honua.Core.Configuration;
 using Honua.Core.Features.FeatureStore.Abstractions;
@@ -12,6 +13,7 @@ using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Features.Tiles;
+using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.TestKit;
 using Microsoft.Extensions.ObjectPool;
@@ -65,6 +67,83 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
     }
 
     public Task DisposeAsync() => _fixture.DropSchemaAsync(_schema);
+
+    [Fact]
+    public async Task QueryPageAsync_NativeDecimalPublishedAsDouble_PreservesDeclaredPrecision()
+    {
+        await _fixture.ExecuteAsync($"""
+            ALTER TABLE {_schema}.cities ADD COLUMN reading numeric;
+            UPDATE {_schema}.cities SET reading = 0.99999999999999999999 WHERE objectid = 1;
+            UPDATE {_schema}.cities SET reading = 2 WHERE objectid = 2;
+            """);
+        var reader = CreateReader(includeDecimalField: true);
+        var result = await reader.QueryPageAsync(1, new FeatureQuery
+        {
+            SqlFilter = new SqlFragment("NULLIF(\"attributes\" ->> 'reading', '')::double precision = @p0", [1])
+        });
+
+        result.Items.Select(feature => feature.Id).Should().Equal(1);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task QueryPageAsync_NumericFilter_PreservesPhysicalAndJsonbNullSemantics(bool useAttributes)
+    {
+        await _fixture.ExecuteAsync($"""
+            UPDATE {_schema}.cities SET attributes = jsonb_build_object('population', population);
+            INSERT INTO {_schema}.cities (objectid, population, attributes) VALUES
+                (3, NULL, jsonb_build_object('population', '')),
+                (4, 40000, jsonb_build_object('population', '40000')),
+                (5, NULL, jsonb_build_object('population', NULL));
+            """);
+        var reader = CreateReader(attributesColumn: useAttributes ? "attributes" : null);
+        var range = await reader.QueryPageAsync(1, new FeatureQuery
+        {
+            SqlFilter = new SqlFragment("NULLIF(\"attributes\" ->> 'population', '')::integer >= @p0", [30000])
+        });
+        range.Items.Select(feature => feature.Id).Should().Equal(1, 4);
+        var nulls = await reader.QueryPageAsync(1, new FeatureQuery
+        {
+            SqlFilter = new SqlFragment("NULLIF(\"attributes\" ->> 'population', '')::integer IS NULL", [])
+        });
+        nulls.Items.Select(feature => feature.Id).Should().Equal(3, 5);
+    }
+
+    [Fact]
+    public async Task QueryPageAsync_CanonicalNumericFilter_UsesSourceIndexAndPreservesResults()
+    {
+        await _fixture.ExecuteAsync($"""
+            INSERT INTO {_schema}.cities (objectid, population)
+                SELECT i + 10, i FROM generate_series(1, 100000) AS i;
+            INSERT INTO {_schema}.cities (objectid, population) VALUES (100011, NULL);
+            CREATE INDEX cities_population_perf_idx ON {_schema}.cities (population);
+            ANALYZE {_schema}.cities;
+            """);
+        var reader = CreateReader();
+        var query = new FeatureQuery
+        {
+            SqlFilter = new SqlFragment("NULLIF(\"attributes\" ->> 'population', '')::integer >= @p0", [350000])
+        };
+        var result = await reader.QueryPageAsync(1, query);
+        result.Items.Select(feature => feature.Id).Should().Equal(1);
+
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(reader, [query, false])!;
+        var parameters = (IReadOnlyList<object?>)sql.GetType().GetProperty("Parameters")!.GetValue(sql)!;
+        await using var connection = await _fixture.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "EXPLAIN (FORMAT JSON) " + sql;
+        foreach (var value in parameters)
+        {
+            command.Parameters.Add(new NpgsqlParameter { Value = value ?? DBNull.Value });
+        }
+
+        var plan = (string)(await command.ExecuteScalarAsync())!;
+        plan.Should().Contain("cities_population_perf_idx",
+            "a selective predicate on a typed source column must retain index eligibility");
+    }
 
     [Fact]
     public async Task QueryFlatGeobufAsync_SourceBackedLayer_ReturnsFlatGeobufPayload()
@@ -251,7 +330,8 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
 
     private PostgresStorageMappedFeatureReader CreateReader(
         string? attributesColumn = null,
-        bool includeNamespacedField = false)
+        bool includeNamespacedField = false,
+        bool includeDecimalField = false)
     {
         var schemaFields = new List<MetadataV2Field>
         {
@@ -263,6 +343,10 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
         if (includeNamespacedField)
         {
             schemaFields.Add(new MetadataV2Field { Name = "eo:cloud_cover", Type = MetadataV2FieldType.Double });
+        }
+        if (includeDecimalField)
+        {
+            schemaFields.Add(new MetadataV2Field { Name = "reading", Type = MetadataV2FieldType.Double });
         }
 
         var resource = new MetadataV2Resource
