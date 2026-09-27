@@ -83,14 +83,21 @@ internal static class OperationSecretKeyRingProtection
             throw new InvalidOperationException($"'{CertificateMaterialKey}' did not contain a certificate.");
         }
 
+        // A private key lands on disk here, so the file is created privately and
+        // uniquely rather than written and then tightened. WriteAllBytes to a fixed
+        // /tmp name created the file under the process umask and only chmod'd it to
+        // 0600 afterwards, which on a shared host leaves a window where another local
+        // user can read it, lets one pre-create the path as a symlink, and lets two
+        // Honua processes overwrite each other's certificate. UnixCreateMode applies
+        // 0600 at open(2) time and CreateNew (O_EXCL) refuses an existing path.
         var path = Path.Join(Path.GetTempPath(), $"honua-operation-keyring-{Guid.NewGuid():N}.pfx");
         var options = new FileStreamOptions
         {
             Mode = FileMode.CreateNew,
             Access = FileAccess.Write,
             Share = FileShare.None,
-            Options = FileOptions.SequentialScan,
         };
+
         if (!OperatingSystem.IsWindows())
         {
             options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;

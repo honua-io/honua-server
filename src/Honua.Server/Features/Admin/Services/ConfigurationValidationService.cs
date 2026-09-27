@@ -713,8 +713,12 @@ internal static class ConfigurationValidationService
             ["FileStorage:AwsS3:AccessKeyId"] = _envOnlyPrefixes,
             ["FileStorage:AwsS3:SecretAccessKey"] = _envOnlyPrefixes,
             ["FileStorage:AzureBlob:ConnectionString"] = _envOnlyPrefixes,
-            ["Operations:SecretChannel:KeyRingCertificatePkcs12"] = _connectionSecretPrefixes,
             ["Operations:SecretChannel:KeyRingCertificatePassword"] = _envOnlyPrefixes,
+            // The PKCS#12 material carries the private key that decrypts the data-protection
+            // key ring, so a literal bundle in appsettings*.json is at least as dangerous as
+            // the password above. External sources only; aws/azure are allowed as well as env
+            // because the point of the key is to reference a secret bundle Lambda can read.
+            ["Operations:SecretChannel:KeyRingCertificatePkcs12"] = _connectionSecretPrefixes,
             ["Monitoring:IntelligentAlerting:NotificationChannels:Email:Password"] = _envOnlyPrefixes,
             ["Monitoring:IntelligentAlerting:NotificationChannels:Slack:WebhookUrl"] = _envOnlyPrefixes,
             ["Monitoring:IntelligentAlerting:NotificationChannels:Webhook:Url"] = _envOnlyPrefixes,

@@ -1,8 +1,10 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Text.Json;
 using FluentAssertions;
 using Honua.Server.Features.Admin.Services;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -240,7 +242,48 @@ public sealed class ConfigurationValidationServiceTests
         throw new InvalidOperationException("Could not locate repository root from test output directory.");
     }
 
-    private static IConfiguration BuildConfiguration(IDictionary<string, string?>? overrides = null)
+    // The PKCS#12 material holds the private key that decrypts the data-protection key
+    // ring. Before this rule existed a literal bundle in appsettings*.json passed
+    // startup validation silently, while the password for that same certificate was
+    // rejected - so the key itself could reach source control and the password could not.
+    [UnitTheory]
+    [InlineData("MIIKnQIBAzCCClcGCSqGSIb3DQEHAaCCCkgEggpEMIIKQDCCBK")]
+    [InlineData("{\"pkcs12\":\"MIIKnQIBAzCCClcGCSqGSIb3DQEHAaCCCkgEggpEMIIKQDCCBK\"}")]
+    public void ValidateConfiguration_NonDevelopment_WithLiteralKeyRingMaterial_ReturnsError(string literal)
+    {
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["Operations:SecretChannel:KeyRingCertificatePkcs12"] = literal
+        }, fileBacked: true);
+
+        var errors = ConfigurationValidationService.ValidateConfiguration(
+            configuration, NullLogger.Instance, isDevelopment: false);
+
+        errors.Should().Contain(error =>
+            error.Contains("Operations:SecretChannel:KeyRingCertificatePkcs12", StringComparison.Ordinal) &&
+            error.Contains("secret reference", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [UnitTheory]
+    [InlineData("aws:secretsmanager:honua/operations/keyring")]
+    [InlineData("env:HONUA_OPERATION_KEYRING_PKCS12")]
+    public void ValidateConfiguration_NonDevelopment_WithKeyRingMaterialReference_IsPermitted(string reference)
+    {
+        var configuration = BuildConfiguration(new Dictionary<string, string?>
+        {
+            ["Operations:SecretChannel:KeyRingCertificatePkcs12"] = reference
+        });
+
+        var errors = ConfigurationValidationService.ValidateConfiguration(
+            configuration, NullLogger.Instance, isDevelopment: false);
+
+        errors.Should().NotContain(error =>
+            error.Contains("Operations:SecretChannel:KeyRingCertificatePkcs12", StringComparison.Ordinal));
+    }
+
+    private static IConfiguration BuildConfiguration(
+        IDictionary<string, string?>? overrides = null,
+        bool fileBacked = false)
     {
         var values = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
         {
@@ -258,8 +301,24 @@ public sealed class ConfigurationValidationServiceTests
             }
         }
 
-        return new ConfigurationBuilder()
-            .AddInMemoryCollection(values)
-            .Build();
+        if (!fileBacked)
+        {
+            return new ConfigurationBuilder()
+                .AddInMemoryCollection(values)
+                .Build();
+        }
+
+        var path = Path.Join(Path.GetTempPath(), $"honua-configuration-validation-{Guid.NewGuid():N}.json");
+        try
+        {
+            File.WriteAllText(path, JsonSerializer.Serialize(values));
+            return new ConfigurationBuilder()
+                .AddJsonFile(path, optional: false, reloadOnChange: false)
+                .Build();
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 }

@@ -112,31 +112,6 @@ public sealed class OperationSecretKeyRingProtectionTests
     }
 
     [UnitTest]
-    public void WritePkcs12Material_CreatesUniquePrivateFiles()
-    {
-        using var source = CreateCertificate();
-        var material = Convert.ToBase64String(source.Export(X509ContentType.Pkcs12));
-        var first = OperationSecretKeyRingProtection.WritePkcs12Material(material);
-        var second = OperationSecretKeyRingProtection.WritePkcs12Material(material);
-        try
-        {
-            first.Path.Should().NotBe(second.Path);
-            if (!OperatingSystem.IsWindows())
-            {
-                File.GetUnixFileMode(first.Path)
-                    .Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite);
-                File.GetUnixFileMode(second.Path)
-                    .Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite);
-            }
-        }
-        finally
-        {
-            File.Delete(first.Path);
-            File.Delete(second.Path);
-        }
-    }
-
-    [UnitTest]
     public void IsProtectedElement_RequiresEncryptedSecretDescriptor()
     {
         var protectedKey = new XElement(
@@ -148,6 +123,37 @@ public sealed class OperationSecretKeyRingProtectionTests
 
         RedisDataProtectionKeyRepository.IsProtectedElement(protectedKey).Should().BeTrue();
         RedisDataProtectionKeyRepository.IsProtectedElement(legacyKey).Should().BeFalse();
+    }
+
+    // A private key on disk gets a unique name and 0600 at creation time, not a fixed
+    // /tmp path tightened after the bytes land - otherwise a shared host leaves a
+    // readable window, a symlink can be pre-created, and two processes clobber
+    // each other's certificate.
+    [UnitTest]
+    public void WritePkcs12Material_CreatesAPrivateUniqueFile()
+    {
+        using var source = CreateCertificate();
+        var material = Convert.ToBase64String(source.Export(X509ContentType.Pkcs12));
+
+        var first = OperationSecretKeyRingProtection.WritePkcs12Material(material);
+        var second = OperationSecretKeyRingProtection.WritePkcs12Material(material);
+        try
+        {
+            second.Path.Should().NotBe(first.Path, "two processes must not share one keyring path");
+            File.Exists(first.Path).Should().BeTrue();
+            File.Exists(second.Path).Should().BeTrue();
+
+            if (!OperatingSystem.IsWindows())
+            {
+                File.GetUnixFileMode(first.Path).Should()
+                    .Be(UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+        }
+        finally
+        {
+            File.Delete(first.Path);
+            File.Delete(second.Path);
+        }
     }
 
     private static X509Certificate2 CreateCertificate()

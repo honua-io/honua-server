@@ -69,7 +69,12 @@ def aws(*args):
     if (result.returncode and args[:2] == ("secretsmanager", "get-secret-value")
             and re.search(r"\(AccessDenied(?:Exception)?\)", result.stderr)):
         raise SecretReadDenied("Secrets Manager read denied")
-    require(result.returncode == 0, f"AWS {args[0]} {args[1]} failed")
+    if result.returncode:
+        kind = "unknown"
+        match = re.search(r"\(([A-Za-z][A-Za-z0-9]+)\)", result.stderr or "")
+        if match:
+            kind = match.group(1)
+        require(False, f"AWS {args[0]} {args[1]} failed ({kind})")
     return json.loads(result.stdout or "{}")
 
 
