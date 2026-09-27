@@ -940,7 +940,7 @@
       "edition": "Enterprise",
       "status": null,
       "entryCount": 3,
-      "provingTestCount": 19,
+      "provingTestCount": 21,
       "maturity": {
         "implemented": 3
       },
@@ -980,7 +980,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 11,
-      "provingTestCount": 62,
+      "provingTestCount": 64,
       "maturity": {
         "implemented": 11
       },
@@ -1000,7 +1000,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 3,
-      "provingTestCount": 13,
+      "provingTestCount": 15,
       "maturity": {
         "implemented": 3
       },
@@ -1749,7 +1749,7 @@
       "edition": "Community",
       "status": null,
       "entryCount": 4,
-      "provingTestCount": 12,
+      "provingTestCount": 13,
       "maturity": {
         "implemented": 4
       },
@@ -1822,10 +1822,10 @@
       "category": "Serve",
       "edition": "Community",
       "status": null,
-      "entryCount": 45,
-      "provingTestCount": 383,
+      "entryCount": 47,
+      "provingTestCount": 385,
       "maturity": {
-        "implemented": 43,
+        "implemented": 45,
         "preview": 2
       },
       "noSurface": null,

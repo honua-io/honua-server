@@ -133,7 +133,12 @@ internal static class MetadataV2AttributeValidation
                 continue;
             }
 
-            builder[field.Name] = normalizedValue;
+            // Store a boolean as a boolean, whatever spelling arrived. A GeoServices
+            // client sends -1, 1 or 0 for a field it sees as esriFieldTypeSmallInteger,
+            // and keeping the number would leave the JSONB holding -1 where every other
+            // protocol reading the same column expects true - OGC API Features and STAC
+            // publish it as a real boolean.
+            builder[field.Name] = CoerceBooleanIfNumeric(field, normalizedValue);
         }
 
         if (errors.Count > 0)
@@ -145,6 +150,30 @@ internal static class MetadataV2AttributeValidation
         }
 
         return ValidationResult<ImmutableDictionary<string, object?>>.Success(builder.ToImmutable());
+    }
+
+    /// <summary>
+    /// Converts an accepted numeric boolean to a real boolean, leaving anything else
+    /// untouched. Non-zero is true, matching Esri's -1 convention as well as 1.
+    /// </summary>
+    private static object? CoerceBooleanIfNumeric(MetadataV2Field field, object? value)
+    {
+        if (field.Type != MetadataV2FieldType.Boolean || value is null or bool)
+        {
+            return value;
+        }
+
+        if (TryGetInt64(value, out var longValue))
+        {
+            return longValue != 0;
+        }
+
+        if (TryGetDouble(value, out var doubleValue))
+        {
+            return doubleValue != 0;
+        }
+
+        return value;
     }
 
     private static object? NormalizeAttributeValue(object? value)
@@ -566,15 +595,33 @@ internal static class MetadataV2AttributeValidation
         }
     }
 
+    /// <summary>
+    /// Whether a numeric value is an acceptable GeoServices spelling of a boolean.
+    /// </summary>
+    /// <remarks>
+    /// <c>-1</c> is accepted as well as <c>0</c> and <c>1</c>, because that is what Esri
+    /// clients send. GeoServices has no boolean type, so a boolean column is published as
+    /// <c>esriFieldTypeSmallInteger</c>, and ArcGIS Pro reads a true value from one as
+    /// <b>-1</b> - the long-standing Esri convention for a boolean held in a small
+    /// integer. Measured on Pro 3.7.1.1904: an <c>arcpy.da</c> cursor over the fixture's
+    /// <c>active</c> column returns -1 and 0, never 1.
+    ///
+    /// Rejecting -1 broke the plainest possible round trip. Reading a row and writing it
+    /// straight back was refused with "Field 'active' must be a boolean.", so
+    /// <c>featureserver.applyEdits</c> failed for a client doing nothing unusual, while
+    /// the same edit with a hand-written 0 or 1 succeeded. The read half converts
+    /// bool -> 0/1 and the write half would not accept what the client makes of it; this
+    /// is the same disagreement between halves as honua-server#5171.
+    /// </remarks>
     private static bool TryGetBooleanFromNumeric(object value)
     {
         if (TryGetInt64(value, out var longValue))
         {
-            return longValue is 0 or 1;
+            return longValue is 0 or 1 or -1;
         }
         if (TryGetDouble(value, out var doubleValue))
         {
-            return doubleValue is 0 or 1;
+            return doubleValue is 0 or 1 or -1;
         }
         return false;
     }
