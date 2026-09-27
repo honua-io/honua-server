@@ -26,12 +26,76 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DATA_PATH = REPO_ROOT / "docs" / "gis" / "data" / "client-certification-checklist.v1.json"
 DOC_PATH = REPO_ROOT / "docs" / "gis" / "CLIENT_CERTIFICATION_CHECKLIST.md"
+
+# Lane results measured after a cell's MATRIX entry was written.
+#
+# MATRIX is the baseline: what each cell was believed to be when the operation was first
+# enumerated. Running a lane then produces a verdict, and until now those verdicts were
+# written straight into the generated JSON, which `--check` rejects as stale - so 123 of
+# them accumulated on a branch that could never land. They live here instead, in a data
+# file the certification promotion scripts own and this generator merges last, so a
+# measured result survives regeneration and CI stays green.
+#
+# Each entry is a whole cell, keyed by (protocol, version, operation, lane), and replaces
+# the MATRIX-derived cell outright. Keeping the prior verdict is the writer's job: the
+# promotion scripts carry it in `previous_exclusion`, which is why re-measuring a stale
+# pass does not erase the run it superseded.
+RESULTS_PATH = REPO_ROOT / "docs" / "gis" / "data" / "client-certification-results.v1.json"
+
+
+# Defined here beside RESULTS_PATH but called after MATRIX, because the overlay is
+# validated against the cells MATRIX defines and MATRIX is built further down.
+def _load_certified_results() -> dict:
+    """Load the measured-result overlay, failing closed on a key that addresses no cell.
+
+    `build_rows()` looks each cell up by key, so a key naming no cell is silently
+    dropped: a promotion writer who misspells a protocol, version, operation or lane
+    would see `--check` stay green while the measured result it wrote never reaches
+    the checklist, because `validate()` only ever inspects generated rows. Duplicate
+    keys are rejected for the same reason - the previous dict comprehension kept the
+    last entry and discarded the rest without a word.
+    """
+    if not RESULTS_PATH.is_file():
+        return {}
+    document = json.loads(RESULTS_PATH.read_text(encoding="utf-8"))
+    valid = {
+        (entry["protocol"], entry["version"], operation, lane)
+        for entry in MATRIX
+        for operation in entry["operations"]
+        for lane in LANES
+    }
+    results: dict = {}
+    problems: list[str] = []
+    for index, record in enumerate(document["results"]):
+        missing = [f for f in ("protocol", "version", "operation", "lane", "cell")
+                   if f not in record]
+        if missing:
+            problems.append(f"results[{index}]: missing field(s) {', '.join(missing)}")
+            continue
+        key = (record["protocol"], record["version"], record["operation"], record["lane"])
+        if key not in valid:
+            problems.append(
+                f"results[{index}]: {key} addresses no checklist cell, so the measured "
+                "result would be dropped without a word")
+            continue
+        if key in results:
+            problems.append(
+                f"results[{index}]: {key} is already claimed by an earlier entry")
+            continue
+        results[key] = record["cell"]
+    if problems:
+        raise ValueError(
+            f"{RESULTS_PATH.name} has {len(problems)} unusable result(s):\n  "
+            + "\n  ".join(problems))
+    return results
+
 
 # The prose in DOC_PATH is hand-authored; only the region between these markers
 # is generated, so the tables cannot drift from the data while the argument
@@ -64,7 +128,47 @@ NEEDS_CITATION = {"n/a-no-client", "n/a-superseded", "blocked"}
 # changes create a new target revision" - so these tokens are searched for in the
 # evidence string. Superseded QGIS builds (3.44.3, 3.40.15) and QGIS 4.2.2 fail
 # the check by simply not matching.
-CERTIFIED_BUILD_TOKENS = ("3.7.1.1904", "3.44.14")
+#
+# Per lane, because the lanes do not all have access to the same precision. The
+# arcpy lane records the version arcpy itself reports, and
+# arcpy.GetInstallInfo()["Version"] returns the three-part product version
+# "3.7.1" with no build number - the probes have no way to write "3.7.1.1904".
+# Demanding the four-part token there would not tighten the gate, it would only
+# force the evidence to be rewritten into something the client never said, which
+# is exactly the relabelling AGENTS.md forbids. The seat is the same one the
+# pro-ui lane drives: a single ArcGIS Pro 3.7.1.1904 install on the certification
+# runner, so "3.7.1" and "3.7.1.1904" name one build here.
+#
+# Every other lane keeps the strict token. pro-ui receipts come from the
+# application's own About page and do carry the build, and both QGIS lanes report
+# 3.44.14 in full.
+CERTIFIED_BUILD_TOKENS_BY_LANE = {
+    "pro-ui": ("3.7.1.1904",),
+    "arcpy": ("3.7.1.1904", "3.7.1"),
+    "qgis-ui": ("3.44.14",),
+    "pyqgis": ("3.44.14",),
+}
+
+# Retained for the error message and for readers looking for the whole set.
+CERTIFIED_BUILD_TOKENS = tuple(
+    dict.fromkeys(t for tokens in CERTIFIED_BUILD_TOKENS_BY_LANE.values() for t in tokens))
+
+
+# Tokens are matched at version boundaries rather than as bare substrings. A plain
+# `"3.7.1" in evidence` also accepts "ArcGIS Pro 3.7.10", a different build, which
+# would be credited to the 3.7.1 certification target against the stated invariant
+# that a version change creates a new target revision. So a trailing digit
+# disqualifies a match, while a trailing dot-separated build number does not -
+# "3.7.1.1904" still satisfies the three-part "3.7.1" token the arcpy lane reports.
+# The leading guard stops "13.7.1" and "4.3.7.1" from matching the same way.
+def _build_token_matcher(token: str) -> "re.Pattern[str]":
+    return re.compile(rf"(?<![\d.]){re.escape(token)}(?!\d)")
+
+
+CERTIFIED_BUILD_TOKEN_MATCHERS_BY_LANE = {
+    lane: tuple(_build_token_matcher(token) for token in tokens)
+    for lane, tokens in CERTIFIED_BUILD_TOKENS_BY_LANE.items()
+}
 
 # --------------------------------------------------------------------------
 # Citations. Every n/a in the checklist resolves to one of these, so a reader can
@@ -1353,7 +1457,19 @@ NATIVE_REPLAY_RESOLUTIONS = {
 }
 
 
-def build_rows() -> list[dict]:
+# Loaded now that MATRIX exists: the overlay is validated against the cells MATRIX
+# defines, so an entry that addresses no cell is an import-time error rather than a
+# measured result that quietly never lands.
+CERTIFIED_RESULTS = _load_certified_results()
+
+
+def build_rows(apply_results: bool = True) -> list[dict]:
+    """Build every cell from MATRIX and its overrides.
+
+    `apply_results=False` stops short of the measured-results overlay and yields the
+    baseline this module defines. The unit tests use it: they exercise the MATRIX and
+    exclusion-review logic, and must not change meaning because a lane was re-run.
+    """
     rows: list[dict] = []
     for entry in MATRIX:
         for operation, lanes in entry["operations"].items():
@@ -1426,6 +1542,9 @@ def build_rows() -> list[dict]:
                         if name in cell
                     }
                     cell.update(state="pass", evidence=replay)
+                certified = CERTIFIED_RESULTS.get(key) if apply_results else None
+                if certified:
+                    cell = dict(certified)
                 cells[lane] = cell
             rows.append({
                 "protocol": entry["protocol"],
@@ -1485,10 +1604,13 @@ def validate(rows: list[dict]) -> list[str]:
                 if not evidence:
                     problems.append(
                         f"{where}/{lane}: a pass requires an evidence reference")
-                elif not any(token in evidence for token in CERTIFIED_BUILD_TOKENS):
-                    problems.append(
-                        f"{where}/{lane}: a pass must name a build under "
-                        f"certification {CERTIFIED_BUILD_TOKENS}, got {evidence!r}")
+                else:
+                    tokens = CERTIFIED_BUILD_TOKENS_BY_LANE[lane]
+                    matchers = CERTIFIED_BUILD_TOKEN_MATCHERS_BY_LANE[lane]
+                    if not any(matcher.search(evidence) for matcher in matchers):
+                        problems.append(
+                            f"{where}/{lane}: a pass must name a build under "
+                            f"certification {tokens}, got {evidence!r}")
     return problems
 
 
@@ -1598,10 +1720,55 @@ def summarise(rows: list[dict]) -> dict:
     return {"per_lane": totals, "overall": overall}
 
 
+def committed_regressions(rows: list[dict]) -> list[str]:
+    """Cells that are closed in the committed JSON but would not be closed by `rows`.
+
+    This file is a build output, but lane results are in practice written straight into
+    it by the certification promotion scripts and only later folded back into MATRIX and
+    the RESOLVED_EXCLUSION_EVIDENCE overlays here. While a result is in that gap, a plain
+    regeneration silently reopens it: measured 2026-09-26, the committed file held 303
+    closed cells and this generator produced 183, so a regenerate-and-commit would have
+    destroyed 120 cells of evidence without a diff anyone would read.
+
+    Refusing to write is the conservative direction. Recovering the lost evidence means
+    re-driving licensed desktop clients by hand; re-running the generator after folding
+    the results back in costs seconds.
+    """
+    if not DATA_PATH.is_file():
+        return []
+    try:
+        committed = json.loads(DATA_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    generated = {
+        (row["protocol"], row.get("version"), row["operation"], lane): cell["state"]
+        for row in rows for lane, cell in row["lanes"].items()
+    }
+    regressions = []
+    for row in committed.get("rows", []):
+        for lane, cell in row.get("lanes", {}).items():
+            was = cell.get("state")
+            if was not in CLOSED_STATES:
+                continue
+            key = (row.get("protocol"), row.get("version"), row.get("operation"), lane)
+            now = generated.get(key)
+            if now is None:
+                regressions.append(f"{key[0]}.{key[2]} @ {key[1]} [{lane}] "
+                                   f"closed as {was} but the row no longer exists")
+            elif now not in CLOSED_STATES:
+                regressions.append(f"{key[0]}.{key[2]} @ {key[1]} [{lane}] "
+                                   f"{was} -> {now}")
+    return regressions
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true",
                         help="validate rows and committed JSON/Markdown projections without writing")
+    parser.add_argument("--allow-regressions", action="store_true",
+                        help="write even when that would reopen cells the committed file "
+                             "records as closed (use only when the reopening is intended)")
     args = parser.parse_args()
 
     rows = build_rows()
@@ -1636,6 +1803,19 @@ def main() -> int:
                 print(f"FAIL {problem}")
             return 1
     else:
+        regressions = committed_regressions(rows)
+        if regressions and not args.allow_regressions:
+            print(f"REFUSING TO WRITE: {len(regressions)} cell(s) the committed file "
+                  f"records as closed would be reopened.")
+            for regression in regressions[:20]:
+                print(f"  - {regression}")
+            if len(regressions) > 20:
+                print(f"  ... and {len(regressions) - 20} more")
+            print()
+            print("These are lane results written into the JSON that have not been "
+                  "folded back into MATRIX / RESOLVED_EXCLUSION_EVIDENCE here. Fold "
+                  "them in, or pass --allow-regressions if the reopening is intended.")
+            return 1
         DATA_PATH.parent.mkdir(parents=True, exist_ok=True)
         DATA_PATH.write_text(json_text, encoding="utf-8", newline="\n")
         print(f"wrote {DATA_PATH.relative_to(REPO_ROOT)}")

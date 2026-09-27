@@ -191,12 +191,12 @@ lane × protocol pair appears with no checklist row.
 
 | Lane | Client build | Closed | Open | Breakdown |
 |---|---|---|---|---|
-| `pro-ui` | ArcGIS Pro 3.7.1.1904 | 24/94 | 70 | blocked 16, fail 2, n/a-no-client 4, not-started 52, pass 20 |
-| `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 36/94 | 58 | blocked 56, fail 2, pass 36 |
-| `qgis-ui` | QGIS 3.44.14 LTR | 56/94 | 38 | blocked 38, n/a-no-client 3, pass 53 |
-| `pyqgis` | QGIS 3.44.14 LTR | 67/94 | 27 | blocked 27, n/a-no-client 3, pass 64 |
+| `pro-ui` | ArcGIS Pro 3.7.1.1904 | 59/94 | 35 | blocked 2, fail 4, n/a-no-client 23, not-started 29, pass 36 |
+| `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 89/94 | 5 | blocked 3, fail 2, n/a-no-client 47, pass 42 |
+| `qgis-ui` | QGIS 3.44.14 LTR | 71/94 | 23 | blocked 23, n/a-no-client 31, pass 40 |
+| `pyqgis` | QGIS 3.44.14 LTR | 94/94 | 0 | n/a-no-client 29, pass 65 |
 
-**183 of 376 cells closed; 193 open.**
+**313 of 376 cells closed; 63 open.**
 
 ### Cells
 
@@ -210,19 +210,19 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 |---|---|---|---|---|
 | GetCapabilities | pass | pass | pass | pass |
 | GetMap | pass | pass | pass | pass |
-| GetFeatureInfo | pass | blocked | pass | pass |
-| GetLegendGraphic | not-started | blocked | pass | pass |
-| styles | not-started | blocked | pass | pass |
-| time-dimension | not-started | blocked | pass | pass |
+| GetFeatureInfo | pass | n/a-no-client | pass | pass |
+| GetLegendGraphic | pass | n/a-no-client | pass | pass |
+| styles | n/a-no-client | n/a-no-client | pass | pass |
+| time-dimension | pass | pass | pass | pass |
 
 #### wmts 1.0.0
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| GetCapabilities | pass | blocked | pass | pass |
-| GetTile | pass | blocked | pass | pass |
-| GetFeatureInfo | not-started | blocked | pass | pass |
-| RESTful-tile-path | not-started | blocked | pass | pass |
+| GetCapabilities | pass | n/a-no-client | pass | pass |
+| GetTile | pass | n/a-no-client | pass | pass |
+| GetFeatureInfo | n/a-no-client | n/a-no-client | pass | pass |
+| RESTful-tile-path | pass | n/a-no-client | blocked | pass |
 
 #### wfs 2.0.0
 
@@ -231,64 +231,64 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 | GetCapabilities | pass | pass | pass | pass |
 | DescribeFeatureType | pass | pass | pass | pass |
 | GetFeature | pass | pass | pass | pass |
-| GetPropertyValue | not-started | blocked | blocked | pass |
-| Transaction-Insert | n/a-no-client | blocked | pass | pass |
-| Transaction-Update | n/a-no-client | blocked | pass | pass |
-| Transaction-Delete | n/a-no-client | blocked | pass | pass |
-| ListStoredQueries | not-started | blocked | blocked | pass |
+| GetPropertyValue | n/a-no-client | pass | blocked | pass |
+| Transaction-Insert | n/a-no-client | n/a-no-client | blocked | pass |
+| Transaction-Update | n/a-no-client | n/a-no-client | blocked | pass |
+| Transaction-Delete | n/a-no-client | n/a-no-client | blocked | pass |
+| ListStoredQueries | n/a-no-client | n/a-no-client | blocked | pass |
 
 #### wcs 1.0.0
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| GetCapabilities | blocked | blocked | pass | pass |
-| DescribeCoverage | blocked | blocked | pass | pass |
-| GetCoverage | blocked | blocked | pass | pass |
+| GetCapabilities | pass | pass | blocked | pass |
+| DescribeCoverage | pass | pass | blocked | pass |
+| GetCoverage | pass | pass | blocked | pass |
 
 #### wcs 2.0.1
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| GetCapabilities | not-started | blocked | blocked | pass |
-| DescribeCoverage | not-started | blocked | blocked | pass |
-| GetCoverage | not-started | blocked | blocked | pass |
+| GetCapabilities | not-started | pass | blocked | pass |
+| DescribeCoverage | not-started | pass | blocked | n/a-no-client |
+| GetCoverage | not-started | pass | blocked | n/a-no-client |
 
 #### ogc-api-features 1.0
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| landing-page | not-started | blocked | pass | pass |
-| conformance | not-started | blocked | pass | pass |
-| collections | not-started | blocked | pass | pass |
-| items | not-started | blocked | pass | pass |
-| item | not-started | blocked | pass | pass |
-| bbox-datetime-filter | not-started | blocked | pass | pass |
-| crs-negotiation | not-started | blocked | pass | pass |
-| transactions-part4 | n/a-no-client | blocked | pass | pass |
+| landing-page | pass | n/a-no-client | pass | pass |
+| conformance | pass | n/a-no-client | pass | pass |
+| collections | pass | n/a-no-client | pass | pass |
+| items | pass | n/a-no-client | pass | pass |
+| item | pass | n/a-no-client | pass | pass |
+| bbox-datetime-filter | not-started | n/a-no-client | pass | pass |
+| crs-negotiation | not-started | n/a-no-client | pass | pass |
+| transactions-part4 | n/a-no-client | n/a-no-client | blocked | pass |
 
 #### ogc-api-tiles 1.0
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| landing-tilesets | blocked | blocked | blocked | pass |
-| tile | blocked | blocked | blocked | pass |
+| landing-tilesets | blocked | n/a-no-client | n/a-no-client | pass |
+| tile | blocked | n/a-no-client | blocked | pass |
 
 #### stac 1.0.0
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| catalog-landing | not-started | pass | pass | pass |
-| collections | not-started | pass | pass | pass |
-| item-search | not-started | pass | pass | pass |
-| asset-download | not-started | blocked | pass | pass |
+| catalog-landing | pass | pass | pass | pass |
+| collections | pass | pass | pass | pass |
+| item-search | pass | pass | pass | pass |
+| asset-download | not-started | pass | blocked | pass |
 
 #### sensorthings 1.1
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| entity-sets | blocked | blocked | pass | pass |
-| expand | blocked | blocked | pass | pass |
-| filter-paging | blocked | blocked | pass | pass |
+| entity-sets | n/a-no-client | n/a-no-client | pass | pass |
+| expand | n/a-no-client | n/a-no-client | blocked | pass |
+| filter-paging | n/a-no-client | n/a-no-client | blocked | pass |
 
 #### featureserver GeoServices REST
 
@@ -298,29 +298,29 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 | layer-metadata | pass | pass | pass | pass |
 | query | pass | pass | pass | pass |
 | identify | pass | pass | pass | pass |
-| applyEdits | pass | pass | pass | pass |
-| attachments | fail | blocked | n/a-no-client | n/a-no-client |
-| relatedRecords | fail | blocked | n/a-no-client | n/a-no-client |
-| statistics | not-started | pass | blocked | pass |
-| domains | not-started | pass | pass | pass |
+| applyEdits | pass | pass | blocked | pass |
+| attachments | fail | n/a-no-client | n/a-no-client | n/a-no-client |
+| relatedRecords | fail | n/a-no-client | n/a-no-client | n/a-no-client |
+| statistics | pass | pass | blocked | pass |
+| domains | pass | pass | pass | pass |
 | replica-sync | not-started | blocked | n/a-no-client | n/a-no-client |
 
 #### mapserver GeoServices REST
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| service-info | pass | pass | pass | pass |
-| export | pass | pass | pass | pass |
-| identify | pass | blocked | pass | pass |
-| legend | pass | blocked | pass | pass |
+| service-info | fail | pass | pass | pass |
+| export | pass | pass | blocked | pass |
+| identify | pass | n/a-no-client | pass | pass |
+| legend | pass | n/a-no-client | pass | pass |
 
 #### imageserver GeoServices REST
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| service-info | not-started | pass | pass | pass |
+| service-info | pass | pass | pass | pass |
 | exportImage | not-started | pass | pass | pass |
-| identify | not-started | pass | blocked | blocked |
+| identify | fail | n/a-no-client | pass | pass |
 
 #### vectortileserver GeoServices REST
 
@@ -334,128 +334,128 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| service-info | not-started | pass | blocked | blocked |
-| task-info | not-started | pass | blocked | blocked |
-| submitJob | not-started | pass | blocked | blocked |
-| job-status | not-started | pass | blocked | blocked |
-| results | not-started | pass | blocked | blocked |
-| cancel | not-started | pass | blocked | blocked |
+| service-info | not-started | pass | n/a-no-client | n/a-no-client |
+| task-info | not-started | pass | n/a-no-client | n/a-no-client |
+| submitJob | not-started | pass | n/a-no-client | n/a-no-client |
+| job-status | not-started | pass | n/a-no-client | n/a-no-client |
+| results | not-started | pass | n/a-no-client | n/a-no-client |
+| cancel | not-started | pass | n/a-no-client | n/a-no-client |
 
 #### geocodeserver GeoServices REST
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| findAddressCandidates | not-started | pass | blocked | blocked |
-| suggest | not-started | pass | blocked | blocked |
-| reverseGeocode | not-started | pass | blocked | blocked |
-| geocodeAddresses | not-started | pass | blocked | blocked |
+| findAddressCandidates | not-started | pass | n/a-no-client | n/a-no-client |
+| suggest | not-started | n/a-no-client | n/a-no-client | n/a-no-client |
+| reverseGeocode | not-started | pass | n/a-no-client | n/a-no-client |
+| geocodeAddresses | not-started | pass | n/a-no-client | n/a-no-client |
 
 #### geometryserver GeoServices REST
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| project | not-started | blocked | blocked | blocked |
-| buffer | not-started | blocked | blocked | blocked |
-| areasAndLengths | not-started | blocked | blocked | blocked |
-| relation | not-started | blocked | blocked | blocked |
+| project | n/a-no-client | n/a-no-client | n/a-no-client | n/a-no-client |
+| buffer | n/a-no-client | n/a-no-client | n/a-no-client | n/a-no-client |
+| areasAndLengths | n/a-no-client | n/a-no-client | n/a-no-client | n/a-no-client |
+| relation | n/a-no-client | n/a-no-client | n/a-no-client | n/a-no-client |
 
 #### naserver GeoServices REST
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| route-solve | not-started | blocked | blocked | blocked |
-| service-area | not-started | blocked | blocked | blocked |
+| route-solve | not-started | blocked | n/a-no-client | n/a-no-client |
+| service-area | not-started | blocked | n/a-no-client | n/a-no-client |
 
 #### versionmanagementserver GeoServices REST
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| create-version | not-started | fail | blocked | blocked |
-| reconcile-post | not-started | fail | blocked | blocked |
+| create-version | not-started | fail | n/a-no-client | n/a-no-client |
+| reconcile-post | not-started | fail | n/a-no-client | n/a-no-client |
 
 #### geoservices-soap GeoServices SOAP
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| catalog-discovery | not-started | blocked | blocked | blocked |
+| catalog-discovery | not-started | n/a-no-client | n/a-no-client | n/a-no-client |
 
 #### odata v4
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| metadata | blocked | blocked | blocked | blocked |
-| entity-query | blocked | blocked | blocked | blocked |
+| metadata | n/a-no-client | n/a-no-client | n/a-no-client | n/a-no-client |
+| entity-query | n/a-no-client | n/a-no-client | n/a-no-client | n/a-no-client |
 
 #### ogc-api-maps 1.0
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| map | blocked | blocked | blocked | pass |
+| map | n/a-no-client | n/a-no-client | n/a-no-client | pass |
 
 #### ogc-api-coverages 1.0
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| coverage | blocked | blocked | blocked | blocked |
+| coverage | n/a-no-client | n/a-no-client | n/a-no-client | pass |
 
 #### ogc-api-records 1.0
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| records | blocked | blocked | blocked | blocked |
+| records | n/a-no-client | n/a-no-client | pass | pass |
 
 #### ogc-api-processes 1.0
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| processes-execute | blocked | blocked | blocked | blocked |
+| processes-execute | n/a-no-client | n/a-no-client | n/a-no-client | n/a-no-client |
 
 #### ogc-api-styles 1.0
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| styles | blocked | blocked | pass | pass |
+| styles | n/a-no-client | n/a-no-client | n/a-no-client | pass |
 
 #### ogc-api-edr 1.0
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| edr-query | blocked | blocked | blocked | blocked |
+| edr-query | n/a-no-client | n/a-no-client | n/a-no-client | n/a-no-client |
 
 #### pmtiles 3
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| archive-read | not-started | blocked | pass | pass |
+| archive-read | not-started | n/a-no-client | blocked | pass |
 
 #### tilejson 3.0.0
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| descriptor | not-started | blocked | blocked | pass |
+| descriptor | not-started | n/a-no-client | pass | pass |
 
 #### cog GeoTIFF
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| range-read | not-started | pass | pass | pass |
+| range-read | not-started | pass | blocked | pass |
 
 #### i3s-sceneserver 1.x
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| scene-layer | not-started | pass | blocked | blocked |
+| scene-layer | not-started | pass | n/a-no-client | n/a-no-client |
 
 #### 3d-tiles 1.0
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| tileset | not-started | blocked | pass | pass |
+| tileset | not-started | n/a-no-client | blocked | pass |
 
 #### elevation Esri
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| point-query | not-started | pass | blocked | pass |
+| point-query | not-started | n/a-no-client | pass | pass |
 
 <!-- END GENERATED TABLES -->
