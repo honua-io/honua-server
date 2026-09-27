@@ -2,10 +2,10 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 //
 // Read-only Esri-compatible GeocodeServer surface; anonymous by design. The
-// POST variants of every operation mirror the GET form and only carry query
-// parameters in the body — they perform no server-side mutation. Each POST
-// route opts into AllowAnonymous explicitly so authorization-policy tooling
-// can see the intent rather than treating it as an accidental gap.
+// GET and POST variants of every operation only read geocoding data and carry
+// no server-side mutation. Each route opts into AllowAnonymous explicitly so
+// authorization-policy tooling can see the intent rather than treating it as
+// an accidental gap.
 
 using Honua.Core.Features.Licensing.Domain;
 using Honua.Infrastructure.Helpers;
@@ -24,7 +24,8 @@ internal static class GeocodingEndpoints
             .WithName("GetGeocodeServerMetadata")
             .WithSummary("Get GeocodeServer metadata")
             .WithDescription("Returns metadata for the configured geocoding service")
-            .WithTags("GeocodeServer");
+            .WithTags("GeocodeServer")
+            .AllowAnonymous();
 
         endpoints.MapPost("/rest/services/{locatorName}/GeocodeServer", HandleMetadata)
             .WithDisplayName("Get GeocodeServer Metadata (POST)")
@@ -39,7 +40,8 @@ internal static class GeocodingEndpoints
             .WithName("FindAddressCandidates")
             .WithSummary("Forward geocode an address")
             .WithDescription("Find address candidates from freeform address text")
-            .WithTags("GeocodeServer");
+            .WithTags("GeocodeServer")
+            .AllowAnonymous();
 
         endpoints.MapPost("/rest/services/{locatorName}/GeocodeServer/findAddressCandidates", HandleFindAddressCandidates)
             .WithDisplayName("Find Address Candidates (POST)")
@@ -54,7 +56,8 @@ internal static class GeocodingEndpoints
             .WithName("ReverseGeocode")
             .WithSummary("Reverse geocode coordinates")
             .WithDescription("Resolve coordinates to the nearest known address")
-            .WithTags("GeocodeServer");
+            .WithTags("GeocodeServer")
+            .AllowAnonymous();
 
         endpoints.MapPost("/rest/services/{locatorName}/GeocodeServer/reverseGeocode", HandleReverseGeocode)
             .WithDisplayName("Reverse Geocode (POST)")
@@ -69,7 +72,8 @@ internal static class GeocodingEndpoints
             .WithName("SuggestAddresses")
             .WithSummary("Suggest addresses for partial text")
             .WithDescription("Returns ranked geocode suggestions")
-            .WithTags("GeocodeServer");
+            .WithTags("GeocodeServer")
+            .AllowAnonymous();
 
         endpoints.MapPost("/rest/services/{locatorName}/GeocodeServer/suggest", HandleSuggest)
             .WithDisplayName("Suggest Addresses (POST)")
@@ -85,6 +89,7 @@ internal static class GeocodingEndpoints
             .WithSummary("Batch geocode addresses")
             .WithDescription("Batch geocoding operation with provider capability checks")
             .WithTags("GeocodeServer")
+            .AllowAnonymous()
             .AddEndpointFilter(RequireBatchGeocodingEntitlement);
 
         endpoints.MapPost("/rest/services/{locatorName}/GeocodeServer/geocodeAddresses", HandleBatch)
@@ -100,7 +105,8 @@ internal static class GeocodingEndpoints
                 handler.HandleMetadataAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
             .WithDisplayName("Get GeocodeServer Metadata (Alias)")
             .WithName("GetGeocodeServerMetadataAlias")
-            .WithTags("GeocodeServer");
+            .WithTags("GeocodeServer")
+            .AllowAnonymous();
 
         endpoints.MapPost("/rest/services/GeocodeServer", static (HttpContext context, GeocodingHandler handler) =>
                 handler.HandleMetadataAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
@@ -113,7 +119,8 @@ internal static class GeocodingEndpoints
                 handler.HandleFindAddressCandidatesAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
             .WithDisplayName("Find Address Candidates (Alias)")
             .WithName("FindAddressCandidatesAlias")
-            .WithTags("GeocodeServer");
+            .WithTags("GeocodeServer")
+            .AllowAnonymous();
 
         endpoints.MapPost("/rest/services/GeocodeServer/findAddressCandidates", static (HttpContext context, GeocodingHandler handler) =>
                 handler.HandleFindAddressCandidatesAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
@@ -126,19 +133,22 @@ internal static class GeocodingEndpoints
                 handler.HandleReverseGeocodeAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
             .WithDisplayName("Reverse Geocode (Alias)")
             .WithName("ReverseGeocodeAlias")
-            .WithTags("GeocodeServer");
+            .WithTags("GeocodeServer")
+            .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/GeocodeServer/suggest", static (HttpContext context, GeocodingHandler handler) =>
                 handler.HandleSuggestAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
             .WithDisplayName("Suggest Addresses (Alias)")
             .WithName("SuggestAddressesAlias")
-            .WithTags("GeocodeServer");
+            .WithTags("GeocodeServer")
+            .AllowAnonymous();
 
         endpoints.MapGet("/rest/services/GeocodeServer/geocodeAddresses", static (HttpContext context, GeocodingHandler handler) =>
                 handler.HandleBatchGeocodeAsync(context, locatorName: null, TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context)))
             .WithDisplayName("Batch Geocode Addresses (Alias)")
             .WithName("BatchGeocodeAddressesAlias")
             .WithTags("GeocodeServer")
+            .AllowAnonymous()
             .AddEndpointFilter(RequireBatchGeocodingEntitlement);
 
         return endpoints;
