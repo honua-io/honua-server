@@ -8,7 +8,10 @@ using System.Xml.Linq;
 using FluentAssertions;
 using Honua.Server.Features.Operations;
 using Honua.TestKit.Attributes;
+using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.DataProtection.Repositories;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Honua.Server.Tests.Features.OperationSecretKeyRingProtectionTests;
 
@@ -154,6 +157,56 @@ public sealed class OperationSecretKeyRingProtectionTests
             File.Delete(first.Path);
             File.Delete(second.Path);
         }
+    }
+
+    [UnitTest]
+    public void AotKeyRing_RoundTripsAcrossProvidersThatShareTheCertificate()
+    {
+        using var certificate = CreateCertificate();
+        var repository = new MemoryKeyRepository();
+        var first = Protect(repository, certificate, "approved-secret");
+        var second = Unprotect(repository, certificate, first);
+
+        second.Should().Be("approved-secret");
+        repository.Elements.Should().ContainSingle();
+        RedisDataProtectionKeyRepository.IsProtectedElement(repository.Elements[0]).Should().BeTrue();
+    }
+
+    private static string Protect(MemoryKeyRepository repository, X509Certificate2 certificate, string value)
+    {
+        using var provider = BuildProvider(repository, certificate);
+        return provider.GetDataProtector("Honua.Server.Operations").Protect(value);
+    }
+
+    private static string Unprotect(MemoryKeyRepository repository, X509Certificate2 certificate, string value)
+    {
+        using var provider = BuildProvider(repository, certificate);
+        return provider.GetDataProtector("Honua.Server.Operations").Unprotect(value);
+    }
+
+    private static ServiceProvider BuildProvider(MemoryKeyRepository repository, X509Certificate2 certificate)
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(new RsaAesGcmKeyRingMaterial(certificate));
+        services.AddDataProtection()
+            .SetApplicationName("Honua.Server")
+            .AddKeyManagementOptions(options =>
+            {
+                options.XmlRepository = repository;
+                options.XmlEncryptor = new RsaAesGcmKeyRingEncryptor(certificate);
+            });
+        return services.BuildServiceProvider();
+    }
+
+    private sealed class MemoryKeyRepository : IXmlRepository
+    {
+        public List<XElement> Elements { get; } = new();
+
+        public IReadOnlyCollection<XElement> GetAllElements()
+            => Elements.Select(element => new XElement(element)).ToArray();
+
+        public void StoreElement(XElement element, string friendlyName)
+            => Elements.Add(new XElement(element));
     }
 
     private static X509Certificate2 CreateCertificate()

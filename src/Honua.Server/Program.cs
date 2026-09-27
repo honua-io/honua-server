@@ -397,19 +397,32 @@ if (connectedRedis is not null &&
 {
     // The operation-secret protector is intentionally backed by the same Redis authority
     // as the proposal/instance stores so every replay node shares a rotation-capable key ring.
+    // Native AOT cannot run EncryptedXml. It still stores the ring in Redis and wraps each key
+    // with the certificate using RSA-OAEP and AES-GCM, so another execution environment can
+    // unwrap it. A process-local ring would make a consume on the wrong environment delete the
+    // secret before it can be unprotected.
+    var nativeAot = !System.Runtime.CompilerServices.RuntimeFeature.IsDynamicCodeSupported;
     var keyRepository = new RedisDataProtectionKeyRepository(connectedRedis);
     keyRepository.EnsureAllElementsAreProtected();
     var keyRing = builder.Services.AddDataProtection()
         .SetApplicationName("Honua.Server")
-        .AddKeyManagementOptions(options =>
-            options.XmlRepository = keyRepository);
+        .AddKeyManagementOptions(options => options.XmlRepository = keyRepository);
 
     // A key ring persisted beside the ciphertext it unlocks is not a boundary on its own. The
     // certificate is mandatory so a Redis reader or snapshot cannot carry both halves. Lambda
     // cannot mount the file, so a Secrets Manager bundle is written to a private temp file first.
     await StartupConfigurationHelpers.EnsureKeyRingCertificateMaterializedAsync(builder.Configuration);
     var keyRingCertificate = OperationSecretKeyRingProtection.Resolve(builder.Configuration);
-    keyRing.ProtectKeysWithCertificate(keyRingCertificate);
+    if (nativeAot)
+    {
+        builder.Services.AddSingleton(new RsaAesGcmKeyRingMaterial(keyRingCertificate));
+        keyRing.AddKeyManagementOptions(options =>
+            options.XmlEncryptor = new RsaAesGcmKeyRingEncryptor(keyRingCertificate));
+    }
+    else
+    {
+        keyRing.ProtectKeysWithCertificate(keyRingCertificate);
+    }
 }
 
 // The ONE sanctioned way an unattested durable job substrate may stop this process
