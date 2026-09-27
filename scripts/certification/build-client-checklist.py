@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -49,17 +50,52 @@ DOC_PATH = REPO_ROOT / "docs" / "gis" / "CLIENT_CERTIFICATION_CHECKLIST.md"
 RESULTS_PATH = REPO_ROOT / "docs" / "gis" / "data" / "client-certification-results.v1.json"
 
 
+# Defined here beside RESULTS_PATH but called after MATRIX, because the overlay is
+# validated against the cells MATRIX defines and MATRIX is built further down.
 def _load_certified_results() -> dict:
+    """Load the measured-result overlay, failing closed on a key that addresses no cell.
+
+    `build_rows()` looks each cell up by key, so a key naming no cell is silently
+    dropped: a promotion writer who misspells a protocol, version, operation or lane
+    would see `--check` stay green while the measured result it wrote never reaches
+    the checklist, because `validate()` only ever inspects generated rows. Duplicate
+    keys are rejected for the same reason - the previous dict comprehension kept the
+    last entry and discarded the rest without a word.
+    """
     if not RESULTS_PATH.is_file():
         return {}
     document = json.loads(RESULTS_PATH.read_text(encoding="utf-8"))
-    return {
-        (r["protocol"], r["version"], r["operation"], r["lane"]): r["cell"]
-        for r in document["results"]
+    valid = {
+        (entry["protocol"], entry["version"], operation, lane)
+        for entry in MATRIX
+        for operation in entry["operations"]
+        for lane in LANES
     }
+    results: dict = {}
+    problems: list[str] = []
+    for index, record in enumerate(document["results"]):
+        missing = [f for f in ("protocol", "version", "operation", "lane", "cell")
+                   if f not in record]
+        if missing:
+            problems.append(f"results[{index}]: missing field(s) {', '.join(missing)}")
+            continue
+        key = (record["protocol"], record["version"], record["operation"], record["lane"])
+        if key not in valid:
+            problems.append(
+                f"results[{index}]: {key} addresses no checklist cell, so the measured "
+                "result would be dropped without a word")
+            continue
+        if key in results:
+            problems.append(
+                f"results[{index}]: {key} is already claimed by an earlier entry")
+            continue
+        results[key] = record["cell"]
+    if problems:
+        raise ValueError(
+            f"{RESULTS_PATH.name} has {len(problems)} unusable result(s):\n  "
+            + "\n  ".join(problems))
+    return results
 
-
-CERTIFIED_RESULTS = _load_certified_results()
 
 # The prose in DOC_PATH is hand-authored; only the region between these markers
 # is generated, so the tables cannot drift from the data while the argument
@@ -116,6 +152,23 @@ CERTIFIED_BUILD_TOKENS_BY_LANE = {
 # Retained for the error message and for readers looking for the whole set.
 CERTIFIED_BUILD_TOKENS = tuple(
     dict.fromkeys(t for tokens in CERTIFIED_BUILD_TOKENS_BY_LANE.values() for t in tokens))
+
+
+# Tokens are matched at version boundaries rather than as bare substrings. A plain
+# `"3.7.1" in evidence` also accepts "ArcGIS Pro 3.7.10", a different build, which
+# would be credited to the 3.7.1 certification target against the stated invariant
+# that a version change creates a new target revision. So a trailing digit
+# disqualifies a match, while a trailing dot-separated build number does not -
+# "3.7.1.1904" still satisfies the three-part "3.7.1" token the arcpy lane reports.
+# The leading guard stops "13.7.1" and "4.3.7.1" from matching the same way.
+def _build_token_matcher(token: str) -> "re.Pattern[str]":
+    return re.compile(rf"(?<![\d.]){re.escape(token)}(?!\d)")
+
+
+CERTIFIED_BUILD_TOKEN_MATCHERS_BY_LANE = {
+    lane: tuple(_build_token_matcher(token) for token in tokens)
+    for lane, tokens in CERTIFIED_BUILD_TOKENS_BY_LANE.items()
+}
 
 # --------------------------------------------------------------------------
 # Citations. Every n/a in the checklist resolves to one of these, so a reader can
@@ -1404,6 +1457,12 @@ NATIVE_REPLAY_RESOLUTIONS = {
 }
 
 
+# Loaded now that MATRIX exists: the overlay is validated against the cells MATRIX
+# defines, so an entry that addresses no cell is an import-time error rather than a
+# measured result that quietly never lands.
+CERTIFIED_RESULTS = _load_certified_results()
+
+
 def build_rows(apply_results: bool = True) -> list[dict]:
     """Build every cell from MATRIX and its overrides.
 
@@ -1547,7 +1606,8 @@ def validate(rows: list[dict]) -> list[str]:
                         f"{where}/{lane}: a pass requires an evidence reference")
                 else:
                     tokens = CERTIFIED_BUILD_TOKENS_BY_LANE[lane]
-                    if not any(token in evidence for token in tokens):
+                    matchers = CERTIFIED_BUILD_TOKEN_MATCHERS_BY_LANE[lane]
+                    if not any(matcher.search(evidence) for matcher in matchers):
                         problems.append(
                             f"{where}/{lane}: a pass must name a build under "
                             f"certification {tokens}, got {evidence!r}")

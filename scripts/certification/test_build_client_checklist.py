@@ -1,6 +1,7 @@
 """Keep unsupported exclusion claims from silently closing client coverage."""
 import copy
 import importlib.util
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -176,6 +177,99 @@ class ExclusionReviewTests(unittest.TestCase):
         evidence = row["lanes"]["pyqgis"]["evidence"]
         for qualification in ("229x214 native overview", "no root discovery", "dataset landing metadata defect"):
             self.assertIn(qualification, evidence)
+
+
+class CertifiedBuildTokenTests(unittest.TestCase):
+    """A pass names the build under certification, matched at version boundaries."""
+
+    def _matches(self, lane, evidence):
+        return any(matcher.search(evidence)
+                   for matcher in checklist.CERTIFIED_BUILD_TOKEN_MATCHERS_BY_LANE[lane])
+
+    def test_three_part_arcpy_token_still_accepts_the_build_number_suffix(self):
+        # arcpy.GetInstallInfo() reports "3.7.1" with no build number, and the
+        # four-part form has to keep matching the same seat.
+        self.assertTrue(self._matches("arcpy", "arcpy 3.7.1 reported by GetInstallInfo"))
+        self.assertTrue(self._matches("arcpy", "arcpy 3.7.1.1904 probe, 2026-09-18"))
+
+    def test_three_part_arcpy_token_rejects_a_neighbouring_patch_version(self):
+        # As a bare substring "3.7.1" also matched "3.7.10", crediting evidence from
+        # a different build to this certification target.
+        self.assertFalse(self._matches("arcpy", "ArcGIS Pro 3.7.10 probe"))
+        self.assertFalse(self._matches("arcpy", "ArcGIS Pro 3.7.11.2000 probe"))
+        self.assertFalse(self._matches("arcpy", "ArcGIS Pro 13.7.1 probe"))
+
+    def test_the_other_lanes_keep_their_strict_tokens(self):
+        self.assertFalse(self._matches("pro-ui", "ArcGIS Pro 3.7.1 About page"))
+        self.assertTrue(self._matches("pro-ui", "ArcGIS Pro 3.7.1.1904 About page"))
+        self.assertTrue(self._matches("qgis-ui", "QGIS 3.44.14 LTR"))
+        self.assertFalse(self._matches("qgis-ui", "QGIS 3.44.140 LTR"))
+        self.assertFalse(self._matches("qgis-ui", "QGIS 3.44.3 LTR"))
+
+    def test_validate_rejects_a_pass_naming_a_neighbouring_build(self):
+        rows = checklist.build_rows(apply_results=False)
+        cell = next(row["lanes"]["arcpy"] for row in rows
+                    if row["lanes"]["arcpy"]["state"] == "pass")
+        cell["evidence"] = "arcpy 3.7.10 probe, 2026-09-18: the operation returned rows"
+        self.assertTrue(any("a build under certification" in problem
+                            for problem in checklist.validate(rows)))
+
+
+class CertifiedResultOverlayTests(unittest.TestCase):
+    """The measured-result overlay has to address real cells, fail-closed.
+
+    build_rows() looks each cell up by key, so a key that names no cell is dropped in
+    silence and validate() never sees it - the measured result would go missing while
+    --check stayed green.
+    """
+
+    def _load(self, results):
+        document = {"schema_version": "1.0", "description": "test", "results": results}
+        with tempfile.TemporaryDirectory(dir=checklist.REPO_ROOT) as directory:
+            path = Path(directory) / "results.json"
+            path.write_text(json.dumps(document), encoding="utf-8")
+            with patch.object(checklist, "RESULTS_PATH", path):
+                return checklist._load_certified_results()
+
+    def _real_result(self):
+        entry = checklist.MATRIX[0]
+        return {"protocol": entry["protocol"], "version": entry["version"],
+                "operation": next(iter(entry["operations"])), "lane": "arcpy",
+                "cell": {"state": "not-started"}}
+
+    def test_every_committed_result_addresses_a_checklist_cell(self):
+        cells = {(row["protocol"], row["version"], row["operation"], lane)
+                 for row in checklist.build_rows(apply_results=False)
+                 for lane in checklist.LANES}
+        self.assertTrue(checklist.CERTIFIED_RESULTS)
+        for key in checklist.CERTIFIED_RESULTS:
+            self.assertIn(key, cells)
+
+    def test_a_well_formed_result_loads(self):
+        record = self._real_result()
+        loaded = self._load([record])
+        self.assertEqual({(record["protocol"], record["version"],
+                           record["operation"], record["lane"]): record["cell"]}, loaded)
+
+    def test_a_key_naming_no_cell_is_rejected(self):
+        for field, bad in (("protocol", "wmz"), ("version", "9.9"),
+                           ("operation", "GetNothing"), ("lane", "arcpyy")):
+            with self.subTest(field=field):
+                with self.assertRaises(ValueError) as caught:
+                    self._load([dict(self._real_result(), **{field: bad})])
+                self.assertIn("addresses no checklist cell", str(caught.exception))
+
+    def test_duplicate_keys_are_rejected_instead_of_collapsing(self):
+        record = self._real_result()
+        with self.assertRaises(ValueError) as caught:
+            self._load([record, dict(record, cell={"state": "pass"})])
+        self.assertIn("already claimed", str(caught.exception))
+
+    def test_a_record_missing_a_field_is_rejected(self):
+        record = {k: v for k, v in self._real_result().items() if k != "cell"}
+        with self.assertRaises(ValueError) as caught:
+            self._load([record])
+        self.assertIn("missing field(s) cell", str(caught.exception))
 
 
 if __name__ == "__main__":
