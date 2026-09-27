@@ -272,6 +272,13 @@ internal static class StartupConfigurationHelpers
         string material,
         CancellationToken cancellationToken)
     {
+        // Production validation accepts env/aws/azure references for this key, so an
+        // env: reference has to resolve here too - otherwise it would validate and
+        // then die in WritePkcs12Material as "not a PKCS#12 bundle".
+        material = SecretReferenceResolver.ResolveEnvironmentReference(
+            material,
+            OperationSecretKeyRingProtection.CertificateMaterialKey) ?? material;
+
         const string awsSecretsManagerPrefix = "aws:secretsmanager:";
         if (!material.StartsWith(awsSecretsManagerPrefix, StringComparison.OrdinalIgnoreCase))
         {
