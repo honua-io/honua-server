@@ -191,12 +191,12 @@ lane × protocol pair appears with no checklist row.
 
 | Lane | Client build | Closed | Open | Breakdown |
 |---|---|---|---|---|
-| `pro-ui` | ArcGIS Pro 3.7.1.1904 | 59/94 | 35 | blocked 2, fail 4, n/a-no-client 23, not-started 29, pass 36 |
-| `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 89/94 | 5 | blocked 3, fail 2, n/a-no-client 47, pass 42 |
+| `pro-ui` | ArcGIS Pro 3.7.1.1904 | 60/94 | 34 | blocked 4, fail 1, n/a-no-client 23, not-started 29, pass 37 |
+| `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 89/94 | 5 | blocked 4, fail 1, n/a-no-client 47, pass 42 |
 | `qgis-ui` | QGIS 3.44.14 LTR | 71/94 | 23 | blocked 23, n/a-no-client 31, pass 40 |
 | `pyqgis` | QGIS 3.44.14 LTR | 94/94 | 0 | n/a-no-client 29, pass 65 |
 
-**313 of 376 cells closed; 63 open.**
+**314 of 376 cells closed; 62 open.**
 
 ### Cells
 
@@ -299,8 +299,8 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 | query | pass | pass | pass | pass |
 | identify | pass | pass | pass | pass |
 | applyEdits | pass | pass | blocked | pass |
-| attachments | fail | n/a-no-client | n/a-no-client | n/a-no-client |
-| relatedRecords | fail | n/a-no-client | n/a-no-client | n/a-no-client |
+| attachments | blocked | n/a-no-client | n/a-no-client | n/a-no-client |
+| relatedRecords | blocked | n/a-no-client | n/a-no-client | n/a-no-client |
 | statistics | pass | pass | blocked | pass |
 | domains | pass | pass | pass | pass |
 | replica-sync | not-started | blocked | n/a-no-client | n/a-no-client |
@@ -309,7 +309,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| service-info | fail | pass | pass | pass |
+| service-info | pass | pass | pass | pass |
 | export | pass | pass | blocked | pass |
 | identify | pass | n/a-no-client | pass | pass |
 | legend | pass | n/a-no-client | pass | pass |
@@ -371,7 +371,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
 | create-version | not-started | fail | n/a-no-client | n/a-no-client |
-| reconcile-post | not-started | fail | n/a-no-client | n/a-no-client |
+| reconcile-post | not-started | blocked | n/a-no-client | n/a-no-client |
 
 #### geoservices-soap GeoServices SOAP
 
