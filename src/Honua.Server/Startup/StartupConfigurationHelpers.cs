@@ -13,6 +13,7 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Security;
 using Honua.Db.Postgres.Features.Security.ConnectionSecretResolvers;
+using Honua.Server.Features.Operations;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -229,6 +230,69 @@ internal static class StartupConfigurationHelpers
         var effectiveKey = configuration[primaryKey] is null ? fallbackKey : primaryKey;
         await ResolveRedisConnectionSecretReferenceAsync(configuration, effectiveKey, cancellationToken)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Materializes <see cref="Honua.Server.Features.Operations.OperationSecretKeyRingProtection.CertificateMaterialKey"/>
+    /// into a private PKCS#12 file and points
+    /// <see cref="Honua.Server.Features.Operations.OperationSecretKeyRingProtection.CertificatePathKey"/>
+    /// at it. A path that already names a file is left alone, so a mounted certificate still wins.
+    /// Lambda cannot mount a file; it carries an <c>aws:secretsmanager:</c> reference instead.
+    /// </summary>
+    public static async Task EnsureKeyRingCertificateMaterializedAsync(
+        ConfigurationManager configuration,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(configuration);
+        var path = configuration[OperationSecretKeyRingProtection.CertificatePathKey];
+        if (!string.IsNullOrWhiteSpace(path) && File.Exists(path))
+        {
+            return;
+        }
+
+        var material = configuration[OperationSecretKeyRingProtection.CertificateMaterialKey];
+        if (string.IsNullOrWhiteSpace(material))
+        {
+            return;
+        }
+
+        material = await ResolveKeyRingMaterialAsync(material, cancellationToken).ConfigureAwait(false);
+        var written = OperationSecretKeyRingProtection.WritePkcs12Material(material);
+        SetResolvedSecretValue(configuration, OperationSecretKeyRingProtection.CertificatePathKey, written.Path);
+        if (!string.IsNullOrEmpty(written.Password))
+        {
+            SetResolvedSecretValue(
+                configuration,
+                OperationSecretKeyRingProtection.CertificatePasswordKey,
+                written.Password);
+        }
+    }
+
+    private static async Task<string> ResolveKeyRingMaterialAsync(
+        string material,
+        CancellationToken cancellationToken)
+    {
+        const string awsSecretsManagerPrefix = "aws:secretsmanager:";
+        if (!material.StartsWith(awsSecretsManagerPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return material;
+        }
+
+        using var loggerFactory = LoggerFactory.Create(static builder => builder.AddConsole());
+        using var secretsClient = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
+        using var metadataClient = new HttpClient { Timeout = TimeSpan.FromSeconds(2) };
+        using var resolver = new AwsSecretsManagerResolver(
+            secretsClient,
+            metadataClient,
+            loggerFactory.CreateLogger<AwsSecretsManagerResolver>());
+        var resolved = await resolver.ResolveSecretAsync(material, cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(resolved))
+        {
+            throw new InvalidOperationException(
+                $"'{OperationSecretKeyRingProtection.CertificateMaterialKey}' did not resolve to a certificate.");
+        }
+
+        return resolved;
     }
 
     private static async Task ResolveRedisConnectionSecretReferenceAsync(
