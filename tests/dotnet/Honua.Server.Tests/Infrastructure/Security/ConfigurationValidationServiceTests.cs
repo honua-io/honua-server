@@ -3,6 +3,7 @@
 
 using FluentAssertions;
 using Honua.Server.Features.Admin.Services;
+using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -243,7 +244,7 @@ public sealed class ConfigurationValidationServiceTests
     // ring. Before this rule existed a literal bundle in appsettings*.json passed
     // startup validation silently, while the password for that same certificate was
     // rejected - so the key itself could reach source control and the password could not.
-    [Theory]
+    [UnitTheory]
     [InlineData("MIIKnQIBAzCCClcGCSqGSIb3DQEHAaCCCkgEggpEMIIKQDCCBK")]
     [InlineData("{\"pkcs12\":\"MIIKnQIBAzCCClcGCSqGSIb3DQEHAaCCCkgEggpEMIIKQDCCBK\"}")]
     public void ValidateConfiguration_NonDevelopment_WithLiteralKeyRingMaterial_ReturnsError(string literal)
@@ -261,7 +262,7 @@ public sealed class ConfigurationValidationServiceTests
             error.Contains("secret reference", StringComparison.OrdinalIgnoreCase));
     }
 
-    [Theory]
+    [UnitTheory]
     [InlineData("aws:secretsmanager:honua/operations/keyring")]
     [InlineData("env:HONUA_OPERATION_KEYRING_PKCS12")]
     public void ValidateConfiguration_NonDevelopment_WithKeyRingMaterialReference_IsPermitted(string reference)
