@@ -124,7 +124,7 @@ The collection 90810 regression on this tree passes. `DemoStacSeedMigratedDataba
 was run in Release against `0d07b78e0` (then fast-forwarded to trunk
 `b817f60d8`, whose only newer commit does not touch STAC or the seed): 1 passed,
 0 failed. The test requires the four Maui Reef Watch scenes, including
-`eo:cloud_cover` and `view:sun_azimuth`, on both items and search.
+`eo:cloud_cover`, `proj:epsg`, and `view:sun_azimuth`, on both items and search.
 
 A public probe of `https://demo.honua.io` at 2026-09-26 22:45Z:
 
@@ -158,5 +158,6 @@ change was made. The operator apply recorded on
 [honua-demo-infra#79](https://github.com/honua-io/honua-demo-infra/pull/79)
 remains the path for migrations and the receipt role. Closing #3384 still
 requires a serving image that contains `08d6eb55f`, a live items/search
-response that includes the two extension fields, the governed receipt, and a
+response that includes all three declared colon-key extension fields
+(`eo:cloud_cover`, `proj:epsg`, and `view:sun_azimuth`), the governed receipt, and a
 green remote Python staging run against that same image.
