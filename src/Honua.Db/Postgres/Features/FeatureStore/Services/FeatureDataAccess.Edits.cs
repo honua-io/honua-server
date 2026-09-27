@@ -1803,9 +1803,30 @@ internal sealed partial class FeatureDataAccess
             // (no provider internals) so it is surfaced verbatim.
             GeometryRequiredForCreateException => GeometryRequiredForCreateMessage,
             ValidationException => "Invalid feature data.",
-            ArgumentException or InvalidOperationException => "Invalid feature data.",
+            ArgumentException => "Invalid feature data.",
+            // InvalidOperationException messages raised by this writer are fixed sentences.
+            // Surface one when it cannot carry a secret or a stack, so a certification
+            // failure names the guard that fired instead of a generic refusal.
+            InvalidOperationException => SafeInvalidOperationMessage(ex.Message),
             _ => $"{operation} failed."
         };
+    }
+
+    private static string SafeInvalidOperationMessage(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message) ||
+            message.Contains("password", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("secret", StringComparison.OrdinalIgnoreCase) ||
+            message.Contains("System.", StringComparison.Ordinal) ||
+            message.Contains("Exception", StringComparison.Ordinal) ||
+            message.Contains("Npgsql", StringComparison.Ordinal) ||
+            message.Contains('\n') ||
+            message.Contains('\r'))
+        {
+            return "Invalid feature data.";
+        }
+
+        return message.Length <= 160 ? message : message[..160];
     }
 
     /// <summary>
