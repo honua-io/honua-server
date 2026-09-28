@@ -494,6 +494,14 @@ endpoints bind by local name. The unqualified arguments ArcGIS Pro and ArcPy sen
 namespace, and a default-namespace operation whose arguments inherit it are the
 same request. A fault for an unrecognised argument names the element.
 
+GPServer SOAP `GetJobStatus` accepts ArcGIS Pro's optional `GetProgressMsg` hint
+with XML boolean values (`true`, `false`, `1`, or `0`). It always returns the scalar
+job status. A `true` hint is tolerated for client compatibility but does not inline
+progress messages; clients retrieve those through `GetJobMessages`. Malformed,
+duplicate, or nested values are rejected, and the hint is not accepted on other
+job operations. This supports the observed Pro polling request without claiming
+support for an undocumented progress-message response extension.
+
 ## Portal Sharing
 
 Esri spec: [ArcGIS REST API - Users, groups, and items](https://developers.arcgis.com/rest/users-groups-and-items/).

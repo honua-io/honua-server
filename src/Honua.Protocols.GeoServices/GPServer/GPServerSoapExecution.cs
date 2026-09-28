@@ -64,6 +64,20 @@ internal static partial class GPServerSoapExecution
         {
             ValidateChildren(operation, "JobID", "ParameterNames", "Options");
         }
+        else if (operation.Name.LocalName == "GetJobStatus")
+        {
+            ValidateChildren(operation, "JobID", "GetProgressMsg");
+            var progress = operation.Element("GetProgressMsg");
+            if (progress is not null && (progress.HasElements || IsNil(progress) ||
+                progress.Value.Trim(' ', '\t', '\r', '\n') is not ("true" or "false" or "1" or "0")))
+            {
+                throw Invalid("GetProgressMsg requires an XML boolean value.");
+            }
+
+            // Pro sends this optional hint even when false. Accept valid booleans,
+            // while preserving the published scalar status response; progress text
+            // remains available through GetJobMessages, including when the hint is true.
+        }
         else
         {
             ValidateChildren(operation, "JobID");
