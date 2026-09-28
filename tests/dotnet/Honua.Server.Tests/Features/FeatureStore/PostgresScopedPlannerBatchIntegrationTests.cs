@@ -13,11 +13,12 @@ using Xunit.Abstractions;
 namespace Honua.Server.Tests.Features.FeatureStore;
 
 /// <summary>
-/// Evidence probes for #5275, before adding a production planner policy. These
-/// exercise the wire-level batch with ordinary pooled connections, including
+/// Wire-level lifecycle and plan-isolation contract for the scoped planner
+/// batch. These exercise ordinary pooled connections, including
 /// the NoResetOnClose setting used by the production data source factory.
 /// </summary>
 [Collection("Database")]
+[Protocol(TestProtocols.TestQuality)]
 public sealed class PostgresScopedPlannerBatchIntegrationTests(DatabaseFixtureAdapter fixture, ITestOutputHelper output)
 {
     private const string LocalPlannerSetting = "SELECT set_config('max_parallel_workers_per_gather', '0', true)";
@@ -68,6 +69,16 @@ public sealed class PostgresScopedPlannerBatchIntegrationTests(DatabaseFixtureAd
         }
 
         await AssertPooledSettingAsync(source, processId);
+    }
+
+    [IntegrationTest]
+    public async Task Batch_ConfiguredCommandTimeout_PreservesConnectionDefault()
+    {
+        await using var source = CreateDataSource(commandTimeoutSeconds: 9);
+        await using var connection = await source.OpenConnectionAsync();
+        await using var batch = CreateBatch(connection, "SELECT 1");
+        batch.Timeout.Should().Be(9);
+        await DrainAsync(batch);
     }
 
     [IntegrationTest]
@@ -293,7 +304,56 @@ public sealed class PostgresScopedPlannerBatchIntegrationTests(DatabaseFixtureAd
         }
     }
 
-    private NpgsqlDataSource CreateDataSource(bool autoPrepare = false)
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Batch_SelectAllIdentity_IsolatesAutoPreparedPlansOnSameBackend(bool multiplexing)
+    {
+        await using var source = CreateDataSource(autoPrepare: true, multiplexing: multiplexing);
+        await using var connection = await source.OpenConnectionAsync();
+        var table = await CreatePlanTableAsync(connection);
+        try
+        {
+            await ConfigurePlanProbeAsync(connection);
+            await ExecuteAsync(connection, "SET plan_cache_mode = force_generic_plan");
+            var ordinarySql = BuildSelect(table);
+            // ALL is SELECT's default modifier, so this changes only the
+            // prepared-statement identity, not relational or ordering semantics.
+            var scopedSql = "SELECT ALL" + ordinarySql["SELECT".Length..];
+            for (var attempt = 0; attempt < 3; attempt++)
+            {
+                var ordinary = await ReadRowsAsync(connection, ordinarySql, scoped: false);
+                var scoped = await ReadRowsAsync(connection, scopedSql, scoped: true);
+                scoped.Should().Equal(ordinary);
+                scoped.Should().HaveCount(101);
+                (await ReadSettingAsync(connection)).Should().Be("2");
+            }
+
+            var ordinaryPlan = await ExplainPreparedAsync(connection, ordinarySql);
+            var scopedPlan = await ExplainPreparedAsync(connection, scopedSql);
+            output.WriteLine("Auto-prepared ordinary SELECT: " + ordinaryPlan);
+            output.WriteLine("Auto-prepared scoped SELECT ALL: " + scopedPlan);
+            HasParallelPlan(ordinaryPlan).Should().BeTrue();
+            HasParallelPlan(scopedPlan).Should().BeFalse();
+        }
+        finally
+        {
+            await ExecuteAsync(connection, $"DROP TABLE IF EXISTS {table}");
+        }
+    }
+
+    private static async Task<string> ExplainPreparedAsync(NpgsqlConnection connection, string sql)
+    {
+        await using var command = new NpgsqlCommand(
+            "SELECT name FROM pg_prepared_statements WHERE statement = $1", connection);
+        command.Parameters.Add(new NpgsqlParameter { Value = sql });
+        var name = (string)(await command.ExecuteScalarAsync())!;
+        name.Should().NotBeNullOrEmpty();
+        var escapedName = name.Replace("\"", "\"\"", StringComparison.Ordinal);
+        return await ExplainAsync(connection, $"EXECUTE \"{escapedName}\"(101)", scoped: false, parameterized: false);
+    }
+
+    private NpgsqlDataSource CreateDataSource(bool autoPrepare = false, bool multiplexing = false, int commandTimeoutSeconds = 30)
     {
         var builder = new NpgsqlConnectionStringBuilder(fixture.ConnectionString)
         {
@@ -301,10 +361,11 @@ public sealed class PostgresScopedPlannerBatchIntegrationTests(DatabaseFixtureAd
             MaxPoolSize = 1,
             MinPoolSize = 0,
             NoResetOnClose = true,
-            Multiplexing = false,
+            Multiplexing = multiplexing,
             Enlist = true,
             MaxAutoPrepare = autoPrepare ? 10 : 0,
-            AutoPrepareMinUsages = 1
+            AutoPrepareMinUsages = 1,
+            CommandTimeout = commandTimeoutSeconds
         };
         return NpgsqlDataSource.Create(builder.ConnectionString);
     }
@@ -385,6 +446,7 @@ public sealed class PostgresScopedPlannerBatchIntegrationTests(DatabaseFixtureAd
         SET parallel_tuple_cost = 0;
         SET enable_indexscan = off;
         SET enable_bitmapscan = off;
+        SET jit = off;
         """);
 
     // Deliberately controlled costs make this a deterministic mechanism test,

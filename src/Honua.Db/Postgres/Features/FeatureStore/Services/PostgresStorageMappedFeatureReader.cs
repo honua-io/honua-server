@@ -46,6 +46,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private readonly ILogger _logger;
     private readonly string _qualifiedTableName;
     private readonly string? _managedFeatureSchema;
+    private readonly bool _preferSerialBoundedSpatialReads;
     private readonly string _primaryKeyColumn;
     private readonly string? _geometryColumn;
     private readonly int _storageSrid;
@@ -65,13 +66,15 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         IRowLevelSecurityFilterSource? rlsFilterSource = null,
         IFieldMaskSource? fieldMaskSource = null,
         string? managedFeatureSchema = null,
-        PostgresBoundConnectionProvider? boundConnectionProvider = null)
+        PostgresBoundConnectionProvider? boundConnectionProvider = null,
+        bool preferSerialBoundedSpatialReads = false)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _dictionaryPool = dictionaryPool ?? throw new ArgumentNullException(nameof(dictionaryPool));
         _resource = resource ?? throw new ArgumentNullException(nameof(resource));
         _mapping = mapping ?? throw new ArgumentNullException(nameof(mapping));
         _managedFeatureSchema = string.IsNullOrWhiteSpace(managedFeatureSchema) ? null : managedFeatureSchema.Trim();
+        _preferSerialBoundedSpatialReads = preferSerialBoundedSpatialReads;
         _connection = connection;
         _boundConnectionProvider = boundConnectionProvider;
         _connectionEncryptionService = connectionEncryptionService;
@@ -409,8 +412,16 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var features = ImmutableArray.CreateBuilder<Feature>();
 
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = CreateReadCommand(connection, sql);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        var useSerialPlan = ShouldUseSerialSpatialPlan(query);
+        await using var command = useSerialPlan ? null : CreateReadCommand(connection, sql);
+        await using var batch = useSerialPlan ? CreateSerialSpatialReadBatch(connection, sql) : null;
+        await using var reader = batch == null
+            ? await command!.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false)
+            : await batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        if (batch != null && !await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("The scoped planner batch did not return feature query results.");
+        }
 
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {

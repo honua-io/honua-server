@@ -151,6 +151,28 @@ because removing them can change arithmetic overflow and decimal-to-Double
 comparison results. Source schema changes also make publication-time type hints
 insufficient to justify removing a cast. An expression index supports the current
 declared-type predicate without changing those query semantics.
+## Bounded source-backed spatial reads
+
+`Database__PreferSerialBoundedSpatialReads=true` opts into a narrow serial-planner
+profile for source-backed PostGIS point layers. The default is `false`. Eligible
+reads have a simple intersects/envelope bbox, an effective first-page limit of
+1–100 features before the extra pagination probe row, default ordering, and no distinct, branch-version or null-geometry request.
+Unknown geometry types and ambient transactions retain ordinary planning.
+Counts, statistics, streaming, tiles, larger pages, later pages and custom sorts
+also retain ordinary planning.
+
+For an eligible read, Honua batches a transaction-local
+`max_parallel_workers_per_gather=0` setting with the original parameterized
+feature SELECT. The setting ends with the batch, including errors, cancellation
+and early reader disposal. The scoped SELECT uses the equivalent `SELECT ALL`
+modifier so auto-preparation cannot reuse a parallel plan from an ordinary read.
+Connection pool limits, query admission, predicates, authorization, CRS and
+pagination remain in effect.
+
+This profile targets parallel-worker startup overhead observed in bounded point
+bbox reads. It does not set a PostgreSQL global or session default. Benchmark
+representative selectivities and concurrent workloads on your deployment before
+enabling it; limiting returned rows does not limit the work required to find them.
 
 ## Related pages
 
