@@ -141,6 +141,13 @@ public sealed class TierTraitEnforcementTests
         {
             if (Directory.Exists(root))
             {
+                // Git marks loose objects read-only on Windows. Clear that bit only
+                // inside this test's disposable repository before recursive cleanup.
+                foreach (var file in Directory.EnumerateFiles(root, "*", SearchOption.AllDirectories))
+                {
+                    File.SetAttributes(file, File.GetAttributes(file) & ~FileAttributes.ReadOnly);
+                }
+
                 Directory.Delete(root, recursive: true);
             }
         }
