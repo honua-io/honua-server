@@ -427,7 +427,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var geometrySelect = _geometryColumn == null
             ? "NULL"
             : $"{geometryEncoder}({BuildGeometryExpression(query)})";
-        var attributesSelect = BuildAttributesExpression(query, sql);
+        // Feature readers consume JSON text; tile encoders keep the shared expression as JSONB.
+        var attributesSelect = $"{BuildAttributesJsonbExpression(query, sql)}::text";
         var distanceSelect = BuildDistanceSelectExpression(query, sql);
 
         if (query.Distinct)
@@ -475,38 +476,38 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         return geometryExpression;
     }
 
-    private string BuildAttributesExpression(FeatureQuery query, SqlBuilder sql)
+    private string BuildAttributesJsonbExpression(FeatureQuery query, SqlBuilder sql)
     {
         if (query.ExcludeAttributes)
         {
-            return "NULL";
+            return "NULL::jsonb";
         }
 
         var fields = ResolveAttributeFields(query);
         if (fields.Length == 0)
         {
-            return "'{}'::jsonb::text";
+            return "'{}'::jsonb";
         }
 
-        return BuildAttributesExpressionText(
+        return BuildAttributesJsonbExpression(
             fields,
             useMapping: true,
             sql.AddParameter,
             query.Distinct || !string.IsNullOrWhiteSpace(_mapping.AttributesColumn) ? _primaryKeyColumn : null);
     }
 
-    private string BuildAttributesExpressionText(
+    private string BuildAttributesJsonbExpression(
         MetadataV2Field[] fields,
         bool useMapping,
         Func<object?, string> addParameter,
         string? distinctObjectIdExpression = null)
-        => BuildAttributesExpressionText(
+        => BuildAttributesJsonbExpression(
             fields,
             useMapping ? _mapping.AttributesColumn : null,
             addParameter,
             distinctObjectIdExpression);
 
-    private static string BuildAttributesExpressionText(
+    private static string BuildAttributesJsonbExpression(
         MetadataV2Field[] fields,
         string? attributesColumn,
         Func<object?, string> addParameter,
@@ -520,7 +521,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
                 addParameter,
                 distinctObjectIdExpression));
 
-        return $"({string.Join(" || ", chunks)})::text";
+        return $"({string.Join(" || ", chunks)})";
     }
 
     private static string BuildAttributesExpressionChunk(

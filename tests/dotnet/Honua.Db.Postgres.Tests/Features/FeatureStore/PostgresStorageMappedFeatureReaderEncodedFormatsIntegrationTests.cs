@@ -2,6 +2,7 @@
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
 using System.Data;
+using System.Globalization;
 using Honua.Core.Exceptions;
 using System.Data.Common;
 using System.Reflection;
@@ -16,6 +17,8 @@ using Honua.Core.Features.Tiles;
 using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.TestKit;
+using Honua.TestKit.Attributes;
+using Honua.TestKit.Formats;
 using Microsoft.Extensions.ObjectPool;
 using Npgsql;
 
@@ -223,6 +226,112 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
         payload!.Should().NotBeEmpty();
     }
 
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetMvtTileAsync_TypedAttributes_PreservesTypesNullsAndFieldMask(bool useAttributes)
+    {
+        await _fixture.ExecuteAsync($"""
+            ALTER TABLE {_schema}.cities ADD COLUMN rating double precision, ADD COLUMN active boolean;
+            UPDATE {_schema}.cities SET rating = 12.5, active = true WHERE objectid = 1;
+            UPDATE {_schema}.cities SET name = NULL, population = NULL, active = false WHERE objectid = 2;
+            UPDATE {_schema}.cities SET attributes = jsonb_build_object(
+                'objectid', -1, 'name', name, 'population', population, 'rating', rating, 'active', active);
+            """);
+        var reader = CreateReader(attributesColumn: useAttributes ? "attributes" : null,
+            additionalFields:
+            [
+                new MetadataV2Field { Name = "rating", Type = MetadataV2FieldType.Double },
+                new MetadataV2Field { Name = "active", Type = MetadataV2FieldType.Boolean }
+            ]);
+        var query = new FeatureQuery { OutputSrid = 4326 };
+        var options = new TileOptions { TileBuffer = 0, TileExtent = 4096 };
+        var payload = await reader.GetMvtTileAsync(1, 0, 0, 0, query, options, new TileLimits());
+        payload.Should().NotBeNullOrEmpty();
+        var features = MvtTileDecoder.Decode(payload!).Layer("layer").Features;
+        features.Should().HaveCount(2);
+        var first = features.Single(feature => Convert.ToInt64(feature.Attributes["objectid"], CultureInfo.InvariantCulture) == 1);
+        first.Attributes["name"].Should().Be("Honolulu");
+        first.Attributes["population"].Should().BeOfType<ulong>().Which.Should().Be(350000);
+        first.Attributes["rating"].Should().BeOfType<double>().Which.Should().Be(12.5);
+        first.Attributes["active"].Should().Be(true);
+        var second = features.Single(feature => Convert.ToInt64(feature.Attributes["objectid"], CultureInfo.InvariantCulture) == 2);
+        second.Attributes.Keys.Should().BeEquivalentTo(["objectid", "active"]);
+        second.Attributes["active"].Should().Be(false);
+
+        var projected = await reader.GetMvtTileAsync(1, 0, 0, 0, query with
+        {
+            OutFields = ["name", "population", "active"],
+            EnforcedMaskedFields = ["POPULATION"]
+        }, options, new TileLimits());
+        var projectedFeatures = MvtTileDecoder.Decode(projected!).Layer("layer").Features;
+        projectedFeatures.Should().HaveCount(2);
+        projectedFeatures.Should().OnlyContain(feature =>
+            !feature.Attributes.ContainsKey("population") && !feature.Attributes.ContainsKey("rating"));
+        projectedFeatures.Select(feature => Convert.ToInt64(feature.Attributes["objectid"], CultureInfo.InvariantCulture))
+            .Should().BeEquivalentTo([1L, 2L]);
+
+        foreach (var emptyQuery in new[] { query with { ExcludeAttributes = true }, query with { OutFields = [] } })
+        {
+            var empty = await reader.GetMvtTileAsync(1, 0, 0, 0, emptyQuery, options, new TileLimits());
+            var emptyFeatures = MvtTileDecoder.Decode(empty!).Layer("layer").Features;
+            emptyFeatures.Should().HaveCount(2);
+            emptyFeatures.Should().OnlyContain(
+                feature => feature.Attributes.Count == 1 && feature.Attributes.ContainsKey("objectid"));
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task GetMvtTileAsync_WideAttributes_PreservesEveryChunk(bool useAttributes)
+    {
+        var fields = Enumerable.Range(1, 51).Select(index => new MetadataV2Field
+        {
+            Name = $"field_{index}",
+            Type = MetadataV2FieldType.Integer
+        }).ToArray();
+        var columns = string.Join(", ", fields.Select(field => $"ADD COLUMN {field.Name} integer DEFAULT 7"));
+        await _fixture.ExecuteAsync($"""
+            ALTER TABLE {_schema}.cities {columns};
+            UPDATE {_schema}.cities AS city SET attributes = to_jsonb(city) - 'geom' - 'attributes';
+            """);
+        var reader = CreateReader(attributesColumn: useAttributes ? "attributes" : null, additionalFields: fields);
+        var query = new FeatureQuery { OutputSrid = 4326, OutFields = [.. fields.Select(field => field.Name)] };
+        var page = await reader.QueryPageAsync(1, query);
+        page.Items.Should().HaveCount(2);
+        foreach (var feature in page.Items)
+        {
+            feature.Attributes.Should().HaveCount(52, "feature reads also include the canonical object ID");
+            feature.Attributes.Should().ContainKeys(fields.Select(field => field.Name));
+        }
+        var payload = await reader.GetMvtTileAsync(1, 0, 0, 0, query,
+            new TileOptions { TileBuffer = 0 }, new TileLimits());
+        var features = MvtTileDecoder.Decode(payload!).Layer("layer").Features;
+        features.Should().HaveCount(2);
+        foreach (var feature in features)
+        {
+            feature.Attributes.Should().HaveCount(52);
+            foreach (var field in fields)
+            {
+                feature.Attributes[field.Name].Should().BeOfType<ulong>().Which.Should().Be(7);
+            }
+        }
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task QueryPageAsync_DistinctAttributes_PreservesTextReaderBoundary(bool useAttributes)
+    {
+        await _fixture.ExecuteAsync($"""
+            UPDATE {_schema}.cities SET name = 'same', attributes = jsonb_build_object('name', 'same');
+            """);
+        var result = await CreateReader(attributesColumn: useAttributes ? "attributes" : null)
+            .QueryPageAsync(1, new FeatureQuery { Distinct = true, OutFields = ["name"] });
+        result.Items.Should().ContainSingle().Which.Attributes["name"].Should().Be("same");
+    }
+
     [Fact]
     public async Task GetMvtTileAsync_SourceBackedLayer_EnforcesEncodedByteBudget()
     {
@@ -331,7 +440,8 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
     private PostgresStorageMappedFeatureReader CreateReader(
         string? attributesColumn = null,
         bool includeNamespacedField = false,
-        bool includeDecimalField = false)
+        bool includeDecimalField = false,
+        MetadataV2Field[]? additionalFields = null)
     {
         var schemaFields = new List<MetadataV2Field>
         {
@@ -347,6 +457,11 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
         if (includeDecimalField)
         {
             schemaFields.Add(new MetadataV2Field { Name = "reading", Type = MetadataV2FieldType.Double });
+        }
+
+        if (additionalFields is not null)
+        {
+            schemaFields.AddRange(additionalFields);
         }
 
         var resource = new MetadataV2Resource

@@ -75,14 +75,14 @@ internal sealed partial class PostgresStorageMappedFeatureReader : ITileProvider
             : $"ST_Transform({bufferedEnvelope}, {_storageSrid})";
         var extentParameter = sql.AddParameter(tileExtent);
         var bufferParameter = sql.AddParameter(tileOptions.TileBuffer);
-        var attributes = BuildAttributesExpression(effectiveQuery, sql);
+        var attributes = BuildAttributesJsonbExpression(effectiveQuery, sql);
 
         sql.Append(CultureInfo.InvariantCulture, $"""
             SELECT ST_AsMVT(tile, 'layer', {extentParameter}, 'geom')
             FROM (
                 SELECT
                     {_primaryKeyColumn}::bigint AS objectid,
-                    ({attributes})::jsonb AS attributes,
+                    {attributes} AS attributes,
                     ST_AsMVTGeom(
                         {geometryForTile},
                         {tileEnvelope},
