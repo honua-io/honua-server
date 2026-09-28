@@ -5285,7 +5285,7 @@
         "check": "inventory-classification"
       },
       "fence": 5,
-      "line": 92,
+      "line": 99,
       "language": "bash"
     },
     {
@@ -13514,7 +13514,7 @@
         "check": "inventory-classification"
       },
       "fence": 1,
-      "line": 420,
+      "line": 425,
       "language": "sql"
     },
     {
@@ -13709,7 +13709,7 @@
         "check": "inventory-classification"
       },
       "fence": 3,
-      "line": 135,
+      "line": 160,
       "language": "sql"
     },
     {
