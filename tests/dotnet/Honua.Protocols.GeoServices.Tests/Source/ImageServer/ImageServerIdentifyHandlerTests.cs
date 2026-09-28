@@ -40,6 +40,92 @@ public class ImageServerIdentifyHandlerTests
             NullLogger<ImageServerIdentifyHandler>.Instance);
     }
 
+    // Esri's NLCDLandCover2001 and CharlotteLAS sample services return a feature set,
+    // not an array of Honua-specific id/name/footprint records (#5238).
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_CatalogMatchesEsriFeatureSet(bool returnGeometry)
+    {
+        SetupSuccessfulIdentify();
+        using var json = await ExecuteIdentifyJsonAsync(new IdentifyRequest
+        {
+            Geometry = "10,20",
+            Sr = "4326",
+            ReturnCatalogItems = true,
+            ReturnGeometry = returnGeometry,
+            F = "json"
+        });
+
+        var catalog = json.RootElement.GetProperty("catalogItems");
+        catalog.ValueKind.Should().Be(JsonValueKind.Object);
+        catalog.GetProperty("objectIdFieldName").GetString().Should().Be("OBJECTID");
+        catalog.GetProperty("geometryType").GetString().Should().Be("esriGeometryPolygon");
+        catalog.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+        var features = catalog.GetProperty("features");
+        features.GetArrayLength().Should().Be(1);
+        features[0].GetProperty("attributes").GetProperty("OBJECTID").GetInt64().Should().Be(100);
+        features[0].GetProperty("attributes").GetProperty("Name").GetString().Should().NotBeNullOrEmpty();
+        features[0].TryGetProperty("geometry", out var geometry).Should().Be(returnGeometry);
+        if (returnGeometry)
+        {
+            var ring = geometry.GetProperty("rings")[0];
+            ring.GetArrayLength().Should().Be(5);
+            ring[0].GetRawText().Should().Be(ring[4].GetRawText());
+            geometry.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+        }
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_EmptyCatalogStillReturnsFeatureSet()
+    {
+        _rasterStore.QueryRastersAsync(default, default, default)
+            .ReturnsForAnyArgs(Array.Empty<RasterInfo>());
+        using var json = await ExecuteIdentifyJsonAsync(new IdentifyRequest
+        {
+            Geometry = "10,20",
+            ReturnCatalogItems = true,
+            F = "json"
+        });
+
+        var root = json.RootElement;
+        root.GetProperty("value").GetString().Should().Be("NoData");
+        var catalog = root.GetProperty("catalogItems");
+        catalog.ValueKind.Should().Be(JsonValueKind.Object);
+        catalog.GetProperty("features").GetArrayLength().Should().Be(0);
+        catalog.TryGetProperty("spatialReference", out _).Should().BeFalse();
+    }
+
+    [UnitTest]
+    [Operation(Operations.Identify)]
+    public async Task IdentifyAsync_CatalogReferenceDescribesFootprintNotIdentifyPoint()
+    {
+        SetupSuccessfulIdentify();
+        _rasterStore.QueryRastersAsync(default, default, default).ReturnsForAnyArgs(
+            [CreateTestRasterInfo() with
+            {
+                Srid = 3857,
+                Extent = new RasterExtent { XMin = 1000, YMin = 2000, XMax = 3000, YMax = 4000, Srid = 3857 }
+            }]);
+        using var json = await ExecuteIdentifyJsonAsync(new IdentifyRequest
+        {
+            Geometry = "10,20",
+            Sr = "4326",
+            ReturnCatalogItems = true,
+            F = "json"
+        });
+
+        var root = json.RootElement;
+        root.GetProperty("location").GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(4326);
+        var catalog = root.GetProperty("catalogItems");
+        catalog.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
+        var geometry = catalog.GetProperty("features")[0].GetProperty("geometry");
+        geometry.GetProperty("spatialReference").GetProperty("wkid").GetInt32().Should().Be(3857);
+        geometry.GetProperty("rings")[0][0][0].GetDouble().Should().Be(1000);
+    }
+
     [UnitTest]
     [Operation(Operations.Identify)]
     public async Task IdentifyAsync_LayerNotFound_ReturnsNotFound()
@@ -224,8 +310,8 @@ public class ImageServerIdentifyHandlerTests
         var result = await _handler.IdentifyAsync(context, 1, request);
 
         var jsonResult = result.Should().BeOfType<JsonHttpResult<IdentifyResponse>>().Which;
-        jsonResult.Value!.CatalogItems.Should().HaveCount(1);
-        jsonResult.Value.CatalogItems![0].Footprint.Should().NotBeNull();
+        jsonResult.Value!.CatalogItems!.Features.Should().HaveCount(1);
+        jsonResult.Value.CatalogItems!.Features[0].Geometry.Should().NotBeNull();
     }
 
     [UnitTest]
@@ -246,8 +332,8 @@ public class ImageServerIdentifyHandlerTests
         var result = await _handler.IdentifyAsync(context, 1, request);
 
         var jsonResult = result.Should().BeOfType<JsonHttpResult<IdentifyResponse>>().Which;
-        jsonResult.Value!.CatalogItems.Should().HaveCount(1);
-        jsonResult.Value.CatalogItems![0].Footprint.Should().BeNull();
+        jsonResult.Value!.CatalogItems!.Features.Should().HaveCount(1);
+        jsonResult.Value.CatalogItems!.Features[0].Geometry.Should().BeNull();
     }
 
     [UnitTest]
@@ -635,8 +721,8 @@ public class ImageServerIdentifyHandlerTests
         json.RootElement.GetProperty("objectId").GetInt64().Should().Be(101);
         json.RootElement.GetProperty("name").GetString().Should().Be("locked-raster");
         json.RootElement.GetProperty("value").GetString().Should().Be("2");
-        json.RootElement.GetProperty("catalogItems").EnumerateArray()
-            .Select(item => item.GetProperty("id").GetInt64())
+        json.RootElement.GetProperty("catalogItems").GetProperty("features").EnumerateArray()
+            .Select(item => item.GetProperty("attributes").GetProperty("OBJECTID").GetInt64())
             .Should().Equal(101);
         await _rasterStore.DidNotReceiveWithAnyArgs().IdentifyMosaicAsync(
             default, default!, default, default, default, default, default, default, default, default);
@@ -824,9 +910,10 @@ public class ImageServerIdentifyHandlerTests
         root.TryGetProperty("catalogItems", out var catalog).Should().Be(returnCatalogItems);
         if (returnCatalogItems)
         {
-            catalog.GetArrayLength().Should().Be(1);
-            catalog[0].GetProperty("id").GetInt64().Should().Be(100);
-            catalog[0].TryGetProperty("footprint", out _).Should().BeFalse();
+            var features = catalog.GetProperty("features");
+            features.GetArrayLength().Should().Be(1);
+            features[0].GetProperty("attributes").GetProperty("OBJECTID").GetInt64().Should().Be(100);
+            features[0].TryGetProperty("geometry", out _).Should().BeFalse();
         }
 
         var results = root.GetProperty("results");

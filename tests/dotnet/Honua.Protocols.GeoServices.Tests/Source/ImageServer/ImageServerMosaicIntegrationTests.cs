@@ -99,7 +99,7 @@ public sealed class ImageServerMosaicIntegrationTests
 
             json.RootElement.GetProperty("name").GetString().Should().Contain("mosaic");
             json.RootElement.GetProperty("properties").GetProperty("Band_1").GetDouble().Should().Be(5);
-            json.RootElement.GetProperty("catalogItems").GetArrayLength().Should().Be(2);
+            json.RootElement.GetProperty("catalogItems").GetProperty("features").GetArrayLength().Should().Be(2);
         }
         finally
         {

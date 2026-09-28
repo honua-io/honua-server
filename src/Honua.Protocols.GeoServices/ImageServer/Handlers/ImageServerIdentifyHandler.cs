@@ -204,7 +204,7 @@ internal sealed class ImageServerIdentifyHandler
                         ["BandCount"] = 0
                     },
                     CatalogItems = request.ReturnCatalogItems == true
-                        ? Array.Empty<CatalogItem>()
+                        ? new IdentifyCatalogItems { SpatialReference = srid is null ? null : CreateLocationSpatialReference(srid) }
                         : null
                 };
 
@@ -238,7 +238,7 @@ internal sealed class ImageServerIdentifyHandler
                     cancellationToken);
 
             // returnGeometry controls whether catalog item footprints are emitted. ArcGIS
-            // returns the footprint envelope on each participating catalog item when
+            // returns a polygon footprint on each participating catalog feature when
             // returnGeometry=true (the default) and omits it when false.
             var includeFootprint = request.ReturnGeometry != false;
 
@@ -256,12 +256,7 @@ internal sealed class ImageServerIdentifyHandler
                 },
                 Properties = CreateProperties(pixelResult, request.PixelSize),
                 CatalogItems = request.ReturnCatalogItems == true
-                    ? selectedRasters.Select(r => new CatalogItem
-                    {
-                        Id = r.Id,
-                        Name = r.Name,
-                        Footprint = includeFootprint ? BuildFootprint(r) : null,
-                    }).ToArray()
+                    ? BuildCatalogItems(selectedRasters, includeFootprint)
                     : null
             };
 
@@ -364,7 +359,9 @@ internal sealed class ImageServerIdentifyHandler
                 ["SRID"] = srid,
                 ["DimensionCount"] = constraints.Count,
             },
-            CatalogItems = request.ReturnCatalogItems == true ? [] : null,
+            CatalogItems = request.ReturnCatalogItems == true
+                ? new IdentifyCatalogItems { SpatialReference = srid is null ? null : CreateLocationSpatialReference(srid) }
+                : null,
         };
 
         ImageServerLog.IdentifyCompleted(_logger, layerId, hasData, hasData ? 1 : 0);
@@ -536,25 +533,49 @@ internal sealed class ImageServerIdentifyHandler
         return properties;
     }
 
+    private static IdentifyCatalogItems BuildCatalogItems(RasterInfo[] rasters, bool returnGeometry)
+    {
+        // Footprints are in each raster's own CRS, independently of the identify point.
+        // Only advertise a shared reference when all catalog features agree.
+        var srids = rasters.Select(raster => raster.Extent?.Srid ?? raster.Srid).Distinct().ToArray();
+        return new IdentifyCatalogItems
+        {
+            SpatialReference = srids.Length == 1 ? CreateLocationSpatialReference(srids[0]) : null,
+            Features = rasters.Select(raster => new CatalogQueryFeature
+            {
+                Attributes = new Dictionary<string, object?>
+                {
+                    ["OBJECTID"] = raster.Id,
+                    ["Name"] = raster.Name
+                },
+                Geometry = returnGeometry ? BuildFootprint(raster) : null
+            }).ToArray()
+        };
+    }
+
     /// <summary>
-    /// Builds an Esri envelope object for a raster footprint from its extent, used to
-    /// populate <see cref="CatalogItem.Footprint"/> when <c>returnGeometry</c> is true.
+    /// Builds the Esri polygon geometry of a raster footprint from its extent.
     /// </summary>
-    private static ImageServerExtent? BuildFootprint(Core.Features.Raster.Domain.RasterInfo raster)
+    private static CatalogQueryGeometry? BuildFootprint(RasterInfo raster)
     {
         if (raster.Extent is not { } extent)
         {
             return null;
         }
 
-        var srid = extent.Srid ?? 4326;
-        return new ImageServerExtent
+        return new CatalogQueryGeometry
         {
-            XMin = extent.XMin,
-            YMin = extent.YMin,
-            XMax = extent.XMax,
-            YMax = extent.YMax,
-            SpatialReference = new SpatialReference { Wkid = srid, LatestWkid = srid },
+            Rings =
+            [
+                [
+                    [extent.XMin, extent.YMin],
+                    [extent.XMin, extent.YMax],
+                    [extent.XMax, extent.YMax],
+                    [extent.XMax, extent.YMin],
+                    [extent.XMin, extent.YMin]
+                ]
+            ],
+            SpatialReference = CreateLocationSpatialReference(extent.Srid ?? raster.Srid)
         };
     }
 }
