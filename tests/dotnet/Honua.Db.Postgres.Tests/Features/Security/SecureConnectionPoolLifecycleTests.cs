@@ -21,8 +21,10 @@ namespace Honua.Db.Postgres.Tests.Features.Security;
 public partial class SecureConnectionRegistryTests
 {
     [SecurityTest]
-    [Fact]
-    public async Task RegistryBinding_RotationAndDeletion_RetirePoolsWithoutInterruptingLeases()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RegistryBinding_RotationAndDeletion_RetirePoolsWithoutInterruptingLeases(bool multiplexing)
     {
         var settings = new NpgsqlConnectionStringBuilder(_fixture.Postgres.ConnectionString)
         {
@@ -31,6 +33,7 @@ public partial class SecureConnectionRegistryTests
         var sourceString = settings.ConnectionString;
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
+            ["Limits:Connections:Multiplexing"] = multiplexing.ToString(),
             ["Limits:Connections:MinConnectionPoolSize"] = "1",
             ["Limits:Connections:MaxConnectionPoolSize"] = "2",
             ["Limits:Connections:ConnectionIdleLifetimeSeconds"] = "2",
@@ -70,11 +73,17 @@ public partial class SecureConnectionRegistryTests
             settings.Timeout = settings.Timeout == 9 ? 10 : 9;
             var rotatedString = settings.ConnectionString;
             await using var current = await bound.OpenConnectionAsync(binding.Connection.Id, rotatedString);
+            await using (var query = new NpgsqlCommand("SELECT 1", current))
+            {
+                Assert.Equal(1, await query.ExecuteScalarAsync());
+            }
             initialPin.Dispose();
             await first.DisposeAsync();
             await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
             {
-                await using var invalid = await initialPin.DataSource.OpenConnectionAsync(new CancellationToken(true));
+                await using var invalid = await initialPin.DataSource.OpenConnectionAsync();
+                await using var query = new NpgsqlCommand("SELECT 1", invalid);
+                await query.ExecuteScalarAsync();
             });
 
             using var named = local.Acquire(created.Name, rotatedString);
@@ -87,7 +96,9 @@ public partial class SecureConnectionRegistryTests
             Assert.Null(await registry.GetConnectionAsync(created.ConnectionId));
             await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
             {
-                await using var invalid = await named.DataSource.OpenConnectionAsync(new CancellationToken(true));
+                await using var invalid = await named.DataSource.OpenConnectionAsync();
+                await using var query = new NpgsqlCommand("SELECT 1", invalid);
+                await query.ExecuteScalarAsync();
             });
 
             await using var observer = await primarySource.OpenConnectionAsync();
@@ -154,18 +165,29 @@ public partial class SecureConnectionRegistryTests
         };
         var storage = new MetadataV2StorageBinding
         {
-            Metadata = new() { Id = "binding", Name = "binding" }, ResourceId = "res", ConnectionId = connectionId,
-            StorageType = MetadataV2StorageType.RelationalTable, Locator = "public.proof", StorageLayerId = 1
+            Metadata = new() { Id = "binding", Name = "binding" },
+            ResourceId = "res",
+            ConnectionId = connectionId,
+            StorageType = MetadataV2StorageType.RelationalTable,
+            Locator = "public.proof",
+            StorageLayerId = 1
         };
         var publication = new MetadataV2Publication
         {
-            Metadata = new() { Id = "pub", Name = "pub" }, ServiceId = "svc", ResourceId = "res",
-            StorageBindingId = "binding", Identifier = new() { Value = "1", IsNumeric = true }
+            Metadata = new() { Id = "pub", Name = "pub" },
+            ServiceId = "svc",
+            ResourceId = "res",
+            StorageBindingId = "binding",
+            Identifier = new() { Value = "1", IsNumeric = true }
         };
         var graph = new MetadataV2Graph
         {
-            Revision = 1, Environment = "test", Services = [service], Resources = [resource],
-            StorageBindings = [storage], Publications = [publication],
+            Revision = 1,
+            Environment = "test",
+            Services = [service],
+            Resources = [resource],
+            StorageBindings = [storage],
+            Publications = [publication],
             Connections = [new() { Metadata = new() { Id = connectionId, Name = "source" }, Provider = DataProviderNames.Postgis }]
         };
         var provider = Substitute.For<IFeatureDataProvider>();
