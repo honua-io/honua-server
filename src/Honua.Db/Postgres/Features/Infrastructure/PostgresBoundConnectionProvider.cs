@@ -9,8 +9,8 @@ using Honua.Db.Postgres.Features.Security;
 namespace Honua.Db.Postgres.Features.Infrastructure;
 
 /// <summary>
-/// Opens source-bound pools through the same admission, retry, session initialization,
-/// and tracking path as the primary database. The singleton cache owns the pools.
+/// Opens source-bound pools through shared admission, retry, timeout and tracking
+/// behavior while retaining the source's own search path. The singleton cache owns pools.
 /// </summary>
 internal sealed class PostgresBoundConnectionProvider(
     SecureConnectionDataSourceCache dataSources,
@@ -25,7 +25,11 @@ internal sealed class PostgresBoundConnectionProvider(
             ? "bound-string:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(connectionString)))
             : "bound-id:" + connectionId;
         var connection = await connections.OpenConnectionAsync(
-            () => dataSources.GetOrCreate(key, connectionString), cancellationToken).ConfigureAwait(false);
+            () =>
+            {
+                var acquisition = dataSources.Acquire(key, connectionString, preservePrimarySchema: false);
+                return (acquisition.DataSource, acquisition);
+            }, cancellationToken).ConfigureAwait(false);
         return new NpgsqlConnectionLease(connection, connection.RequireNpgsqlConnection());
     }
 }

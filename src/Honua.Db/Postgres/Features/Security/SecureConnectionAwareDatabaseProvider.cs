@@ -199,11 +199,10 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IAdoNetDatabaseCon
         NpgsqlConnection? connection = null;
         try
         {
-            // Key the cache by the logical connection name so a rotated secret
-            // (new resolved connection string) replaces — and disposes — the
-            // previous data source instead of leaking its connection pool.
-            var dataSource = _dataSourceCache.GetOrCreate(_namedConnectionToUse, connectionString);
-            connection = await dataSource.OpenConnectionWithRetryAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+            // Pin this generation through open so concurrent secret rotation
+            // can retire it without disposing a still-pending acquisition.
+            using var acquisition = _dataSourceCache.Acquire(_namedConnectionToUse, connectionString);
+            connection = await acquisition.DataSource.OpenConnectionWithRetryAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
             await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
 
             _logSecureConnectionOpened(_logger, _namedConnectionToUse, null);

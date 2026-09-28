@@ -3,6 +3,7 @@
 
 using Honua.Core.Exceptions;
 using Honua.Core.Features.FeatureStore.Domain;
+using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
@@ -87,6 +88,46 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
         harness.Metrics.GetPoolUtilization().Should().Be(1);
     }
 
+    [IntegrationTheory]
+    [InlineData("primary_schema", null, false)]
+    [InlineData(null, "request_schema", false)]
+    [InlineData("primary_schema", "request_schema", false)]
+    [InlineData("primary_schema", "request_schema", true)]
+    public async Task BoundReader_WithoutSchema_PreservesSourceSearchPath(
+        string? primarySchema, string? requestSchema, bool explicitSourceSchema)
+    {
+        await using (var setup = new NpgsqlConnection(_sourceString))
+        {
+            await setup.OpenAsync();
+            var roleSchema = SchemaSearchPath.ValidateAndQuote(new NpgsqlConnectionStringBuilder(_sourceString).Username!);
+            await using var command = new NpgsqlCommand($"""
+                CREATE SCHEMA {roleSchema};
+                CREATE TABLE {roleSchema}.schema_probe (id bigint PRIMARY KEY, name text);
+                INSERT INTO {roleSchema}.schema_probe VALUES (7, 'role schema');
+                CREATE SCHEMA source_explicit;
+                CREATE TABLE source_explicit.schema_probe (id bigint PRIMARY KEY, name text);
+                INSERT INTO source_explicit.schema_probe VALUES (17, 'explicit schema');
+                """, setup);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        using var harness = new Harness(fixture.DataSource, primarySchema, requestSchema);
+        var sourceString = explicitSourceSchema
+            ? new NpgsqlConnectionStringBuilder(_sourceString) { SearchPath = "source_explicit" }.ConnectionString
+            : _sourceString;
+        var reader = CreateReader(harness,
+            new DataConnection { Id = "source", IsEncrypted = false, ConnectionString = sourceString },
+            schemaName: null, tableName: "schema_probe");
+
+        // Reuse the physical pool as well as checking its initial session.
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var result = await reader.QueryPageAsync(1, new FeatureQuery { Limit = 1 });
+            result.Items.Should().ContainSingle().Which.Id.Should().Be(explicitSourceSchema ? 17 : 7);
+            harness.Gate.AvailableSlots.Should().Be(1);
+        }
+    }
+
     [IntegrationTest]
     public async Task EncryptedBinding_ResolvesBeforeAdmission_AndDoesNotDoubleAcquire()
     {
@@ -117,11 +158,39 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
         }
     }
 
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task BoundPool_PreservesSourceStartupOptions_AndAppliesConfiguredTimeouts(bool multiplexing)
+    {
+        await using (var setup = new NpgsqlConnection(_sourceString))
+        {
+            await setup.OpenAsync();
+            await using var create = new NpgsqlCommand("CREATE SCHEMA source_options", setup);
+            await create.ExecuteNonQueryAsync();
+        }
+
+        using var harness = new Harness(fixture.DataSource, "primary_schema", "request_schema", multiplexing);
+        var sourceString = new NpgsqlConnectionStringBuilder(_sourceString)
+        {
+            Options = "-c search_path=source_options -c statement_timeout=30s"
+        }.ConnectionString;
+        await using var connection = await harness.Bound.OpenConnectionAsync("source", sourceString);
+        await using var command = new NpgsqlCommand("SELECT current_schema(), current_setting('statement_timeout')", connection);
+        await using var result = await command.ExecuteReaderAsync();
+        (await result.ReadAsync()).Should().BeTrue();
+        result.GetString(0).Should().Be("source_options");
+        result.GetString(1).Should().Be("19s");
+    }
+
     [IntegrationTest]
     public async Task OpenFailure_ReleasesAdmission_AndRecordsFailureWithoutSuccessfulLeaseDuration()
     {
         using var harness = new Harness(fixture.DataSource);
         var invalid = new NpgsqlConnectionStringBuilder(_sourceString) { Username = "missing_pool_probe_user" }.ConnectionString;
+        var failedAcquisition = harness.Cache.Acquire("bound-id:source", invalid, preservePrimarySchema: false);
+        var failedSource = failedAcquisition.DataSource;
+        failedAcquisition.Dispose();
         var open = () => harness.Bound.OpenConnectionAsync("source", invalid);
         await open.Should().ThrowAsync<PostgresException>();
         harness.Gate.AvailableSlots.Should().Be(1);
@@ -130,14 +199,18 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
         harness.Gate.GetSnapshot().DurationEwmaMs.Should().Be(0);
         await using var recovered = await harness.Bound.OpenConnectionAsync("source", _sourceString);
         harness.Gate.AvailableSlots.Should().Be(0);
+        await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
+        {
+            await using var unexpected = await failedSource.OpenConnectionAsync();
+        });
     }
 
     [IntegrationTest]
     public async Task CancellationWhileWaitingForPhysicalPool_ReleasesAdmissionWithoutRecordingFailure()
     {
         using var harness = new Harness(fixture.DataSource);
-        var dataSource = harness.Cache.GetOrCreate("bound-id:source", _sourceString);
-        await using var occupied = await dataSource.OpenConnectionAsync();
+        using var acquisition = harness.Cache.Acquire("bound-id:source", _sourceString, preservePrimarySchema: false);
+        await using var occupied = await acquisition.DataSource.OpenConnectionAsync();
         using var cancellation = new CancellationTokenSource();
         var pending = harness.Bound.OpenConnectionAsync("source", _sourceString, cancellation.Token);
         harness.Gate.AvailableSlots.Should().Be(0);
@@ -148,18 +221,27 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
         harness.Metrics.GetTotalFailures().Should().Be(0);
         harness.Tracker.GetActiveCount().Should().Be(0);
         harness.Gate.GetSnapshot().DurationEwmaMs.Should().Be(0);
+        acquisition.Dispose();
+        using var replacement = harness.Cache.Acquire("bound-id:source",
+            new NpgsqlConnectionStringBuilder(_sourceString) { ApplicationName = "after-cancellation" }.ConnectionString,
+            preservePrimarySchema: false);
+        await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
+        {
+            await using var unexpected = await acquisition.DataSource.OpenConnectionAsync();
+        });
     }
 
     [IntegrationTest]
     public async Task RotationWhileQueued_ResolvesPoolAfterAdmission()
     {
         using var harness = new Harness(fixture.DataSource);
-        harness.Cache.GetOrCreate("bound-id:source", _sourceString);
+        using var original = harness.Cache.Acquire("bound-id:source", _sourceString, preservePrimarySchema: false);
         await using var blocker = await harness.Primary.OpenConnectionAsync();
         var pending = harness.Bound.OpenConnectionAsync("source", _sourceString);
         harness.Gate.GetSnapshot().QueuedWaiters.Should().Be(1);
-        harness.Cache.GetOrCreate("bound-id:source",
-            new NpgsqlConnectionStringBuilder(_sourceString) { ApplicationName = "rotated" }.ConnectionString);
+        using var rotated = harness.Cache.Acquire("bound-id:source",
+            new NpgsqlConnectionStringBuilder(_sourceString) { ApplicationName = "rotated" }.ConnectionString,
+            preservePrimarySchema: false);
         await blocker.DisposeAsync();
         await using var lease = await pending;
         lease.Connection.Database.Should().Be(new NpgsqlConnectionStringBuilder(_sourceString).Database);
@@ -170,27 +252,50 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
     }
 
     [IntegrationTest]
-    public async Task RotationBetweenResolutionAndOpen_RetriesOnceWithinSameAdmissionSlot()
+    public async Task RepeatedRotationBetweenAcquisitionAndOpen_PreservesPinnedPoolAndAdmission()
     {
         using var harness = new Harness(fixture.DataSource);
-        using var retired = NpgsqlDataSource.Create(_sourceString);
-        retired.Dispose();
-        var live = harness.Cache.GetOrCreate("bound-id:source", _sourceString);
+        NpgsqlDataSource? retired = null;
         var resolutions = 0;
         await using var connection = await harness.Primary.OpenConnectionAsync(() =>
         {
             harness.Gate.AvailableSlots.Should().Be(0);
-            return ++resolutions == 1 ? retired : live;
+            resolutions++;
+            var acquisition = harness.Cache.Acquire("bound-id:source", _sourceString, preservePrimarySchema: false);
+            retired = acquisition.DataSource;
+            // Rotate repeatedly before the provider can start opening this source.
+            // Pinning must survive any number of overlapping metadata generations.
+            for (var generation = 0; generation < 3; generation++)
+            {
+                using var replacement = harness.Cache.Acquire("bound-id:source",
+                    new NpgsqlConnectionStringBuilder(_sourceString) { ApplicationName = $"rotation-{generation}" }.ConnectionString,
+                    preservePrimarySchema: false);
+            }
+
+            return (acquisition.DataSource, acquisition);
         });
-        resolutions.Should().Be(2);
+        resolutions.Should().Be(1);
         harness.Metrics.GetTotalFailures().Should().Be(0);
         harness.Tracker.GetActiveCount().Should().Be(1);
+        // The acquisition pin was released after open. Its retired source is
+        // disposed, but the already-open connection remains usable until return.
+        await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
+        {
+            await using var unexpected = await retired!.OpenConnectionAsync();
+        });
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT 1";
+            (await command.ExecuteScalarAsync()).Should().Be(1);
+        }
+
         await connection.DisposeAsync();
         harness.Gate.AvailableSlots.Should().Be(1);
     }
 
     private PostgresStorageMappedFeatureReader CreateReader(
-        Harness harness, DataConnection? binding = null, IConnectionEncryptionService? encryption = null)
+        Harness harness, DataConnection? binding = null, IConnectionEncryptionService? encryption = null,
+        string? schemaName = "public", string tableName = "pool_probe")
         => new(harness.Primary,
             new DefaultObjectPoolProvider().Create(new Honua.Core.Features.Infrastructure.ServiceRegistration.DictionaryPooledObjectPolicy()),
             new MetadataV2Resource
@@ -198,7 +303,7 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
                 Metadata = new MetadataV2ObjectMetadata { Id = "pool-probe", Name = "pool-probe" },
                 SchemaFields = [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }]
             },
-            new FeatureStorageMapping("pool_probe", SchemaName: "public", PrimaryKeyColumn: "id", GeometryColumn: null),
+            new FeatureStorageMapping(tableName, SchemaName: schemaName, PrimaryKeyColumn: "id", GeometryColumn: null),
             binding ?? new DataConnection { Id = "source", IsEncrypted = false, ConnectionString = _sourceString },
             encryption, boundConnectionProvider: harness.Bound);
 
@@ -211,10 +316,13 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
         public readonly CachingDatabaseConnectionProvider Primary;
         public readonly PostgresBoundConnectionProvider Bound;
 
-        public Harness(NpgsqlDataSource defaultSource)
+        public Harness(NpgsqlDataSource defaultSource, string? primarySchema = null, string? requestSchema = null,
+            bool multiplexing = false)
         {
             var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
             {
+                ["Database:Schema"] = primarySchema,
+                ["Limits:Connections:Multiplexing"] = multiplexing.ToString(),
                 ["Limits:Connections:MaxConnectionPoolSize"] = "1",
                 ["Limits:Connections:MinConnectionPoolSize"] = "0",
                 ["Limits:Connections:MaxConcurrentQueries"] = "1",
@@ -225,8 +333,11 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
             Gate = new QueryConcurrencyGate(PostgresDataSourceFactory.ResolveConnectionLimits(configuration));
             Metrics = new ConnectionPoolMetrics(Tracker);
             Cache = new SecureConnectionDataSourceCache(configuration);
+            var schemaContext = Substitute.For<ISchemaContext>();
+            schemaContext.CurrentSchema.Returns(requestSchema);
             Primary = new CachingDatabaseConnectionProvider(defaultSource,
                 NullLogger<CachingDatabaseConnectionProvider>.Instance,
+                schemaContext: schemaContext,
                 activeDbConnectionTracker: Tracker, concurrencyGate: Gate, connectionPoolMetrics: Metrics);
             Bound = new PostgresBoundConnectionProvider(Cache, Primary);
         }

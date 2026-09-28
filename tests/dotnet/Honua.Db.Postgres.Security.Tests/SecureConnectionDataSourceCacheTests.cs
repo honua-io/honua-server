@@ -288,6 +288,172 @@ public sealed class SecureConnectionDataSourceCacheTests
         }
     }
 
+    [SecurityTest]
+    [UnitTest]
+    public async Task Acquire_OverlappingRotations_PinEachGenerationUntilItsLastAcquisitionCompletes()
+    {
+        using var cache = new SecureConnectionDataSourceCache(new ConfigurationBuilder().Build());
+        using var first = cache.Acquire("source", SampleConnectionString);
+        using var sameGeneration = cache.Acquire("source", SampleConnectionString);
+        var rotated = SampleConnectionString.Replace("Password=secret", "Password=rotated", StringComparison.Ordinal);
+        using var second = cache.Acquire("source", rotated);
+        // An overlapping request still carrying old metadata rotates the cache again.
+        using var third = cache.Acquire("source", SampleConnectionString);
+        Assert.Same(first.DataSource, sameGeneration.DataSource);
+        Assert.NotSame(first.DataSource, third.DataSource);
+        await AssertUsableAsync(first.DataSource);
+        await AssertUsableAsync(second.DataSource);
+        await AssertUsableAsync(third.DataSource);
+
+        first.Dispose();
+        first.Dispose();
+        await AssertUsableAsync(sameGeneration.DataSource);
+        second.Dispose();
+        await AssertDisposedAsync(second.DataSource);
+        sameGeneration.Dispose();
+        await AssertDisposedAsync(first.DataSource);
+        await AssertUsableAsync(third.DataSource);
+
+        third.Dispose();
+        // The current generation remains cached even when no acquisition is pending.
+        Assert.Same(third.DataSource, cache.GetOrCreate("source", SampleConnectionString));
+        cache.Dispose();
+        await AssertDisposedAsync(third.DataSource);
+    }
+
+    [SecurityTest]
+    [UnitTest]
+    public async Task Acquire_Shutdown_DefersDisposalUntilPendingAcquisitionsComplete()
+    {
+        using var cache = new SecureConnectionDataSourceCache(new ConfigurationBuilder().Build());
+        using var primary = cache.Acquire("source", SampleConnectionString);
+        using var bound = cache.Acquire("source", SampleConnectionString, preservePrimarySchema: false);
+
+        cache.Dispose();
+        cache.Dispose();
+
+        Assert.Throws<ObjectDisposedException>(() => cache.Acquire("source", SampleConnectionString));
+        Assert.Throws<ObjectDisposedException>(() => cache.Acquire("source", SampleConnectionString, false));
+        await AssertUsableAsync(primary.DataSource);
+        await AssertUsableAsync(bound.DataSource);
+        primary.Dispose();
+        await AssertDisposedAsync(primary.DataSource);
+        await AssertUsableAsync(bound.DataSource);
+        bound.Dispose();
+        await AssertDisposedAsync(bound.DataSource);
+    }
+
+    [SecurityTest]
+    [UnitTest]
+    public async Task Acquire_FailedOpen_ReleasesRetiredPool()
+    {
+        using var cache = new SecureConnectionDataSourceCache(new ConfigurationBuilder().Build());
+        using var pending = cache.Acquire("source", SampleConnectionString);
+        using var replacement = cache.Acquire("source",
+            SampleConnectionString.Replace("Password=secret", "Password=rotated", StringComparison.Ordinal));
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+        {
+            using (pending)
+            {
+                await using var connection = await pending.DataSource.OpenConnectionAsync(new CancellationToken(canceled: true));
+            }
+        });
+
+        await AssertDisposedAsync(pending.DataSource);
+        await AssertUsableAsync(replacement.DataSource);
+    }
+
+    [SecurityTest]
+    [UnitTest]
+    public async Task Acquire_FailedFactory_PreservesPinnedPoolAndAllowsRotationRetry()
+    {
+        var attempts = 0;
+        using var cache = new SecureConnectionDataSourceCache(new ConfigurationBuilder().Build(), _ =>
+            ++attempts == 2
+                ? throw new InvalidOperationException("Creation failed")
+                : NpgsqlDataSource.Create(SampleConnectionString));
+        using var original = cache.Acquire("source", "original");
+        Assert.Throws<InvalidOperationException>(() => cache.Acquire("source", "replacement"));
+        Assert.Same(original.DataSource, cache.GetOrCreate("source", "original"));
+        await AssertUsableAsync(original.DataSource);
+
+        using var replacement = cache.Acquire("source", "replacement");
+        await AssertUsableAsync(original.DataSource);
+        original.Dispose();
+        await AssertDisposedAsync(original.DataSource);
+        await AssertUsableAsync(replacement.DataSource);
+        Assert.Equal(3, attempts);
+    }
+
+    [SecurityTest]
+    [UnitTest]
+    public async Task Acquire_SourceSchemaMode_IsolatesPoolsAndPreservesLimitsWithoutPrimarySearchPath()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Database:Schema"] = "primary_only",
+            ["Limits:Connections:Multiplexing"] = "true",
+            ["Limits:Connections:MaxConnectionPoolSize"] = "12",
+            ["Limits:Connections:MinConnectionPoolSize"] = "2",
+            ["Limits:Connections:CommandTimeoutSeconds"] = "17",
+            ["Limits:Connections:StatementTimeout"] = "00:00:19"
+        }).Build();
+        using var cache = new SecureConnectionDataSourceCache(configuration);
+        using var primary = cache.Acquire("source", SampleConnectionString);
+        using var bound = cache.Acquire("source", SampleConnectionString, preservePrimarySchema: false);
+        Assert.NotSame(primary.DataSource, bound.DataSource);
+        Assert.Same(primary.DataSource, cache.GetOrCreate("source", SampleConnectionString));
+        using var sameBound = cache.Acquire("source", SampleConnectionString, preservePrimarySchema: false);
+        Assert.Same(bound.DataSource, sameBound.DataSource);
+        var primarySettings = new NpgsqlConnectionStringBuilder(primary.DataSource.ConnectionString);
+        var boundSettings = new NpgsqlConnectionStringBuilder(bound.DataSource.ConnectionString);
+        Assert.Contains("search_path=", primarySettings.Options ?? string.Empty);
+        Assert.DoesNotContain("search_path=", boundSettings.Options ?? string.Empty);
+        Assert.Equal(12, boundSettings.MaxPoolSize);
+        Assert.Equal(2, boundSettings.MinPoolSize);
+        Assert.Equal(17, boundSettings.CommandTimeout);
+        Assert.Contains("statement_timeout=19s", boundSettings.Options ?? string.Empty);
+
+        using var rotated = cache.Acquire("source",
+            SampleConnectionString.Replace("Password=secret", "Password=rotated", StringComparison.Ordinal),
+            preservePrimarySchema: false);
+        sameBound.Dispose();
+        bound.Dispose();
+        await AssertDisposedAsync(bound.DataSource);
+        Assert.Same(primary.DataSource, cache.GetOrCreate("source", SampleConnectionString));
+    }
+
+    [SecurityTest]
+    [UnitTest]
+    public void Acquire_SourceSchemaMode_DoesNotInheritPrimaryRequestSchemaConfiguration()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Database:Schema"] = "primary_only",
+            ["MultiTenancy:SchemaRouting:Enabled"] = "true",
+            ["Limits:Connections:Multiplexing"] = "true"
+        }).Build();
+        using var cache = new SecureConnectionDataSourceCache(configuration);
+        using var primary = cache.Acquire("source", SampleConnectionString);
+        using var bound = cache.Acquire("source", SampleConnectionString, preservePrimarySchema: false);
+        var primarySettings = new NpgsqlConnectionStringBuilder(primary.DataSource.ConnectionString);
+        var boundSettings = new NpgsqlConnectionStringBuilder(bound.DataSource.ConnectionString);
+        Assert.False(primarySettings.Multiplexing);
+        Assert.False(primarySettings.NoResetOnClose);
+        Assert.True(boundSettings.Multiplexing);
+        Assert.True(boundSettings.NoResetOnClose);
+        Assert.DoesNotContain("search_path=", boundSettings.Options ?? string.Empty);
+    }
+
+    private static async Task AssertUsableAsync(NpgsqlDataSource dataSource)
+    {
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+        {
+            await using var connection = await dataSource.OpenConnectionAsync(new CancellationToken(canceled: true));
+        });
+    }
+
     private static async Task AssertDisposedAsync(NpgsqlDataSource dataSource)
     {
         // Disposed pools reject acquisition before cancellation is considered. The

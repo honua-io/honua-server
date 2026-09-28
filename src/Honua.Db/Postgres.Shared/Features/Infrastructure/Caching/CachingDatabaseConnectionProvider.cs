@@ -87,17 +87,20 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>A caching-enabled PostgreSQL connection</returns>
     public Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
-        => OpenConnectionCoreAsync(_dataSource, null, cancellationToken);
+        => OpenConnectionCoreAsync(_dataSource, null, applyPrimarySchema: true, cancellationToken);
 
     internal Task<DbConnection> OpenConnectionAsync(
-        Func<NpgsqlDataSource> resolveDataSource, CancellationToken cancellationToken = default)
+        Func<(NpgsqlDataSource DataSource, IDisposable Acquisition)> acquireDataSource,
+        CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(resolveDataSource);
-        return OpenConnectionCoreAsync(null, resolveDataSource, cancellationToken);
+        ArgumentNullException.ThrowIfNull(acquireDataSource);
+        return OpenConnectionCoreAsync(null, acquireDataSource, applyPrimarySchema: false, cancellationToken);
     }
 
     private async Task<DbConnection> OpenConnectionCoreAsync(
-        NpgsqlDataSource? dataSource, Func<NpgsqlDataSource>? resolveDataSource, CancellationToken cancellationToken)
+        NpgsqlDataSource? dataSource,
+        Func<(NpgsqlDataSource DataSource, IDisposable Acquisition)>? acquireDataSource,
+        bool applyPrimarySchema, CancellationToken cancellationToken)
     {
         if (_concurrencyGate is not null)
         {
@@ -117,25 +120,19 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
         NpgsqlConnection? connection = null;
         try
         {
-            // Resolve a bound pool after admission: it may have rotated while this
-            // request was queued. A rotation can also win between lookup and open;
-            // retry that narrow disposal race once while retaining the same slot.
-            var source = dataSource ?? resolveDataSource!();
-            try
-            {
-                connection = await source.OpenConnectionWithRetryAsync(
-                    onRetry: (ex, delay, attempt) => DatabaseConnectionRetry(_logger, attempt, ex.Message, ex),
-                    cancellationToken: cancellationToken).ConfigureAwait(false);
-            }
-            catch (ObjectDisposedException) when (resolveDataSource is not null)
-            {
-                source = resolveDataSource();
-                connection = await source.OpenConnectionWithRetryAsync(
-                    onRetry: (ex, delay, attempt) => DatabaseConnectionRetry(_logger, attempt, ex.Message, ex),
-                    cancellationToken: cancellationToken).ConfigureAwait(false);
-            }
+            // Acquire after admission, and pin that pool generation until its open
+            // completes. Overlapping old/new credentials cannot retire a pending open.
+            var acquired = acquireDataSource?.Invoke();
+            using var acquisition = acquired?.Acquisition;
+            var source = dataSource ?? acquired!.Value.DataSource;
+            connection = await source.OpenConnectionWithRetryAsync(
+                onRetry: (ex, delay, attempt) => DatabaseConnectionRetry(_logger, attempt, ex.Message, ex),
+                cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (applyPrimarySchema)
+            {
+                await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
             DbConnectionTracking.Track(connection, _activeDbConnectionTracker);
 
             return _concurrencyGate is null

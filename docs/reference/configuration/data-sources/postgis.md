@@ -108,13 +108,17 @@ Pool maxima and minima apply **per data source, per Honua process**. The primary
 database, named secure connections, and registered source-bound feature/tile
 connections have independently owned pools. Source-bound reads use the configured
 pool settings and the same admission gate as primary database operations. A
-source's credentials and database remain independent of the primary connection.
+source's credentials, database, and search path remain independent of the primary
+connection. Primary `Database:Schema` and request-scoped schema overrides do not
+apply to bound source connections.
 
 The admission ceiling is shared within each process; it bounds active leases,
 not the sum of idle physical connections across pools or replicas. Account for
 all source pools and application replicas when budgeting PostgreSQL connection
 slots. Credential changes for a registered connection retire its previous pool;
-shutdown disposes all cached pools. Legacy bindings without a stable connection
+pending connection opens retain their pool until acquisition finishes, and opened
+connections can finish before being closed on return. Shutdown retires all cached
+pools with the same lifetime guarantees. Legacy bindings without a stable connection
 ID use a separate pool for each distinct connection string.
 
 The full admission set (adaptive bounds, target lease duration, update interval) is in the [environment variable reference](../environment-variables.md#admission-and-pooling). Pool and admission behavior can be observed at `GET /monitoring/metrics/connection-pool`.
