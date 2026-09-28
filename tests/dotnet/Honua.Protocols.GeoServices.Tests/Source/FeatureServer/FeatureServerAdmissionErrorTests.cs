@@ -110,7 +110,7 @@ public sealed class FeatureServerAdmissionErrorTests : IClassFixture<FeatureServ
 
         // GeoServices transports ordinary protocol errors as HTTP 200 envelopes.
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        response.Headers.RetryAfter?.Delta.Should().Be(TimeSpan.FromSeconds(7));
+        (response.Headers.RetryAfter?.Delta).Should().Be(TimeSpan.FromSeconds(7));
         using var document = JsonDocument.Parse(content);
         document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(503);
         document.RootElement.GetProperty("error").GetProperty("retryable").GetBoolean().Should().BeTrue();
@@ -135,7 +135,7 @@ public sealed class FeatureServerAdmissionErrorTests : IClassFixture<FeatureServ
         _state.StreamStarts.Should().Be(starts + 1, "the regression must exercise streaming admission");
         _state.StreamDisposals.Should().Be(disposals + 1);
         response.StatusCode.Should().Be(HttpStatusCode.OK, content);
-        response.Headers.RetryAfter?.Delta.Should().Be(TimeSpan.FromSeconds(7));
+        (response.Headers.RetryAfter?.Delta).Should().Be(TimeSpan.FromSeconds(7));
         using var document = JsonDocument.Parse(content);
         document.RootElement.GetProperty("error").GetProperty("code").GetInt32().Should().Be(503);
         content.Should().NotContain("Private pool diagnostics");

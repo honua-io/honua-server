@@ -109,8 +109,8 @@ public sealed class OgcFeaturesAdmissionErrorTests : IClassFixture<OgcFeaturesAd
         var content = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, content);
-        response.Headers.RetryAfter?.Delta.Should().Be(TimeSpan.FromSeconds(7));
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        (response.Headers.RetryAfter?.Delta).Should().Be(TimeSpan.FromSeconds(7));
+        (response.Content.Headers.ContentType?.MediaType).Should().Be("application/problem+json");
         using var document = JsonDocument.Parse(content);
         document.RootElement.GetProperty("status").GetInt32().Should().Be(503);
         document.RootElement.GetProperty("title").GetString().Should().Be("Service Unavailable");
@@ -130,8 +130,8 @@ public sealed class OgcFeaturesAdmissionErrorTests : IClassFixture<OgcFeaturesAd
         _state.StreamStarts.Should().Be(starts + 1, "COUNT succeeds before the streaming connection is acquired");
         _state.StreamDisposals.Should().Be(disposals + 1);
         response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, content);
-        response.Headers.RetryAfter?.Delta.Should().Be(TimeSpan.FromSeconds(7));
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        (response.Headers.RetryAfter?.Delta).Should().Be(TimeSpan.FromSeconds(7));
+        (response.Content.Headers.ContentType?.MediaType).Should().Be("application/problem+json");
         using var document = JsonDocument.Parse(content);
         document.RootElement.GetProperty("status").GetInt32().Should().Be(503);
         content.Should().NotContain("Private pool diagnostics");
