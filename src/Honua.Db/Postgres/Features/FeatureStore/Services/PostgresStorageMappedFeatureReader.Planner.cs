@@ -4,6 +4,7 @@
 using System.Transactions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Shared.Models;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 
@@ -18,7 +19,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         _resource.ReadGeometryType() == MetadataV2GeometryType.Point &&
         query.Limit is > 0 and <= 100 &&
         query.Offset.GetValueOrDefault() == 0 &&
-        (query.OrderBy == null || query.OrderBy.Value.IsDefaultOrEmpty) &&
+        HasDefaultPlannerOrder(query) &&
         !query.Distinct &&
         !query.IncludeNullGeometry &&
         query.VersionContext is not { IsDefault: false } &&
@@ -35,6 +36,21 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         // ambient scopes here and borrowed explicit transactions after opening
         // the connection lease in ExecuteFeatureQueryAsync.
         Transaction.Current == null;
+
+    private bool HasDefaultPlannerOrder(FeatureQuery query)
+    {
+        if (query.OrderBy is not { } orderBy || orderBy.IsDefaultOrEmpty)
+        {
+            return true;
+        }
+
+        // Protocol query normalization makes the default primary-ID ordering
+        // explicit. Keep that equivalent shape eligible without changing its SQL.
+        return orderBy.Length == 1 &&
+               orderBy[0] is { Ascending: true, NullOrdering: NullOrdering.Default } ordering &&
+               string.Equals(ordering.Field, _resource.FindPrimaryIdField()?.Name ?? FieldNames.ObjectId,
+                   StringComparison.OrdinalIgnoreCase);
+    }
 
     private static NpgsqlBatch CreateSerialSpatialReadBatch(NpgsqlConnection connection, SqlBuilder sql)
     {

@@ -12,14 +12,21 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.FeatureStore.Services;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Features.Query;
+using Honua.Core.Features.Security.Domain;
 using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.FeatureStore;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Features.Infrastructure;
+using Honua.Db.Postgres.Features.Infrastructure.Caching;
+using Honua.Db.Postgres.Features.Security;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.ObjectPool;
 using NSubstitute;
 using Npgsql;
@@ -95,29 +102,81 @@ public sealed class PostgresBoundedSpatialPlannerIntegrationTests(DatabaseFixtur
     [IntegrationTheory]
     [InlineData(false, "2")]
     [InlineData(true, "0")]
+    public async Task QueryPage_NormalizedPrimaryIdOrder_PreservesPlannerEligibility(bool enabled, string expected)
+    {
+        var resource = CreateResource(MetadataV2GeometryType.Point);
+        var reader = CreateReader(enabled);
+        var processor = new QueryProcessor(Substitute.For<IFilterExpressionTranslator>(), reader,
+            NullLogger<QueryProcessor>.Instance);
+        var normalized = processor.OptimizeQuery(new UnifiedQuery
+        {
+            Limit = 100,
+            SpatialFilter = Bbox().SpatialFilter
+        }, resource);
+        var query = processor.ToFeatureQuery(normalized, resource);
+        query.OrderBy.Should().NotBeNull();
+        var ordering = query.OrderBy!.Value.Should().ContainSingle().Which;
+        ordering.Field.Should().Be("id");
+        ordering.Ascending.Should().BeTrue();
+        ordering.NullOrdering.Should().Be(NullOrdering.Default);
+
+        var result = await reader.QueryPageAsync(1, query);
+
+        result.Items.Select(feature => feature.Id).Should().Equal(1L, 2L);
+        result.Items.Select(Setting).Should().OnlyContain(value => value == expected);
+        await AssertPoolSettingAsync();
+    }
+
+    [IntegrationTheory]
+    [InlineData(false, "2")]
+    [InlineData(true, "0")]
     public async Task RegisteredFeatureStore_ForwardsPlannerProfileToBoundReader(bool enabled, string expected)
     {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Limits:Connections:MaxConnectionPoolSize"] = "4",
+            ["Limits:Connections:MinConnectionPoolSize"] = "0",
+            ["Limits:Connections:MaxConcurrentQueries"] = "1",
+            ["Limits:Connections:Multiplexing"] = "false"
+        }).Build();
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<IAdoNetDatabaseConnectionProvider>(new SourceProvider(_source));
+        services.AddSingleton(_ => new SecureConnectionDataSourceCache(configuration));
+        services.AddSingleton(_ => new QueryConcurrencyGate(PostgresDataSourceFactory.ResolveConnectionLimits(configuration)));
+        services.AddScoped(registered => new CachingDatabaseConnectionProvider(
+            _source, registered.GetRequiredService<ILogger<CachingDatabaseConnectionProvider>>(),
+            concurrencyGate: registered.GetRequiredService<QueryConcurrencyGate>()));
         services.AddRefactoredFeatureStore(_schema, preferSerialBoundedSpatialReads: enabled);
         await using var provider = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         await using var scope = provider.CreateAsyncScope();
         var store = scope.ServiceProvider.GetRequiredService<IFeatureDataProvider>();
         var resource = CreateResource(MetadataV2GeometryType.Point);
+        var connectionString = new NpgsqlConnectionStringBuilder(fixture.ConnectionString)
+        {
+            Options = "-c max_parallel_workers_per_gather=2"
+        }.ConnectionString;
         var binding = new FeatureProviderBinding(new MetadataV2Service(), resource, new MetadataV2Publication(),
             new MetadataV2StorageBinding { ResourceId = resource.Metadata.Id }, CreateMapping(sourceBacked: true),
-            1, store, Connection: null);
+            1, store, new DataConnection { Id = "planner-bound", IsEncrypted = false, ConnectionString = connectionString });
         var reader = (IPagedFeatureReader)((IBindableFeatureDataProvider)store).CreateReaderForBinding(binding);
         var result = await reader.QueryPageAsync(1, Bbox());
+        result.Items.Select(feature => feature.Id).Should().Equal(1L, 2L);
         result.Items.Select(Setting).Should().OnlyContain(value => value == expected);
-        await AssertPoolSettingAsync();
+        scope.ServiceProvider.GetRequiredService<QueryConcurrencyGate>().AvailableSlots.Should().Be(1);
+        await using var connection = await scope.ServiceProvider.GetRequiredService<PostgresBoundConnectionProvider>()
+            .OpenConnectionAsync("planner-bound", connectionString);
+        await using var command = new NpgsqlCommand("SHOW max_parallel_workers_per_gather", connection);
+        (await command.ExecuteScalarAsync()).Should().Be("2", "the source pool must not retain the scoped setting");
     }
 
     [IntegrationTheory]
     [InlineData("larger-page")]
     [InlineData("later-page")]
     [InlineData("custom-order")]
+    [InlineData("descending-id")]
+    [InlineData("multiple-order-fields")]
+    [InlineData("explicit-null-order")]
     [InlineData("distinct")]
     [InlineData("no-bbox")]
     [InlineData("unbounded")]
@@ -130,7 +189,10 @@ public sealed class PostgresBoundedSpatialPlannerIntegrationTests(DatabaseFixtur
         {
             "larger-page" => Bbox() with { Limit = 101 },
             "later-page" => Bbox() with { Offset = 1 },
-            "custom-order" => Bbox() with { OrderBy = [new OrderByClause("id")] },
+            "custom-order" => Bbox() with { OrderBy = [new OrderByClause("label")] },
+            "descending-id" => Bbox() with { OrderBy = [new OrderByClause("id", ascending: false)] },
+            "multiple-order-fields" => Bbox() with { OrderBy = [new OrderByClause("id"), new OrderByClause("label")] },
+            "explicit-null-order" => Bbox() with { OrderBy = [new OrderByClause("id") { NullOrdering = NullOrdering.NullsLast }] },
             "distinct" => Bbox() with { Distinct = true },
             "no-bbox" => Bbox() with { SpatialFilter = null },
             "unbounded" => Bbox() with { Limit = null },

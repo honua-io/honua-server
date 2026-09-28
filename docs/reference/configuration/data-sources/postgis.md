@@ -156,7 +156,8 @@ declared-type predicate without changing those query semantics.
 `Database__PreferSerialBoundedSpatialReads=true` opts into a narrow serial-planner
 profile for source-backed PostGIS point layers. The default is `false`. Eligible
 reads have a simple intersects/envelope bbox, an effective first-page limit of
-1–100 features before the extra pagination probe row, default ordering, and no distinct, branch-version or null-geometry request.
+1–100 features before the extra pagination probe row, default ordering (including
+the normalized ascending primary-ID sort), and no distinct, branch-version or null-geometry request.
 Unknown geometry types, ambient transactions and borrowed mutation transactions
 retain ordinary planning.
 Counts, statistics, streaming, tiles, larger pages, later pages and custom sorts
