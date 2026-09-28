@@ -16,7 +16,7 @@ Expansion (explicitly out of scope here):
 
 | Revision | Value |
 |---|---|
-| `fixtureRevision` | `sha256:e9354b5d54abdb904684bee0f836ef3cd47b983ce27b7c3b243aea850e2ee252` |
+| `fixtureRevision` | `sha256:a58bef19c3c1c38b24a3a00de53b9210c6d80fe3b08972e3ebca073a7fdee599` |
 | `serverConfigRevision` | `sha256:d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a` |
 | `authPolicyRevision` | `sha256:9068f9d255f917b14ba5cff7c9a9defc268f69892e7605923f9d3f5dc3f5fea9` |
 
@@ -40,13 +40,14 @@ lowercase hex characters. Reproduce with `sha256sum <path>`.
 Because step 3 reproduces `sha256sum` output exactly, the whole algorithm is reproducible by hand:
 
 ```console
-$ LC_ALL=C sha256sum docker/client-compat/seed/publish-cog.py \
+$ LC_ALL=C sha256sum docker/client-compat/seed/publish-attachments.py \
+    docker/client-compat/seed/publish-cog.py \
     docker/client-compat/seed/publish-pmtiles.py docker/client-compat/seed/publish-scene.py \
     docker/client-compat/seed/run.sh tests/seed/apply-yaml-seed.sh \
     tests/seed/browser-compat.yaml tests/seed/client-compat-auth-wave1.yaml \
     tests/seed/client-compat-v1.sql tests/seed/portal-compat.yaml \
     | sha256sum
-e9354b5d54abdb904684bee0f836ef3cd47b983ce27b7c3b243aea850e2ee252  -
+a58bef19c3c1c38b24a3a00de53b9210c6d80fe3b08972e3ebca073a7fdee599  -
 $ LC_ALL=C sha256sum tests/config/client-compat-server-v1.json | sha256sum
 d4b2189558e492204909a75ccc71054741042fa7974d600e82a7a0ee0213435a  -
 ```
@@ -62,6 +63,7 @@ not file-backed, which is why it is digested from its declaration rather than fr
 
 | Path | Role |
 |---|---|
+| `docker/client-compat/seed/publish-attachments.py` | fixture |
 | `docker/client-compat/seed/publish-cog.py` | fixture |
 | `docker/client-compat/seed/publish-pmtiles.py` | fixture |
 | `docker/client-compat/seed/publish-scene.py` | fixture |
@@ -74,7 +76,7 @@ not file-backed, which is why it is digested from its declaration rather than fr
 | `tests/config/client-compat-server-v1.json` | server-config |
 
 `docker/client-compat/seed/publish-*.py` are fixture inputs because they determine the derived
-PMTiles, COG, and scene artifacts. Their code changes must advance `fixtureRevision`.
+attachment payloads and PMTiles, COG, and scene artifacts. Their code changes must advance `fixtureRevision`.
 
 `docker/client-compat/seed/run.sh` is a fixture input because it defines *which* seed files are
 applied and in what order; adding a fixture input necessarily edits it and therefore moves
@@ -94,10 +96,25 @@ symbol, so a comment edit does not force a manifest revision while a value chang
 | Service | Role | Layers | Source |
 |---|---|---|---|
 | `test_service` | canonical vector | `0` (Point, 10 features) | `tests/seed/client-compat-v1.sql` |
+| `cert_relations` | desktop attachments and relationships | `20` attachment parents, `21` assets, `22` inspections | `tests/seed/client-compat-v1.sql` |
 | `browser_compat` | render and raster | `2000` Point + raster, `2001` LineString, `2002` Polygon | `tests/seed/browser-compat.yaml` |
 | `portal_public` / `portal_org` / `portal_private` | authorization ladder | `3000` / `3001` / `3002` | `tests/seed/portal-compat.yaml` |
 
 Ordering rules:
+
+The additive `cert_relations` service leaves `test_service`'s four layer identities
+and canonical read rows unchanged. Layer 20 advertises attachment support and has
+parents 9001/9002. `docker/client-compat/seed/publish-attachments.py` uploads two
+deterministic text files through `addAttachment`, verifies their downloaded bytes,
+and reuses them on subsequent runs. A failed upload, corrupt download, or invalid relationship fails seed bootstrap rather than yielding an
+empty desktop fixture. The runner uses `HONUA_BASE_URL` and `HONUA_ADMIN_PASSWORD`.
+
+Relationship 1 connects assets 9101/9102 on layer 21 to inspections 9201/9202 and
+9203 respectively on layer 22 via `asset_id`. Both directions are advertised and
+queried by the bootstrap verifier. Explicit fixture object IDs reserve the range
+through 9203; the seed advances the shared sequence without lowering it on reruns.
+This changes the fixture revision and requires fresh candidate-bound client
+receipts. Fixture verification alone does not close any native UI cell (Refs #5259).
 
 - `features.objectid` is a `BIGSERIAL`. PostgreSQL evaluates the seed's `VALUES` scan in
   declaration order, so on a fresh database the ids run `alpha` = 1 through `lambda` = 10, and the
