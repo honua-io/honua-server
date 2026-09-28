@@ -709,7 +709,8 @@ internal static class GeoservicesCatalogEndpoints
         ILicenseStatusProvider licenseStatusProvider,
         ILogger logger,
         MetadataV2GraphSnapshot? scopedSnapshot = null,
-        bool featureMapOnly = false)
+        bool featureMapOnly = false,
+        string? serviceName = null)
     {
         var cancellationToken = TimeoutTokenHelper.GetTimeoutAwareCancellationToken(context);
         var baseUrl = BaseUrlResolver.GetBaseUrl(context);
@@ -725,7 +726,8 @@ internal static class GeoservicesCatalogEndpoints
 
         foreach (var service in snapshot.Graph.Services.OrderBy(static s => s.Metadata.Name, StringComparer.OrdinalIgnoreCase))
         {
-            if (!service.IsRoutable())
+            if (!service.IsRoutable()
+                || (serviceName is not null && !string.Equals(service.Metadata.Name, serviceName, StringComparison.OrdinalIgnoreCase)))
             {
                 continue;
             }
@@ -859,6 +861,13 @@ internal static class GeoservicesCatalogEndpoints
             AppendGeocodeServerEntry(context, entries, baseUrl, logger);
         }
 
+        // Decide folder access from that folder's visible entries and denied resources.
+        // A public locator or scene elsewhere must not suppress its authentication challenge.
+        if (serviceName is not null)
+        {
+            entries.RemoveAll(entry => !string.Equals(entry.Name, serviceName, StringComparison.OrdinalIgnoreCase));
+        }
+
         // A graph can contain more than one publication/service record that projects to
         // the same Esri directory name and type. ArcGIS clients treat the directory key as
         // (name,type); returning duplicates makes authenticated discovery ambiguous and can
@@ -984,8 +993,8 @@ internal static class GeoservicesCatalogEndpoints
     /// Reuses <see cref="BuildServiceDirectoryProjectionAsync"/> rather than enumerating
     /// separately, so this node can never disagree with the catalogue root about what is
     /// published or about who may see it - the projection already applies per-resource
-    /// access filtering. A name with no visible entries answers the GeoServices
-    /// not-found envelope, which is the correct answer for a folder that does not exist;
+    /// access filtering scoped to the requested name. Denied folders retain their access
+    /// error; an unknown name answers the GeoServices not-found envelope;
     /// the defect in #5158 was giving that answer for a service that does.
     /// </remarks>
     private static async Task<IResult> HandleGetServiceFolder(
@@ -1009,16 +1018,15 @@ internal static class GeoservicesCatalogEndpoints
             graphProvider,
             rasterStore,
             licenseStatusProvider,
-            logger).ConfigureAwait(false);
+            logger,
+            serviceName: folderName).ConfigureAwait(false);
         if (projection.AccessError is not null)
         {
             return projection.AccessError;
         }
 
-        var entries = projection.Entries
-            .Where(entry => string.Equals(entry.Name, folderName, StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-        if (entries.Length == 0)
+        var entries = projection.Entries;
+        if (entries.Count == 0)
         {
             return StandardErrorHelpers.CreateNotFound(
                 context, $"Folder '{folderName}' was not found.");

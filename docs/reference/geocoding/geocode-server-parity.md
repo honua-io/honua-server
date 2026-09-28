@@ -23,8 +23,9 @@ catalogs advertise the configured `Geocoding:LocatorName` (default `World`) as a
 `GeocodeServer` when geocoding is enabled and its default provider is configured. The
 canonical URL uses the named locator and the configured public base URL or request path
 base. The unnamed GeocodeServer route remains a compatibility alias. Catalog capabilities
-match the locator metadata, including licensed batch support. The locator is anonymous;
-its visibility does not expose protected feature or map services.
+match the locator metadata and provider operation flags, including licensed batch support.
+The locator is anonymous; its visibility does not expose protected feature or map services
+or suppress authentication and authorization errors on their named service folders.
 
 ## Status vocabulary
 
