@@ -8,9 +8,9 @@ namespace Honua.Infrastructure.Caching;
 /// <summary>
 /// Stops the scene asset cache from varying by the request Host header.
 /// ASP.NET Core varies output-cache entries by host unless a policy turns that
-/// off. A tileset fetched as <c>honua:5000</c> and the same path fetched through
-/// the advertised TLS host were therefore different entries: one could stay 200
-/// after generation while the other kept a 404 (#5218).
+/// off. Public scene assets share an entry across internal and advertised Host
+/// values within the same request scheme. The framework still separates HTTP
+/// and HTTPS entries and excludes non-200 responses from cache storage.
 /// </summary>
 internal sealed class IgnoreRequestHostOutputCachePolicy : IOutputCachePolicy
 {

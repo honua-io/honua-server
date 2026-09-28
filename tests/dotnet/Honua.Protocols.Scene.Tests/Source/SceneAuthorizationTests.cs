@@ -3,8 +3,10 @@
 
 using System.Net;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
@@ -27,6 +29,8 @@ public sealed class SceneAuthorizationTests : IAsyncLifetime
         var fixtureRoot = SceneFixturePaths.ResolveFixtureRoot();
 
         _fixture = new WebAppFixture()
+            // Exercise the output-cache middleware, which requires a Pro entitlement.
+            .WithTestLicense(HonuaEdition.Pro)
             .ConfigureWebHost(builder =>
             {
                 builder.UseSetting("HONUA_DEV_AUTH", "false");
@@ -75,6 +79,29 @@ public sealed class SceneAuthorizationTests : IAsyncLifetime
     {
         var response = await _fixture.Client.GetAsync($"/scenes/{SceneFixturePaths.ProtectedSceneId}/tileset.json");
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [IntegrationTheory]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /scenes/{sceneId}/tileset.json")]
+    [InlineData("honua:5000", "host.docker.internal:18443")]
+    [InlineData("host.docker.internal:18443", "honua:5000")]
+    public async Task GetTileset_ChangingHost_DoesNotReplayProtectedResponseToAnonymousCaller(
+        string authenticatedHost, string anonymousHost)
+    {
+        var path = $"/scenes/{SceneFixturePaths.ProtectedSceneId}/tileset.json";
+        using var authorizedRequest = new HttpRequestMessage(HttpMethod.Get, path);
+        authorizedRequest.Headers.Host = authenticatedHost;
+        using var authorized = await _authenticatedClient.SendAsync(authorizedRequest);
+        authorized.StatusCode.Should().Be(HttpStatusCode.OK);
+        authorized.Headers.CacheControl?.NoStore.Should().BeTrue();
+
+        using var anonymousRequest = new HttpRequestMessage(HttpMethod.Get, path);
+        anonymousRequest.Headers.Host = anonymousHost;
+        using var anonymous = await _fixture.Client.SendAsync(anonymousRequest);
+
+        anonymous.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        anonymous.Headers.Age.Should().BeNull();
     }
 
     [IntegrationTest]
