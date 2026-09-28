@@ -62,7 +62,8 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     // must be replayed when the connection is restored.
     private readonly ConcurrentQueue<string> _pendingInvalidationKeys = new();
     private int _pendingInvalidationKeyCount;
-    private readonly Timer _cleanupTimer;
+    private readonly ITimer _cleanupTimer;
+    private readonly RedisCacheIndexMaintenance? _indexMaintenance;
     private readonly string _distributedCacheKeyPrefix;
     private volatile bool _isUsingFallback;
     private volatile bool _disposed;
@@ -75,7 +76,8 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         ILogger<RedisCacheService> logger,
         IPerformanceMonitor performanceMonitor,
         IConnectionMultiplexer? redis = null,
-        string? distributedCacheKeyPrefix = null)
+        string? distributedCacheKeyPrefix = null,
+        TimeProvider? timeProvider = null)
     {
         _distributedCache = distributedCache;
         _redis = redis;
@@ -103,7 +105,28 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         }
 
         // Start cleanup timer for fallback cache (every minute)
-        _cleanupTimer = new Timer(CleanupExpiredEntries, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+        _cleanupTimer = CreateCleanupTimer(timeProvider ?? TimeProvider.System);
+        if (_options.Enabled && _distributedCache != null && _redis != null)
+        {
+            _indexMaintenance = new RedisCacheIndexMaintenance(
+                _redis, _distributedCacheKeyPrefix + _options.KeyPrefix, _logger,
+                timeProvider ?? TimeProvider.System);
+        }
+    }
+
+    private ITimer CreateCleanupTimer(TimeProvider timeProvider)
+    {
+        if (ExecutionContext.IsFlowSuppressed())
+        {
+            return timeProvider.CreateTimer(CleanupExpiredEntries, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+        }
+
+        // This singleton can first be resolved by a request or readiness probe.
+        // Its periodic callback must not retain that caller's AsyncLocal graph.
+        using (ExecutionContext.SuppressFlow())
+        {
+            return timeProvider.CreateTimer(CleanupExpiredEntries, null, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+        }
     }
 
     /// <inheritdoc />
@@ -1428,6 +1451,10 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     {
         try
         {
+            if (_indexMaintenance is not null)
+            {
+                await _indexMaintenance.DisposeAsync().ConfigureAwait(false);
+            }
             if (healthProbe is not null)
             {
                 await healthProbe.ConfigureAwait(false);
@@ -1435,15 +1462,17 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         }
         finally
         {
-            _cleanupTimer.Dispose();
-            _fallbackCache.Clear();
-            _writeMetadata.Clear();
-            _distributedIndexLock.Dispose();
-            foreach (var semaphore in _keyLocks.Values)
+            using (_cleanupTimer)
             {
-                semaphore.Dispose();
+                _fallbackCache.Clear();
+                _writeMetadata.Clear();
+                _distributedIndexLock.Dispose();
+                foreach (var semaphore in _keyLocks.Values)
+                {
+                    semaphore.Dispose();
+                }
+                _keyLocks.Clear();
             }
-            _keyLocks.Clear();
         }
     }
 
