@@ -269,12 +269,9 @@ public sealed class RedisCacheIndexMaintenanceTests
         }
         public void Tick()
         {
-            foreach (var timer in _timers)
+            foreach (var timer in _timers.Where(timer => timer.Period == RedisCacheIndexMaintenance.Interval))
             {
-                if (timer.Period == RedisCacheIndexMaintenance.Interval)
-                {
-                    timer.Tick();
-                }
+                timer.Tick();
             }
         }
         private sealed class TickTimer(TimerCallback callback, object? state, TimeSpan period) : ITimer

@@ -1416,14 +1416,16 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         }
         finally
         {
-            _cleanupTimer.Dispose();
-            _fallbackCache.Clear();
-            _writeMetadata.Clear();
-            foreach (var semaphore in _keyLocks.Values)
+            using (_cleanupTimer)
             {
-                semaphore.Dispose();
+                _fallbackCache.Clear();
+                _writeMetadata.Clear();
+                foreach (var semaphore in _keyLocks.Values)
+                {
+                    semaphore.Dispose();
+                }
+                _keyLocks.Clear();
             }
-            _keyLocks.Clear();
         }
     }
 
