@@ -9,6 +9,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using System.Text.RegularExpressions;
 using Honua.Core.Configuration;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -345,6 +346,11 @@ internal sealed partial class FeatureServerQueryHandler(
         {
             FeatureServerLog.QueryFailed(_logger, serviceId, layerId, ex.Message, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
+
+            if (ex is ServiceUnavailableException)
+            {
+                return (null, StandardErrorHelpers.CreateFromException(context, ex));
+            }
 
             return IsClientSafeInvalidOperation(ex)
                 ? (null, StandardErrorHelpers.CreateBadRequest(context, ErrorMessages.Validation.InvalidParameter))
@@ -1243,6 +1249,11 @@ internal sealed partial class FeatureServerQueryHandler(
             if (context.Response.HasStarted)
             {
                 return _streamingResult;
+            }
+
+            if (ex is ServiceUnavailableException)
+            {
+                return StandardErrorHelpers.CreateFromException(context, ex);
             }
 
             if (IsClientSafeInvalidOperation(ex))

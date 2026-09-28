@@ -57,12 +57,9 @@ public sealed class PostgresBoundFeatureStoreRegistrationTests(PostgresFixture f
         Honua.Db.Postgres.ServiceCollectionExtensions.AddPostgreSqlServices(
             services, configuration, TestCoreSchemaMigrations.Manifest);
 
-        // Keep the real feature-store factory, primary provider, bound provider,
-        // data-source cache, and gate. Catalog/security collaborators are unrelated
-        // to the connection ownership being exercised and need no server bootstrap.
-        services.AddSingleton(Substitute.For<IFeatureQueryBuilder>());
-        services.AddSingleton(Substitute.For<IFeatureDataAccess>());
-        services.AddSingleton(Substitute.For<IFeatureCacheManager>());
+        // Keep the real feature-store factory and its query/data/cache collaborators,
+        // primary provider, bound provider, data-source cache, and gate. Only public
+        // catalog/security boundaries are substituted to avoid server bootstrap.
         services.AddSingleton(Substitute.For<IMetadataV2GraphProvider>());
         services.AddSingleton(Substitute.For<IConnectionEncryptionService>());
         services.AddSingleton(Substitute.For<ISecureConnectionResolver>());
@@ -89,7 +86,7 @@ public sealed class PostgresBoundFeatureStoreRegistrationTests(PostgresFixture f
         var binding = new FeatureProviderBinding(
             new MetadataV2Service(), resource, new MetadataV2Publication(),
             new MetadataV2StorageBinding { ConnectionId = "registered-source", ResourceId = resource.Metadata.Id },
-            new FeatureStorageMapping("registration_pool_probe", SchemaName: "public", PrimaryKeyColumn: "id"),
+            new FeatureStorageMapping("registration_pool_probe", SchemaName: "public", PrimaryKeyColumn: "id", GeometryColumn: null),
             1, featureStore,
             new DataConnection { Id = "registered-source", IsEncrypted = false, ConnectionString = _sourceString });
         var reader = (IPagedFeatureReader)((IBindableFeatureDataProvider)featureStore).CreateReaderForBinding(binding);

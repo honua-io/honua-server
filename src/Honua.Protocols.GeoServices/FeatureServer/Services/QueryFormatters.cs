@@ -1026,6 +1026,11 @@ internal sealed class StreamingQueryFormatter
         bool returnCentroid = false,
         CancellationToken cancellationToken = default)
     {
+        // Acquire the source before writing JSON so admission failures can still
+        // produce a complete protocol error. Keep only the current feature buffered.
+        await using var enumerator = features.GetAsyncEnumerator(cancellationToken);
+        var hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
+
         using var writer = new Utf8JsonWriter(outputStream, new JsonWriterOptions
         {
             Indented = false,
@@ -1084,8 +1089,9 @@ internal sealed class StreamingQueryFormatter
         writer.WriteStartArray("features");
         var featuresSinceFlush = 0;
 
-        await foreach (var feature in features.WithCancellation(cancellationToken))
+        while (hasFeature)
         {
+            var feature = enumerator.Current;
             WriteGeoServicesFeature(
                 writer,
                 feature,
@@ -1107,6 +1113,8 @@ internal sealed class StreamingQueryFormatter
                 await writer.FlushAsync(cancellationToken);
                 featuresSinceFlush = 0;
             }
+
+            hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
         }
 
         writer.WriteEndArray();
@@ -1165,6 +1173,11 @@ internal sealed class StreamingQueryFormatter
         PipeWriter outputStream,
         CancellationToken cancellationToken = default)
     {
+        // Acquire the source before writing JSON so admission failures can still
+        // produce a complete protocol error. Keep only the current feature buffered.
+        await using var enumerator = features.GetAsyncEnumerator(cancellationToken);
+        var hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
+
         using var writer = new Utf8JsonWriter(outputStream, new JsonWriterOptions
         {
             Indented = false,
@@ -1186,8 +1199,9 @@ internal sealed class StreamingQueryFormatter
             forceSimplify: maxAllowableOffset is > 0);
         var featuresSinceFlush = 0;
 
-        await foreach (var feature in features.WithCancellation(cancellationToken))
+        while (hasFeature)
         {
+            var feature = enumerator.Current;
             WriteGeoJsonFeature(
                 writer,
                 feature,
@@ -1204,6 +1218,8 @@ internal sealed class StreamingQueryFormatter
                 await writer.FlushAsync(cancellationToken);
                 featuresSinceFlush = 0;
             }
+
+            hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
         }
 
         writer.WriteEndArray();

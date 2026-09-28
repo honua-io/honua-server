@@ -96,7 +96,10 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
             .Returns(_ => ResolveUsingMetadataAsync());
         var binding = new DataConnection
         {
-            Id = "encrypted-source", IsEncrypted = true, EncryptedConnectionString = [1], EncryptionKeyVersion = 1
+            Id = "encrypted-source",
+            IsEncrypted = true,
+            EncryptedConnectionString = [1],
+            EncryptionKeyVersion = 1
         };
         var reader = CreateReader(harness, binding, encryption);
         (await reader.QueryPageAsync(1, new FeatureQuery { Limit = 1 })).Items.Should().ContainSingle();
@@ -195,7 +198,7 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
                 Metadata = new MetadataV2ObjectMetadata { Id = "pool-probe", Name = "pool-probe" },
                 SchemaFields = [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }]
             },
-            new FeatureStorageMapping("pool_probe", SchemaName: "public", PrimaryKeyColumn: "id"),
+            new FeatureStorageMapping("pool_probe", SchemaName: "public", PrimaryKeyColumn: "id", GeometryColumn: null),
             binding ?? new DataConnection { Id = "source", IsEncrypted = false, ConnectionString = _sourceString },
             encryption, boundConnectionProvider: harness.Bound);
 
