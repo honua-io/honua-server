@@ -13025,6 +13025,10 @@
       "protocol": "http-route-family",
       "code_location": "src/Honua.Server/EndpointRegistry.cs",
       "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.PortalHelperServicesTests.PortalsSelf_AnonymousWithPublicBaseUrl_PreservesCanonicalPrefix",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.PortalHelperServicesTests.PortalsSelf_RestrictedProvider_OmitsUnavailableHelpers",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.PortalHelperServicesTests.PortalsSelf_SupportedHelpers_ResolveToMatchingAnalysisLayers",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.PortalHelperServicesTests.PortalsSelf_UnavailableRoutingProvider_PreservesPortalIdentityWithoutHelpers",
         "Honua.Server.Tests.Features.Sharing.PortalFacadeDiscoveryContractTests.PortalsSelf_WithNamedUserToken_PopulatesUserBlock",
         "Honua.Server.Tests.Features.Sharing.SharingRestReadTests.PortalsSelf_Anonymous_OmitsUser"
       ],

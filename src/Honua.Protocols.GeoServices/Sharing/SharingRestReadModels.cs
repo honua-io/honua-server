@@ -73,8 +73,39 @@ internal sealed record PortalSelfResponse
     [JsonPropertyName("user")]
     public PortalUser? User { get; init; }
 
+    /// <summary>Supported routing helpers clients can resolve through this portal.</summary>
+    [JsonPropertyName("helperServices")]
+    public PortalHelperServices HelperServices { get; init; } = new();
+
     // No ArcGIS Portal version (currentVersion) is advertised — Honua does not impersonate a
     // specific ArcGIS Portal release (guarded by NoArcGisServerVersionTests).
+}
+
+/// <summary>Only synchronous solvers supported by the configured routing provider.</summary>
+internal sealed record PortalHelperServices
+{
+    [JsonPropertyName("route")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PortalHelperService? Route { get; init; }
+
+    [JsonPropertyName("serviceArea")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PortalHelperService? ServiceArea { get; init; }
+
+    [JsonPropertyName("closestFacility")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PortalHelperService? ClosestFacility { get; init; }
+
+    [JsonPropertyName("odCostMatrix")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PortalHelperService? OdCostMatrix { get; init; }
+}
+
+/// <summary>Canonical URL of an available helper service.</summary>
+internal sealed record PortalHelperService
+{
+    [JsonPropertyName("url")]
+    public required string Url { get; init; }
 }
 
 /// <summary>
