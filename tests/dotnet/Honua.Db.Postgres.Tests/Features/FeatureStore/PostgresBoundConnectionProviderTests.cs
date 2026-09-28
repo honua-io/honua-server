@@ -99,6 +99,14 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
         harness.Gate.AvailableSlots.Should().Be(1);
         harness.Tracker.GetActiveCount().Should().Be(0);
 
+        var invalidQuery = () => reader.QueryPageAsync(1, query with
+        {
+            EnforcedSqlFilter = new SqlFragment("1 / 0 = 0", [])
+        });
+        (await invalidQuery.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be(PostgresErrorCodes.DivisionByZero);
+        harness.Gate.AvailableSlots.Should().Be(1);
+        harness.Tracker.GetActiveCount().Should().Be(0);
+
         // A parse failure in the discarded statement must not acquire a second lease.
         await using (var command = new NpgsqlCommand("ALTER TABLE public.pool_probe ALTER COLUMN name TYPE boolean USING name = 1;", setup))
         {
@@ -117,7 +125,19 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
         }
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
         var cancelledRead = () => reader.QueryPageAsync(1, query, cancellation.Token);
-        await cancelledRead.Should().ThrowAsync<OperationCanceledException>();
+        var cancellationError = await Record.ExceptionAsync(() => cancelledRead());
+        cancellation.IsCancellationRequested.Should().BeTrue();
+        if (multiplexing && cancellationError is NpgsqlException providerTimeout)
+        {
+            // Npgsql 10 multiplexing also surfaces in-flight cancellation as a read
+            // timeout for a plain canonical command. Verify cleanup for that existing
+            // provider behavior, without weakening the default cancellation contract.
+            providerTimeout.InnerException.Should().BeOfType<TimeoutException>();
+        }
+        else
+        {
+            cancellationError.Should().BeAssignableTo<OperationCanceledException>();
+        }
         harness.Gate.AvailableSlots.Should().Be(1);
         harness.Tracker.GetActiveCount().Should().Be(0);
         await transaction.RollbackAsync();

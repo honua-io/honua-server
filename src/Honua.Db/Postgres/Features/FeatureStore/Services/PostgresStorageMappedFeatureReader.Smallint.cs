@@ -1,11 +1,9 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Metadata.Domain.V2;
-using Honua.Core.Features.Shared.Models;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Npgsql;
 
@@ -91,75 +89,139 @@ internal sealed partial class PostgresStorageMappedFeatureReader
         return batch;
     }
 
-    private async IAsyncEnumerable<Feature> ExecuteFeatureRowsAsync(
+    private async Task<FeatureReadSession> OpenFeatureReadSessionAsync(
         FeatureQuery query,
         bool probeLimit,
         bool allowSerialPlan,
-        [EnumeratorCancellation] CancellationToken cancellationToken)
+        CancellationToken cancellationToken)
     {
         var sql = BuildFeatureSelect(query, probeLimit);
-        await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        var useSerialPlan = allowSerialPlan && connection.Transaction is null && ShouldUseSerialSpatialPlan(query);
-        if (sql.SmallintComparison is not null && connection.Transaction is null &&
-            System.Transactions.Transaction.Current is null)
+        var session = new FeatureReadSession(await OpenConnectionAsync(cancellationToken).ConfigureAwait(false));
+        try
         {
-            await using var guardedBatch = CreateSmallintReadBatch(connection, sql, useSerialPlan);
-            await using var guardedReader = await guardedBatch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            if (!await guardedReader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            var connection = session.Connection;
+            var useSerialPlan = allowSerialPlan && connection.Transaction is null && ShouldUseSerialSpatialPlan(query);
+            if (sql.SmallintComparison is not null && connection.Transaction is null &&
+                System.Transactions.Transaction.Current is null)
             {
-                throw new InvalidOperationException("The smallint type-verification batch returned no verdict.");
-            }
-
-            if (guardedReader.GetBoolean(0))
-            {
-                await AdvanceToSmallintFeaturesAsync(guardedReader, useSerialPlan, cancellationToken).ConfigureAwait(false);
-                while (await guardedReader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                session.Batch = CreateSmallintReadBatch(connection, sql, useSerialPlan);
+                var guardedReader = await session.Batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                session.Reader = guardedReader;
+                if (!await guardedReader.ReadAsync(cancellationToken).ConfigureAwait(false))
                 {
-                    yield return ReadFeature(guardedReader);
+                    throw new InvalidOperationException("The smallint type-verification batch returned no verdict.");
                 }
 
-                yield break;
+                if (guardedReader.GetBoolean(0))
+                {
+                    await AdvanceToSmallintFeaturesAsync(guardedReader, useSerialPlan, cancellationToken).ConfigureAwait(false);
+                    return session;
+                }
+
+                // The second statement's one-time guard suppresses row/RLS/volatile
+                // expression execution on stale hints. A boolean/text column can still
+                // fail operator resolution at parse time, after the first false verdict.
+                // Drain that batch before the single canonical retry. Never retry after
+                // a true verdict or a cancellation, or inside an existing transaction.
+                try
+                {
+                    await AdvanceToSmallintFeaturesAsync(guardedReader, useSerialPlan, cancellationToken).ConfigureAwait(false);
+                    if (await guardedReader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                    {
+                        throw new InvalidOperationException("A rejected smallint query unexpectedly returned features.");
+                    }
+                }
+                catch (PostgresException exception) when (
+                    exception.SqlState == PostgresErrorCodes.UndefinedFunction && !cancellationToken.IsCancellationRequested)
+                {
+                    // PostgreSQL has rolled back the implicit batch transaction.
+                }
+
+                await session.DisposeQueryAsync().ConfigureAwait(false);
             }
 
-            // The second statement's one-time guard suppresses row/RLS/volatile
-            // expression execution on stale hints. A boolean/text column can still
-            // fail operator resolution at parse time, after the first false verdict.
-            // Drain that batch before the single canonical retry. Never retry after
-            // a true verdict or a cancellation, or inside an existing transaction.
+            if (sql.SmallintComparison is not null)
+            {
+                sql = BuildFeatureSelectCore(query, probeLimit, comparison: null);
+            }
+
+            if (useSerialPlan)
+            {
+                session.Batch = CreateSerialSpatialReadBatch(connection, sql);
+                session.Reader = await session.Batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+                if (!await session.Reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    throw new InvalidOperationException("The scoped planner batch did not return feature query results.");
+                }
+            }
+            else
+            {
+                session.Command = CreateReadCommand(connection, sql);
+                session.Reader = await session.Command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            return session;
+        }
+        catch
+        {
+            // Initialization owns every partial resource until it returns the session.
+            // Failures, including cancellation before the verdict, release the full lease.
+            await session.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    private sealed class FeatureReadSession(NpgsqlConnectionLease connection) : IAsyncDisposable
+    {
+        public NpgsqlConnectionLease Connection { get; } = connection;
+        public NpgsqlCommand? Command { get; set; }
+        public NpgsqlBatch? Batch { get; set; }
+        public NpgsqlDataReader? Reader { get; set; }
+
+        public async ValueTask DisposeQueryAsync()
+        {
+            var reader = Reader;
+            var batch = Batch;
+            var command = Command;
+            Reader = null;
+            Batch = null;
+            Command = null;
             try
             {
-                await AdvanceToSmallintFeaturesAsync(guardedReader, useSerialPlan, cancellationToken).ConfigureAwait(false);
-                if (await guardedReader.ReadAsync(cancellationToken).ConfigureAwait(false))
+                if (reader is not null)
                 {
-                    throw new InvalidOperationException("A rejected smallint query unexpectedly returned features.");
+                    await reader.DisposeAsync().ConfigureAwait(false);
                 }
             }
-            catch (PostgresException exception) when (
-                exception.SqlState == PostgresErrorCodes.UndefinedFunction && !cancellationToken.IsCancellationRequested)
+            finally
             {
-                // PostgreSQL has rolled back the implicit batch transaction; disposal
-                // completes its protocol cleanup before the canonical command opens.
+                try
+                {
+                    if (batch is not null)
+                    {
+                        await batch.DisposeAsync().ConfigureAwait(false);
+                    }
+                }
+                finally
+                {
+                    if (command is not null)
+                    {
+                        await command.DisposeAsync().ConfigureAwait(false);
+                    }
+                }
             }
         }
 
-        if (sql.SmallintComparison is not null)
+        public async ValueTask DisposeAsync()
         {
-            sql = BuildFeatureSelectCore(query, probeLimit, comparison: null);
-        }
-
-        await using var command = useSerialPlan ? null : CreateReadCommand(connection, sql);
-        await using var batch = useSerialPlan ? CreateSerialSpatialReadBatch(connection, sql) : null;
-        await using var reader = batch is null
-            ? await command!.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false)
-            : await batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        if (batch is not null && !await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
-        {
-            throw new InvalidOperationException("The scoped planner batch did not return feature query results.");
-        }
-
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            yield return ReadFeature(reader);
+            try
+            {
+                await DisposeQueryAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                await Connection.DisposeAsync().ConfigureAwait(false);
+            }
         }
     }
 

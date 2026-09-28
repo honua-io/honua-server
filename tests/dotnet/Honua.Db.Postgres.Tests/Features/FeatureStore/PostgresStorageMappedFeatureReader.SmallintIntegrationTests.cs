@@ -148,7 +148,9 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
                 Pooling = false
             };
             var query = SmallintQuery("=", 1L);
-            foreach (var physicalType in new[] { "smallint", "numeric", "boolean" })
+            // For stale types the only executed policy must belong to the canonical retry.
+            // A valid smallint plan can legitimately visit fewer rows via predicate pushdown.
+            foreach (var physicalType in new[] { "numeric", "boolean" })
             {
                 var conversion = physicalType == "boolean" ? "population = 1" : "population";
                 await _fixture.ExecuteAsync($"ALTER TABLE {_schema}.cities ALTER COLUMN population TYPE {physicalType} USING {conversion};");
@@ -179,7 +181,7 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
             """);
         var settings = new NpgsqlConnectionStringBuilder(_fixture.ConnectionString)
         {
-            SearchPath = _schema + ",pg_catalog",
+            SearchPath = _schema + ",pg_catalog,public",
             Pooling = false
         };
         var reader = CreateReader(smallintHint: true, connectionString: settings.ConnectionString);

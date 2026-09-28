@@ -362,10 +362,12 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
-        await foreach (var feature in ExecuteFeatureRowsAsync(
-                           query, probeLimit: false, allowSerialPlan: false, cancellationToken).ConfigureAwait(false))
+        await using var session = await OpenFeatureReadSessionAsync(
+            query, probeLimit: false, allowSerialPlan: false, cancellationToken).ConfigureAwait(false);
+        var reader = session.Reader!;
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            yield return feature;
+            yield return ReadFeature(reader);
         }
     }
 
@@ -405,10 +407,12 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         CancellationToken cancellationToken)
     {
         var features = ImmutableArray.CreateBuilder<Feature>();
-        await foreach (var feature in ExecuteFeatureRowsAsync(
-                           query, probeLimit, allowSerialPlan: true, cancellationToken).ConfigureAwait(false))
+        await using var session = await OpenFeatureReadSessionAsync(
+            query, probeLimit, allowSerialPlan: true, cancellationToken).ConfigureAwait(false);
+        var reader = session.Reader!;
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            features.Add(feature);
+            features.Add(ReadFeature(reader));
         }
 
         return features.ToImmutable();
