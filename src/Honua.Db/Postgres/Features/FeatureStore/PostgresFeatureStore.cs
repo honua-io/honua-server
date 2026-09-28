@@ -18,6 +18,7 @@ using Honua.Core.Features.Metadata.Domain.V2;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.ObjectPool;
 using CoreGeometryStorageType = Honua.Core.Features.FeatureStore.Abstractions.GeometryStorageType;
@@ -55,6 +56,7 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
     private readonly ILogger<PostgresStorageMappedFeatureReader>? _storageMappedReaderLogger;
     private readonly string? _managedFeatureSchema;
     private readonly LayerReadSecurityResolver _readSecurity;
+    private readonly PostgresBoundConnectionProvider? _boundConnectionProvider;
 
     public PostgresFeatureStoreRefactored(
         IFeatureQueryBuilder queryBuilder,
@@ -83,13 +85,15 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
         ILogger<PostgresStorageMappedFeatureReader>? storageMappedReaderLogger = null,
         IRowLevelSecurityFilterSource? rlsFilterSource = null,
         IFieldMaskSource? fieldMaskSource = null,
-        string? managedFeatureSchema = null)
+        string? managedFeatureSchema = null,
+        PostgresBoundConnectionProvider? boundConnectionProvider = null)
     {
         _queryBuilder = queryBuilder ?? throw new ArgumentNullException(nameof(queryBuilder));
         _dataAccess = dataAccess ?? throw new ArgumentNullException(nameof(dataAccess));
         _cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
         _v2Provider = v2Provider;
         _connectionProvider = connectionProvider;
+        _boundConnectionProvider = boundConnectionProvider;
         _dictionaryPool = dictionaryPool;
         _connectionEncryptionService = connectionEncryptionService;
         _filterExpressionService = filterExpressionService;
@@ -128,7 +132,8 @@ internal sealed class PostgresFeatureStoreRefactored : IFeatureDataProvider, IFe
             _filterExpressionService,
             _rlsFilterSource,
             _fieldMaskSource,
-            _managedFeatureSchema);
+            _managedFeatureSchema,
+            _boundConnectionProvider);
     }
 
     public ITileProvider CreateTileProviderForBinding(FeatureProviderBinding binding)

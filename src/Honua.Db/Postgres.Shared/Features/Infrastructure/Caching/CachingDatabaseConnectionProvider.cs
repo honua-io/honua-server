@@ -86,7 +86,18 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
     /// </summary>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>A caching-enabled PostgreSQL connection</returns>
-    public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
+    public Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
+        => OpenConnectionCoreAsync(_dataSource, null, cancellationToken);
+
+    internal Task<DbConnection> OpenConnectionAsync(
+        Func<NpgsqlDataSource> resolveDataSource, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(resolveDataSource);
+        return OpenConnectionCoreAsync(null, resolveDataSource, cancellationToken);
+    }
+
+    private async Task<DbConnection> OpenConnectionCoreAsync(
+        NpgsqlDataSource? dataSource, Func<NpgsqlDataSource>? resolveDataSource, CancellationToken cancellationToken)
     {
         if (_concurrencyGate is not null)
         {
@@ -106,10 +117,23 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
         NpgsqlConnection? connection = null;
         try
         {
-            // Use the resilience extension method with logging callback
-            connection = await _dataSource.OpenConnectionWithRetryAsync(
-                onRetry: (ex, delay, attempt) => DatabaseConnectionRetry(_logger, attempt, ex.Message, ex),
-                cancellationToken: cancellationToken).ConfigureAwait(false);
+            // Resolve a bound pool after admission: it may have rotated while this
+            // request was queued. A rotation can also win between lookup and open;
+            // retry that narrow disposal race once while retaining the same slot.
+            var source = dataSource ?? resolveDataSource!();
+            try
+            {
+                connection = await source.OpenConnectionWithRetryAsync(
+                    onRetry: (ex, delay, attempt) => DatabaseConnectionRetry(_logger, attempt, ex.Message, ex),
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+            catch (ObjectDisposedException) when (resolveDataSource is not null)
+            {
+                source = resolveDataSource();
+                connection = await source.OpenConnectionWithRetryAsync(
+                    onRetry: (ex, delay, attempt) => DatabaseConnectionRetry(_logger, attempt, ex.Message, ex),
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
 
             await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
             DbConnectionTracking.Track(connection, _activeDbConnectionTracker);

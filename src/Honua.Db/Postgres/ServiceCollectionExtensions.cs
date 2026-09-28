@@ -527,7 +527,9 @@ internal static class ServiceCollectionExtensions
         services.AddHostedService<HighFrequencyQueryPreparationService>();
 
         // Register enhanced database connection provider with prepared statement caching
-        services.AddScoped<IDatabaseConnectionProvider, CachingDatabaseConnectionProvider>();
+        services.AddScoped<CachingDatabaseConnectionProvider>();
+        services.AddScoped<IDatabaseConnectionProvider>(provider =>
+            provider.GetRequiredService<CachingDatabaseConnectionProvider>());
 
         // Provider-internal ADO.NET escape hatch (ADR 0046): forwards to whatever
         // IDatabaseConnectionProvider resolves to at runtime so secure-connection

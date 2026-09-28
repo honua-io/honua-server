@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
 using Honua.Core.Configuration;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Configuration;
@@ -11,12 +10,22 @@ namespace Honua.Db.Postgres.Features.Security;
 
 internal sealed class SecureConnectionDataSourceCache : IDisposable
 {
-    private readonly ConcurrentDictionary<string, CacheEntry> _dataSources = new(StringComparer.Ordinal);
+    private readonly object _sync = new();
+    private readonly Dictionary<string, CacheEntry> _dataSources = new(StringComparer.Ordinal);
     private readonly bool _schemaHeadersEnabled;
     private readonly ConnectionLimits _connectionLimits;
     private readonly string? _defaultSchema;
+    private readonly Func<string, NpgsqlDataSource> _createDataSource;
+    private bool _disposed;
 
     public SecureConnectionDataSourceCache(IConfiguration configuration)
+        : this(configuration, null)
+    {
+    }
+
+    internal SecureConnectionDataSourceCache(
+        IConfiguration configuration,
+        Func<string, NpgsqlDataSource>? createDataSource)
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
@@ -33,6 +42,8 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable
         // ISchemaContext.CurrentSchema is null) fall back to the PostgreSQL default
         // search_path and miss schema-qualified tables (honua-server#2949).
         _defaultSchema = configuration["Database:Schema"];
+        _createDataSource = createDataSource ?? (connectionString =>
+            PostgresDataSourceFactory.Create(connectionString, _schemaHeadersEnabled, _connectionLimits, _defaultSchema));
     }
 
     public NpgsqlDataSource GetOrCreate(string connectionString)
@@ -57,49 +68,47 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable
             throw new ArgumentException("Connection string cannot be null or empty.", nameof(connectionString));
         }
 
-        while (true)
+        lock (_sync)
         {
-            var entry = _dataSources.GetOrAdd(connectionName, _ => CreateEntry(connectionString));
-            if (string.Equals(entry.ConnectionString, connectionString, StringComparison.Ordinal))
+            ObjectDisposedException.ThrowIf(_disposed, this);
+
+            _dataSources.TryGetValue(connectionName, out var entry);
+            if (entry != null && string.Equals(entry.ConnectionString, connectionString, StringComparison.Ordinal))
             {
-                return entry.DataSource.Value;
+                return entry.DataSource;
             }
 
-            // Connection string changed for this logical connection: swap in a fresh
-            // data source and dispose the previous one. Npgsql closes its idle pooled
-            // connections immediately and rented ones as they are returned, so in-flight
-            // commands on the old pool finish normally. Retry on a lost swap race.
-            var replacement = CreateEntry(connectionString);
-            if (_dataSources.TryUpdate(connectionName, replacement, entry))
-            {
-                if (entry.DataSource.IsValueCreated)
-                {
-                    entry.DataSource.Value.Dispose();
-                }
+            // Construction opens no database connection. Keep it under the lifecycle
+            // lock so rotation or shutdown cannot abandon an initializing pool. Build
+            // before replacing the entry so a failed rotation preserves the old pool.
+            var dataSource = _createDataSource(connectionString);
+            _dataSources[connectionName] = new CacheEntry(connectionString, dataSource);
 
-                return replacement.DataSource.Value;
-            }
+            // Npgsql closes idle pooled connections immediately and rented ones as
+            // they are returned, allowing commands already using the old pool to finish.
+            entry?.DataSource.Dispose();
+            return dataSource;
         }
     }
-
-    private CacheEntry CreateEntry(string connectionString)
-        => new(
-            connectionString,
-            new Lazy<NpgsqlDataSource>(
-                () => PostgresDataSourceFactory.Create(connectionString, _schemaHeadersEnabled, _connectionLimits, _defaultSchema),
-                LazyThreadSafetyMode.ExecutionAndPublication));
 
     public void Dispose()
     {
-        foreach (var dataSource in _dataSources.Values
-            .Where(entry => entry.DataSource.IsValueCreated)
-            .Select(entry => entry.DataSource.Value))
+        lock (_sync)
         {
-            dataSource.Dispose();
-        }
+            if (_disposed)
+            {
+                return;
+            }
 
-        _dataSources.Clear();
+            _disposed = true;
+            foreach (var entry in _dataSources.Values)
+            {
+                entry.DataSource.Dispose();
+            }
+
+            _dataSources.Clear();
+        }
     }
 
-    private sealed record CacheEntry(string ConnectionString, Lazy<NpgsqlDataSource> DataSource);
+    private sealed record CacheEntry(string ConnectionString, NpgsqlDataSource DataSource);
 }
