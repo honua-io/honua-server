@@ -21,6 +21,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 
 namespace Honua.Server.Tests.Features.Protocols.GeoServices.Catalog;
@@ -31,6 +32,9 @@ public sealed class GeoservicesCatalogGeocodeServerTests
     [IntegrationTheory]
     [InlineData("World", "GetServiceDescriptions")]
     [InlineData("City Locator", "GetServiceDescriptionsEx")]
+    [InlineData("Montréal 東京", "GetServiceDescriptionsEx")]
+    [InlineData("City%2FStreet", "GetServiceDescriptionsEx")]
+    [InlineData("City\\Street", "GetServiceDescriptionsEx")]
     [Operation(Operations.GetMetadata)]
     [Endpoint("GET /rest/services")]
     [Endpoint("POST /services")]
@@ -69,6 +73,24 @@ public sealed class GeoservicesCatalogGeocodeServerTests
         aliasResponse.StatusCode.Should().Be(HttpStatusCode.OK);
         using var alias = JsonDocument.Parse(await aliasResponse.Content.ReadAsStringAsync());
         alias.RootElement.GetProperty("locatorProperties").GetProperty("LocatorName").GetString().Should().Be(locatorName);
+    }
+
+    [IntegrationTheory]
+    [InlineData("City/Street")]
+    [InlineData("..")]
+    [Operation(Operations.GetMetadata)]
+    [Endpoint("GET /rest/services")]
+    public void Catalogs_UnaddressableLocatorName_FailsStartupBeforeAdvertising(string locatorName)
+    {
+        using var factory = CreateFactory(locatorName);
+        var exception = Record.Exception(() =>
+        {
+            using var client = factory.CreateClient();
+        });
+        exception.Should().NotBeNull("the named locator must occupy one route segment");
+        IEnumerable<Exception?> errors = exception is AggregateException aggregate ? aggregate.Flatten().InnerExceptions : [exception];
+        errors.Should().Contain(error => error is OptionsValidationException &&
+            error.Message.Contains("Geocoding:LocatorName", StringComparison.Ordinal));
     }
 
     [IntegrationTheory]

@@ -895,22 +895,12 @@ internal static class GeoservicesCatalogEndpoints
     }
 
     private static void AppendGeocodeServerEntry(
-        HttpContext context,
-        List<ServiceDirectoryEntry> entries,
-        string baseUrl,
-        ILogger logger,
-        string? serviceNameFilter = null)
+        HttpContext context, List<ServiceDirectoryEntry> entries, string baseUrl, ILogger logger)
     {
         try
         {
             var options = context.RequestServices.GetService<IOptions<GeocodingConfiguration>>()?.Value;
             if (options is not { Enabled: true })
-            {
-                return;
-            }
-
-            if (serviceNameFilter is not null
-                && !string.Equals(options.LocatorName, serviceNameFilter, StringComparison.OrdinalIgnoreCase))
             {
                 return;
             }
