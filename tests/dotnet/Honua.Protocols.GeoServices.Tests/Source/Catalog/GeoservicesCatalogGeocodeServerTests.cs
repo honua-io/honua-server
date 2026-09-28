@@ -134,30 +134,58 @@ public sealed class GeoservicesCatalogGeocodeServerTests
         await folder.AssertGeoServicesErrorAsync(499);
     }
 
-    [IntegrationTest]
+    [IntegrationTheory]
+    [InlineData(null, 499)]
+    [InlineData("other-role", 403)]
+    [InlineData("catalog-reader", 0)]
     [Operation(Operations.GetMetadata)]
-    [Endpoint("GET /rest/services")]
+    [Endpoint("GET /rest/services/{folderName}")]
+    public async Task ServiceFolder_PublicLocator_PreservesProtectedFolderAuthorization(string? role, int expectedError)
+    {
+        using var factory = CreateFactory(restrictedFeatures: true);
+        using var client = role is null ? factory.CreateClient() : ServiceRbacTestFixture.CreateClient(factory, role);
+        using var folder = await client.GetAsync($"/rest/services/{ServiceRbacTestFixture.AlphaService}?f=json");
+        if (expectedError != 0)
+        {
+            await folder.AssertGeoServicesErrorAsync(expectedError);
+        }
+        else
+        {
+            folder.StatusCode.Should().Be(HttpStatusCode.OK);
+            using var directory = JsonDocument.Parse(await folder.Content.ReadAsStringAsync());
+            directory.RootElement.GetProperty("services").EnumerateArray().Should().NotBeEmpty()
+                .And.OnlyContain(entry => entry.GetProperty("name").GetString() == ServiceRbacTestFixture.AlphaService);
+        }
+
+        using var missing = await client.GetAsync("/rest/services/missing-folder?f=json");
+        await missing.AssertGeoServicesErrorAsync(404);
+        using var publicFolder = await client.GetAsync("/rest/services/World?f=json");
+        publicFolder.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var locator = JsonDocument.Parse(await publicFolder.Content.ReadAsStringAsync());
+        locator.RootElement.GetProperty("services").EnumerateArray().Should().ContainSingle()
+            .Which.GetProperty("type").GetString().Should().Be("GeocodeServer");
+    }
+
+    [IntegrationTheory]
+    [InlineData(false, true, "ReverseGeocode")]
+    [InlineData(true, false, "Geocode")]
+    [InlineData(false, false, "")]
+    [Operation(Operations.GetMetadata)]
     [Endpoint("POST /services")]
     [Endpoint("GET /rest/services/{locatorName}/GeocodeServer")]
-    public async Task Catalogs_LocatorCapabilities_AdvertiseOnlySupportedOperations()
+    public async Task Catalogs_ProviderOperationFlags_MatchMetadataCapabilities(bool forward, bool reverse, string expected)
     {
-        using var factory = CreateFactory(capabilities: new GeocodeProviderCapabilities(
-            SupportsForwardGeocode: false,
-            SupportsReverseGeocode: true,
-            SupportsSuggest: false,
-            SupportsBatch: false));
+        using var factory = CreateFactory(providerCapabilities: new GeocodeProviderCapabilities(
+            SupportsForwardGeocode: forward, SupportsReverseGeocode: reverse));
         using var client = factory.CreateClient();
-
-        using var metadata = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
-        metadata.StatusCode.Should().Be(HttpStatusCode.OK);
-        using var metadataDocument = JsonDocument.Parse(await metadata.Content.ReadAsStringAsync());
-        metadataDocument.RootElement.GetProperty("capabilities").GetString().Should().Be("ReverseGeocode");
-
         var soap = await ReadSoapAsync(client);
         var description = soap.Descendants().Where(element => element.Name.LocalName == "ServiceDescription")
-            .Where(element => ChildValue(element, "Type") == "GeocodeServer")
-            .Should().ContainSingle().Which;
-        ChildValue(description, "Capabilities").Should().Be("ReverseGeocode");
+            .Single(element => ChildValue(element, "Type") == "GeocodeServer");
+        ChildValue(description, "Capabilities").Should().Be(expected);
+        using var response = await client.GetAsync("/rest/services/World/GeocodeServer?f=json");
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var metadata = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        metadata.RootElement.GetProperty("capabilities").GetString().Should().Be(expected);
     }
 
     [IntegrationTest]
@@ -184,13 +212,13 @@ public sealed class GeoservicesCatalogGeocodeServerTests
     private static WebApplicationFactory<Program> CreateFactory(
         string locatorName = "World", bool enabled = true, bool configured = true,
         bool restrictedFeatures = false, string? baseUrl = null, bool providerFails = false,
-        GeocodeProviderCapabilities? capabilities = null)
+        GeocodeProviderCapabilities? providerCapabilities = null)
     {
         var policy = ServiceRbacTestFixture.CreateServiceMetadata(
             allowAnonymous: !restrictedFeatures, readRoles: restrictedFeatures ? ["catalog-reader"] : null);
         var provider = Substitute.For<IGeocodeProvider>();
         provider.Name.Returns("catalog-test");
-        provider.Capabilities.Returns(capabilities ?? new GeocodeProviderCapabilities { SupportsSuggest = true, SupportsBatch = true });
+        provider.Capabilities.Returns(providerCapabilities ?? new GeocodeProviderCapabilities { SupportsSuggest = true, SupportsBatch = true });
         var registry = Substitute.For<IGeocodeProviderRegistry>();
         registry.GetProvider("catalog-test").Returns(_ => providerFails
             ? throw new InvalidOperationException("Configured provider cannot initialize.")
