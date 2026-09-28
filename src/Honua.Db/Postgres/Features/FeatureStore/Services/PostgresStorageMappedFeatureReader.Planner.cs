@@ -31,9 +31,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader
             EnvelopeMaxY: not null,
             SpatialRelationship: SpatialRelationship.Intersects or SpatialRelationship.EnvelopeIntersects
         } &&
-        // Reads acquire a fresh owned lease. An ambient transaction is the only
-        // caller-owned transaction that can flow into that lease; SET LOCAL
-        // would outlive this batch in such a transaction, so retain normal SQL.
+        // SET LOCAL would outlive the batch in an outer transaction. Exclude
+        // ambient scopes here and borrowed explicit transactions after opening
+        // the connection lease in ExecuteFeatureQueryAsync.
         Transaction.Current == null;
 
     private static NpgsqlBatch CreateSerialSpatialReadBatch(NpgsqlConnection connection, SqlBuilder sql)

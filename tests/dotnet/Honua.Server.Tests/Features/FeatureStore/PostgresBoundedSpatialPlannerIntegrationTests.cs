@@ -15,6 +15,7 @@ using Honua.Core.Features.Shared.Models;
 using Honua.Core.Queries.Filters;
 using Honua.Db.Postgres.Features.FeatureStore;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
+using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Server.Tests.Infrastructure;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.DependencyInjection;
@@ -155,6 +156,30 @@ public sealed class PostgresBoundedSpatialPlannerIntegrationTests(DatabaseFixtur
         }
 
         await AssertPoolSettingAsync();
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task QueryPage_BorrowedMutationTransaction_RetainsSettingUntilOuterTransactionEnds(bool commit)
+    {
+        var provider = new SourceProvider(_source);
+        var reader = CreateReader(provider: provider);
+        var processId = await ReadPoolProcessIdAsync();
+        await PostgresMutationTransaction.ExecuteAsync(provider, async () =>
+        {
+            Transaction.Current.Should().BeNull("the borrowed mutation scope does not use System.Transactions");
+            await using var lease = await provider.OpenNpgsqlConnectionAsync();
+            lease.Transaction.Should().NotBeNull();
+            lease.Connection.ProcessID.Should().Be(processId);
+            var result = await reader.QueryPageAsync(1, Bbox());
+            result.Items.Select(Setting).Should().OnlyContain(value => value == "2");
+            await using var command = new NpgsqlCommand("SHOW max_parallel_workers_per_gather", lease);
+            (await command.ExecuteScalarAsync()).Should().Be("2",
+                "the read must leave the caller-owned transaction's planner setting unchanged");
+            return true;
+        }, _ => commit, CancellationToken.None);
+        await AssertPoolSettingAsync(processId);
     }
 
     [IntegrationTest]
@@ -320,14 +345,15 @@ public sealed class PostgresBoundedSpatialPlannerIntegrationTests(DatabaseFixtur
     }
 
     private PostgresStorageMappedFeatureReader CreateReader(bool enabled = true, bool sourceBacked = true,
-        MetadataV2GeometryType geometryType = MetadataV2GeometryType.Point, bool secured = false)
+        MetadataV2GeometryType geometryType = MetadataV2GeometryType.Point, bool secured = false,
+        IAdoNetDatabaseConnectionProvider? provider = null)
     {
         var resource = CreateResource(geometryType);
         var rls = Substitute.For<IRowLevelSecurityFilterSource>();
         rls.ResolveAsync(resource, Arg.Any<CancellationToken>()).Returns(new SqlFragment("\"id\" > @p0", [1]));
         var masks = Substitute.For<IFieldMaskSource>();
         masks.ResolveAsync(resource, Arg.Any<CancellationToken>()).Returns(["secret"]);
-        return new PostgresStorageMappedFeatureReader(new SourceProvider(_source),
+        return new PostgresStorageMappedFeatureReader(provider ?? new SourceProvider(_source),
             new DefaultObjectPoolProvider().Create(new Honua.Core.Features.Infrastructure.ServiceRegistration.DictionaryPooledObjectPolicy()),
             resource,
             CreateMapping(sourceBacked),

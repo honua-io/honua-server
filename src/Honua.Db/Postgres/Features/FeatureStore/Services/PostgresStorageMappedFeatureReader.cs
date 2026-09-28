@@ -412,7 +412,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         var features = ImmutableArray.CreateBuilder<Feature>();
 
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        var useSerialPlan = ShouldUseSerialSpatialPlan(query);
+        var useSerialPlan = connection.Transaction is null && ShouldUseSerialSpatialPlan(query);
         await using var command = useSerialPlan ? null : CreateReadCommand(connection, sql);
         await using var batch = useSerialPlan ? CreateSerialSpatialReadBatch(connection, sql) : null;
         await using var reader = batch == null

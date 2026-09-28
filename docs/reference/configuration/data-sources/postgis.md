@@ -157,7 +157,8 @@ declared-type predicate without changing those query semantics.
 profile for source-backed PostGIS point layers. The default is `false`. Eligible
 reads have a simple intersects/envelope bbox, an effective first-page limit of
 1–100 features before the extra pagination probe row, default ordering, and no distinct, branch-version or null-geometry request.
-Unknown geometry types and ambient transactions retain ordinary planning.
+Unknown geometry types, ambient transactions and borrowed mutation transactions
+retain ordinary planning.
 Counts, statistics, streaming, tiles, larger pages, later pages and custom sorts
 also retain ordinary planning.
 
