@@ -5,8 +5,10 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using FluentAssertions;
+using Honua.Core.Features.Licensing.Domain;
 using Honua.TestKit;
 using Honua.TestKit.Attributes;
+using Honua.TestKit.Helpers;
 using Microsoft.Extensions.Configuration;
 
 namespace Honua.Server.Tests.Features.Protocols.Scene;
@@ -29,6 +31,8 @@ public sealed class SceneTilesetEndpointTests : IAsyncLifetime
         _fixtureRoot = SceneFixturePaths.ResolveFixtureRoot();
 
         _fixture = new WebAppFixture()
+            // Exercise the output-cache middleware, which requires a Pro entitlement.
+            .WithTestLicense(HonuaEdition.Pro)
             .ConfigureWebHost(builder =>
             {
                 // Public scene tests exercise anonymous behavior end-to-end:
@@ -90,6 +94,53 @@ public sealed class SceneTilesetEndpointTests : IAsyncLifetime
         first.Headers.ETag.Should().NotBeNull();
         second.Headers.ETag.Should().NotBeNull();
         second.Headers.ETag!.Tag.Should().Be(first.Headers.ETag!.Tag);
+    }
+
+    [IntegrationTheory]
+    [Operation(Operations.GetTileMetadata, Operations.GetTile)]
+    [Endpoint("GET /scenes/{sceneId}/tileset.json")]
+    [Endpoint("GET /scenes/{sceneId}/{*assetPath}")]
+    [InlineData("tileset.json", "honua:5000", "host.docker.internal:18443")]
+    [InlineData("tileset.json", "host.docker.internal:18443", "honua:5000")]
+    [InlineData("tiles/0.b3dm", "honua:5000", "host.docker.internal:18443")]
+    [InlineData("tiles/0.b3dm", "host.docker.internal:18443", "honua:5000")]
+    public async Task GetSceneAsset_InternalAndAdvertisedHosts_SharePublicCacheEntry(
+        string assetPath, string firstHost, string secondHost)
+    {
+        var path = $"/scenes/{SceneFixturePaths.FixtureSceneId}/{assetPath}";
+        using var firstRequest = new HttpRequestMessage(HttpMethod.Get, path);
+        firstRequest.Headers.Host = firstHost;
+        using var first = await _fixture.Client.SendAsync(firstRequest);
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        first.Headers.CacheControl?.Public.Should().BeTrue();
+        var expected = await first.Content.ReadAsByteArrayAsync();
+
+        using var secondRequest = new HttpRequestMessage(HttpMethod.Get, path);
+        secondRequest.Headers.Host = secondHost;
+        using var second = await _fixture.Client.SendAsync(secondRequest);
+
+        second.StatusCode.Should().Be(HttpStatusCode.OK);
+        second.Headers.Age.Should().NotBeNull("the advertised and internal hosts must reuse the same anonymous cache entry");
+        second.Headers.ETag.Should().Be(first.Headers.ETag);
+        (await second.Content.ReadAsByteArrayAsync()).Should().Equal(expected);
+    }
+
+    [IntegrationTheory]
+    [Operation(Operations.GetTileMetadata)]
+    [Endpoint("GET /scenes/{sceneId}/tileset.json")]
+    [InlineData("http", "honua:5000")]
+    [InlineData("http", "host.docker.internal:18443")]
+    [InlineData("https", "host.docker.internal:18443")]
+    public async Task GetTileset_ColdRequest_ResolvesInternalAndAdvertisedIdentities(string scheme, string host)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get,
+            $"{scheme}://{host}/scenes/{SceneFixturePaths.FixtureSceneId}/tileset.json");
+        using var response = await _fixture.Client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        json.RootElement.GetProperty("asset").GetProperty("version").GetString().Should().Be("1.1");
+        json.RootElement.GetProperty("root").GetProperty("content").GetProperty("uri").GetString().Should().Be("tiles/0.b3dm");
     }
 
     [IntegrationTest]
