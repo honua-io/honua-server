@@ -135,11 +135,27 @@ The full admission set (adaptive bounds, target lease duration, update interval)
 ## Indexing numeric source columns
 
 For source-backed layers with physical columns, Honua retains the published
-numeric type in filter expressions. A PostgreSQL `smallint` column published as
-`Integer` is queried as `priority::integer`. That widening cast can prevent a
-normal index on `priority` from serving a selective filter.
+numeric type in filter expressions. Newly published PostgreSQL `smallint` columns
+include a provider hint that lets simple `Integer` comparisons (`=`, `!=`, `<>`,
+`<`, `<=`, `>`, `>=` with an integer literal) use an ordinary index on the source
+column. Parameters retain their original integer width, including out-of-range
+literals.
 
-An expression index matching the declared type preserves the filter's semantics:
+Publication hints can become stale. Before an eligible buffered or streaming read,
+Honua checks the actual column type in a row-free statement batched with the query
+in one database round trip. The batch holds the relation lock until execution
+finishes, preventing external DDL between verification and use. A mismatched type,
+domain, or custom operator search path uses the original declared-type query.
+The discarded statement is guarded against evaluating source rows or row-security
+policies. Existing transactions, bindings without hints, compound predicates,
+arithmetic, explicit casts, JSONB attributes, counts and aggregates retain the
+canonical casts.
+Republish an existing source layer to record its current smallint hints; existing
+publications do not discover or persist these hints during queries.
+
+Those canonical queries can still use an expression index matching the declared
+type. For example, `priority::integer` can prevent an ordinary `smallint` index
+from serving a selective filter; an expression index preserves its semantics:
 
 ```sql
 CREATE INDEX CONCURRENTLY features_priority_integer_idx
@@ -157,9 +173,11 @@ adds maintenance work on writes. See PostgreSQL's
 This example applies to physical `smallint` columns published as `Integer`, not
 fields stored inside a JSONB attributes document. Honua keeps numeric casts
 because removing them can change arithmetic overflow and decimal-to-Double
-comparison results. Source schema changes also make publication-time type hints
-insufficient to justify removing a cast. An expression index supports the current
-declared-type predicate without changing those query semantics.
+comparison results. An expression index supports the canonical declared-type
+predicate without changing those query semantics. Check the plan before adding
+one to a newly published source whose simple comparisons already use its ordinary
+index.
+
 ## Bounded source-backed spatial reads
 
 `Database__PreferSerialBoundedSpatialReads=true` opts into a narrow serial-planner

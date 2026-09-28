@@ -6,6 +6,7 @@ using Honua.Core.Features.FeatureStore.Domain;
 using Honua.Core.Features.Infrastructure.Abstractions;
 using Honua.Core.Features.Infrastructure.Monitoring;
 using Honua.Core.Features.Metadata.Domain.V2;
+using Honua.Core.Queries.Filters;
 using Honua.Core.Features.Security.Abstractions;
 using Honua.Core.Features.Security.Domain;
 using Honua.Db.Postgres.Features.FeatureStore.Services;
@@ -69,6 +70,78 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
         var result = await reader.QueryPageAsync(1, new FeatureQuery { Limit = 1 });
         result.Items.Should().ContainSingle().Which.Id.Should().Be(7);
         harness.Gate.AvailableSlots.Should().Be(1);
+    }
+
+    [IntegrationTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task BoundReader_SmallintBatch_ReleasesAdmissionAfterDisposalFallbackAndCancellation(bool multiplexing)
+    {
+        await using var setup = new NpgsqlConnection(_sourceString);
+        await setup.OpenAsync();
+        await using (var command = new NpgsqlCommand("ALTER TABLE public.pool_probe ALTER COLUMN name TYPE smallint USING 1;", setup))
+        {
+            await command.ExecuteNonQueryAsync();
+        }
+        using var harness = new Harness(fixture.DataSource, multiplexing: multiplexing);
+        var reader = CreateReader(harness, smallintHint: true);
+        var query = new FeatureQuery
+        {
+            Limit = 10,
+            SqlFilter = new SqlFragment("NULLIF(\"attributes\" ->> 'name', '')::integer = @p0", [1L])
+        };
+        await using (var stream = reader.StreamFeaturesAsync(1, query).GetAsyncEnumerator())
+        {
+            (await stream.MoveNextAsync()).Should().BeTrue();
+            harness.Gate.AvailableSlots.Should().Be(0);
+            harness.Tracker.GetActiveCount().Should().Be(1);
+        }
+        harness.Gate.AvailableSlots.Should().Be(1);
+        harness.Tracker.GetActiveCount().Should().Be(0);
+
+        var invalidQuery = () => reader.QueryPageAsync(1, query with
+        {
+            EnforcedSqlFilter = new SqlFragment("1 / 0 = 0", [])
+        });
+        (await invalidQuery.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().Be(PostgresErrorCodes.DivisionByZero);
+        harness.Gate.AvailableSlots.Should().Be(1);
+        harness.Tracker.GetActiveCount().Should().Be(0);
+
+        // A parse failure in the discarded statement must not acquire a second lease.
+        await using (var command = new NpgsqlCommand("ALTER TABLE public.pool_probe ALTER COLUMN name TYPE boolean USING name = 1;", setup))
+        {
+            await command.ExecuteNonQueryAsync();
+        }
+        (await reader.QueryPageAsync(1, query)).Items.Should().ContainSingle().Which.Id.Should().Be(7);
+        harness.Gate.AvailableSlots.Should().Be(1);
+        harness.Tracker.GetActiveCount().Should().Be(0);
+        harness.Metrics.GetTotalTimeouts().Should().Be(0);
+
+        // Cancel while the first, row-free verification is waiting for the relation lock.
+        await using var transaction = await setup.BeginTransactionAsync();
+        await using (var command = new NpgsqlCommand("LOCK TABLE public.pool_probe IN ACCESS EXCLUSIVE MODE", setup, transaction))
+        {
+            await command.ExecuteNonQueryAsync();
+        }
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(300));
+        var cancelledRead = () => reader.QueryPageAsync(1, query, cancellation.Token);
+        var cancellationError = await Record.ExceptionAsync(() => cancelledRead());
+        cancellation.IsCancellationRequested.Should().BeTrue();
+        if (multiplexing && cancellationError is NpgsqlException providerTimeout)
+        {
+            // Npgsql 10 multiplexing also surfaces in-flight cancellation as a read
+            // timeout for a plain canonical command. Verify cleanup for that existing
+            // provider behavior, without weakening the default cancellation contract.
+            providerTimeout.InnerException.Should().BeOfType<TimeoutException>();
+        }
+        else
+        {
+            cancellationError.Should().BeAssignableTo<OperationCanceledException>();
+        }
+        harness.Gate.AvailableSlots.Should().Be(1);
+        harness.Tracker.GetActiveCount().Should().Be(0);
+        await transaction.RollbackAsync();
+        (await reader.QueryPageAsync(1, query)).Items.Should().ContainSingle();
     }
 
     [IntegrationTest]
@@ -334,15 +407,20 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
 
     private PostgresStorageMappedFeatureReader CreateReader(
         Harness harness, DataConnection? binding = null, IConnectionEncryptionService? encryption = null,
-        string? schemaName = "public", string tableName = "pool_probe")
+        string? schemaName = "public", string tableName = "pool_probe", bool smallintHint = false)
         => new(harness.Primary,
             new DefaultObjectPoolProvider().Create(new Honua.Core.Features.Infrastructure.ServiceRegistration.DictionaryPooledObjectPolicy()),
             new MetadataV2Resource
             {
                 Metadata = new MetadataV2ObjectMetadata { Id = "pool-probe", Name = "pool-probe" },
-                SchemaFields = [new MetadataV2Field { Name = "name", Type = MetadataV2FieldType.String }]
+                SchemaFields = [new MetadataV2Field { Name = "name", Type = smallintHint ? MetadataV2FieldType.Integer : MetadataV2FieldType.String }]
             },
-            new FeatureStorageMapping(tableName, SchemaName: schemaName, PrimaryKeyColumn: "id", GeometryColumn: null),
+            new FeatureStorageMapping(tableName, SchemaName: schemaName, PrimaryKeyColumn: "id", GeometryColumn: null,
+                ProviderOptions: smallintHint ? new Dictionary<string, string>
+                {
+                    [FeatureStorageMapping.SourceBackedOption] = "true",
+                    ["postgresSmallintColumn:name"] = "true"
+                } : null),
             binding ?? new DataConnection { Id = "source", IsEncrypted = false, ConnectionString = _sourceString },
             encryption, boundConnectionProvider: harness.Bound);
 

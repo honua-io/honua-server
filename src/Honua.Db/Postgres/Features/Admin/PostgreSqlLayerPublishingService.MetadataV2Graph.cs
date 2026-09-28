@@ -3335,6 +3335,10 @@ internal sealed partial class PostgreSqlLayerPublishingService
         if (!storage.IsManagedStore)
         {
             options[FeatureStorageMapping.SourceBackedOption] = BoolOption(true);
+            foreach (var column in storage.SmallintColumns ?? [])
+            {
+                options[PostgresColumnTypeHints.SmallintColumnPrefix + column] = BoolOption(true);
+            }
         }
 
         if (storage.BindingSchemaName is not null)

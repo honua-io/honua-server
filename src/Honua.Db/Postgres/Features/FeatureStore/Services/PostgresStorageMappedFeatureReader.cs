@@ -362,11 +362,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         query = await ApplyReadSecurityAsync(query, cancellationToken).ConfigureAwait(false);
-        var sql = BuildFeatureSelect(query, probeLimit: false);
-        await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = CreateReadCommand(connection, sql);
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-
+        await using var session = await OpenFeatureReadSessionAsync(
+            query, probeLimit: false, allowSerialPlan: false, cancellationToken).ConfigureAwait(false);
+        var reader = session.Reader!;
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             yield return ReadFeature(reader);
@@ -408,21 +406,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         bool probeLimit,
         CancellationToken cancellationToken)
     {
-        var sql = BuildFeatureSelect(query, probeLimit);
         var features = ImmutableArray.CreateBuilder<Feature>();
-
-        await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        var useSerialPlan = connection.Transaction is null && ShouldUseSerialSpatialPlan(query);
-        await using var command = useSerialPlan ? null : CreateReadCommand(connection, sql);
-        await using var batch = useSerialPlan ? CreateSerialSpatialReadBatch(connection, sql) : null;
-        await using var reader = batch == null
-            ? await command!.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false)
-            : await batch.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        if (batch != null && !await reader.NextResultAsync(cancellationToken).ConfigureAwait(false))
-        {
-            throw new InvalidOperationException("The scoped planner batch did not return feature query results.");
-        }
-
+        await using var session = await OpenFeatureReadSessionAsync(
+            query, probeLimit, allowSerialPlan: true, cancellationToken).ConfigureAwait(false);
+        var reader = session.Reader!;
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             features.Add(ReadFeature(reader));
@@ -432,8 +419,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     }
 
     private SqlBuilder BuildFeatureSelect(FeatureQuery query, bool probeLimit)
+        => BuildFeatureSelectCore(query, probeLimit, TryGetSmallintComparison(query));
+
+    private SqlBuilder BuildFeatureSelectCore(FeatureQuery query, bool probeLimit, SmallintComparison? comparison)
     {
-        var sql = new SqlBuilder();
+        var sql = new SqlBuilder { SmallintComparison = comparison };
         // Preserve Z/M ordinates through extended WKB when the canonical query requests it (returnZ/
         // returnM); ST_AsBinary emits 2D OGC WKB and silently drops higher ordinates. EWKB is read
         // transparently by the WKB consumers, so 2D-only data is unaffected.
@@ -644,6 +634,10 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private void AppendFilter(SqlBuilder sql, FeatureQuery query, string prefix = "WHERE")
     {
         var conditions = new List<string>();
+        if (sql.SmallintComparison is { } smallint)
+        {
+            conditions.Add(BuildSmallintTypeGuard(smallint, lockRelation: false));
+        }
         if (query.TextSearch is { } search)
         {
             conditions.Add(FeatureTextSearchSql.Build(search,
@@ -667,7 +661,9 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
         if (query.SqlFilter != null)
         {
-            conditions.Add(ConvertSqlFilter(query.SqlFilter, sql));
+            conditions.Add(sql.SmallintComparison is { } comparison
+                ? $"{ResolveColumnExpression(comparison.FieldName, sql)} {comparison.Operator} {sql.AddParameter(comparison.Value)}"
+                : ConvertSqlFilter(query.SqlFilter, sql));
         }
         else if (!string.IsNullOrWhiteSpace(query.Where))
         {
@@ -1648,6 +1644,11 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
 
     private static NpgsqlCommand CreateReadCommand(NpgsqlConnection connection, SqlBuilder sql)
     {
+        if (sql.SmallintComparison is not null)
+        {
+            throw new InvalidOperationException("A smallint query requires its type-verification batch.");
+        }
+
         var command = PostgresSqlSafety.CreateReadCommand(connection, sql.ToString());
         foreach (var parameter in sql.Parameters)
         {
@@ -2002,6 +2003,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         public IReadOnlyList<object?> Parameters => _parameters;
 
         public bool HasOuterFilter { get; set; }
+
+        public SmallintComparison? SmallintComparison { get; init; }
 
         public void Append(string value) => _text.Append(value);
 

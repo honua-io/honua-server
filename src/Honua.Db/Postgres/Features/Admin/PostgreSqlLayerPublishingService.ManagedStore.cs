@@ -305,14 +305,16 @@ internal sealed partial class PostgreSqlLayerPublishingService
         string? GeometryColumn,
         int StorageSrid,
         string StorageOptionsJson,
-        bool IsManagedStore)
+        bool IsManagedStore,
+        IReadOnlyList<string>? SmallintColumns = null)
     {
         public static PublishedLayerStorage ForSourceTable(
             string schema,
             string table,
             string primaryKeyColumn,
             string? geometryColumn,
-            int storageSrid)
+            int storageSrid,
+            IReadOnlyList<string>? smallintColumns = null)
             => new(
                 schema,
                 schema,
@@ -321,7 +323,8 @@ internal sealed partial class PostgreSqlLayerPublishingService
                 geometryColumn,
                 storageSrid,
                 SourceBackedStorageOptionsJson,
-                IsManagedStore: false);
+                IsManagedStore: false,
+                SmallintColumns: smallintColumns);
 
         // Materialization transforms every geometry to the layer SRID, so managed rows are
         // stored in it.

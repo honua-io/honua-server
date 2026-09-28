@@ -383,7 +383,9 @@ internal sealed partial class PostgreSqlLayerPublishingService(
                     ?? await ResolveCanonicalFeaturesSchemaAsync(connection, transaction, cancellationToken).ConfigureAwait(false),
                 _configuredFeatureSchema,
                 srid)
-            : PublishedLayerStorage.ForSourceTable(schema, table, primaryKeyColumn!.Name, geometryColumn, storageSrid);
+            : PublishedLayerStorage.ForSourceTable(schema, table, primaryKeyColumn!.Name, geometryColumn, storageSrid,
+                selectedColumns.Where(column => column.DataType.Equals("smallint", StringComparison.OrdinalIgnoreCase))
+                    .Select(column => column.Name).ToArray());
 
         if (storage.IsManagedStore)
         {
