@@ -149,6 +149,69 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
     }
 
     [Fact]
+    public async Task QueryPageAsync_SmallintPublishedAsInteger_UsesDeclaredTypeExpressionIndex()
+    {
+        await _fixture.ExecuteAsync($"""
+            TRUNCATE {_schema}.cities;
+            ALTER TABLE {_schema}.cities ALTER COLUMN population TYPE smallint;
+            INSERT INTO {_schema}.cities (objectid, population)
+                SELECT i, (i % 30000)::smallint FROM generate_series(1, 100000) AS i;
+            INSERT INTO {_schema}.cities (objectid, population) VALUES
+                (100001, -32768), (100002, 32767), (100003, NULL);
+            CREATE INDEX cities_population_smallint_idx ON {_schema}.cities (population);
+            CREATE INDEX cities_population_integer_expr_idx ON {_schema}.cities ((population::integer));
+            ANALYZE {_schema}.cities;
+            """);
+        var reader = CreateReader();
+        var query = new FeatureQuery
+        {
+            SqlFilter = new SqlFragment("NULLIF(\"attributes\" ->> 'population', '')::integer = @p0", [32767])
+        };
+        var result = await reader.QueryPageAsync(1, query);
+        result.Items.Select(feature => feature.Id).Should().Equal(100002);
+
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(reader, [query, false])!;
+        var parameters = (IReadOnlyList<object?>)sql.GetType().GetProperty("Parameters")!.GetValue(sql)!;
+        await using var connection = await _fixture.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "EXPLAIN (FORMAT JSON) " + sql;
+        foreach (var value in parameters)
+        {
+            command.Parameters.Add(new NpgsqlParameter { Value = value ?? DBNull.Value });
+        }
+
+        var plan = (string)(await command.ExecuteScalarAsync())!;
+        plan.Should().Contain("cities_population_integer_expr_idx",
+            "the expression index must serve the declared Integer predicate without removing its widening cast");
+
+        var outsideSmallintRange = await reader.QueryPageAsync(1, query with
+        {
+            SqlFilter = new SqlFragment("NULLIF(\"attributes\" ->> 'population', '')::integer = @p0", [40000])
+        });
+        outsideSmallintRange.Items.Should().BeEmpty();
+
+        var widenedArithmetic = await reader.QueryPageAsync(1, query with
+        {
+            SqlFilter = new SqlFragment("(NULLIF(\"attributes\" ->> 'population', '')::integer + NULLIF(\"attributes\" ->> 'population', '')::integer) = @p0", [65534])
+        });
+        widenedArithmetic.Items.Select(feature => feature.Id).Should().Equal(100002);
+
+        var lowerBoundary = await reader.QueryPageAsync(1, query with
+        {
+            SqlFilter = new SqlFragment("NULLIF(\"attributes\" ->> 'population', '')::integer <= @p0", [-32768])
+        });
+        lowerBoundary.Items.Select(feature => feature.Id).Should().Equal(100001);
+
+        var nulls = await reader.QueryPageAsync(1, query with
+        {
+            SqlFilter = new SqlFragment("NULLIF(\"attributes\" ->> 'population', '')::integer IS NULL", [])
+        });
+        nulls.Items.Select(feature => feature.Id).Should().Equal(100003);
+    }
+
+    [Fact]
     public async Task QueryFlatGeobufAsync_SourceBackedLayer_ReturnsFlatGeobufPayload()
     {
         var reader = CreateReader();

@@ -106,6 +106,35 @@ Honua applies its PostgreSQL session settings (`lock_timeout`, `statement_timeou
 
 The full admission set (adaptive bounds, target lease duration, update interval) is in the [environment variable reference](../environment-variables.md#admission-and-pooling). Pool and admission behavior can be observed at `GET /monitoring/metrics/connection-pool`.
 
+## Indexing numeric source columns
+
+For source-backed layers with physical columns, Honua retains the published
+numeric type in filter expressions. A PostgreSQL `smallint` column published as
+`Integer` is queried as `priority::integer`. That widening cast can prevent a
+normal index on `priority` from serving a selective filter.
+
+An expression index matching the declared type preserves the filter's semantics:
+
+```sql
+CREATE INDEX CONCURRENTLY features_priority_integer_idx
+    ON public.features ((priority::integer));
+ANALYZE public.features;
+EXPLAIN SELECT * FROM public.features WHERE priority::integer = 32767;
+```
+
+Replace the example table and column with the source binding's names. Run
+`CREATE INDEX CONCURRENTLY` outside a transaction block. Check the actual query
+plan and workload before retaining the additional index: it consumes storage and
+adds maintenance work on writes. See PostgreSQL's
+[indexes on expressions](https://www.postgresql.org/docs/current/indexes-expressional.html).
+
+This example applies to physical `smallint` columns published as `Integer`, not
+fields stored inside a JSONB attributes document. Honua keeps numeric casts
+because removing them can change arithmetic overflow and decimal-to-Double
+comparison results. Source schema changes also make publication-time type hints
+insufficient to justify removing a cast. An expression index supports the current
+declared-type predicate without changing those query semantics.
+
 ## Related pages
 
 - [Data sources overview](README.md)
