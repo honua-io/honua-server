@@ -251,10 +251,14 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
         harness.Gate.AvailableSlots.Should().Be(1);
     }
 
-    [IntegrationTest]
-    public async Task RepeatedRotationBetweenAcquisitionAndOpen_PreservesPinnedPoolAndAdmission()
+    [IntegrationTheory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task RepeatedRotationBetweenAcquisitionAndOpen_PreservesPinnedPoolAndAdmission(bool multiplexing, bool admissionEnabled)
     {
-        using var harness = new Harness(fixture.DataSource);
+        using var harness = new Harness(fixture.DataSource, multiplexing: multiplexing, admissionEnabled: admissionEnabled);
         NpgsqlDataSource? retired = null;
         var resolutions = 0;
         await using var connection = await harness.Primary.OpenConnectionAsync(() =>
@@ -277,12 +281,6 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
         resolutions.Should().Be(1);
         harness.Metrics.GetTotalFailures().Should().Be(0);
         harness.Tracker.GetActiveCount().Should().Be(1);
-        // The acquisition pin was released after open. Its retired source is
-        // disposed, but the already-open connection remains usable until return.
-        await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
-        {
-            await using var unexpected = await retired!.OpenConnectionAsync();
-        });
         await using (var command = connection.CreateCommand())
         {
             command.CommandText = "SELECT 1";
@@ -291,6 +289,47 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
 
         await connection.DisposeAsync();
         harness.Gate.AvailableSlots.Should().Be(1);
+        await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
+        {
+            await using var unexpected = await retired!.OpenConnectionAsync();
+            // A multiplexed logical open defers the disposed-pool check until binding.
+            await using var transaction = await unexpected.BeginTransactionAsync();
+        });
+    }
+
+    [IntegrationTheory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task RotationAfterOpen_KeepsReturnedConnectionUsableUntilDisposal(bool multiplexing, bool admissionEnabled)
+    {
+        using var harness = new Harness(fixture.DataSource, multiplexing: multiplexing, admissionEnabled: admissionEnabled);
+        var initial = harness.Cache.Acquire("bound-id:source", _sourceString, preservePrimarySchema: false);
+        var originalSource = initial.DataSource;
+        initial.Dispose();
+        await using var connection = await harness.Bound.OpenConnectionAsync("source", _sourceString);
+        using var replacement = harness.Cache.Acquire("bound-id:source",
+            new NpgsqlConnectionStringBuilder(_sourceString) { ApplicationName = "after-open" }.ConnectionString,
+            preservePrimarySchema: false);
+
+        // Multiplexed opens can remain unbound until a command executes, and
+        // later commands still depend on the retained data source's channel.
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            await using var command = new NpgsqlCommand("SELECT 1", connection);
+            (await command.ExecuteScalarAsync()).Should().Be(1);
+        }
+
+        await connection.DisposeAsync();
+        harness.Gate.AvailableSlots.Should().Be(1);
+        harness.Tracker.GetActiveCount().Should().Be(0);
+        await Assert.ThrowsAsync<ObjectDisposedException>(async () =>
+        {
+            await using var unexpected = await originalSource.OpenConnectionAsync();
+            // A multiplexed logical open defers the disposed-pool check until binding.
+            await using var transaction = await unexpected.BeginTransactionAsync();
+        });
     }
 
     private PostgresStorageMappedFeatureReader CreateReader(
@@ -317,7 +356,7 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
         public readonly PostgresBoundConnectionProvider Bound;
 
         public Harness(NpgsqlDataSource defaultSource, string? primarySchema = null, string? requestSchema = null,
-            bool multiplexing = false)
+            bool multiplexing = false, bool admissionEnabled = true)
         {
             var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -338,7 +377,7 @@ public sealed class PostgresBoundConnectionProviderTests(PostgresFixture fixture
             Primary = new CachingDatabaseConnectionProvider(defaultSource,
                 NullLogger<CachingDatabaseConnectionProvider>.Instance,
                 schemaContext: schemaContext,
-                activeDbConnectionTracker: Tracker, concurrencyGate: Gate, connectionPoolMetrics: Metrics);
+                activeDbConnectionTracker: Tracker, concurrencyGate: admissionEnabled ? Gate : null, connectionPoolMetrics: Metrics);
             Bound = new PostgresBoundConnectionProvider(Cache, Primary);
         }
 

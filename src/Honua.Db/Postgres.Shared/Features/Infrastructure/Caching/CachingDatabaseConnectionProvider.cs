@@ -118,12 +118,14 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
 
         var slotAcquiredAt = Stopwatch.GetTimestamp();
         NpgsqlConnection? connection = null;
+        IDisposable? acquisition = null;
         try
         {
-            // Acquire after admission, and pin that pool generation until its open
-            // completes. Overlapping old/new credentials cannot retire a pending open.
+            // Acquire after admission and pin the generation through connection
+            // disposal. Multiplexed logical connections still need their source's
+            // command channel after OpenConnectionAsync has completed.
             var acquired = acquireDataSource?.Invoke();
-            using var acquisition = acquired?.Acquisition;
+            acquisition = acquired?.Acquisition;
             var source = dataSource ?? acquired!.Value.DataSource;
             connection = await source.OpenConnectionWithRetryAsync(
                 onRetry: (ex, delay, attempt) => DatabaseConnectionRetry(_logger, attempt, ex.Message, ex),
@@ -135,9 +137,11 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
             }
             DbConnectionTracking.Track(connection, _activeDbConnectionTracker);
 
-            return _concurrencyGate is null
+            DbConnection lease = _concurrencyGate is null && acquisition is null
                 ? connection
-                : new SemaphoreReleasingConnection(connection, () => ReleaseOneSlot(slotAcquiredAt));
+                : new SemaphoreReleasingConnection(connection, () => ReleaseOneSlot(slotAcquiredAt), acquisition);
+            acquisition = null; // Ownership moved into the returned connection.
+            return lease;
         }
         catch (Exception ex)
         {
@@ -159,6 +163,10 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
             // database is unhealthy. Release the slot without recording metrics.
             ReleaseOneSlot(0);
             throw;
+        }
+        finally
+        {
+            acquisition?.Dispose();
         }
     }
 

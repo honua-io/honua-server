@@ -65,9 +65,9 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable
     }
 
     /// <summary>
-    /// Pins a pool until its connection-open attempt completes. Rotation and shutdown
-    /// retire pinned pools; their disposal waits for the last pending acquisition.
-    /// Opened connections remain owned by Npgsql and can finish after pool disposal.
+    /// Pins a pool through its connection lifetime, including an in-flight open.
+    /// Rotation and shutdown retire pinned pools; disposal waits for the last pin.
+    /// Multiplexed logical connections need their source until the lease is returned.
     /// </summary>
     public Acquisition Acquire(string connectionName, string connectionString, bool preservePrimarySchema = true)
     {

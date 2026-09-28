@@ -197,20 +197,22 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IAdoNetDatabaseCon
         }
 
         NpgsqlConnection? connection = null;
+        SecureConnectionDataSourceCache.Acquisition? acquisition = null;
         try
         {
-            // Pin this generation through open so concurrent secret rotation
-            // can retire it without disposing a still-pending acquisition.
-            using var acquisition = _dataSourceCache.Acquire(_namedConnectionToUse, connectionString);
-            connection = await acquisition.DataSource.OpenConnectionWithRetryAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+            // Multiplexed logical connections need the source command channel for
+            // their whole lease, so retain the pool pin until connection disposal.
+            var source = _dataSourceCache.Acquire(_namedConnectionToUse, connectionString);
+            acquisition = source;
+            connection = await source.DataSource.OpenConnectionWithRetryAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
             await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
 
             _logSecureConnectionOpened(_logger, _namedConnectionToUse, null);
             DbConnectionTracking.Track(connection, _activeDbConnectionTracker);
 
-            return _concurrencyGate is null
-                ? connection
-                : new SemaphoreReleasingConnection(connection, () => ReleaseOneSlot(slotAcquiredAt));
+            var lease = new SemaphoreReleasingConnection(connection, () => ReleaseOneSlot(slotAcquiredAt), acquisition);
+            acquisition = null;
+            return lease;
         }
         catch
         {
@@ -225,6 +227,10 @@ internal sealed class SecureConnectionAwareDatabaseProvider : IAdoNetDatabaseCon
             }
 
             throw;
+        }
+        finally
+        {
+            acquisition?.Dispose();
         }
     }
 

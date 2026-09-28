@@ -62,7 +62,8 @@ internal sealed class PostgresFeatureLayerCopyService(
         var fields = schemaFields.Where(f => f.Type is not (MetadataV2FieldType.Geometry or MetadataV2FieldType.Geography)).ToArray();
         var primary = fields.Single(f => f.SemanticRoles.Contains("id.primary")).Name;
         var table = "gp_copy_" + Guid.NewGuid().ToString("N");
-        await using var connection = (NpgsqlConnection)await connections.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var connectionOwner = await connections.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        var connection = connectionOwner.RequireNpgsqlConnection();
         await using var schemaCommand = new NpgsqlCommand("SELECT current_schema()", connection);
         var schema = (string)(await schemaCommand.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false))!;
         var qualified = Quote(schema) + "." + Quote(table);

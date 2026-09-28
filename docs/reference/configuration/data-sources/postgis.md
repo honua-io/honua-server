@@ -116,9 +116,9 @@ The admission ceiling is shared within each process; it bounds active leases,
 not the sum of idle physical connections across pools or replicas. Account for
 all source pools and application replicas when budgeting PostgreSQL connection
 slots. Credential changes for a registered connection retire its previous pool;
-pending connection opens retain their pool until acquisition finishes, and opened
-connections can finish before being closed on return. Shutdown retires all cached
-pools with the same lifetime guarantees. Legacy bindings without a stable connection
+pending opens and active connection leases retain their pool until the connection
+is returned. This also protects multiplexed logical connections between commands.
+Shutdown retires all cached pools with the same lifetime guarantees. Legacy bindings without a stable connection
 ID use a separate pool for each distinct connection string.
 
 The full admission set (adaptive bounds, target lease duration, update interval) is in the [environment variable reference](../environment-variables.md#admission-and-pooling). Pool and admission behavior can be observed at `GET /monitoring/metrics/connection-pool`.
