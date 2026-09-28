@@ -21,7 +21,7 @@ namespace Honua.Db.Postgres.Tests.Features.Security;
 /// </remarks>
 [Collection("Database")]
 [SecurityTest]
-public class SecureConnectionRegistryTests : IClassFixture<WebAppFixture>
+public partial class SecureConnectionRegistryTests : IClassFixture<WebAppFixture>
 {
     private readonly WebAppFixture _fixture;
     private readonly PostgresSecureConnectionRegistry _registry;
@@ -32,7 +32,8 @@ public class SecureConnectionRegistryTests : IClassFixture<WebAppFixture>
         var primaryProvider = _fixture.GetService<IPrimaryDatabaseConnectionProvider>();
         _registry = new PostgresSecureConnectionRegistry(
             primaryProvider,
-            NullLogger<PostgresSecureConnectionRegistry>.Instance);
+            NullLogger<PostgresSecureConnectionRegistry>.Instance,
+            _fixture.GetService<SecureConnectionDataSourceCache>());
     }
 
     [Fact]

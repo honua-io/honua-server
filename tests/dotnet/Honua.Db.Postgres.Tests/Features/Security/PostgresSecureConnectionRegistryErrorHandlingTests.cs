@@ -9,6 +9,7 @@ using Honua.Db.Postgres.Features.Infrastructure;
 using Honua.Db.Postgres.Features.Security;
 using Honua.TestKit.Attributes;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Configuration;
 
 namespace Honua.Db.Postgres.Tests.Features.Security;
 
@@ -25,9 +26,10 @@ public sealed class PostgresSecureConnectionRegistryErrorHandlingTests
         // underlying exception type to bubble up unchanged.
         var expected = new InvalidOperationException("primary database unavailable");
         var provider = new ThrowingPrimaryDatabaseConnectionProvider(expected);
+        using var dataSources = new SecureConnectionDataSourceCache(new ConfigurationBuilder().Build());
         ISecureConnectionRegistry registry = new PostgresSecureConnectionRegistry(
             provider,
-            NullLogger<PostgresSecureConnectionRegistry>.Instance);
+            NullLogger<PostgresSecureConnectionRegistry>.Instance, dataSources);
 
         var actual = await Assert.ThrowsAsync<InvalidOperationException>(() =>
             registry.GetActiveConnectionsAsync(CancellationToken.None));
@@ -47,9 +49,10 @@ public sealed class PostgresSecureConnectionRegistryErrorHandlingTests
 
         var provider = new ThrowingPrimaryDatabaseConnectionProvider(
             new OperationCanceledException(cts.Token));
+        using var dataSources = new SecureConnectionDataSourceCache(new ConfigurationBuilder().Build());
         ISecureConnectionRegistry registry = new PostgresSecureConnectionRegistry(
             provider,
-            NullLogger<PostgresSecureConnectionRegistry>.Instance);
+            NullLogger<PostgresSecureConnectionRegistry>.Instance, dataSources);
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
             registry.GetActiveConnectionsAsync(cts.Token));
@@ -62,9 +65,10 @@ public sealed class PostgresSecureConnectionRegistryErrorHandlingTests
         var expectedException = new InvalidOperationException(
             "transient upstream failure while validating duplicate key metadata");
         var provider = new ThrowingPrimaryDatabaseConnectionProvider(expectedException);
+        using var dataSources = new SecureConnectionDataSourceCache(new ConfigurationBuilder().Build());
         var registry = new PostgresSecureConnectionRegistry(
             provider,
-            NullLogger<PostgresSecureConnectionRegistry>.Instance);
+            NullLogger<PostgresSecureConnectionRegistry>.Instance, dataSources);
 
         var connection = DataConnection.CreateWithEncryptedCredentials(
             name: "test-connection",
@@ -81,6 +85,28 @@ public sealed class PostgresSecureConnectionRegistryErrorHandlingTests
 
         exception.Message.Should().Be(expectedException.Message);
         exception.Should().BeSameAs(expectedException);
+    }
+
+    [SecurityTest]
+    [Fact]
+    public async Task DeleteConnectionAsync_DatabaseFailure_DoesNotRetireCachedSource()
+    {
+        var expected = new InvalidOperationException("primary database unavailable");
+        var provider = new ThrowingPrimaryDatabaseConnectionProvider(expected);
+        using var dataSources = new SecureConnectionDataSourceCache(new ConfigurationBuilder().Build());
+        var id = Guid.NewGuid();
+        var key = "bound-id:" + id.ToString("D");
+        const string connectionString = "Host=localhost;Database=unused;Username=test;Password=test";
+        using var existing = dataSources.Acquire(key, connectionString, preservePrimarySchema: false);
+        existing.Dispose();
+        var registry = new PostgresSecureConnectionRegistry(
+            provider, NullLogger<PostgresSecureConnectionRegistry>.Instance, dataSources);
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => registry.DeleteConnectionAsync(id));
+
+        Assert.Same(expected, error);
+        using var retained = dataSources.Acquire(key, connectionString, preservePrimarySchema: false);
+        Assert.Same(existing.DataSource, retained.DataSource);
     }
 
     private sealed class ThrowingPrimaryDatabaseConnectionProvider(Exception exceptionToThrow) : IPrimaryDatabaseConnectionProvider
