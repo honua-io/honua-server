@@ -92,10 +92,13 @@ internal sealed partial class FieldMaskSource : IFieldMaskSource
     {
         var maskedFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        // Always evaluate with the wildcard service so "*"-service policies apply even
-        // when the resource has no resolvable publication (e.g. direct layer-id access),
-        // plus each concrete service name the resource is published under.
-        var lookupServices = new HashSet<string>(serviceNames, StringComparer.OrdinalIgnoreCase) { "*" };
+        // Every concrete-service lookup already includes wildcard-service policies.
+        // A separate wildcard lookup is only needed without a resolvable publication.
+        var lookupServices = new HashSet<string>(serviceNames, StringComparer.OrdinalIgnoreCase);
+        if (lookupServices.Count == 0)
+        {
+            lookupServices.Add("*");
+        }
 
         foreach (var service in lookupServices)
         {
