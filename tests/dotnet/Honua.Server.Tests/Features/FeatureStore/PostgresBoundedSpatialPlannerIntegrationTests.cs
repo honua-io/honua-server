@@ -5,6 +5,7 @@ using System.Data.Common;
 using System.Diagnostics;
 using System.Globalization;
 using System.Transactions;
+using FluentAssertions;
 using Honua.Core.Features.Authorization.Abstractions;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
