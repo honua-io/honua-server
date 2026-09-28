@@ -12274,6 +12274,22 @@
       "capability": "routing.solve"
     },
     {
+      "id": "get-rest-services-serviceid-naserver-servicearea-solveservicearea",
+      "route": "/rest/services/{serviceId}/NAServer/ServiceArea/solveServiceArea",
+      "method": "GET",
+      "family": "GeoServices REST NAServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerAnonymousContractTests.ServiceArea_GetWithoutCredentialsAndDevAuthOff_ReturnsPolygons",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.ServiceArea_GetWithoutFacilities_ReturnsValidationError",
+        "Honua.Server.Tests.Features.Protocols.GeoServices.NAServer.NAServerEndpointTests.ServiceArea_Get_ReturnsIdenticalPostPolygons"
+      ],
+      "proof_ledger_surface": "naserver-routing",
+      "maturity": "implemented",
+      "capability": "routing.solve"
+    },
+    {
       "id": "get-rest-services-serviceid-naserver-layername",
       "route": "/rest/services/{serviceId}/NAServer/{layerName}",
       "method": "GET",
@@ -21472,6 +21488,20 @@
       "capability": "serve.geoservices-mapserver"
     },
     {
+      "id": "post-rest-services-serviceid-mapserver-alllayersandtables",
+      "route": "/rest/services/{serviceId}/MapServer/allLayersAndTables",
+      "method": "POST",
+      "family": "GeoServices REST MapServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_LayerMetadataPost_ReturnsIdenticalCompleteGetDocument"
+      ],
+      "proof_ledger_surface": "map-server",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-mapserver"
+    },
+    {
       "id": "post-rest-services-serviceid-mapserver-estimateexporttilessize",
       "route": "/rest/services/{serviceId}/MapServer/estimateExportTilesSize",
       "method": "POST",
@@ -21587,6 +21617,20 @@
       "proving_tests": [
         "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerExportTilesJobEndpointTests.ExportTiles_CompactV2_SubmitStatusCancelResult",
         "Honua.Server.Tests.Features.Tiles.TileExportDurableRecoveryRedisTests.Cancel_FromDifferentReplica_QueuedJob_IsCancelledAndDequeued"
+      ],
+      "proof_ledger_surface": "map-server",
+      "maturity": "implemented",
+      "capability": "serve.geoservices-mapserver"
+    },
+    {
+      "id": "post-rest-services-serviceid-mapserver-layers",
+      "route": "/rest/services/{serviceId}/MapServer/layers",
+      "method": "POST",
+      "family": "GeoServices REST MapServer",
+      "protocol": "http-route-family",
+      "code_location": "src/Honua.Server/EndpointRegistry.cs",
+      "proving_tests": [
+        "Honua.Server.Tests.Features.Protocols.GeoServices.MapServer.MapServerEndpointTests.MapServer_LayerMetadataPost_ReturnsIdenticalCompleteGetDocument"
       ],
       "proof_ledger_surface": "map-server",
       "maturity": "implemented",
