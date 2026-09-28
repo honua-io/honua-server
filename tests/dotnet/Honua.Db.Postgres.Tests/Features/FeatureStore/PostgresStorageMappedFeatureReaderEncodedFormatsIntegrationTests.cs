@@ -33,7 +33,7 @@ namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 /// PostGIS table to prove both formats now produce valid payloads over the storage mapping.
 /// </summary>
 [Collection("Database")]
-public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationTests : IAsyncLifetime
+public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationTests : IAsyncLifetime
 {
     private static readonly ObjectPool<Dictionary<string, object?>> DictionaryPool =
         new DefaultObjectPoolProvider().Create(
@@ -71,15 +71,17 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
 
     public Task DisposeAsync() => _fixture.DropSchemaAsync(_schema);
 
-    [Fact]
-    public async Task QueryPageAsync_NativeDecimalPublishedAsDouble_PreservesDeclaredPrecision()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task QueryPageAsync_NativeDecimalPublishedAsDouble_PreservesDeclaredPrecision(bool smallintHint)
     {
         await _fixture.ExecuteAsync($"""
             ALTER TABLE {_schema}.cities ADD COLUMN reading numeric;
             UPDATE {_schema}.cities SET reading = 0.99999999999999999999 WHERE objectid = 1;
             UPDATE {_schema}.cities SET reading = 2 WHERE objectid = 2;
             """);
-        var reader = CreateReader(includeDecimalField: true);
+        var reader = CreateReader(includeDecimalField: true, smallintHint: smallintHint);
         var result = await reader.QueryPageAsync(1, new FeatureQuery
         {
             SqlFilter = new SqlFragment("NULLIF(\"attributes\" ->> 'reading', '')::double precision = @p0", [1])
@@ -500,11 +502,63 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
             .Should().Equal(1L, 1L);
     }
 
+    [Fact]
+    public async Task QueryPageAsync_SmallintHint_UsesOrdinaryIndexWithoutNarrowingLiteral()
+    {
+        await _fixture.ExecuteAsync($"""
+            TRUNCATE {_schema}.cities;
+            ALTER TABLE {_schema}.cities ALTER COLUMN population TYPE smallint;
+            INSERT INTO {_schema}.cities (objectid, population)
+                SELECT i, (i % 30000)::smallint FROM generate_series(1, 100000) AS i;
+            INSERT INTO {_schema}.cities (objectid, population) VALUES
+                (100001, -32768), (100002, 32767), (100003, NULL);
+            CREATE INDEX cities_population_smallint_idx ON {_schema}.cities (population);
+            ANALYZE {_schema}.cities;
+            """);
+        var reader = CreateReader(smallintHint: true);
+        var query = new FeatureQuery
+        {
+            Limit = 10,
+            SqlFilter = new SqlFragment("NULLIF(\"attributes\" ->> 'population', '')::integer = @p0", [32767L])
+        };
+        var result = await reader.QueryPageAsync(1, query);
+        result.Items.Select(feature => feature.Id).Should().Equal(100002);
+
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(reader, [query, true])!;
+        var parameters = (IReadOnlyList<object?>)sql.GetType().GetProperty("Parameters")!.GetValue(sql)!;
+        await using var connection = await _fixture.DataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "EXPLAIN (FORMAT JSON) " + sql;
+        foreach (var value in parameters)
+        {
+            command.Parameters.AddWithValue(value ?? DBNull.Value);
+        }
+
+        var plan = (string)(await command.ExecuteScalarAsync())!;
+        plan.Should().Contain("cities_population_smallint_idx");
+
+        foreach (var literal in new[] { -32768L, 40000L, long.MaxValue })
+        {
+            var page = await reader.QueryPageAsync(1, query with
+            {
+                SqlFilter = new SqlFragment("NULLIF(\"attributes\" ->> 'population', '')::integer = @p0", [literal])
+            });
+            long[] expectedIds = literal == -32768L ? [100001L] : [];
+            page.Items.Select(feature => feature.Id).Should().Equal(expectedIds);
+        }
+    }
+
     private PostgresStorageMappedFeatureReader CreateReader(
         string? attributesColumn = null,
         bool includeNamespacedField = false,
         bool includeDecimalField = false,
-        MetadataV2Field[]? additionalFields = null)
+        MetadataV2Field[]? additionalFields = null,
+        bool smallintHint = false,
+        string? connectionString = null,
+        bool preferSerialPlan = false,
+        IAdoNetDatabaseConnectionProvider? connectionProvider = null)
     {
         var schemaFields = new List<MetadataV2Field>
         {
@@ -546,15 +600,23 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
             PrimaryKeyColumn: "objectid",
             GeometryColumn: "geom",
             StorageSrid: 4326,
-            AttributesColumn: attributesColumn);
+            AttributesColumn: attributesColumn,
+            ProviderOptions: smallintHint
+                ? new Dictionary<string, string>
+                {
+                    [FeatureStorageMapping.SourceBackedOption] = "true",
+                    ["postgresSmallintColumn:population"] = "true"
+                }
+                : null);
 
         return new PostgresStorageMappedFeatureReader(
-            new FixtureConnectionProvider(_fixture.ConnectionString),
+            connectionProvider ?? new FixtureConnectionProvider(connectionString ?? _fixture.ConnectionString),
             DictionaryPool,
             resource,
             mapping,
             connection: null,
-            connectionEncryptionService: null);
+            connectionEncryptionService: null,
+            preferSerialBoundedSpatialReads: preferSerialPlan);
     }
 
     private sealed class FixtureConnectionProvider : IAdoNetDatabaseConnectionProvider
