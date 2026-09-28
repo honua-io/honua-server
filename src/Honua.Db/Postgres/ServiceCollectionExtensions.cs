@@ -527,7 +527,18 @@ internal static class ServiceCollectionExtensions
         services.AddHostedService<HighFrequencyQueryPreparationService>();
 
         // Register enhanced database connection provider with prepared statement caching
-        services.AddScoped<IDatabaseConnectionProvider, CachingDatabaseConnectionProvider>();
+        // Keep construction behind a factory so DB-less hosts can remove the public
+        // provider/data source without activating this otherwise-unused concrete alias.
+        services.AddScoped<CachingDatabaseConnectionProvider>(provider =>
+            new CachingDatabaseConnectionProvider(
+                provider.GetRequiredService<NpgsqlDataSource>(),
+                provider.GetRequiredService<ILogger<CachingDatabaseConnectionProvider>>(),
+                provider.GetService<ISchemaContext>(),
+                provider.GetService<IActiveDbConnectionTracker>(),
+                provider.GetService<QueryConcurrencyGate>(),
+                provider.GetService<ConnectionPoolMetrics>()));
+        services.AddScoped<IDatabaseConnectionProvider>(provider =>
+            provider.GetRequiredService<CachingDatabaseConnectionProvider>());
 
         // Provider-internal ADO.NET escape hatch (ADR 0046): forwards to whatever
         // IDatabaseConnectionProvider resolves to at runtime so secure-connection

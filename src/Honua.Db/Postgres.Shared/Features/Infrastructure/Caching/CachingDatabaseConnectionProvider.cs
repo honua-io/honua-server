@@ -86,7 +86,21 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
     /// </summary>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>A caching-enabled PostgreSQL connection</returns>
-    public async Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
+    public Task<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
+        => OpenConnectionCoreAsync(_dataSource, null, applyPrimarySchema: true, cancellationToken);
+
+    internal Task<DbConnection> OpenConnectionAsync(
+        Func<(NpgsqlDataSource DataSource, IDisposable Acquisition)> acquireDataSource,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(acquireDataSource);
+        return OpenConnectionCoreAsync(null, acquireDataSource, applyPrimarySchema: false, cancellationToken);
+    }
+
+    private async Task<DbConnection> OpenConnectionCoreAsync(
+        NpgsqlDataSource? dataSource,
+        Func<(NpgsqlDataSource DataSource, IDisposable Acquisition)>? acquireDataSource,
+        bool applyPrimarySchema, CancellationToken cancellationToken)
     {
         if (_concurrencyGate is not null)
         {
@@ -104,19 +118,30 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
 
         var slotAcquiredAt = Stopwatch.GetTimestamp();
         NpgsqlConnection? connection = null;
+        IDisposable? acquisition = null;
         try
         {
-            // Use the resilience extension method with logging callback
-            connection = await _dataSource.OpenConnectionWithRetryAsync(
+            // Acquire after admission and pin the generation through connection
+            // disposal. Multiplexed logical connections still need their source's
+            // command channel after OpenConnectionAsync has completed.
+            var acquired = acquireDataSource?.Invoke();
+            acquisition = acquired?.Acquisition;
+            var source = dataSource ?? acquired!.Value.DataSource;
+            connection = await source.OpenConnectionWithRetryAsync(
                 onRetry: (ex, delay, attempt) => DatabaseConnectionRetry(_logger, attempt, ex.Message, ex),
                 cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (applyPrimarySchema)
+            {
+                await SchemaSearchPath.ApplyAsync(connection, _schemaContext?.CurrentSchema, cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
             DbConnectionTracking.Track(connection, _activeDbConnectionTracker);
 
-            return _concurrencyGate is null
+            DbConnection lease = _concurrencyGate is null && acquisition is null
                 ? connection
-                : new SemaphoreReleasingConnection(connection, () => ReleaseOneSlot(slotAcquiredAt));
+                : new SemaphoreReleasingConnection(connection, () => ReleaseOneSlot(slotAcquiredAt), acquisition);
+            acquisition = null; // Ownership moved into the returned connection.
+            return lease;
         }
         catch (Exception ex)
         {
@@ -138,6 +163,10 @@ internal sealed partial class CachingDatabaseConnectionProvider : IPrimaryDataba
             // database is unhealthy. Release the slot without recording metrics.
             ReleaseOneSlot(0);
             throw;
+        }
+        finally
+        {
+            acquisition?.Dispose();
         }
     }
 

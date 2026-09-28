@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Buffers;
 using System.Linq;
 using System.Text.Json;
+using Honua.Core.Exceptions;
 using Honua.Core.Features.Caching;
 using Honua.Core.Features.FeatureStore.Abstractions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -546,7 +547,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
         {
             OgcFeaturesLog.ItemsQueryFailed(_logger, collectionId, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
-            return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving items.");
+            return ex is ServiceUnavailableException
+                ? StandardErrorHelpers.CreateFromException(context, ex)
+                : StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving items.");
         }
         finally
         {
@@ -799,7 +802,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
         {
             OgcFeaturesLog.ItemQueryFailed(_logger, collectionId, ex);
             HonuaTelemetry.RecordException(featureActivity, ex);
-            return StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving the feature.");
+            return ex is ServiceUnavailableException
+                ? StandardErrorHelpers.CreateFromException(context, ex)
+                : StandardErrorHelpers.CreateInternalServerError(context, "An error occurred while retrieving the feature.");
         }
         finally
         {
@@ -1377,6 +1382,10 @@ internal sealed partial class OgcFeaturesQueryHandler(
         long numberMatched,
         CancellationToken cancellationToken)
     {
+        // Do not commit a FeatureCollection prefix until source admission succeeds.
+        await using var enumerator = features.GetAsyncEnumerator(cancellationToken);
+        var hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
+
         using var writer = new Utf8JsonWriter(context.Response.BodyWriter, new JsonWriterOptions
         {
             Indented = false,
@@ -1390,8 +1399,9 @@ internal sealed partial class OgcFeaturesQueryHandler(
         var numberReturned = 0;
         var hasMoreResults = false;
         var featuresSinceFlush = 0;
-        await foreach (var feature in features.WithCancellation(cancellationToken))
+        while (hasFeature)
         {
+            var feature = enumerator.Current;
             if (numberReturned >= maxFeatures)
             {
                 // The limit+1 probe row exists: there is a next page.
@@ -1416,6 +1426,8 @@ internal sealed partial class OgcFeaturesQueryHandler(
                 await context.Response.BodyWriter.FlushAsync(cancellationToken);
                 featuresSinceFlush = 0;
             }
+
+            hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
         }
 
         writer.WriteEndArray();

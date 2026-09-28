@@ -451,6 +451,10 @@ internal sealed partial class FeatureServerQueryExecutor
         context.Response.ContentType = "application/json";
         context.Response.StatusCode = StatusCodes.Status200OK;
 
+        var features = streamingFeatureStore.StreamFeaturesAsync(layerId, query, cancellationToken);
+        await using var enumerator = features.GetAsyncEnumerator(cancellationToken);
+        var hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
+
         await using var writer = new Utf8JsonWriter(context.Response.BodyWriter, new JsonWriterOptions
         {
             Indented = false,
@@ -461,16 +465,18 @@ internal sealed partial class FeatureServerQueryExecutor
         writer.WriteString("objectIdFieldName", objectIdFieldName);
         writer.WriteStartArray("objectIds");
 
-        var features = streamingFeatureStore.StreamFeaturesAsync(layerId, query, cancellationToken);
         var idsSinceFlush = 0;
-        await foreach (var feature in features.WithCancellation(cancellationToken))
+        while (hasFeature)
         {
+            var feature = enumerator.Current;
             writer.WriteNumberValue(GeoServicesObjectIdFieldResolver.ResolveObjectIdValue(feature, objectIdFieldName));
             if (++idsSinceFlush >= FlushInterval)
             {
                 await writer.FlushAsync(cancellationToken);
                 idsSinceFlush = 0;
             }
+
+            hasFeature = await enumerator.MoveNextAsync().ConfigureAwait(false);
         }
 
         writer.WriteEndArray();

@@ -35,6 +35,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
     private const int MaxJsonbBuildObjectPairs = 50;
 
     private readonly IAdoNetDatabaseConnectionProvider _connectionProvider;
+    private readonly PostgresBoundConnectionProvider? _boundConnectionProvider;
     private readonly ObjectPool<Dictionary<string, object?>> _dictionaryPool;
     private readonly MetadataV2Resource _resource;
     private readonly FeatureStorageMapping _mapping;
@@ -63,7 +64,8 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         IFilterExpressionService? filterExpressionService = null,
         IRowLevelSecurityFilterSource? rlsFilterSource = null,
         IFieldMaskSource? fieldMaskSource = null,
-        string? managedFeatureSchema = null)
+        string? managedFeatureSchema = null,
+        PostgresBoundConnectionProvider? boundConnectionProvider = null)
     {
         _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _dictionaryPool = dictionaryPool ?? throw new ArgumentNullException(nameof(dictionaryPool));
@@ -71,6 +73,7 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
         _mapping = mapping ?? throw new ArgumentNullException(nameof(mapping));
         _managedFeatureSchema = string.IsNullOrWhiteSpace(managedFeatureSchema) ? null : managedFeatureSchema.Trim();
         _connection = connection;
+        _boundConnectionProvider = boundConnectionProvider;
         _connectionEncryptionService = connectionEncryptionService;
         _filterExpressionService = filterExpressionService;
         // The reader is bound to its resource, so the shared resolver needs no layer-id lookup
@@ -1486,19 +1489,13 @@ internal sealed partial class PostgresStorageMappedFeatureReader : IFeatureReade
             return await _connectionProvider.OpenNpgsqlConnectionAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        var connection = new NpgsqlConnection(connectionString);
-        try
+        if (_boundConnectionProvider is null)
         {
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            await connection.DisposeAsync().ConfigureAwait(false);
-            throw;
+            throw new InvalidOperationException("Managed source-bound PostGIS connections are not configured.");
         }
 
-        // The bound-string connection owns itself: disposing the lease disposes the connection.
-        return new NpgsqlConnectionLease(connection, connection);
+        return await _boundConnectionProvider.OpenConnectionAsync(
+            _connection!.Id, connectionString, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<string?> ResolveBoundConnectionStringAsync()

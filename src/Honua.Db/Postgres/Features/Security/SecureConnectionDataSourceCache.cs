@@ -1,7 +1,6 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
-using System.Collections.Concurrent;
 using Honua.Core.Configuration;
 using Honua.Db.Postgres.Features.Infrastructure;
 using Microsoft.Extensions.Configuration;
@@ -11,12 +10,22 @@ namespace Honua.Db.Postgres.Features.Security;
 
 internal sealed class SecureConnectionDataSourceCache : IDisposable
 {
-    private readonly ConcurrentDictionary<string, CacheEntry> _dataSources = new(StringComparer.Ordinal);
+    private readonly object _sync = new();
+    private readonly Dictionary<(string Name, bool PreservePrimarySchema), CacheEntry> _dataSources = new();
     private readonly bool _schemaHeadersEnabled;
     private readonly ConnectionLimits _connectionLimits;
     private readonly string? _defaultSchema;
+    private readonly Func<string, NpgsqlDataSource>? _createDataSource;
+    private bool _disposed;
 
     public SecureConnectionDataSourceCache(IConfiguration configuration)
+        : this(configuration, null)
+    {
+    }
+
+    internal SecureConnectionDataSourceCache(
+        IConfiguration configuration,
+        Func<string, NpgsqlDataSource>? createDataSource)
     {
         ArgumentNullException.ThrowIfNull(configuration);
 
@@ -33,6 +42,7 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable
         // ISchemaContext.CurrentSchema is null) fall back to the PostgreSQL default
         // search_path and miss schema-qualified tables (honua-server#2949).
         _defaultSchema = configuration["Database:Schema"];
+        _createDataSource = createDataSource;
     }
 
     public NpgsqlDataSource GetOrCreate(string connectionString)
@@ -47,6 +57,31 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable
     /// </summary>
     public NpgsqlDataSource GetOrCreate(string connectionName, string connectionString)
     {
+        ValidateArguments(connectionName, connectionString);
+        lock (_sync)
+        {
+            return GetOrCreateEntry(connectionName, connectionString, preservePrimarySchema: true).DataSource;
+        }
+    }
+
+    /// <summary>
+    /// Pins a pool through its connection lifetime, including an in-flight open.
+    /// Rotation and shutdown retire pinned pools; disposal waits for the last pin.
+    /// Multiplexed logical connections need their source until the lease is returned.
+    /// </summary>
+    public Acquisition Acquire(string connectionName, string connectionString, bool preservePrimarySchema = true)
+    {
+        ValidateArguments(connectionName, connectionString);
+        lock (_sync)
+        {
+            var entry = GetOrCreateEntry(connectionName, connectionString, preservePrimarySchema);
+            entry.Acquisitions++;
+            return new Acquisition(entry.DataSource, () => Release(entry));
+        }
+    }
+
+    private static void ValidateArguments(string connectionName, string connectionString)
+    {
         if (string.IsNullOrWhiteSpace(connectionName))
         {
             throw new ArgumentException("Connection name cannot be null or empty.", nameof(connectionName));
@@ -56,50 +91,90 @@ internal sealed class SecureConnectionDataSourceCache : IDisposable
         {
             throw new ArgumentException("Connection string cannot be null or empty.", nameof(connectionString));
         }
+    }
 
-        while (true)
+    // Caller holds _sync across lookup, construction, replacement and acquisition.
+    private CacheEntry GetOrCreateEntry(string connectionName, string connectionString, bool preservePrimarySchema)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+
+        var key = (connectionName, preservePrimarySchema);
+        _dataSources.TryGetValue(key, out var entry);
+        if (entry != null && string.Equals(entry.ConnectionString, connectionString, StringComparison.Ordinal))
         {
-            var entry = _dataSources.GetOrAdd(connectionName, _ => CreateEntry(connectionString));
-            if (string.Equals(entry.ConnectionString, connectionString, StringComparison.Ordinal))
-            {
-                return entry.DataSource.Value;
-            }
+            return entry;
+        }
 
-            // Connection string changed for this logical connection: swap in a fresh
-            // data source and dispose the previous one. Npgsql closes its idle pooled
-            // connections immediately and rented ones as they are returned, so in-flight
-            // commands on the old pool finish normally. Retry on a lost swap race.
-            var replacement = CreateEntry(connectionString);
-            if (_dataSources.TryUpdate(connectionName, replacement, entry))
-            {
-                if (entry.DataSource.IsValueCreated)
-                {
-                    entry.DataSource.Value.Dispose();
-                }
+        // Construction opens no database connection. Build before replacing the
+        // entry so a failed rotation preserves the old pool. Source-bound pools use
+        // common limits/timeouts without inheriting the primary database's schema.
+        var dataSource = _createDataSource?.Invoke(connectionString) ?? (preservePrimarySchema
+            ? PostgresDataSourceFactory.Create(connectionString, _schemaHeadersEnabled, _connectionLimits, _defaultSchema)
+            : PostgresDataSourceFactory.CreateForBoundSource(connectionString, _connectionLimits));
+        var replacement = new CacheEntry(connectionString, dataSource);
+        _dataSources[key] = replacement;
+        if (entry != null)
+        {
+            Retire(entry);
+        }
 
-                return replacement.DataSource.Value;
+        return replacement;
+    }
+
+    private void Release(CacheEntry entry)
+    {
+        lock (_sync)
+        {
+            entry.Acquisitions--;
+            if (entry.Retired && entry.Acquisitions == 0)
+            {
+                entry.DataSource.Dispose();
             }
         }
     }
 
-    private CacheEntry CreateEntry(string connectionString)
-        => new(
-            connectionString,
-            new Lazy<NpgsqlDataSource>(
-                () => PostgresDataSourceFactory.Create(connectionString, _schemaHeadersEnabled, _connectionLimits, _defaultSchema),
-                LazyThreadSafetyMode.ExecutionAndPublication));
+    private static void Retire(CacheEntry entry)
+    {
+        entry.Retired = true;
+        if (entry.Acquisitions == 0)
+        {
+            entry.DataSource.Dispose();
+        }
+    }
 
     public void Dispose()
     {
-        foreach (var dataSource in _dataSources.Values
-            .Where(entry => entry.DataSource.IsValueCreated)
-            .Select(entry => entry.DataSource.Value))
+        lock (_sync)
         {
-            dataSource.Dispose();
-        }
+            if (_disposed)
+            {
+                return;
+            }
 
-        _dataSources.Clear();
+            _disposed = true;
+            foreach (var entry in _dataSources.Values)
+            {
+                Retire(entry);
+            }
+
+            _dataSources.Clear();
+        }
     }
 
-    private sealed record CacheEntry(string ConnectionString, Lazy<NpgsqlDataSource> DataSource);
+    private sealed class CacheEntry(string connectionString, NpgsqlDataSource dataSource)
+    {
+        public string ConnectionString { get; } = connectionString;
+        public NpgsqlDataSource DataSource { get; } = dataSource;
+        public int Acquisitions { get; set; }
+        public bool Retired { get; set; }
+    }
+
+    internal sealed class Acquisition(NpgsqlDataSource dataSource, Action release) : IDisposable
+    {
+        private Action? _release = release;
+
+        public NpgsqlDataSource DataSource { get; } = dataSource;
+
+        public void Dispose() => Interlocked.Exchange(ref _release, null)?.Invoke();
+    }
 }

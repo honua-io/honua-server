@@ -25,12 +25,19 @@ internal sealed class SemaphoreReleasingConnection : DbConnection
 {
     private readonly NpgsqlConnection _inner;
     private readonly Action _releaseAction;
+    private readonly IDisposable? _lifetime;
     private bool _disposed;
 
     public SemaphoreReleasingConnection(NpgsqlConnection inner, Action releaseAction)
+        : this(inner, releaseAction, null)
+    {
+    }
+
+    public SemaphoreReleasingConnection(NpgsqlConnection inner, Action releaseAction, IDisposable? lifetime)
     {
         _inner = inner ?? throw new ArgumentNullException(nameof(inner));
         _releaseAction = releaseAction ?? throw new ArgumentNullException(nameof(releaseAction));
+        _lifetime = lifetime;
         _inner.StateChange += OnInnerStateChange;
     }
 
@@ -100,7 +107,7 @@ internal sealed class SemaphoreReleasingConnection : DbConnection
                 finally
                 {
                     _inner.StateChange -= OnInnerStateChange;
-                    _releaseAction();
+                    ReleaseResources();
                 }
             }
         }
@@ -120,10 +127,22 @@ internal sealed class SemaphoreReleasingConnection : DbConnection
             finally
             {
                 _inner.StateChange -= OnInnerStateChange;
-                _releaseAction();
+                ReleaseResources();
             }
         }
 
         await base.DisposeAsync().ConfigureAwait(false);
+    }
+
+    private void ReleaseResources()
+    {
+        try
+        {
+            _lifetime?.Dispose();
+        }
+        finally
+        {
+            _releaseAction();
+        }
     }
 }
