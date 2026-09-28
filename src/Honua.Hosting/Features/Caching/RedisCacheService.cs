@@ -41,7 +41,6 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     // limit is reached, older entries are dropped (FIFO) to bound memory growth; the
     // worst case is that a small number of stale keys survive in Redis until their TTL.
     private const int MaxPendingInvalidationKeys = 500;
-    private static readonly TimeSpan CacheKeyIndexTtl = TimeSpan.FromDays(30);
     private readonly IDistributedCache? _distributedCache;
     private readonly IConnectionMultiplexer? _redis;
     private readonly CacheOptions _options;
@@ -52,7 +51,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
     private readonly ConcurrentDictionary<string, CacheEntry> _fallbackCache = new();
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _keyLocks = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, CacheWriteInfo> _writeMetadata = new(StringComparer.Ordinal);
-    private readonly SemaphoreSlim _distributedIndexLock = new(1, 1);
+    private readonly DistributedCacheKeyIndex? _distributedIndex;
     private readonly object _healthProbeStateLock = new();
     private Task<bool>? _activeHealthProbe;
     private Task? _disposeTask;
@@ -111,6 +110,11 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             _indexMaintenance = new RedisCacheIndexMaintenance(
                 _redis, _distributedCacheKeyPrefix + _options.KeyPrefix, _logger,
                 timeProvider ?? TimeProvider.System);
+        }
+        if (_distributedCache is not null && _redis is null)
+        {
+            _distributedIndex = new DistributedCacheKeyIndex(_distributedCache, _logger, timeProvider ?? TimeProvider.System,
+                processLocal: _distributedCache is MemoryDistributedCache);
         }
     }
 
@@ -335,7 +339,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
                         await _redisPolicy.ExecuteAsync(
                             ct => _distributedCache.SetAsync(prefixedKey, data, options, ct),
                             cancellationToken).ConfigureAwait(false);
-                        await TrackIndexedKeyAsync(prefixedKey, cancellationToken).ConfigureAwait(false);
+                        await TrackIndexedKeyAsync(prefixedKey, ttl, cancellationToken).ConfigureAwait(false);
                     }
 
                     _writeMetadata[prefixedKey] = new CacheWriteInfo(DateTime.UtcNow.Ticks, ttl.Ticks);
@@ -484,9 +488,8 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
                 if (matchingKeys.Length > 0)
                 {
-                    await UpdateDistributedKeyIndexAsync(
-                        keys => keys.RemoveAll(key => matchingKeys.Contains(key, StringComparer.Ordinal)),
-                        cancellationToken).ConfigureAwait(false);
+                    await _distributedIndex!.RemoveAsync(
+                        GetPrefixedKey(CacheKeyIndexKey), matchingKeys, cancellationToken).ConfigureAwait(false);
                 }
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
@@ -1144,7 +1147,7 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         return key.Equals(pattern, StringComparison.Ordinal);
     }
 
-    private async Task TrackIndexedKeyAsync(string prefixedKey, CancellationToken cancellationToken)
+    private async Task TrackIndexedKeyAsync(string prefixedKey, TimeSpan ttl, CancellationToken cancellationToken)
     {
         if (string.Equals(prefixedKey, GetPrefixedKey(CacheKeyIndexKey), StringComparison.Ordinal))
         {
@@ -1173,9 +1176,8 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
         if (_distributedCache != null)
         {
-            await UpdateDistributedKeyIndexAsync(
-                keys => keys.Add(prefixedKey),
-                cancellationToken).ConfigureAwait(false);
+            await _distributedIndex!.TrackAsync(
+                GetPrefixedKey(CacheKeyIndexKey), prefixedKey, ttl, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -1203,66 +1205,15 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
 
         if (_distributedCache != null)
         {
-            await UpdateDistributedKeyIndexAsync(
-                keys => keys.RemoveAll(key => string.Equals(key, prefixedKey, StringComparison.Ordinal)),
-                cancellationToken).ConfigureAwait(false);
+            await _distributedIndex!.RemoveAsync(
+                GetPrefixedKey(CacheKeyIndexKey), [prefixedKey], cancellationToken).ConfigureAwait(false);
         }
     }
 
-    private async Task<IReadOnlyList<string>> LoadDistributedIndexedKeysAsync(CancellationToken cancellationToken)
-    {
-        if (_distributedCache == null)
-        {
-            return [];
-        }
-
-        var data = await _distributedCache.GetAsync(GetPrefixedKey(CacheKeyIndexKey), cancellationToken).ConfigureAwait(false);
-        if (data == null)
-        {
-            return [];
-        }
-
-        var index = JsonSerializer.Deserialize(data, CacheJsonContext.Default.CachedCacheKeyIndex);
-        return index?.Keys ?? [];
-    }
-
-    private async Task UpdateDistributedKeyIndexAsync(Action<List<string>> update, CancellationToken cancellationToken)
-    {
-        if (_distributedCache == null)
-        {
-            return;
-        }
-
-        await _distributedIndexLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            var existing = await LoadDistributedIndexedKeysAsync(cancellationToken).ConfigureAwait(false);
-            var keys = existing.ToList();
-            update(keys);
-            keys = keys
-                .Distinct(StringComparer.Ordinal)
-                .ToList();
-
-            if (keys.Count == 0)
-            {
-                await _distributedCache.RemoveAsync(GetPrefixedKey(CacheKeyIndexKey), cancellationToken).ConfigureAwait(false);
-                return;
-            }
-
-            var data = JsonSerializer.SerializeToUtf8Bytes(
-                new CachedCacheKeyIndex([.. keys]),
-                CacheJsonContext.Default.CachedCacheKeyIndex);
-            await _distributedCache.SetAsync(
-                GetPrefixedKey(CacheKeyIndexKey),
-                data,
-                new DistributedCacheEntryOptions { AbsoluteExpirationRelativeToNow = CacheKeyIndexTtl },
-                cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            _distributedIndexLock.Release();
-        }
-    }
+    private Task<IReadOnlyList<string>> LoadDistributedIndexedKeysAsync(CancellationToken cancellationToken)
+        => _distributedIndex is null
+            ? Task.FromResult<IReadOnlyList<string>>([])
+            : _distributedIndex.ReadAsync(GetPrefixedKey(CacheKeyIndexKey), cancellationToken);
 
     private string GetRedisStorageKey(string prefixedKey) => $"{_distributedCacheKeyPrefix}{prefixedKey}";
 
@@ -1455,6 +1406,10 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             {
                 await _indexMaintenance.DisposeAsync().ConfigureAwait(false);
             }
+            if (_distributedIndex is not null)
+            {
+                await _distributedIndex.DisposeAsync().ConfigureAwait(false);
+            }
             if (healthProbe is not null)
             {
                 await healthProbe.ConfigureAwait(false);
@@ -1466,7 +1421,6 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
             {
                 _fallbackCache.Clear();
                 _writeMetadata.Clear();
-                _distributedIndexLock.Dispose();
                 foreach (var semaphore in _keyLocks.Values)
                 {
                     semaphore.Dispose();
