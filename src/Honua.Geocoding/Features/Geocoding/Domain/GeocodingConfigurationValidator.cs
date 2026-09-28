@@ -27,9 +27,9 @@ public sealed class GeocodingConfigurationValidator : ConfigurationValidator<Geo
         {
             errors.Add("Geocoding:LocatorName is required.");
         }
-        else if (!GeocodeLocatorNameSyntax.IsRouteSafe(options.LocatorName))
+        else if (!GeocodeLocatorNameRules.IsValid(options.LocatorName))
         {
-            errors.Add("Geocoding:LocatorName must be a single route segment and must not contain slash, backslash, control characters, or be '.' or '..'.");
+            errors.Add($"Geocoding:LocatorName: {GeocodeLocatorNameRules.ValidationMessage}");
         }
 
         if (options.DefaultSpatialReferenceWkid <= 0)

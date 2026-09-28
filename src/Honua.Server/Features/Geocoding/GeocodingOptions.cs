@@ -50,9 +50,9 @@ internal sealed class GeocodingOptionsValidator : OptionsValidator<GeocodingOpti
         {
             failures.Add("Geocoding:LocatorName is required.");
         }
-        else if (!GeocodeLocatorNameSyntax.IsRouteSafe(options.LocatorName))
+        else if (!GeocodeLocatorNameRules.IsValid(options.LocatorName))
         {
-            failures.Add("Geocoding:LocatorName must be a single route segment and must not contain slash, backslash, control characters, or be '.' or '..'.");
+            failures.Add($"Geocoding:LocatorName: {GeocodeLocatorNameRules.ValidationMessage}");
         }
 
         if (string.IsNullOrWhiteSpace(options.DefaultProvider))

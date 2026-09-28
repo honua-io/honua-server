@@ -48,7 +48,6 @@ public sealed class GeocodingOptionsValidatorTests
 
     [UnitTheory]
     [InlineData("City/Street")]
-    [InlineData("City\\Street")]
     [InlineData(".")]
     [InlineData("..")]
     [InlineData("City\nStreet")]
@@ -66,6 +65,7 @@ public sealed class GeocodingOptionsValidatorTests
     [UnitTheory]
     [InlineData("München")]
     [InlineData("City%2FStreet")]
+    [InlineData("City\\Street")]
     [InlineData("City.Street")]
     public void Validate_WithRouteSafeUnicodeAndLiteralPercentName_ReturnsSuccess(string locatorName)
     {
