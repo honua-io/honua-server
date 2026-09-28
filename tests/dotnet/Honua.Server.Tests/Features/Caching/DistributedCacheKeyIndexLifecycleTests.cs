@@ -64,6 +64,30 @@ public sealed class DistributedCacheKeyIndexLifecycleTests
 
     [UnitTest]
     [Operation(Operations.Cache)]
+    public async Task IdleMaintenance_PreservesAnchorAndRemovesExpiredNeighborWithoutForegroundAccess()
+    {
+        var clock = new IndexClock();
+        var backend = new ExpiringCache(clock);
+        await using var index = new DistributedCacheKeyIndex(backend, NullLogger.Instance, clock);
+        await backend.SetAsync("anchor", [1], Options(TimeSpan.FromMinutes(1)));
+        await index.TrackAsync("index", "anchor", TimeSpan.FromMinutes(1), default);
+        await backend.SetAsync("short", [2], Options(TimeSpan.FromSeconds(1)));
+        await index.TrackAsync("index", "short", TimeSpan.FromSeconds(1), default);
+
+        clock.Advance(TimeSpan.FromSeconds(5));
+        await WaitUntilAsync(() =>
+        {
+            using var document = JsonDocument.Parse(backend.Get("index")!);
+            return document.RootElement.GetProperty("keys").GetArrayLength() == 1;
+        });
+        using var remaining = JsonDocument.Parse(backend.Get("index")!);
+        Assert.Equal("anchor", remaining.RootElement.GetProperty("keys")[0].GetString());
+        Assert.NotNull(backend.Get("anchor"));
+        Assert.Null(backend.Get("short"));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
     public async Task LegacyIndex_BoundedProbesPreserveLiveKeysThenReclaimExpiredMembership()
     {
         var clock = new IndexClock();
