@@ -143,6 +143,82 @@ public sealed class SceneTilesetEndpointTests : IAsyncLifetime
         json.RootElement.GetProperty("root").GetProperty("content").GetProperty("uri").GetString().Should().Be("tiles/0.b3dm");
     }
 
+    [IntegrationTheory]
+    [Operation(Operations.GetTileMetadata, Operations.GetTile)]
+    [Endpoint("GET /scenes/{sceneId}/tileset.json")]
+    [Endpoint("GET /scenes/{sceneId}/{*assetPath}")]
+    [InlineData("tileset.json")]
+    [InlineData("tiles/0.b3dm")]
+    public async Task GetSceneAsset_HttpThenHttps_ResolvesBothAndCachesWithinScheme(string assetPath)
+    {
+        var path = $"/scenes/{SceneFixturePaths.FixtureSceneId}/{assetPath}";
+        using var internalResponse = await _fixture.Client.GetAsync($"http://honua:5000{path}");
+        using var advertisedResponse = await _fixture.Client.GetAsync($"https://host.docker.internal:18443{path}");
+        using var repeatedHttpsResponse = await _fixture.Client.GetAsync($"https://host.docker.internal:18443{path}");
+
+        internalResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        advertisedResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        advertisedResponse.Headers.Age.Should().BeNull("HTTP and HTTPS retain separate framework cache entries");
+        repeatedHttpsResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        repeatedHttpsResponse.Headers.Age.Should().NotBeNull();
+        advertisedResponse.Headers.ETag.Should().Be(internalResponse.Headers.ETag);
+        (await advertisedResponse.Content.ReadAsByteArrayAsync()).Should().Equal(await internalResponse.Content.ReadAsByteArrayAsync());
+        (await repeatedHttpsResponse.Content.ReadAsByteArrayAsync()).Should().Equal(await internalResponse.Content.ReadAsByteArrayAsync());
+    }
+
+    [IntegrationTheory]
+    [Operation(Operations.GetTileMetadata, Operations.GetTile)]
+    [Endpoint("GET /scenes/{sceneId}/tileset.json")]
+    [Endpoint("GET /scenes/{sceneId}/{*assetPath}")]
+    [InlineData("tileset.json")]
+    [InlineData("tiles/0.b3dm")]
+    public async Task GetSceneAsset_MissingThenPublished_DoesNotRetain404AcrossHostsOrSchemes(string assetPath)
+    {
+        var assetRoot = Directory.CreateTempSubdirectory("honua-scene-cache-").FullName;
+        try
+        {
+            await using var fixture = new WebAppFixture()
+                .WithTestLicense(HonuaEdition.Pro)
+                .ConfigureWebHost(builder =>
+                {
+                    builder.UseSetting("HONUA_DEV_AUTH", "false");
+                    builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["Scenes:Datasets:0:Id"] = "arriving-scene",
+                            ["Scenes:Datasets:0:Name"] = "Arriving scene",
+                            ["Scenes:Datasets:0:AssetRoot"] = assetRoot,
+                            ["Scenes:Datasets:0:TilesetFileName"] = "tileset.json"
+                        }));
+                });
+            await fixture.InitializeAsync();
+            var path = $"/scenes/arriving-scene/{assetPath}";
+            using var missingHttp = await fixture.Client.GetAsync($"http://host.docker.internal:18443{path}");
+            using var missingHttps = await fixture.Client.GetAsync($"https://host.docker.internal:18443{path}");
+            missingHttp.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            missingHttps.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            missingHttp.Headers.Age.Should().BeNull();
+            missingHttps.Headers.Age.Should().BeNull();
+
+            var assetFile = Path.Combine(assetRoot, assetPath);
+            Directory.CreateDirectory(Path.GetDirectoryName(assetFile)!);
+            File.Copy(Path.Combine(_fixtureRoot, assetPath), assetFile);
+
+            using var internalResponse = await fixture.Client.GetAsync($"http://honua:5000{path}");
+            using var advertisedHttp = await fixture.Client.GetAsync($"http://host.docker.internal:18443{path}");
+            using var advertisedHttps = await fixture.Client.GetAsync($"https://host.docker.internal:18443{path}");
+            internalResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            advertisedHttp.StatusCode.Should().Be(HttpStatusCode.OK);
+            advertisedHttps.StatusCode.Should().Be(HttpStatusCode.OK);
+            (await advertisedHttp.Content.ReadAsByteArrayAsync()).Should().Equal(await internalResponse.Content.ReadAsByteArrayAsync());
+            (await advertisedHttps.Content.ReadAsByteArrayAsync()).Should().Equal(await internalResponse.Content.ReadAsByteArrayAsync());
+        }
+        finally
+        {
+            Directory.Delete(assetRoot, recursive: true);
+        }
+    }
+
     [IntegrationTest]
     [Operation(Operations.GetTileMetadata)]
     [Endpoint("GET /scenes/{sceneId}/tileset.json")]
