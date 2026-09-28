@@ -396,6 +396,13 @@ public sealed class GPServerDurableRuntimeTests(RedisFixture redis)
             {
                 var jobId = result.Value;
                 await WaitForSoapJobSucceededAsync(client, jobId, fixture.GetService<IExecutionJobStore>());
+                foreach (var progressHint in new[] { "false", "true" })
+                {
+                    var status = await SendSoapAsync(client, "GetJobStatus",
+                        $"<JobID>{jobId}</JobID><GetProgressMsg>{progressHint}</GetProgressMsg>");
+                    status.Value.Should().Be("esriJobSucceeded");
+                    status.HasElements.Should().BeFalse();
+                }
                 result = await SendSoapAsync(client, "GetJobResult", $"<JobID>{jobId}</JobID><ParameterNames><String>outputScalar</String></ParameterNames>");
             }
             var scalar = result.Element("Values")!.Elements("GPValue").Should().ContainSingle().Subject;
