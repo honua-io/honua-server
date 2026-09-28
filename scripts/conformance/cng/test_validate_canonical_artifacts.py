@@ -141,6 +141,53 @@ class CanonicalArtifactEvidenceTests(unittest.TestCase):
         changed["operation"], changed["canonical_client"] = "multidimensional-subset", "xarray"
         self.assertNotEqual("honua", MODULE._normalize_observations([changed], args())[0]["artifact_producer"])
 
+    def test_fsspec_requires_its_own_completed_read_and_unchanged_budgets(self):
+        row = MODULE._observation("zarr", "store-read", "fsspec", "fsspec-zarr", "2026-08-21T00:00:00Z", args())
+        row.update(executed=True,
+                   observed_metadata=dict(MODULE.FORMAT_BUDGET_PROFILES["zarr"]["expected_metadata"]),
+                   observed_transfer={"requests": 12, "range_requests": 0,
+                                      "full_object_downloads": 12, "transferred_bytes": 2704},
+                   derived_output_binding={"source_sha": args().source_sha, "image_digest": args().image_digest,
+                                           "receipt_sha256": "d" * 64,
+                                           "worker_image": "localhost:5000/cng-zarr-worker@sha256:" + "e" * 64,
+                                           "qualification": False, "job_id": "job42", "coverage_id": 7,
+                                           "registration_id": 8, "root_path": "derived-zarr/42-1/canonical.zarr"},
+                   fsspec_execution={"client": "fsspec.implementations.http.HTTPFileSystem", "completed": True,
+                                     "values_checked": 128,
+                                     "verified_facets": ["positive", "metadata", "range-efficiency"]})
+        normalized = MODULE._normalize_observations([copy.deepcopy(row)], args())[0]
+        self.assertEqual("pass", normalized["result"])
+        self.assertEqual({"positive", "metadata", "range-efficiency"}, set(normalized["facet_results"]))
+        for mutation in ("unexecuted", "binding", "not_completed", "values", "facets", "bytes", "objects", "transfer"):
+            changed = copy.deepcopy(row)
+            if mutation == "unexecuted":
+                changed["executed"] = False
+            elif mutation == "binding":
+                del changed["derived_output_binding"]
+            elif mutation == "not_completed":
+                changed["fsspec_execution"]["completed"] = False
+            elif mutation == "values":
+                changed["fsspec_execution"]["values_checked"] = 0
+            elif mutation == "facets":
+                changed["fsspec_execution"]["verified_facets"].append("crs-axis")
+            elif mutation == "bytes":
+                changed["observed_transfer"]["transferred_bytes"] = 33_554_433
+            elif mutation == "objects":
+                changed["observed_transfer"]["full_object_downloads"] = 17
+            else:
+                del changed["observed_transfer"]
+            with self.subTest(mutation=mutation):
+                rejected = MODULE._normalize_observations([changed], args())[0]
+                self.assertNotEqual("pass", rejected["result"])
+                self.assertIsNone(rejected["facet_results"])
+        for client, operation in (("xarray", "multidimensional-subset"), ("Dask", "distributed-array-compute")):
+            changed = copy.deepcopy(row)
+            changed.update(canonical_client=client, operation=operation,
+                           client_version=MODULE.GOVERNED_ASSIGNMENTS[("zarr", operation, client)].version)
+            rejected = MODULE._normalize_observations([changed], args())[0]
+            self.assertNotEqual("pass", rejected["result"])
+            self.assertFalse(rejected["honua_in_loop"])
+
     def test_honua_transcoded_cog_passes_with_a_real_evidence_digest(self):
         """#4398: `honua.cog.tif` is produced by CogMetadataExtractor +
         CogTiffTileEncoder, so the COG cells are Honua evidence and — once every

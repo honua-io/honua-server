@@ -26,11 +26,17 @@ def safe_key(value: str) -> str:
 
 
 def has_derived_binding(observation: dict) -> bool:
-    """Only the nominated row may carry the validator's verified output binding."""
+    """Only nominated, executed clients may carry the validator's verified output binding."""
     binding = observation.get("derived_output_binding")
+    identity = (observation.get("surface"), observation.get("operation"), observation.get("canonical_client"))
+    fsspec = observation.get("fsspec_execution", {})
+    nominated = identity == ("zarr", "array-read", "zarr") or (
+        identity == ("zarr", "store-read", "fsspec") and observation.get("executed") is True
+        and fsspec.get("client") == "fsspec.implementations.http.HTTPFileSystem"
+        and fsspec.get("completed") is True and fsspec.get("values_checked") == 128
+        and fsspec.get("verified_facets") == ["positive", "metadata", "range-efficiency"])
     return bool(
-        (observation.get("surface"), observation.get("operation"), observation.get("canonical_client"))
-        == ("zarr", "array-read", "zarr")
+        nominated
         and isinstance(binding, dict)
         and binding.get("source_sha") == observation.get("source_sha")
         and binding.get("image_digest") == observation.get("image_digest")
