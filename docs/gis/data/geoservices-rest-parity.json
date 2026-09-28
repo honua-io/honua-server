@@ -4333,7 +4333,7 @@
             "capabilityMaturity": [
               "implemented"
             ],
-            "notes": "Only username and fullName are real (projected from the caller\u0027s claims). The portal id (\u00220123456789ABCDEF\u0022), name, portalName, isPortal, and role are hardcoded; org settings, urlKey, allSSL, basemaps, and privileges are absent. Sufficient for client bootstrap, not for portal administration."
+            "notes": "username and fullName are projected from the caller\u0027s claims. helperServices advertises supported synchronous route, serviceArea, closestFacility and odCostMatrix layers using the public base URL. Unsupported helpers are omitted; provider failure is logged and leaves the helper block empty. The portal id (\u00220123456789ABCDEF\u0022), name, portalName, isPortal, and role are hardcoded; org settings, urlKey, allSSL, basemaps, and privileges are absent. Sufficient for client bootstrap, not for portal administration."
           },
           {
             "name": "Search",
