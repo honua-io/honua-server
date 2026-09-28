@@ -34,7 +34,7 @@ Limits__Tiles__TileTimeout=00:00:30
 TileOptions__CacheMaxAge=3600
 ```
 
-3. Add Redis caching. With Redis configured, metadata and output caches are shared across replicas; without it each replica falls back to a bounded in-memory cache.
+3. Add Redis caching. With Redis configured, metadata and output caches are shared across replicas; without it each replica uses its own in-memory cache. `Cache__EnableFallback` controls fallback during a configured backend outage; it does not disable the normal no-Redis cache.
 
 ```bash
 ConnectionStrings__Redis=redis.example.com:6379
@@ -57,8 +57,11 @@ kubectl -n honua scale deployment/honua-server --replicas=4
 |---|---|---|
 | Edge / CDN | Tiles, public read endpoints | Recommended in production; honor `TileOptions__CacheMaxAge` |
 | Redis (shared) | Service/layer metadata, output cache | Set `ConnectionStrings__Redis`; shared across replicas |
-| In-memory fallback | Same surfaces, per replica | Automatic when Redis is absent or down (`Cache__EnableFallback`) |
+| In-memory (no Redis configured) | Same surfaces, per replica | Automatic; entries retain their configured TTL |
+| In-memory outage fallback | Same surfaces, per replica | Controlled by `Cache__EnableFallback` and `Cache__FallbackMaxEntries` |
 | Npgsql prepared statements | Query plans | Internal; inspect via `GET /api/v1/admin/performance/database/query-cache/statistics` |
+
+The no-Redis cache index expires with its latest tracked payload deadline. Subsequent writes remove expired membership instead of renewing it for another 30 days. A bounded background sweep also reclaims visited idle indexes and checks older index formats without removing renewed values. Generic cache providers cannot enumerate previously unvisited schema scopes: legacy indexes are checked when their scope is next used, and otherwise retain their existing expiry. Use Redis for shared cache behavior across replicas.
 
 ## What needs Redis when multi-node
 
