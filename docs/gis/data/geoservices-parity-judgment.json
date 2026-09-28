@@ -2793,7 +2793,7 @@
           "esriPaths": [
             "/sharing/rest/portals/self"
           ],
-          "notes": "Only username and fullName are real (projected from the caller's claims). The portal id (\"0123456789ABCDEF\"), name, portalName, isPortal, and role are hardcoded; org settings, urlKey, allSSL, basemaps, and privileges are absent. Sufficient for client bootstrap, not for portal administration."
+          "notes": "username and fullName are projected from the caller's claims. helperServices advertises supported synchronous route, serviceArea, closestFacility and odCostMatrix layers using the public base URL. Unsupported helpers are omitted; provider failure is logged and leaves the helper block empty. The portal id (\"0123456789ABCDEF\"), name, portalName, isPortal, and role are hardcoded; org settings, urlKey, allSSL, basemaps, and privileges are absent. Sufficient for client bootstrap, not for portal administration."
         },
         {
           "name": "Community Self",

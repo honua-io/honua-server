@@ -16,6 +16,8 @@ using Honua.Infrastructure.Helpers;
 using Honua.Infrastructure.Licensing;
 using Honua.Infrastructure.Middleware;
 using Honua.Infrastructure.Models;
+using Honua.Routing.Features.Routing.Abstractions;
+using Honua.Routing.Features.Routing.Domain;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.OutputCaching;
 using Microsoft.Extensions.Configuration;
@@ -360,7 +362,7 @@ public static class SharingRestEndpoints
         return Results.Json(response, SharingRestJsonContext.Default.SharingInfoResponse, contentType: JsonContentType);
     }
 
-    private static IResult HandlePortalSelfAsync(
+    private static async Task<IResult> HandlePortalSelfAsync(
         HttpContext context,
         string? f,
         [FromServices] ILogger<SharingRestLog> logger)
@@ -385,9 +387,43 @@ public static class SharingRestEndpoints
             Id = "0123456789ABCDEF",
             Name = "Honua",
             User = user,
+            HelperServices = await BuildRoutingHelpersAsync(context, logger).ConfigureAwait(false),
         };
 
         return Results.Json(response, SharingRestJsonContext.Default.PortalSelfResponse, contentType: JsonContentType);
+    }
+
+    private static async Task<PortalHelperServices> BuildRoutingHelpersAsync(HttpContext context, ILogger<SharingRestLog> logger)
+    {
+        RoutingProviderCapabilities capabilities;
+        try
+        {
+            var routing = context.RequestServices.GetService<IRoutingProvider>();
+            if (routing is null)
+            {
+                return new PortalHelperServices();
+            }
+
+            capabilities = await routing.GetCapabilitiesAsync(context.RequestAborted).ConfigureAwait(false);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException and not OutOfMemoryException)
+        {
+            // Routing is optional portal metadata. A provider failure must neither
+            // advertise unavailable helpers nor hide the rest of the portal identity.
+            SharingRestLog.RoutingHelpersUnavailable(logger, exception);
+            return new PortalHelperServices();
+        }
+
+        // NAServer is a provider-level service. Its routes accept the stable Routing
+        // name independently of feature-service publications in the metadata catalog.
+        var baseUrl = $"{BaseUrlResolver.GetBaseUrl(context).TrimEnd('/')}/rest/services/Routing/NAServer";
+        return new PortalHelperServices
+        {
+            Route = capabilities.SupportsRoute ? new PortalHelperService { Url = $"{baseUrl}/Route" } : null,
+            ServiceArea = capabilities.SupportsServiceArea ? new PortalHelperService { Url = $"{baseUrl}/ServiceArea" } : null,
+            ClosestFacility = capabilities.SupportsClosestFacility ? new PortalHelperService { Url = $"{baseUrl}/ClosestFacility" } : null,
+            OdCostMatrix = capabilities.SupportsOdCostMatrix ? new PortalHelperService { Url = $"{baseUrl}/ODCostMatrix" } : null,
+        };
     }
 
     private static IResult HandleCommunitySelfAsync(
@@ -857,6 +893,10 @@ public static class SharingRestEndpoints
 
 internal sealed partial class SharingRestLog
 {
+    [LoggerMessage(EventId = 7139, Level = LogLevel.Warning,
+        Message = "Portal routing helpers omitted because the routing provider could not describe its capabilities.")]
+    public static partial void RoutingHelpersUnavailable(ILogger logger, Exception exception);
+
     [LoggerMessage(EventId = 7120, Level = LogLevel.Warning,
         Message = "Portal OAuth authorize rejected: redirect_uri is not registered in the deployment allow-list.")]
     public static partial void OAuthRedirectUriRejected(ILogger logger);
