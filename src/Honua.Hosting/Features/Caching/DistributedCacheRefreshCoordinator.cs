@@ -23,7 +23,6 @@ namespace Honua.Infrastructure.Caching;
 internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundService, Honua.Core.Features.Caching.Abstractions.IDistributedCacheRefreshCoordinator
 {
     private const string MetricsCacheType = "background-refresh";
-    private static readonly TimeSpan FailureBackoff = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan RedisLockExpiry = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan RedisRetryBackoff = TimeSpan.FromSeconds(30);
 
@@ -38,13 +37,12 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
 
     // Local state for fallback mode and metrics
     private readonly ConcurrentDictionary<string, byte> _localPendingKeys = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, long> _retryAfterUtcTicks = new(StringComparer.Ordinal);
+    private readonly CacheRefreshBackoff _retryBackoff;
 
     // Tracks fire-and-forget Redis tasks (NotifyDistributedInvalidation) so they can be
     // drained before shutdown to avoid losing in-flight invalidations on a clean stop.
     private readonly ConcurrentQueue<Task> _pendingFireAndForgetTasks = new();
 
-    private readonly TimeProvider _timeProvider;
     private readonly CacheOptions _options;
     private readonly IPerformanceMonitor _performanceMonitor;
     private readonly ILogger<DistributedCacheRefreshCoordinator> _logger;
@@ -66,7 +64,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         TimeProvider? timeProvider = null)
     {
         _options = options.Value;
-        _timeProvider = timeProvider ?? TimeProvider.System;
+        _retryBackoff = new CacheRefreshBackoff(timeProvider ?? TimeProvider.System);
         _performanceMonitor = performanceMonitor;
         _logger = logger;
         _instanceId = Environment.MachineName + "_" + Guid.NewGuid().ToString("N")[..8];
@@ -121,7 +119,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
     /// <inheritdoc />
     public void NotifyInvalidation(string key)
     {
-        _retryAfterUtcTicks.TryRemove(key, out _);
+        _retryBackoff.Remove(key);
 
         if (IsDistributed)
         {
@@ -197,8 +195,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
     /// <inheritdoc />
     public bool TryEnqueueRefresh(string key, Func<CancellationToken, Task> refreshCallback)
     {
-        var nowTicks = _timeProvider.GetUtcNow().UtcTicks;
-        if (IsWithinRetryBackoff(key, nowTicks))
+        if (_retryBackoff.IsActive(key))
         {
             return false;
         }
@@ -214,7 +211,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
 
         // Re-check after the pending claim to close the race with a recently failed
         // refresh that may have published its retry backoff concurrently.
-        if (IsWithinRetryBackoff(key, _timeProvider.GetUtcNow().UtcTicks))
+        if (_retryBackoff.IsActive(key))
         {
             EnqueueAndTrackFireAndForget(ReleaseRefreshClaimAsync(key).AsTask());
             return false;
@@ -258,6 +255,8 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
 
         Log.BackgroundRefreshStarted(_logger, _options.MaxConcurrentRefreshes, IsDistributed);
 
+        // The worker owns the timer, including cancellation and early loop exit.
+        using var backoffCleanup = _retryBackoff.StartCleanup();
         using var semaphore = new SemaphoreSlim(_options.MaxConcurrentRefreshes, _options.MaxConcurrentRefreshes);
 
         await foreach (var item in _channel.Reader.ReadAllAsync(stoppingToken))
@@ -350,7 +349,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         catch (OperationCanceledException)
         {
             // Refresh timeout — count as failure
-            SetRetryBackoff(item.Key);
+            _retryBackoff.Set(item.Key);
             Interlocked.Increment(ref _failureCount);
             _performanceMonitor.RecordCacheMetrics(MetricsCacheType, "refresh_timeout");
             Log.BackgroundRefreshTimeout(_logger, item.Key);
@@ -360,7 +359,7 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
         // counted, and backed off instead of propagating.
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            SetRetryBackoff(item.Key);
+            _retryBackoff.Set(item.Key);
             Interlocked.Increment(ref _failureCount);
             _performanceMonitor.RecordCacheMetrics(MetricsCacheType, "refresh_failure");
             Log.BackgroundRefreshFailed(_logger, item.Key, ex);
@@ -751,27 +750,6 @@ internal sealed partial class DistributedCacheRefreshCoordinator : BackgroundSer
             Log.QueueDepthCheckFailed(_logger, ex);
             return _localPendingKeys.Count;
         }
-    }
-
-    private bool IsWithinRetryBackoff(string key, long nowTicks)
-    {
-        if (!_retryAfterUtcTicks.TryGetValue(key, out var retryAfterTicks))
-        {
-            return false;
-        }
-
-        if (retryAfterTicks > nowTicks)
-        {
-            return true;
-        }
-
-        _retryAfterUtcTicks.TryRemove(key, out _);
-        return false;
-    }
-
-    private void SetRetryBackoff(string key)
-    {
-        _retryAfterUtcTicks[key] = _timeProvider.GetUtcNow().Add(FailureBackoff).UtcTicks;
     }
 
     private bool ShouldUseRedis()
