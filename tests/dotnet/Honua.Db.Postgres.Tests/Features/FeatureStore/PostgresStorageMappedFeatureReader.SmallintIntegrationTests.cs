@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Diagnostics;
 using System.Reflection;
 using FluentAssertions;
 using Honua.Core.Features.FeatureStore.Domain;
@@ -208,6 +209,7 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
         await SeedSmallintBoundariesAsync();
         await using var connection = await _fixture.DataSource.OpenConnectionAsync();
         await using var blocker = await _fixture.DataSource.OpenConnectionAsync();
+        await using var ddl = await _fixture.DataSource.OpenConnectionAsync();
         var key = Random.Shared.NextInt64(1, long.MaxValue);
         await using var acquire = new NpgsqlCommand("SELECT pg_advisory_lock($1)", blocker);
         acquire.Parameters.AddWithValue(key);
@@ -220,13 +222,13 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
             .GetMethod("CreateSmallintReadBatch", BindingFlags.NonPublic | BindingFlags.Instance)!
             .Invoke(store, [connection, sql, false])!;
         NpgsqlDataReader? result = null;
+        Task<NpgsqlDataReader>? pendingReader = null;
         try
         {
             // Pause between the real verification and feature statements. This proves
             // that verification itself locks the source, including cached plans.
-            // Force the verdict onto the wire before the next statement blocks;
-            // otherwise PostgreSQL can keep a small result in its output buffer.
-            batch.BatchCommands[0].CommandText += ", repeat('x', 65536)";
+            // Observe the server-side pause independently of result buffering: PG16
+            // can withhold even a padded verdict until the blocked statement finishes.
             var wait = new NpgsqlBatchCommand("SELECT pg_advisory_xact_lock($1)");
             wait.Parameters.AddWithValue(key);
             batch.BatchCommands.Insert(1, wait);
@@ -234,10 +236,21 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
             {
                 await batch.PrepareAsync();
             }
-            result = await batch.ExecuteReaderAsync();
-            (await result.ReadAsync()).Should().BeTrue();
-            result.GetBoolean(0).Should().BeTrue();
-            await using var ddl = await _fixture.DataSource.OpenConnectionAsync();
+            pendingReader = batch.ExecuteReaderAsync();
+            await using (var observe = new NpgsqlCommand("""
+                SELECT EXISTS(SELECT FROM pg_stat_activity
+                    WHERE pid = $1 AND wait_event_type = 'Lock' AND wait_event = 'advisory')
+                """, ddl))
+            {
+                observe.Parameters.AddWithValue(connection.ProcessID);
+                var elapsed = Stopwatch.StartNew();
+                while (!(bool)(await observe.ExecuteScalarAsync())!)
+                {
+                    elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(10),
+                        "the batch must reach the advisory pause before testing its relation lock");
+                    await Task.Delay(20);
+                }
+            }
             await using (var timeout = new NpgsqlCommand("SET lock_timeout = '200ms'", ddl))
             {
                 await timeout.ExecuteNonQueryAsync();
@@ -251,6 +264,9 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
             {
                 await release.ExecuteNonQueryAsync();
             }
+            result = await pendingReader;
+            (await result.ReadAsync()).Should().BeTrue();
+            result.GetBoolean(0).Should().BeTrue();
             (await result.NextResultAsync()).Should().BeTrue();
             (await result.NextResultAsync()).Should().BeTrue();
             var ids = new List<long>();
@@ -266,6 +282,10 @@ public sealed partial class PostgresStorageMappedFeatureReaderEncodedFormatsInte
         {
             await using var release = new NpgsqlCommand("SELECT pg_advisory_unlock_all()", blocker);
             await release.ExecuteNonQueryAsync();
+            if (result is null && pendingReader is not null)
+            {
+                result = await pendingReader;
+            }
             if (result is not null)
             {
                 await result.DisposeAsync();
