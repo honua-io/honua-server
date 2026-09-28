@@ -179,7 +179,8 @@ internal static class ServiceCollectionExtensions
         services.TryAddScoped<IArtifactStore>(serviceProvider => serviceProvider.GetRequiredService<PostgresWorkspaceStore>());
 
         // Register refactored feature store implementation
-        services.AddRefactoredFeatureStore(configuration["Database:Schema"]);
+        services.AddRefactoredFeatureStore(configuration["Database:Schema"],
+            configuration.GetValue<bool>("Database:PreferSerialBoundedSpatialReads"));
         services.TryAddScoped<IFeatureDataProviderRegistry>(serviceProvider =>
             new FeatureDataProviderRegistry(serviceProvider.GetServices<IFeatureDataProvider>()));
         services.TryAddScoped(serviceProvider =>
