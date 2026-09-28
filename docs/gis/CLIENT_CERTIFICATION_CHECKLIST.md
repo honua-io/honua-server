@@ -191,12 +191,12 @@ lane × protocol pair appears with no checklist row.
 
 | Lane | Client build | Closed | Open | Breakdown |
 |---|---|---|---|---|
-| `pro-ui` | ArcGIS Pro 3.7.1.1904 | 59/94 | 35 | blocked 2, fail 4, n/a-no-client 23, not-started 29, pass 36 |
-| `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 89/94 | 5 | blocked 3, fail 2, n/a-no-client 47, pass 42 |
-| `qgis-ui` | QGIS 3.44.14 LTR | 71/94 | 23 | blocked 23, n/a-no-client 31, pass 40 |
+| `pro-ui` | ArcGIS Pro 3.7.1.1904 | 63/94 | 31 | blocked 15, fail 2, n/a-no-client 23, not-started 14, pass 40 |
+| `arcpy` | ArcPy (ships with ArcGIS Pro 3.7.1.1904) | 89/94 | 5 | blocked 4, fail 1, n/a-no-client 47, pass 42 |
+| `qgis-ui` | QGIS 3.44.14 LTR | 81/94 | 13 | blocked 13, n/a-no-client 31, pass 50 |
 | `pyqgis` | QGIS 3.44.14 LTR | 94/94 | 0 | n/a-no-client 29, pass 65 |
 
-**313 of 376 cells closed; 63 open.**
+**327 of 376 cells closed; 49 open.**
 
 ### Cells
 
@@ -241,17 +241,17 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| GetCapabilities | pass | pass | blocked | pass |
-| DescribeCoverage | pass | pass | blocked | pass |
-| GetCoverage | pass | pass | blocked | pass |
+| GetCapabilities | pass | pass | pass | pass |
+| DescribeCoverage | pass | pass | pass | pass |
+| GetCoverage | pass | pass | pass | pass |
 
 #### wcs 2.0.1
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| GetCapabilities | not-started | pass | blocked | pass |
-| DescribeCoverage | not-started | pass | blocked | n/a-no-client |
-| GetCoverage | not-started | pass | blocked | n/a-no-client |
+| GetCapabilities | not-started | pass | pass | pass |
+| DescribeCoverage | not-started | pass | pass | n/a-no-client |
+| GetCoverage | not-started | pass | pass | n/a-no-client |
 
 #### ogc-api-features 1.0
 
@@ -280,7 +280,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 | catalog-landing | pass | pass | pass | pass |
 | collections | pass | pass | pass | pass |
 | item-search | pass | pass | pass | pass |
-| asset-download | not-started | pass | blocked | pass |
+| asset-download | not-started | pass | pass | pass |
 
 #### sensorthings 1.1
 
@@ -299,17 +299,17 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 | query | pass | pass | pass | pass |
 | identify | pass | pass | pass | pass |
 | applyEdits | pass | pass | blocked | pass |
-| attachments | fail | n/a-no-client | n/a-no-client | n/a-no-client |
-| relatedRecords | fail | n/a-no-client | n/a-no-client | n/a-no-client |
+| attachments | blocked | n/a-no-client | n/a-no-client | n/a-no-client |
+| relatedRecords | blocked | n/a-no-client | n/a-no-client | n/a-no-client |
 | statistics | pass | pass | blocked | pass |
 | domains | pass | pass | pass | pass |
-| replica-sync | not-started | blocked | n/a-no-client | n/a-no-client |
+| replica-sync | blocked | blocked | n/a-no-client | n/a-no-client |
 
 #### mapserver GeoServices REST
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| service-info | fail | pass | pass | pass |
+| service-info | pass | pass | pass | pass |
 | export | pass | pass | blocked | pass |
 | identify | pass | n/a-no-client | pass | pass |
 | legend | pass | n/a-no-client | pass | pass |
@@ -334,21 +334,21 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| service-info | not-started | pass | n/a-no-client | n/a-no-client |
-| task-info | not-started | pass | n/a-no-client | n/a-no-client |
-| submitJob | not-started | pass | n/a-no-client | n/a-no-client |
-| job-status | not-started | pass | n/a-no-client | n/a-no-client |
-| results | not-started | pass | n/a-no-client | n/a-no-client |
-| cancel | not-started | pass | n/a-no-client | n/a-no-client |
+| service-info | pass | pass | n/a-no-client | n/a-no-client |
+| task-info | pass | pass | n/a-no-client | n/a-no-client |
+| submitJob | pass | pass | n/a-no-client | n/a-no-client |
+| job-status | fail | pass | n/a-no-client | n/a-no-client |
+| results | blocked | pass | n/a-no-client | n/a-no-client |
+| cancel | blocked | pass | n/a-no-client | n/a-no-client |
 
 #### geocodeserver GeoServices REST
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| findAddressCandidates | not-started | pass | n/a-no-client | n/a-no-client |
-| suggest | not-started | n/a-no-client | n/a-no-client | n/a-no-client |
-| reverseGeocode | not-started | pass | n/a-no-client | n/a-no-client |
-| geocodeAddresses | not-started | pass | n/a-no-client | n/a-no-client |
+| findAddressCandidates | blocked | pass | n/a-no-client | n/a-no-client |
+| suggest | blocked | n/a-no-client | n/a-no-client | n/a-no-client |
+| reverseGeocode | blocked | pass | n/a-no-client | n/a-no-client |
+| geocodeAddresses | blocked | pass | n/a-no-client | n/a-no-client |
 
 #### geometryserver GeoServices REST
 
@@ -363,15 +363,15 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| route-solve | not-started | blocked | n/a-no-client | n/a-no-client |
-| service-area | not-started | blocked | n/a-no-client | n/a-no-client |
+| route-solve | blocked | blocked | n/a-no-client | n/a-no-client |
+| service-area | blocked | blocked | n/a-no-client | n/a-no-client |
 
 #### versionmanagementserver GeoServices REST
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| create-version | not-started | fail | n/a-no-client | n/a-no-client |
-| reconcile-post | not-started | fail | n/a-no-client | n/a-no-client |
+| create-version | blocked | fail | n/a-no-client | n/a-no-client |
+| reconcile-post | blocked | blocked | n/a-no-client | n/a-no-client |
 
 #### geoservices-soap GeoServices SOAP
 
@@ -426,7 +426,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| archive-read | not-started | n/a-no-client | blocked | pass |
+| archive-read | not-started | n/a-no-client | pass | pass |
 
 #### tilejson 3.0.0
 
@@ -438,7 +438,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| range-read | not-started | pass | blocked | pass |
+| range-read | not-started | pass | pass | pass |
 
 #### i3s-sceneserver 1.x
 
@@ -450,7 +450,7 @@ in `docs/gis/data/client-certification-checklist.v1.json`.
 
 | Operation | `pro-ui` | `arcpy` | `qgis-ui` | `pyqgis` |
 |---|---|---|---|---|
-| tileset | not-started | n/a-no-client | blocked | pass |
+| tileset | not-started | n/a-no-client | pass | pass |
 
 #### elevation Esri
 
