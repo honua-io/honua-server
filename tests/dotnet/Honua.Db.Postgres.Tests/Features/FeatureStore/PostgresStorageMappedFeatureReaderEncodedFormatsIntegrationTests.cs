@@ -191,7 +191,7 @@ public sealed class PostgresStorageMappedFeatureReaderEncodedFormatsIntegrationT
 
         var widenedArithmetic = await reader.QueryPageAsync(1, query with
         {
-            SqlFilter = new SqlFragment("(NULLIF(\"attributes\" ->> 'population', '')::integer + @p0) = @p1", [1, 32768])
+            SqlFilter = new SqlFragment("(NULLIF(\"attributes\" ->> 'population', '')::integer + NULLIF(\"attributes\" ->> 'population', '')::integer) = @p0", [65534])
         });
         widenedArithmetic.Items.Select(feature => feature.Id).Should().Equal(100002);
 
