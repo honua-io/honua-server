@@ -1,6 +1,7 @@
 // Copyright (c) Honua. All rights reserved.
 // Licensed under the Elastic License 2.0. See LICENSE in the project root.
 
+using System.Runtime.CompilerServices;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
 
@@ -20,7 +21,11 @@ internal sealed partial class DistributedCacheKeyIndex : IAsyncDisposable
     private readonly IDistributedCache _cache;
     private readonly ILogger _logger;
     private readonly TimeProvider _clock;
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    // Backend-scoped transactions must outlive individual service owners. Weak keys
+    // allow an unused backend and its managed semaphore to be collected together.
+    private static readonly ConditionalWeakTable<IDistributedCache, SemaphoreSlim> BackendGates = new();
+    private readonly SemaphoreSlim _gate;
+    private readonly bool _processLocal;
     private readonly LinkedList<IndexState> _visited = new();
     private readonly Dictionary<string, LinkedListNode<IndexState>> _nodes = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _stopping = new();
@@ -31,11 +36,20 @@ internal sealed partial class DistributedCacheKeyIndex : IAsyncDisposable
     private Task? _disposeTask;
     private TaskCompletionSource? _drained;
 
-    public DistributedCacheKeyIndex(IDistributedCache cache, ILogger logger, TimeProvider clock)
+    public DistributedCacheKeyIndex(IDistributedCache cache, ILogger logger, TimeProvider clock, bool processLocal)
     {
         _cache = cache;
         _logger = logger;
         _clock = clock;
+        _processLocal = processLocal;
+        _gate = BackendGates.GetValue(cache, static _ => new SemaphoreSlim(1, 1));
+        if (!processLocal)
+        {
+            // Arbitrary distributed providers expose no CAS or distributed lock.
+            // Preserve their foreground-only, best-effort legacy index semantics.
+            _maintenance = Task.CompletedTask;
+            return;
+        }
         if (ExecutionContext.IsFlowSuppressed())
         {
             _maintenance = MaintainAsync();
@@ -63,7 +77,7 @@ internal sealed partial class DistributedCacheKeyIndex : IAsyncDisposable
             {
                 deadline = Math.Max(deadline, previousDeadline);
             }
-            entries[key] = deadline;
+            entries[key] = _processLocal ? deadline : null;
             await PruneAsync(entries, Visit(indexKey), 4, cancellationToken).ConfigureAwait(false);
             await SaveAsync(indexKey, entries, cancellationToken).ConfigureAwait(false);
         }
@@ -75,10 +89,14 @@ internal sealed partial class DistributedCacheKeyIndex : IAsyncDisposable
 
     public async Task<IReadOnlyList<string>> ReadAsync(string indexKey, CancellationToken cancellationToken)
     {
-        await EnterAsync(cancellationToken).ConfigureAwait(false);
+        await EnterAsync(cancellationToken, acquireGate: _processLocal).ConfigureAwait(false);
         try
         {
             var entries = await LoadAsync(indexKey, cancellationToken).ConfigureAwait(false);
+            if (!_processLocal)
+            {
+                return entries.Keys.ToArray();
+            }
             if (await PruneAsync(entries, Visit(indexKey), 4, cancellationToken).ConfigureAwait(false))
             {
                 await SaveAsync(indexKey, entries, cancellationToken).ConfigureAwait(false);
@@ -91,7 +109,7 @@ internal sealed partial class DistributedCacheKeyIndex : IAsyncDisposable
         }
         finally
         {
-            Exit();
+            Exit(releaseGate: _processLocal);
         }
     }
 
@@ -132,6 +150,10 @@ internal sealed partial class DistributedCacheKeyIndex : IAsyncDisposable
     private async Task<bool> PruneAsync(
         Dictionary<string, long?> entries, IndexState state, int legacyBudget, CancellationToken cancellationToken)
     {
+        if (!_processLocal)
+        {
+            return false;
+        }
         var now = _clock.GetUtcNow().UtcTicks;
         var changed = false;
         List<string>? legacy = null;
@@ -177,7 +199,7 @@ internal sealed partial class DistributedCacheKeyIndex : IAsyncDisposable
         var deadlines = new Dictionary<string, long>(StringComparer.Ordinal);
         foreach (var (key, deadline) in entries)
         {
-            if (deadline is long known)
+            if (_processLocal && deadline is long known)
             {
                 deadlines.Add(key, known);
                 expiry = Math.Max(expiry, known);
@@ -273,7 +295,7 @@ internal sealed partial class DistributedCacheKeyIndex : IAsyncDisposable
         }
     }
 
-    private async Task EnterAsync(CancellationToken cancellationToken)
+    private async Task EnterAsync(CancellationToken cancellationToken, bool acquireGate = true)
     {
         lock (_lifetime)
         {
@@ -282,7 +304,11 @@ internal sealed partial class DistributedCacheKeyIndex : IAsyncDisposable
         }
         try
         {
-            await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (acquireGate)
+            {
+                await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            }
         }
         catch
         {
@@ -291,9 +317,12 @@ internal sealed partial class DistributedCacheKeyIndex : IAsyncDisposable
         }
     }
 
-    private void Exit()
+    private void Exit(bool releaseGate = true)
     {
-        _gate.Release();
+        if (releaseGate)
+        {
+            _gate.Release();
+        }
         EndOperation();
     }
 
@@ -336,7 +365,8 @@ internal sealed partial class DistributedCacheKeyIndex : IAsyncDisposable
         _stopping.Dispose();
         _visited.Clear();
         _nodes.Clear();
-        _gate.Dispose();
+        // Other owners may still be using the backend gate. It has no native wait
+        // handle and is reclaimed with the backend, not with this service owner.
     }
 
     private sealed class IndexState(string key)

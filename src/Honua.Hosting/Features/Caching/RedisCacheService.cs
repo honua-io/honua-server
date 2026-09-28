@@ -113,7 +113,8 @@ internal sealed partial class RedisCacheService : ICacheService, ICacheHealthChe
         }
         if (_distributedCache is not null && _redis is null)
         {
-            _distributedIndex = new DistributedCacheKeyIndex(_distributedCache, _logger, timeProvider ?? TimeProvider.System);
+            _distributedIndex = new DistributedCacheKeyIndex(_distributedCache, _logger, timeProvider ?? TimeProvider.System,
+                processLocal: _distributedCache is MemoryDistributedCache);
         }
     }
 

@@ -18,11 +18,77 @@ public sealed class DistributedCacheKeyIndexLifecycleTests
 {
     [UnitTest]
     [Operation(Operations.Cache)]
+    public async Task UnknownDistributedProvider_PreservesLegacyIndexWithoutBackgroundOrReadMutation()
+    {
+        var clock = new IndexClock();
+        var backend = new ExpiringCache(clock);
+        await using var index = new DistributedCacheKeyIndex(backend, NullLogger.Instance, clock, processLocal: false);
+        await index.TrackAsync("index", "expired", TimeSpan.FromSeconds(1), default);
+        var original = backend.Get("index");
+        backend.Reads.Clear();
+        clock.Advance(TimeSpan.FromSeconds(5));
+        Assert.Equal(0, clock.ActiveTimers);
+        Assert.Empty(backend.Reads);
+        Assert.Equal(["expired"], await index.ReadAsync("index", default));
+        Assert.Equal(original, backend.Get("index"));
+        await index.TrackAsync("index", "live", TimeSpan.FromMinutes(1), default);
+        Assert.Equal(new[] { "expired", "live" }, await index.ReadAsync("index", default));
+        clock.Advance(TimeSpan.FromDays(29));
+        Assert.NotNull(backend.Get("index"));
+        clock.Advance(TimeSpan.FromDays(2));
+        Assert.Null(backend.Get("index"));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
+    public async Task SharedBackend_SweepCannotOverwriteOtherOwnersRenewalOrDisposeItsGate()
+    {
+        var clock = new IndexClock();
+        var backend = new ExpiringCache(clock);
+        await using var first = new DistributedCacheKeyIndex(backend, NullLogger.Instance, clock, processLocal: true);
+        await using var second = new DistributedCacheKeyIndex(backend, NullLogger.Instance, new IndexClock(), processLocal: true);
+        await first.TrackAsync("index", "anchor", TimeSpan.FromMinutes(1), default);
+        await first.TrackAsync("index", "renewed", TimeSpan.FromSeconds(1), default);
+        var captured = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var paused = 0;
+        backend.AfterGet = async key =>
+        {
+            if (key == "index" && Interlocked.Exchange(ref paused, 1) == 0)
+            {
+                captured.SetResult();
+                await release.Task;
+            }
+        };
+        clock.Advance(TimeSpan.FromSeconds(5));
+        await captured.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await backend.SetAsync("renewed", [2], Options(TimeSpan.FromMinutes(1)));
+        var renewal = second.TrackAsync("index", "renewed", TimeSpan.FromMinutes(1), default);
+        try
+        {
+            // The paused sweep owns the complete read/modify/write transaction.
+            // Another owner must not finish tracking against that stale snapshot.
+            Assert.False(renewal.IsCompleted);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await renewal.WaitAsync(TimeSpan.FromSeconds(5));
+        }
+        await first.DisposeAsync();
+        Assert.Contains("renewed", await second.ReadAsync("index", default));
+        Assert.Equal(new byte[] { 2 }, await backend.GetAsync("renewed"));
+        await second.TrackAsync("index", "after-disposal", TimeSpan.FromMinutes(1), default);
+        Assert.Contains("after-disposal", await second.ReadAsync("index", default));
+    }
+
+    [UnitTest]
+    [Operation(Operations.Cache)]
     public async Task Renewal_DelayedOlderTracking_DoesNotShortenNewerDeadline()
     {
         var clock = new IndexClock();
         var backend = new ExpiringCache(clock);
-        await using var index = new DistributedCacheKeyIndex(backend, NullLogger.Instance, clock);
+        await using var index = new DistributedCacheKeyIndex(backend, NullLogger.Instance, clock, processLocal: true);
         await backend.SetAsync("key", [1], Options(TimeSpan.FromSeconds(10)));
         await backend.SetAsync("key", [2], Options(TimeSpan.FromMinutes(1)));
         await index.TrackAsync("index", "key", TimeSpan.FromMinutes(1), default);
@@ -44,7 +110,7 @@ public sealed class DistributedCacheKeyIndexLifecycleTests
         var clock = new IndexClock();
         var backend = new ExpiringCache(clock);
         var ambient = new AsyncLocal<object?> { Value = new object() };
-        await using var index = new DistributedCacheKeyIndex(backend, NullLogger.Instance, clock);
+        await using var index = new DistributedCacheKeyIndex(backend, NullLogger.Instance, clock, processLocal: true);
         foreach (var scope in new[] { "scope:default:", "scope:schema:tenant-a:" })
         {
             await backend.SetAsync(scope + "value", [1], Options(TimeSpan.FromSeconds(1)));
@@ -68,7 +134,7 @@ public sealed class DistributedCacheKeyIndexLifecycleTests
     {
         var clock = new IndexClock();
         var backend = new ExpiringCache(clock);
-        await using var index = new DistributedCacheKeyIndex(backend, NullLogger.Instance, clock);
+        await using var index = new DistributedCacheKeyIndex(backend, NullLogger.Instance, clock, processLocal: true);
         await backend.SetAsync("anchor", [1], Options(TimeSpan.FromMinutes(1)));
         await index.TrackAsync("index", "anchor", TimeSpan.FromMinutes(1), default);
         await backend.SetAsync("short", [2], Options(TimeSpan.FromSeconds(1)));
@@ -95,7 +161,7 @@ public sealed class DistributedCacheKeyIndexLifecycleTests
         var keys = Enumerable.Range(0, 100).Select(value => "expired:" + value).Append("live").ToArray();
         await backend.SetAsync("index", JsonSerializer.SerializeToUtf8Bytes(new { keys }), Options(TimeSpan.FromDays(30)));
         await backend.SetAsync("live", [1], Options(TimeSpan.FromHours(1)));
-        await using var index = new DistributedCacheKeyIndex(backend, NullLogger.Instance, clock);
+        await using var index = new DistributedCacheKeyIndex(backend, NullLogger.Instance, clock, processLocal: true);
         Assert.Contains("live", await index.ReadAsync("index", default));
         backend.Reads.Clear();
         for (var tick = 0; tick < 5; tick++)
@@ -120,7 +186,7 @@ public sealed class DistributedCacheKeyIndexLifecycleTests
     {
         var clock = new IndexClock();
         var backend = new ExpiringCache(clock);
-        await using var index = new DistributedCacheKeyIndex(backend, NullLogger.Instance, clock);
+        await using var index = new DistributedCacheKeyIndex(backend, NullLogger.Instance, clock, processLocal: true);
         for (var scope = 0; scope < 1025; scope++)
         {
             await index.TrackAsync("index:" + scope, "value:" + scope, TimeSpan.FromMinutes(10), default);
@@ -145,7 +211,7 @@ public sealed class DistributedCacheKeyIndexLifecycleTests
             entered.TrySetResult();
             await release.Task;
         };
-        var index = new DistributedCacheKeyIndex(backend, NullLogger.Instance, clock);
+        var index = new DistributedCacheKeyIndex(backend, NullLogger.Instance, clock, processLocal: true);
         var first = index.TrackAsync("index", "first", TimeSpan.FromMinutes(1), default);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
         var queued = index.TrackAsync("index", "second", TimeSpan.FromMinutes(1), default);
@@ -173,7 +239,7 @@ public sealed class DistributedCacheKeyIndexLifecycleTests
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         backend.BeforeGet = async (_, _) => { entered.TrySetResult(); await release.Task; };
-        var index = new DistributedCacheKeyIndex(backend, NullLogger.Instance, clock);
+        var index = new DistributedCacheKeyIndex(backend, NullLogger.Instance, clock, processLocal: true);
         var first = index.ReadAsync("index", default);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
         using var cancellation = new CancellationTokenSource();
@@ -191,7 +257,7 @@ public sealed class DistributedCacheKeyIndexLifecycleTests
     {
         var clock = new IndexClock();
         var backend = new ExpiringCache(clock);
-        var index = new DistributedCacheKeyIndex(backend, NullLogger.Instance, clock);
+        var index = new DistributedCacheKeyIndex(backend, NullLogger.Instance, clock, processLocal: true);
         await index.TrackAsync("index", "value", TimeSpan.FromMinutes(1), default);
         var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -224,7 +290,7 @@ public sealed class DistributedCacheKeyIndexLifecycleTests
         var clock = new IndexClock();
         var backend = new ExpiringCache(clock);
         await backend.SetAsync("index", System.Text.Encoding.UTF8.GetBytes(json), Options(TimeSpan.FromDays(30)));
-        await using var index = new DistributedCacheKeyIndex(backend, NullLogger.Instance, clock);
+        await using var index = new DistributedCacheKeyIndex(backend, NullLogger.Instance, clock, processLocal: true);
         Assert.Empty(await index.ReadAsync("index", default));
     }
 
@@ -249,7 +315,7 @@ public sealed class DistributedCacheKeyIndexLifecycleTests
         var weak = new WeakReference(ambient.Value);
         try
         {
-            return (new DistributedCacheKeyIndex(new ExpiringCache(TimeProvider.System), NullLogger.Instance, TimeProvider.System), weak);
+            return (new DistributedCacheKeyIndex(new ExpiringCache(TimeProvider.System), NullLogger.Instance, TimeProvider.System, processLocal: true), weak);
         }
         finally
         {
@@ -299,6 +365,7 @@ public sealed class DistributedCacheKeyIndexLifecycleTests
         private readonly ConcurrentDictionary<string, (byte[] Value, long Deadline)> _entries = new(StringComparer.Ordinal);
         public ConcurrentQueue<string> Reads { get; } = new();
         public Func<string, CancellationToken, Task>? BeforeGet { get; set; }
+        public Func<string, Task>? AfterGet { get; set; }
         public bool Contains(string key) => _entries.ContainsKey(key);
         public byte[]? Get(string key)
         {
@@ -311,7 +378,9 @@ public sealed class DistributedCacheKeyIndexLifecycleTests
         {
             Reads.Enqueue(key);
             if (BeforeGet is not null) { await BeforeGet(key, token); }
-            return Get(key);
+            var value = Get(key);
+            if (AfterGet is not null) { await AfterGet(key); }
+            return value;
         }
         public void Set(string key, byte[] value, DistributedCacheEntryOptions options)
             => _entries[key] = (value, clock.GetUtcNow().Add(options.AbsoluteExpirationRelativeToNow!.Value).UtcTicks);
