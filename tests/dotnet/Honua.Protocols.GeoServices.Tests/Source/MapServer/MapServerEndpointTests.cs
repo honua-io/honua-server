@@ -820,6 +820,30 @@ public sealed class MapServerEndpointTests : MapServerEndpointTestBase
         response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    [IntegrationTheory]
+    [InlineData("layers")]
+    [InlineData("allLayersAndTables")]
+    [Operation(Operations.Metadata)]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/layers")]
+    [Endpoint("POST /rest/services/{serviceId}/MapServer/allLayersAndTables")]
+    public async Task MapServer_LayerMetadataPost_ReturnsIdenticalCompleteGetDocument(string resource)
+    {
+        var service = await SeedGenerateKmlGeometryServiceAsync();
+        var path = $"/rest/services/{service}/MapServer/{resource}";
+        using var get = await Fixture.Client.GetAsync(path + "?f=json");
+        var expected = await get.Content.ReadAsStringAsync();
+        get.StatusCode.Should().Be(HttpStatusCode.OK, expected);
+        using var document = JsonDocument.Parse(expected);
+        document.RootElement.GetProperty("layers").GetArrayLength().Should().Be(4);
+
+        using var form = new FormUrlEncodedContent([new KeyValuePair<string, string>("f", "json")]);
+        using var post = await Fixture.Client.PostAsync(path, form);
+
+        var actual = await post.Content.ReadAsStringAsync();
+        post.StatusCode.Should().Be(HttpStatusCode.OK, actual);
+        actual.Should().Be(expected, "POST must preserve every sublayer, not merely return HTTP 200");
+    }
+
     [IntegrationTest]
     [Operation(Operations.Metadata)]
     [Endpoint("GET /rest/services/{serviceId}/MapServer/layers")]

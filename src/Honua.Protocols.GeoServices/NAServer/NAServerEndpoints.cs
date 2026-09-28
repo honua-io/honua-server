@@ -67,6 +67,17 @@ internal static class NAServerEndpoints
             .Produces<NAServerRouteSolveResponse>(StatusCodes.Status200OK, JsonContentType)
             .AllowAnonymous();
 
+        endpoints.MapGet($"{RouteBase}/ServiceArea/solveServiceArea",
+                static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
+                    => HandleServiceArea(context, routing, options.Value, ct))
+            .WithDisplayName("NAServer Service Area Solve (GET)")
+            .WithName("NAServerServiceAreaSolveGet")
+            .WithSummary("Solve a NAServer service area from query parameters")
+            .WithDescription("Solves service-area (isochrone) polygons from query-string parameters through the shared routing pipeline and returns an Esri saPolygons feature set.")
+            .WithTags("NAServer")
+            .Produces<NAServerServiceAreaResponse>(StatusCodes.Status200OK, JsonContentType)
+            .AllowAnonymous();
+
         endpoints.MapPost($"{RouteBase}/ServiceArea/solveServiceArea",
                 static (HttpContext context, IRoutingProvider routing, IOptions<RoutingConfiguration> options, CancellationToken ct)
                     => HandleServiceArea(context, routing, options.Value, ct))
