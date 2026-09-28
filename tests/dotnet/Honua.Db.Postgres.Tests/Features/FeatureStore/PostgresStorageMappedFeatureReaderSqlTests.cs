@@ -13,6 +13,7 @@ using Honua.Db.Postgres.Features.FeatureStore.Services;
 using Honua.Db.Postgres.Queries.Filters;
 using Microsoft.Extensions.ObjectPool;
 using NSubstitute;
+using Honua.TestKit.Attributes;
 
 namespace Honua.Db.Postgres.Tests.Features.FeatureStore;
 
@@ -359,15 +360,28 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         sql.Should().Contain("LIMIT $2 OFFSET $3");
     }
 
-    [Fact]
-    public void BuildAttributesExpressionText_WithWideOutFields_ChunksJsonbBuildObjectCalls()
+    [UnitTheory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BuildFeatureSelect_AttributesRemainTextAtReaderBoundary(bool distinct)
+    {
+        var query = new FeatureQuery { OutFields = ["name"], Distinct = distinct };
+        var sql = typeof(PostgresStorageMappedFeatureReader)
+            .GetMethod("BuildFeatureSelect", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(CreateReader(CreateResource()), [query, false])!.ToString()!;
+
+        sql.Should().Contain("(jsonb_build_object($1::text, \"name\"))::text AS attributes");
+    }
+
+    [UnitTest]
+    public void BuildAttributesJsonbExpression_WithWideOutFields_ChunksJsonbBuildObjectCalls()
     {
         var fields = Enumerable.Range(1, 51)
             .Select(index => new MetadataV2Field { Name = $"field_{index}", Type = MetadataV2FieldType.String })
             .ToArray();
 
         var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
-            "BuildAttributesExpressionText",
+            "BuildAttributesJsonbExpression",
             BindingFlags.NonPublic | BindingFlags.Static,
             binder: null,
             types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>), typeof(string)],
@@ -386,15 +400,15 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
 
         expression.Split("jsonb_build_object", StringSplitOptions.None).Length.Should().Be(3);
         expression.Should().StartWith("(");
-        expression.Should().EndWith(")::text");
+        expression.Should().EndWith(")");
         expression.Should().Contain(" || ");
         expression.Should().Contain("$1::text, \"field_1\"");
         expression.Should().Contain("$51::text, \"field_51\"");
         parameters.Should().Equal(fields.Select(static field => field.Name));
     }
 
-    [Fact]
-    public void BuildAttributesExpressionText_WithJsonbColumn_PreservesNumericTypeButStringifiesText()
+    [UnitTest]
+    public void BuildAttributesJsonbExpression_WithJsonbColumn_PreservesNumericTypeButStringifiesText()
     {
         var fields = new[]
         {
@@ -406,7 +420,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         };
 
         var method = typeof(PostgresStorageMappedFeatureReader).GetMethod(
-            "BuildAttributesExpressionText",
+            "BuildAttributesJsonbExpression",
             BindingFlags.NonPublic | BindingFlags.Static,
             binder: null,
             types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>), typeof(string)],
@@ -435,8 +449,8 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
         parameters.Should().Equal(fields.Select(static field => field.Name));
     }
 
-    [Fact]
-    public void BuildAttributesExpressionText_WithQuotedJsonbKey_BindsKeyWithoutChangingStatement()
+    [UnitTest]
+    public void BuildAttributesJsonbExpression_WithQuotedJsonbKey_BindsKeyWithoutChangingStatement()
     {
         const string fieldName = "owner's key ->> 'x'; SELECT pg_sleep(1); --";
         var field = new MetadataV2Field { Name = fieldName, Type = MetadataV2FieldType.String };
@@ -452,7 +466,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             "the existing JSON attribute-key allow-list remains the first gate");
 
         var buildMethod = typeof(PostgresStorageMappedFeatureReader).GetMethod(
-            "BuildAttributesExpressionText",
+            "BuildAttributesJsonbExpression",
             BindingFlags.NonPublic | BindingFlags.Static,
             binder: null,
             types: [typeof(MetadataV2Field[]), typeof(string), typeof(Func<object?, string>), typeof(string)],
@@ -469,7 +483,7 @@ public sealed class PostgresStorageMappedFeatureReaderSqlTests
             null,
             [new[] { field }, "attributes", (Func<object?, string>)AddParameter, null])!;
 
-        expression.Should().Be("(jsonb_build_object($1::text, \"attributes\" ->> $1::text))::text");
+        expression.Should().Be("(jsonb_build_object($1::text, \"attributes\" ->> $1::text))");
         expression.Should().NotContain(fieldName);
         parameters.Should().ContainSingle().Which.Should().Be(fieldName);
     }
